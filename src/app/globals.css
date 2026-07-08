@@ -1,0 +1,182 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ─── PROJEXA Brand Colors (construction/blueprint palette, deliberately
+     distinct from VERIDIAN's navy/saffron/teal) ─── */
+  --color-px-concrete: #F6F5F1;
+  --color-px-ink: #182430;
+  --color-px-ink2: #253746;
+  --color-px-ink3: #33495C;
+  --color-px-orange: #E6510C;
+  --color-px-orange-hover: #C94509;
+  --color-px-steel: #1F6F8B;
+  --color-px-steel-hover: #185A70;
+
+  /* ─── Semantic Colors ─── */
+  --color-px-success: #1E8E3E;
+  --color-px-success-light: #F0FDF4;
+  --color-px-success-border: #86EFAC;
+  --color-px-warning: #D97706;
+  --color-px-warning-light: #FEF9EC;
+  --color-px-warning-border: #FCD34D;
+  --color-px-error: #C0392B;
+  --color-px-error-light: #FDECEB;
+  --color-px-error-border: #E8A39D;
+  --color-px-info: #2563EB;
+  --color-px-info-light: #EFF6FF;
+  --color-px-info-border: #BFDBFE;
+
+  /* ─── Neutral Colors ─── */
+  --color-px-cloud: #EEF1F3;
+  --color-px-cloud2: #E4E9ED;
+  --color-px-slate: #4A5568;
+  --color-px-muted: #6B7A88;
+  --color-px-border: #DDE3E8;
+  --color-px-border2: #C6D0D8;
+  --color-px-white: #FFFFFF;
+  --color-px-row-hover: #FAFBFC;
+
+  /* ─── Legacy `ct-*` aliases ───────────────────────────────────────────
+     The UI components copied from VERIDIAN (src/components/ui/*) reference
+     VERIDIAN's `ct-*` (compliance-tracker) token names directly. Rather
+     than hand-edit every copied file, alias the token NAMES those
+     components expect to PROJEXA's own palette VALUES here -- same
+     approach, distinct brand. */
+  --color-ct-navy: var(--color-px-ink);
+  --color-ct-teal: var(--color-px-steel);
+  --color-ct-cloud: var(--color-px-cloud);
+  --color-ct-muted: var(--color-px-muted);
+  --color-ct-border: var(--color-px-border);
+  --color-ct-row-hover: var(--color-px-row-hover);
+  --color-ct-slate: var(--color-px-slate);
+
+  /* ─── shadcn/ui Mappings ─── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-heading: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
+  --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+}
+
+:root {
+  --radius: 0.625rem;
+
+  --background: #F6F5F1;
+  --foreground: #182430;
+  --card: #FFFFFF;
+  --card-foreground: #182430;
+  --popover: #FFFFFF;
+  --popover-foreground: #182430;
+  --primary: #E6510C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EEF1F3;
+  --secondary-foreground: #182430;
+  --muted: #EEF1F3;
+  --muted-foreground: #6B7A88;
+  --accent: #FDEEE7;
+  --accent-foreground: #182430;
+  --destructive: #C0392B;
+  --border: #DDE3E8;
+  --input: #C6D0D8;
+  --ring: #E6510C;
+
+  --chart-1: #E6510C;
+  --chart-2: #1F6F8B;
+  --chart-3: #2563EB;
+  --chart-4: #D97706;
+  --chart-5: #1E8E3E;
+
+  --sidebar: #182430;
+  --sidebar-foreground: #C6D0D8;
+  --sidebar-primary: #E6510C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #253746;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #253746;
+  --sidebar-ring: #E6510C;
+}
+
+.dark {
+  --background: #10181F;
+  --foreground: #E4E9ED;
+  --card: #182430;
+  --card-foreground: #E4E9ED;
+  --popover: #182430;
+  --popover-foreground: #E4E9ED;
+  --primary: #F2632A;
+  --primary-foreground: #10181F;
+  --secondary: #253746;
+  --secondary-foreground: #E4E9ED;
+  --muted: #253746;
+  --muted-foreground: #9AA9B5;
+  --accent: #33495C;
+  --accent-foreground: #E4E9ED;
+  --border: #253746;
+  --input: #33495C;
+  --ring: #F2632A;
+}
+
+@layer base {
+  * {
+    @apply border-px-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1, h2, h3, h4, .font-heading {
+    font-family: var(--font-heading);
+  }
+}
+
+@layer base {
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #C6D0D8; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9AA9B5; }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .shadow-orange { box-shadow: 0 4px 16px rgba(230, 81, 12, 0.28); }
+  .shadow-card { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07); }
+  .shadow-nav { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
+}
