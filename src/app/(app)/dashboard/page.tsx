@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   let errorMessage: string | null = null;
 
   try {
-    data = await callVeridian<OrgDashboard>("/projexa/dashboard");
+    data = await callVeridian<OrgDashboard>("/dashboard");
   } catch (err) {
     errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from VERIDIAN";
   }
