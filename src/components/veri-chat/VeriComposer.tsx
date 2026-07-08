@@ -67,6 +67,7 @@ export default function VeriComposer() {
   const [selectedPath, setSelectedPath] = useState<PathSegment[]>([]);
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
+  const [queue, setQueue] = useState<{ codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }[]>([]);
   const textareaRef = useAutoGrowTextarea(value, 160);
 
   const chainModes = tree.filter((n) => !FIXED_MODES.includes(n.key as never)).map((n) => n.key);
@@ -94,29 +95,78 @@ export default function VeriComposer() {
     });
   }
 
+  async function dispatchLeaf(item: { codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }) {
+    const res = await fetch("/api/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        codeReference: item.codeReference,
+        breadcrumb: item.display,
+        inputs: item.fixedInputs,
+      }),
+    });
+    if (!res.ok) throw new Error();
+  }
+
+  function resetChainForMode() {
+    setSelectedPath(preseedKeyForMode(composerMode) ? [preseedKeyForMode(composerMode)!] : []);
+  }
+
   async function dispatchQuery() {
     if (!completedLeaf?.codeReference) return;
     setSending(true);
     try {
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codeReference: completedLeaf.codeReference,
-          breadcrumb: pathDisplayString(selectedPath),
-          inputs: completedLeaf.fixedInputs ?? {},
-        }),
+      await dispatchLeaf({
+        codeReference: completedLeaf.codeReference,
+        fixedInputs: completedLeaf.fixedInputs ?? {},
+        label: completedLeaf.label,
+        display: pathDisplayString(selectedPath),
       });
-      if (!res.ok) throw new Error();
       toast.success(`Done — ${completedLeaf.label}`);
       setValue("");
-      setSelectedPath(preseedKeyForMode(composerMode) ? [preseedKeyForMode(composerMode)!] : []);
+      resetChainForMode();
       bumpRefresh();
     } catch {
       toast.error("Couldn't reach the construction assistant — try again");
     } finally {
       setSending(false);
     }
+  }
+
+  // Stage the completed chain instead of sending immediately, so a second
+  // query can be picked without losing the first -- e.g. checking budget
+  // status for several projects in one visit. Mirrors VERIDIAN's
+  // queueCurrent()/sendAllQueued() (VERI_CHAT_COMPOSER_DESIGN.md), adapted
+  // for PROJEXA's structured dispatch: no free-text instruction to carry,
+  // just the resolved leaf.
+  function queueCurrent() {
+    if (!completedLeaf?.codeReference || !chainComplete) return;
+    setQueue((q) => [...q, {
+      codeReference: completedLeaf.codeReference!,
+      fixedInputs: completedLeaf.fixedInputs ?? {},
+      label: completedLeaf.label,
+      display: pathDisplayString(selectedPath),
+    }]);
+    resetChainForMode();
+  }
+
+  async function sendAllQueued() {
+    if (queue.length === 0) return;
+    setSending(true);
+    const items = queue;
+    setQueue([]);
+    let failCount = 0;
+    for (const item of items) {
+      try {
+        await dispatchLeaf(item);
+      } catch {
+        failCount += 1;
+      }
+    }
+    if (failCount === 0) toast.success(`Done — ${items.length} ${items.length === 1 ? "query" : "queries"}`);
+    else toast.error(`${failCount} of ${items.length} queries failed — check Queries for details`);
+    bumpRefresh();
+    setSending(false);
   }
 
   async function sendDiscuss() {
@@ -198,6 +248,25 @@ export default function VeriComposer() {
           </div>
         )}
 
+        {queue.length > 0 && isChainMode && !isThreadOpen && (
+          <div className="rounded-xl border border-px-border bg-px-cloud/50 px-3 py-2 mb-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-semibold text-px-slate">Queued</span>
+              <button type="button" onClick={sendAllQueued} disabled={sending} className="text-[11px] font-semibold text-px-orange disabled:opacity-40">
+                Send all ({queue.length})
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {queue.map((item, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1.5 rounded-full border border-px-border bg-white px-2.5 py-1 text-[11px] text-px-ink">
+                  {item.display}
+                  <button type="button" onClick={() => setQueue((q) => q.filter((_, i) => i !== idx))} className="text-px-muted hover:text-px-error">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {composerMode === "discuss" && discussMessages.length > 0 && !isThreadOpen && (
           <div className="mb-2 max-h-[220px] space-y-2 overflow-y-auto rounded-2xl border border-px-border bg-px-concrete/60 px-3 py-2.5">
             {discussMessages.map((m, i) => (
@@ -222,7 +291,18 @@ export default function VeriComposer() {
               disabled={disabled && composerMode !== "discuss"}
               className="w-full bg-transparent text-[15px] text-px-ink placeholder:text-px-muted focus:outline-none resize-none max-h-[160px] overflow-y-auto disabled:cursor-not-allowed"
             />
-            <div className="flex items-center justify-end mt-2">
+            <div className="flex items-center justify-end gap-2 mt-2">
+              {isChainMode && (
+                <button
+                  type="button"
+                  onClick={queueCurrent}
+                  disabled={!chainComplete || sending}
+                  title="Stage this and pick another query"
+                  className="px-3 h-9 rounded-lg text-[12.5px] font-semibold text-px-slate border border-px-border hover:bg-px-cloud disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  + Add another
+                </button>
+              )}
               <button
                 type="button"
                 onClick={send}
