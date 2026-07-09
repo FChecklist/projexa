@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useSidebar } from "@/components/sidebar-context";
 
 type NavItem = { label: string; href: string; icon: React.ElementType };
 type NavSection = { title: string; items: NavItem[] };
@@ -101,13 +102,18 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
 export function AppSidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { collapsed } = useSidebar();
 
   return (
     <>
-      {/* Desktop */}
-      <aside className="hidden w-64 shrink-0 lg:block">
-        <SidebarContent pathname={pathname} />
-      </aside>
+      {/* Desktop -- conditionally rendered rather than width-toggled:
+          SidebarContent sets its own min-width internally, which would
+          otherwise fight a wrapper's width:0 (see VERI_CHAT_COMPOSER_DESIGN.md). */}
+      {!collapsed && (
+        <aside className="hidden w-64 shrink-0 lg:block">
+          <SidebarContent pathname={pathname} />
+        </aside>
+      )}
 
       {/* Mobile */}
       <Sheet open={open} onOpenChange={setOpen}>
