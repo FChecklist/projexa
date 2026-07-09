@@ -39,6 +39,9 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [quantity, setQuantity] = useState("1");
   const [unitCost, setUnitCost] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
+  const [widthCm, setWidthCm] = useState("");
+  const [depthCm, setDepthCm] = useState("");
+  const [heightCm, setHeightCm] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -70,11 +73,13 @@ export default function FfeClient({ projectId }: { projectId: string }) {
         body: JSON.stringify({
           projectId, itemName, roomOrArea: roomOrArea || undefined, category,
           quantity: Number(quantity) || 1, unitCost: Number(unitCost) || 0, unitPrice: Number(unitPrice) || 0,
+          widthCm: widthCm ? Number(widthCm) : undefined, depthCm: depthCm ? Number(depthCm) : undefined, heightCm: heightCm ? Number(heightCm) : undefined,
         }),
       });
       if (!res.ok) throw new Error();
       toast.success("FF&E item added");
-      setItemName(""); setRoomOrArea(""); setCategory("furniture"); setQuantity("1"); setUnitCost(""); setUnitPrice(""); setOpen(false);
+      setItemName(""); setRoomOrArea(""); setCategory("furniture"); setQuantity("1"); setUnitCost(""); setUnitPrice("");
+      setWidthCm(""); setDepthCm(""); setHeightCm(""); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't add item");
@@ -129,6 +134,11 @@ export default function FfeClient({ projectId }: { projectId: string }) {
                 <div className="space-y-1.5"><Label>Qty</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Cost (₹)</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Client Price (₹)</Label><Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5"><Label>Width (cm)</Label><Input type="number" value={widthCm} onChange={(e) => setWidthCm(e.target.value)} placeholder="for 3D" /></div>
+                <div className="space-y-1.5"><Label>Depth (cm)</Label><Input type="number" value={depthCm} onChange={(e) => setDepthCm(e.target.value)} placeholder="for 3D" /></div>
+                <div className="space-y-1.5"><Label>Height (cm)</Label><Input type="number" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="for 3D" /></div>
               </div>
             </div>
             <DialogFooter><Button onClick={createItem} disabled={submitting}>{submitting ? "Adding…" : "Add Item"}</Button></DialogFooter>

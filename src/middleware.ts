@@ -25,7 +25,7 @@ export async function middleware(request: NextRequest) {
 
   const PROTECTED_PREFIXES = [
     "/dashboard", "/schedule", "/scope", "/work-progress", "/site-diary", "/documents",
-    "/rfis", "/submittals", "/punch-list", "/change-orders", "/mood-boards", "/ffe",
+    "/rfis", "/submittals", "/punch-list", "/change-orders", "/mood-boards", "/ffe", "/floor-plans",
     "/manpower", "/labour", "/materials", "/vendors", "/budgets", "/expenses", "/kpis",
     "/reports", "/ai-copilot", "/settings",
   ];

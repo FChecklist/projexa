@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
-  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa,
+  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/sidebar-context";
 
-type NavItem = { label: string; href: string; icon: React.ElementType };
+type NavItem = { label: string; href: string; icon: React.ComponentType<{ className?: string }> };
 type NavSection = { title: string; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -46,6 +46,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Mood Boards", href: "/mood-boards", icon: Palette },
       { label: "FF&E Specification", href: "/ffe", icon: Sofa },
+      { label: "Floor Plans", href: "/floor-plans", icon: LayoutPanelLeft },
     ],
   },
   {
