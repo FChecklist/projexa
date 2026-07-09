@@ -34,7 +34,7 @@ export async function getVeridianApiKey(organizationId: string): Promise<string>
 
 export async function callVeridian<T = unknown>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown; apiKey?: string; organizationId?: string } = {}
+  options: { method?: "GET" | "POST" | "PATCH"; body?: unknown; apiKey?: string; organizationId?: string } = {}
 ): Promise<T> {
   const apiKey = options.apiKey ?? (options.organizationId ? await getVeridianApiKey(options.organizationId) : process.env.VERIDIAN_API_KEY);
   if (!apiKey) throw new VeridianApiError("No VERIDIAN API key configured", 500);

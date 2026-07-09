@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
+  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,15 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Work Progress", href: "/work-progress", icon: ClipboardList },
       { label: "Site Diary", href: "/site-diary", icon: BookOpen },
       { label: "Documents", href: "/documents", icon: FolderOpen },
+    ],
+  },
+  {
+    title: "FIELD",
+    items: [
+      { label: "RFIs", href: "/rfis", icon: MessageCircleQuestion },
+      { label: "Submittals", href: "/submittals", icon: FileCheck2 },
+      { label: "Punch List", href: "/punch-list", icon: ListChecks },
+      { label: "Change Orders", href: "/change-orders", icon: FileSignature },
     ],
   },
   {
