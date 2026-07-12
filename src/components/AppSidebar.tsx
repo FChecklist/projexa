@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
@@ -10,9 +10,10 @@ import {
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/sidebar-context";
+import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 
 type NavItem = { label: string; href: string; icon: React.ComponentType<{ className?: string }> };
 type NavSection = { title: string; items: NavItem[] };
@@ -78,13 +79,28 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+// `projectId`, when present, is threaded onto every nav link's href so that
+// navigating between the project-scoped pages (RFIs, Scope, Labour, ...)
+// via the sidebar keeps showing the same selected project instead of
+// silently reverting to the org's first project on every click.
+function SidebarContent({
+  pathname,
+  projectId,
+  onNavigate,
+}: {
+  pathname: string;
+  projectId: string | null;
+  onNavigate?: () => void;
+}) {
+  const suffix = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+
   return (
     <div className="flex h-full flex-col bg-px-ink text-px-cloud">
       <div className="flex items-center gap-2 px-5 py-5">
         <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} />
         <span className="font-heading text-lg font-semibold text-white">PROJEXA</span>
       </div>
+      <ProjectSwitcher pathname={pathname} projectId={projectId} />
       <nav className="flex-1 overflow-y-auto px-3 pb-6">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title || "bottom"} className="mb-5">
@@ -98,7 +114,7 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
                 return (
                   <Link
                     key={item.href}
-                    href={item.href}
+                    href={item.href + suffix}
                     onClick={onNavigate}
                     className={cn(
                       "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
@@ -118,6 +134,15 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
   );
 }
 
+// Isolates the useSearchParams() call behind a Suspense boundary (Next.js
+// requirement) so it doesn't force the whole app shell into client-only
+// rendering. Falls back to no project param on first paint; hydration
+// fills in the real value immediately after.
+function SidebarContentWithProject({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const searchParams = useSearchParams();
+  return <SidebarContent pathname={pathname} projectId={searchParams.get("projectId")} onNavigate={onNavigate} />;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -130,7 +155,9 @@ export function AppSidebar() {
           otherwise fight a wrapper's width:0 (see VERI_CHAT_COMPOSER_DESIGN.md). */}
       {!collapsed && (
         <aside className="hidden w-64 shrink-0 lg:block">
-          <SidebarContent pathname={pathname} />
+          <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} />}>
+            <SidebarContentWithProject pathname={pathname} />
+          </Suspense>
         </aside>
       )}
 
@@ -145,7 +172,9 @@ export function AppSidebar() {
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
           </SheetHeader>
-          <SidebarContent pathname={pathname} onNavigate={() => setOpen(false)} />
+          <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} onNavigate={() => setOpen(false)} />}>
+            <SidebarContentWithProject pathname={pathname} onNavigate={() => setOpen(false)} />
+          </Suspense>
         </SheetContent>
       </Sheet>
     </>

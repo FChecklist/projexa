@@ -1,6 +1,29 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getClaimsWithRetry } from "./lib/supabase/get-claims-with-retry";
 
+// CONFIRMED ROOT CAUSE of the random mid-session logouts + silent write
+// failures (investigated 2026-07-13, see auth-guard.ts for the full
+// writeup): this used to call `supabase.auth.getUser()`, which makes a live
+// network round-trip to Supabase Auth's `/user` endpoint on *every single
+// request* this middleware runs for (its matcher covers pages and /api/*
+// alike), with the `error` half of the result silently discarded. Every
+// Route Handler then made its *own* independent getUser() call on top of
+// that via requireAuth() -- so one page load with ~6 concurrent API calls
+// meant ~12 independent live calls to Supabase Auth, any one of which
+// failing (a real, reproduced ConnectTimeoutError talking to Supabase's
+// edge, not a hypothetical) got silently treated as "user is logged out",
+// bouncing that one request to /login or 401ing that one write -- with
+// nothing visibly wrong to the person testing it, and no relationship to
+// which route happened to be involved.
+//
+// Fix: use getClaims(), which verifies the session's JWT locally (WebCrypto
+// signature check against a cached JWKS) instead of a network call, only
+// touching the network when the token is genuinely near-expiry (to refresh)
+// or the JWKS cache is cold. This is also where the (still real, still
+// needed) refresh-token network call happens when one actually is due --
+// keeping that here and *not* repeating it in every Route Handler is what
+// stops the redundant-refresh fan-out.
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -21,7 +44,15 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await getClaimsWithRetry(supabase);
+  if (error) {
+    // Non-fatal by design (a transient JWKS-fetch or refresh failure here
+    // must not be indistinguishable from "not logged in" without a trace),
+    // but no longer silent -- this is exactly the failure mode that used to
+    // produce unexplained logouts.
+    console.error("[middleware] getClaims() failed:", error.message);
+  }
+  const userId = (data?.claims?.sub as string | undefined) ?? null;
 
   const PROTECTED_PREFIXES = [
     "/dashboard", "/schedule", "/scope", "/work-progress", "/site-diary", "/documents",
@@ -31,14 +62,14 @@ export async function middleware(request: NextRequest) {
   ];
   const isProtected = PROTECTED_PREFIXES.some((prefix) => request.nextUrl.pathname.startsWith(prefix));
 
-  if (!user && isProtected) {
+  if (!userId && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirectTo", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
-  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
+  if (userId && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

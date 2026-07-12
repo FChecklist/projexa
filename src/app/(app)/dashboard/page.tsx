@@ -48,6 +48,14 @@ export default async function DashboardPage() {
               <DashboardCard title="Total Expenses" value={formatCurrency(data.totalExpenses)} icon={Receipt} variant="pending" />
             </div>
 
+            {data.totalRevenue === 0 && (
+              <p className="text-sm text-px-muted">
+                Total Revenue shows ₹0 because no VERIDIAN ERP sales invoices are linked to these projects yet —
+                invoicing happens in VERIDIAN&apos;s ERP Sales module, and there&apos;s no self-serve API yet to
+                create or link an invoice to a project from PROJEXA.
+              </p>
+            )}
+
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="font-heading text-base">Projects</CardTitle>

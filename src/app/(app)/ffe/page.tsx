@@ -1,19 +1,11 @@
 import { AppTopbar } from "@/components/AppTopbar";
 import { Card, CardContent } from "@/components/ui/card";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { resolveSelectedProject } from "@/lib/project-selection";
 import FfeClient from "@/components/FfeClient";
 
-type OrgDashboard = { projects: { id: string; name: string }[] };
-
-export default async function FfePage() {
-  let project: { id: string; name: string } | null = null;
-  let errorMessage: string | null = null;
-  try {
-    const data = await callVeridian<OrgDashboard>("/dashboard");
-    project = data.projects[0] ?? null;
-  } catch (err) {
-    errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN";
-  }
+export default async function FfePage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+  const { projectId } = await searchParams;
+  const { project, errorMessage } = await resolveSelectedProject(projectId);
 
   return (
     <>
