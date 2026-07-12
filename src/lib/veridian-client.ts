@@ -13,6 +13,16 @@ import { eq } from "drizzle-orm";
 // look up that customer's own stored key via public.veridian_credentials.
 const VERIDIAN_API_BASE = process.env.VERIDIAN_API_BASE_URL ?? "https://veridian-compliance-ai.vercel.app/api/v1/projexa";
 
+// A handful of real, already-shipped VERIDIAN v1 endpoints PROJEXA needs
+// (labour roster, KPI entries, generic documents) were never re-exported
+// under /api/v1/projexa/* -- they only exist at their original /api/v1/*
+// location (e.g. /api/v1/construction/labour-roster, /api/v1/documents).
+// Rather than waiting on VERIDIAN to add projexa/* aliases for them, calls
+// that need one of those paths pass `root: true` to reach VERIDIAN_API_ROOT
+// (the base URL one level up, stripped of the "/projexa" suffix) instead of
+// VERIDIAN_API_BASE. Same auth, same host, just a different path prefix.
+const VERIDIAN_API_ROOT = VERIDIAN_API_BASE.replace(/\/projexa$/, "");
+
 export class VeridianApiError extends Error {
   constructor(message: string, public status: number) {
     super(message);
@@ -34,12 +44,13 @@ export async function getVeridianApiKey(organizationId: string): Promise<string>
 
 export async function callVeridian<T = unknown>(
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string } = {}
+  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean } = {}
 ): Promise<T> {
   const apiKey = options.apiKey ?? (options.organizationId ? await getVeridianApiKey(options.organizationId) : process.env.VERIDIAN_API_KEY);
   if (!apiKey) throw new VeridianApiError("No VERIDIAN API key configured", 500);
 
-  const res = await fetch(`${VERIDIAN_API_BASE}${path}`, {
+  const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
+  const res = await fetch(`${base}${path}`, {
     method: options.method ?? "GET",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
