@@ -3,7 +3,6 @@ import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import VeriComposer from "@/components/veri-chat/VeriComposer";
 import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Toaster } from "@/components/ui/sonner";
 import { SidebarProvider } from "@/components/sidebar-context";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +24,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
-        <Toaster />
+        {/* Toaster is mounted once in the root layout (src/app/layout.tsx)
+            with position="top-right" richColors -- a second instance here
+            used to duplicate every toast.error() call (both instances
+            subscribe to the same global sonner store), which made write
+            failures look inconsistent/easy to miss during testing instead
+            of a single clear error. */}
       </VeriChatProvider>
     </SidebarProvider>
   );

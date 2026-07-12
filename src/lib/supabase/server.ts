@@ -17,9 +17,18 @@ export async function createClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {
-            // Called from a Server Component; safe to ignore since
-            // middleware refreshes the session on every request.
+          } catch (err) {
+            // cookies().set() throws when called from a Server Component,
+            // which genuinely cannot set cookies -- that specific case is
+            // safe to ignore since middleware already refreshed the session
+            // for this request. But this same catch used to also silently
+            // swallow *real* failures from Route Handlers (which CAN set
+            // cookies), making a corrupted/failed session write
+            // indistinguishable from the harmless Server Component case.
+            // Log it so that class of bug (a refreshed session that never
+            // actually got persisted back to the browser) is diagnosable
+            // instead of surfacing later as an unexplained logout.
+            console.error("[supabase/server] cookies().set() failed -- if this came from a Route Handler or Server Action, the refreshed session was NOT persisted to the browser:", err);
           }
         },
       },

@@ -1,25 +1,53 @@
 import { NextResponse } from "next/server";
 import { createClient } from "./server";
-import type { User } from "@supabase/supabase-js";
+import { getClaimsWithRetry } from "./get-claims-with-retry";
+
+export type AuthUser = { id: string; email: string | null };
 
 export type AuthContext = {
-  user: User | null;
+  user: AuthUser | null;
   organizationId: string | null;
   role: string | null;
   response: NextResponse | null;
 };
 
-// Reads via the user's own session JWT (RLS-checked), not a service-role
-// key or Drizzle -- PROJEXA doesn't have DATABASE_URL/service-role wired up
-// yet, and for user-facing CRUD (todos, chats, assistant history) this is
-// the more correct approach anyway: every read here is exactly what RLS
-// already allows the signed-in user to see.
+// CONFIRMED ROOT CAUSE (2026-07-13 investigation, see commit message for the
+// full writeup): this used to call `supabase.auth.getUser()`, which makes a
+// live network round-trip to Supabase Auth's `/user` endpoint on *every*
+// single call, with no caching. middleware.ts *already* makes that same
+// live call on every request that reaches this handler (its matcher covers
+// /api/* too), so every Route Handler was making a second, fully redundant
+// round-trip to Supabase Auth for a request that had already been verified
+// moments earlier. Reproduced live against this project's real Supabase
+// instance: a `getUser()` call that hit a slow/failed connection
+// (ConnectTimeoutError against Supabase's edge) took 10-20s and then
+// resolved with no user, which this function silently treated as "not
+// logged in" -- a transient network hiccup, not an actual logout, ends up
+// bouncing the user to /login (via middleware) or 401ing a write (via this
+// function) with zero indication anything went wrong. Doubling the number
+// of independent live calls per page load (~6 concurrent API requests, each
+// with its own getUser() here, on top of middleware's own) doubled exposure
+// to that failure mode for no security benefit, since both calls check the
+// exact same cookie-derived session against the exact same Auth server.
+//
+// Fix: verify the session locally via getClaims(), which validates the
+// JWT's signature against a cached JWKS (WebCrypto, no network call) and
+// only ever talks to the network when the token is actually near-expiry
+// (to refresh first) or the JWKS cache is cold -- see auth-js's GoTrueClient
+// for the exact fallback rules. This eliminates the redundant round-trip
+// instead of just relocating it.
 export async function requireAuth(): Promise<AuthContext> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const { data, error } = await getClaimsWithRetry(supabase);
+
+  if (error || !data?.claims) {
+    if (error) {
+      console.error("[requireAuth] getClaims() failed -- treating as unauthenticated:", error.message);
+    }
     return { user: null, organizationId: null, role: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
+
+  const user: AuthUser = { id: data.claims.sub as string, email: (data.claims.email as string | undefined) ?? null };
 
   const { data: membership } = await supabase
     .from("memberships")
