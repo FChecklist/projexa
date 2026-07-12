@@ -77,12 +77,35 @@ names that pattern and where it's enforced today (AI Dev Team dispatch,
 also checking whether VERIDIAN's `/api/v1/projexa/assistant` handler validates its own
 input would be theater — validating a shape client-side while the real model call
 happens in a different repo, behind an API key, with its own (currently unverified)
-input handling. **Recommended follow-up, not done in this bootstrap**: confirm whether
-VERIDIAN's `/api/v1/projexa/*` handlers run their inputs through `task-tightening.ts`
-or an equivalent already; if not, that's where the guardrail belongs, ported and
-adapted to whatever shape the `assistant`/`discuss` payloads actually are — not a
-verbatim copy of the file into this repo, which has no model client for the pattern to
-protect.
+input handling.
+
+**Follow-up confirmed, 2026-07-12 (VERIDIAN Priority 7):** checked both handlers
+directly in `compliance-tracker`.
+
+- `POST /api/v1/projexa/assistant` (`src/app/api/v1/projexa/assistant/route.ts`) never
+  calls a model at all — it forwards `codeReference` through `dispatchTool()`
+  (`task-execution-engine.ts`), restricted to a fixed allowlist of 7 deterministic
+  construction compute functions (`get_construction_project_dashboard`,
+  `list_delayed_activities`, etc. — pure DB reads/aggregations, zero LLM calls in the
+  dispatch path). `TightTask`'s objective/scope/success-criteria discipline exists to
+  tighten instructions handed to a *model*; there is no model call here for it to
+  protect, so `[NOT APPLICABLE YET]` for this route is actually the correct, permanent
+  answer, not a temporary gap.
+- `POST /api/v1/projexa/discuss` (`src/app/api/v1/projexa/discuss/route.ts`) **does**
+  call a model, via `discussConstruction()`
+  (`compliance-tracker/src/lib/services/construction-ai-service.ts`). That function
+  already calls `enforcePolicy()` (`compliance-tracker/src/lib/policy-enforcement-engine.ts`)
+  before the model is invoked — the same guardrail class VERIDIAN's own VERI Chat
+  reply paths use for free-text conversation (`chat-service.ts`'s `generateAiReply()`/
+  `generateVeriGroupReply()`), not `TightTask`. `TightTask` is the right guardrail for
+  *task dispatch* (build/fix work handed to the AI Dev Team with an
+  objective/scope/success-criteria); it is the wrong tool for a conversational chat
+  message, which is what `/discuss` is. `[ENFORCED, correctly, via the right
+  guardrail]` — not a gap, just previously an unanswered question.
+
+**Corrected bottom line**: there is no code gap on VERIDIAN's side for this endpoint
+pair. The original `[NOT APPLICABLE YET]` framing above conflated "no `TightTask`" with
+"no guardrail" — `TightTask` was simply never the applicable guardrail for either route.
 
 ---
 
@@ -115,7 +138,7 @@ protect.
 | `tasks.status` (`pending\|in_progress\|completed\|failed\|cancelled`) | `assistant_queries.status` (`pending\|done\|error`) | Narrower enum (3 states, no `in_progress`/`cancelled`); scoped to one dispatch call, not a general task object. |
 | `taskAgentExecutions` (per-step execution record) | none | **[NOT APPLICABLE YET]** — `assistant_queries` is a single row per call, not a multi-step execution plan. |
 | Risk Assessment / `detectHighImpactAction()` | none | **[NOT APPLICABLE YET]** — no confirmation gate exists before an `assistant_queries` row is created or dispatched. |
-| Objective/Scope/Instruction Validation guardrails (`task-tightening.ts`) | none | See §1 above — the real fix point is VERIDIAN's endpoint handler, not this repo, but that hasn't been confirmed either way yet. |
+| Objective/Scope/Instruction Validation guardrails (`task-tightening.ts`) | none | See §1 above — confirmed 2026-07-12: `assistant` never calls a model (no gap to have), `discuss` calls a model and is already guarded via `enforcePolicy()`, the correct guardrail class for conversational chat. Not a gap. |
 | 18-stage lifecycle (Request → ... → Closed) | none | **[NOT APPLICABLE YET]** — VERIDIAN's own constitution already marks the full 18-stage lifecycle `[POLICY ONLY]` even in its own repo; PROJEXA is further behind that, not closer. |
 
 **Bottom line, stated plainly**: PROJEXA does not yet have a task lifecycle in the
