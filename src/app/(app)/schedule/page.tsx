@@ -1,7 +1,9 @@
 import { AppTopbar } from "@/components/AppTopbar";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import ScheduleGanttClient from "@/components/ScheduleGanttClient";
+import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
@@ -22,7 +24,18 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
         {project && (
           <>
             <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
-            <ScheduleGanttClient projectId={project.id} />
+            <Tabs defaultValue="timeline">
+              <TabsList>
+                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                <TabsTrigger value="board">Board</TabsTrigger>
+              </TabsList>
+              <TabsContent value="timeline">
+                <ScheduleGanttClient projectId={project.id} />
+              </TabsContent>
+              <TabsContent value="board">
+                <ScheduleBoardClient projectId={project.id} />
+              </TabsContent>
+            </Tabs>
           </>
         )}
       </main>
