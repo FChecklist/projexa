@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
   MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
-  ShieldCheck,
+  CalendarClock, ShieldCheck,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: "EXECUTION",
     items: [
       { label: "Schedule", href: "/schedule", icon: GanttChartSquare },
+      { label: "Meetings", href: "/meetings", icon: CalendarClock },
       { label: "Scope of Work (BOQ)", href: "/scope", icon: FileText },
       { label: "Work Progress", href: "/work-progress", icon: ClipboardList },
       { label: "Site Diary", href: "/site-diary", icon: BookOpen },
