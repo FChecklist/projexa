@@ -1,0 +1,594 @@
+"use client";
+
+// Priority 15: PROJEXA's Accounting surface -- 6 tabs over VERIDIAN's real
+// GL/financial-reporting engine, sized for a ~100-employee firm running
+// ~500 projects: a Finance dashboard (cash position, AR aging, revenue
+// trend), a paginated/filtered General Ledger with real double-entry
+// journal-entry creation (debit=credit validated server-side), Trial
+// Balance / P&L / Balance Sheet as generated reports with a date-range
+// picker, a P&L-by-project rollup (the view a 500-project firm actually
+// needs, not just company-wide), and a read-only Bank Reconciliation view.
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+type Account = { id: string; accountName: string; accountNumber: string | null; rootType: string; accountType: string | null };
+type JournalEntry = { id: string; entryNumber: number; postingDate: string; referenceType: string | null; userRemark: string | null; status: string; totalDebit: string; totalCredit: string };
+type FinanceDashboard = {
+  asOfDate: string; cashPosition: number;
+  arAging: { totalOutstanding: number; buckets: { current: number; d1_30: number; d31_60: number; d61_90: number; d90Plus: number } };
+  topOverdueInvoices: { invoiceId: string; invoiceNumber: number; customerName: string | null; outstandingAmount: string; daysOverdue: number }[];
+  revenue: { thisMonth: number; lastMonth: number };
+};
+type AccountBalance = { accountId: string; accountName: string; accountNumber: string | null; rootType: string; totalDebit: number; totalCredit: number; netBalance: number };
+type TrialBalanceReport = { asOfDate: string; accounts: AccountBalance[]; totalDebit: number; totalCredit: number; isBalanced: boolean };
+type PnlReport = { fromDate: string; toDate: string; income: AccountBalance[]; expense: AccountBalance[]; totalIncome: number; totalExpense: number; netProfit: number };
+type BalanceSheetReport = { asOfDate: string; assets: AccountBalance[]; liabilities: AccountBalance[]; equity: AccountBalance[]; totalAssets: number; totalLiabilities: number; totalEquity: number; isBalanced: boolean };
+type ProjectPnl = { fromDate: string; toDate: string; costCenters: { costCenterId: string; costCenterName: string; projectId: string | null; income: number; expense: number; netProfit: number }[]; totalIncome: number; totalExpense: number };
+type BankImport = { id: string; fileName: string; totalLines: number; importedAt: string };
+type BankLine = { id: string; transactionDate: string; description: string | null; debitAmount: string; creditAmount: string; status: string };
+
+function money(n: number) {
+  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+// ---------------------------------------------------------------------------
+// Finance Dashboard tab
+// ---------------------------------------------------------------------------
+function DashboardPanel() {
+  const [data, setData] = useState<FinanceDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/finance-dashboard");
+        setData(await res.json());
+      } catch {
+        toast.error("Couldn't load finance dashboard");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+  if (!data) return <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the finance dashboard. (An org needs its ERP module + a chart of accounts set up first.)</p>;
+
+  const revenueChange = data.revenue.lastMonth > 0 ? ((data.revenue.thisMonth - data.revenue.lastMonth) / data.revenue.lastMonth) * 100 : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Cash Position</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.cashPosition)}</p></CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">AR Outstanding</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.arAging.totalOutstanding)}</p></CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Revenue (This Month)</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.revenue.thisMonth)}</p>{revenueChange !== null && <p className={`text-xs ${revenueChange >= 0 ? "text-green-600" : "text-red-600"}`}>{revenueChange >= 0 ? "+" : ""}{revenueChange.toFixed(1)}% vs last month</p>}</CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">90+ Days Overdue</p><p className="mt-1 text-2xl font-bold text-red-600">{money(data.arAging.buckets.d90Plus)}</p></CardContent></Card>
+      </div>
+
+      <Card className="shadow-card">
+        <CardHeader><CardTitle className="text-base">AR Aging</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-5 gap-2 text-center text-sm">
+            {[["Current", data.arAging.buckets.current], ["1-30d", data.arAging.buckets.d1_30], ["31-60d", data.arAging.buckets.d31_60], ["61-90d", data.arAging.buckets.d61_90], ["90+d", data.arAging.buckets.d90Plus]].map(([label, value]) => (
+              <div key={label as string} className="rounded-md border p-3">
+                <p className="text-xs text-px-muted">{label}</p>
+                <p className="mt-1 font-semibold text-px-ink">{money(value as number)}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardHeader><CardTitle className="text-base">Top Overdue Invoices</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          {data.topOverdueInvoices.length === 0 ? (
+            <p className="py-6 text-center text-sm text-px-muted">No overdue invoices.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Customer</TableHead><TableHead>Days Overdue</TableHead><TableHead>Outstanding</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {data.topOverdueInvoices.map((inv) => (
+                  <TableRow key={inv.invoiceId}>
+                    <TableCell className="font-medium">#{inv.invoiceNumber}</TableCell>
+                    <TableCell className="text-px-muted">{inv.customerName ?? "—"}</TableCell>
+                    <TableCell className="text-red-600">{inv.daysOverdue}d</TableCell>
+                    <TableCell>{money(Number(inv.outstandingAmount))}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// General Ledger tab
+// ---------------------------------------------------------------------------
+type JeLine = { accountId: string; debit: string; credit: string };
+
+function GeneralLedgerPanel() {
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [userRemark, setUserRemark] = useState("");
+  const [lines, setLines] = useState<JeLine[]>([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: "25" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/journal-entries?${params.toString()}`);
+      const data = await res.json();
+      setEntries(data.entries ?? []);
+      setTotalPages(data.totalPages ?? 1);
+    } catch {
+      toast.error("Couldn't load the General Ledger");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, [page, statusFilter]);
+
+  async function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next || accounts.length > 0) return;
+    try {
+      const res = await fetch("/api/accounts");
+      const data = await res.json();
+      setAccounts(data.accounts ?? []);
+    } catch {
+      toast.error("Couldn't load chart of accounts");
+    }
+  }
+
+  function updateLine(idx: number, patch: Partial<JeLine>) {
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  }
+
+  const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+  const balanced = lines.length >= 2 && Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
+
+  async function createEntry() {
+    if (!balanced) { toast.error("Debit and credit totals must match"); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/journal-entries", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postingDate, userRemark: userRemark || undefined,
+          lines: lines.filter((l) => l.accountId).map((l) => ({ accountId: l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
+      toast.success("Journal entry drafted");
+      setUserRemark(""); setLines([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]); setOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create journal entry");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input placeholder="Search remarks…" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} className="max-w-xs" />
+          <Select value={statusFilter} onValueChange={(v) => { setPage(1); setStatusFilter(v); }}>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {["draft", "submitted"].map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={load}>Search</Button>
+        </div>
+        <Dialog open={open} onOpenChange={onOpenChange}>
+          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> New Journal Entry</Button></DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader><DialogTitle>New Journal Entry</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5"><Label>Posting Date</Label><Input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label>Remark</Label><Input value={userRemark} onChange={(e) => setUserRemark(e.target.value)} placeholder="e.g. Site 4 material accrual" /></div>
+              </div>
+              <div className="space-y-2">
+                <Label>Lines (double-entry — debit must equal credit)</Label>
+                {lines.map((line, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_90px_90px_28px] items-center gap-1.5">
+                    <Select value={line.accountId} onValueChange={(v) => updateLine(idx, { accountId: v })}>
+                      <SelectTrigger><SelectValue placeholder={accounts.length ? "Account" : "Loading…"} /></SelectTrigger>
+                      <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Input type="number" placeholder="Debit" value={line.debit} onChange={(e) => updateLine(idx, { debit: e.target.value, credit: e.target.value ? "" : line.credit })} />
+                    <Input type="number" placeholder="Credit" value={line.credit} onChange={(e) => updateLine(idx, { credit: e.target.value, debit: e.target.value ? "" : line.debit })} />
+                    <Button variant="ghost" size="icon" disabled={lines.length <= 2} onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}><Trash2 className="size-4" /></Button>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, { accountId: "", debit: "", credit: "" }])}><Plus className="size-3.5" /> Add Line</Button>
+              </div>
+              <div className={`rounded-md border p-2 text-sm ${balanced ? "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300" : "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"}`}>
+                Debit {money(totalDebit)} &middot; Credit {money(totalCredit)} {balanced ? "— balanced" : "— must balance before posting"}
+              </div>
+            </div>
+            <DialogFooter><Button onClick={createEntry} disabled={submitting || !balanced}>{submitting ? "Creating…" : "Create Draft Entry"}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="shadow-card">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : entries.length === 0 ? (
+            <p className="py-10 text-center text-sm text-px-muted">No journal entries found.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Posting Date</TableHead><TableHead>Remark</TableHead><TableHead>Debit</TableHead><TableHead>Credit</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {entries.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="text-px-muted">{e.entryNumber}</TableCell>
+                    <TableCell>{new Date(e.postingDate).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-px-muted">{e.userRemark ?? e.referenceType ?? "—"}</TableCell>
+                    <TableCell>{money(Number(e.totalDebit))}</TableCell>
+                    <TableCell>{money(Number(e.totalCredit))}</TableCell>
+                    <TableCell><Badge variant={e.status === "submitted" ? "default" : "outline"} className="capitalize">{e.status}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 text-sm text-px-muted">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft className="size-4" /></Button>
+          Page {page} of {totalPages}
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><ChevronRight className="size-4" /></Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trial Balance / P&L / Balance Sheet tabs (shared date-range pattern)
+// ---------------------------------------------------------------------------
+function BalanceRows({ rows }: { rows: AccountBalance[] }) {
+  return (
+    <Table>
+      <TableHeader><TableRow><TableHead>Account</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Net</TableHead></TableRow></TableHeader>
+      <TableBody>
+        {rows.map((r) => (
+          <TableRow key={r.accountId}>
+            <TableCell>{r.accountNumber ? `${r.accountNumber} — ` : ""}{r.accountName}</TableCell>
+            <TableCell className="text-right">{money(r.totalDebit)}</TableCell>
+            <TableCell className="text-right">{money(r.totalCredit)}</TableCell>
+            <TableCell className="text-right font-medium">{money(r.netBalance)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function TrialBalancePanel() {
+  const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [report, setReport] = useState<TrialBalanceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/trial-balance?asOfDate=${asOfDate}`);
+      setReport(await res.json());
+    } catch {
+      toast.error("Couldn't generate trial balance");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="space-y-1.5"><Label>As of</Label><Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} /></div>
+        <Button size="sm" onClick={load}>Generate</Button>
+      </div>
+      <Card className="shadow-card">
+        <CardContent className="p-0">
+          {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            : !report || report.accounts.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No postings yet.</p>
+            : (<>
+              <BalanceRows rows={report.accounts} />
+              <div className="flex items-center justify-between border-t p-3 text-sm font-semibold">
+                <span>Total</span>
+                <span>{money(report.totalDebit)} / {money(report.totalCredit)} {report.isBalanced ? <Badge className="ml-2" variant="default">Balanced</Badge> : <Badge className="ml-2" variant="destructive">Out of balance</Badge>}</span>
+              </div>
+            </>)}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProfitAndLossPanel() {
+  const now = new Date();
+  const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
+  const [report, setReport] = useState<PnlReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}`);
+      setReport(await res.json());
+    } catch {
+      toast.error("Couldn't generate P&L");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="space-y-1.5"><Label>From</Label><Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} /></div>
+        <div className="space-y-1.5"><Label>To</Label><Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></div>
+        <Button size="sm" onClick={load}>Generate</Button>
+      </div>
+      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
+        <div className="space-y-4">
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Income</CardTitle></CardHeader><CardContent className="p-0">{report.income.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No income postings.</p> : <BalanceRows rows={report.income} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Expense</CardTitle></CardHeader><CardContent className="p-0">{report.expense.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No expense postings.</p> : <BalanceRows rows={report.expense} />}</CardContent></Card>
+          <Card className="shadow-card"><CardContent className="flex items-center justify-between p-4 text-sm font-semibold"><span>Net Profit</span><span className={report.netProfit >= 0 ? "text-green-600" : "text-red-600"}>{money(report.netProfit)}</span></CardContent></Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalanceSheetPanel() {
+  const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [report, setReport] = useState<BalanceSheetReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/balance-sheet?asOfDate=${asOfDate}`);
+      setReport(await res.json());
+    } catch {
+      toast.error("Couldn't generate balance sheet");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="space-y-1.5"><Label>As of</Label><Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} /></div>
+        <Button size="sm" onClick={load}>Generate</Button>
+      </div>
+      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
+        <div className="space-y-4">
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Assets — {money(report.totalAssets)}</CardTitle></CardHeader><CardContent className="p-0">{report.assets.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No asset postings.</p> : <BalanceRows rows={report.assets} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Liabilities — {money(report.totalLiabilities)}</CardTitle></CardHeader><CardContent className="p-0">{report.liabilities.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No liability postings.</p> : <BalanceRows rows={report.liabilities} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Equity — {money(report.totalEquity)}</CardTitle></CardHeader><CardContent className="p-0">{report.equity.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No equity postings.</p> : <BalanceRows rows={report.equity} />}</CardContent></Card>
+          <Card className="shadow-card"><CardContent className="flex items-center justify-between p-4 text-sm font-semibold">
+            <span>Assets = Liabilities + Equity</span>
+            {report.isBalanced ? <Badge variant="default">Balanced</Badge> : <Badge variant="destructive">Out of balance</Badge>}
+          </CardContent></Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// P&L by Project tab
+// ---------------------------------------------------------------------------
+function ProjectPnlPanel() {
+  const now = new Date();
+  const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
+  const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
+  const [report, setReport] = useState<ProjectPnl | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/profit-and-loss-by-project?fromDate=${fromDate}&toDate=${toDate}`);
+      setReport(await res.json());
+    } catch {
+      toast.error("Couldn't generate per-project P&L");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="space-y-1.5"><Label>From</Label><Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} /></div>
+        <div className="space-y-1.5"><Label>To</Label><Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></div>
+        <Button size="sm" onClick={load}>Generate</Button>
+      </div>
+      <p className="text-xs text-px-muted">Requires journal-entry lines tagged with a cost center linked to a project (VERIDIAN&apos;s Chart of Accounts / Cost Centers setup). Cost centers with no tagged postings in this range won&apos;t appear.</p>
+      <Card className="shadow-card">
+        <CardContent className="p-0">
+          {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            : !report || report.costCenters.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No cost-center-tagged postings in this range.</p>
+            : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Project / Cost Center</TableHead><TableHead className="text-right">Income</TableHead><TableHead className="text-right">Expense</TableHead><TableHead className="text-right">Net Profit</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {report.costCenters.map((c) => (
+                    <TableRow key={c.costCenterId}>
+                      <TableCell className="font-medium">{c.costCenterName}</TableCell>
+                      <TableCell className="text-right">{money(c.income)}</TableCell>
+                      <TableCell className="text-right">{money(c.expense)}</TableCell>
+                      <TableCell className={`text-right font-medium ${c.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{money(c.netProfit)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bank Reconciliation tab (read-only for this wave)
+// ---------------------------------------------------------------------------
+function BankReconciliationPanel() {
+  const [imports, setImports] = useState<BankImport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
+  const [lines, setLines] = useState<BankLine[]>([]);
+  const [linesLoading, setLinesLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/bank-reconciliation");
+        const data = await res.json();
+        setImports(data.imports ?? []);
+      } catch {
+        toast.error("Couldn't load bank statement imports");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function viewImport(id: string) {
+    setSelectedImportId(id);
+    setLinesLoading(true);
+    try {
+      const res = await fetch(`/api/bank-reconciliation?importId=${id}`);
+      const data = await res.json();
+      setLines(data.lines ?? []);
+    } catch {
+      toast.error("Couldn't load statement lines");
+    } finally {
+      setLinesLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-px-muted">Read-only for this wave — importing a new bank statement (file upload) and matching lines to journal entries is done from VERIDIAN&apos;s own Accounting workspace for now.</p>
+      {loading ? (
+        <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+      ) : imports.length === 0 ? (
+        <p className="py-10 text-center text-sm text-px-muted">No bank statements imported yet.</p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+          <Card className="shadow-card">
+            <CardContent className="p-2">
+              {imports.map((imp) => (
+                <button key={imp.id} onClick={() => viewImport(imp.id)} className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedImportId === imp.id ? "bg-px-orange/10 text-px-ink" : "hover:bg-muted"}`}>
+                  <div className="font-medium">{imp.fileName}</div>
+                  <div className="text-xs text-px-muted">{imp.totalLines} lines &middot; {new Date(imp.importedAt).toLocaleDateString()}</div>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {!selectedImportId ? <p className="py-10 text-center text-sm text-px-muted">Select an import to view its lines.</p>
+                : linesLoading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+                : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {lines.map((l) => (
+                        <TableRow key={l.id}>
+                          <TableCell>{new Date(l.transactionDate).toLocaleDateString()}</TableCell>
+                          <TableCell className="text-px-muted">{l.description ?? "—"}</TableCell>
+                          <TableCell className="text-right">{Number(l.debitAmount) > 0 ? money(Number(l.debitAmount)) : "—"}</TableCell>
+                          <TableCell className="text-right">{Number(l.creditAmount) > 0 ? money(Number(l.creditAmount)) : "—"}</TableCell>
+                          <TableCell><Badge variant={l.status === "matched" ? "default" : "outline"} className="capitalize">{l.status}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Root client
+// ---------------------------------------------------------------------------
+export default function AccountingClient() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-sm text-px-muted">
+        <Landmark className="size-4" />
+        <span>Real GL data from VERIDIAN AI OS — every journal entry, report, and balance below is generated from actual postings.</span>
+      </div>
+      <Tabs defaultValue="dashboard">
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="ledger">General Ledger</TabsTrigger>
+          <TabsTrigger value="trial-balance">Trial Balance</TabsTrigger>
+          <TabsTrigger value="pnl">P&amp;L</TabsTrigger>
+          <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
+          <TabsTrigger value="project-pnl">P&amp;L by Project</TabsTrigger>
+          <TabsTrigger value="bank-rec">Bank Reconciliation</TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard"><DashboardPanel /></TabsContent>
+        <TabsContent value="ledger"><GeneralLedgerPanel /></TabsContent>
+        <TabsContent value="trial-balance"><TrialBalancePanel /></TabsContent>
+        <TabsContent value="pnl"><ProfitAndLossPanel /></TabsContent>
+        <TabsContent value="balance-sheet"><BalanceSheetPanel /></TabsContent>
+        <TabsContent value="project-pnl"><ProjectPnlPanel /></TabsContent>
+        <TabsContent value="bank-rec"><BankReconciliationPanel /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
