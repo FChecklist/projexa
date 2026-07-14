@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Copy, ArrowRightCircle } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy, ArrowRightCircle, FileDown } from "lucide-react";
 
 type QuotationItem = { id: string; description: string; quantity: string; rate: string; amount: string };
 type Quotation = {
@@ -58,6 +58,7 @@ export default function QuotationsClient() {
 
   const [convertFor, setConvertFor] = useState<Quotation | null>(null);
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,6 +128,27 @@ export default function QuotationsClient() {
       load();
     } catch {
       toast.error("Couldn't create revision");
+    }
+  }
+
+  async function downloadPdf(q: Quotation) {
+    setDownloadingId(q.id);
+    try {
+      const res = await fetch(`/api/quotations/${q.id}/pdf`);
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `quotation-${q.quotationNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Couldn't download quotation PDF");
+    } finally {
+      setDownloadingId(null);
     }
   }
 
@@ -240,6 +262,15 @@ export default function QuotationsClient() {
                         {!["ordered", "lost", "expired"].includes(q.status) && (
                           <Button size="sm" variant="ghost" onClick={() => createRevision(q)} title="New revision"><Copy className="size-3.5" /></Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={downloadingId === q.id}
+                          onClick={() => downloadPdf(q)}
+                          title="Download PDF"
+                        >
+                          {downloadingId === q.id ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
