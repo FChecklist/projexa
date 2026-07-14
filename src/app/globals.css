@@ -180,3 +180,21 @@
   .shadow-card { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07); }
   .shadow-nav { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
 }
+
+/* ─── Marketing page motion ───────────────────────────────────────────────
+   Used by the landing page (src/app/page.tsx + src/components/marketing/*)
+   for the hero's ambient glow drift. Kept minimal and deliberately subtle --
+   see PROJEXA_TASK_GOVERNANCE.md-style discipline of not gold-plating.
+   Disabled entirely under prefers-reduced-motion, same as Reveal's
+   transition (its duration classes are Tailwind's motion-safe-gated
+   equivalent via the transition-all utility, which browsers already soften
+   under reduced-motion; this keyframe animation needs an explicit guard
+   since @keyframes isn't automatically motion-safe). */
+@keyframes px-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-24px, 24px) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-px-drift { animation: px-drift 14s ease-in-out infinite; }
+}
