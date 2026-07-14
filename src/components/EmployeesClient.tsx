@@ -13,6 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, Check, X, Users, Building2, Network } from "lucide-react";
+import { useOrgRole } from "@/hooks/use-org-role";
+
+const EMPLOYMENT_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  active: "default", on_leave: "secondary", terminated: "destructive", resigned: "outline",
+};
 
 type Employee = {
   id: string;
@@ -27,6 +32,9 @@ type Employee = {
     employmentType: string | null;
     dateOfJoining: string | null;
     dateOfBirth: string | null;
+    employmentStatus: string | null;
+    emergencyContactName: string | null;
+    emergencyContactPhone: string | null;
   } | null;
 };
 
@@ -53,6 +61,7 @@ const LEAVE_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructiv
 };
 
 export default function EmployeesClient() {
+  const { isHrAdmin } = useOrgRole();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [orgChart, setOrgChart] = useState<OrgChart | null>(null);
@@ -70,7 +79,11 @@ export default function EmployeesClient() {
   const [jobTitle, setJobTitle] = useState("");
   const [employmentType, setEmploymentType] = useState("full_time");
   const [dateOfJoining, setDateOfJoining] = useState("");
+  const [employmentStatus, setEmploymentStatus] = useState("active");
+  const [emergencyContactName, setEmergencyContactName] = useState("");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [viewEmployee, setViewEmployee] = useState<Employee | null>(null);
 
   // -- Department dialog
   const [deptOpen, setDeptOpen] = useState(false);
@@ -125,6 +138,18 @@ export default function EmployeesClient() {
 
   useEffect(() => { load(); }, []);
 
+  function selectProfileUser(id: string) {
+    setUserId(id);
+    const existing = employees.find((e) => e.id === id)?.profile;
+    setEmployeeCode(existing?.employeeCode ?? "");
+    setJobTitle(existing?.jobTitle ?? "");
+    setEmploymentType(existing?.employmentType ?? "full_time");
+    setDateOfJoining(existing?.dateOfJoining ? existing.dateOfJoining.slice(0, 10) : "");
+    setEmploymentStatus(existing?.employmentStatus ?? "active");
+    setEmergencyContactName(existing?.emergencyContactName ?? "");
+    setEmergencyContactPhone(existing?.emergencyContactPhone ?? "");
+  }
+
   async function saveProfile() {
     if (!userId.trim()) return;
     setProfileSubmitting(true);
@@ -134,6 +159,7 @@ export default function EmployeesClient() {
         body: JSON.stringify({
           userId, employeeCode: employeeCode || undefined, jobTitle: jobTitle || undefined,
           employmentType, dateOfJoining: dateOfJoining || undefined,
+          employmentStatus, emergencyContactName: emergencyContactName || undefined, emergencyContactPhone: emergencyContactPhone || undefined,
         }),
       });
       if (!res.ok) {
@@ -141,7 +167,9 @@ export default function EmployeesClient() {
         throw new Error(err?.error);
       }
       toast.success("Employee profile saved");
-      setUserId(""); setEmployeeCode(""); setJobTitle(""); setDateOfJoining(""); setProfileOpen(false);
+      setUserId(""); setEmployeeCode(""); setJobTitle(""); setDateOfJoining("");
+      setEmploymentStatus("active"); setEmergencyContactName(""); setEmergencyContactPhone("");
+      setProfileOpen(false);
       load();
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't save employee profile");
@@ -285,6 +313,17 @@ export default function EmployeesClient() {
       id: "dateOfJoining", header: "Joined",
       cell: ({ row }) => row.original.profile?.dateOfJoining ? new Date(row.original.profile.dateOfJoining).toLocaleDateString() : "—",
     },
+    {
+      id: "employmentStatus", header: "Status",
+      cell: ({ row }) => {
+        const status = row.original.profile?.employmentStatus;
+        return status ? <Badge variant={EMPLOYMENT_STATUS_VARIANT[status] ?? "outline"}>{status.replace(/_/g, " ")}</Badge> : "—";
+      },
+    },
+    {
+      id: "actions", header: "",
+      cell: ({ row }) => <Button size="sm" variant="ghost" onClick={() => setViewEmployee(row.original)}>View</Button>,
+    },
   ];
 
   const departmentColumns: ColumnDef<Department>[] = [
@@ -332,42 +371,60 @@ export default function EmployeesClient() {
               </SelectContent>
             </Select>
           </div>
-          <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
-            <DialogTrigger asChild><Button><Plus className="size-4" /> Employee Profile</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create / Update Employee Profile</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>User</Label>
-                  <Select value={userId} onValueChange={setUserId}>
-                    <SelectTrigger><SelectValue placeholder="Select existing user account" /></SelectTrigger>
-                    <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.email})</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5"><Label>Employee Code (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} /></div>
-                  <div className="space-y-1.5"><Label>Designation (optional)</Label><Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Site Architect" /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+          {isHrAdmin && (
+            <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+              <DialogTrigger asChild><Button><Plus className="size-4" /> Employee Profile</Button></DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Create / Update Employee Profile</DialogTitle></DialogHeader>
+                <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label>Employment Type</Label>
-                    <Select value={employmentType} onValueChange={setEmploymentType}>
+                    <Label>User</Label>
+                    <Select value={userId} onValueChange={selectProfileUser}>
+                      <SelectTrigger><SelectValue placeholder="Select existing user account" /></SelectTrigger>
+                      <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.email})</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5"><Label>Employee Code (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} /></div>
+                    <div className="space-y-1.5"><Label>Designation (optional)</Label><Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Site Architect" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label>Employment Type</Label>
+                      <Select value={employmentType} onValueChange={setEmploymentType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="full_time">Full Time</SelectItem>
+                          <SelectItem value="part_time">Part Time</SelectItem>
+                          <SelectItem value="contract">Contract</SelectItem>
+                          <SelectItem value="intern">Intern</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5"><Label>Date of Joining (optional)</Label><Input type="date" value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} /></div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Employment Status</Label>
+                    <Select value={employmentStatus} onValueChange={setEmploymentStatus}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="full_time">Full Time</SelectItem>
-                        <SelectItem value="part_time">Part Time</SelectItem>
-                        <SelectItem value="contract">Contract</SelectItem>
-                        <SelectItem value="intern">Intern</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="on_leave">On Leave</SelectItem>
+                        <SelectItem value="terminated">Terminated</SelectItem>
+                        <SelectItem value="resigned">Resigned</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5"><Label>Date of Joining (optional)</Label><Input type="date" value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} /></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5"><Label>Emergency Contact Name (optional)</Label><Input value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} /></div>
+                    <div className="space-y-1.5"><Label>Emergency Contact Phone (optional)</Label><Input value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} /></div>
+                  </div>
+                  <p className="text-xs text-px-muted">Department and reporting manager are managed from user administration, not here.</p>
                 </div>
-                <p className="text-xs text-px-muted">Department and reporting manager are managed from user administration, not here.</p>
-              </div>
-              <DialogFooter><Button onClick={saveProfile} disabled={profileSubmitting}>{profileSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter><Button onClick={saveProfile} disabled={profileSubmitting}>{profileSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
 
         <Card className="shadow-card">
@@ -383,6 +440,7 @@ export default function EmployeesClient() {
 
       <TabsContent value="departments" className="space-y-4">
         <div className="flex justify-end">
+          {isHrAdmin && (
           <Dialog open={deptOpen} onOpenChange={setDeptOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4" /> New Department</Button></DialogTrigger>
             <DialogContent>
@@ -394,6 +452,7 @@ export default function EmployeesClient() {
               <DialogFooter><Button onClick={createDepartment} disabled={deptSubmitting}>{deptSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
@@ -435,14 +494,16 @@ export default function EmployeesClient() {
               </Select>
             </div>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={bulkApproving || leaveRequests.filter((r) => r.status === "pending").length === 0}
-                onClick={approveAllPending}
-              >
-                {bulkApproving ? "Approving…" : "Approve All Pending"}
-              </Button>
+              {isHrAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkApproving || leaveRequests.filter((r) => r.status === "pending").length === 0}
+                  onClick={approveAllPending}
+                >
+                  {bulkApproving ? "Approving…" : "Approve All Pending"}
+                </Button>
+              )}
               <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
                 <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Request Leave</Button></DialogTrigger>
                 <DialogContent>
@@ -479,7 +540,7 @@ export default function EmployeesClient() {
                         <TableCell>{r.numDays}</TableCell>
                         <TableCell><Badge variant={LEAVE_STATUS_VARIANT[r.status] ?? "outline"}>{r.status}</Badge></TableCell>
                         <TableCell>
-                          {r.status === "pending" && (
+                          {r.status === "pending" && isHrAdmin && (
                             <div className="flex gap-1">
                               <Button size="icon" variant="ghost" disabled={decidingId === r.id} onClick={() => decide(r.id, "approved")}><Check className="size-4 text-px-success" /></Button>
                               <Button size="icon" variant="ghost" disabled={decidingId === r.id} onClick={() => decide(r.id, "rejected")}><X className="size-4 text-px-error" /></Button>
@@ -498,6 +559,7 @@ export default function EmployeesClient() {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Leave Balances</h3>
+            {isHrAdmin && (
             <Dialog open={balanceOpen} onOpenChange={setBalanceOpen}>
               <DialogTrigger asChild><Button size="sm" variant="outline"><Plus className="size-4" /> Set Balance</Button></DialogTrigger>
               <DialogContent>
@@ -519,6 +581,7 @@ export default function EmployeesClient() {
                 <DialogFooter><Button onClick={saveBalance} disabled={balanceSubmitting}>{balanceSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
               </DialogContent>
             </Dialog>
+            )}
           </div>
           <Card className="shadow-card">
             <CardContent className="p-0">
@@ -547,6 +610,44 @@ export default function EmployeesClient() {
           </Card>
         </div>
       </TabsContent>
+
+      {/* Employee detail view (Priority 15 Wave 2) */}
+      <Dialog open={!!viewEmployee} onOpenChange={(open) => { if (!open) setViewEmployee(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{viewEmployee?.name}</DialogTitle></DialogHeader>
+          {viewEmployee && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-xs text-px-muted">Email</p><p>{viewEmployee.email}</p></div>
+                <div><p className="text-xs text-px-muted">Department</p><p>{departmentName(viewEmployee.departmentId)}</p></div>
+                <div><p className="text-xs text-px-muted">Designation</p><p>{viewEmployee.profile?.jobTitle ?? "—"}</p></div>
+                <div><p className="text-xs text-px-muted">Reports To</p><p>{employeeName(viewEmployee.reportingToId)}</p></div>
+                <div><p className="text-xs text-px-muted">Employee Code</p><p>{viewEmployee.profile?.employeeCode ?? "—"}</p></div>
+                <div><p className="text-xs text-px-muted">Employment Type</p><p>{viewEmployee.profile?.employmentType?.replace(/_/g, " ") ?? "—"}</p></div>
+                <div><p className="text-xs text-px-muted">Joined</p><p>{viewEmployee.profile?.dateOfJoining ? new Date(viewEmployee.profile.dateOfJoining).toLocaleDateString() : "—"}</p></div>
+                <div>
+                  <p className="text-xs text-px-muted">Employment Status</p>
+                  {viewEmployee.profile?.employmentStatus ? (
+                    <Badge variant={EMPLOYMENT_STATUS_VARIANT[viewEmployee.profile.employmentStatus] ?? "outline"}>{viewEmployee.profile.employmentStatus.replace(/_/g, " ")}</Badge>
+                  ) : "—"}
+                </div>
+              </div>
+              <div className="border-t border-px-border pt-3">
+                <p className="mb-1 text-xs font-semibold text-px-muted">Emergency Contact</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><p className="text-xs text-px-muted">Name</p><p>{viewEmployee.profile?.emergencyContactName ?? "—"}</p></div>
+                  <div><p className="text-xs text-px-muted">Phone</p><p>{viewEmployee.profile?.emergencyContactPhone ?? "—"}</p></div>
+                </div>
+              </div>
+            </div>
+          )}
+          {isHrAdmin && viewEmployee && (
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { selectProfileUser(viewEmployee.id); setViewEmployee(null); setProfileOpen(true); }}>Edit Profile</Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }

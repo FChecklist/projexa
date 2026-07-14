@@ -75,3 +75,29 @@ export async function callVeridian<T = unknown>(path: string, options: CallVerid
   const res = await callVeridianRaw(path, options);
   return res.json() as Promise<T>;
 }
+
+// Priority 15 Wave 2: callVeridian() above always parses the response as
+// JSON, which breaks for binary responses (the new payslip PDF endpoint
+// returns Content-Type: application/pdf). Same auth/base-URL resolution as
+// callVeridian, but returns the raw ArrayBuffer + content-type instead of
+// assuming JSON.
+export async function callVeridianBinary(
+  path: string,
+  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+): Promise<{ body: ArrayBuffer; contentType: string }> {
+  const apiKey = options.apiKey ?? (options.organizationId ? await getVeridianApiKey(options.organizationId) : process.env.VERIDIAN_API_KEY);
+  if (!apiKey) throw new VeridianApiError("No VERIDIAN API key configured", 500);
+
+  const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
+  const res = await fetch(`${base}${path}`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${apiKey}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({ error: res.statusText }));
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+  }
+  return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
+}
