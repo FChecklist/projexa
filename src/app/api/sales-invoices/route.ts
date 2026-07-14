@@ -6,11 +6,15 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // Dashboard Revenue gap PROJEXA_GAP_ANALYSIS.md flagged (Total Revenue
 // showed a hardcoded ₹0 disclosure because there was no self-serve API to
 // create or link an ERP sales invoice from PROJEXA).
-export async function GET() {
+//
+// Priority 15: GET now forwards its query string (status/customerId/
+// fromDate/toDate/page/limit) to VERIDIAN's paginated/filtered list --
+// full invoice lifecycle at 500-project scale needs more than a flat array.
+export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
-    const data = await callVeridian("/sales-invoices");
+    const data = await callVeridian(`/sales-invoices${request.nextUrl.search}`);
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load sales invoices" }, { status: 502 });

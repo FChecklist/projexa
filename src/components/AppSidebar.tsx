@@ -9,6 +9,7 @@ import {
   MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
+  ShieldAlert, Calculator, ReceiptText,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -74,10 +75,29 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Priority 15: a real Risk & Compliance surface (risk register, audit
+    // findings/CAPA, policy library, vendor risk, fraud cases, access
+    // review, statutory compliance register) -- reuses VERIDIAN's own
+    // original GRC engine, see GrcClient.tsx / src/app/api/v1/projexa/*
+    // (risks, audit-engagements, audit-findings, policies, vendor-risk,
+    // fraud-cases, access-review, compliance-register, grc-dashboard).
+    title: "GRC",
+    items: [
+      { label: "Risk & Compliance", href: "/grc", icon: ShieldAlert },
+    ],
+  },
+  {
     title: "FINANCE",
     items: [
       { label: "Budgets", href: "/budgets", icon: Wallet },
       { label: "Expenses", href: "/expenses", icon: Receipt },
+      // Priority 15: real GL/reporting + full invoice lifecycle -- see
+      // AccountingClient.tsx / InvoicesClient.tsx and
+      // src/app/api/v1/projexa/{accounts,journal-entries,trial-balance,
+      // profit-and-loss,balance-sheet,profit-and-loss-by-project,
+      // bank-reconciliation,finance-dashboard,credit-notes,ar-aging}.
+      { label: "Accounting", href: "/accounting", icon: Calculator },
+      { label: "Invoices", href: "/invoices", icon: ReceiptText },
     ],
   },
   {
