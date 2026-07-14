@@ -10,6 +10,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/opportunities/bulk-reassign", { method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to bulk-reassign opportunities" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to bulk-reassign opportunities" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

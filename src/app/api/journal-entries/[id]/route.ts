@@ -12,6 +12,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const data = await callVeridian(`/journal-entries/${id}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load journal entry" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load journal entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

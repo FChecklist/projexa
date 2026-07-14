@@ -9,7 +9,7 @@ export async function GET() {
     const data = await callVeridian("/recruitment/job-openings");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load job openings" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load job openings" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -21,6 +21,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/recruitment/job-openings", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create job opening" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create job opening" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

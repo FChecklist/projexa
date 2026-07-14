@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/construction/labour-roster?projectId=${encodeURIComponent(projectId)}`, { root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load labour roster" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load labour roster" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -28,6 +28,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/construction/labour-roster", { method: "POST", body, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to add worker" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to add worker" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

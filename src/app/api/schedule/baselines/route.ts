@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load baselines from VERIDIAN";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -30,6 +30,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to capture baseline";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

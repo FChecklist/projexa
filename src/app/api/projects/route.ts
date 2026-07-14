@@ -15,7 +15,7 @@ export async function GET() {
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof VeridianApiError ? err.message : "Failed to load projects" },
-      { status: 502 }
+      { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
 }

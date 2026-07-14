@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/meetings?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load meetings" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load meetings" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/meetings", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create meeting" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create meeting" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

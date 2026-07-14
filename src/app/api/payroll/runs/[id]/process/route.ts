@@ -12,6 +12,6 @@ export async function POST(_request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/payroll/runs/${encodeURIComponent(id)}/process`, { method: "POST" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to process payroll run" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to process payroll run" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

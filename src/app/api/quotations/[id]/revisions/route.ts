@@ -13,6 +13,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/quotations/${id}/revisions`, { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create quotation revision" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create quotation revision" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/work-progress?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load work progress" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load work progress" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/work-progress", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log progress" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log progress" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

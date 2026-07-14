@@ -67,6 +67,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to dispatch to VERIDIAN";
     await supabase.from("assistant_queries").update({ status: "error", error_message: message }).eq("id", row.id);
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

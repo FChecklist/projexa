@@ -12,7 +12,7 @@ export async function GET() {
     const data = await callVeridian("/audit-engagements");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load audit engagements" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load audit engagements" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -24,6 +24,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/audit-engagements", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create audit engagement" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create audit engagement" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

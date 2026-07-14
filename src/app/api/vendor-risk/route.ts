@@ -11,7 +11,7 @@ export async function GET() {
     const data = await callVeridian("/vendor-risk");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load vendor risk profiles" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load vendor risk profiles" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/vendor-risk", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create vendor risk profile" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create vendor risk profile" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

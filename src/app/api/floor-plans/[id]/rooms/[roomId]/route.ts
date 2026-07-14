@@ -13,7 +13,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/rooms/${encodeURIComponent(roomId)}`, { method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update room" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update room" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -25,6 +25,6 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/rooms/${encodeURIComponent(roomId)}`, { method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove room" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove room" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

@@ -12,6 +12,6 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     const data = await callVeridian(`/audit-findings/${id}`, { method: "PATCH" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update audit finding" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update audit finding" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

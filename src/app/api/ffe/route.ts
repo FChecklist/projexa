@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/ffe?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load FF&E items" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load FF&E items" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/ffe", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create FF&E item" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create FF&E item" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

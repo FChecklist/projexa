@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/leads${qs}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load leads" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load leads" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -22,6 +22,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/leads", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create lead" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create lead" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

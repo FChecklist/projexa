@@ -13,6 +13,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/leave/requests/${encodeURIComponent(id)}/decision`, { method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to decide leave request" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to decide leave request" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
