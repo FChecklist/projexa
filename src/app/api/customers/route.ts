@@ -5,11 +5,16 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // Priority 13: VERIDIAN's /api/v1/projexa/customers discovery lookup -- the
 // customerId a sales invoice needs, same shape of gap fiscal-years/
 // cost-centers close for budgets.
-export async function GET() {
+// Priority 15 (Sales & CRM depth wave): forwards search/page/pageSize query
+// params through to VERIDIAN's listCustomersPaged variant, and adds POST
+// so PROJEXA's own Customers page can create a customer directly (CRM/
+// quotation/sales-order flows all need a real customerId to pick from).
+export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
+  const qs = request.nextUrl.search;
   try {
-    const data = await callVeridian("/customers");
+    const data = await callVeridian(`/customers${qs}`);
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load customers" }, { status: 502 });
