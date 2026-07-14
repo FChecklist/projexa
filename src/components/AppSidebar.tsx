@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
   MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
-  CalendarClock, ShieldCheck,
+  CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,15 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Budgets", href: "/budgets", icon: Wallet },
       { label: "Expenses", href: "/expenses", icon: Receipt },
+    ],
+  },
+  {
+    title: "HR",
+    items: [
+      { label: "HR Dashboard", href: "/hr", icon: UserCog },
+      { label: "Employees", href: "/employees", icon: IdCard },
+      { label: "Payroll", href: "/payroll", icon: Banknote },
+      { label: "Recruitment", href: "/recruitment", icon: Briefcase },
     ],
   },
   {
