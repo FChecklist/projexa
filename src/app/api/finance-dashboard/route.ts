@@ -9,7 +9,7 @@ export async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
-    const data = await callVeridian("/finance-dashboard");
+    const data = await callVeridian("/finance-dashboard", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load finance dashboard" }, { status: err instanceof VeridianApiError ? err.status : 502 });

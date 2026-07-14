@@ -1,11 +1,13 @@
 import { AppTopbar } from "@/components/AppTopbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import MoodBoardsClient from "@/components/MoodBoardsClient";
 
 export default async function MoodBoardsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  const { project, errorMessage } = await resolveSelectedProject(projectId);
+  const organizationId = await getServerOrganizationId();
+  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
   return (
     <>

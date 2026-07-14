@@ -7,10 +7,11 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // keeps a local history row -- dispatchTool() is synchronous, so this table
 // stands in for VERIDIAN's real async Tasks system (see drizzle/0002).
 //
-// MVP note: always uses the shared demo VERIDIAN_API_KEY (no per-org lookup
-// yet) -- reading a real per-org key out of veridian_credentials needs
-// DATABASE_URL/service-role, which isn't configured. Every PROJEXA org talks
-// to the same demo VERIDIAN tenant until that's wired up.
+// Priority 17 (VERIDIAN platform provisioning): passes organizationId so
+// callVeridian() resolves this org's own VERIDIAN API key from
+// veridian_credentials instead of the shared demo VERIDIAN_API_KEY. Orgs
+// with no credentials row yet (pre-existing/demo orgs) still fall back to
+// the shared key automatically -- see resolveApiKey() in veridian-client.ts.
 export async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await callVeridian<{ codeReference: string; result: unknown }>("/assistant", {
+      organizationId: ctx.organizationId!,
       method: "POST",
       body: { codeReference, inputs },
     });

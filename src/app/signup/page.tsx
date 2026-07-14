@@ -8,10 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
-function slugify(name: string) {
-  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "org";
-}
-
 export default function SignupPage() {
   const router = useRouter();
   const [orgName, setOrgName] = useState("");
@@ -43,22 +39,20 @@ export default function SignupPage() {
       return;
     }
 
-    const { data: org, error: orgError } = await supabase
-      .from("organizations")
-      .insert({ name: orgName, slug: `${slugify(orgName)}-${Math.random().toString(36).slice(2, 7)}` })
-      .select()
-      .single();
-    if (orgError || !org) {
-      setError(orgError?.message ?? "Failed to create organization");
-      setLoading(false);
-      return;
-    }
-
-    const { error: membershipError } = await supabase
-      .from("memberships")
-      .insert({ user_id: data.session.user.id, organization_id: org.id, role: "owner" });
-    if (membershipError) {
-      setError(membershipError.message);
+    // Organization creation (PROJEXA org + membership + VERIDIAN
+    // provisioning) happens entirely server-side now -- see
+    // /api/org/provision. The VERIDIAN platform application key that
+    // endpoint uses must never reach the browser, and provisioning a real
+    // VERIDIAN tenant is not something the client should be able to trigger
+    // or retry arbitrarily.
+    const res = await fetch("/api/org/provision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgName }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: "Failed to create organization" }));
+      setError(body.error ?? "Failed to create organization");
       setLoading(false);
       return;
     }

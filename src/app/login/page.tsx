@@ -8,10 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
-function slugify(name: string) {
-  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "org";
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -33,7 +29,9 @@ export default function LoginPage() {
     }
 
     // Finish provisioning if signup deferred org creation for email
-    // confirmation (see signup/page.tsx).
+    // confirmation (see signup/page.tsx). Provisioning itself (PROJEXA org +
+    // membership + VERIDIAN tenant) runs entirely server-side via
+    // /api/org/provision -- see that route's comment for why.
     const { data: existing } = await supabase
       .from("memberships")
       .select("organization_id")
@@ -44,14 +42,18 @@ export default function LoginPage() {
     if (!existing) {
       const pendingOrgName = window.localStorage.getItem("projexa_pending_org_name");
       if (pendingOrgName) {
-        const { data: org, error: orgError } = await supabase
-          .from("organizations")
-          .insert({ name: pendingOrgName, slug: `${slugify(pendingOrgName)}-${Math.random().toString(36).slice(2, 7)}` })
-          .select()
-          .single();
-        if (!orgError && org) {
-          await supabase.from("memberships").insert({ user_id: data.session.user.id, organization_id: org.id, role: "owner" });
+        const res = await fetch("/api/org/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orgName: pendingOrgName }),
+        });
+        if (res.ok) {
           window.localStorage.removeItem("projexa_pending_org_name");
+        } else {
+          const body = await res.json().catch(() => ({ error: "Failed to finish setting up your workspace" }));
+          setError(body.error ?? "Failed to finish setting up your workspace");
+          setLoading(false);
+          return;
         }
       }
     }

@@ -10,7 +10,7 @@ export async function GET() {
   if (ctx.response) return ctx.response;
 
   try {
-    const data = await callVeridian<{ projects: { id: string; name: string }[] }>("/dashboard");
+    const data = await callVeridian<{ projects: { id: string; name: string }[] }>("/dashboard", { organizationId: ctx.organizationId! });
     return NextResponse.json({ projects: data.projects ?? [] });
   } catch (err) {
     return NextResponse.json(

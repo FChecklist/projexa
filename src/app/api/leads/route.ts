@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const qs = request.nextUrl.search;
   try {
-    const data = await callVeridian(`/leads${qs}`);
+    const data = await callVeridian(`/leads${qs}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load leads" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    const data = await callVeridian("/leads", { method: "POST", body });
+    const data = await callVeridian("/leads", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create lead" }, { status: err instanceof VeridianApiError ? err.status : 502 });

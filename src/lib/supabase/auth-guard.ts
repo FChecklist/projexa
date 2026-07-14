@@ -85,3 +85,20 @@ export async function requireAuth(): Promise<AuthContext> {
 
   return { user, organizationId: membership.organization_id, role: membership.role, response: null };
 }
+
+// Server Component convenience wrapper around requireAuth(). Server
+// Components (e.g. the (app)/*/page.tsx pages that call
+// resolveSelectedProject() in src/lib/project-selection.ts) can't return a
+// NextResponse the way a Route Handler can -- page-level route protection is
+// already handled by middleware.ts, so these just need the current
+// organizationId for scoping their VERIDIAN calls (see Priority 17 platform
+// provisioning: callVeridian* now resolves a per-org key from this id
+// instead of always falling back to the shared demo VERIDIAN_API_KEY).
+// Returns null if unauthenticated or the user has no organization yet --
+// callers already handle a null/missing project the same way they handle a
+// VERIDIAN error (see resolveSelectedProject's errorMessage/empty-state
+// handling), so this deliberately doesn't throw.
+export async function getServerOrganizationId(): Promise<string | null> {
+  const ctx = await requireAuth();
+  return ctx.organizationId;
+}

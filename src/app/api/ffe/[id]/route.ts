@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/ffe/${encodeURIComponent(id)}`, { method: "PATCH", body: { action: "status", ...body } });
+    const data = await callVeridian(`/ffe/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body: { action: "status", ...body } });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update FF&E item" }, { status: err instanceof VeridianApiError ? err.status : 502 });

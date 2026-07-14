@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (weekStart) query.set("weekStart", weekStart);
 
   try {
-    const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?${query.toString()}`);
+    const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?${query.toString()}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : `Failed to generate ${reportName} report` }, { status: err instanceof VeridianApiError ? err.status : 502 });

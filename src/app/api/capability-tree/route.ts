@@ -10,7 +10,7 @@ export async function GET() {
   if (ctx.response) return ctx.response;
 
   try {
-    const data = await callVeridian<{ nodes: unknown[] }>("/capability-tree");
+    const data = await callVeridian<{ nodes: unknown[] }>("/capability-tree", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load capability tree from VERIDIAN";

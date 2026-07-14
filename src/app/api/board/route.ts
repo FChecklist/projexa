@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   try {
-    const data = await callVeridian(`/board?projectId=${encodeURIComponent(projectId)}`);
+    const data = await callVeridian(`/board?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load board" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    const data = await callVeridian("/board", { method: "PATCH", body });
+    const data = await callVeridian("/board", { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update issue status" }, { status: err instanceof VeridianApiError ? err.status : 502 });

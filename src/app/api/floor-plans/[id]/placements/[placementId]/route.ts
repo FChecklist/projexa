@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id, placementId } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/placements/${encodeURIComponent(placementId)}`, { method: "PATCH", body });
+    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/placements/${encodeURIComponent(placementId)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update placement" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -22,7 +22,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id, placementId } = await params;
   try {
-    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/placements/${encodeURIComponent(placementId)}`, { method: "DELETE" });
+    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/placements/${encodeURIComponent(placementId)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove placement" }, { status: err instanceof VeridianApiError ? err.status : 502 });

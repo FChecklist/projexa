@@ -8,7 +8,7 @@ export async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
-    const data = await callVeridian("/policies");
+    const data = await callVeridian("/policies", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load policies" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    const data = await callVeridian("/policies", { method: "POST", body });
+    const data = await callVeridian("/policies", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create policy" }, { status: err instanceof VeridianApiError ? err.status : 502 });

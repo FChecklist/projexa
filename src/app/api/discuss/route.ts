@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await callVeridian<{ reply: string }>("/discuss", {
+      organizationId: ctx.organizationId!,
       method: "POST",
       body: { message, history: body.history ?? [] },
     });

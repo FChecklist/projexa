@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const kpiDefinitionId = request.nextUrl.searchParams.get("kpiDefinitionId");
   if (!kpiDefinitionId) return NextResponse.json({ error: "kpiDefinitionId query param is required" }, { status: 400 });
   try {
-    const data = await callVeridian(`/construction/kpi-entries?kpiDefinitionId=${encodeURIComponent(kpiDefinitionId)}`, { root: true });
+    const data = await callVeridian(`/construction/kpi-entries?kpiDefinitionId=${encodeURIComponent(kpiDefinitionId)}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load KPI entries" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    const data = await callVeridian("/construction/kpi-entries", { method: "POST", body, root: true });
+    const data = await callVeridian("/construction/kpi-entries", { organizationId: ctx.organizationId!, method: "POST", body, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit KPI entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });

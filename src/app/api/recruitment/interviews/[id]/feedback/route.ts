@@ -10,7 +10,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   const body = await request.json();
   try {
     const { id } = await params;
-    const data = await callVeridian(`/recruitment/interviews/${encodeURIComponent(id)}/feedback`, { method: "POST", body });
+    const data = await callVeridian(`/recruitment/interviews/${encodeURIComponent(id)}/feedback`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit interview feedback" }, { status: err instanceof VeridianApiError ? err.status : 502 });

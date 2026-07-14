@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/opportunities/${id}`, { method: "PATCH", body });
+    const data = await callVeridian(`/opportunities/${id}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update opportunity" }, { status: err instanceof VeridianApiError ? err.status : 502 });

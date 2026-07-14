@@ -9,7 +9,7 @@ export async function POST(_request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   try {
     const { id } = await params;
-    const data = await callVeridian(`/payroll/payslips/${encodeURIComponent(id)}/finalize`, { method: "POST" });
+    const data = await callVeridian(`/payroll/payslips/${encodeURIComponent(id)}/finalize`, { organizationId: ctx.organizationId!, method: "POST" });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to finalize payslip" }, { status: err instanceof VeridianApiError ? err.status : 502 });

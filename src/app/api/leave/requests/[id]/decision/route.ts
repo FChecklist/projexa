@@ -10,7 +10,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   const body = await request.json();
   try {
     const { id } = await params;
-    const data = await callVeridian(`/leave/requests/${encodeURIComponent(id)}/decision`, { method: "POST", body });
+    const data = await callVeridian(`/leave/requests/${encodeURIComponent(id)}/decision`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to decide leave request" }, { status: err instanceof VeridianApiError ? err.status : 502 });

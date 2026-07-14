@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
 
 type OrgDashboard = {
@@ -23,7 +24,8 @@ export default async function DashboardPage() {
   let errorMessage: string | null = null;
 
   try {
-    data = await callVeridian<OrgDashboard>("/dashboard");
+    const organizationId = await getServerOrganizationId();
+    data = await callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined });
   } catch (err) {
     errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from VERIDIAN";
   }

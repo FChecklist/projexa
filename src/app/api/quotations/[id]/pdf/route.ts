@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const upstream = await callVeridianRaw(`/quotations/${id}/pdf`);
+    const upstream = await callVeridianRaw(`/quotations/${id}/pdf`, { organizationId: ctx.organizationId! });
     const pdfBuffer = await upstream.arrayBuffer();
     return new NextResponse(pdfBuffer, {
       status: 200,

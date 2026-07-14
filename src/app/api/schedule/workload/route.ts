@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
 
   try {
-    const data = await callVeridian(`/schedule/workload?projectId=${encodeURIComponent(projectId)}`);
+    const data = await callVeridian(`/schedule/workload?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load workload from VERIDIAN";
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const data = await callVeridian("/schedule/workload", { method: "POST", body });
+    const data = await callVeridian("/schedule/workload", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to create resource allocation";

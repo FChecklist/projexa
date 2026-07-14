@@ -49,8 +49,31 @@ What actually exists:
   (commit `e1aaf06`, "Port VERIDIAN's Mode Pills / Chain Selector / Chatbox to
   PROJEXA"), not an independent AI implementation.
 
-**MVP-stage caveat, stated in the code itself** (`veridian-client.ts` comment,
-`src/app/api/assistant/route.ts` comment): every PROJEXA org currently shares one
+**Update, 2026-07-15 (Priority 17, VERIDIAN platform provisioning):** the
+per-organization credential path described below as an MVP-stage gap is now
+wired into the live call path. `POST /api/org/provision` (called server-side
+from signup/login, never the browser) provisions a brand-new, isolated
+VERIDIAN org via VERIDIAN's `POST /api/v1/platform/provision-org` and stores
+the returned `{ organisationId, apiKey }` in `veridian_credentials`, keyed by
+the PROJEXA org's own id. `callVeridian()`/`callVeridianRaw()`/
+`callVeridianBinary()` (`src/lib/veridian-client.ts`) now resolve a caller's
+key primarily via `getVeridianApiKey(organizationId)` -- every real call site
+under `src/app/api/**`, plus the dashboard and every project-scoped page,
+passes its own `organizationId`. The shared `VERIDIAN_API_KEY` env var is
+still a real fallback (not removed), used automatically when an org has no
+`veridian_credentials` row (pre-existing/demo orgs such as
+`projexa_demo_org`) or when the lookup itself fails for any reason,
+including `DATABASE_URL`/`SUPABASE_DB_PASSWORD` not being configured in a
+given deployment -- see `resolveApiKey()`'s comment in `veridian-client.ts`.
+**Named follow-up, not yet done as of this update:** `DATABASE_URL` (or
+`SUPABASE_DB_PASSWORD`) must actually be set in the deployed environment for
+new signups' per-org isolation to take effect at runtime -- without it, every
+org (including brand-new ones) silently falls back to the shared demo key,
+which defeats the isolation goal without breaking anything. This is an infra
+step, not a code gap.
+
+**Original MVP-stage caveat below, kept for history** (superseded by the
+update above): every PROJEXA org currently shares one
 demo `VERIDIAN_API_KEY` — per-organization credential lookup
 (`getVeridianApiKey()` / `veridian_credentials` table) exists in the schema but is not
 yet wired into the live call path, since that needs `DATABASE_URL`/service-role access

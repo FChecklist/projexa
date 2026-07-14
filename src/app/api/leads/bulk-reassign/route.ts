@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    const data = await callVeridian("/leads/bulk-reassign", { method: "POST", body });
+    const data = await callVeridian("/leads/bulk-reassign", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to bulk-reassign leads" }, { status: err instanceof VeridianApiError ? err.status : 502 });
