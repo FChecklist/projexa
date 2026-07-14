@@ -14,6 +14,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load schedule from VERIDIAN";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

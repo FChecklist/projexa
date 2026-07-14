@@ -18,6 +18,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to reach VERI AI";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

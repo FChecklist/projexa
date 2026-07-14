@@ -12,7 +12,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/recruitment/applications/${encodeURIComponent(id)}/interviews`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load interviews" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load interviews" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -25,6 +25,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/recruitment/applications/${encodeURIComponent(id)}/interviews`, { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to schedule interview" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to schedule interview" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

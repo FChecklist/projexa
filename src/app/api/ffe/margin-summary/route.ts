@@ -11,6 +11,6 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load margin summary" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load margin summary" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

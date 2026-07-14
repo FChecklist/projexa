@@ -21,6 +21,6 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to generate payslip PDF" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to generate payslip PDF" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

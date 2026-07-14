@@ -13,6 +13,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/recruitment/job-openings/${encodeURIComponent(id)}/status`, { method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update job opening status" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update job opening status" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

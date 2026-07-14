@@ -12,7 +12,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/payroll/employees/${encodeURIComponent(id)}/tax-exemptions`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load tax exemptions" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load tax exemptions" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -25,6 +25,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/payroll/employees/${encodeURIComponent(id)}/tax-exemptions`, { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create tax exemption" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create tax exemption" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

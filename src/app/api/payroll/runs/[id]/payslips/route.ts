@@ -12,6 +12,6 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/payroll/runs/${encodeURIComponent(id)}/payslips`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load payslips" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load payslips" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

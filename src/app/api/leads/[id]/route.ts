@@ -13,6 +13,6 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/leads/${id}`, { method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update lead" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update lead" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

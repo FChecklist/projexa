@@ -9,7 +9,7 @@ export async function GET() {
     const data = await callVeridian("/payroll/salary-structures");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load salary structures" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load salary structures" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -21,6 +21,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/payroll/salary-structures", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create salary structure" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create salary structure" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/construction/kpi-entries?kpiDefinitionId=${encodeURIComponent(kpiDefinitionId)}`, { root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load KPI entries" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load KPI entries" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -26,6 +26,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/construction/kpi-entries", { method: "POST", body, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit KPI entry" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit KPI entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

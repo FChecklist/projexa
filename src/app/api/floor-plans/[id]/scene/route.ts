@@ -12,6 +12,6 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/scene`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load scene" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load scene" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

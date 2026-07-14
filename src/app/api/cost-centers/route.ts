@@ -11,6 +11,6 @@ export async function GET() {
     const data = await callVeridian("/cost-centers");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load cost centers" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load cost centers" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

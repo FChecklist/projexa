@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/submittals?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load submittals" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load submittals" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -23,6 +23,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/submittals", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create submittal" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create submittal" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

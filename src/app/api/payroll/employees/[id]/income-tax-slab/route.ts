@@ -13,6 +13,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/payroll/employees/${encodeURIComponent(id)}/income-tax-slab`, { method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to assign income tax slab" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to assign income tax slab" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

@@ -13,6 +13,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const data = await callVeridian(`/access-review/certifications/${id}`, { method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record certification decision" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record certification decision" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

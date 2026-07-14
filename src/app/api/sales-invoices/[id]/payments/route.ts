@@ -14,6 +14,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const data = await callVeridian(`/sales-invoices/${id}/payments`, { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record payment" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record payment" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

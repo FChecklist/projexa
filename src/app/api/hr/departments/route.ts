@@ -9,7 +9,7 @@ export async function GET() {
     const data = await callVeridian("/hr/departments");
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load departments" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load departments" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -21,6 +21,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/hr/departments", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create department" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create department" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

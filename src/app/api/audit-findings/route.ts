@@ -12,6 +12,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/audit-findings", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create audit finding" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create audit finding" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

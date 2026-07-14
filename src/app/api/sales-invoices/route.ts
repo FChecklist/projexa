@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/sales-invoices${request.nextUrl.search}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load sales invoices" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load sales invoices" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -29,6 +29,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/sales-invoices", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create sales invoice" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create sales invoice" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

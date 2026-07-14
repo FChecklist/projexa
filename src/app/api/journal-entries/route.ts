@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/journal-entries${request.nextUrl.search}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load journal entries" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load journal entries" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -24,6 +24,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/journal-entries", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create journal entry" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create journal entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
