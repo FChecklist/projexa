@@ -49,12 +49,35 @@ export async function requireAuth(): Promise<AuthContext> {
 
   const user: AuthUser = { id: data.claims.sub as string, email: (data.claims.email as string | undefined) ?? null };
 
-  const { data: membership } = await supabase
-    .from("memberships")
-    .select("organization_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
+  const fetchMembership = () =>
+    supabase
+      .from("memberships")
+      .select("organization_id, role")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+  // CONFIRMED ROOT CAUSE (Priority 16 Part 2, "Create Job Opening"
+  // reproducibly failing with 400 "No organization" on a user who
+  // demonstrably has a real membership row): this used to destructure only
+  // `data` from the query below and silently discard `error` -- so a
+  // transient Supabase query failure (the same class of network hiccup
+  // documented above for getClaims(), and separately reproduced this same
+  // test session against /api/attendance) was indistinguishable from a
+  // genuine "this user has no organization" case, and got misreported with
+  // the same misleading, non-retryable-sounding 400. One retry, mirroring
+  // getClaimsWithRetry() above -- if it still errors after that, this is
+  // surfaced honestly as a transient failure instead of a false "no org".
+  let { data: membership, error: membershipError } = await fetchMembership();
+  if (membershipError) {
+    console.warn("[requireAuth] memberships query failed once, retrying:", membershipError.message);
+    ({ data: membership, error: membershipError } = await fetchMembership());
+  }
+
+  if (membershipError) {
+    console.error("[requireAuth] memberships query failed twice -- not a genuine 'no organization' case, surfacing as a transient failure instead:", membershipError.message);
+    return { user, organizationId: null, role: null, response: NextResponse.json({ error: "Could not verify organization membership, please retry" }, { status: 503 }) };
+  }
 
   if (!membership) {
     return { user, organizationId: null, role: null, response: NextResponse.json({ error: "No organization" }, { status: 400 }) };
