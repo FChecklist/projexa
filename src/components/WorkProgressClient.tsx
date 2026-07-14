@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// Priority 16 Part 2 (PROJEXA-WORKPROGRESS-NO-ACTIVITY-PICKER): the
+// "Activity ID" field used to be a free-text box with placeholder "Paste
+// the activity's ID from VERIDIAN" and zero discovery UI -- unusable on any
+// brand-new project (construction_activities has zero rows until the first
+// activity is created). Replaced with a real Select sourced from the new
+// /api/work-progress/activities endpoint, plus an inline "New Activity"
+// dialog for when the list is empty (or a new activity is simply needed).
+// See control/priority16_e2e_testing_plan.md "GAP -- Work Progress".
+import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 
 type Entry = {
@@ -19,6 +28,7 @@ type Entry = {
   percentComplete: number;
   remarks: string | null;
 };
+type Activity = { id: string; name: string; unit: string | null };
 
 function progressVariant(pct: number): "default" | "secondary" | "destructive" | "outline" {
   if (pct >= 100) return "outline";
@@ -37,6 +47,15 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [newActivityOpen, setNewActivityOpen] = useState(false);
+  const [newActivityName, setNewActivityName] = useState("");
+  const [newActivityUnit, setNewActivityUnit] = useState("");
+  const [creatingActivity, setCreatingActivity] = useState(false);
+
+  const activitiesById = new Map(activities.map((a) => [a.id, a]));
+
   async function load() {
     setLoading(true);
     try {
@@ -50,16 +69,34 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
     }
   }
 
+  const loadActivities = useCallback(async () => {
+    setActivitiesLoading(true);
+    try {
+      const res = await fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json();
+      const loaded: Activity[] = data.activities ?? [];
+      setActivities(loaded);
+      // Keep the current selection if it's still valid; otherwise default to
+      // the first activity so the picker isn't blank when there's exactly one.
+      setActivityId((prev) => (loaded.some((a) => a.id === prev) ? prev : (loaded[0]?.id ?? "")));
+    } catch {
+      toast.error("Couldn't load activities");
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, [projectId]);
+
   useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { loadActivities(); }, [loadActivities]);
 
   async function createEntry() {
-    if (!activityId.trim() || !entryDate || quantityDone === "" || percentComplete === "") return;
+    if (!activityId || !entryDate || quantityDone === "" || percentComplete === "") return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/work-progress", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId, activityId: activityId.trim(), entryDate,
+          projectId, activityId, entryDate,
           quantityDone: Number(quantityDone), percentComplete: Number(percentComplete),
           remarks: remarks || undefined,
         }),
@@ -69,12 +106,33 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
         throw new Error(err?.error);
       }
       toast.success("Progress logged");
-      setActivityId(""); setQuantityDone(""); setPercentComplete(""); setRemarks(""); setOpen(false);
+      setQuantityDone(""); setPercentComplete(""); setRemarks(""); setOpen(false);
       load();
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't log progress");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function createActivity() {
+    if (!newActivityName.trim()) return;
+    setCreatingActivity(true);
+    try {
+      const res = await fetch("/api/work-progress/activities", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, name: newActivityName.trim(), unit: newActivityUnit || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to create activity");
+      toast.success("Activity created");
+      setNewActivityName(""); setNewActivityUnit(""); setNewActivityOpen(false);
+      await loadActivities();
+      setActivityId(data.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create activity");
+    } finally {
+      setCreatingActivity(false);
     }
   }
 
@@ -87,9 +145,31 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
             <DialogHeader><DialogTitle>Log Work Progress</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label>Activity ID</Label>
-                <Input value={activityId} onChange={(e) => setActivityId(e.target.value)} placeholder="Paste the activity's ID from VERIDIAN" />
-                <p className="text-xs text-px-muted">Category/activity setup has no self-service form yet — this ID must already exist in VERIDIAN.</p>
+                <Label>Activity</Label>
+                {activitiesLoading ? (
+                  <div className="flex h-9 items-center gap-2 text-xs text-px-muted"><Loader2 className="size-3.5 animate-spin" /> Loading activities…</div>
+                ) : activities.length === 0 ? (
+                  <p className="text-xs text-px-muted">
+                    No activities yet for this project.{" "}
+                    <button type="button" className="font-medium text-px-ink underline" onClick={() => setNewActivityOpen(true)}>
+                      Create the first one
+                    </button>.
+                  </p>
+                ) : (
+                  <div className="flex gap-2">
+                    <Select value={activityId} onValueChange={setActivityId}>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Select an activity" /></SelectTrigger>
+                      <SelectContent>
+                        {activities.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}{a.unit ? ` (${a.unit})` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setNewActivityOpen(true)} title="New activity">
+                      <Plus className="size-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} /></div>
               <div className="grid grid-cols-2 gap-2">
@@ -98,7 +178,24 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
               </div>
               <div className="space-y-1.5"><Label>Remarks (optional)</Label><Input value={remarks} onChange={(e) => setRemarks(e.target.value)} /></div>
             </div>
-            <DialogFooter><Button onClick={createEntry} disabled={submitting}>{submitting ? "Saving…" : "Log Entry"}</Button></DialogFooter>
+            <DialogFooter><Button onClick={createEntry} disabled={submitting || !activityId}>{submitting ? "Saving…" : "Log Entry"}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={newActivityOpen} onOpenChange={setNewActivityOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>New Activity</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Name</Label>
+                <Input value={newActivityName} onChange={(e) => setNewActivityName(e.target.value)} placeholder="e.g. Column casting - Level 3" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Unit (optional)</Label>
+                <Input value={newActivityUnit} onChange={(e) => setNewActivityUnit(e.target.value)} placeholder="e.g. cum, sqm, nos" />
+              </div>
+            </div>
+            <DialogFooter><Button onClick={createActivity} disabled={creatingActivity || !newActivityName.trim()}>{creatingActivity ? "Creating…" : "Create Activity"}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -113,7 +210,7 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead><TableHead>Activity ID</TableHead><TableHead>Qty Done</TableHead>
+                  <TableHead>Date</TableHead><TableHead>Activity</TableHead><TableHead>Qty Done</TableHead>
                   <TableHead>% Complete</TableHead><TableHead>Remarks</TableHead>
                 </TableRow>
               </TableHeader>
@@ -121,7 +218,7 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
                 {entries.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="text-px-muted">{new Date(e.entryDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="font-mono text-xs">{e.activityId}</TableCell>
+                    <TableCell>{activitiesById.get(e.activityId)?.name ?? <span className="font-mono text-xs">{e.activityId}</span>}</TableCell>
                     <TableCell>{e.quantityDone}</TableCell>
                     <TableCell><Badge variant={progressVariant(e.percentComplete)}>{e.percentComplete}%</Badge></TableCell>
                     <TableCell className="text-px-muted">{e.remarks ?? "—"}</TableCell>
