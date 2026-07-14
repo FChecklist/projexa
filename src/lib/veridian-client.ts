@@ -42,10 +42,14 @@ export async function getVeridianApiKey(organizationId: string): Promise<string>
   return row.apiKey;
 }
 
-export async function callVeridian<T = unknown>(
-  path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean } = {}
-): Promise<T> {
+type CallVeridianOptions = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+
+// Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
+// route (a real binary response, not JSON) can reuse the exact same
+// auth/base-url/error-shape logic instead of duplicating it. callVeridian()
+// below is now a thin `res.json()` wrapper around this -- every existing
+// caller's behavior is unchanged.
+export async function callVeridianRaw(path: string, options: CallVeridianOptions = {}): Promise<Response> {
   const apiKey = options.apiKey ?? (options.organizationId ? await getVeridianApiKey(options.organizationId) : process.env.VERIDIAN_API_KEY);
   if (!apiKey) throw new VeridianApiError("No VERIDIAN API key configured", 500);
 
@@ -54,7 +58,7 @@ export async function callVeridian<T = unknown>(
     method: options.method ?? "GET",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
@@ -64,5 +68,10 @@ export async function callVeridian<T = unknown>(
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
     throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
   }
+  return res;
+}
+
+export async function callVeridian<T = unknown>(path: string, options: CallVeridianOptions = {}): Promise<T> {
+  const res = await callVeridianRaw(path, options);
   return res.json() as Promise<T>;
 }
