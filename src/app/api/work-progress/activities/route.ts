@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/work-progress/activities?projectId=${encodeURIComponent(projectId)}`);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load activities" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load activities" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
 
@@ -30,6 +30,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/work-progress/activities", { method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create activity" }, { status: 502 });
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create activity" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }
