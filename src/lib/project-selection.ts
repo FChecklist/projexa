@@ -17,9 +17,21 @@ export type ProjectSelection = {
 // anything yet) this falls back to the org's first project -- the exact
 // behavior every one of these pages had before the switcher was added, so
 // old URLs keep working unchanged.
-export async function resolveSelectedProject(requestedProjectId?: string): Promise<ProjectSelection> {
+//
+// `organizationId` (Priority 17 platform provisioning) scopes the VERIDIAN
+// call to the caller's own org -- see getServerOrganizationId() in
+// src/lib/supabase/auth-guard.ts, which every page.tsx caller uses to
+// obtain it. Optional/nullable so a page that somehow calls this before
+// resolving auth still gets the same demo-key fallback callVeridian() has
+// always had, rather than a hard failure.
+export async function resolveSelectedProject(
+  requestedProjectId?: string,
+  organizationId?: string | null
+): Promise<ProjectSelection> {
   try {
-    const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard");
+    const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard", {
+      organizationId: organizationId ?? undefined,
+    });
     const projects = data.projects ?? [];
     const project = (requestedProjectId && projects.find((p) => p.id === requestedProjectId)) || projects[0] || null;
     return { project, projects, errorMessage: null };

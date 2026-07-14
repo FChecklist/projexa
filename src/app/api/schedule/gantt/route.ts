@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
 
   try {
-    const data = await callVeridian(`/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
+    const data = await callVeridian(`/schedule/gantt?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load schedule from VERIDIAN";

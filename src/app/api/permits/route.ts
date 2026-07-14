@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const withinDays = request.nextUrl.searchParams.get("withinDays");
   const params = withinDays ? `?withinDays=${encodeURIComponent(withinDays)}` : "";
   try {
-    const data = await callVeridian(`/permits${params}`);
+    const data = await callVeridian(`/permits${params}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load permits" }, { status: err instanceof VeridianApiError ? err.status : 502 });

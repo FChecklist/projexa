@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
-    const data = await callVeridian(`/ar-aging${request.nextUrl.search}`);
+    const data = await callVeridian(`/ar-aging${request.nextUrl.search}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to generate AR aging report" }, { status: err instanceof VeridianApiError ? err.status : 502 });

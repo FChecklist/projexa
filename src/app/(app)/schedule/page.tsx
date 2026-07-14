@@ -2,12 +2,14 @@ import { AppTopbar } from "@/components/AppTopbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScheduleGanttClient from "@/components/ScheduleGanttClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  const { project, errorMessage } = await resolveSelectedProject(projectId);
+  const organizationId = await getServerOrganizationId();
+  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
   return (
     <>

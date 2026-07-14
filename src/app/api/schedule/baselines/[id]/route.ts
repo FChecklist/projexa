@@ -10,7 +10,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
 
   try {
-    const data = await callVeridian(`/schedule/baselines/${encodeURIComponent(id)}`);
+    const data = await callVeridian(`/schedule/baselines/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof VeridianApiError ? err.message : "Failed to load baseline comparison";

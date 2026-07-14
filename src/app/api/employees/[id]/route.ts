@@ -9,7 +9,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   try {
     const { id } = await params;
-    const data = await callVeridian(`/employees/${encodeURIComponent(id)}`);
+    const data = await callVeridian(`/employees/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load employee" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -22,7 +22,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const body = await request.json();
   try {
     const { id } = await params;
-    const data = await callVeridian(`/employees/${encodeURIComponent(id)}`, { method: "PATCH", body });
+    const data = await callVeridian(`/employees/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update employee" }, { status: err instanceof VeridianApiError ? err.status : 502 });

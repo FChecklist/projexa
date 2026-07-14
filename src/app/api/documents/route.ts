@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (category) params.set("category", category);
 
   try {
-    const data = await callVeridian(`/documents?${params.toString()}`, { root: true });
+    const data = await callVeridian(`/documents?${params.toString()}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load documents" }, { status: err instanceof VeridianApiError ? err.status : 502 });

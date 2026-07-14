@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}`);
+    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load floor plan" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -22,7 +22,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}`, { method: "PATCH", body: { action: "status", ...body } });
+    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body: { action: "status", ...body } });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update floor plan" }, { status: err instanceof VeridianApiError ? err.status : 502 });

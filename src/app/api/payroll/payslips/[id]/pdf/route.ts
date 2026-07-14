@@ -13,7 +13,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   try {
     const { id } = await params;
-    const { body, contentType } = await callVeridianBinary(`/payroll/payslips/${encodeURIComponent(id)}/pdf`);
+    const { body, contentType } = await callVeridianBinary(`/payroll/payslips/${encodeURIComponent(id)}/pdf`, { organizationId: ctx.organizationId! });
     return new NextResponse(body, {
       headers: {
         "Content-Type": contentType,

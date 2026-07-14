@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/scene`);
+    const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/scene`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load scene" }, { status: err instanceof VeridianApiError ? err.status : 502 });

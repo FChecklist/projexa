@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/access-review/certifications/${id}`, { method: "PATCH", body });
+    const data = await callVeridian(`/access-review/certifications/${id}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record certification decision" }, { status: err instanceof VeridianApiError ? err.status : 502 });
