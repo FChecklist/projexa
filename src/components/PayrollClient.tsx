@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-import { Loader2, Plus, PlayCircle, Trash2, FileDown } from "lucide-react";
+import { Loader2, Plus, PlayCircle, Trash2, FileDown, FileText } from "lucide-react";
+import { useOrgRole } from "@/hooks/use-org-role";
 
 type PayrollRun = { id: string; month: number; year: number; status: string; processedAt: string | null };
 type PayslipLine = { id: string; label: string; lineType: "earning" | "deduction"; amount: string };
@@ -26,6 +27,7 @@ type Employee = { id: string; name: string; profile: { employeeCode: string | nu
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function PayrollClient() {
+  const { isHrAdmin } = useOrgRole();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [components, setComponents] = useState<SalaryComponent[]>([]);
   const [structures, setStructures] = useState<SalaryStructure[]>([]);
@@ -170,6 +172,14 @@ export default function PayrollClient() {
     a.download = `payroll-register-${registerRun.year}-${String(registerRun.month).padStart(2, "0")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadPayslipPdf(payslipId: string) {
+    // Real per-payslip PDF (Priority 15 Wave 2) -- a plain navigation to the
+    // proxy route rather than a fetch+blob dance, since the route already
+    // sets Content-Disposition: attachment and the browser handles the
+    // download natively.
+    window.open(`/api/payroll/payslips/${payslipId}/pdf`, "_blank");
   }
 
   async function saveTds() {
@@ -347,7 +357,7 @@ export default function PayrollClient() {
     {
       id: "actions", header: "", cell: ({ row }) => (
         <div className="flex gap-2">
-          {row.original.status === "draft" && (
+          {row.original.status === "draft" && isHrAdmin && (
             <Button size="sm" variant="outline" disabled={processingId === row.original.id} onClick={() => processRun(row.original.id)}>
               <PlayCircle className="size-4" /> {processingId === row.original.id ? "Processing…" : "Process"}
             </Button>
@@ -356,7 +366,7 @@ export default function PayrollClient() {
         </div>
       ),
     },
-  ], [processingId]);
+  ], [processingId, isHrAdmin]);
 
   const componentColumns: ColumnDef<SalaryComponent>[] = [
     { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
@@ -390,6 +400,7 @@ export default function PayrollClient() {
 
       <TabsContent value="runs" className="space-y-4">
         <div className="flex justify-end">
+          {isHrAdmin && (
           <Dialog open={runOpen} onOpenChange={setRunOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4" /> New Payroll Run</Button></DialogTrigger>
             <DialogContent>
@@ -407,6 +418,7 @@ export default function PayrollClient() {
               <DialogFooter><Button onClick={createRun} disabled={runSubmitting}>{runSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
@@ -417,6 +429,7 @@ export default function PayrollClient() {
 
       <TabsContent value="structures" className="space-y-4">
         <div className="flex justify-end">
+          {isHrAdmin && (
           <Dialog open={structOpen} onOpenChange={setStructOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4" /> New Salary Structure</Button></DialogTrigger>
             <DialogContent className="max-w-lg">
@@ -455,6 +468,7 @@ export default function PayrollClient() {
               <DialogFooter><Button onClick={createStructure} disabled={structSubmitting}>{structSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
@@ -465,6 +479,7 @@ export default function PayrollClient() {
 
       <TabsContent value="components" className="space-y-4">
         <div className="flex justify-end">
+          {isHrAdmin && (
           <Dialog open={compOpen} onOpenChange={setCompOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4" /> New Component</Button></DialogTrigger>
             <DialogContent>
@@ -500,6 +515,7 @@ export default function PayrollClient() {
               <DialogFooter><Button onClick={createComponent} disabled={compSubmitting}>{compSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
@@ -510,6 +526,7 @@ export default function PayrollClient() {
 
       <TabsContent value="statutory" className="space-y-4">
         <div className="flex justify-end">
+          {isHrAdmin && (
           <Dialog open={ruleOpen} onOpenChange={setRuleOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4" /> New Statutory Rule</Button></DialogTrigger>
             <DialogContent className="max-w-lg">
@@ -557,6 +574,7 @@ export default function PayrollClient() {
               <DialogFooter><Button onClick={createRule} disabled={ruleSubmitting}>{ruleSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
@@ -585,6 +603,7 @@ export default function PayrollClient() {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Income Tax Slabs</h3>
+            {isHrAdmin && (
             <Dialog open={slabOpen} onOpenChange={setSlabOpen}>
               <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> New Slab</Button></DialogTrigger>
               <DialogContent className="max-w-lg">
@@ -613,6 +632,7 @@ export default function PayrollClient() {
                 <DialogFooter><Button onClick={createSlab} disabled={slabSubmitting}>{slabSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
               </DialogContent>
             </Dialog>
+            )}
           </div>
           <Card className="shadow-card">
             <CardContent className="p-0">
@@ -635,6 +655,7 @@ export default function PayrollClient() {
           </Card>
         </div>
 
+        {isHrAdmin && (
         <div>
           <h3 className="mb-2 text-sm font-semibold">Assign Slab to Employee</h3>
           <Card className="shadow-card">
@@ -657,6 +678,7 @@ export default function PayrollClient() {
             </CardContent>
           </Card>
         </div>
+        )}
       </TabsContent>
 
       {/* Payroll register dialog */}
@@ -700,6 +722,9 @@ export default function PayrollClient() {
           <DialogHeader><DialogTitle>Payslip — {payslipDetail?.employeeName}</DialogTitle></DialogHeader>
           {payslipDetail && (
             <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" onClick={() => downloadPayslipPdf(payslipDetail.id)}><FileText className="size-4" /> Download PDF</Button>
+              </div>
               <Table>
                 <TableBody>
                   {payslipDetail.lines.map((l) => (
@@ -716,7 +741,7 @@ export default function PayrollClient() {
                   </TableRow>
                 </TableBody>
               </Table>
-              {payslipDetail.status === "draft" && (
+              {payslipDetail.status === "draft" && isHrAdmin && (
                 <div className="flex items-end gap-2 border-t border-px-border pt-3">
                   <div className="flex-1 space-y-1.5"><Label>TDS Amount (manual override)</Label><Input type="number" value={tdsAmount} onChange={(e) => setTdsAmount(e.target.value)} /></div>
                   <Button variant="outline" disabled={payslipBusy} onClick={saveTds}>Save TDS</Button>
@@ -725,7 +750,7 @@ export default function PayrollClient() {
             </div>
           )}
           <DialogFooter>
-            {payslipDetail?.status === "draft" && <Button disabled={payslipBusy} onClick={finalizePayslip}>{payslipBusy ? "Finalizing…" : "Finalize Payslip"}</Button>}
+            {payslipDetail?.status === "draft" && isHrAdmin && <Button disabled={payslipBusy} onClick={finalizePayslip}>{payslipBusy ? "Finalizing…" : "Finalize Payslip"}</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
