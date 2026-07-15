@@ -11,8 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+// Priority 17 remaining gap (2026-07-15): erp_budgets.companyId has existed
+// since Wave 70 (createBudget already accepted it) -- this wires the UI
+// selector, reusing AccountingClient.tsx's exact component.
+import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
-type Budget = { id: string; name: string; fiscalYearId: string; costCenterId: string | null; status: string; actionIfExceeded: string | null };
+type Budget = { id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null; status: string; actionIfExceeded: string | null };
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
 type CostCenter = { id: string; name: string; projectId: string | null };
 // Priority 19 Part 2, Workstream B: erp_accounts now gets a real default
@@ -39,16 +43,23 @@ export default function BudgetsClient() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [lookupsLoading, setLookupsLoading] = useState(false);
 
+  // Priority 17 remaining gap: companies list + list-level filter scope,
+  // same pattern as AccountingClient.tsx/LeadsClient.tsx.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
   const [name, setName] = useState("");
   const [fiscalYearId, setFiscalYearId] = useState("");
   const [costCenterId, setCostCenterId] = useState("");
   const [accountId, setAccountId] = useState("");
   const [annualAmount, setAnnualAmount] = useState("");
+  const [budgetCompanyId, setBudgetCompanyId] = useState<string>("__none__");
 
-  async function load() {
+  async function load(companyId: string | null = null) {
     setLoading(true);
     try {
-      const res = await fetch("/api/project-budgets");
+      const qs = companyId ? `?companyId=${companyId}` : "";
+      const res = await fetch(`/api/project-budgets${qs}`);
       const data = await res.json();
       setBudgets(data.projectBudgets ?? []);
     } catch {
@@ -58,7 +69,19 @@ export default function BudgetsClient() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(scope.companyId); }, [scope.companyId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/companies");
+        const data = await res.json();
+        setCompanies(data.companies ?? []);
+      } catch {
+        // Non-fatal -- CompanySelector renders nothing when companies is empty.
+      }
+    })();
+  }, []);
 
   async function loadLookups() {
     setLookupsLoading(true);
@@ -88,13 +111,14 @@ export default function BudgetsClient() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name, fiscalYearId, costCenterId: costCenterId || undefined,
+          companyId: budgetCompanyId === "__none__" ? undefined : budgetCompanyId,
           lineItems: [{ accountId, annualAmount: Number(annualAmount) }],
         }),
       });
       if (!res.ok) throw new Error();
       toast.success("Budget created");
-      setName(""); setFiscalYearId(""); setCostCenterId(""); setAccountId(""); setAnnualAmount(""); setOpen(false);
-      load();
+      setName(""); setFiscalYearId(""); setCostCenterId(""); setAccountId(""); setAnnualAmount(""); setBudgetCompanyId("__none__"); setOpen(false);
+      load(scope.companyId);
     } catch {
       toast.error("Couldn't create budget");
     } finally {
@@ -104,6 +128,7 @@ export default function BudgetsClient() {
 
   return (
     <div className="space-y-4">
+      <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-px-muted">
           Fiscal year, cost center, and the line item&apos;s account are all looked up live from VERIDIAN&apos;s ERP
@@ -146,6 +171,18 @@ export default function BudgetsClient() {
                   </Select>
                 </div>
                 <div className="space-y-1.5"><Label>Annual Amount</Label><Input type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} /></div>
+                {companies.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label>Company / Office (optional)</Label>
+                    <Select value={budgetCompanyId} onValueChange={setBudgetCompanyId}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Org-wide (no specific company)</SelectItem>
+                        {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             )}
             <DialogFooter><Button onClick={createBudget} disabled={submitting || lookupsLoading}>{submitting ? "Creating…" : "Create Budget"}</Button></DialogFooter>

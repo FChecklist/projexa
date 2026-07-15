@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
+import { type Company, type CompanyScope, companyScopeQuery, CompanySelector } from "@/components/company-scope";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -40,21 +41,10 @@ type BalanceSheetReport = { asOfDate: string; assets: AccountBalance[]; liabilit
 type ProjectPnl = { fromDate: string; toDate: string; costCenters: { costCenterId: string; costCenterName: string; projectId: string | null; income: number; expense: number; netProfit: number }[]; totalIncome: number; totalExpense: number };
 type BankImport = { id: string; fileName: string; totalLines: number; importedAt: string };
 type BankLine = { id: string; transactionDate: string; description: string | null; debitAmount: string; creditAmount: string; status: string };
-// Priority 17 Wave 1: erp_companies (Wave 67) -- a legal entity/office WITHIN
-// this org's ERP, distinct from the org itself. Chart of accounts stays
-// shared across companies; VERIDIAN's resolveCompanyScope rolls a report up
-// through the parent-child company tree at report-runtime when
-// consolidate=true, never a stored "group GL".
-type Company = { id: string; companyName: string; abbr: string | null; parentCompanyId: string | null; isGroup: boolean; defaultCurrencyId: string | null; country: string | null; dateOfIncorporation: string | null; isActive: boolean };
-// Lifted to the root client so the same selection drives every report tab
-// (Trial Balance/P&L/Balance Sheet/P&L by Project) without each re-fetching
-// the company list independently.
-type CompanyScope = { companyId: string | null; consolidate: boolean };
-
-function companyScopeQuery(scope: CompanyScope): string {
-  if (!scope.companyId) return "";
-  return `&companyId=${scope.companyId}&consolidate=${scope.consolidate}`;
-}
+// Company/CompanyScope/companyScopeQuery/CompanySelector now live in
+// @/components/company-scope (Priority 17 remaining-gap pass, 2026-07-15) so
+// Reports/Budgets/Sales-CRM/HR can reuse the exact same selector instead of
+// each page forking its own copy -- imported above, not redefined here.
 
 // Priority 17 re-sweep fix: was hardcoding "₹" -- now takes the caller's own
 // `currencies` list (each panel below fetches it independently via
@@ -514,43 +504,8 @@ function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Company / office selector -- drives the Trial Balance / P&L / Balance
-// Sheet / P&L by Project tabs above. Priority 17 Wave 1.
-// ---------------------------------------------------------------------------
-function CompanySelector({ companies, scope, onChange }: { companies: Company[]; scope: CompanyScope; onChange: (scope: CompanyScope) => void }) {
-  if (companies.length === 0) return null;
-  return (
-    <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-2.5">
-      <Building2 className="mt-2 size-4 text-px-muted" />
-      <div className="space-y-1.5">
-        <Label className="text-xs">Company / Office</Label>
-        <Select
-          value={scope.companyId ?? "__all__"}
-          onValueChange={(v) => onChange({ companyId: v === "__all__" ? null : v, consolidate: scope.consolidate })}
-        >
-          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All companies (org-wide)</SelectItem>
-            {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-      {scope.companyId && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Scope</Label>
-          <Select value={scope.consolidate ? "consolidated" : "own"} onValueChange={(v) => onChange({ companyId: scope.companyId, consolidate: v === "consolidated" })}>
-            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="own">This company only</SelectItem>
-              <SelectItem value="consolidated">Consolidated (+ sub-companies)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-    </div>
-  );
-}
+// CompanySelector (was defined here, Priority 17 Wave 1) now lives in
+// @/components/company-scope -- imported above, reused as-is.
 
 // ---------------------------------------------------------------------------
 // Companies / Offices tab -- list + create. erp_companies (Wave 67) supports

@@ -14,6 +14,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, Check, X, Users, Building2, Network } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+// Priority 17 remaining gap (2026-07-15): employee_profiles/leave_requests
+// gained a companyId column (were orgId-only before this wave) -- reuses
+// the exact selector AccountingClient.tsx/LeadsClient.tsx already use, not
+// a third copy.
+import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
 const EMPLOYMENT_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default", on_leave: "secondary", terminated: "destructive", resigned: "outline",
@@ -35,6 +40,7 @@ type Employee = {
     employmentStatus: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
+    companyId: string | null;
   } | null;
 };
 
@@ -52,6 +58,7 @@ type LeaveRequest = {
   numDays: string;
   reason: string | null;
   status: string;
+  companyId: string | null;
 };
 
 type LeaveBalance = { id: string; userId: string; leaveType: string; year: number; totalDays: string; usedDays: string };
@@ -72,6 +79,13 @@ export default function EmployeesClient() {
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [leaveStatusFilter, setLeaveStatusFilter] = useState<string>("pending");
 
+  // Priority 17 remaining gap: companies list + a shared filter scope for
+  // both the Directory and Leave tabs (client-side filter, matching this
+  // component's existing deptFilter/leaveStatusFilter precedent rather than
+  // a server round-trip).
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
   // -- Employee profile dialog
   const [profileOpen, setProfileOpen] = useState(false);
   const [userId, setUserId] = useState("");
@@ -82,6 +96,7 @@ export default function EmployeesClient() {
   const [employmentStatus, setEmploymentStatus] = useState("active");
   const [emergencyContactName, setEmergencyContactName] = useState("");
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const [profileCompanyId, setProfileCompanyId] = useState<string>("__none__");
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [viewEmployee, setViewEmployee] = useState<Employee | null>(null);
 
@@ -112,23 +127,26 @@ export default function EmployeesClient() {
   async function load() {
     setLoading(true);
     try {
-      const [empRes, deptRes, chartRes, leaveRes, balRes] = await Promise.all([
+      const [empRes, deptRes, chartRes, leaveRes, balRes, companiesRes] = await Promise.all([
         fetch("/api/employees"),
         fetch("/api/hr/departments"),
         fetch("/api/hr/org-chart"),
         fetch("/api/leave/requests"),
         fetch("/api/leave/balances"),
+        fetch("/api/companies"),
       ]);
       const empData = await empRes.json();
       const deptData = await deptRes.json();
       const chartData = await chartRes.json();
       const leaveData = await leaveRes.json();
       const balData = await balRes.json();
+      const companiesData = await companiesRes.json().catch(() => ({}));
       setEmployees(empData.employees ?? []);
       setDepartments(deptData.departments ?? []);
       setOrgChart(chartData);
       setLeaveRequests(leaveData.requests ?? []);
       setLeaveBalances(balData.balances ?? []);
+      setCompanies(companiesData.companies ?? []);
     } catch {
       toast.error("Couldn't load HR data");
     } finally {
@@ -148,6 +166,7 @@ export default function EmployeesClient() {
     setEmploymentStatus(existing?.employmentStatus ?? "active");
     setEmergencyContactName(existing?.emergencyContactName ?? "");
     setEmergencyContactPhone(existing?.emergencyContactPhone ?? "");
+    setProfileCompanyId(existing?.companyId ?? "__none__");
   }
 
   async function saveProfile() {
@@ -160,6 +179,7 @@ export default function EmployeesClient() {
           userId, employeeCode: employeeCode || undefined, jobTitle: jobTitle || undefined,
           employmentType, dateOfJoining: dateOfJoining || undefined,
           employmentStatus, emergencyContactName: emergencyContactName || undefined, emergencyContactPhone: emergencyContactPhone || undefined,
+          companyId: profileCompanyId === "__none__" ? undefined : profileCompanyId,
         }),
       });
       if (!res.ok) {
@@ -168,7 +188,7 @@ export default function EmployeesClient() {
       }
       toast.success("Employee profile saved");
       setUserId(""); setEmployeeCode(""); setJobTitle(""); setDateOfJoining("");
-      setEmploymentStatus("active"); setEmergencyContactName(""); setEmergencyContactPhone("");
+      setEmploymentStatus("active"); setEmergencyContactName(""); setEmergencyContactPhone(""); setProfileCompanyId("__none__");
       setProfileOpen(false);
       load();
     } catch (err) {
@@ -289,13 +309,15 @@ export default function EmployeesClient() {
   const departmentName = (id: string | null) => departments.find((d) => d.id === id)?.name ?? "—";
 
   const filteredEmployees = useMemo(
-    () => (deptFilter === "all" ? employees : employees.filter((e) => e.departmentId === deptFilter)),
-    [employees, deptFilter]
+    () => (deptFilter === "all" ? employees : employees.filter((e) => e.departmentId === deptFilter))
+      .filter((e) => !scope.companyId || e.profile?.companyId === scope.companyId),
+    [employees, deptFilter, scope.companyId]
   );
 
   const filteredLeaveRequests = useMemo(
-    () => (leaveStatusFilter === "all" ? leaveRequests : leaveRequests.filter((r) => r.status === leaveStatusFilter)),
-    [leaveRequests, leaveStatusFilter]
+    () => (leaveStatusFilter === "all" ? leaveRequests : leaveRequests.filter((r) => r.status === leaveStatusFilter))
+      .filter((r) => !scope.companyId || r.companyId === scope.companyId),
+    [leaveRequests, leaveStatusFilter, scope.companyId]
   );
 
   const employeeColumns: ColumnDef<Employee>[] = [
@@ -361,6 +383,7 @@ export default function EmployeesClient() {
       </TabsList>
 
       <TabsContent value="directory" className="space-y-4">
+        <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
         <div className="flex items-center justify-between gap-2">
           <div className="w-56">
             <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -419,6 +442,18 @@ export default function EmployeesClient() {
                     <div className="space-y-1.5"><Label>Emergency Contact Name (optional)</Label><Input value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} /></div>
                     <div className="space-y-1.5"><Label>Emergency Contact Phone (optional)</Label><Input value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} /></div>
                   </div>
+                  {companies.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label>Company / Office (optional)</Label>
+                      <Select value={profileCompanyId} onValueChange={setProfileCompanyId}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Unattributed</SelectItem>
+                          {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <p className="text-xs text-px-muted">Department and reporting manager are managed from user administration, not here.</p>
                 </div>
                 <DialogFooter><Button onClick={saveProfile} disabled={profileSubmitting}>{profileSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
@@ -479,6 +514,7 @@ export default function EmployeesClient() {
       </TabsContent>
 
       <TabsContent value="leave" className="space-y-6">
+        <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
