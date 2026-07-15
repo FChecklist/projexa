@@ -15,6 +15,14 @@ import { Loader2, Plus } from "lucide-react";
 type Budget = { id: string; name: string; fiscalYearId: string; costCenterId: string | null; status: string; actionIfExceeded: string | null };
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
 type CostCenter = { id: string; name: string; projectId: string | null };
+// Priority 19 Part 2, Workstream B: erp_accounts now gets a real default
+// chart of accounts seeded on ERP enablement (see compliance-tracker's
+// erp-enablement-service.ts), and /api/v1/projexa/accounts already existed
+// (AccountingClient.tsx's account picker) -- this was just never wired into
+// the Budgets dialog, which is why the line item's account ID was a
+// paste-an-opaque-ID free-text field. Reusing the same lookup here closes
+// that.
+type Account = { id: string; accountName: string; accountNumber: string | null };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", submitted: "secondary", approved: "default",
@@ -28,6 +36,7 @@ export default function BudgetsClient() {
 
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [lookupsLoading, setLookupsLoading] = useState(false);
 
   const [name, setName] = useState("");
@@ -54,12 +63,13 @@ export default function BudgetsClient() {
   async function loadLookups() {
     setLookupsLoading(true);
     try {
-      const [fyRes, ccRes] = await Promise.all([fetch("/api/fiscal-years"), fetch("/api/cost-centers")]);
-      const [fyData, ccData] = await Promise.all([fyRes.json(), ccRes.json()]);
+      const [fyRes, ccRes, acRes] = await Promise.all([fetch("/api/fiscal-years"), fetch("/api/cost-centers"), fetch("/api/accounts")]);
+      const [fyData, ccData, acData] = await Promise.all([fyRes.json(), ccRes.json(), acRes.json()]);
       setFiscalYears(fyData.fiscalYears ?? []);
       setCostCenters(ccData.costCenters ?? []);
+      setAccounts(acData.accounts ?? []);
     } catch {
-      toast.error("Couldn't load fiscal years / cost centers from VERIDIAN");
+      toast.error("Couldn't load fiscal years / cost centers / accounts from VERIDIAN");
     } finally {
       setLookupsLoading(false);
     }
@@ -96,9 +106,8 @@ export default function BudgetsClient() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-px-muted">
-          Fiscal year and cost center are looked up live from VERIDIAN&apos;s ERP module below — no more guessing an
-          opaque ID. The budget line item&apos;s account ID still needs to come from VERIDIAN&apos;s own Chart of
-          Accounts (there is no accounts lookup surfaced to PROJEXA yet), so paste that in directly for now.
+          Fiscal year, cost center, and the line item&apos;s account are all looked up live from VERIDIAN&apos;s ERP
+          module below — no more guessing an opaque ID.
         </p>
         <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogTrigger asChild><Button className="shrink-0"><Plus className="size-4" /> New Budget</Button></DialogTrigger>
@@ -127,10 +136,16 @@ export default function BudgetsClient() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5"><Label>Account ID</Label><Input value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="VERIDIAN erp_accounts.id" /></div>
-                  <div className="space-y-1.5"><Label>Annual Amount</Label><Input type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} /></div>
+                <div className="space-y-1.5">
+                  <Label>Account</Label>
+                  <Select value={accountId} onValueChange={setAccountId}>
+                    <SelectTrigger><SelectValue placeholder={accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
+                <div className="space-y-1.5"><Label>Annual Amount</Label><Input type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} /></div>
               </div>
             )}
             <DialogFooter><Button onClick={createBudget} disabled={submitting || lookupsLoading}>{submitting ? "Creating…" : "Create Budget"}</Button></DialogFooter>

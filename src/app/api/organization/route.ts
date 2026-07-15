@@ -14,7 +14,11 @@ export async function GET() {
   const supabase = await createClient();
   const { data: org, error } = await supabase
     .from("organizations")
-    .select("id, name, slug, created_at")
+    // Priority 19 Part 2, Workstream C: country added so client components
+    // (CustomersClient/VendorsClient/PayrollClient) can gate India-specific
+    // fields (GSTIN/GST/Income Tax Slabs) on country === 'IN' instead of
+    // always rendering them regardless of the org's actual country.
+    .select("id, name, slug, created_at, country")
     .eq("id", ctx.organizationId!)
     .single();
 

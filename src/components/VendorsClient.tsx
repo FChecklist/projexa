@@ -10,13 +10,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { useOrgRole } from "@/hooks/use-org-role";
 
 type Vendor = {
   id: string; vendorName: string; vendorType: string | null; gst: string | null;
   trade: string | null; creditLimit: string | null; isActive: boolean;
 };
 
+// Priority 19 Part 2, Workstream C: GST is an Indian GST-registration
+// field with no UAE VAT/TRN (or any other country's) equivalent -- it was
+// rendering unconditionally regardless of the org's own country. Gated on
+// isIndiaOrg (hide, don't error, for non-IN orgs), same pattern as
+// CustomersClient.tsx's GSTIN field.
 export default function VendorsClient() {
+  const { isIndiaOrg } = useOrgRole();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -77,8 +84,10 @@ export default function VendorsClient() {
                 <div className="space-y-1.5"><Label>Type (optional)</Label><Input value={vendorType} onChange={(e) => setVendorType(e.target.value)} placeholder="e.g. Subcontractor" /></div>
                 <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Electrical" /></div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>GST (optional)</Label><Input value={gst} onChange={(e) => setGst(e.target.value)} /></div>
+              <div className={isIndiaOrg ? "grid grid-cols-2 gap-2" : ""}>
+                {isIndiaOrg && (
+                  <div className="space-y-1.5"><Label>GST (optional)</Label><Input value={gst} onChange={(e) => setGst(e.target.value)} /></div>
+                )}
                 <div className="space-y-1.5"><Label>Credit Limit (optional)</Label><Input type="number" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} /></div>
               </div>
             </div>
@@ -96,7 +105,7 @@ export default function VendorsClient() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Trade</TableHead><TableHead>GST</TableHead><TableHead>Status</TableHead></TableRow>
+                <TableRow><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Trade</TableHead>{isIndiaOrg && <TableHead>GST</TableHead>}<TableHead>Status</TableHead></TableRow>
               </TableHeader>
               <TableBody>
                 {vendors.map((v) => (
@@ -104,7 +113,7 @@ export default function VendorsClient() {
                     <TableCell className="font-medium">{v.vendorName}</TableCell>
                     <TableCell className="text-px-muted">{v.vendorType ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{v.trade ?? "—"}</TableCell>
-                    <TableCell className="text-px-muted">{v.gst ?? "—"}</TableCell>
+                    {isIndiaOrg && <TableCell className="text-px-muted">{v.gst ?? "—"}</TableCell>}
                     <TableCell><Badge variant={v.isActive ? "default" : "outline"}>{v.isActive ? "active" : "inactive"}</Badge></TableCell>
                   </TableRow>
                 ))}

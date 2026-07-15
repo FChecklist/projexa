@@ -11,10 +11,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { useOrgRole } from "@/hooks/use-org-role";
 
 type Customer = { id: string; customerName: string; gstin: string | null; defaultPaymentTermsDays: number | null; creditLimit: string | null; isActive: boolean };
 
+// Priority 19 Part 2, Workstream C: GSTIN is an Indian GST-registration
+// field with no UAE VAT/TRN (or any other country's) equivalent -- it was
+// rendering unconditionally regardless of the org's own country. Gated on
+// isIndiaOrg (hide, don't error, for non-IN orgs), matching the same
+// principle compliance-tracker's getComplianceEngine() registry already
+// applies to computation.
 export default function CustomersClient() {
+  const { isIndiaOrg } = useOrgRole();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -77,8 +85,10 @@ export default function CustomersClient() {
             <DialogHeader><DialogTitle>New Customer</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5"><Label>Customer Name</Label><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>GSTIN (optional)</Label><Input value={gstin} onChange={(e) => setGstin(e.target.value)} /></div>
+              <div className={isIndiaOrg ? "grid grid-cols-2 gap-2" : ""}>
+                {isIndiaOrg && (
+                  <div className="space-y-1.5"><Label>GSTIN (optional)</Label><Input value={gstin} onChange={(e) => setGstin(e.target.value)} /></div>
+                )}
                 <div className="space-y-1.5"><Label>Credit Limit (optional)</Label><Input type="number" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} /></div>
               </div>
             </div>
@@ -96,7 +106,7 @@ export default function CustomersClient() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow><TableHead>Name</TableHead><TableHead>GSTIN</TableHead><TableHead>Credit Limit</TableHead><TableHead>Status</TableHead></TableRow>
+                <TableRow><TableHead>Name</TableHead>{isIndiaOrg && <TableHead>GSTIN</TableHead>}<TableHead>Credit Limit</TableHead><TableHead>Status</TableHead></TableRow>
               </TableHeader>
               <TableBody>
                 {customers.map((c) => (
@@ -104,7 +114,7 @@ export default function CustomersClient() {
                     <TableCell className="font-medium">
                       <Link href={`/customers/${c.id}`} className="hover:text-px-orange hover:underline">{c.customerName}</Link>
                     </TableCell>
-                    <TableCell className="text-px-muted">{c.gstin ?? "—"}</TableCell>
+                    {isIndiaOrg && <TableCell className="text-px-muted">{c.gstin ?? "—"}</TableCell>}
                     <TableCell className="text-px-muted">{c.creditLimit ? `₹${Number(c.creditLimit).toLocaleString("en-IN")}` : "—"}</TableCell>
                     <TableCell><Badge variant={c.isActive ? "default" : "outline"}>{c.isActive ? "active" : "inactive"}</Badge></TableCell>
                   </TableRow>

@@ -27,7 +27,11 @@ type Employee = { id: string; name: string; profile: { employeeCode: string | nu
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function PayrollClient() {
-  const { isHrAdmin } = useOrgRole();
+  // Priority 19 Part 2, Workstream C: "Income Tax" tab is India-specific
+  // (progressive income-tax slabs -- not applicable to UAE, which has no
+  // personal income tax) -- gated on isIndiaOrg, hidden (not errored) for
+  // non-IN orgs.
+  const { isHrAdmin, isIndiaOrg } = useOrgRole();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [components, setComponents] = useState<SalaryComponent[]>([]);
   const [structures, setStructures] = useState<SalaryStructure[]>([]);
@@ -395,7 +399,7 @@ export default function PayrollClient() {
         <TabsTrigger value="structures">Salary Structures</TabsTrigger>
         <TabsTrigger value="components">Salary Components</TabsTrigger>
         <TabsTrigger value="statutory">Statutory Rules</TabsTrigger>
-        <TabsTrigger value="tax">Income Tax</TabsTrigger>
+        {isIndiaOrg && <TabsTrigger value="tax">Income Tax</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="runs" className="space-y-4">
@@ -599,6 +603,7 @@ export default function PayrollClient() {
         </Card>
       </TabsContent>
 
+      {isIndiaOrg && (
       <TabsContent value="tax" className="space-y-6">
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -680,6 +685,7 @@ export default function PayrollClient() {
         </div>
         )}
       </TabsContent>
+      )}
 
       {/* Payroll register dialog */}
       <Dialog open={!!registerRun} onOpenChange={(open) => { if (!open) { setRegisterRun(null); setRegisterPayslips([]); } }}>
