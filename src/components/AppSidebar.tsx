@@ -74,6 +74,7 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.inventory", href: "/inventory", icon: Warehouse },
       { labelKey: "items.vendors", href: "/vendors", icon: Building2 },
       { labelKey: "items.procurement", href: "/procurement", icon: ClipboardCheck },
+      { labelKey: "items.purchaseOrders", href: "/purchase-orders", icon: ClipboardCheck },
     ],
   },
   {
