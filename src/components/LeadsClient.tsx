@@ -12,10 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, History } from "lucide-react";
+// Priority 17 remaining gap (2026-07-15): crm_leads gained a companyId
+// column (was orgId-only before this wave) -- reuses the exact selector
+// AccountingClient.tsx already built, not a second copy. consolidate has no
+// meaning for a flat leads list (no parent/sub-company tree to roll up),
+// so the toggle is hidden here.
+import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
 type Lead = {
   id: string; name: string; contactEmail: string | null; contactPhone: string | null;
-  source: string | null; status: string; ownerId: string | null;
+  source: string | null; status: string; ownerId: string | null; companyId: string | null;
   nextActionDate: string | null; nextActionNote: string | null; createdAt: string;
 };
 
@@ -37,12 +43,19 @@ export default function LeadsClient() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOwnerId, setBulkOwnerId] = useState("");
 
+  // Priority 17 remaining gap: companies list + the list-level filter scope.
+  // Defaults to "All companies" -- an org that hasn't set up companies/
+  // offices yet (or a lead never attributed to one) sees no change at all.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [source, setSource] = useState("");
   const [nextActionDate, setNextActionDate] = useState("");
+  const [leadCompanyId, setLeadCompanyId] = useState<string>("__none__");
   const [submitting, setSubmitting] = useState(false);
 
   const [historyFor, setHistoryFor] = useState<Lead | null>(null);
@@ -54,6 +67,7 @@ export default function LeadsClient() {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (scope.companyId) params.set("companyId", scope.companyId);
       const res = await fetch(`/api/leads?${params.toString()}`);
       const data = await res.json();
       setLeads(data.leads ?? []);
@@ -64,9 +78,22 @@ export default function LeadsClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, scope.companyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/companies");
+        const data = await res.json();
+        setCompanies(data.companies ?? []);
+      } catch {
+        // Non-fatal -- CompanySelector renders nothing when companies is
+        // empty, so a failed fetch just means no selector, not a broken page.
+      }
+    })();
+  }, []);
 
   async function createLead() {
     if (!name.trim()) return;
@@ -77,11 +104,12 @@ export default function LeadsClient() {
         body: JSON.stringify({
           name, contactEmail: contactEmail || undefined, contactPhone: contactPhone || undefined,
           source: source || undefined, nextActionDate: nextActionDate || undefined,
+          companyId: leadCompanyId === "__none__" ? undefined : leadCompanyId,
         }),
       });
       if (!res.ok) throw new Error();
       toast.success("Lead created");
-      setName(""); setContactEmail(""); setContactPhone(""); setSource(""); setNextActionDate(""); setOpen(false);
+      setName(""); setContactEmail(""); setContactPhone(""); setSource(""); setNextActionDate(""); setLeadCompanyId("__none__"); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't create lead");
@@ -134,6 +162,7 @@ export default function LeadsClient() {
 
   return (
     <div className="space-y-4">
+      <CompanySelector companies={companies} scope={scope} onChange={(s) => { setPage(1); setScope(s); }} showConsolidateToggle={false} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Input placeholder="Search leads…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} className="w-56" />
@@ -159,6 +188,18 @@ export default function LeadsClient() {
                 <div className="space-y-1.5"><Label>Source (optional)</Label><Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="e.g. referral, website" /></div>
                 <div className="space-y-1.5"><Label>Next Follow-up (optional)</Label><Input type="date" value={nextActionDate} onChange={(e) => setNextActionDate(e.target.value)} /></div>
               </div>
+              {companies.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Company / Office (optional)</Label>
+                  <Select value={leadCompanyId} onValueChange={setLeadCompanyId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unattributed</SelectItem>
+                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter><Button onClick={createLead} disabled={submitting}>{submitting ? "Creating…" : "Create Lead"}</Button></DialogFooter>
           </DialogContent>
