@@ -9,6 +9,16 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Priority 19 Part 2, Workstream C (drizzle/0009): ISO 3166-1 alpha-2
+  // country code, nullable, defaults 'IN'. Deliberately separate from
+  // compliance-tracker's own organisations.country (PLATFORM-01 Wave 2) --
+  // that column is keyed by a VERIDIAN org_id every real PROJEXA org
+  // currently shares (PROJEXA-IDENTITY-BRIDGE-01), so it can't distinguish
+  // one PROJEXA tenant from another. This table is genuinely per-tenant
+  // (see the Team/Settings page's own confirmed isolation), so this is the
+  // real source of truth for country-conditional PROJEXA UI -- see
+  // src/hooks/use-org-role.ts.
+  country: text("country").default("IN"),
 });
 
 export const memberships = pgTable(

@@ -20,8 +20,20 @@ export type OrgRole = "owner" | "admin" | "member";
 
 const HR_ADMIN_ROLES: ReadonlySet<OrgRole> = new Set(["owner", "admin"]);
 
+// Priority 19 Part 2, Workstream C: this hook already fetched
+// GET /api/organization for the role check above -- reusing the same
+// fetch to also expose `country` (added to that route's response,
+// drizzle/0009) rather than adding a second hook/fetch for the same data.
+// `country` starts null (unknown) and only becomes a definite non-null
+// value once the fetch resolves; callers gating India-specific content
+// (GSTIN/GST/Income Tax Slabs) should treat `country === "IN"` as the only
+// "show" condition -- null/loading/any other value all mean "don't show
+// yet" or "don't show", matching the "don't fabricate, just don't offer"
+// principle compliance-tracker's own getComplianceEngine() registry
+// already applies to computation, applied here to UI instead.
 export function useOrgRole() {
   const [role, setRole] = useState<OrgRole | null>(null);
+  const [country, setCountry] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +44,7 @@ export function useOrgRole() {
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled && data?.role) setRole(data.role as OrgRole);
+        if (!cancelled && data?.organization?.country) setCountry(data.organization.country as string);
       } catch {
         // Fails open to "no role known" -- callers should treat null the
         // same as "not an HR admin" (isHrAdmin below already does this).
@@ -42,5 +55,11 @@ export function useOrgRole() {
     return () => { cancelled = true; };
   }, []);
 
-  return { role, loading, isHrAdmin: role != null && HR_ADMIN_ROLES.has(role) };
+  return {
+    role,
+    country,
+    loading,
+    isHrAdmin: role != null && HR_ADMIN_ROLES.has(role),
+    isIndiaOrg: country === "IN",
+  };
 }

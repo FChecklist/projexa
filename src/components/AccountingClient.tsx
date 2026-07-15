@@ -147,6 +147,16 @@ function GeneralLedgerPanel() {
   const [search, setSearch] = useState("");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // Priority 19 Part 2, Workstream B: this used to be indistinguishable from
+  // "still loading" (both rendered the same "Loading…" placeholder) --
+  // root cause was zero accounts existing for any real org (erp_accounts had
+  // no rows), now fixed at the source via compliance-tracker's
+  // erp-enablement-service.ts seeding a default chart of accounts on ERP
+  // enablement. This flag is a small defensive hardening on top of that fix
+  // so a genuinely-empty chart of accounts (e.g. after backfilling data,
+  // before this fix shipped) still reads as an honest empty state, not a
+  // stuck spinner.
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -173,13 +183,15 @@ function GeneralLedgerPanel() {
 
   async function onOpenChange(next: boolean) {
     setOpen(next);
-    if (!next || accounts.length > 0) return;
+    if (!next || accountsLoaded) return;
     try {
       const res = await fetch("/api/accounts");
       const data = await res.json();
       setAccounts(data.accounts ?? []);
     } catch {
       toast.error("Couldn't load chart of accounts");
+    } finally {
+      setAccountsLoaded(true);
     }
   }
 
@@ -241,7 +253,7 @@ function GeneralLedgerPanel() {
                 {lines.map((line, idx) => (
                   <div key={idx} className="grid grid-cols-[1fr_90px_90px_28px] items-center gap-1.5">
                     <Select value={line.accountId} onValueChange={(v) => updateLine(idx, { accountId: v })}>
-                      <SelectTrigger><SelectValue placeholder={accounts.length ? "Account" : "Loading…"} /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder={!accountsLoaded ? "Loading…" : accounts.length ? "Account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
                       <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
                     </Select>
                     <Input type="number" placeholder="Debit" value={line.debit} onChange={(e) => updateLine(idx, { debit: e.target.value, credit: e.target.value ? "" : line.credit })} />
