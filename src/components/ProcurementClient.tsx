@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Send, ArrowRight, PackageCheck } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type Requisition = {
   id: string; requisitionNumber: number; purpose: string | null; status: string; postingDate: string;
@@ -45,6 +46,7 @@ const STATUS_VARIANT: Record<string, "default" | "outline" | "secondary"> = {
 };
 
 export default function ProcurementClient() {
+  const currencies = useCurrencies();
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [rfqs, setRfqs] = useState<Rfq[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -470,7 +472,7 @@ export default function ProcurementClient() {
                       <TableRow key={q.id}>
                         <TableCell className="font-medium">SQ-{q.quotationNumber}</TableCell>
                         <TableCell>{vendorName(q.supplierId)}</TableCell>
-                        <TableCell>₹{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
+                        <TableCell>{currencyLabel(undefined, currencies)}{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
                         <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "outline"}>{q.status}</Badge></TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" onClick={() => convertToPo(q)}><ArrowRight className="size-3.5" /> Convert to PO</Button>
@@ -499,7 +501,7 @@ export default function ProcurementClient() {
                     <TableRow key={po.id}>
                       <TableCell className="font-medium">PO-{po.poNumber}</TableCell>
                       <TableCell>{vendorName(po.supplierId)}</TableCell>
-                      <TableCell>₹{Number(po.grandTotal).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
+                      <TableCell>{currencyLabel(undefined, currencies)}{Number(po.grandTotal).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[po.status] ?? "outline"}>{po.status}</Badge></TableCell>
                       <TableCell className="text-right space-x-2">
                         {po.status === "draft" && <Button size="sm" variant="outline" onClick={() => submitPo(po.id)}><Send className="size-3.5" /> Submit</Button>}

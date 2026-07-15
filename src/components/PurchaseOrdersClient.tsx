@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2 } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): the first Purchase
 // Order creation UI in PROJEXA -- VendorsClient.tsx only ever managed
@@ -24,18 +25,8 @@ type PurchaseOrder = {
   status: string; currencyId: string | null; exchangeRate: string; grandTotal: string; items: PurchaseOrderItem[];
 };
 type Vendor = { id: string; vendorName: string };
-type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
-// Priority 17 re-sweep fix: currencyId null means "org base currency" (see
-// erp-selling-service.ts's resolveDocumentCurrency() comment), but the list
-// rows below were hardcoding the literal "₹" symbol for that case instead
-// of looking up the org's real base currency -- wrong for any non-INR-base
-// org (e.g. a UAE org whose base currency is AED). Falls back to "₹" only
-// if the currencies list hasn't loaded yet or genuinely has no base-currency
-// row, matching the previous behavior's degradation case.
-function currencyLabel(id: string | null | undefined, currencies: Currency[]): string {
-  const c = id ? currencies.find((c) => c.id === id) : currencies.find((c) => c.isBaseCurrency)
-  return c ? `${c.code} ` : "₹"
-}
+// currencyLabel()/useCurrencies() now live in @/lib/currency (Priority 17
+// re-sweep consolidation -- this was previously a per-file copy).
 type Line = { description: string; quantity: string; rate: string };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -45,7 +36,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 export default function PurchaseOrdersClient() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const currencies = useCurrencies();
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
 
@@ -72,7 +63,6 @@ export default function PurchaseOrdersClient() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {}); }, []);
-  useEffect(() => { fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {}); }, []);
 
   const selectedCurrency = currencies.find((c) => c.id === currencyId);
   const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;

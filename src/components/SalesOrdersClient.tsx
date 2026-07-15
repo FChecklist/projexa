@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2 } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type SalesOrderItem = { id: string; description: string; quantity: string; rate: string; amount: string; deliveredQuantity: string };
 type SalesOrder = {
@@ -21,18 +22,8 @@ type SalesOrder = {
 };
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
-type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
-// Priority 17 re-sweep fix: currencyId null means "org base currency" (see
-// erp-selling-service.ts's resolveDocumentCurrency() comment), but the list
-// rows below were hardcoding the literal "₹" symbol for that case instead
-// of looking up the org's real base currency -- wrong for any non-INR-base
-// org (e.g. a UAE org whose base currency is AED). Falls back to "₹" only
-// if the currencies list hasn't loaded yet or genuinely has no base-currency
-// row, matching the previous behavior's degradation case.
-function currencyLabel(id: string | null | undefined, currencies: Currency[]): string {
-  const c = id ? currencies.find((c) => c.id === id) : currencies.find((c) => c.isBaseCurrency)
-  return c ? `${c.code} ` : "₹"
-}
+// currencyLabel()/useCurrencies() now live in @/lib/currency (Priority 17
+// re-sweep consolidation -- this was previously a per-file copy).
 type Line = { description: string; quantity: string; rate: string };
 
 const STATUS_OPTIONS = ["draft", "confirmed", "partially_fulfilled", "fulfilled", "cancelled"];
@@ -59,7 +50,7 @@ export default function SalesOrdersClient() {
   const [deliveryDate, setDeliveryDate] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
   const [submitting, setSubmitting] = useState(false);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const currencies = useCurrencies();
   const [currencyId, setCurrencyId] = useState("");
   const [exchangeRate, setExchangeRate] = useState("1");
 
@@ -84,7 +75,6 @@ export default function SalesOrdersClient() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {}); }, []);
-  useEffect(() => { fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {}); }, []);
 
   const selectedCurrency = currencies.find((c) => c.id === currencyId);
   const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;

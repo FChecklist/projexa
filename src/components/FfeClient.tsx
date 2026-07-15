@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type FfeItem = {
   id: string; itemName: string; roomOrArea: string | null; category: string; quantity: number;
@@ -24,11 +25,13 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 const CATEGORIES = ["furniture", "fixture", "equipment", "finish", "textile", "lighting", "other"];
 const STATUSES = ["specified", "ordered", "received", "installed"];
 
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
-}
-
 export default function FfeClient({ projectId }: { projectId: string }) {
+  const currencies = useCurrencies();
+  // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
+  // -- forced both symbol and grouping to India regardless of the org's real
+  // base currency. Closure over `currencies` so every existing
+  // formatCurrency(...) call site below is unchanged.
+  const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,8 +135,8 @@ export default function FfeClient({ projectId }: { projectId: string }) {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5"><Label>Qty</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Cost (₹)</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Client Price (₹)</Label><Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label>Cost ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label>Client Price ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5"><Label>Width (cm)</Label><Input type="number" value={widthCm} onChange={(e) => setWidthCm(e.target.value)} placeholder="for 3D" /></div>

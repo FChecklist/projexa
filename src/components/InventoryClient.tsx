@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Warehouse, ArrowDownToLine } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type WarehouseRow = { id: string; warehouseName: string; parentWarehouseId: string | null };
 type ItemRow = { id: string; itemCode: string; itemName: string; uom: string | null; hasBatchNo: boolean };
@@ -21,6 +22,7 @@ type Balance = {
 };
 
 export default function InventoryClient() {
+  const currencies = useCurrencies();
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -228,8 +230,8 @@ export default function InventoryClient() {
                           <TableCell className="font-medium">{b.itemName ?? b.itemId} {b.itemCode ? <span className="text-px-muted">({b.itemCode})</span> : null}</TableCell>
                           <TableCell>{b.warehouseName ?? b.warehouseId}</TableCell>
                           <TableCell>{b.qty.toLocaleString()} {b.uom ?? ""}</TableCell>
-                          <TableCell>₹{b.averageCost.toFixed(2)}</TableCell>
-                          <TableCell>₹{b.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell>{currencyLabel(undefined, currencies)}{b.averageCost.toFixed(2)}</TableCell>
+                          <TableCell>{currencyLabel(undefined, currencies)}{b.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

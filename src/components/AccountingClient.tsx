@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
+import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -55,14 +56,19 @@ function companyScopeQuery(scope: CompanyScope): string {
   return `&companyId=${scope.companyId}&consolidate=${scope.consolidate}`;
 }
 
-function money(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+// Priority 17 re-sweep fix: was hardcoding "₹" -- now takes the caller's own
+// `currencies` list (each panel below fetches it independently via
+// useCurrencies(), and BalanceRows receives it as a prop since it's a
+// shared sub-component) and resolves the org's real base currency instead.
+function money(n: number, currencies: Currency[]) {
+  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 // ---------------------------------------------------------------------------
 // Finance Dashboard tab
 // ---------------------------------------------------------------------------
 function DashboardPanel() {
+  const currencies = useCurrencies();
   const [data, setData] = useState<FinanceDashboard | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -87,10 +93,10 @@ function DashboardPanel() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Cash Position</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.cashPosition)}</p></CardContent></Card>
-        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">AR Outstanding</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.arAging.totalOutstanding)}</p></CardContent></Card>
-        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Revenue (This Month)</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.revenue.thisMonth)}</p>{revenueChange !== null && <p className={`text-xs ${revenueChange >= 0 ? "text-green-600" : "text-red-600"}`}>{revenueChange >= 0 ? "+" : ""}{revenueChange.toFixed(1)}% vs last month</p>}</CardContent></Card>
-        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">90+ Days Overdue</p><p className="mt-1 text-2xl font-bold text-red-600">{money(data.arAging.buckets.d90Plus)}</p></CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Cash Position</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.cashPosition, currencies)}</p></CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">AR Outstanding</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.arAging.totalOutstanding, currencies)}</p></CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Revenue (This Month)</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.revenue.thisMonth, currencies)}</p>{revenueChange !== null && <p className={`text-xs ${revenueChange >= 0 ? "text-green-600" : "text-red-600"}`}>{revenueChange >= 0 ? "+" : ""}{revenueChange.toFixed(1)}% vs last month</p>}</CardContent></Card>
+        <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">90+ Days Overdue</p><p className="mt-1 text-2xl font-bold text-red-600">{money(data.arAging.buckets.d90Plus, currencies)}</p></CardContent></Card>
       </div>
 
       <Card className="shadow-card">
@@ -100,7 +106,7 @@ function DashboardPanel() {
             {[["Current", data.arAging.buckets.current], ["1-30d", data.arAging.buckets.d1_30], ["31-60d", data.arAging.buckets.d31_60], ["61-90d", data.arAging.buckets.d61_90], ["90+d", data.arAging.buckets.d90Plus]].map(([label, value]) => (
               <div key={label as string} className="rounded-md border p-3">
                 <p className="text-xs text-px-muted">{label}</p>
-                <p className="mt-1 font-semibold text-px-ink">{money(value as number)}</p>
+                <p className="mt-1 font-semibold text-px-ink">{money(value as number, currencies)}</p>
               </div>
             ))}
           </div>
@@ -121,7 +127,7 @@ function DashboardPanel() {
                     <TableCell className="font-medium">#{inv.invoiceNumber}</TableCell>
                     <TableCell className="text-px-muted">{inv.customerName ?? "—"}</TableCell>
                     <TableCell className="text-red-600">{inv.daysOverdue}d</TableCell>
-                    <TableCell>{money(Number(inv.outstandingAmount))}</TableCell>
+                    <TableCell>{money(Number(inv.outstandingAmount), currencies)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -162,6 +168,7 @@ function GeneralLedgerPanel() {
   const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [userRemark, setUserRemark] = useState("");
   const [lines, setLines] = useState<JeLine[]>([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]);
+  const currencies = useCurrencies();
 
   async function load() {
     setLoading(true);
@@ -264,7 +271,7 @@ function GeneralLedgerPanel() {
                 <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, { accountId: "", debit: "", credit: "" }])}><Plus className="size-3.5" /> Add Line</Button>
               </div>
               <div className={`rounded-md border p-2 text-sm ${balanced ? "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300" : "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"}`}>
-                Debit {money(totalDebit)} &middot; Credit {money(totalCredit)} {balanced ? "— balanced" : "— must balance before posting"}
+                Debit {money(totalDebit, currencies)} &middot; Credit {money(totalCredit, currencies)} {balanced ? "— balanced" : "— must balance before posting"}
               </div>
             </div>
             <DialogFooter><Button onClick={createEntry} disabled={submitting || !balanced}>{submitting ? "Creating…" : "Create Draft Entry"}</Button></DialogFooter>
@@ -287,8 +294,8 @@ function GeneralLedgerPanel() {
                     <TableCell className="text-px-muted">{e.entryNumber}</TableCell>
                     <TableCell>{new Date(e.postingDate).toLocaleDateString()}</TableCell>
                     <TableCell className="text-px-muted">{e.userRemark ?? e.referenceType ?? "—"}</TableCell>
-                    <TableCell>{money(Number(e.totalDebit))}</TableCell>
-                    <TableCell>{money(Number(e.totalCredit))}</TableCell>
+                    <TableCell>{money(Number(e.totalDebit), currencies)}</TableCell>
+                    <TableCell>{money(Number(e.totalCredit), currencies)}</TableCell>
                     <TableCell><Badge variant={e.status === "submitted" ? "default" : "outline"} className="capitalize">{e.status}</Badge></TableCell>
                   </TableRow>
                 ))}
@@ -311,7 +318,7 @@ function GeneralLedgerPanel() {
 // ---------------------------------------------------------------------------
 // Trial Balance / P&L / Balance Sheet tabs (shared date-range pattern)
 // ---------------------------------------------------------------------------
-function BalanceRows({ rows }: { rows: AccountBalance[] }) {
+function BalanceRows({ rows, currencies }: { rows: AccountBalance[]; currencies: Currency[] }) {
   return (
     <Table>
       <TableHeader><TableRow><TableHead>Account</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Net</TableHead></TableRow></TableHeader>
@@ -319,9 +326,9 @@ function BalanceRows({ rows }: { rows: AccountBalance[] }) {
         {rows.map((r) => (
           <TableRow key={r.accountId}>
             <TableCell>{r.accountNumber ? `${r.accountNumber} — ` : ""}{r.accountName}</TableCell>
-            <TableCell className="text-right">{money(r.totalDebit)}</TableCell>
-            <TableCell className="text-right">{money(r.totalCredit)}</TableCell>
-            <TableCell className="text-right font-medium">{money(r.netBalance)}</TableCell>
+            <TableCell className="text-right">{money(r.totalDebit, currencies)}</TableCell>
+            <TableCell className="text-right">{money(r.totalCredit, currencies)}</TableCell>
+            <TableCell className="text-right font-medium">{money(r.netBalance, currencies)}</TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -330,6 +337,7 @@ function BalanceRows({ rows }: { rows: AccountBalance[] }) {
 }
 
 function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
+  const currencies = useCurrencies();
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -358,10 +366,10 @@ function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
           {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             : !report || report.accounts.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No postings yet.</p>
             : (<>
-              <BalanceRows rows={report.accounts} />
+              <BalanceRows rows={report.accounts} currencies={currencies} />
               <div className="flex items-center justify-between border-t p-3 text-sm font-semibold">
                 <span>Total</span>
-                <span>{money(report.totalDebit)} / {money(report.totalCredit)} {report.isBalanced ? <Badge className="ml-2" variant="default">Balanced</Badge> : <Badge className="ml-2" variant="destructive">Out of balance</Badge>}</span>
+                <span>{money(report.totalDebit, currencies)} / {money(report.totalCredit, currencies)} {report.isBalanced ? <Badge className="ml-2" variant="default">Balanced</Badge> : <Badge className="ml-2" variant="destructive">Out of balance</Badge>}</span>
               </div>
             </>)}
         </CardContent>
@@ -371,6 +379,7 @@ function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
 }
 
 function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
+  const currencies = useCurrencies();
   const now = new Date();
   const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
   const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
@@ -399,9 +408,9 @@ function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
       </div>
       {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
         <div className="space-y-4">
-          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Income</CardTitle></CardHeader><CardContent className="p-0">{report.income.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No income postings.</p> : <BalanceRows rows={report.income} />}</CardContent></Card>
-          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Expense</CardTitle></CardHeader><CardContent className="p-0">{report.expense.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No expense postings.</p> : <BalanceRows rows={report.expense} />}</CardContent></Card>
-          <Card className="shadow-card"><CardContent className="flex items-center justify-between p-4 text-sm font-semibold"><span>Net Profit</span><span className={report.netProfit >= 0 ? "text-green-600" : "text-red-600"}>{money(report.netProfit)}</span></CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Income</CardTitle></CardHeader><CardContent className="p-0">{report.income.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No income postings.</p> : <BalanceRows rows={report.income} currencies={currencies} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Expense</CardTitle></CardHeader><CardContent className="p-0">{report.expense.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No expense postings.</p> : <BalanceRows rows={report.expense} currencies={currencies} />}</CardContent></Card>
+          <Card className="shadow-card"><CardContent className="flex items-center justify-between p-4 text-sm font-semibold"><span>Net Profit</span><span className={report.netProfit >= 0 ? "text-green-600" : "text-red-600"}>{money(report.netProfit, currencies)}</span></CardContent></Card>
         </div>
       )}
     </div>
@@ -409,6 +418,7 @@ function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
 }
 
 function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
+  const currencies = useCurrencies();
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<BalanceSheetReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -434,9 +444,9 @@ function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
       </div>
       {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
         <div className="space-y-4">
-          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Assets — {money(report.totalAssets)}</CardTitle></CardHeader><CardContent className="p-0">{report.assets.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No asset postings.</p> : <BalanceRows rows={report.assets} />}</CardContent></Card>
-          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Liabilities — {money(report.totalLiabilities)}</CardTitle></CardHeader><CardContent className="p-0">{report.liabilities.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No liability postings.</p> : <BalanceRows rows={report.liabilities} />}</CardContent></Card>
-          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Equity — {money(report.totalEquity)}</CardTitle></CardHeader><CardContent className="p-0">{report.equity.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No equity postings.</p> : <BalanceRows rows={report.equity} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Assets — {money(report.totalAssets, currencies)}</CardTitle></CardHeader><CardContent className="p-0">{report.assets.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No asset postings.</p> : <BalanceRows rows={report.assets} currencies={currencies} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Liabilities — {money(report.totalLiabilities, currencies)}</CardTitle></CardHeader><CardContent className="p-0">{report.liabilities.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No liability postings.</p> : <BalanceRows rows={report.liabilities} currencies={currencies} />}</CardContent></Card>
+          <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Equity — {money(report.totalEquity, currencies)}</CardTitle></CardHeader><CardContent className="p-0">{report.equity.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No equity postings.</p> : <BalanceRows rows={report.equity} currencies={currencies} />}</CardContent></Card>
           <Card className="shadow-card"><CardContent className="flex items-center justify-between p-4 text-sm font-semibold">
             <span>Assets = Liabilities + Equity</span>
             {report.isBalanced ? <Badge variant="default">Balanced</Badge> : <Badge variant="destructive">Out of balance</Badge>}
@@ -451,6 +461,7 @@ function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
 // P&L by Project tab
 // ---------------------------------------------------------------------------
 function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
+  const currencies = useCurrencies();
   const now = new Date();
   const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
   const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
@@ -489,9 +500,9 @@ function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
                   {report.costCenters.map((c) => (
                     <TableRow key={c.costCenterId}>
                       <TableCell className="font-medium">{c.costCenterName}</TableCell>
-                      <TableCell className="text-right">{money(c.income)}</TableCell>
-                      <TableCell className="text-right">{money(c.expense)}</TableCell>
-                      <TableCell className={`text-right font-medium ${c.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{money(c.netProfit)}</TableCell>
+                      <TableCell className="text-right">{money(c.income, currencies)}</TableCell>
+                      <TableCell className="text-right">{money(c.expense, currencies)}</TableCell>
+                      <TableCell className={`text-right font-medium ${c.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{money(c.netProfit, currencies)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -644,6 +655,7 @@ function CompaniesPanel({ companies, loading, onCreated }: { companies: Company[
 // Bank Reconciliation tab (read-only for this wave)
 // ---------------------------------------------------------------------------
 function BankReconciliationPanel() {
+  const currencies = useCurrencies();
   const [imports, setImports] = useState<BankImport[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
@@ -709,8 +721,8 @@ function BankReconciliationPanel() {
                         <TableRow key={l.id}>
                           <TableCell>{new Date(l.transactionDate).toLocaleDateString()}</TableCell>
                           <TableCell className="text-px-muted">{l.description ?? "—"}</TableCell>
-                          <TableCell className="text-right">{Number(l.debitAmount) > 0 ? money(Number(l.debitAmount)) : "—"}</TableCell>
-                          <TableCell className="text-right">{Number(l.creditAmount) > 0 ? money(Number(l.creditAmount)) : "—"}</TableCell>
+                          <TableCell className="text-right">{Number(l.debitAmount) > 0 ? money(Number(l.debitAmount), currencies) : "—"}</TableCell>
+                          <TableCell className="text-right">{Number(l.creditAmount) > 0 ? money(Number(l.creditAmount), currencies) : "—"}</TableCell>
                           <TableCell><Badge variant={l.status === "matched" ? "default" : "outline"} className="capitalize">{l.status}</Badge></TableCell>
                         </TableRow>
                       ))}

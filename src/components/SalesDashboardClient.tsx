@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type Overview = {
   totalLeads: number;
@@ -23,9 +24,12 @@ type Overview = {
 const STAGE_ORDER = ["prospecting", "proposal", "negotiation", "won", "lost"];
 const LEAD_STATUS_ORDER = ["new", "contacted", "qualified", "converted", "lost"];
 
-function inr(n: number) { return `₹${n.toLocaleString("en-IN")}`; }
-
 export default function SalesDashboardClient() {
+  const currencies = useCurrencies();
+  // Priority 17 re-sweep fix: was a module-level `inr()` hardcoding "₹" --
+  // now a closure over `currencies` so both existing inr(...) call sites
+  // below resolve the org's real base currency instead.
+  const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN")}`;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
 

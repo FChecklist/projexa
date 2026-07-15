@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type ChangeOrder = {
   id: string; number: number; title: string; reason: string | null; costImpact: string; scheduleImpactDays: number; status: string;
@@ -20,11 +21,13 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   draft: "outline", pending_approval: "secondary", approved: "default", rejected: "destructive",
 };
 
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
-}
-
 export default function ChangeOrdersClient({ projectId }: { projectId: string }) {
+  const currencies = useCurrencies();
+  // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
+  // -- forced both symbol and grouping to India regardless of the org's real
+  // base currency. Closure over `currencies` so every existing
+  // formatCurrency(...) call site below is unchanged.
+  const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
   const [items, setItems] = useState<ChangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -106,7 +109,7 @@ export default function ChangeOrdersClient({ projectId }: { projectId: string })
               <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>Reason (optional)</Label><Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Cost Impact (₹)</Label><Input type="number" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} placeholder="+/- amount" /></div>
+                <div className="space-y-1.5"><Label>Cost Impact ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} placeholder="+/- amount" /></div>
                 <div className="space-y-1.5"><Label>Schedule Impact (days)</Label><Input type="number" value={scheduleImpactDays} onChange={(e) => setScheduleImpactDays(e.target.value)} placeholder="+/- days" /></div>
               </div>
             </div>
