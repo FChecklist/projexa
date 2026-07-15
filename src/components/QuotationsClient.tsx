@@ -21,6 +21,17 @@ type Quotation = {
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
 type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+// Priority 17 re-sweep fix: currencyId null means "org base currency" (see
+// erp-selling-service.ts's resolveDocumentCurrency() comment), but the list
+// rows below were hardcoding the literal "₹" symbol for that case instead
+// of looking up the org's real base currency -- wrong for any non-INR-base
+// org (e.g. a UAE org whose base currency is AED). Falls back to "₹" only
+// if the currencies list hasn't loaded yet or genuinely has no base-currency
+// row, matching the previous behavior's degradation case.
+function currencyLabel(id: string | null | undefined, currencies: Currency[]): string {
+  const c = id ? currencies.find((c) => c.id === id) : currencies.find((c) => c.isBaseCurrency)
+  return c ? `${c.code} ` : "₹"
+}
 
 // Mirrors erp-selling-service.ts's QUOTATION_TRANSITIONS -- UX-only duplicate,
 // the backend enforces the real gate; this just decides which action
@@ -288,7 +299,7 @@ export default function QuotationsClient() {
                     <TableCell className="text-px-muted">{q.quotationDate}</TableCell>
                     <TableCell className="text-px-muted">v{q.version}{q.revisionOf ? " (revision)" : ""}</TableCell>
                     <TableCell className="text-px-muted">
-                      {q.currencyId ? `${currencies.find((c) => c.id === q.currencyId)?.code ?? ""} ` : "₹"}{Number(q.grandTotal).toLocaleString("en-IN")}
+                      {currencyLabel(q.currencyId, currencies)}{Number(q.grandTotal).toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "outline"}>{q.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right">
