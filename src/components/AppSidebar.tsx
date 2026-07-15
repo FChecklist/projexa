@@ -10,7 +10,7 @@ import {
   MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
-  ShieldAlert, Calculator, ReceiptText,
+  ShieldAlert, Calculator, ReceiptText, NotebookText, Library,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.workProgress", href: "/work-progress", icon: ClipboardList },
       { labelKey: "items.siteDiary", href: "/site-diary", icon: BookOpen },
       { labelKey: "items.documents", href: "/documents", icon: FolderOpen },
+      // Priority 17 Wave 1: per-project working notes over
+      // pms-wiki-service.ts -- distinct from Documents (file storage) and
+      // from the org-wide Knowledge Base below (see KnowledgeBaseClient.tsx).
+      { labelKey: "items.wiki", href: "/wiki", icon: NotebookText },
       { labelKey: "items.permits", href: "/permits", icon: ShieldCheck },
     ],
   },
@@ -111,6 +115,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.kpis", href: "/kpis", icon: Target },
       { labelKey: "items.reports", href: "/reports", icon: BarChart3 },
       { labelKey: "items.aiCopilot", href: "/copilot", icon: Bot },
+      // Priority 17 Wave 1: org-wide reference material over
+      // knowledge-base-service.ts -- not project-scoped, unlike every other
+      // link in this sidebar (see KnowledgeBaseClient.tsx's own header).
+      { labelKey: "items.knowledgeBase", href: "/knowledge-base", icon: Library },
     ],
   },
   {

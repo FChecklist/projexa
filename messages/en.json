@@ -21,6 +21,7 @@
       "workProgress": "Work Progress",
       "siteDiary": "Site Diary",
       "documents": "Documents",
+      "wiki": "Wiki",
       "permits": "Permits",
       "rfis": "RFIs",
       "submittals": "Submittals",
@@ -50,6 +51,7 @@
       "kpis": "KPIs",
       "reports": "Reports",
       "aiCopilot": "AI Copilot",
+      "knowledgeBase": "Knowledge Base",
       "settings": "Settings"
     }
   },
