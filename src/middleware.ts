@@ -70,6 +70,28 @@ export async function middleware(request: NextRequest) {
   }
 
   if (userId && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
+    // Deferred-provisioning gap (Priority 17 platform provisioning): an
+    // authenticated user with NO organization yet -- signup required email
+    // confirmation, so org/VERIDIAN provisioning was deferred to their next
+    // login (see login/page.tsx's `projexa_pending_org_name` handling) --
+    // must be allowed to actually reach /login so that completion logic can
+    // run. Unconditionally bouncing every authenticated visitor to
+    // /dashboard (the prior behavior) made that entire code path
+    // unreachable: middleware redirected them away before the page's own
+    // script ever executed. Only /login gets this exception; /signup has no
+    // equivalent "resume" logic and re-running supabase.auth.signUp() for an
+    // already-authenticated session isn't a real use case.
+    if (request.nextUrl.pathname === "/login") {
+      const { data: membership } = await supabase
+        .from("memberships")
+        .select("organization_id")
+        .eq("user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!membership) {
+        return supabaseResponse;
+      }
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
