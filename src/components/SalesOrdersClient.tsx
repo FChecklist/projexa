@@ -22,6 +22,17 @@ type SalesOrder = {
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
 type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+// Priority 17 re-sweep fix: currencyId null means "org base currency" (see
+// erp-selling-service.ts's resolveDocumentCurrency() comment), but the list
+// rows below were hardcoding the literal "₹" symbol for that case instead
+// of looking up the org's real base currency -- wrong for any non-INR-base
+// org (e.g. a UAE org whose base currency is AED). Falls back to "₹" only
+// if the currencies list hasn't loaded yet or genuinely has no base-currency
+// row, matching the previous behavior's degradation case.
+function currencyLabel(id: string | null | undefined, currencies: Currency[]): string {
+  const c = id ? currencies.find((c) => c.id === id) : currencies.find((c) => c.isBaseCurrency)
+  return c ? `${c.code} ` : "₹"
+}
 type Line = { description: string; quantity: string; rate: string };
 
 const STATUS_OPTIONS = ["draft", "confirmed", "partially_fulfilled", "fulfilled", "cancelled"];
@@ -262,7 +273,7 @@ export default function SalesOrdersClient() {
                     <TableCell className="text-px-muted">{o.customerName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{o.orderDate}</TableCell>
                     <TableCell className="text-px-muted">
-                      {o.currencyId ? `${currencies.find((c) => c.id === o.currencyId)?.code ?? ""} ` : "₹"}{Number(o.grandTotal).toLocaleString("en-IN")}
+                      {currencyLabel(o.currencyId, currencies)}{Number(o.grandTotal).toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell>
                       <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
