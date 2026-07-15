@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Clock } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -53,6 +53,19 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   const [priority, setPriority] = useState("no_priority");
   const [dueDate, setDueDate] = useState("");
   const [creating, setCreating] = useState(false);
+
+  // Priority 17 Wave 1: quick "Log time" action on a task card, over the
+  // previously-unexposed pms-time-service.ts. Honest limitation: this POST
+  // requires a real VERIDIAN user session (pms_time_entries.user_id is a
+  // hard FK to compliance.users) -- PROJEXA's shared-API-key proxy has no
+  // per-user identity bridge to VERIDIAN yet, so this currently surfaces
+  // the same 400 the existing leave-approval/quotation-approval buttons
+  // already do for the identical reason. The dialog itself is real and
+  // wired, ready to work once that bridge exists.
+  const [logTimeIssue, setLogTimeIssue] = useState<BoardIssue | null>(null);
+  const [logHours, setLogHours] = useState("");
+  const [logSpentOn, setLogSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [loggingTime, setLoggingTime] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +151,25 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
       toast.error(err instanceof Error ? err.message : "Couldn't create task");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function submitLogTime() {
+    if (!logTimeIssue || !logHours || !logSpentOn) return;
+    setLoggingTime(true);
+    try {
+      const res = await fetch("/api/timesheets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issueId: logTimeIssue.id, hours: logHours, spentOn: logSpentOn }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to log time");
+      toast.success("Time logged");
+      setLogTimeIssue(null); setLogHours("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't log time");
+    } finally {
+      setLoggingTime(false);
     }
   }
 
@@ -236,20 +268,29 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
                           {issue.priority.replace(/_/g, " ")}
                         </Badge>
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="mt-2 w-full rounded border border-px-border py-1 text-xs text-px-muted hover:bg-px-cloud/60">
-                            Move to…
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          {columns.filter((c) => c.id !== column.id).map((target) => (
-                            <DropdownMenuItem key={target.id} onClick={() => moveIssue(issue.id, target.id)}>
-                              {target.name}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="mt-2 flex gap-1.5">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="flex-1 rounded border border-px-border py-1 text-xs text-px-muted hover:bg-px-cloud/60">
+                              Move to…
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {columns.filter((c) => c.id !== column.id).map((target) => (
+                              <DropdownMenuItem key={target.id} onClick={() => moveIssue(issue.id, target.id)}>
+                                {target.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <button
+                          onClick={() => setLogTimeIssue(issue)}
+                          title="Log time"
+                          className="rounded border border-px-border px-2 py-1 text-xs text-px-muted hover:bg-px-cloud/60"
+                        >
+                          <Clock className="size-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -258,6 +299,17 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
           </div>
         ))}
       </div>
+
+      <Dialog open={logTimeIssue !== null} onOpenChange={(o) => { if (!o) setLogTimeIssue(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Log Time{logTimeIssue ? ` — #${logTimeIssue.number} ${logTimeIssue.title}` : ""}</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" value={logHours} onChange={(e) => setLogHours(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={logSpentOn} onChange={(e) => setLogSpentOn(e.target.value)} /></div>
+          </div>
+          <DialogFooter><Button onClick={submitLogTime} disabled={loggingTime || !logHours}>{loggingTime ? "Logging…" : "Log Time"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScheduleGanttClient from "@/components/ScheduleGanttClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
+import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
+import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
 
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
@@ -30,12 +32,20 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
               <TabsList>
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="board">Board</TabsTrigger>
+                <TabsTrigger value="sprints">Sprints</TabsTrigger>
+                <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
               </TabsList>
               <TabsContent value="timeline">
                 <ScheduleGanttClient projectId={project.id} />
               </TabsContent>
               <TabsContent value="board">
                 <ScheduleBoardClient projectId={project.id} />
+              </TabsContent>
+              <TabsContent value="sprints">
+                <ScheduleSprintsClient projectId={project.id} />
+              </TabsContent>
+              <TabsContent value="timesheet">
+                <ScheduleTimesheetClient projectId={project.id} />
               </TabsContent>
             </Tabs>
           </>
