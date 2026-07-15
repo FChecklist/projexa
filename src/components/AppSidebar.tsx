@@ -9,7 +9,7 @@ import {
   MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
-  ShieldAlert, Calculator, ReceiptText,
+  ShieldAlert, Calculator, ReceiptText, ClipboardCheck,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Manpower & Attendance", href: "/labour", icon: Users },
       { label: "Materials", href: "/materials", icon: Package },
       { label: "Vendors", href: "/vendors", icon: Building2 },
+      { label: "Purchase Orders", href: "/purchase-orders", icon: ClipboardCheck },
     ],
   },
   {
