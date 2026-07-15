@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +37,20 @@ export default function ReportsClient({ projectId }: { projectId: string }) {
   const [result, setResult] = useState<unknown>(null);
   const [ranOnce, setRanOnce] = useState(false);
 
+  // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
+  // guards against an out-of-order/stale fetch response overwriting a more
+  // recent one's state -- e.g. the user switches the report type and clicks
+  // "Run Report" again before the first request resolves; without this, a
+  // slower first response landing after a faster second one would silently
+  // clobber the correct, more recent result (or vice versa, a slow response
+  // for a report the user has since navigated away from could still commit
+  // state after the fact). Bumped at the start of every runReport() call;
+  // any resolving fetch whose captured generation no longer matches the
+  // latest is dropped instead of touching state.
+  const requestGeneration = useRef(0);
+
   async function runReport() {
+    const myGeneration = ++requestGeneration.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ projectId });
@@ -45,13 +58,15 @@ export default function ReportsClient({ projectId }: { projectId: string }) {
       const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
+      if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
       setRanOnce(true);
     } catch (err) {
+      if (myGeneration !== requestGeneration.current) return;
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate report");
       setResult(null);
     } finally {
-      setLoading(false);
+      if (myGeneration === requestGeneration.current) setLoading(false);
     }
   }
 

@@ -21,7 +21,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <ReportsClient projectId={project.id} />}
+        {project && <ReportsClient key={project.id} projectId={project.id} />}
       </main>
     </>
   );
