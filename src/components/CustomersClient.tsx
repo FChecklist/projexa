@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type Customer = { id: string; customerName: string; gstin: string | null; defaultPaymentTermsDays: number | null; creditLimit: string | null; isActive: boolean };
 
@@ -23,6 +24,7 @@ type Customer = { id: string; customerName: string; gstin: string | null; defaul
 // applies to computation.
 export default function CustomersClient() {
   const { isIndiaOrg } = useOrgRole();
+  const currencies = useCurrencies();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -115,7 +117,7 @@ export default function CustomersClient() {
                       <Link href={`/customers/${c.id}`} className="hover:text-px-orange hover:underline">{c.customerName}</Link>
                     </TableCell>
                     {isIndiaOrg && <TableCell className="text-px-muted">{c.gstin ?? "—"}</TableCell>}
-                    <TableCell className="text-px-muted">{c.creditLimit ? `₹${Number(c.creditLimit).toLocaleString("en-IN")}` : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{c.creditLimit ? `${currencyLabel(undefined, currencies)}${Number(c.creditLimit).toLocaleString("en-IN")}` : "—"}</TableCell>
                     <TableCell><Badge variant={c.isActive ? "default" : "outline"}>{c.isActive ? "active" : "inactive"}</Badge></TableCell>
                   </TableRow>
                 ))}

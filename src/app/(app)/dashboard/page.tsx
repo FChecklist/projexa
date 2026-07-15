@@ -14,20 +14,37 @@ type OrgDashboard = {
   totalExpenses: number;
   projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number }[];
 };
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+// Local, server-safe copy (not imported from @/lib/currency, which is a
+// "use client" module -- this page is a Server Component and fetches its
+// own currencies list directly via callVeridian, same as /api/currencies'
+// own backing call). Priority 17 re-sweep fix: was
+// Intl.NumberFormat(..., { currency: "INR" }), forcing both symbol and
+// grouping to India regardless of the org's real base currency.
+type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+function currencyLabel(currencies: CurrencyRow[]): string {
+  const c = currencies.find((c) => c.isBaseCurrency);
+  return c ? `${c.code} ` : "₹";
+}
+function formatCurrency(n: number, currencies: CurrencyRow[]) {
+  return `${currencyLabel(currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 export default async function DashboardPage() {
   let data: OrgDashboard | null = null;
   let errorMessage: string | null = null;
+  let currencies: CurrencyRow[] = [];
 
   try {
     const organizationId = await getServerOrganizationId();
     data = await callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined });
   } catch (err) {
     errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from VERIDIAN";
+  }
+  try {
+    const currencyData = await callVeridian<{ currencies: CurrencyRow[] }>("/currencies");
+    currencies = currencyData.currencies ?? [];
+  } catch {
+    // Non-fatal -- formatCurrency() falls back to "₹" if this list is empty.
   }
 
   return (
@@ -46,15 +63,15 @@ export default async function DashboardPage() {
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <DashboardCard title="Active Projects" value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title="Total Budget" value={formatCurrency(data.totalBudget)} icon={Wallet} variant="total" />
-              <DashboardCard title="Total Revenue" value={formatCurrency(data.totalRevenue)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title="Total Expenses" value={formatCurrency(data.totalExpenses)} icon={Receipt} variant="pending" />
+              <DashboardCard title="Total Budget" value={formatCurrency(data.totalBudget, currencies)} icon={Wallet} variant="total" />
+              <DashboardCard title="Total Revenue" value={formatCurrency(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
+              <DashboardCard title="Total Expenses" value={formatCurrency(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
                 {data.totalRevenue === 0
-                  ? "Total Revenue shows ₹0 because no VERIDIAN ERP sales invoices exist yet for this org — create one below."
+                  ? `Total Revenue shows ${formatCurrency(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org — create one below.`
                   : "Revenue reflects VERIDIAN ERP sales invoices for this org. Create another one below."}
               </p>
               <CreateInvoiceDialog />
@@ -82,8 +99,8 @@ export default async function DashboardPage() {
                       {data.projects.map((p) => (
                         <TableRow key={p.id}>
                           <TableCell className="font-medium">{p.name}</TableCell>
-                          <TableCell>{formatCurrency(p.revenue)}</TableCell>
-                          <TableCell>{formatCurrency(p.expenses)}</TableCell>
+                          <TableCell>{formatCurrency(p.revenue, currencies)}</TableCell>
+                          <TableCell>{formatCurrency(p.expenses, currencies)}</TableCell>
                           <TableCell>{p.taskCount}</TableCell>
                           <TableCell>
                             {p.delayedTaskCount > 0 ? (

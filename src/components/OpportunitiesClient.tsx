@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, History } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type Opportunity = {
   id: string; name: string; leadId: string | null; erpCustomerId: string | null; stage: string;
@@ -27,6 +28,7 @@ const STAGE_VARIANT: Record<string, "default" | "secondary" | "destructive" | "o
 };
 
 export default function OpportunitiesClient() {
+  const currencies = useCurrencies();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -209,7 +211,7 @@ export default function OpportunitiesClient() {
                     </TableCell>
                     <TableCell className="font-medium">{o.name}</TableCell>
                     <TableCell className="text-px-muted">{customerName(o.erpCustomerId)}</TableCell>
-                    <TableCell className="text-px-muted">{o.estimatedValue ? `₹${Number(o.estimatedValue).toLocaleString("en-IN")}` : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{o.estimatedValue ? `${currencyLabel(undefined, currencies)}${Number(o.estimatedValue).toLocaleString("en-IN")}` : "—"}</TableCell>
                     <TableCell>
                       <Select value={o.stage} onValueChange={(v) => updateStage(o, v)}>
                         <SelectTrigger className="h-7 w-32 border-none p-0 shadow-none">

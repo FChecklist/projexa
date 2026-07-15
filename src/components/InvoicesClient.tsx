@@ -18,7 +18,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, IndianRupee, Ban } from "lucide-react";
+import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, Banknote, Ban } from "lucide-react";
+import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
 type Invoice = { id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null; grandTotal: string; outstandingAmount: string; status: string };
 type CreditNote = { id: string; creditNoteNumber: number; customerId: string; salesInvoiceId: string | null; postingDate: string; reason: string | null; status: string; totalAmount: string };
@@ -31,14 +32,19 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 const NEW_CUSTOMER = "__new__";
 
-function money(v: string | number) {
-  return `₹${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+// Priority 17 re-sweep fix: was a plain function hardcoding "₹" -- now takes
+// the caller's own `currencies` list (each panel below fetches it
+// independently via useCurrencies()) and resolves the org's real base
+// currency instead.
+function money(v: string | number, currencies: Currency[]) {
+  return `${currencyLabel(undefined, currencies)}${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 // ---------------------------------------------------------------------------
 // Invoices tab
 // ---------------------------------------------------------------------------
 function InvoicesPanel() {
+  const currencies = useCurrencies();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -212,12 +218,12 @@ function InvoicesPanel() {
                     <TableCell className="font-medium">{inv.customerName ?? "—"}</TableCell>
                     <TableCell>{new Date(inv.postingDate).toLocaleDateString()}</TableCell>
                     <TableCell className="text-px-muted">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}</TableCell>
-                    <TableCell className="text-right">{money(inv.grandTotal)}</TableCell>
-                    <TableCell className="text-right">{money(inv.outstandingAmount)}</TableCell>
+                    <TableCell className="text-right">{money(inv.grandTotal, currencies)}</TableCell>
+                    <TableCell className="text-right">{money(inv.outstandingAmount, currencies)}</TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[inv.status] ?? "outline"} className="capitalize">{inv.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right space-x-1">
                       {["submitted", "partially_paid", "overdue"].includes(inv.status) && (
-                        <Button variant="ghost" size="sm" onClick={() => openPayment(inv)}><IndianRupee className="size-3.5" /> Record Payment</Button>
+                        <Button variant="ghost" size="sm" onClick={() => openPayment(inv)}><Banknote className="size-3.5" /> Record Payment</Button>
                       )}
                       {inv.status === "draft" && (
                         <Button variant="ghost" size="sm" className="text-red-600" onClick={() => cancelInvoice(inv.id)}><Ban className="size-3.5" /> Cancel</Button>
@@ -265,6 +271,7 @@ function InvoicesPanel() {
 // Credit Notes tab
 // ---------------------------------------------------------------------------
 function CreditNotesPanel() {
+  const currencies = useCurrencies();
   const [notes, setNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -362,7 +369,7 @@ function CreditNotesPanel() {
                     <TableCell className="text-px-muted">{n.creditNoteNumber}</TableCell>
                     <TableCell>{new Date(n.postingDate).toLocaleDateString()}</TableCell>
                     <TableCell className="text-px-muted">{n.reason ?? "—"}</TableCell>
-                    <TableCell className="text-right">{money(n.totalAmount)}</TableCell>
+                    <TableCell className="text-right">{money(n.totalAmount, currencies)}</TableCell>
                     <TableCell><Badge variant={n.status === "submitted" ? "default" : "outline"} className="capitalize">{n.status}</Badge></TableCell>
                   </TableRow>
                 ))}
@@ -379,6 +386,7 @@ function CreditNotesPanel() {
 // AR Aging tab
 // ---------------------------------------------------------------------------
 function ArAgingPanel() {
+  const currencies = useCurrencies();
   const [report, setReport] = useState<AgingReport | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -402,7 +410,7 @@ function ArAgingPanel() {
     <div className="space-y-4">
       <div className="grid grid-cols-5 gap-2 text-center text-sm">
         {[["Current", report.buckets.current], ["1-30d", report.buckets.d1_30], ["31-60d", report.buckets.d31_60], ["61-90d", report.buckets.d61_90], ["90+d", report.buckets.d90Plus]].map(([label, value]) => (
-          <Card key={label as string} className="shadow-card"><CardContent className="p-3"><p className="text-xs text-px-muted">{label}</p><p className="mt-1 font-semibold text-px-ink">{money(value as number)}</p></CardContent></Card>
+          <Card key={label as string} className="shadow-card"><CardContent className="p-3"><p className="text-xs text-px-muted">{label}</p><p className="mt-1 font-semibold text-px-ink">{money(value as number, currencies)}</p></CardContent></Card>
         ))}
       </div>
       <Card className="shadow-card">
@@ -420,7 +428,7 @@ function ArAgingPanel() {
                     <TableCell className="text-px-muted">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}</TableCell>
                     <TableCell className={inv.daysOverdue > 0 ? "text-red-600" : "text-px-muted"}>{inv.daysOverdue}d</TableCell>
                     <TableCell><Badge variant="outline">{inv.bucket}</Badge></TableCell>
-                    <TableCell className="text-right">{money(inv.outstandingAmount)}</TableCell>
+                    <TableCell className="text-right">{money(inv.outstandingAmount, currencies)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, ShieldAlert, ChevronRight } from "lucide-react";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -630,6 +631,7 @@ const FRAUD_TRANSITIONS: Record<string, string[]> = {
 };
 
 function FraudCasesPanel() {
+  const currencies = useCurrencies();
   const [cases, setCases] = useState<FraudCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -725,7 +727,7 @@ function FraudCasesPanel() {
                     <TableCell className="text-px-muted">{c.caseNumber}</TableCell>
                     <TableCell className="font-medium">{c.title}</TableCell>
                     <TableCell className="capitalize text-px-muted">{c.fraudType.replace("_", " ")}</TableCell>
-                    <TableCell className="text-px-muted">{c.financialExposure ? `₹${Number(c.financialExposure).toLocaleString("en-IN")}` : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{c.financialExposure ? `${currencyLabel(undefined, currencies)}${Number(c.financialExposure).toLocaleString("en-IN")}` : "—"}</TableCell>
                     <TableCell><Badge variant={c.status === "resolved" ? "default" : c.status === "confirmed" ? "destructive" : "outline"} className="capitalize">{c.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right space-x-1">
                       {(FRAUD_TRANSITIONS[c.status] ?? []).map((next) => (
