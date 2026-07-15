@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -39,6 +39,21 @@ type BalanceSheetReport = { asOfDate: string; assets: AccountBalance[]; liabilit
 type ProjectPnl = { fromDate: string; toDate: string; costCenters: { costCenterId: string; costCenterName: string; projectId: string | null; income: number; expense: number; netProfit: number }[]; totalIncome: number; totalExpense: number };
 type BankImport = { id: string; fileName: string; totalLines: number; importedAt: string };
 type BankLine = { id: string; transactionDate: string; description: string | null; debitAmount: string; creditAmount: string; status: string };
+// Priority 17 Wave 1: erp_companies (Wave 67) -- a legal entity/office WITHIN
+// this org's ERP, distinct from the org itself. Chart of accounts stays
+// shared across companies; VERIDIAN's resolveCompanyScope rolls a report up
+// through the parent-child company tree at report-runtime when
+// consolidate=true, never a stored "group GL".
+type Company = { id: string; companyName: string; abbr: string | null; parentCompanyId: string | null; isGroup: boolean; defaultCurrencyId: string | null; country: string | null; dateOfIncorporation: string | null; isActive: boolean };
+// Lifted to the root client so the same selection drives every report tab
+// (Trial Balance/P&L/Balance Sheet/P&L by Project) without each re-fetching
+// the company list independently.
+type CompanyScope = { companyId: string | null; consolidate: boolean };
+
+function companyScopeQuery(scope: CompanyScope): string {
+  if (!scope.companyId) return "";
+  return `&companyId=${scope.companyId}&consolidate=${scope.consolidate}`;
+}
 
 function money(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -302,7 +317,7 @@ function BalanceRows({ rows }: { rows: AccountBalance[] }) {
   );
 }
 
-function TrialBalancePanel() {
+function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -310,7 +325,7 @@ function TrialBalancePanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/trial-balance?asOfDate=${asOfDate}`);
+      const res = await fetch(`/api/trial-balance?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
       setReport(await res.json());
     } catch {
       toast.error("Couldn't generate trial balance");
@@ -318,7 +333,7 @@ function TrialBalancePanel() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [scope.companyId, scope.consolidate]);
 
   return (
     <div className="space-y-4">
@@ -343,7 +358,7 @@ function TrialBalancePanel() {
   );
 }
 
-function ProfitAndLossPanel() {
+function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
   const now = new Date();
   const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
   const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
@@ -353,7 +368,7 @@ function ProfitAndLossPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}`);
+      const res = await fetch(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`);
       setReport(await res.json());
     } catch {
       toast.error("Couldn't generate P&L");
@@ -361,7 +376,7 @@ function ProfitAndLossPanel() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [scope.companyId, scope.consolidate]);
 
   return (
     <div className="space-y-4">
@@ -381,7 +396,7 @@ function ProfitAndLossPanel() {
   );
 }
 
-function BalanceSheetPanel() {
+function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<BalanceSheetReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -389,7 +404,7 @@ function BalanceSheetPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/balance-sheet?asOfDate=${asOfDate}`);
+      const res = await fetch(`/api/balance-sheet?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
       setReport(await res.json());
     } catch {
       toast.error("Couldn't generate balance sheet");
@@ -397,7 +412,7 @@ function BalanceSheetPanel() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [scope.companyId, scope.consolidate]);
 
   return (
     <div className="space-y-4">
@@ -423,7 +438,7 @@ function BalanceSheetPanel() {
 // ---------------------------------------------------------------------------
 // P&L by Project tab
 // ---------------------------------------------------------------------------
-function ProjectPnlPanel() {
+function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
   const now = new Date();
   const [fromDate, setFromDate] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
   const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
@@ -433,7 +448,7 @@ function ProjectPnlPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/profit-and-loss-by-project?fromDate=${fromDate}&toDate=${toDate}`);
+      const res = await fetch(`/api/profit-and-loss-by-project?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`);
       setReport(await res.json());
     } catch {
       toast.error("Couldn't generate per-project P&L");
@@ -441,7 +456,7 @@ function ProjectPnlPanel() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [scope.companyId, scope.consolidate]);
 
   return (
     <div className="space-y-4">
@@ -470,6 +485,143 @@ function ProjectPnlPanel() {
                 </TableBody>
               </Table>
             )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Company / office selector -- drives the Trial Balance / P&L / Balance
+// Sheet / P&L by Project tabs above. Priority 17 Wave 1.
+// ---------------------------------------------------------------------------
+function CompanySelector({ companies, scope, onChange }: { companies: Company[]; scope: CompanyScope; onChange: (scope: CompanyScope) => void }) {
+  if (companies.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-2.5">
+      <Building2 className="mt-2 size-4 text-px-muted" />
+      <div className="space-y-1.5">
+        <Label className="text-xs">Company / Office</Label>
+        <Select
+          value={scope.companyId ?? "__all__"}
+          onValueChange={(v) => onChange({ companyId: v === "__all__" ? null : v, consolidate: scope.consolidate })}
+        >
+          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All companies (org-wide)</SelectItem>
+            {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      {scope.companyId && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Scope</Label>
+          <Select value={scope.consolidate ? "consolidated" : "own"} onValueChange={(v) => onChange({ companyId: scope.companyId, consolidate: v === "consolidated" })}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="own">This company only</SelectItem>
+              <SelectItem value="consolidated">Consolidated (+ sub-companies)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Companies / Offices tab -- list + create. erp_companies (Wave 67) supports
+// a real parent-child tree (an office/branch under a parent company), which
+// is what makes the "Consolidated" scope above meaningful.
+// ---------------------------------------------------------------------------
+function CompaniesPanel({ companies, loading, onCreated }: { companies: Company[]; loading: boolean; onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [abbr, setAbbr] = useState("");
+  const [country, setCountry] = useState("");
+  const [parentCompanyId, setParentCompanyId] = useState<string>("__none__");
+  const [isGroup, setIsGroup] = useState(false);
+
+  async function createCompany() {
+    if (!companyName.trim()) { toast.error("Company name is required"); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/companies", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName, abbr: abbr || undefined, country: country || undefined,
+          parentCompanyId: parentCompanyId === "__none__" ? undefined : parentCompanyId,
+          isGroup,
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
+      toast.success("Company created");
+      setCompanyName(""); setAbbr(""); setCountry(""); setParentCompanyId("__none__"); setIsGroup(false); setOpen(false);
+      onCreated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create company");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-px-muted">Legal entities / offices within this org&apos;s ERP. Chart of accounts is shared across companies; reports can be scoped to one company or consolidated across its sub-companies from the selector above the financial-report tabs.</p>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> New Company / Office</Button></DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>New Company / Office</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1.5"><Label>Company Name</Label><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Interiors — Mumbai Office" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5"><Label>Abbreviation</Label><Input value={abbr} onChange={(e) => setAbbr(e.target.value)} placeholder="e.g. AIM" /></div>
+                <div className="space-y-1.5"><Label>Country</Label><Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. India" /></div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Parent Company (optional)</Label>
+                <Select value={parentCompanyId} onValueChange={setParentCompanyId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None (top-level company)</SelectItem>
+                    {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={isGroup} onChange={(e) => setIsGroup(e.target.checked)} className="size-4" />
+                This is a group/holding entity (organizational grouping, not its own set of postings)
+              </label>
+            </div>
+            <DialogFooter><Button onClick={createCompany} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <Card className="shadow-card">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : companies.length === 0 ? (
+            <p className="py-10 text-center text-sm text-px-muted">No companies/offices set up yet — everything defaults to org-wide.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Company</TableHead><TableHead>Abbr.</TableHead><TableHead>Parent</TableHead><TableHead>Country</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {companies.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.companyName}</TableCell>
+                    <TableCell className="text-px-muted">{c.abbr ?? "—"}</TableCell>
+                    <TableCell className="text-px-muted">{companies.find((p) => p.id === c.parentCompanyId)?.companyName ?? "—"}</TableCell>
+                    <TableCell className="text-px-muted">{c.country ?? "—"}</TableCell>
+                    <TableCell>{c.isGroup ? <Badge variant="outline">Group</Badge> : <Badge variant="outline">Company</Badge>}</TableCell>
+                    <TableCell><Badge variant={c.isActive ? "default" : "outline"}>{c.isActive ? "Active" : "Inactive"}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -564,14 +716,38 @@ function BankReconciliationPanel() {
 // ---------------------------------------------------------------------------
 // Root client
 // ---------------------------------------------------------------------------
+const REPORT_TABS = new Set(["trial-balance", "pnl", "balance-sheet", "project-pnl"]);
+
 export default function AccountingClient() {
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+  // Defaults to "All companies / consolidated" (companyId: null), matching
+  // every existing report's unchanged pre-Priority-17 behavior -- an org
+  // that never sets up companies/offices sees no change at all.
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
+  async function loadCompanies() {
+    setCompaniesLoading(true);
+    try {
+      const res = await fetch("/api/companies");
+      const data = await res.json();
+      setCompanies(data.companies ?? []);
+    } catch {
+      toast.error("Couldn't load companies");
+    } finally {
+      setCompaniesLoading(false);
+    }
+  }
+  useEffect(() => { loadCompanies(); }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-px-muted">
         <Landmark className="size-4" />
         <span>Real GL data from VERIDIAN AI OS — every journal entry, report, and balance below is generated from actual postings.</span>
       </div>
-      <Tabs defaultValue="dashboard">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="ledger">General Ledger</TabsTrigger>
@@ -580,14 +756,21 @@ export default function AccountingClient() {
           <TabsTrigger value="balance-sheet">Balance Sheet</TabsTrigger>
           <TabsTrigger value="project-pnl">P&amp;L by Project</TabsTrigger>
           <TabsTrigger value="bank-rec">Bank Reconciliation</TabsTrigger>
+          <TabsTrigger value="companies">Companies</TabsTrigger>
         </TabsList>
+        {REPORT_TABS.has(activeTab) && (
+          <div className="mt-3">
+            <CompanySelector companies={companies} scope={scope} onChange={setScope} />
+          </div>
+        )}
         <TabsContent value="dashboard"><DashboardPanel /></TabsContent>
         <TabsContent value="ledger"><GeneralLedgerPanel /></TabsContent>
-        <TabsContent value="trial-balance"><TrialBalancePanel /></TabsContent>
-        <TabsContent value="pnl"><ProfitAndLossPanel /></TabsContent>
-        <TabsContent value="balance-sheet"><BalanceSheetPanel /></TabsContent>
-        <TabsContent value="project-pnl"><ProjectPnlPanel /></TabsContent>
+        <TabsContent value="trial-balance"><TrialBalancePanel scope={scope} /></TabsContent>
+        <TabsContent value="pnl"><ProfitAndLossPanel scope={scope} /></TabsContent>
+        <TabsContent value="balance-sheet"><BalanceSheetPanel scope={scope} /></TabsContent>
+        <TabsContent value="project-pnl"><ProjectPnlPanel scope={scope} /></TabsContent>
         <TabsContent value="bank-rec"><BankReconciliationPanel /></TabsContent>
+        <TabsContent value="companies"><CompaniesPanel companies={companies} loading={companiesLoading} onCreated={loadCompanies} /></TabsContent>
       </Tabs>
     </div>
   );
