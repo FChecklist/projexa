@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
@@ -18,108 +19,103 @@ import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/sidebar-context";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 
-type NavItem = { label: string; href: string; icon: React.ComponentType<{ className?: string }> };
-type NavSection = { title: string; items: NavItem[] };
+// `labelKey`/`titleKey` are keys into the "Nav" namespace of messages/*.json
+// (see messages/en.json's Nav.items / Nav.sections) -- PLATFORM-01 Wave 2
+// (Workstream 5, i18n) reference pattern: this array is module-scope data,
+// outside any component, so it cannot call useTranslations() itself (hooks
+// only work inside components) -- it carries translation keys, and the
+// actual t() lookups happen in SidebarContent below, which is a component.
+type NavItem = { labelKey: string; href: string; icon: React.ComponentType<{ className?: string }> };
+type NavSection = { titleKey: string | null; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    title: "OVERVIEW",
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    titleKey: "sections.overview",
+    items: [{ labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard }],
   },
   {
-    title: "EXECUTION",
+    titleKey: "sections.execution",
     items: [
-      { label: "Schedule", href: "/schedule", icon: GanttChartSquare },
-      { label: "Meetings", href: "/meetings", icon: CalendarClock },
-      { label: "Scope of Work (BOQ)", href: "/scope", icon: FileText },
-      { label: "Work Progress", href: "/work-progress", icon: ClipboardList },
-      { label: "Site Diary", href: "/site-diary", icon: BookOpen },
-      { label: "Documents", href: "/documents", icon: FolderOpen },
-      { label: "Permits", href: "/permits", icon: ShieldCheck },
+      { labelKey: "items.schedule", href: "/schedule", icon: GanttChartSquare },
+      { labelKey: "items.meetings", href: "/meetings", icon: CalendarClock },
+      { labelKey: "items.scope", href: "/scope", icon: FileText },
+      { labelKey: "items.workProgress", href: "/work-progress", icon: ClipboardList },
+      { labelKey: "items.siteDiary", href: "/site-diary", icon: BookOpen },
+      { labelKey: "items.documents", href: "/documents", icon: FolderOpen },
+      { labelKey: "items.permits", href: "/permits", icon: ShieldCheck },
     ],
   },
   {
-    title: "FIELD",
+    titleKey: "sections.field",
     items: [
-      { label: "RFIs", href: "/rfis", icon: MessageCircleQuestion },
-      { label: "Submittals", href: "/submittals", icon: FileCheck2 },
-      { label: "Punch List", href: "/punch-list", icon: ListChecks },
-      { label: "Change Orders", href: "/change-orders", icon: FileSignature },
+      { labelKey: "items.rfis", href: "/rfis", icon: MessageCircleQuestion },
+      { labelKey: "items.submittals", href: "/submittals", icon: FileCheck2 },
+      { labelKey: "items.punchList", href: "/punch-list", icon: ListChecks },
+      { labelKey: "items.changeOrders", href: "/change-orders", icon: FileSignature },
     ],
   },
   {
-    title: "DESIGN",
+    titleKey: "sections.design",
     items: [
-      { label: "Mood Boards", href: "/mood-boards", icon: Palette },
-      { label: "FF&E Specification", href: "/ffe", icon: Sofa },
-      { label: "Floor Plans", href: "/floor-plans", icon: LayoutPanelLeft },
+      { labelKey: "items.moodBoards", href: "/mood-boards", icon: Palette },
+      { labelKey: "items.ffe", href: "/ffe", icon: Sofa },
+      { labelKey: "items.floorPlans", href: "/floor-plans", icon: LayoutPanelLeft },
     ],
   },
   {
-    title: "RESOURCES",
+    titleKey: "sections.resources",
     items: [
-      { label: "Manpower & Attendance", href: "/labour", icon: Users },
-      { label: "Materials", href: "/materials", icon: Package },
-      { label: "Vendors", href: "/vendors", icon: Building2 },
+      { labelKey: "items.labour", href: "/labour", icon: Users },
+      { labelKey: "items.materials", href: "/materials", icon: Package },
+      { labelKey: "items.vendors", href: "/vendors", icon: Building2 },
     ],
   },
   {
-    title: "SALES",
+    titleKey: "sections.sales",
     items: [
-      { label: "Sales Dashboard", href: "/sales", icon: TrendingUp },
-      { label: "Leads", href: "/sales/leads", icon: UserPlus },
-      { label: "Opportunities", href: "/sales/opportunities", icon: Handshake },
-      { label: "Quotations", href: "/quotations", icon: FileSpreadsheet },
-      { label: "Sales Orders", href: "/sales-orders", icon: ShoppingCart },
-      { label: "Customers", href: "/customers", icon: Contact2 },
+      { labelKey: "items.salesDashboard", href: "/sales", icon: TrendingUp },
+      { labelKey: "items.leads", href: "/sales/leads", icon: UserPlus },
+      { labelKey: "items.opportunities", href: "/sales/opportunities", icon: Handshake },
+      { labelKey: "items.quotations", href: "/quotations", icon: FileSpreadsheet },
+      { labelKey: "items.salesOrders", href: "/sales-orders", icon: ShoppingCart },
+      { labelKey: "items.customers", href: "/customers", icon: Contact2 },
     ],
   },
   {
-    // Priority 15: a real Risk & Compliance surface (risk register, audit
-    // findings/CAPA, policy library, vendor risk, fraud cases, access
-    // review, statutory compliance register) -- reuses VERIDIAN's own
-    // original GRC engine, see GrcClient.tsx / src/app/api/v1/projexa/*
-    // (risks, audit-engagements, audit-findings, policies, vendor-risk,
-    // fraud-cases, access-review, compliance-register, grc-dashboard).
-    title: "GRC",
+    titleKey: "sections.grc",
     items: [
-      { label: "Risk & Compliance", href: "/grc", icon: ShieldAlert },
+      { labelKey: "items.grc", href: "/grc", icon: ShieldAlert },
     ],
   },
   {
-    title: "FINANCE",
+    titleKey: "sections.finance",
     items: [
-      { label: "Budgets", href: "/budgets", icon: Wallet },
-      { label: "Expenses", href: "/expenses", icon: Receipt },
-      // Priority 15: real GL/reporting + full invoice lifecycle -- see
-      // AccountingClient.tsx / InvoicesClient.tsx and
-      // src/app/api/v1/projexa/{accounts,journal-entries,trial-balance,
-      // profit-and-loss,balance-sheet,profit-and-loss-by-project,
-      // bank-reconciliation,finance-dashboard,credit-notes,ar-aging}.
-      { label: "Accounting", href: "/accounting", icon: Calculator },
-      { label: "Invoices", href: "/invoices", icon: ReceiptText },
+      { labelKey: "items.budgets", href: "/budgets", icon: Wallet },
+      { labelKey: "items.expenses", href: "/expenses", icon: Receipt },
+      { labelKey: "items.accounting", href: "/accounting", icon: Calculator },
+      { labelKey: "items.invoices", href: "/invoices", icon: ReceiptText },
     ],
   },
   {
-    title: "HR",
+    titleKey: "sections.hr",
     items: [
-      { label: "HR Dashboard", href: "/hr", icon: UserCog },
-      { label: "Employees", href: "/employees", icon: IdCard },
-      { label: "Payroll", href: "/payroll", icon: Banknote },
-      { label: "Recruitment", href: "/recruitment", icon: Briefcase },
+      { labelKey: "items.hrDashboard", href: "/hr", icon: UserCog },
+      { labelKey: "items.employees", href: "/employees", icon: IdCard },
+      { labelKey: "items.payroll", href: "/payroll", icon: Banknote },
+      { labelKey: "items.recruitment", href: "/recruitment", icon: Briefcase },
     ],
   },
   {
-    title: "INTELLIGENCE",
+    titleKey: "sections.intelligence",
     items: [
-      { label: "KPIs", href: "/kpis", icon: Target },
-      { label: "Reports", href: "/reports", icon: BarChart3 },
-      { label: "AI Copilot", href: "/copilot", icon: Bot },
+      { labelKey: "items.kpis", href: "/kpis", icon: Target },
+      { labelKey: "items.reports", href: "/reports", icon: BarChart3 },
+      { labelKey: "items.aiCopilot", href: "/copilot", icon: Bot },
     ],
   },
   {
-    title: "",
-    items: [{ label: "Settings", href: "/settings", icon: Settings }],
+    titleKey: null,
+    items: [{ labelKey: "items.settings", href: "/settings", icon: Settings }],
   },
 ];
 
@@ -136,6 +132,7 @@ function SidebarContent({
   projectId: string | null;
   onNavigate?: () => void;
 }) {
+  const t = useTranslations("Nav");
   const suffix = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
 
   return (
@@ -147,9 +144,9 @@ function SidebarContent({
       <ProjectSwitcher pathname={pathname} projectId={projectId} />
       <nav className="flex-1 overflow-y-auto px-3 pb-6">
         {NAV_SECTIONS.map((section) => (
-          <div key={section.title || "bottom"} className="mb-5">
-            {section.title && (
-              <div className="px-2 pb-2 text-[11px] font-semibold tracking-wider text-px-muted">{section.title}</div>
+          <div key={section.titleKey ?? "bottom"} className="mb-5">
+            {section.titleKey && (
+              <div className="px-2 pb-2 text-[11px] font-semibold tracking-wider text-px-muted">{t(section.titleKey)}</div>
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => {
@@ -166,7 +163,7 @@ function SidebarContent({
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
+                    <span className="truncate">{t(item.labelKey)}</span>
                   </Link>
                 );
               })}
@@ -189,6 +186,7 @@ function SidebarContentWithProject({ pathname, onNavigate }: { pathname: string;
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const t = useTranslations("Nav");
   const [open, setOpen] = useState(false);
   const { collapsed } = useSidebar();
 
@@ -214,7 +212,7 @@ export function AppSidebar() {
         </SheetTrigger>
         <SheetContent side="left" className="w-64 border-none p-0">
           <SheetHeader className="sr-only">
-            <SheetTitle>Navigation</SheetTitle>
+            <SheetTitle>{t("navigationLabel")}</SheetTitle>
           </SheetHeader>
           <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} onNavigate={() => setOpen(false)} />}>
             <SidebarContentWithProject pathname={pathname} onNavigate={() => setOpen(false)} />
