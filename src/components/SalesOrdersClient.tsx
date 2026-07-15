@@ -16,10 +16,12 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 type SalesOrderItem = { id: string; description: string; quantity: string; rate: string; amount: string; deliveredQuantity: string };
 type SalesOrder = {
   id: string; soNumber: number; customerId: string; customerName: string | null;
-  orderDate: string; deliveryDate: string | null; status: string; grandTotal: string; items: SalesOrderItem[];
+  orderDate: string; deliveryDate: string | null; status: string;
+  currencyId: string | null; exchangeRate: string; grandTotal: string; items: SalesOrderItem[];
 };
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
+type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 type Line = { description: string; quantity: string; rate: string };
 
 const STATUS_OPTIONS = ["draft", "confirmed", "partially_fulfilled", "fulfilled", "cancelled"];
@@ -46,6 +48,9 @@ export default function SalesOrdersClient() {
   const [deliveryDate, setDeliveryDate] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
   const [submitting, setSubmitting] = useState(false);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencyId, setCurrencyId] = useState("");
+  const [exchangeRate, setExchangeRate] = useState("1");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +73,10 @@ export default function SalesOrdersClient() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {}); }, []);
+
+  const selectedCurrency = currencies.find((c) => c.id === currencyId);
+  const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -75,18 +84,24 @@ export default function SalesOrdersClient() {
 
   async function createOrder() {
     if (!customerId || lines.some((l) => !l.description.trim() || !l.rate)) return;
+    if (needsExchangeRate && (!exchangeRate || Number(exchangeRate) <= 0)) {
+      toast.error("An exchange rate is required for a non-base currency");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/sales-orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId, projectId: projectId || undefined, orderDate, deliveryDate: deliveryDate || undefined,
+          currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
           items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
         }),
       });
       if (!res.ok) throw new Error();
       toast.success("Sales order created");
-      setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]); setOpen(false);
+      setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]);
+      setCurrencyId(""); setExchangeRate("1"); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't create sales order");
@@ -165,6 +180,26 @@ export default function SalesOrdersClient() {
                 <div className="space-y-1.5"><Label>Order Date</Label><Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Delivery Date (optional)</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} /></div>
               </div>
+              {currencies.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label>Currency (optional)</Label>
+                    <Select value={currencyId || "base"} onValueChange={(v) => setCurrencyId(v === "base" ? "" : v)}>
+                      <SelectTrigger><SelectValue placeholder="Org base currency" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="base">Org base currency</SelectItem>
+                        {currencies.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}{c.isBaseCurrency ? " (base)" : ""}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {needsExchangeRate && (
+                    <div className="space-y-1.5">
+                      <Label>Exchange Rate (to base)</Label>
+                      <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} placeholder="e.g. 83.25" />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Line Items</Label>
                 {lines.map((l, i) => (
@@ -226,7 +261,9 @@ export default function SalesOrdersClient() {
                     <TableCell className="font-medium">{o.soNumber}</TableCell>
                     <TableCell className="text-px-muted">{o.customerName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{o.orderDate}</TableCell>
-                    <TableCell className="text-px-muted">₹{Number(o.grandTotal).toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="text-px-muted">
+                      {o.currencyId ? `${currencies.find((c) => c.id === o.currencyId)?.code ?? ""} ` : "₹"}{Number(o.grandTotal).toLocaleString("en-IN")}
+                    </TableCell>
                     <TableCell>
                       <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>
                         <SelectTrigger className="h-7 w-40 border-none p-0 shadow-none">

@@ -16,10 +16,11 @@ type QuotationItem = { id: string; description: string; quantity: string; rate: 
 type Quotation = {
   id: string; quotationNumber: number; customerId: string | null; customerName: string | null;
   quotationDate: string; validTill: string | null; status: string; version: number; revisionOf: string | null;
-  grandTotal: string; items: QuotationItem[];
+  currencyId: string | null; exchangeRate: string; grandTotal: string; items: QuotationItem[];
 };
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
+type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 
 // Mirrors erp-selling-service.ts's QUOTATION_TRANSITIONS -- UX-only duplicate,
 // the backend enforces the real gate; this just decides which action
@@ -55,6 +56,9 @@ export default function QuotationsClient() {
   const [validTill, setValidTill] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
   const [submitting, setSubmitting] = useState(false);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencyId, setCurrencyId] = useState("");
+  const [exchangeRate, setExchangeRate] = useState("1");
 
   const [convertFor, setConvertFor] = useState<Quotation | null>(null);
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -80,6 +84,14 @@ export default function QuotationsClient() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {}); }, []);
+
+  // Only non-base currencies need a manual exchange rate -- picking the
+  // org's own base currency (or leaving it unset) always means rate 1,
+  // matching erp-selling-service.ts's resolveDocumentCurrency() (omitting
+  // currencyId entirely also means "org base currency, rate 1").
+  const selectedCurrency = currencies.find((c) => c.id === currencyId);
+  const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -87,18 +99,24 @@ export default function QuotationsClient() {
 
   async function createQuotation() {
     if (!customerId || lines.some((l) => !l.description.trim() || !l.rate)) return;
+    if (needsExchangeRate && (!exchangeRate || Number(exchangeRate) <= 0)) {
+      toast.error("An exchange rate is required for a non-base currency");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/quotations", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId, projectId: projectId || undefined, quotationDate, validTill: validTill || undefined,
+          currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
           items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
         }),
       });
       if (!res.ok) throw new Error();
       toast.success("Quotation created");
-      setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]); setOpen(false);
+      setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]);
+      setCurrencyId(""); setExchangeRate("1"); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't create quotation");
@@ -208,6 +226,26 @@ export default function QuotationsClient() {
                 <div className="space-y-1.5"><Label>Quotation Date</Label><Input type="date" value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Valid Till (optional)</Label><Input type="date" value={validTill} onChange={(e) => setValidTill(e.target.value)} /></div>
               </div>
+              {currencies.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label>Currency (optional)</Label>
+                    <Select value={currencyId || "base"} onValueChange={(v) => setCurrencyId(v === "base" ? "" : v)}>
+                      <SelectTrigger><SelectValue placeholder="Org base currency" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="base">Org base currency</SelectItem>
+                        {currencies.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}{c.isBaseCurrency ? " (base)" : ""}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {needsExchangeRate && (
+                    <div className="space-y-1.5">
+                      <Label>Exchange Rate (to base)</Label>
+                      <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} placeholder="e.g. 83.25" />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Line Items</Label>
                 {lines.map((l, i) => (
@@ -249,7 +287,9 @@ export default function QuotationsClient() {
                     <TableCell className="text-px-muted">{q.customerName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{q.quotationDate}</TableCell>
                     <TableCell className="text-px-muted">v{q.version}{q.revisionOf ? " (revision)" : ""}</TableCell>
-                    <TableCell className="text-px-muted">₹{Number(q.grandTotal).toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="text-px-muted">
+                      {q.currencyId ? `${currencies.find((c) => c.id === q.currencyId)?.code ?? ""} ` : "₹"}{Number(q.grandTotal).toLocaleString("en-IN")}
+                    </TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "outline"}>{q.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">

@@ -35,6 +35,7 @@
       "inventory": "Inventory",
       "vendors": "Vendors",
       "procurement": "Procurement",
+      "purchaseOrders": "Purchase Orders",
       "salesDashboard": "Sales Dashboard",
       "leads": "Leads",
       "opportunities": "Opportunities",
