@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { ArrowRight, PlayCircle } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 import { Button } from "@/components/ui/button";
 
-export function Hero() {
+export async function Hero() {
+  const t = await getTranslations("Marketing.hero");
+
   return (
     <section className="relative overflow-hidden bg-px-ink">
       {/* Blueprint grid texture -- faint, construction-drawing-coded rather
@@ -31,26 +34,24 @@ export function Hero() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-medium tracking-wide text-px-cloud2">
             <span className="h-1.5 w-1.5 rounded-full bg-px-orange" />
-            AI-NATIVE CONSTRUCTION INTELLIGENCE
+            {t("badge")}
           </div>
 
           <h1 className="font-heading text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
-            Every deadline, drawing and decision.{" "}
+            {t("headingLine1")}{" "}
             <span className="bg-gradient-to-r from-px-orange to-orange-300 bg-clip-text text-transparent">
-              One coordinated system.
+              {t("headingLine2")}
             </span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-px-cloud2 sm:text-xl">
-            PROJEXA replaces the scattered spreadsheets, WhatsApp threads and missed
-            follow-ups that quietly cost construction and interior design projects time
-            and money — with one AI Copilot-backed system for schedule, site, and spend.
+            {t("subhead")}
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg" className="h-12 w-full bg-px-orange px-8 text-base text-white shadow-orange hover:bg-px-orange-hover sm:w-auto">
               <Link href="/signup">
-                Start free <ArrowRight className="h-4 w-4" />
+                {t("ctaStart")} <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button
@@ -61,13 +62,13 @@ export function Hero() {
             >
               <Link href="/login">
                 <PlayCircle className="h-4 w-4" />
-                Log in
+                {t("ctaLogin")}
               </Link>
             </Button>
           </div>
 
           <p className="mt-5 text-sm text-px-cloud2/70">
-            No credit card required. Set up your first project in minutes.
+            {t("note")}
           </p>
         </div>
       </div>

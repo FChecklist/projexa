@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "./Reveal";
 
-export function FinalCTA() {
+export async function FinalCTA() {
+  const t = await getTranslations("Marketing.finalCta");
+
   return (
     <section className="relative overflow-hidden bg-px-ink py-20 sm:py-28">
       <div
@@ -23,16 +26,15 @@ export function FinalCTA() {
       <div className="relative mx-auto max-w-3xl px-4 text-center sm:px-6 lg:px-8">
         <Reveal>
           <h2 className="font-heading text-balance text-3xl font-semibold tracking-tight text-white sm:text-5xl">
-            PROJEXA makes work complete.
+            {t("heading")}
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-balance text-lg leading-relaxed text-px-cloud2">
-            Every RFI answered. Every schedule slip caught early. Every change order on
-            record. From first drawing to final handover — nothing falls through.
+            {t("body")}
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg" className="h-12 w-full bg-px-orange px-8 text-base text-white shadow-orange hover:bg-px-orange-hover sm:w-auto">
               <Link href="/signup">
-                Start free <ArrowRight className="h-4 w-4" />
+                {t("ctaStart")} <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button
@@ -41,7 +43,7 @@ export function FinalCTA() {
               variant="outline"
               className="h-12 w-full border-white/20 bg-transparent px-8 text-base text-white hover:bg-white/10 hover:text-white sm:w-auto"
             >
-              <Link href="/login">Log in</Link>
+              <Link href="/login">{t("ctaLogin")}</Link>
             </Button>
           </div>
         </Reveal>

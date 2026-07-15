@@ -1,0 +1,242 @@
+{
+  "Nav": {
+    "navigationLabel": "Navigation",
+    "sections": {
+      "overview": "OVERVIEW",
+      "execution": "EXECUTION",
+      "field": "FIELD",
+      "design": "DESIGN",
+      "resources": "RESOURCES",
+      "sales": "SALES",
+      "grc": "GRC",
+      "finance": "FINANCE",
+      "hr": "HR",
+      "intelligence": "INTELLIGENCE"
+    },
+    "items": {
+      "dashboard": "Dashboard",
+      "schedule": "Schedule",
+      "meetings": "Meetings",
+      "scope": "Scope of Work (BOQ)",
+      "workProgress": "Work Progress",
+      "siteDiary": "Site Diary",
+      "documents": "Documents",
+      "permits": "Permits",
+      "rfis": "RFIs",
+      "submittals": "Submittals",
+      "punchList": "Punch List",
+      "changeOrders": "Change Orders",
+      "moodBoards": "Mood Boards",
+      "ffe": "FF&E Specification",
+      "floorPlans": "Floor Plans",
+      "labour": "Manpower & Attendance",
+      "materials": "Materials",
+      "vendors": "Vendors",
+      "salesDashboard": "Sales Dashboard",
+      "leads": "Leads",
+      "opportunities": "Opportunities",
+      "quotations": "Quotations",
+      "salesOrders": "Sales Orders",
+      "customers": "Customers",
+      "grc": "Risk & Compliance",
+      "budgets": "Budgets",
+      "expenses": "Expenses",
+      "accounting": "Accounting",
+      "invoices": "Invoices",
+      "hrDashboard": "HR Dashboard",
+      "employees": "Employees",
+      "payroll": "Payroll",
+      "recruitment": "Recruitment",
+      "kpis": "KPIs",
+      "reports": "Reports",
+      "aiCopilot": "AI Copilot",
+      "settings": "Settings"
+    }
+  },
+  "Auth": {
+    "login": {
+      "title": "Log in to PROJEXA",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Log in",
+      "submitting": "Logging in…",
+      "noAccount": "No account?",
+      "signUpLink": "Sign up",
+      "genericError": "Login failed",
+      "provisionError": "Failed to finish setting up your workspace"
+    },
+    "signup": {
+      "title": "Create your PROJEXA account",
+      "checkEmailTitle": "Check your email",
+      "checkEmailBody": "We sent a confirmation link to {email}. Click it, then come back and log in.",
+      "companyName": "Company name",
+      "companyNamePlaceholder": "Acme Construction",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Create account",
+      "submitting": "Creating account…",
+      "haveAccount": "Already have an account?",
+      "loginLink": "Log in",
+      "genericError": "Failed to create organization"
+    }
+  },
+  "Marketing": {
+    "header": {
+      "navLinks": {
+        "coordination": "Coordination",
+        "modules": "Modules",
+        "copilot": "AI Copilot",
+        "value": "Value"
+      },
+      "login": "Log in",
+      "startFree": "Start free",
+      "openMenu": "Open menu",
+      "closeMenu": "Close menu"
+    },
+    "hero": {
+      "badge": "AI-NATIVE CONSTRUCTION INTELLIGENCE",
+      "headingLine1": "Every deadline, drawing and decision.",
+      "headingLine2": "One coordinated system.",
+      "subhead": "PROJEXA replaces the scattered spreadsheets, WhatsApp threads and missed follow-ups that quietly cost construction and interior design projects time and money — with one AI Copilot-backed system for schedule, site, and spend.",
+      "ctaStart": "Start free",
+      "ctaLogin": "Log in",
+      "note": "No credit card required. Set up your first project in minutes."
+    },
+    "problem": {
+      "eyebrow": "The real cost",
+      "heading": "The work isn't the expensive part. The coordination is.",
+      "subhead": "Every mid-size construction and interior design team loses money the same way — not on materials or labour, but on the gaps between them.",
+      "points": {
+        "commsScattered": {
+          "title": "Communication scattered everywhere",
+          "body": "RFIs in email, submittals in WhatsApp, approvals over calls. By the time an answer surfaces, the site has already moved on."
+        },
+        "deadlinesSlip": {
+          "title": "Deadlines slip silently",
+          "body": "Schedule delays get discovered after they've already cascaded into the next trade, the next milestone, the next client conversation."
+        },
+        "noSourceOfTruth": {
+          "title": "No single source of truth",
+          "body": "Budgets in one spreadsheet, change orders in another, site diaries on paper. Nobody — including the PM — has the full picture."
+        },
+        "rework": {
+          "title": "Rework from miscommunication",
+          "body": "A decision made on-site never makes it back to the drawings. Three weeks later, it's redone at the client's expense — and yours."
+        }
+      }
+    },
+    "solution": {
+      "eyebrow": "One coordinated system",
+      "heading": "Every module talks to every other module.",
+      "subhead": "Not twenty disconnected tools stitched together with exports — one system where a change order updates the budget, and a schedule slip shows up in the diary automatically.",
+      "modules": {
+        "schedule": {
+          "title": "Schedule",
+          "body": "One live timeline the whole team works from — so a slip on-site shows up before it becomes a missed milestone."
+        },
+        "scope": {
+          "title": "Scope of Work (BOQ)",
+          "body": "Line-item scope tied straight to budgets and progress, not a spreadsheet nobody re-checks."
+        },
+        "workProgress": {
+          "title": "Work Progress",
+          "body": "Actual site progress against plan, tracked continuously instead of reconstructed at month-end."
+        },
+        "siteDiary": {
+          "title": "Site Diary",
+          "body": "The daily record of what actually happened on site — searchable, not buried in a paper logbook."
+        },
+        "rfisSubmittals": {
+          "title": "RFIs & Submittals",
+          "body": "Every question and every approval tracked to resolution, with nothing left waiting in someone's inbox."
+        },
+        "punchList": {
+          "title": "Punch List",
+          "body": "Snags and closeout items owned, assigned, and closed — visible to everyone, not just whoever wrote it down."
+        },
+        "changeOrders": {
+          "title": "Change Orders",
+          "body": "Scope changes documented and priced the moment they happen, not reconstructed in a dispute later."
+        },
+        "budgets": {
+          "title": "Budgets & Expenses",
+          "body": "Real spend against real budget, per project — visible before it becomes a surprise at handover."
+        },
+        "aiCopilot": {
+          "title": "AI Copilot",
+          "body": "Grounded in your own project data — ask it about any RFI, budget line, or schedule change and get a real answer."
+        }
+      },
+      "plusLabel": "Plus:",
+      "more": {
+        "moodBoards": "Mood Boards",
+        "ffe": "FF&E Specification",
+        "floorPlans": "Floor Plans",
+        "manpower": "Manpower & Attendance",
+        "materials": "Materials",
+        "vendors": "Vendors",
+        "documents": "Documents",
+        "kpis": "KPIs",
+        "reports": "Reports"
+      }
+    },
+    "copilot": {
+      "badge": "AI Copilot",
+      "heading": "An AI Copilot that actually knows your project.",
+      "subhead": "This isn't a chatbot bolted onto a dashboard. PROJEXA's AI Copilot is wired into every module — schedule, RFIs, site diary, budgets, change orders — so it can answer real questions about a real project, in context, the moment you ask.",
+      "capabilities": {
+        "grounded": {
+          "title": "Grounded in your project, not the internet",
+          "body": "Every answer is drawn from your own schedule, RFIs, site diaries and budgets — not a generic model guessing."
+        },
+        "ask": {
+          "title": "Ask instead of digging",
+          "body": "What's blocking the electrical RFI on the third floor? gets answered in seconds, not after three phone calls."
+        },
+        "workflow": {
+          "title": "Built into the workflow",
+          "body": "The Copilot sits alongside every module, so it already has the context — no exporting data or switching tabs."
+        }
+      },
+      "chat": {
+        "q1": "What's blocking the electrical RFI on Level 3?",
+        "a1": "RFI-042 has been pending vendor response for 4 days. It's blocking two dependent schedule items due Friday. Want me to flag it to the vendor and notify the PM?",
+        "q2": "Yes, do that.",
+        "typing": "Notifying vendor and PM…"
+      }
+    },
+    "roi": {
+      "eyebrow": "Why it pays for itself",
+      "heading": "Built to save teams at least 2x what they spend on it.",
+      "body": "We won't hand you a fabricated statistic — every project is different. What we will say plainly: the cost of PROJEXA is small next to the cost of a missed deadline, a disputed change order, or a week of rework caused by a decision that never made it back to the drawings. Prevent one of those on a single project, and PROJEXA has already paid for itself many times over.",
+      "boxTitle": "The math is simple, not fabricated.",
+      "boxBody": "PROJEXA costs a small, predictable amount per month. A single missed deadline, rework cycle, or vendor dispute typically costs far more than that — on just one project. Catch it before it happens, and you're ahead.",
+      "reasons": {
+        "deadline": {
+          "title": "One missed deadline costs more than a year of PROJEXA",
+          "body": "A single schedule slip that cascades into the next trade, or a change order that goes undocumented, routinely costs more than what a team spends on PROJEXA in a full year."
+        },
+        "rework": {
+          "title": "Rework is the silent budget killer",
+          "body": "Miscommunication between site and office doesn't show up as a line item — it shows up as redone work, disputed change orders, and client trust you have to rebuild."
+        },
+        "compound": {
+          "title": "Coordination, done once, compounds",
+          "body": "Every project run through PROJEXA makes the next one faster — the same schedule discipline, the same paper trail, the same AI Copilot context, reused."
+        }
+      }
+    },
+    "finalCta": {
+      "heading": "PROJEXA makes work complete.",
+      "body": "Every RFI answered. Every schedule slip caught early. Every change order on record. From first drawing to final handover — nothing falls through.",
+      "ctaStart": "Start free",
+      "ctaLogin": "Log in"
+    },
+    "footer": {
+      "tagline": "— Construction Intelligence AI OS",
+      "login": "Log in",
+      "signup": "Sign up",
+      "copyright": "© {year} PROJEXA. Built on VERIDIAN AI OS."
+    }
+  }
+}

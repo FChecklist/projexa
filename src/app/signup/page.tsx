@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 
 export default function SignupPage() {
   const router = useRouter();
+  const t = useTranslations("Auth.signup");
   const [orgName, setOrgName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -51,8 +53,8 @@ export default function SignupPage() {
       body: JSON.stringify({ orgName }),
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: "Failed to create organization" }));
-      setError(body.error ?? "Failed to create organization");
+      const body = await res.json().catch(() => ({ error: t("genericError") }));
+      setError(body.error ?? t("genericError"));
       setLoading(false);
       return;
     }
@@ -66,10 +68,10 @@ export default function SignupPage() {
       <div className="flex min-h-screen items-center justify-center bg-px-concrete p-6">
         <Card className="w-full max-w-sm">
           <CardHeader>
-            <CardTitle className="font-heading text-xl">Check your email</CardTitle>
+            <CardTitle className="font-heading text-xl">{t("checkEmailTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-px-muted">We sent a confirmation link to {email}. Click it, then come back and log in.</p>
+            <p className="text-sm text-px-muted">{t("checkEmailBody", { email })}</p>
           </CardContent>
         </Card>
       </div>
@@ -80,27 +82,27 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center bg-px-concrete p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="font-heading text-xl">Create your PROJEXA account</CardTitle>
+          <CardTitle className="font-heading text-xl">{t("title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="orgName">Company name</Label>
-              <Input id="orgName" required value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Acme Construction" />
+              <Label htmlFor="orgName">{t("companyName")}</Label>
+              <Input id="orgName" required value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder={t("companyNamePlaceholder")} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("email")}</Label>
               <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("password")}</Label>
               <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <p className="text-sm text-px-error">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Creating account…" : "Create account"}</Button>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? t("submitting") : t("submit")}</Button>
           </form>
           <p className="mt-4 text-center text-sm text-px-muted">
-            Already have an account? <a href="/login" className="font-semibold text-px-ink underline">Log in</a>
+            {t("haveAccount")} <a href="/login" className="font-semibold text-px-ink underline">{t("loginLink")}</a>
           </p>
         </CardContent>
       </Card>

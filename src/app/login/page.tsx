@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useTranslations("Auth.login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export default function LoginPage() {
 
     const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
     if (loginError || !data.session) {
-      setError(loginError?.message ?? "Login failed");
+      setError(loginError?.message ?? t("genericError"));
       setLoading(false);
       return;
     }
@@ -50,8 +52,8 @@ export default function LoginPage() {
         if (res.ok) {
           window.localStorage.removeItem("projexa_pending_org_name");
         } else {
-          const body = await res.json().catch(() => ({ error: "Failed to finish setting up your workspace" }));
-          setError(body.error ?? "Failed to finish setting up your workspace");
+          const body = await res.json().catch(() => ({ error: t("provisionError") }));
+          setError(body.error ?? t("provisionError"));
           setLoading(false);
           return;
         }
@@ -66,23 +68,23 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-px-concrete p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="font-heading text-xl">Log in to PROJEXA</CardTitle>
+          <CardTitle className="font-heading text-xl">{t("title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("email")}</Label>
               <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("password")}</Label>
               <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <p className="text-sm text-px-error">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Logging in…" : "Log in"}</Button>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? t("submitting") : t("submit")}</Button>
           </form>
           <p className="mt-4 text-center text-sm text-px-muted">
-            No account? <a href="/signup" className="font-semibold text-px-ink underline">Sign up</a>
+            {t("noAccount")} <a href="/signup" className="font-semibold text-px-ink underline">{t("signUpLink")}</a>
           </p>
         </CardContent>
       </Card>
