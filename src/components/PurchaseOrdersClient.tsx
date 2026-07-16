@@ -12,6 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+// Priority 17 final gap (2026-07-16): erp_purchase_orders gained a
+// companyId column this wave -- reuses the exact selector
+// AccountingClient.tsx/LeadsClient.tsx already built (company-scope.tsx),
+// not a second copy. consolidate has no meaning for a flat PO list, so the
+// toggle is hidden here, same as Leads/Quotations/Sales Orders.
+import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): the first Purchase
 // Order creation UI in PROJEXA -- VendorsClient.tsx only ever managed
@@ -22,7 +28,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 type PurchaseOrderItem = { id: string; description: string; quantity: string; rate: string; amount: string; receivedQuantity: string };
 type PurchaseOrder = {
   id: string; poNumber: number; vendorId: string; orderDate: string; expectedDeliveryDate: string | null;
-  status: string; currencyId: string | null; exchangeRate: string; grandTotal: string; items: PurchaseOrderItem[];
+  status: string; companyId: string | null; currencyId: string | null; exchangeRate: string; grandTotal: string; items: PurchaseOrderItem[];
 };
 type Vendor = { id: string; vendorName: string };
 // currencyLabel()/useCurrencies() now live in @/lib/currency (Priority 17
@@ -40,7 +46,14 @@ export default function PurchaseOrdersClient() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
 
+  // Priority 17 final gap: companies list + the list-level filter scope.
+  // Defaults to "All companies" -- an org that hasn't set up companies/
+  // offices yet (or a PO never attributed to one) sees no change.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
   const [vendorId, setVendorId] = useState("");
+  const [poCompanyId, setPoCompanyId] = useState<string>("__none__");
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
   const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
@@ -51,7 +64,10 @@ export default function PurchaseOrdersClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/purchase-orders");
+      const params = new URLSearchParams();
+      if (scope.companyId) params.set("companyId", scope.companyId);
+      const qs = params.toString();
+      const res = await fetch(`/api/purchase-orders${qs ? `?${qs}` : ""}`);
       const data = await res.json();
       setOrders(data.purchaseOrders ?? []);
     } catch {
@@ -59,10 +75,22 @@ export default function PurchaseOrdersClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope.companyId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/companies");
+        const data = await res.json();
+        setCompanies(data.companies ?? []);
+      } catch {
+        // Non-fatal -- CompanySelector renders nothing when companies is
+        // empty, so a failed fetch just means no selector, not a broken page.
+      }
+    })();
+  }, []);
 
   const selectedCurrency = currencies.find((c) => c.id === currencyId);
   const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;
@@ -83,6 +111,7 @@ export default function PurchaseOrdersClient() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vendorId, orderDate, expectedDeliveryDate: expectedDeliveryDate || undefined,
+          companyId: poCompanyId === "__none__" ? undefined : poCompanyId,
           currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
           items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
         }),
@@ -90,7 +119,7 @@ export default function PurchaseOrdersClient() {
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }
       toast.success("Purchase order created");
       setVendorId(""); setExpectedDeliveryDate(""); setLines([{ description: "", quantity: "1", rate: "" }]);
-      setCurrencyId(""); setExchangeRate("1"); setOpen(false);
+      setCurrencyId(""); setExchangeRate("1"); setPoCompanyId("__none__"); setOpen(false);
       load();
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't create purchase order");
@@ -101,6 +130,7 @@ export default function PurchaseOrdersClient() {
 
   return (
     <div className="space-y-4">
+      <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
       <div className="flex justify-end">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="size-4" /> New Purchase Order</Button></DialogTrigger>
@@ -118,6 +148,18 @@ export default function PurchaseOrdersClient() {
                 <div className="space-y-1.5"><Label>Order Date</Label><Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Expected Delivery (optional)</Label><Input type="date" value={expectedDeliveryDate} onChange={(e) => setExpectedDeliveryDate(e.target.value)} /></div>
               </div>
+              {companies.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Company / Office (optional)</Label>
+                  <Select value={poCompanyId} onValueChange={setPoCompanyId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unattributed</SelectItem>
+                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {currencies.length > 0 && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">

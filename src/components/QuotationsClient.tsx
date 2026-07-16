@@ -12,11 +12,18 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Copy, ArrowRightCircle, FileDown } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+// Priority 17 final gap (2026-07-16): erp_quotations gained a companyId
+// column this wave -- reuses the exact selector AccountingClient.tsx/
+// LeadsClient.tsx already built (company-scope.tsx), not a second copy.
+// consolidate has no meaning for a flat quotations list (no parent/sub-
+// company tree to roll up), so the toggle is hidden here, same as Leads.
+import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
 type QuotationItem = { id: string; description: string; quantity: string; rate: string; amount: string };
 type Quotation = {
   id: string; quotationNumber: number; customerId: string | null; customerName: string | null;
   quotationDate: string; validTill: string | null; status: string; version: number; revisionOf: string | null;
+  companyId: string | null;
   currencyId: string | null; exchangeRate: string; grandTotal: string; items: QuotationItem[];
 };
 type Customer = { id: string; customerName: string };
@@ -50,9 +57,16 @@ export default function QuotationsClient() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // Priority 17 final gap: companies list + the list-level filter scope.
+  // Defaults to "All companies" -- an org that hasn't set up companies/
+  // offices yet (or a quotation never attributed to one) sees no change.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [quotationCompanyId, setQuotationCompanyId] = useState<string>("__none__");
   const [projects, setProjects] = useState<Project[]>([]);
   const [quotationDate, setQuotationDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [validTill, setValidTill] = useState("");
@@ -72,6 +86,7 @@ export default function QuotationsClient() {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (scope.companyId) params.set("companyId", scope.companyId);
       const res = await fetch(`/api/quotations?${params.toString()}`);
       const data = await res.json();
       setQuotations(data.quotations ?? []);
@@ -81,11 +96,23 @@ export default function QuotationsClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, scope.companyId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/companies");
+        const data = await res.json();
+        setCompanies(data.companies ?? []);
+      } catch {
+        // Non-fatal -- CompanySelector renders nothing when companies is
+        // empty, so a failed fetch just means no selector, not a broken page.
+      }
+    })();
+  }, []);
 
   // Only non-base currencies need a manual exchange rate -- picking the
   // org's own base currency (or leaving it unset) always means rate 1,
@@ -110,6 +137,7 @@ export default function QuotationsClient() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId, projectId: projectId || undefined, quotationDate, validTill: validTill || undefined,
+          companyId: quotationCompanyId === "__none__" ? undefined : quotationCompanyId,
           currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
           items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
         }),
@@ -117,7 +145,7 @@ export default function QuotationsClient() {
       if (!res.ok) throw new Error();
       toast.success("Quotation created");
       setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]);
-      setCurrencyId(""); setExchangeRate("1"); setOpen(false);
+      setCurrencyId(""); setExchangeRate("1"); setQuotationCompanyId("__none__"); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't create quotation");
@@ -191,6 +219,7 @@ export default function QuotationsClient() {
 
   return (
     <div className="space-y-4">
+      <CompanySelector companies={companies} scope={scope} onChange={(s) => { setPage(1); setScope(s); }} showConsolidateToggle={false} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Input placeholder="Search by customer…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} className="w-56" />
@@ -227,6 +256,18 @@ export default function QuotationsClient() {
                 <div className="space-y-1.5"><Label>Quotation Date</Label><Input type="date" value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Valid Till (optional)</Label><Input type="date" value={validTill} onChange={(e) => setValidTill(e.target.value)} /></div>
               </div>
+              {companies.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Company / Office (optional)</Label>
+                  <Select value={quotationCompanyId} onValueChange={setQuotationCompanyId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unattributed</SelectItem>
+                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {currencies.length > 0 && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
