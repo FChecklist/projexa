@@ -9,6 +9,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
+  // Priority 17 follow-on (projexa_reports_dispatch_2026_07_16): previously
+  // this page refused to render ReportsClient at all when the org had no
+  // projects yet, which would have also hidden the new org-wide "Full
+  // Catalog" tab (report_definitions catalog -- does not need a project) --
+  // a real regression for any org that has not created a project yet.
+  // ReportsClient is now always rendered (projectId nullable); only its
+  // "Project Reports" tab needs a project, and it shows its own honest
+  // empty state when there is not one, instead of the whole page.
   return (
     <>
       <AppTopbar title="Reports" />
@@ -18,10 +26,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
           </Card>
         )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && <ReportsClient key={project.id} projectId={project.id} />}
+        <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} />
       </main>
     </>
   );
