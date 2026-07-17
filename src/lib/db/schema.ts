@@ -123,3 +123,24 @@ export const todos = pgTable("todos", {
   done: boolean("done").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Marketing site lead capture ("Talk to an Engineer" -- see
+// src/components/marketing/ContactForm.tsx). Public, unauthenticated,
+// anonymous-visitor rows -- same reasoning as compliance-tracker's own
+// contact_submissions table: these rows belong to a visitor, not a tenant,
+// so no organizationId FK and no RLS/tenant scoping. text id (cuid2, via
+// @paralleldrive/cuid2 -- already a dependency of this repo) rather than
+// this schema's usual uuid().defaultRandom(), matching that same sibling
+// table's own id shape.
+export const contactRequests = pgTable("contact_requests", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  company: text("company"),
+  phone: text("phone"),
+  message: text("message"),
+  // Which marketing page the visitor submitted from -- "home" or
+  // "how-it-works" today (see ContactForm's sourcePage prop).
+  sourcePage: text("source_page"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

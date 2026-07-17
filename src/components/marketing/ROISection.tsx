@@ -12,7 +12,7 @@ export async function ROISection() {
   const t = await getTranslations("Marketing.roi");
 
   return (
-    <section id="value" className="border-b border-border bg-muted/40 py-20 sm:py-28">
+    <section id="pays-for-itself" className="border-b border-border bg-muted/40 py-20 sm:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
           <Reveal>

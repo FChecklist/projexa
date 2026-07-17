@@ -1,14 +1,14 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "./Reveal";
+import { ContactForm } from "./ContactForm";
 
-export async function FinalCTA() {
+export async function FinalCTA({ sourcePage = "home" }: { sourcePage?: "home" | "how-it-works" }) {
   const t = await getTranslations("Marketing.finalCta");
 
   return (
-    <section className="relative overflow-hidden bg-px-ink py-20 sm:py-28">
+    <section id="contact" className="relative overflow-hidden bg-px-ink py-20 sm:py-28">
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.06]"
         style={{
@@ -31,17 +31,17 @@ export async function FinalCTA() {
           <p className="mx-auto mt-5 max-w-xl text-balance text-lg leading-relaxed text-px-cloud2">
             {t("body")}
           </p>
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button asChild size="lg" className="h-12 w-full bg-px-orange px-8 text-base text-white shadow-orange hover:bg-px-orange-hover sm:w-auto">
-              <Link href="/signup">
-                {t("ctaStart")} <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+        </Reveal>
+
+        <Reveal delay={100} className="mt-9">
+          <p className="mb-5 font-heading text-base font-semibold text-white">{t("formIntro")}</p>
+          <ContactForm sourcePage={sourcePage} />
+          <div className="mt-5">
             <Button
               asChild
               size="lg"
               variant="outline"
-              className="h-12 w-full border-white/20 bg-transparent px-8 text-base text-white hover:bg-white/10 hover:text-white sm:w-auto"
+              className="h-11 border-white/20 bg-transparent px-8 text-base text-white hover:bg-white/10 hover:text-white"
             >
               <Link href="/login">{t("ctaLogin")}</Link>
             </Button>

@@ -58,6 +58,11 @@
   --color-foreground: var(--foreground);
   --font-heading: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
+  /* Marketing site redesign (2026-07-17): small monospace eyebrow/tag
+     labels (hero badge, catalog category tags) -- self-hosted via
+     next/font/google in layout.tsx, same pattern as the two fonts above.
+     Tailwind v4 auto-generates the `font-mono` utility from this var. */
+  --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, monospace;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
