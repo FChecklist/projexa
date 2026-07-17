@@ -88,24 +88,44 @@
   "Marketing": {
     "header": {
       "navLinks": {
-        "coordination": "Coordination",
+        "aiOs": "AI OS",
+        "system": "System",
+        "howItWorks": "How It Works",
+        "paysForItself": "It pays for itself",
+        "selfCoordination": "Self Coordination",
         "modules": "Modules",
-        "copilot": "AI Copilot",
+        "veri": "VERI — Your AI Assistant",
         "value": "Value"
       },
       "login": "Log in",
-      "startFree": "Start free",
+      "talkToEngineer": "Talk to an Engineer",
       "openMenu": "Open menu",
       "closeMenu": "Close menu"
     },
     "hero": {
       "badge": "AI-NATIVE CONSTRUCTION INTELLIGENCE",
+      "statChips": {
+        "coordination": "10x Coordination",
+        "productivity": "5x Productivity",
+        "savings": "2x Savings"
+      },
       "headingLine1": "Every deadline, drawing and decision.",
       "headingLine2": "One coordinated system.",
-      "subhead": "PROJEXA replaces the scattered spreadsheets, WhatsApp threads and missed follow-ups that quietly cost construction and interior design projects time and money — with one AI Copilot-backed system for schedule, site, and spend.",
-      "ctaStart": "Start free",
-      "ctaLogin": "Log in",
-      "note": "No credit card required. Set up your first project in minutes."
+      "subhead": "PROJEXA replaces the scattered spreadsheets, WhatsApp threads and missed follow-ups that quietly cost construction and interior design projects time and money — with one system for schedule, site, and spend, with VERI built in from day one.",
+      "manifesto": "We're engineers, not a sales team. We won't sweet-talk you into a demo — we'll show you exactly how the system thinks, and you decide.",
+      "ctaTalk": "Talk to an Engineer",
+      "ctaHowItWorks": "See How It Works",
+      "preview": {
+        "url": "app.projexa.ai/villa-21-whitefield",
+        "projectName": "Villa 21 — Whitefield",
+        "greeting": "Good morning. I'm VERI, your assistant — here's where Villa 21 stands today. Everything below updates itself, nobody re-typed a thing.",
+        "tiles": {
+          "schedule": { "label": "Schedule", "value": "On track — 2 tasks due this week" },
+          "budget": { "label": "Budget", "value": "₹12.4L spent of ₹18L" },
+          "rfis": { "label": "RFIs", "value": "1 open — awaiting vendor, 4 days" },
+          "team": { "label": "Team on site", "value": "4 active — PM, Site, Design, Procurement" }
+        }
+      }
     },
     "problem": {
       "eyebrow": "The real cost",
@@ -167,8 +187,8 @@
           "title": "Budgets & Expenses",
           "body": "Real spend against real budget, per project — visible before it becomes a surprise at handover."
         },
-        "aiCopilot": {
-          "title": "AI Copilot",
+        "veri": {
+          "title": "VERI — Your AI Assistant",
           "body": "Grounded in your own project data — ask it about any RFI, budget line, or schedule change and get a real answer."
         }
       },
@@ -185,10 +205,105 @@
         "reports": "Reports"
       }
     },
+    "system": {
+      "eyebrow": "The full picture",
+      "heading": "One interface. One coordination core.",
+      "body": "PROJEXA is the interface you use every day — its engine is VERIDIAN AI OS, the same coordination core running underneath. That means every module a real construction or interior design business needs is already here, already connected."
+    },
+    "moduleCatalog": {
+      "heading": "Every module a construction or interior design business runs on.",
+      "subhead": "Beyond the core workflow above, here's the full catalog — grouped the way a project actually runs.",
+      "categories": {
+        "execution": {
+          "title": "Project Execution",
+          "body": "The day-to-day workflow: schedule, scope, the site record, and every approval in between."
+        },
+        "interior": {
+          "title": "Interior & Design",
+          "body": "Mood boards through to a walkable 3D floor plan, tied to the same project."
+        },
+        "finance": {
+          "title": "Finance & Accounting",
+          "body": "Real spend, real budget, real invoices — not a spreadsheet reconciled once a month."
+        },
+        "procurement": {
+          "title": "Procurement & Inventory",
+          "body": "What's ordered, what's on-site, and who supplied it, tracked in one place."
+        },
+        "sales": {
+          "title": "Sales & CRM",
+          "body": "From first lead to signed order, without a separate CRM to keep in sync."
+        },
+        "people": {
+          "title": "People & Workforce",
+          "body": "Who's on payroll, who's hiring, and who's on site today."
+        },
+        "governance": {
+          "title": "Governance & Risk",
+          "body": "One workspace, real workflows — not a single checkbox."
+        },
+        "knowledge": {
+          "title": "Knowledge & Collaboration",
+          "body": "Where the project's documents, decisions and meetings actually live."
+        },
+        "core": {
+          "title": "The AI OS Core",
+          "body": "The cross-cutting layer every module above is built on — VERI, reporting, and the multi-project workspace itself."
+        }
+      },
+      "items": {
+        "schedule": "Schedule",
+        "scope": "Scope of Work (BOQ)",
+        "workProgress": "Work Progress",
+        "siteDiary": "Site Diary",
+        "rfisSubmittals": "RFIs & Submittals",
+        "punchList": "Punch List",
+        "changeOrders": "Change Orders",
+        "permits": "Permits",
+        "moodBoards": "Mood Boards",
+        "ffe": "FF&E Specification",
+        "floorPlans": "Floor Plans (2D/3D)",
+        "materials": "Materials",
+        "accounting": "Accounting",
+        "budgets": "Budgets",
+        "expenses": "Expenses",
+        "invoices": "Invoices",
+        "procurement": "Procurement",
+        "purchaseOrders": "Purchase Orders",
+        "inventory": "Inventory",
+        "vendors": "Vendors",
+        "salesDashboard": "Sales Dashboard",
+        "leads": "Leads",
+        "opportunities": "Opportunities",
+        "quotations": "Quotations",
+        "salesOrders": "Sales Orders",
+        "customers": "Customers",
+        "hr": "HR Dashboard",
+        "employees": "Employees",
+        "payroll": "Payroll",
+        "recruitment": "Recruitment",
+        "labour": "Manpower & Attendance",
+        "riskCompliance": "Risk & Compliance (GRC)",
+        "riskRegister": "Risk Register",
+        "auditsFindings": "Audits & Findings",
+        "policies": "Policies",
+        "vendorRisk": "Vendor Risk",
+        "complianceRegister": "Compliance Register",
+        "documents": "Documents",
+        "knowledgeBase": "Knowledge Base",
+        "wiki": "Wiki",
+        "meetings": "Meetings",
+        "veri": "VERI — Your AI Assistant",
+        "reports": "Reports",
+        "kpis": "KPIs",
+        "multiProject": "Multi-project, multi-tenant workspace",
+        "bilingual": "Bilingual interface (English/Hindi)"
+      }
+    },
     "copilot": {
-      "badge": "AI Copilot",
-      "heading": "An AI Copilot that actually knows your project.",
-      "subhead": "This isn't a chatbot bolted onto a dashboard. PROJEXA's AI Copilot is wired into every module — schedule, RFIs, site diary, budgets, change orders — so it can answer real questions about a real project, in context, the moment you ask.",
+      "badge": "VERI — Your AI Assistant",
+      "heading": "VERI — the AI Assistant that actually knows your project.",
+      "subhead": "This isn't a chatbot bolted onto a dashboard. VERI is wired into every module — schedule, RFIs, site diary, budgets, change orders — so it can answer real questions about a real project, in context, the moment you ask.",
       "capabilities": {
         "grounded": {
           "title": "Grounded in your project, not the internet",
@@ -200,7 +315,7 @@
         },
         "workflow": {
           "title": "Built into the workflow",
-          "body": "The Copilot sits alongside every module, so it already has the context — no exporting data or switching tabs."
+          "body": "VERI sits alongside every module, so it already has the context — no exporting data or switching tabs."
         }
       },
       "chat": {
@@ -209,6 +324,14 @@
         "q2": "Yes, do that.",
         "typing": "Notifying vendor and PM…"
       }
+    },
+    "value": {
+      "eyebrow": "Why PROJEXA",
+      "heading": "Every business that wants to grow works off a system.",
+      "body": "PROJEXA is that system — built for construction and interior design, thinking like an engineer, not a sales funnel.",
+      "noteTitle": "Engineer's Note",
+      "noteBody": "We're not going to sweet-talk you. Tell us where the project is bleeding time and money. We figure out the system that stops it. That's the whole approach — because it's not a pitch, it's how we work.",
+      "signature": "— the team that builds PROJEXA"
     },
     "roi": {
       "eyebrow": "Why it pays for itself",
@@ -227,21 +350,105 @@
         },
         "compound": {
           "title": "Coordination, done once, compounds",
-          "body": "Every project run through PROJEXA makes the next one faster — the same schedule discipline, the same paper trail, the same AI Copilot context, reused."
+          "body": "Every project run through PROJEXA makes the next one faster — the same schedule discipline, the same paper trail, the same VERI context, reused."
+        }
+      }
+    },
+    "selfCoordination": {
+      "eyebrow": "Self Coordination",
+      "heading": "Here's the actual difference.",
+      "subhead": "\"Self-coordinating AI OS\" is a specific claim, not a buzzword. Here's exactly what it means, compared to the two things it isn't.",
+      "rows": {
+        "chatbot": {
+          "themLabel": "Most \"AI-powered\" software",
+          "themBody": "A chat window bolted on top, with no idea what's actually happening in your project data.",
+          "usLabel": "PROJEXA",
+          "usBody": "VERI is wired into every module from day one, grounded in your own project data."
+        },
+        "platform": {
+          "themLabel": "A generic business-apps platform",
+          "themBody": "You configure a dozen apps to sort-of fit construction, and wire them together yourself.",
+          "usLabel": "PROJEXA",
+          "usBody": "Built for construction & interior design, already coordinated — a change order updates the budget automatically, with zero setup."
         }
       }
     },
     "finalCta": {
       "heading": "PROJEXA makes work complete.",
       "body": "Every RFI answered. Every schedule slip caught early. Every change order on record. From first drawing to final handover — nothing falls through.",
-      "ctaStart": "Start free",
+      "formIntro": "Tell us where the project is bleeding time and money.",
       "ctaLogin": "Log in"
+    },
+    "contactForm": {
+      "nameLabel": "Name",
+      "namePlaceholder": "Your name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@company.com",
+      "companyLabel": "Company (optional)",
+      "companyPlaceholder": "Your company",
+      "messageLabel": "Message (optional)",
+      "messagePlaceholder": "Tell us about the project",
+      "submit": "Talk to an Engineer",
+      "errorRequired": "Name and email are required.",
+      "errorGeneric": "Something went wrong. Please try again.",
+      "successToast": "Thanks — we've got it.",
+      "successTitle": "We've got your message.",
+      "successBody": "An engineer will get back to you directly. No auto-reply, no sales queue."
     },
     "footer": {
       "tagline": "— Construction Intelligence AI OS",
       "login": "Log in",
       "signup": "Sign up",
       "copyright": "© {year} PROJEXA. Built on VERIDIAN AI OS."
+    },
+    "howItWorks": {
+      "hero": {
+        "heading": "38 modules. One core. Nothing works in isolation.",
+        "subhead": "This isn't a feature tour — it's one system, and here's exactly how the pieces move together."
+      },
+      "architecture": {
+        "eyebrow": "How it's built",
+        "heading": "PROJEXA's interface, VERIDIAN's coordination core.",
+        "subhead": "Every category below is a real part of the app, wired into the same core underneath.",
+        "core": "VERIDIAN AI OS — Coordination Core"
+      },
+      "trace": {
+        "eyebrow": "A real example",
+        "heading": "Watch one change order move through five modules, with nobody re-typing anything.",
+        "subhead": "This is the actual path a change order takes through PROJEXA today, not a hypothetical.",
+        "steps": {
+          "step1": {
+            "category": "Project Execution",
+            "title": "A site engineer raises a Change Order",
+            "body": "Extra electrical conduit is needed on Level 3. The cost and schedule impact are estimated on the spot, in the same screen the site engineer is already working in."
+          },
+          "step2": {
+            "category": "Finance & Accounting",
+            "title": "The budget updates automatically",
+            "body": "The change order's cost is reflected against the live project budget immediately — no separate spreadsheet to update, no month-end reconciliation surprise."
+          },
+          "step3": {
+            "category": "Governance & Risk",
+            "title": "A real e-signature approval is requested",
+            "body": "Approval isn't a status flag anyone could quietly flip. PROJEXA requests an actual e-signature from the approver and shows honest signature progress — \"awaiting signature, 1 of 2 signed\" — until it's genuinely signed."
+          },
+          "step4": {
+            "category": "Project Execution",
+            "title": "The schedule shifts, downstream trades are notified",
+            "body": "Once approved, the affected schedule items move, and the trades whose work depends on them are notified automatically."
+          },
+          "step5": {
+            "category": "VERI",
+            "title": "Ask about it anywhere, immediately",
+            "body": "\"What changed on Villa 21 this week?\" — VERI already knows, because it was wired into every step above, not bolted on after."
+          }
+        }
+      },
+      "facts": {
+        "fact1": { "value": "1", "label": "Login. Every module, every project, one place." },
+        "fact2": { "value": "0", "label": "Manual re-entry between modules." },
+        "fact3": { "value": "38", "label": "Real modules, one coordinated system." }
+      }
     }
   }
 }
