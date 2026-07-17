@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const qs = request.nextUrl.search;
   try {
-    const data = await callVeridian(`/inventory/stock-balance${qs}`);
+    const data = await callVeridian(`/inventory/stock-balance${qs}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load stock balances" }, { status: err instanceof VeridianApiError ? err.status : 502 });

@@ -9,7 +9,7 @@ export async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
-    const data = await callVeridian("/knowledge-base");
+    const data = await callVeridian("/knowledge-base", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load knowledge base pages" }, { status: err instanceof VeridianApiError ? err.status : 502 });

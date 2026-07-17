@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   try {
-    const data = await callVeridian(`/wiki?projectId=${encodeURIComponent(projectId)}`);
+    const data = await callVeridian(`/wiki?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load wiki pages" }, { status: err instanceof VeridianApiError ? err.status : 502 });

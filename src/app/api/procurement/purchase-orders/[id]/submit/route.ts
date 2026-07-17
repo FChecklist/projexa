@@ -9,7 +9,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/procurement/purchase-orders/${id}/submit`, { method: "POST", body: {} });
+    const data = await callVeridian(`/procurement/purchase-orders/${id}/submit`, { organizationId: ctx.organizationId!, method: "POST", body: {} });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit purchase order" }, { status: err instanceof VeridianApiError ? err.status : 502 });

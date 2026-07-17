@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   if (issueId) qs.set("issueId", issueId);
   if (mine) qs.set("mine", mine);
   try {
-    const data = await callVeridian(`/timesheets?${qs.toString()}`);
+    const data = await callVeridian(`/timesheets?${qs.toString()}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load time entries" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "issueId, hours, and spentOn are required" }, { status: 400 });
   }
   try {
-    const data = await callVeridian("/timesheets", { method: "POST", body });
+    const data = await callVeridian("/timesheets", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log time entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
