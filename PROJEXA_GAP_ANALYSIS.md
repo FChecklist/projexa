@@ -150,16 +150,32 @@ Original findings (unchanged, kept for reference):
    messaging/conversations feature, end to end. Real, fixable bug: add the
    missing FK `user_id -> profiles(id)` on both tables.
 
-5. **Change Order "pending approval" status has no visible approve/reject
-   action** — CO-1 correctly shows "Send for Approval" while in `draft`,
-   but once a change order moves to `pending approval` (CO-2), the Actions
-   column is empty — no way to actually approve or reject it from the UI.
-   Given `esignature-service.ts`'s real signing workflow is the documented
-   intended approval mechanism for change orders, this may be intentional
-   (approval happens via a signature-request flow surfaced elsewhere, not
-   a button on this table) rather than a gap — needs a quick check of
-   whether an e-signature request was actually created for CO-2, and if
-   so, where a real approver would go to act on it.
+5. **RESOLVED (2026-07-17).** ~~Change Order "pending approval" status has
+   no visible approve/reject action~~ — CO-1 correctly shows "Send for
+   Approval" while in `draft`, but once a change order moves to
+   `pending approval` (CO-2), the Actions column was empty — no way to
+   actually approve or reject it from the UI.
+   The quick check this entry called for was done: `esignature-service.ts`'s
+   `submitSignature()`/`declineSignature()` never touched the linked change
+   order's own status at all -- `construction-change-order-service.ts`
+   already had `markChangeOrderApproved()`/`markChangeOrderRejected()` with
+   a comment saying "Called from the e-signature completion path," but
+   nothing ever called them. So a signed-and-completed change order really
+   would sit at `pending_approval` forever with no way to progress.
+   The one-click Approve/Reject button this entry's phrasing might suggest
+   was deliberately NOT built -- that would let any team member flip a
+   change order to approved regardless of whether the real external signer
+   signed anything, defeating the point of using e-signature instead of a
+   status flag. Real fix instead: compliance-tracker's `submitSignature()`
+   now auto-transitions the change order to `approved` once every signer
+   has signed, and `declineSignature()` auto-transitions it to `rejected`
+   on a decline (compliance-tracker branch
+   `esignature-change-order-status-sync`). This table's Actions cell now
+   shows the real signature progress instead of nothing --
+   "Awaiting signature (N of M signed)", who has/hasn't signed, or the
+   decline reason -- sourced from a new
+   `GET /change-orders/[id]/signature-status` alias (PROJEXA branch
+   `change-order-signature-status-visibility`).
 
 ## Resolved investigations (not bugs, logged for completeness)
 - Dashboard's "Total Budget ₹0" and "Total Revenue ₹0" are accurate, not a
