@@ -9,7 +9,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/timesheets/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const data = await callVeridian(`/timesheets/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to delete time entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/procurement/requisitions/${id}`);
+    const data = await callVeridian(`/procurement/requisitions/${id}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load purchase requisition" }, { status: err instanceof VeridianApiError ? err.status : 502 });

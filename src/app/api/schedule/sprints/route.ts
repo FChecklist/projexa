@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   try {
-    const data = await callVeridian(`/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
+    const data = await callVeridian(`/schedule/sprints?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load sprints" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "projectId and name are required" }, { status: 400 });
   }
   try {
-    const data = await callVeridian("/schedule/sprints", { method: "POST", body });
+    const data = await callVeridian("/schedule/sprints", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create sprint" }, { status: err instanceof VeridianApiError ? err.status : 502 });
