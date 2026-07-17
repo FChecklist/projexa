@@ -17,9 +17,49 @@ type ChangeOrder = {
   id: string; number: number; title: string; reason: string | null; costImpact: string; scheduleImpactDays: number; status: string;
 };
 
+type SignatureStatus = {
+  signatureRequest: {
+    id: string; status: string; title: string; completedAt: string | null;
+    signers: { name: string; email: string; status: string; signOrder: number | null; signedAt: string | null; declinedAt: string | null; declineReason: string | null }[];
+  } | null;
+};
+
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", pending_approval: "secondary", approved: "default", rejected: "destructive",
 };
+
+// Real, honest signature-progress summary for a pending_approval change
+// order -- deliberately NOT a one-click approve/reject button. A naive
+// button here would let any team member flip a change order to "approved"
+// regardless of whether the actual external signer signed anything,
+// defeating the entire point of using e-signature instead of a status flag
+// (PROJEXA_GAP_ANALYSIS.md gap #5). The real approval mechanism is
+// VERIDIAN's e-signature completion path (esignature-service.ts), which now
+// auto-transitions the change order's own status once every signer has
+// signed (or rejects it if a signer declines) -- this cell only reports
+// that real progress, it never causes it.
+function SignatureStatusCell({ data, loading }: { data: SignatureStatus | undefined; loading: boolean }) {
+  if (loading) return <span className="text-xs text-px-muted">Checking signature status…</span>;
+  if (!data || !data.signatureRequest) {
+    return <span className="text-xs text-px-muted">No signature request created yet</span>;
+  }
+  const { signers, status } = data.signatureRequest;
+  const signedCount = signers.filter((s) => s.status === "signed").length;
+  const declined = signers.find((s) => s.status === "declined");
+  if (status === "declined" || declined) {
+    return (
+      <span className="text-xs text-px-error">
+        Declined by {declined?.name ?? "a signer"}{declined?.declineReason ? ` — "${declined.declineReason}"` : ""}
+      </span>
+    );
+  }
+  if (status === "voided") return <span className="text-xs text-px-muted">Signature request voided</span>;
+  return (
+    <span className="text-xs text-px-muted" title={signers.map((s) => `${s.name} (${s.email}): ${s.status}`).join(", ")}>
+      Awaiting signature ({signedCount} of {signers.length} signed)
+    </span>
+  );
+}
 
 export default function ChangeOrdersClient({ projectId }: { projectId: string }) {
   const currencies = useCurrencies();
@@ -30,6 +70,8 @@ export default function ChangeOrdersClient({ projectId }: { projectId: string })
   const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
   const [items, setItems] = useState<ChangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [signatureStatuses, setSignatureStatuses] = useState<Record<string, SignatureStatus>>({});
+  const [signatureStatusLoading, setSignatureStatusLoading] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [reason, setReason] = useState("");
@@ -45,7 +87,26 @@ export default function ChangeOrdersClient({ projectId }: { projectId: string })
     try {
       const res = await fetch(`/api/change-orders?projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json();
-      setItems(data.changeOrders ?? []);
+      const changeOrders: ChangeOrder[] = data.changeOrders ?? [];
+      setItems(changeOrders);
+      // Only pending_approval rows have anything to show here -- draft has
+      // no signature request yet, approved/rejected already have their
+      // final Badge, no need to spend a request on those.
+      const pending = changeOrders.filter((c) => c.status === "pending_approval");
+      setSignatureStatusLoading(Object.fromEntries(pending.map((c) => [c.id, true])));
+      await Promise.all(pending.map(async (c) => {
+        try {
+          const sRes = await fetch(`/api/change-orders/${c.id}/signature-status`);
+          const sData = await sRes.json();
+          setSignatureStatuses((prev) => ({ ...prev, [c.id]: sData }));
+        } catch {
+          // Leave this row's entry unset -- SignatureStatusCell already
+          // renders an honest "No signature request created yet" fallback
+          // for undefined, no separate error state needed for one row.
+        } finally {
+          setSignatureStatusLoading((prev) => ({ ...prev, [c.id]: false }));
+        }
+      }));
     } catch {
       toast.error("Couldn't load change orders");
     } finally {
@@ -142,6 +203,9 @@ export default function ChangeOrdersClient({ projectId }: { projectId: string })
                     <TableCell><Badge variant={STATUS_VARIANT[c.status]}>{c.status.replace(/_/g, " ")}</Badge></TableCell>
                     <TableCell className="text-right">
                       {c.status === "draft" && <Button size="sm" variant="outline" onClick={() => setSubmittingId(c)}>Send for Approval</Button>}
+                      {c.status === "pending_approval" && (
+                        <SignatureStatusCell data={signatureStatuses[c.id]} loading={!!signatureStatusLoading[c.id]} />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
