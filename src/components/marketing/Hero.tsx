@@ -51,14 +51,20 @@ export async function Hero() {
               {t("badge")}
             </div>
 
+            {/* Each chip links to the ROI section's own honest math rather
+                than floating as a bare, unexplained multiplier -- that
+                section explicitly says "we won't hand you a fabricated
+                statistic," so these numbers need a way to show their work,
+                not just assert it. */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
               {STAT_CHIP_KEYS.map((key) => (
-                <span
+                <Link
                   key={key}
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-[11px] font-medium text-px-cloud2"
+                  href="#pays-for-itself"
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-[11px] font-medium text-px-cloud2 transition-colors hover:border-white/25 hover:text-white"
                 >
                   {t(`statChips.${key}`)}
-                </span>
+                </Link>
               ))}
             </div>
 
