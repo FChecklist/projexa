@@ -1,7 +1,7 @@
 "use client";
 
 import { PanelLeft } from "lucide-react";
-import { AppSidebar } from "@/components/AppSidebar";
+import { MobileSidebarTrigger } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/sidebar-context";
@@ -11,9 +11,7 @@ export function AppTopbar({ title }: { title: string }) {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-px-ink2 bg-px-ink px-4 shadow-nav">
-      <div className="lg:hidden">
-        <AppSidebar />
-      </div>
+      <MobileSidebarTrigger />
       <Button
         variant="ghost"
         size="icon"
