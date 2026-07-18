@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import { veridianHeadingFont } from "@fchecklist/veridian-ui-kit/tokens/fonts";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { ThemeProvider } from "next-themes";
@@ -12,11 +13,11 @@ const inter = Inter({
   display: "swap",
 });
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  display: "swap",
-});
+// Owner directive 2026-07-18: heading font must exactly match VERIDIAN AI
+// OS's (DM Serif Display) -- replaces the previous PROJEXA-only Space
+// Grotesk choice. Loaded from the shared veridian-ui-kit package (not a
+// local next/font/google call) so every consuming product loads the
+// literal same font instance/variable name.
 
 // Marketing site redesign (2026-07-17): small monospace eyebrow/tag labels
 // (e.g. the hero badge, catalog category tags) -- self-hosted the same way
@@ -48,7 +49,7 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${veridianHeadingFont.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <NextIntlClientProvider messages={messages}>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
             {children}

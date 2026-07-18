@@ -6,6 +6,8 @@ import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-re
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
+import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
+import { createClient } from "@/lib/supabase/server";
 
 type OrgDashboard = {
   totalProjects: number;
@@ -47,9 +49,32 @@ export default async function DashboardPage() {
     // Non-fatal -- formatCurrency() falls back to "₹" if this list is empty.
   }
 
+  // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
+  // mockup): /dashboard is PROJEXA's designated home route (see
+  // (app)/layout.tsx's HOME_ROUTE). Real counts only -- delayedProjectCount
+  // reuses the same per-project delayedTaskCount this page already fetches
+  // above, never a fabricated number.
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const userName = userData.user?.email?.split("@")[0] ?? "there";
+  const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
+  const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
+
   return (
     <>
       <AppTopbar title="Dashboard" />
+      <HomeGreeting
+        userName={userName}
+        summary={
+          data && data.totalProjects > 0
+            ? `You have ${data.totalProjects} active project${data.totalProjects === 1 ? "" : "s"}. ${delayedProjectCount > 0 ? `${delayedProjectCount} of them ${delayedProjectCount === 1 ? "has" : "have"} delayed tasks needing attention.` : "None of them have delayed tasks right now."}`
+            : "No active projects yet — use VERI Chat below to get started."
+        }
+        stats={[
+          ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
+          ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
+        ]}
+      />
       <main className="flex-1 space-y-6 p-6">
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
