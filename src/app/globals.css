@@ -1,21 +1,34 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fchecklist/veridian-ui-kit/tokens/globals.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* ─── PROJEXA Brand Colors (construction/blueprint palette, deliberately
-     distinct from VERIDIAN's navy/saffron/teal) ─── */
-  --color-px-concrete: #F6F5F1;
-  --color-px-ink: #182430;
-  --color-px-ink2: #253746;
-  --color-px-ink3: #33495C;
-  --color-px-orange: #E6510C;
-  --color-px-orange-hover: #C94509;
-  --color-px-steel: #1F6F8B;
-  --color-px-steel-hover: #185A70;
+  /* ─── PROJEXA colors now ALIAS veridian-ui-kit's real ct-* values ──────
+     Owner directive 2026-07-18: colors/fonts/navigation must exactly match
+     compliance-tracker/veridian-scope-selector-in-home.html across every
+     FChecklist product. PROJEXA's own `px-*` palette below used to carry
+     its OWN hex values ("deliberately distinct from VERIDIAN's navy/
+     saffron/teal" -- see git history) -- every one of those now points at
+     the shared package's real token instead of a locally-forked value, so
+     every existing `px-*`-classed element across this app's 34+ pages
+     picks up VERIDIAN's exact palette without a class-name rewrite. Do NOT
+     reintroduce a local hex value here -- add a new semantic token to
+     veridian-ui-kit itself if one is genuinely missing, per that package's
+     own README. */
+  --color-px-concrete: var(--color-ct-cream);
+  --color-px-ink: var(--color-ct-navy);
+  --color-px-ink2: var(--color-ct-navy2);
+  --color-px-ink3: var(--color-ct-navy3);
+  --color-px-orange: var(--color-ct-saffron);
+  --color-px-orange-hover: var(--color-ct-saffron-hover);
+  --color-px-steel: var(--color-ct-teal);
+  --color-px-steel-hover: var(--color-ct-teal);
 
-  /* ─── Semantic Colors ─── */
+  /* ─── Semantic Colors (unchanged -- veridian-ui-kit doesn't define
+     success/warning/error/info tones yet; these stay PROJEXA-local until
+     it does) ─── */
   --color-px-success: #1E8E3E;
   --color-px-success-light: #F0FDF4;
   --color-px-success-border: #86EFAC;
@@ -29,34 +42,19 @@
   --color-px-info-light: #EFF6FF;
   --color-px-info-border: #BFDBFE;
 
-  /* ─── Neutral Colors ─── */
-  --color-px-cloud: #EEF1F3;
-  --color-px-cloud2: #E4E9ED;
-  --color-px-slate: #4A5568;
-  --color-px-muted: #6B7A88;
-  --color-px-border: #DDE3E8;
-  --color-px-border2: #C6D0D8;
+  /* ─── Neutral Colors -- now aliasing the shared cloud/slate/muted/border ─── */
+  --color-px-cloud: var(--color-ct-cloud);
+  --color-px-cloud2: var(--color-ct-cloud2);
+  --color-px-slate: var(--color-ct-slate);
+  --color-px-muted: var(--color-ct-muted);
+  --color-px-border: var(--color-ct-border);
+  --color-px-border2: var(--color-ct-border2);
   --color-px-white: #FFFFFF;
-  --color-px-row-hover: #FAFBFC;
-
-  /* ─── Legacy `ct-*` aliases ───────────────────────────────────────────
-     The UI components copied from VERIDIAN (src/components/ui/*) reference
-     VERIDIAN's `ct-*` (compliance-tracker) token names directly. Rather
-     than hand-edit every copied file, alias the token NAMES those
-     components expect to PROJEXA's own palette VALUES here -- same
-     approach, distinct brand. */
-  --color-ct-navy: var(--color-px-ink);
-  --color-ct-teal: var(--color-px-steel);
-  --color-ct-cloud: var(--color-px-cloud);
-  --color-ct-muted: var(--color-px-muted);
-  --color-ct-border: var(--color-px-border);
-  --color-ct-row-hover: var(--color-px-row-hover);
-  --color-ct-slate: var(--color-px-slate);
+  --color-px-row-hover: var(--color-ct-cloud);
 
   /* ─── shadcn/ui Mappings ─── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-heading: var(--font-space-grotesk), 'Space Grotesk', system-ui, sans-serif;
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
   /* Marketing site redesign (2026-07-17): small monospace eyebrow/tag
      labels (hero badge, catalog category tags) -- self-hosted via
