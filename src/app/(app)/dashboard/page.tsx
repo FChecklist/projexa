@@ -6,6 +6,7 @@ import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-re
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import { createClient } from "@/lib/supabase/server";
 
@@ -83,6 +84,10 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         )}
+
+        <div className="flex justify-end">
+          <CreateProjectDialog />
+        </div>
 
         {data && (
           <>
