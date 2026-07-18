@@ -103,16 +103,17 @@
 :root {
   --radius: 0.625rem;
 
-  /* Owner directive 2026-07-18 (round 2): the px-* namespaced tokens above
-     were re-pointed at veridian-ui-kit's real ct-* values in the first UI-kit
-     adoption pass, but these bare shadcn/ui semantic variables were missed --
-     every default-variant shadcn primitive (Button, Badge, etc, including
-     ones with no explicit px-*/ct-* className, like CreateProjectDialog's own
-     plain <Button>) reads --primary/--ring/--sidebar-primary directly, not
-     the px-* aliases. That's why the "old orange" (#E6510C) kept showing on
-     a real customer's fresh login even after the first pass merged. Values
-     below are copied verbatim from compliance-tracker's own :root block --
-     not re-derived -- so this can never drift from VERIDIAN's real numbers again. */
+  /* Owner directive 2026-07-18 (round 2): the px-namespaced tokens above
+     were re-pointed at veridian-ui-kit's real ct-namespaced values in the
+     first UI-kit adoption pass, but these bare shadcn/ui semantic variables
+     were missed -- every default-variant shadcn primitive (Button, Badge,
+     etc, including ones with no explicit px/ct className, like
+     CreateProjectDialog's own plain Button) reads --primary/--ring/
+     --sidebar-primary directly, not the px-namespaced aliases. That is why
+     the old orange (#E6510C) kept showing on a real customer's fresh login
+     even after the first pass merged. Values below are copied verbatim from
+     compliance-tracker's own :root block -- not re-derived -- so this can
+     never drift from VERIDIAN's real numbers again. */
   --background: #FFFDF9;
   --foreground: #1C2B3A;
   --card: #FFFDF9;
