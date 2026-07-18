@@ -103,39 +103,50 @@
 :root {
   --radius: 0.625rem;
 
-  --background: #F6F5F1;
-  --foreground: #182430;
-  --card: #FFFFFF;
-  --card-foreground: #182430;
+  /* Owner directive 2026-07-18 (round 2): the px-namespaced tokens above
+     were re-pointed at veridian-ui-kit's real ct-namespaced values in the
+     first UI-kit adoption pass, but these bare shadcn/ui semantic variables
+     were missed -- every default-variant shadcn primitive (Button, Badge,
+     etc, including ones with no explicit px/ct className, like
+     CreateProjectDialog's own plain Button) reads --primary/--ring/
+     --sidebar-primary directly, not the px-namespaced aliases. That is why
+     the old orange (#E6510C) kept showing on a real customer's fresh login
+     even after the first pass merged. Values below are copied verbatim from
+     compliance-tracker's own :root block -- not re-derived -- so this can
+     never drift from VERIDIAN's real numbers again. */
+  --background: #FFFDF9;
+  --foreground: #1C2B3A;
+  --card: #FFFDF9;
+  --card-foreground: #1C2B3A;
   --popover: #FFFFFF;
-  --popover-foreground: #182430;
-  --primary: #E6510C;
+  --popover-foreground: #1C2B3A;
+  --primary: #F5820A;
   --primary-foreground: #FFFFFF;
-  --secondary: #EEF1F3;
-  --secondary-foreground: #182430;
-  --muted: #EEF1F3;
-  --muted-foreground: #6B7A88;
-  --accent: #FDEEE7;
-  --accent-foreground: #182430;
+  --secondary: #F0F4F8;
+  --secondary-foreground: #1C2B3A;
+  --muted: #F0F4F8;
+  --muted-foreground: #718096;
+  --accent: #FEF3E2;
+  --accent-foreground: #1C2B3A;
   --destructive: #C0392B;
-  --border: #DDE3E8;
-  --input: #C6D0D8;
-  --ring: #E6510C;
+  --border: #E2E8F0;
+  --input: #CBD5E1;
+  --ring: #F5820A;
 
-  --chart-1: #E6510C;
-  --chart-2: #1F6F8B;
+  --chart-1: #F5820A;
+  --chart-2: #0E7C6E;
   --chart-3: #2563EB;
-  --chart-4: #D97706;
-  --chart-5: #1E8E3E;
+  --chart-4: #7C3AED;
+  --chart-5: #E67E22;
 
-  --sidebar: #182430;
-  --sidebar-foreground: #C6D0D8;
-  --sidebar-primary: #E6510C;
+  --sidebar: #FFFDF9;
+  --sidebar-foreground: #4A5568;
+  --sidebar-primary: #F5820A;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #253746;
-  --sidebar-accent-foreground: #FFFFFF;
-  --sidebar-border: #253746;
-  --sidebar-ring: #E6510C;
+  --sidebar-accent: #FEF3E2;
+  --sidebar-accent-foreground: #1C2B3A;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #F5820A;
 }
 
 .dark {
@@ -145,7 +156,7 @@
   --card-foreground: #E4E9ED;
   --popover: #182430;
   --popover-foreground: #E4E9ED;
-  --primary: #F2632A;
+  --primary: #F5820A;
   --primary-foreground: #10181F;
   --secondary: #253746;
   --secondary-foreground: #E4E9ED;
@@ -155,7 +166,7 @@
   --accent-foreground: #E4E9ED;
   --border: #253746;
   --input: #33495C;
-  --ring: #F2632A;
+  --ring: #F5820A;
 }
 
 @layer base {
@@ -179,7 +190,7 @@
 
 @layer utilities {
   .text-balance { text-wrap: balance; }
-  .shadow-orange { box-shadow: 0 4px 16px rgba(230, 81, 12, 0.28); }
+  .shadow-orange { box-shadow: 0 4px 16px rgba(245, 130, 10, 0.28); }
   .shadow-card { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07); }
   .shadow-nav { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
 }
