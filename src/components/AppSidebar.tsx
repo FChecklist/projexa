@@ -195,41 +195,50 @@ function SidebarContentWithProject({ pathname, onNavigate }: { pathname: string;
   return <SidebarContent pathname={pathname} projectId={searchParams.get("projectId")} onNavigate={onNavigate} />;
 }
 
+// Desktop persistent sidebar -- mounted exactly once, from (app)/layout.tsx.
+// Conditionally rendered rather than width-toggled: SidebarContent sets its
+// own min-width internally, which would otherwise fight a wrapper's
+// width:0 (see VERI_CHAT_COMPOSER_DESIGN.md).
 export function AppSidebar() {
+  const pathname = usePathname();
+  const { collapsed } = useSidebar();
+
+  if (collapsed) return null;
+
+  return (
+    <aside className="hidden w-64 shrink-0 lg:block">
+      <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} />}>
+        <SidebarContentWithProject pathname={pathname} />
+      </Suspense>
+    </aside>
+  );
+}
+
+// Mobile hamburger + drawer -- mounted exactly once, from AppTopbar (so it
+// sits inside the header row itself). Split out of AppSidebar so pages don't
+// end up mounting two full sidebars (two usePathname/useTranslations/Sheet
+// instances, two desktop <aside> DOM nodes) when both AppSidebar and the
+// mobile trigger are needed on the same page.
+export function MobileSidebarTrigger() {
   const pathname = usePathname();
   const t = useTranslations("Nav");
   const [open, setOpen] = useState(false);
-  const { collapsed } = useSidebar();
 
   return (
-    <>
-      {/* Desktop -- conditionally rendered rather than width-toggled:
-          SidebarContent sets its own min-width internally, which would
-          otherwise fight a wrapper's width:0 (see VERI_CHAT_COMPOSER_DESIGN.md). */}
-      {!collapsed && (
-        <aside className="hidden w-64 shrink-0 lg:block">
-          <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} />}>
-            <SidebarContentWithProject pathname={pathname} />
-          </Suspense>
-        </aside>
-      )}
-
-      {/* Mobile */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="lg:hidden">
-            <LayoutDashboard className="h-5 w-5" />
-          </Button>
-        </SheetTrigger>
-        <SheetContent side="left" className="w-64 border-none p-0">
-          <SheetHeader className="sr-only">
-            <SheetTitle>{t("navigationLabel")}</SheetTitle>
-          </SheetHeader>
-          <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} onNavigate={() => setOpen(false)} />}>
-            <SidebarContentWithProject pathname={pathname} onNavigate={() => setOpen(false)} />
-          </Suspense>
-        </SheetContent>
-      </Sheet>
-    </>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon" className="lg:hidden">
+          <LayoutDashboard className="h-5 w-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-64 border-none p-0">
+        <SheetHeader className="sr-only">
+          <SheetTitle>{t("navigationLabel")}</SheetTitle>
+        </SheetHeader>
+        <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} onNavigate={() => setOpen(false)} />}>
+          <SidebarContentWithProject pathname={pathname} onNavigate={() => setOpen(false)} />
+        </Suspense>
+      </SheetContent>
+    </Sheet>
   );
 }
