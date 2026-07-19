@@ -1,4 +1,3 @@
-import { AppTopbar } from "@/components/AppTopbar";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -63,7 +62,10 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <AppTopbar title="Dashboard" />
+      {/* No PageHeading here -- this is PROJEXA's designated home route
+          (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
+          already renders a real "Good morning, {name}." heading; a second
+          "Dashboard" label above it would be redundant. */}
       <HomeGreeting
         userName={userName}
         summary={

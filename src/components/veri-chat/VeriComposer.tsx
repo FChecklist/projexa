@@ -7,6 +7,22 @@
 // (Wave 130's /api/v1/projexa/capability-tree). Sending in a chain mode
 // calls /api/assistant, which dispatches through the same worker-agent
 // pipeline the tree itself was built from.
+//
+// veridian-ui-kit migration: investigated adopting the shared package's own
+// VeriComposer (@fchecklist/veridian-ui-kit/composer), and found a real,
+// confirmed conflict -- same class of finding compliance-tracker's own
+// migration (PR #471) made for its VCEL calculator inputs. The shared
+// component's `onDispatch(path, text)` requires non-empty free text before
+// a completed chain is even sendable (`if (!text) return`, mirroring
+// VERIDIAN's real model of a typed instruction handed to an AI worker
+// agent). PROJEXA's real dispatch is deterministic (a resolved leaf's
+// codeReference + fixedInputs, sent to /api/assistant with zero required
+// user text) -- forcing the shared component's text requirement here would
+// make every query dispatch require the user to type filler text with no
+// purpose, a real UX regression, not a paint-only difference. Kept local
+// per this task's own "report the blocker, don't paper over it"
+// instruction. Types (CapabilityNode/PathSegment/FIXED_MODES) still flow
+// from the shared package transitively via veri-chat-context.tsx.
 import { useEffect, useState } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";

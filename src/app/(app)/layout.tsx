@@ -1,64 +1,65 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { AppShellFrame } from "@fchecklist/veridian-ui-kit/shell";
 import { AppSidebar } from "@/components/AppSidebar";
+import { AppTopbar } from "@/components/AppTopbar";
 import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import VeriComposer from "@/components/veri-chat/VeriComposer";
 import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { SidebarProvider } from "@/components/sidebar-context";
 
 // Owner directive 2026-07-18: navigation/shell behavior must exactly match
 // compliance-tracker/veridian-scope-selector-in-home.html (the agreed UI/UX
 // reference) -- including the merged-Home-page pattern, where VeriChatPanel
 // merges into the main content area instead of sitting in its own side
-// panel. Ported here as the same direct pathname-conditional fix applied to
-// VERIDIAN AI OS's own AppShell.tsx (see that repo's
-// feat/home-page-merge-panel-fix), using PROJEXA's OWN existing
-// VeriComposer/VeriChatPanel (real, already-working /api/assistant,
-// /api/discuss, /api/todos, /api/conversations wiring) rather than the
-// shared veridian-ui-kit package's generic composer/panel components --
-// swapping those in here would mean re-deriving that real data wiring
-// against a different callback surface for no behavioral gain, given
-// PROJEXA's dashboard is the designated home route either way.
+// panel. AppShellFrame (from @fchecklist/veridian-ui-kit) now owns that
+// merge mechanics generically -- ported from compliance-tracker's own real
+// migration (PR #471) to the shared package's real shell/composer/panel/
+// header components, unconditionally (PROJEXA has no existing feature-flag
+// gate to preserve, unlike compliance-tracker's veriChatV2Enabled branch --
+// this is a newer, smaller product with less blast radius). VeriComposer/
+// VeriChatPanel stay PROJEXA's own components (real, already-working
+// /api/assistant, /api/discuss, /api/todos, /api/conversations wiring) --
+// only their outer chrome now comes from the shared package, see those
+// files' own header comments for exactly what did and didn't move.
 const HOME_ROUTE = "/dashboard";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+function ShellBody({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const isHome = pathname === HOME_ROUTE;
 
   return (
-    <SidebarProvider>
-      <VeriChatProvider>
-        <div className="flex h-screen overflow-hidden bg-background">
-          <AppSidebar />
-          {isHome ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-auto">{children}</div>
-              <VeriComposer />
-            </div>
-          ) : (
-            <ResizablePanelGroup direction="horizontal" autoSaveId="projexa-shell-panels" className="flex-1 overflow-hidden">
-              <ResizablePanel defaultSize={72} minSize={50}>
-                <div className="h-full flex flex-col overflow-hidden">
-                  <div className="flex-1 overflow-auto">{children}</div>
-                  <VeriComposer />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={28} minSize={18} maxSize={40}>
-                <VeriChatPanel />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          )}
-        </div>
-        {/* Toaster is mounted once in the root layout (src/app/layout.tsx)
-            with position="top-right" richColors -- a second instance here
-            used to duplicate every toast.error() call (both instances
-            subscribe to the same global sonner store), which made write
-            failures look inconsistent/easy to miss during testing instead
-            of a single clear error. */}
-      </VeriChatProvider>
-    </SidebarProvider>
+    <AppShellFrame
+      homeRoute={HOME_ROUTE}
+      header={
+        <AppTopbar
+          sidebarCollapsed={collapsed}
+          onToggleSidebar={() => setCollapsed((v) => !v)}
+          onToggleRightPanel={isHome ? undefined : () => setPanelCollapsed((v) => !v)}
+        />
+      }
+      sidebar={collapsed ? null : <AppSidebar />}
+      composer={<VeriComposer />}
+      panel={panelCollapsed ? null : <VeriChatPanel />}
+    >
+      {children}
+    </AppShellFrame>
+  );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <VeriChatProvider>
+      <ShellBody>{children}</ShellBody>
+      {/* Toaster is mounted once in the root layout (src/app/layout.tsx)
+          with position="top-right" richColors -- a second instance here
+          used to duplicate every toast.error() call (both instances
+          subscribe to the same global sonner store), which made write
+          failures look inconsistent/easy to miss during testing instead
+          of a single clear error. */}
+    </VeriChatProvider>
   );
 }

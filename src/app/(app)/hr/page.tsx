@@ -1,11 +1,11 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import HrDashboardClient from "@/components/HrDashboardClient";
 
 export default function HrDashboardPage() {
   return (
     <>
-      <AppTopbar title="HR Dashboard" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="HR Dashboard" />
         <HrDashboardClient />
       </main>
     </>

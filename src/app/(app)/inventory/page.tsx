@@ -1,11 +1,11 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import InventoryClient from "@/components/InventoryClient";
 
 export default function InventoryPage() {
   return (
     <>
-      <AppTopbar title="Inventory" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="Inventory" />
         <InventoryClient />
       </main>
     </>
