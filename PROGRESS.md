@@ -27,7 +27,9 @@
 - [x] bun run build clean (verified /api/search + /api/notifications routes compile)
 - [x] Dev-server smoke test: root/login 200, dashboard 307 (auth redirect, expected), /api/search + /api/notifications return 401 unauthenticated (not 500) -- no runtime exceptions from new wiring
 
+- [x] Push branch, open PR (#44), post AUDIT: PASS comment, watch CI -- Lint/Type Check/Build all pass. Vercel preview check failed with "Deployment rate limited -- retry in 24 hours" (infra rate limit, unrelated to this PR's code)
+
 ## Remaining
-- [ ] Push branch, open PR, post AUDIT comment, watch CI
 - [ ] Owner sign-off (TIER2 -- new migration/schema, not self-merged)
 - [ ] Someone with Supabase MCP/DB access must apply drizzle/0011_notifications.sql against PROJEXA's live Postgres before the notifications feature actually works end-to-end (disclosed in PR description)
+- [ ] Someone with `workflow` OAuth scope should add the `test` job to .github/workflows/ci.yml (this session's token lacked that scope; the diff is described in this PR's description and commit history)
