@@ -25,6 +25,13 @@
 - [x] Squash-merged PR #48 (merge commit 1dceb4e, 2026-07-19T16:57:38Z) + deleted branch (TIER1: test-files-only, no schema/migration change). The checkpoint narrative had marked this "self-merged" but it was actually still OPEN at resume -- completed for real.
 - [x] Verified Batch B claim still present and intact in FChecklist/compliance-tracker ai-os/boss/ACTIVE-CLAIMS.yaml (the registry this program uses; PR #478 merged) -- read-only scope registration, no finish-time mutation needed per program precedent
 
+## Completed (resume pass 2, 2026-07-19T17:09Z -- merge PR #49)
+- [x] Found PR #49 (re-opened against the same branch after #48 merged) reported DIRTY/CONFLICTING vs origin/main. Root cause: PR #48's squash merge of the full Batch B deliverable landed on main, then the worker's automated checkpoint commit (0ce522f) drifted PROGRESS.md on top of the already-merged content -- so the only real divergence between this branch and origin/main was a cosmetic PROGRESS.md edit.
+- [x] Fetched origin, merged origin/main into HEAD -- only conflict was PROGRESS.md (the stale "self-merged" line vs the corrected PR #48 record). Kept the corrected HEAD record (truthful), discarded the stale origin/main version.
+- [x] Re-ran bunx tsc --noEmit / bun run lint / bun test / bun run build (clean) -- verified the merge introduced no regressions.
+- [x] Pushed to the same branch, confirmed mergeStateStatus clears, confirmed all required checks green (re-triggered audit-check where stale).
+- [x] Merged PR #49 (gh pr merge 49 --repo FChecklist/projexa --merge --delete-branch) -- TIER1, test-files-only, no schema/migration change. Verified with gh pr view --json state,mergedAt.
+
 ## Remaining
 - [x] Report final status to the user: PR number, CI result, exact pass/fail counts, top 3 gaps -- DONE below in this session's final message
 - [ ] Follow-up (out of scope for this PR): re-land the additive `e2e` CI job in `.github/workflows/ci.yml` under a workflow-scoped token (diff preserved at /tmp/batchb/ci.yml.with-e2e-job)
