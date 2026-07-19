@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { notifyOrgMembers, buildSubmittalStatusChangedNotification } from "@/lib/services/notification-service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/submittals/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    const data = await callVeridian<{ id: string; title: string; status: string }>(`/submittals/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    if (body.action === "review" && body.projectId) {
+      await notifyOrgMembers(ctx.organizationId!, ctx.user!.id, buildSubmittalStatusChangedNotification(data, body.projectId, ctx.user!.email));
+    }
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update submittal" }, { status: err instanceof VeridianApiError ? err.status : 502 });

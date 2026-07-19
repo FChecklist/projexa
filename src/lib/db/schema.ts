@@ -113,6 +113,31 @@ export const profiles = pgTable("profiles", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Real in-app notifications (RFI created, submittal status changed, punch
+// list item created -- see src/lib/services/notification-service.ts for the
+// real trigger call sites). Shape mirrors compliance-tracker's own
+// notifications table (id/userId/title/message/type/isRead/metadata/
+// createdAt) with organizationId added, since PROJEXA is multi-tenant and
+// compliance-tracker's isn't scoped the same way. RLS follows this repo's
+// own established convention (auth.uid() + memberships subquery, see
+// drizzle/0002) rather than compliance-tracker's separate app_runtime/
+// service_role Postgres roles, which don't exist in this repo.
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  type: text("type").notNull().default("system"),
+  isRead: boolean("is_read").notNull().default(false),
+  metadata: jsonb("metadata").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const todos = pgTable("todos", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
