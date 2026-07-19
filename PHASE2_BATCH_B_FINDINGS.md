@@ -157,11 +157,13 @@ The `e2e` CI job added in this PR is wired as `continue-on-error: true` for exac
 
 ## Files in this PR
 
-- `playwright.config.ts`, `e2e/global-setup.ts`, `e2e/credentials.ts`, `e2e/helpers.ts` — new Playwright infrastructure
-- `e2e/01-materials.spec.ts` … `e2e/12-member-access.spec.ts` — 12 spec files, 31 tests
-- `.github/workflows/ci.yml` — new `e2e` job (`continue-on-error: true`, see rationale above)
+- `playwright.config.ts`, `e2e/helpers.ts` — Playwright infrastructure (config + shared helpers; `helpers.ts` adds a `fieldByLabel()` workaround for the accessibility gap below). The shared `e2e/auth.setup.ts` + `e2e/users.ts` login scaffolding and `playwright.config.ts` were contributed by the concurrently-merged Batch C suite (PR #46, already on `main`); this PR adds the `siteSupervisor` user/login this batch's non-admin check needs on top of them.
+- `e2e/01-materials.spec.ts` … `e2e/12-member-access.spec.ts` — 12 spec files, 31 tests, all 11 in-scope modules + a non-admin access check
 - `.gitignore` — excludes `test-results/`, `playwright-report/`, `blob-report/`, `playwright/.cache/`, `playwright/.auth/`
-- `package.json` / `bun.lock` — added `@playwright/test` dev dependency
 - `PHASE2_BATCH_B_FINDINGS.md` — this report
 
-Tier: **TIER1** (test files, CI config, and a dev dependency only — no schema/migration change, no modification to existing application source).
+### Not in this PR (deferred — see "CI job deferred" note)
+- `.github/workflows/ci.yml` — an additive, non-blocking (`continue-on-error: true`) `e2e` CI job was authored for this batch and is described above (rationale + exact steps), but is **not** committed in this PR. The push token available to this worker (`gho_…`, GitHub `repo` scope only) cannot push commits that modify `.github/workflows/` (GitHub rejects those without the `workflow` scope), so including it here would have blocked the push entirely. The exact diff is preserved and is a trivial, separately-pushable follow-up under a `workflow`-scoped token. The committed `playwright.config.ts` already makes `bunx playwright test` runnable; only the CI-wiring half is deferred.
+- `package.json` / `bun.lock` — `@playwright/test` is already a dev dependency on `main` (added by Batch C's PR #46), so this PR does not touch it.
+
+Tier: **TIER1** (test files + a report only — no schema/migration change, no modification to existing application source, no workflow-file change).
