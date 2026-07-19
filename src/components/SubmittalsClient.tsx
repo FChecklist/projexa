@@ -70,7 +70,7 @@ export default function SubmittalsClient({ projectId }: { projectId: string }) {
     try {
       const res = await fetch(`/api/submittals/${reviewing.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "review", status, comments }),
+        body: JSON.stringify({ action: "review", status, comments, projectId }),
       });
       if (!res.ok) throw new Error();
       toast.success("Submittal reviewed");

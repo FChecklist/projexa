@@ -1,0 +1,76 @@
+# ============================================================================
+# ACTIVE CLAIMS REGISTRY -- read this BEFORE picking any new gap/task to work
+# on in this repo. Bootstrapped 2026-07-19 for PROJEXA, following the exact
+# same convention established in FChecklist/compliance-tracker's own
+# ai-os/boss/ACTIVE-CLAIMS.yaml (created there 2026-07-14). PROJEXA did not
+# have this file before this commit -- AGENTS.md already disclosed PROJEXA
+# has "no ai-os/ directory" and no dispatch infrastructure of its own; this
+# is that gap's first real piece, added because this task is the first time
+# a session needed to claim file-scoped work in this repo ahead of a
+# multi-tenant schema change. Not claiming any pre-existing history this file
+# never recorded.
+#
+# THIS FILE IS NOT A SUBSTITUTE FOR GIT'S OWN SAFETY (worktree isolation +
+# PR/CI + branch protection already prevent silent data loss). It exists to
+# prevent a DIFFERENT problem git can't solve on its own: two sessions
+# independently choosing to build the SAME gap at the same time, wasting a
+# full agent-hours cycle on duplicate/conflicting work that then has to be
+# thrown away or painfully reconciled after the fact.
+#
+# PROTOCOL (every session, every time, no exceptions):
+#   1. BEFORE selecting a gap/task to work on: `git pull origin main` this
+#      file fresh, read every entry under `active:` below, and do NOT start
+#      work on a gap/file-area another entry already claims, unless that
+#      entry's `claimed_at` is more than 4 hours stale with no matching open
+#      PR (check `gh pr list`) -- treat a stale claim as abandoned, not
+#      binding.
+#   2. IMMEDIATELY when you start real work (dispatching a sub-agent, or
+#      starting to edit yourself): add a new entry under `active:` with your
+#      session label, what you're claiming (gap id + real file/directory
+#      scope, not just a vague area), and a timestamp. Commit and push this
+#      addition on its own, fast, BEFORE the actual work PR -- don't batch it
+#      with the real change, so other sessions see the claim as early as
+#      possible.
+#   3. WHEN your work merges (or you abandon it), move your entry from
+#      `active:` to `recently_completed:` (keep the last ~15 entries there,
+#      drop older ones -- this is a rolling log, not permanent history).
+#   4. If you discover an active claim that conflicts with what you were
+#      about to do, do NOT silently work around it or silently pick a
+#      different gap without saying so -- note it in your own session's
+#      final report to your Owner/user.
+#   5. Sessions cannot literally message each other -- this file IS the
+#      message. Keep entries short, factual, and file/directory-scoped so a
+#      session with zero other context can act on them correctly.
+# ============================================================================
+active: []
+recently_completed:
+  - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
+    claimed_at: "2026-07-19T (this session)"
+    completed_at: "2026-07-19T (this session)"
+    claim: |
+      Built real command-palette search (src/components/search-command.tsx +
+      src/app/api/search/route.ts, src/lib/services/search-service.ts) across
+      PROJEXA's real entities: org projects, the current project's real
+      VERIDIAN-backed RFIs/Submittals/Punch List items/Change Orders (fetched
+      live via the existing veridian-client.ts proxy, filtered in
+      application code -- these entities live in VERIDIAN, not PROJEXA's own
+      Postgres, so there is no ILIKE path for them), and PROJEXA's own local
+      `todos` table (real Postgres ILIKE). Built a real `notifications`
+      table (drizzle/0011_notifications.sql) + API routes
+      (src/app/api/notifications/route.ts,
+      src/app/api/notifications/[id]/read/route.ts) + bell dropdown
+      (src/components/NotificationBell.tsx), wired to 3 real existing
+      call sites: RFI created (src/app/api/rfis/route.ts POST), submittal
+      status changed (src/app/api/submittals/[id]/route.ts PATCH), punch
+      list item created (src/app/api/punch-list/route.ts POST) -- each
+      fans out to the org's other real members via the existing
+      `memberships` table. Wired both into AppTopbar.tsx's searchSlot/
+      notificationSlot (previously `false`). File scope: the files listed
+      above, src/lib/db/schema.ts, drizzle/0011_notifications.sql, this
+      claims file, PROGRESS.md. Did not touch compliance-tracker or
+      veridian-ui-kit. TIER2 (new migration/schema) -- not self-merged,
+      reported for Owner sign-off. See the PR description for the exact
+      migration-apply caveat (no live DB credentials in this environment;
+      the .sql file is the durable record per this repo's own established
+      convention, same as drizzle/0008 and 0009 -- someone with Supabase
+      MCP/DB access still needs to apply it before the feature is live).
