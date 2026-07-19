@@ -14,14 +14,11 @@
 //   relocated here via AppHeader's extraActions slot so it keeps its real
 //   placement inside the header row, same as before this migration.
 //
-// searchSlot/notificationSlot are deliberately omitted (passed `false`, not
-// left unset) -- PROJEXA has no real search mechanism or notifications
-// system anywhere in this codebase (confirmed by grep before writing this
-// file), and AppHeader's own default fallback for an omitted slot is a
-// decorative, non-functional icon button (`searchSlot ?? <button>...`,
-// which only checks for null/undefined -- NOT `false`). Passing `false`
-// explicitly suppresses that fallback instead of shipping a dead button;
-// see this task's own final report for these as honestly-disclosed gaps.
+// searchSlot/notificationSlot now carry PROJEXA's own real implementations
+// (search-command.tsx's command palette + NotificationBell.tsx's dropdown --
+// both backed by real API routes, not the placeholder `false` this repo
+// shipped in PR #42/#43, which was an honest disclosure that neither
+// existed yet, not a permanent state).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { User, Settings, LogOut, ChevronDown, Loader2 } from "lucide-react";
@@ -33,6 +30,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MobileSidebarTrigger } from "@/components/AppSidebar";
+import { SearchTrigger } from "@/components/search-command";
+import { NotificationBell } from "@/components/NotificationBell";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";
 
@@ -106,8 +105,8 @@ export function AppTopbar({
       productName="PROJEXA"
       onToggleSidebar={onToggleSidebar}
       sidebarCollapsed={sidebarCollapsed}
-      searchSlot={false}
-      notificationSlot={false}
+      searchSlot={<SearchTrigger />}
+      notificationSlot={<NotificationBell />}
       onToggleRightPanel={onToggleRightPanel}
       contextLabel={info?.organization?.name ? <span className="hidden md:inline">{info.organization.name}</span> : undefined}
       userMenuSlot={userMenuSlot}
