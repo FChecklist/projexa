@@ -1,28 +1,28 @@
-# PROGRESS -- task-20260719-034948-migrate-projexa-to-consume-veridian-ui-k
+# PROGRESS -- task-20260719-061256-projexa-e2e-phase-1--architecture-discov
 
 ## Completed
-- [x] Registered claim in compliance-tracker's ai-os/boss/ACTIVE-CLAIMS.yaml (the cross-repo shared registry -- projexa itself has no ai-os/boss dir), via compliance-tracker#473 (merged). No collisions found.
-- [x] Read compliance-tracker PR #471 (merged) diff in full -- the proven precedent.
-- [x] Checked out veridian-ui-kit at v0.2.2 (v0.2.0 + 2 upstream bugfixes compliance-tracker found: AppShellFrame h-screen clipping, AppSidebar duplicate-key) and read every file under src/shell/, src/composer/, src/panel/, src/context/, plus README.md, in full.
-- [x] Read PROJEXA's own real current implementation in full (layout.tsx, AppSidebar.tsx, AppTopbar.tsx, VeriComposer.tsx, VeriChatPanel.tsx, veri-chat-context.tsx, dashboard/page.tsx, sidebar-context.tsx, SettingsClient.tsx, api/organization/route.ts) and confirmed via grep: no search mechanism, no notifications system anywhere in the codebase.
-- [x] Bumped package.json to @fchecklist/veridian-ui-kit v0.2.2 (matching compliance-tracker's own final pin), bun install clean.
-- [x] veri-chat-context.tsx rewritten as a thin wrapper around createVeriChatContext() -- activeQueryId/openQuery kept as PROJEXA's own layered state (not the factory's activeTaskId/openTask, which has an incompatible composerMode side-effect PROJEXA's query flow never had); discussMessages/appendDiscussMessage layered the same way. openConversation/setComposerMode/closeThread all wrapped to keep both state slices in sync exactly as the original single-context version did.
-- [x] AppSidebar.tsx rewritten to use the shared AppSidebar for the generic shell/style, with PROJEXA's real 10 nav sections (Overview/Execution/Field/Design/Resources/Sales/GRC/Finance/HR/Intelligence) converted to NavSection/NavItem data. ProjectSwitcher kept as a real sibling above the shared component (disclosed reorder -- no slot for it between logo/nav in the shared component). Mobile Sheet trigger kept fully decoupled from desktop collapsed state (unlike compliance-tracker's own coupled pattern) so a mobile user can never get stranded; now auto-closes via a pathname effect since it's mounted once, not per-page.
-- [x] New src/components/PageHeading.tsx + swept all 41 page.tsx files: removed per-page `<AppTopbar title="X"/>` (AppHeader is now a single global mount, not per-page), replaced with `<PageHeading title="X"/>` inside each page's own `<main>`. Dashboard (home route) drops the heading entirely since HomeGreeting already provides one.
-- [x] AppTopbar.tsx rewritten to wrap the shared AppHeader, mounted once from layout.tsx: real user-menu (Supabase signOut, matching SettingsClient.tsx's own pattern, real email from /api/organization), real org contextLabel, real working right-panel-toggle (new panelCollapsed state in layout.tsx), real MobileSidebarTrigger relocated into extraActions (same header placement as before). searchSlot/notificationSlot explicitly passed `false` (not omitted) to suppress AppHeader's own decorative-dead-button fallback, since PROJEXA has neither a real search mechanism nor a notifications system.
-- [x] theme-toggle.tsx restyled for the new light header (was styled for the old dark bg-px-ink bar).
-- [x] VeriChatPanel.tsx rewritten to use the shared PanelShell for its outer chrome/tabs only (overview/queries/chats/todo); all real list/thread rendering (QueryList/ChatList/TodoPanel/QueryThread/ConvoThread/Overview) kept local, unchanged.
-- [x] VeriComposer.tsx: investigated adopting the shared VeriComposer, found a real, confirmed blocker (its onDispatch requires non-empty free text before a completed chain is sendable; PROJEXA's real dispatch is deterministic codeReference+fixedInputs with zero required text) -- kept local per this task's "report the blocker" instruction, documented in the file's own header comment. Types still flow from the shared package transitively.
-- [x] src/app/(app)/layout.tsx rewritten to use AppShellFrame (sidebar/header/composer/panel/homeRoute="/dashboard") in place of the hand-rolled flex/ResizablePanelGroup layout.
-- [x] Simplified away sidebar-context.tsx (Context+Provider) once this migration left it with exactly one real consumer -- replaced with plain useState in layout.tsx's ShellBody.
-- [x] bunx tsc --noEmit: 0 errors. bun run lint: 0 errors (1 pre-existing unrelated warning in ui/data-table.tsx). bun run build: succeeds, every route compiles. bun test: this repo has zero test files / no test script defined in package.json (pre-existing, confirmed via grep -- not introduced by this change); `bun test` exits 1 with "0 test files matching" rather than a real failure.
-- [x] Confirmed this repo's own ci.yml only defines Lint/Type Check/Build jobs (no Unit Tests/E2E Tests jobs exist) and this repo has no GitHub branch protection configured (403 on the branches/main/protection API, matching compliance-tracker's ACTIVE-CLAIMS.yaml note that projexa has "no CI/branch-protection in that repo").
-
-- [x] Pushed branch, opened FChecklist/projexa PR #42
-- [x] Posted AUDIT: PASS comment
-- [x] Watched CI: Lint, Type Check, Build, Vercel preview deploy all green
-- [x] Self-merged PR #42 (TIER1 -- no schema/migration touched), squash, branch deleted
-- [x] Moved ACTIVE-CLAIMS.yaml entry to recently_completed via compliance-tracker PR #474 (merged)
+- [x] Located both repos: FChecklist/projexa (this workspace) and FChecklist/compliance-tracker (/opt/veridian/repos/compliance-tracker)
+- [x] Registered claim in compliance-tracker's ai-os/boss/ACTIVE-CLAIMS.yaml (PR #477, via a scratch clone at /tmp/compliance-tracker-claim to avoid touching the shared checkout's pre-existing uncommitted work)
+- [x] Confirmed real auth/data-bridge mechanism with file:line citations:
+  - projexa/src/lib/veridian-client.ts (getVeridianApiKey/resolveApiKey/provisionVeridianOrg)
+  - projexa/src/app/api/org/provision/route.ts (creates PROJEXA org + membership + veridian_credentials row)
+  - compliance-tracker/src/app/api/v1/platform/provision-org/route.ts (mints vk_... apiKey scoped to a new compliance.organisations row)
+  - compliance-tracker/src/lib/supabase/api-key-auth.ts (validateApiKey resolves vk_... -> orgId for every /api/v1/projexa/* call)
+  - compliance-tracker/src/lib/services/product-branch-service.ts (branch enablement gate)
+- [x] SELF-CORRECTED: initially misread the "platform schema" detail as a false premise because the shared checkout was 63 commits behind origin/main. Live `psql` introspection confirmed the task brief WAS right: `platform.product_branches` etc. really exist (compliance-tracker PR #468/#469, merged). No drizzle/0245 file exists by that name, but the schema-relocation fact is real. Construction/ERP/HR business tables (what seeding needs) are unaffected.
+- [x] Confirmed real userRoleEnum (live pg_enum): admin, manager, member, viewer, veridian_admin, branch_manager, senior_professional, team_member, client_viewer, external_auditor, stage_0
+- [x] Found existing account-provisioning precedent for democeo@projexa-ai.com (claude-control/CONTROLLER.yaml PROJEXA-DEMO-01 entry)
+- [x] Full 40-module real-vs-placeholder backing survey complete (6 parallel research agents): 39/40 REAL-BACKING, 1/40 (settings) legitimately PROJEXA-native-only by design -- full table in PHASE1_SEED_REPORT.md section (b)
+- [x] Full live-DB schema introspection (psql \d) for every table used in the seed script -- cross-checked against agent findings, all consistent
+- [x] Designed 11-person org chart (CEO + 10) mapped to real userRoleEnum + realistic construction job titles -- see PHASE1_SEED_REPORT.md section (c)
+- [x] Wrote and ran 4-batch seed script against compliance-tracker's live DB: new org "Meridian Construction Group (E2E Test Org)" (id 4ecc472f-4152-4310-ae8d-cf8b7c52ab6d), 1,007 rows total across projects/RFIs/submittals/punch-list/change-orders/site-diary/schedule/BOQ/vendors/materials/customers/POs/quotations/sales-orders/invoices/payroll/leave/documents/meetings/KPIs
+- [x] Minted a real VERIDIAN vk_ API key (compliance-tracker api_keys row b199026b-dc76-402e-ab40-616db6068774) scoped to the new org, ready to bridge from PROJEXA
+- [x] Attempted PROJEXA-side account creation; hit a genuine, well-evidenced credential-access blocker (Vercel Sensitive env vars unreadable via CLI, no Supabase MCP tool available, expired SUPABASE_ACCESS_TOKEN, public signup blocked by required email confirmation with no mailbox access) -- documented in full in PHASE1_SEED_REPORT.md section (c), including a side-effect probe account left in PROJEXA's Supabase Auth that needs cleanup
+- [x] Wrote scripts/phase1-provision-projexa-accounts.mjs -- ready to run once a session has real PROJEXA service-role/DB access, reuses the already-minted real org id + vk_ key (no re-seeding needed)
+- [x] Wrote PHASE1_SEED_REPORT.md with exact counts, credentials, and file:line citations
+- [x] Committed report + seed scripts, opened PR against FChecklist/projexa
 
 ## Remaining
-- [ ] None -- task complete. Final report delivered to Owner in this session's closing message.
+- [ ] (Blocked, handed off) Run scripts/phase1-provision-projexa-accounts.mjs once real PROJEXA Supabase service-role/DB credentials are available -- creates the 11 real working logins Phase 2/3 need
+- [ ] (Handed off) Delete the dangling unconfirmed probe account probe-test-e2e-phase1@projexa-ai.com from PROJEXA's Supabase Auth once service-role access exists
+- [ ] Phase 2 (E2E test writing/execution) -- separate, subsequent dispatch, not part of this task
