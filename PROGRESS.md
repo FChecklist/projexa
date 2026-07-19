@@ -20,7 +20,7 @@
 - [x] Wire both into src/components/AppTopbar.tsx (searchSlot/notificationSlot)
 - [x] Wire real notification triggers: RFI created (api/rfis POST), submittal status changed (api/submittals/[id] PATCH, also had to add projectId to SubmittalsClient's PATCH body), punch list item created (api/punch-list POST)
 - [x] Add tests: search-service.test.ts, notification-service.test.ts (12 tests, all pass)
-- [x] Add `test` job to .github/workflows/ci.yml (repo's first tests)
+- [x] Attempted to add a `test` job to .github/workflows/ci.yml -- reverted: `git push` was rejected ("refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope"), this session's gh token doesn't have that scope. Tests exist and pass locally (`bun test`) but are NOT yet wired into CI -- disclosed in the PR description; whoever has `workflow` scope should add the 6-line job (see this commit's history for the exact diff) as a fast follow-up
 - [x] bunx tsc --noEmit clean
 - [x] bun run lint clean (1 pre-existing unrelated warning)
 - [x] bun test clean (12 pass)
