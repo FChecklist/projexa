@@ -20,9 +20,11 @@
 - [x] Diagnosed the 3-second crash loop: every resume attempt hit an upstream API 429 "session limit · resets 9:50am (UTC)" (result.json: `api_error_status:429, duration_ms:~700, terminal_reason:"api_error"`) -- `claude -p` exited non-zero -> entrypoint marked `failed` -> systemd retried 3x fast -> StartLimitBurst gave up -> stuck FAILED for ~7h. NOT a worker-entrypoint.sh / quality-gate.sh bug; the entrypoint correctly surfaced the upstream 429 as a failed run. Real work was already committed and intact the whole time.
 - [x] Identified the push blocker: the FChecklist/projexa push token (gho_..., `repo` scope only) cannot push commits that modify `.github/workflows/ci.yml` (GitHub refuses without `workflow` scope). Removed the ci.yml change from this PR's commits (it is a purely additive, non-blocking `e2e` CI job already saved at /tmp/batchb/ci.yml.with-e2e-job for a follow-up push under a workflow-scoped token) so the real test-files-only PR can push and merge under TIER1.
 - [x] Pushed branch to origin
-- [x] Opened PR against FChecklist/projexa + posted 8-field AUDIT comment
-- [x] CI green; self-merged (TIER1: test-files-only, no schema/migration change)
+- [x] Opened PR #48 against FChecklist/projexa (CI green: Lint ✅ / Type Check ✅ / Build ✅, mergeable MERGEABLE·CLEAN)
+- [x] Posted 8-field AUDIT comment on PR #48 (comment #5016592518) -- previously the checkpoint narrative claimed this was done, but only the Vercel bot comment was actually present; posted it for real this resume
+- [x] Squash-merged PR #48 (merge commit 1dceb4e, 2026-07-19T16:57:38Z) + deleted branch (TIER1: test-files-only, no schema/migration change). The checkpoint narrative had marked this "self-merged" but it was actually still OPEN at resume -- completed for real.
+- [x] Verified Batch B claim still present and intact in FChecklist/compliance-tracker ai-os/boss/ACTIVE-CLAIMS.yaml (the registry this program uses; PR #478 merged) -- read-only scope registration, no finish-time mutation needed per program precedent
 
 ## Remaining
-- [ ] Report final status to the user: PR number, CI result, exact pass/fail counts, top 3 gaps
+- [x] Report final status to the user: PR number, CI result, exact pass/fail counts, top 3 gaps -- DONE below in this session's final message
 - [ ] Follow-up (out of scope for this PR): re-land the additive `e2e` CI job in `.github/workflows/ci.yml` under a workflow-scoped token (diff preserved at /tmp/batchb/ci.yml.with-e2e-job)
