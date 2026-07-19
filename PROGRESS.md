@@ -1,35 +1,28 @@
-# PROGRESS -- task-20260719-060409-projexa--build-real-search---notificatio
+# PROGRESS -- task-20260719-061256-projexa-e2e-phase-1--architecture-discov
 
 ## Completed
-- [x] Read compliance-tracker's search-command.tsx, /api/search route, search-service.ts
-- [x] Read compliance-tracker's notifications schema/route + AppTopbar notification bell UI
-- [x] Read veridian-ui-kit AppHeader.tsx slot contract (searchSlot/notificationSlot)
-- [x] Read PROJEXA's real schema.ts, veridian-client.ts, AppTopbar.tsx, RFI/submittal/punch-list/project routes -- confirmed PROJEXA's construction entities live in VERIDIAN (proxied), not in PROJEXA's own Postgres; only todos/orgs/memberships are real local tables
-- [x] Confirmed no live DB/Supabase credentials available in this environment (no .env.local, SUPABASE_ACCESS_TOKEN unauthorized) -- migration will be committed as the durable record, not applied live
-- [x] Bootstrap ai-os/boss/ACTIVE-CLAIMS.yaml for PROJEXA (didn't exist before)
-- [x] Design: search aggregates projects (name), RFIs (subject), submittals (title), punch list (description), change orders (title) via VERIDIAN proxy + in-app filtering, plus real local todos ILIKE
-- [x] Design: notifications table (mirrors compliance-tracker shape + orgId), RLS following PROJEXA's own auth.uid()/memberships convention (not compliance-tracker's app_runtime/service_role convention)
-- [x] Add `notifications` table to src/lib/db/schema.ts
-- [x] Add drizzle/0011_notifications.sql migration
-- [x] Build src/lib/services/search-service.ts (pure matching helpers + VERIDIAN/todos search)
-- [x] Build src/lib/services/notification-service.ts (pure content builders + notifyOrgMembers)
-- [x] Build src/app/api/search/route.ts
-- [x] Build src/app/api/notifications/route.ts (GET) + src/app/api/notifications/[id]/read/route.ts (PATCH)
-- [x] Build src/components/search-command.tsx (command palette, no semantic tab -- out of scope)
-- [x] Build src/components/NotificationBell.tsx
-- [x] Wire both into src/components/AppTopbar.tsx (searchSlot/notificationSlot)
-- [x] Wire real notification triggers: RFI created (api/rfis POST), submittal status changed (api/submittals/[id] PATCH, also had to add projectId to SubmittalsClient's PATCH body), punch list item created (api/punch-list POST)
-- [x] Add tests: search-service.test.ts, notification-service.test.ts (12 tests, all pass)
-- [x] Attempted to add a `test` job to .github/workflows/ci.yml -- reverted: `git push` was rejected ("refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope"), this session's gh token doesn't have that scope. Tests exist and pass locally (`bun test`) but are NOT yet wired into CI -- disclosed in the PR description; whoever has `workflow` scope should add the 6-line job (see this commit's history for the exact diff) as a fast follow-up
-- [x] bunx tsc --noEmit clean
-- [x] bun run lint clean (1 pre-existing unrelated warning)
-- [x] bun test clean (12 pass)
-- [x] bun run build clean (verified /api/search + /api/notifications routes compile)
-- [x] Dev-server smoke test: root/login 200, dashboard 307 (auth redirect, expected), /api/search + /api/notifications return 401 unauthenticated (not 500) -- no runtime exceptions from new wiring
-
-- [x] Push branch, open PR (#44), post AUDIT: PASS comment, watch CI -- Lint/Type Check/Build all pass. Vercel preview check failed with "Deployment rate limited -- retry in 24 hours" (infra rate limit, unrelated to this PR's code)
+- [x] Located both repos: FChecklist/projexa (this workspace) and FChecklist/compliance-tracker (/opt/veridian/repos/compliance-tracker)
+- [x] Registered claim in compliance-tracker's ai-os/boss/ACTIVE-CLAIMS.yaml (PR #477, via a scratch clone at /tmp/compliance-tracker-claim to avoid touching the shared checkout's pre-existing uncommitted work)
+- [x] Confirmed real auth/data-bridge mechanism with file:line citations:
+  - projexa/src/lib/veridian-client.ts (getVeridianApiKey/resolveApiKey/provisionVeridianOrg)
+  - projexa/src/app/api/org/provision/route.ts (creates PROJEXA org + membership + veridian_credentials row)
+  - compliance-tracker/src/app/api/v1/platform/provision-org/route.ts (mints vk_... apiKey scoped to a new compliance.organisations row)
+  - compliance-tracker/src/lib/supabase/api-key-auth.ts (validateApiKey resolves vk_... -> orgId for every /api/v1/projexa/* call)
+  - compliance-tracker/src/lib/services/product-branch-service.ts (branch enablement gate)
+- [x] SELF-CORRECTED: initially misread the "platform schema" detail as a false premise because the shared checkout was 63 commits behind origin/main. Live `psql` introspection confirmed the task brief WAS right: `platform.product_branches` etc. really exist (compliance-tracker PR #468/#469, merged). No drizzle/0245 file exists by that name, but the schema-relocation fact is real. Construction/ERP/HR business tables (what seeding needs) are unaffected.
+- [x] Confirmed real userRoleEnum (live pg_enum): admin, manager, member, viewer, veridian_admin, branch_manager, senior_professional, team_member, client_viewer, external_auditor, stage_0
+- [x] Found existing account-provisioning precedent for democeo@projexa-ai.com (claude-control/CONTROLLER.yaml PROJEXA-DEMO-01 entry)
+- [x] Full 40-module real-vs-placeholder backing survey complete (6 parallel research agents): 39/40 REAL-BACKING, 1/40 (settings) legitimately PROJEXA-native-only by design -- full table in PHASE1_SEED_REPORT.md section (b)
+- [x] Full live-DB schema introspection (psql \d) for every table used in the seed script -- cross-checked against agent findings, all consistent
+- [x] Designed 11-person org chart (CEO + 10) mapped to real userRoleEnum + realistic construction job titles -- see PHASE1_SEED_REPORT.md section (c)
+- [x] Wrote and ran 4-batch seed script against compliance-tracker's live DB: new org "Meridian Construction Group (E2E Test Org)" (id 4ecc472f-4152-4310-ae8d-cf8b7c52ab6d), 1,007 rows total across projects/RFIs/submittals/punch-list/change-orders/site-diary/schedule/BOQ/vendors/materials/customers/POs/quotations/sales-orders/invoices/payroll/leave/documents/meetings/KPIs
+- [x] Minted a real VERIDIAN vk_ API key (compliance-tracker api_keys row b199026b-dc76-402e-ab40-616db6068774) scoped to the new org, ready to bridge from PROJEXA
+- [x] Attempted PROJEXA-side account creation; hit a genuine, well-evidenced credential-access blocker (Vercel Sensitive env vars unreadable via CLI, no Supabase MCP tool available, expired SUPABASE_ACCESS_TOKEN, public signup blocked by required email confirmation with no mailbox access) -- documented in full in PHASE1_SEED_REPORT.md section (c), including a side-effect probe account left in PROJEXA's Supabase Auth that needs cleanup
+- [x] Wrote scripts/phase1-provision-projexa-accounts.mjs -- ready to run once a session has real PROJEXA service-role/DB access, reuses the already-minted real org id + vk_ key (no re-seeding needed)
+- [x] Wrote PHASE1_SEED_REPORT.md with exact counts, credentials, and file:line citations
+- [x] Committed report + seed scripts, opened PR against FChecklist/projexa
 
 ## Remaining
-- [ ] Owner sign-off (TIER2 -- new migration/schema, not self-merged)
-- [ ] Someone with Supabase MCP/DB access must apply drizzle/0011_notifications.sql against PROJEXA's live Postgres before the notifications feature actually works end-to-end (disclosed in PR description)
-- [ ] Someone with `workflow` OAuth scope should add the `test` job to .github/workflows/ci.yml (this session's token lacked that scope; the diff is described in this PR's description and commit history)
+- [ ] (Blocked, handed off) Run scripts/phase1-provision-projexa-accounts.mjs once real PROJEXA Supabase service-role/DB credentials are available -- creates the 11 real working logins Phase 2/3 need
+- [ ] (Handed off) Delete the dangling unconfirmed probe account probe-test-e2e-phase1@projexa-ai.com from PROJEXA's Supabase Auth once service-role access exists
+- [ ] Phase 2 (E2E test writing/execution) -- separate, subsequent dispatch, not part of this task
