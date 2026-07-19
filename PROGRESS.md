@@ -18,10 +18,11 @@
 - [x] bunx tsc --noEmit: 0 errors. bun run lint: 0 errors (1 pre-existing unrelated warning in ui/data-table.tsx). bun run build: succeeds, every route compiles. bun test: this repo has zero test files / no test script defined in package.json (pre-existing, confirmed via grep -- not introduced by this change); `bun test` exits 1 with "0 test files matching" rather than a real failure.
 - [x] Confirmed this repo's own ci.yml only defines Lint/Type Check/Build jobs (no Unit Tests/E2E Tests jobs exist) and this repo has no GitHub branch protection configured (403 on the branches/main/protection API, matching compliance-tracker's ACTIVE-CLAIMS.yaml note that projexa has "no CI/branch-protection in that repo").
 
+- [x] Pushed branch, opened FChecklist/projexa PR #42
+- [x] Posted AUDIT: PASS comment
+- [x] Watched CI: Lint, Type Check, Build, Vercel preview deploy all green
+- [x] Self-merged PR #42 (TIER1 -- no schema/migration touched), squash, branch deleted
+- [x] Moved ACTIVE-CLAIMS.yaml entry to recently_completed via compliance-tracker PR #474 (merged)
+
 ## Remaining
-- [ ] Push branch, open PR
-- [ ] Post AUDIT: PASS comment
-- [ ] Watch this repo's real CI (Lint/Type Check/Build) to green
-- [ ] Self-merge (TIER1 -- no schema/migration touched) once green
-- [ ] Move ACTIVE-CLAIMS.yaml entry to recently_completed (separate small PR against compliance-tracker)
-- [ ] Final report to Owner: PR number, CI result, merged status, honest AppHeader slot-by-slot functionality list (search/notifications/user-menu/panel-toggle: what's real vs honestly omitted)
+- [ ] None -- task complete. Final report delivered to Owner in this session's closing message.
