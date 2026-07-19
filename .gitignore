@@ -7,3 +7,10 @@ node_modules
 tsconfig.tsbuildinfo
 
 .vercel
+
+# Playwright
+/playwright/.auth/
+/playwright-report/
+/test-results/
+/blob-report/
+/e2e-results.json
