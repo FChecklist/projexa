@@ -31,3 +31,8 @@ setup("authenticate as HR administrator (Sneha Reddy)", async ({ page }) => {
   await loginAs("hr", page);
   await page.context().storageState({ path: "playwright/.auth/hr.json" });
 });
+
+setup("authenticate as Site Supervisor (Manoj Yadav)", async ({ page }) => {
+  await loginAs("siteSupervisor", page);
+  await page.context().storageState({ path: "playwright/.auth/siteSupervisor.json" });
+});
