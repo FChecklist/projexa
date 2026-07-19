@@ -1,4 +1,4 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
@@ -19,8 +19,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // empty state when there is not one, instead of the whole page.
   return (
     <>
-      <AppTopbar title="Reports" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="Reports" />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>

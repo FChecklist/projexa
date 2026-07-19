@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -12,11 +11,10 @@ import {
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
 } from "lucide-react";
+import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection } from "@fchecklist/veridian-ui-kit/shell";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Suspense, useState } from "react";
-import { cn } from "@/lib/utils";
-import { useSidebar } from "@/components/sidebar-context";
+import { Suspense, useEffect, useState } from "react";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 
 // `labelKey`/`titleKey` are keys into the "Nav" namespace of messages/*.json
@@ -24,7 +22,7 @@ import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 // (Workstream 5, i18n) reference pattern: this array is module-scope data,
 // outside any component, so it cannot call useTranslations() itself (hooks
 // only work inside components) -- it carries translation keys, and the
-// actual t() lookups happen in SidebarContent below, which is a component.
+// actual t() lookups happen in SidebarInner below, which is a component.
 type NavItem = { labelKey: string; href: string; icon: React.ComponentType<{ className?: string }> };
 type NavSection = { titleKey: string | null; items: NavItem[] };
 
@@ -130,58 +128,56 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// veridian-ui-kit migration: the shared AppSidebar component owns only the
+// generic nav-sections shell/style (logo row + scrollable section list, per
+// that package's own README scope boundary) -- PROJEXA's real nav DATA
+// (NAV_SECTIONS above) is built here and converted to the shared
+// component's NavItem/NavSection shape.
+//
 // `projectId`, when present, is threaded onto every nav link's href so that
 // navigating between the project-scoped pages (RFIs, Scope, Labour, ...)
 // via the sidebar keeps showing the same selected project instead of
-// silently reverting to the org's first project on every click.
-function SidebarContent({
-  pathname,
-  projectId,
-  onNavigate,
-}: {
-  pathname: string;
-  projectId: string | null;
-  onNavigate?: () => void;
-}) {
-  const t = useTranslations("Nav");
+// silently reverting to the org's first project on every click -- same real
+// behavior as before this migration. Disclosed tradeoff: the shared
+// component's active-highlight check is `pathname === href || pathname
+// .startsWith(href + "/")`, with no query-string awareness, so once a
+// non-default project is selected, every project-scoped nav item still
+// navigates correctly but stops visually highlighting as active (matches
+// the same class of tradeoff veridian-ui-kit's own README/compliance-
+// tracker adoption already accepted for its own query-string-routed items).
+function toSharedItem(href: string, label: string, icon: React.ComponentType<{ className?: string }>): SharedNavItem {
+  return { href, label, icon: <SidebarIcon icon={icon} /> };
+}
+
+function SidebarIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
+  return <Icon className="h-4 w-4 shrink-0" />;
+}
+
+function buildSharedSections(t: ReturnType<typeof useTranslations>, projectId: string | null): SharedNavSection[] {
   const suffix = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  return NAV_SECTIONS.map((section) => ({
+    label: section.titleKey ? t(section.titleKey) : undefined,
+    items: section.items.map((item) => toSharedItem(item.href + suffix, t(item.labelKey), item.icon)),
+  }));
+}
+
+// ProjectSwitcher sits above the shared component (the shared AppSidebar has
+// no slot between its logo row and nav list, unlike this repo's previous
+// hand-rolled layout) -- a disclosed, real-but-cosmetic reordering: the
+// PROJEXA wordmark (rendered by the shared component itself) now appears
+// below the switcher instead of above it. Real behavior (which project's
+// data the 17 project-scoped pages render) is unaffected.
+function SidebarInner({ pathname, projectId }: { pathname: string; projectId: string | null }) {
+  const t = useTranslations("Nav");
+  const sections = buildSharedSections(t, projectId);
+  const logo = <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} className="rounded-sm" />;
 
   return (
-    <div className="flex h-full flex-col bg-px-ink text-px-cloud">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} />
-        <span className="font-heading text-lg font-semibold text-white">PROJEXA</span>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
       <ProjectSwitcher pathname={pathname} projectId={projectId} />
-      <nav className="flex-1 overflow-y-auto px-3 pb-6">
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.titleKey ?? "bottom"} className="mb-5">
-            {section.titleKey && (
-              <div className="px-2 pb-2 text-[11px] font-semibold tracking-wider text-px-muted">{t(section.titleKey)}</div>
-            )}
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href + suffix}
-                    onClick={onNavigate}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-                      active ? "bg-px-orange text-white" : "text-px-cloud2 hover:bg-px-ink2 hover:text-white"
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{t(item.labelKey)}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
+      <div className="flex min-h-0 flex-1">
+        <SharedAppSidebar sections={sections} logo={logo} productName="PROJEXA" collapsed={false} />
+      </div>
     </div>
   );
 }
@@ -190,53 +186,63 @@ function SidebarContent({
 // requirement) so it doesn't force the whole app shell into client-only
 // rendering. Falls back to no project param on first paint; hydration
 // fills in the real value immediately after.
-function SidebarContentWithProject({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+function SidebarInnerWithProject({ pathname }: { pathname: string }) {
   const searchParams = useSearchParams();
-  return <SidebarContent pathname={pathname} projectId={searchParams.get("projectId")} onNavigate={onNavigate} />;
+  return <SidebarInner pathname={pathname} projectId={searchParams.get("projectId")} />;
 }
 
 // Desktop persistent sidebar -- mounted exactly once, from (app)/layout.tsx.
-// Conditionally rendered rather than width-toggled: SidebarContent sets its
-// own min-width internally, which would otherwise fight a wrapper's
-// width:0 (see VERI_CHAT_COMPOSER_DESIGN.md).
+// Conditionally rendered (via the `sidebar` prop passed to AppShellFrame in
+// layout.tsx being `null` when collapsed) rather than width-toggled: the
+// shared component sets its own min-width internally, which would otherwise
+// fight a wrapper's width:0 (see VERI_CHAT_COMPOSER_DESIGN.md).
 export function AppSidebar() {
   const pathname = usePathname();
-  const { collapsed } = useSidebar();
-
-  if (collapsed) return null;
 
   return (
-    <aside className="hidden w-64 shrink-0 lg:block">
-      <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} />}>
-        <SidebarContentWithProject pathname={pathname} />
+    <aside className="hidden h-full lg:block">
+      <Suspense fallback={<SidebarInner pathname={pathname} projectId={null} />}>
+        <SidebarInnerWithProject pathname={pathname} />
       </Suspense>
     </aside>
   );
 }
 
 // Mobile hamburger + drawer -- mounted exactly once, from AppTopbar (so it
-// sits inside the header row itself). Split out of AppSidebar so pages don't
-// end up mounting two full sidebars (two usePathname/useTranslations/Sheet
-// instances, two desktop <aside> DOM nodes) when both AppSidebar and the
-// mobile trigger are needed on the same page.
+// sits inside the header row itself, same real placement as before this
+// migration). Deliberately its own export, independent of the desktop
+// sidebar's collapsed state (see (app)/layout.tsx's ShellBody): a mobile
+// user must always be able to reach this trigger regardless of whether the
+// desktop sidebar happens to be collapsed.
+//
+// Auto-closes on navigation via a pathname effect, not a per-Link onClick --
+// the shared AppSidebar's NavItem has no onClick slot to hook (its Link
+// components are fully internal to that component), and AppTopbar (and thus
+// this trigger) is now mounted once from layout.tsx instead of remounting
+// per page, so the Sheet's open state would otherwise persist across
+// navigations instead of resetting the way it used to.
 export function MobileSidebarTrigger() {
   const pathname = usePathname();
   const t = useTranslations("Nav");
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="lg:hidden">
+        <Button variant="ghost" size="icon" className="veri-icon-btn lg:hidden">
           <LayoutDashboard className="h-5 w-5" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 border-none p-0">
+      <SheetContent side="left" className="w-[260px] border-none p-0">
         <SheetHeader className="sr-only">
           <SheetTitle>{t("navigationLabel")}</SheetTitle>
         </SheetHeader>
-        <Suspense fallback={<SidebarContent pathname={pathname} projectId={null} onNavigate={() => setOpen(false)} />}>
-          <SidebarContentWithProject pathname={pathname} onNavigate={() => setOpen(false)} />
+        <Suspense fallback={<SidebarInner pathname={pathname} projectId={null} />}>
+          <SidebarInnerWithProject pathname={pathname} />
         </Suspense>
       </SheetContent>
     </Sheet>

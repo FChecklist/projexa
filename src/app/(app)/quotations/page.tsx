@@ -1,11 +1,11 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import QuotationsClient from "@/components/QuotationsClient";
 
 export default function QuotationsPage() {
   return (
     <>
-      <AppTopbar title="Quotations" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="Quotations" />
         <QuotationsClient />
       </main>
     </>

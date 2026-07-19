@@ -4,10 +4,17 @@
 // right-panel design (its own view tabs, never driven by composerMode).
 // "Tasks" is renamed "Queries" throughout (see veri-chat-context.tsx for
 // why PROJEXA has no async Tasks system).
+//
+// veridian-ui-kit migration: adopts the shared PanelShell for the outer
+// header+tabs chrome only (matching compliance-tracker's own real
+// migration, PR #471) -- every real list/thread component below
+// (QueryList/ChatList/TodoPanel/QueryThread/ConvoThread/Overview) stays
+// local and unchanged, rendered as PanelShell's children.
 import { useEffect, useState } from "react";
 import { Loader2, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { useVeriChat } from "./veri-chat-context";
+import { PanelShell } from "@fchecklist/veridian-ui-kit/panel";
+import { useVeriChat, type RightPanelView } from "./veri-chat-context";
 
 type QuerySummary = {
   id: string;
@@ -31,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = { pending: "Working…", done: "Don
 const STATUS_COLOR: Record<string, string> = { pending: "text-px-warning", done: "text-px-success", error: "text-px-error" };
 
 export default function VeriChatPanel() {
-  const { rightPanelView, setRightPanelView, activeQueryId, activeConversationId, openQuery, openConversation, closeThread, refreshCounter, bumpRefresh } = useVeriChat();
+  const { rightPanelView, setRightPanelView, activeQueryId, activeConversationId, openQuery, openConversation, closeThread, isThreadOpen, refreshCounter, bumpRefresh } = useVeriChat();
 
   const [queries, setQueries] = useState<QuerySummary[]>([]);
   const [conversations, setConversations] = useState<ConvoSummary[]>([]);
@@ -127,53 +134,37 @@ export default function VeriChatPanel() {
   const activeQuery = activeQueryId ? queries.find((q) => q.id === activeQueryId) : null;
   const activeConvo = activeConversationId ? conversations.find((c) => c.id === activeConversationId) : null;
 
-  return (
-    <aside className="border-l border-px-border bg-white flex flex-col h-full">
-      <div className="border-b border-px-border px-4 py-3">
-        <div className="flex items-center gap-2 mb-2.5">
-          <MessageSquare className="size-4 text-px-orange" />
-          <span className="font-heading text-[15px] text-px-ink">PROJEXA Assistant</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {([
-            { key: "overview", label: "Overview", count: 0 },
-            { key: "queries", label: "Queries", count: pendingQueryCount },
-            { key: "chats", label: "Chats", count: 0 },
-            { key: "todo", label: "To Do", count: todoCount },
-          ] as const).map((v) => (
-            <button
-              key={v.key}
-              type="button"
-              onClick={() => { closeThread(); setRightPanelView(v.key); }}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg ${
-                rightPanelView === v.key && !activeQueryId && !activeConversationId ? "bg-px-orange/10 text-px-orange border border-px-orange/30" : "text-px-muted hover:bg-px-cloud"
-              }`}
-            >
-              {v.label}
-              {v.count > 0 && <span className="inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-px-error text-white text-[9.5px] font-bold">{v.count}</span>}
-            </button>
-          ))}
-        </div>
-      </div>
+  const tabs = [
+    { key: "overview" as const, label: "Overview", badge: 0 },
+    { key: "queries" as const, label: "Queries", badge: pendingQueryCount },
+    { key: "chats" as const, label: "Chats", badge: 0 },
+    { key: "todo" as const, label: "To Do", badge: todoCount },
+  ];
 
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="grid place-items-center h-32"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-        ) : activeQuery ? (
-          <QueryThread query={activeQuery} onBack={closeThread} />
-        ) : activeConvo ? (
-          <ConvoThread convo={activeConvo} messages={convoMessages} onBack={closeThread} onSend={sendMessage} />
-        ) : rightPanelView === "queries" ? (
-          <QueryList queries={queries} onOpen={openQuery} />
-        ) : rightPanelView === "chats" ? (
-          <ChatList conversations={conversations} orgMembers={orgMembers} onOpen={openConversation} onStart={startConversation} />
-        ) : rightPanelView === "todo" ? (
-          <TodoPanel todos={todos} newText={newTodoText} onNewText={setNewTodoText} onAdd={addTodo} onToggle={toggleTodo} />
-        ) : (
-          <Overview queries={queries} conversations={conversations} todos={todos} onOpenQuery={openQuery} onOpenConvo={openConversation} onGoToTodo={() => setRightPanelView("todo")} />
-        )}
-      </div>
-    </aside>
+  return (
+    <PanelShell<RightPanelView>
+      title="PROJEXA Assistant"
+      tabs={tabs}
+      activeView={rightPanelView}
+      isThreadOpen={isThreadOpen}
+      onSelectTab={(v) => { closeThread(); setRightPanelView(v); }}
+    >
+      {loading ? (
+        <div className="grid place-items-center h-32"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+      ) : activeQuery ? (
+        <QueryThread query={activeQuery} onBack={closeThread} />
+      ) : activeConvo ? (
+        <ConvoThread convo={activeConvo} messages={convoMessages} onBack={closeThread} onSend={sendMessage} />
+      ) : rightPanelView === "queries" ? (
+        <QueryList queries={queries} onOpen={openQuery} />
+      ) : rightPanelView === "chats" ? (
+        <ChatList conversations={conversations} orgMembers={orgMembers} onOpen={openConversation} onStart={startConversation} />
+      ) : rightPanelView === "todo" ? (
+        <TodoPanel todos={todos} newText={newTodoText} onNewText={setNewTodoText} onAdd={addTodo} onToggle={toggleTodo} />
+      ) : (
+        <Overview queries={queries} conversations={conversations} todos={todos} onOpenQuery={openQuery} onOpenConvo={openConversation} onGoToTodo={() => setRightPanelView("todo")} />
+      )}
+    </PanelShell>
   );
 }
 

@@ -1,11 +1,11 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import LeadsClient from "@/components/LeadsClient";
 
 export default function LeadsPage() {
   return (
     <>
-      <AppTopbar title="Leads" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="Leads" />
         <LeadsClient />
       </main>
     </>

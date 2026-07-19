@@ -1,4 +1,4 @@
-import { AppTopbar } from "@/components/AppTopbar";
+import { PageHeading } from "@/components/PageHeading";
 import KnowledgeBaseClient from "@/components/KnowledgeBaseClient";
 
 // Org-wide -- deliberately no resolveSelectedProject()/projectId, unlike
@@ -7,8 +7,8 @@ import KnowledgeBaseClient from "@/components/KnowledgeBaseClient";
 export default function KnowledgeBasePage() {
   return (
     <>
-      <AppTopbar title="Knowledge Base" />
       <main className="flex-1 space-y-6 p-6">
+        <PageHeading title="Knowledge Base" />
         <KnowledgeBaseClient />
       </main>
     </>
