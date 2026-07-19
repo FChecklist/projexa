@@ -37,6 +37,16 @@ export const USERS = {
     name: "Sneha Reddy",
     localRole: "member" as const,
   },
+  // Added for Batch B's non-admin access check (see PHASE2_BATCH_B_FINDINGS.md)
+  // -- Site Supervisor, and also compliance.users.role="member" (not
+  // manager/senior_professional/admin) in the real userRoleEnum, taken
+  // literally against the task's "a member account otherwise" instruction.
+  siteSupervisor: {
+    email: "manoj.yadav@meridian-construction.e2e-test.projexa-ai.com",
+    password: PASSWORD,
+    name: "Manoj Yadav",
+    localRole: "member" as const,
+  },
 } as const;
 
 export type UserKey = keyof typeof USERS;

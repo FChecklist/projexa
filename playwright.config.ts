@@ -1,13 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Phase 2 Batch C (Finance/Sales/HR + copilot) E2E suite -- runs against the
-// REAL live PROJEXA site (https://projexa-ai.com), not a local dev server or
-// mock. There is no local server to boot: PROJEXA's real data lives in
-// compliance-tracker's live database via the VERIDIAN API bridge (see
-// PHASE1_SEED_REPORT.md), so a local `next dev` instance would show nothing
-// useful for this suite's purposes -- the whole point is exercising the real
-// deployed app against the real seeded "Meridian Construction Group (E2E
-// Test Org)" data.
+// Shared Phase 2 E2E suite (Batch B: Resources/Field/Design; Batch C:
+// Finance/Sales/HR + copilot) -- runs against the REAL live PROJEXA site
+// (https://projexa-ai.com), not a local dev server or mock. There is no
+// local server to boot: PROJEXA's real data lives in compliance-tracker's
+// live database via the VERIDIAN API bridge (see PHASE1_SEED_REPORT.md), so
+// a local `next dev` instance would show nothing useful for this suite's
+// purposes -- the whole point is exercising the real deployed app against
+// the real seeded "Meridian Construction Group (E2E Test Org)" data.
+// Override PLAYWRIGHT_BASE_URL to point a one-off run at a different
+// environment without changing this default.
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -16,13 +18,15 @@ export default defineConfig({
   // Real live external site -- keep worker count low to avoid hammering it
   // and to keep test output easy to read as a real transcript.
   workers: 3,
-  reporter: [["list"], ["json", { outputFile: "e2e-results.json" }]],
+  reporter: process.env.CI ? [["github"], ["list"]] : [["list"], ["json", { outputFile: "e2e-results.json" }]],
   // Copilot Discuss tests wait up to 60s for a real LLM round-trip under
-  // concurrent load -- give every test enough headroom for that plus setup.
+  // concurrent load; Batch B's proxy-through-VERIDIAN round trips were also
+  // observed needing headroom under real (if elevated) load -- give every
+  // test enough headroom for that plus setup.
   timeout: 75_000,
-  expect: { timeout: 10_000 },
+  expect: { timeout: 20_000 },
   use: {
-    baseURL: "https://projexa-ai.com",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "https://projexa-ai.com",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     navigationTimeout: 30_000,
@@ -33,8 +37,8 @@ export default defineConfig({
     {
       // Each spec file selects its own logged-in user via
       // test.use({ storageState: "playwright/.auth/<key>.json" }) at the
-      // top of the file -- see e2e/users.ts for which of the 3 seeded
-      // users owns which module.
+      // top of the file -- see e2e/users.ts for which seeded user owns
+      // which module.
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
