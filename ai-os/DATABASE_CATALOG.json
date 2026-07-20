@@ -1,7 +1,7 @@
 {
   "generated_by": "extract-db-schema-catalog.mjs (drizzle-orm getTableConfig introspection, not AI-written)",
   "source_file": "/opt/veridian/repos/projexa/src/lib/db/schema.ts",
-  "table_count": 10,
+  "table_count": 11,
   "enum_count": 0,
   "other_export_count": 0,
   "tables": [
@@ -466,6 +466,125 @@
             "conversation_id"
           ],
           "foreign_table": "conversations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "notifications",
+      "table_name": "notifications",
+      "schema": "public",
+      "column_count": 9,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "title",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "message",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "type",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "is_read",
+          "data_type": "boolean",
+          "sql_type": "boolean",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "metadata",
+          "data_type": "json",
+          "sql_type": "jsonb",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "foreign_table": "profiles",
           "foreign_columns": [
             "id"
           ]
