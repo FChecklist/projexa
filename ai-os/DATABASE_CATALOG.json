@@ -1,0 +1,739 @@
+{
+  "generated_by": "extract-db-schema-catalog.mjs (drizzle-orm getTableConfig introspection, not AI-written)",
+  "source_file": "/opt/veridian/repos/projexa/src/lib/db/schema.ts",
+  "table_count": 10,
+  "enum_count": 0,
+  "other_export_count": 0,
+  "tables": [
+    {
+      "export_name": "assistantQueries",
+      "table_name": "assistant_queries",
+      "schema": "public",
+      "column_count": 10,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_by",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "code_reference",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "breadcrumb",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "inputs",
+          "data_type": "json",
+          "sql_type": "jsonb",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "result",
+          "data_type": "json",
+          "sql_type": "jsonb",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "status",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "error_message",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "contactRequests",
+      "table_name": "contact_requests",
+      "schema": "public",
+      "column_count": 8,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "name",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "email",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "company",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "phone",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "message",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "source_page",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": []
+    },
+    {
+      "export_name": "conversationParticipants",
+      "table_name": "conversation_participants",
+      "schema": "public",
+      "column_count": 3,
+      "columns": [
+        {
+          "name": "conversation_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "joined_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "conversation_id"
+          ],
+          "foreign_table": "conversations",
+          "foreign_columns": [
+            "id"
+          ]
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "foreign_table": "profiles",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "conversations",
+      "table_name": "conversations",
+      "schema": "public",
+      "column_count": 3,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "memberships",
+      "table_name": "memberships",
+      "schema": "public",
+      "column_count": 5,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "role",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "foreign_table": "profiles",
+          "foreign_columns": [
+            "id"
+          ]
+        },
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "messages",
+      "table_name": "messages",
+      "schema": "public",
+      "column_count": 5,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "conversation_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "sender_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "content",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "conversation_id"
+          ],
+          "foreign_table": "conversations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "organizations",
+      "table_name": "organizations",
+      "schema": "public",
+      "column_count": 5,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "name",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "slug",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": true,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "country",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": []
+    },
+    {
+      "export_name": "profiles",
+      "table_name": "profiles",
+      "schema": "public",
+      "column_count": 4,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "email",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "display_name",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": false,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": []
+    },
+    {
+      "export_name": "todos",
+      "table_name": "todos",
+      "schema": "public",
+      "column_count": 6,
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "text",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "done",
+          "data_type": "boolean",
+          "sql_type": "boolean",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "export_name": "veridianCredentials",
+      "table_name": "veridian_credentials",
+      "schema": "public",
+      "column_count": 5,
+      "columns": [
+        {
+          "name": "organization_id",
+          "data_type": "string",
+          "sql_type": "uuid",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": true,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "veridian_org_id",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "veridian_api_key",
+          "data_type": "string",
+          "sql_type": "text",
+          "not_null": true,
+          "has_default": false,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "date",
+          "sql_type": "timestamp with time zone",
+          "not_null": true,
+          "has_default": true,
+          "primary_key": false,
+          "is_unique": false,
+          "enum_values": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "organization_id"
+          ],
+          "foreign_table": "organizations",
+          "foreign_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": []
+    }
+  ],
+  "enums": [],
+  "other_exports_not_tables_or_enums": []
+}
