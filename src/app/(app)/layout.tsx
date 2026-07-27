@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { AppShellFrame } from "@fchecklist/veridian-ui-kit/shell";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AppTopbar } from "@/components/AppTopbar";
-import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
+import { VeriChatProvider, HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import VeriComposer from "@/components/veri-chat/VeriComposer";
 import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
+import HomeThreadSlot from "@/components/veri-chat/HomeThreadSlot";
 
 // Owner directive 2026-07-18: navigation/shell behavior must exactly match
 // compliance-tracker/veridian-scope-selector-in-home.html (the agreed UI/UX
@@ -23,8 +24,6 @@ import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
 // /api/assistant, /api/discuss, /api/todos, /api/conversations wiring) --
 // only their outer chrome now comes from the shared package, see those
 // files' own header comments for exactly what did and didn't move.
-const HOME_ROUTE = "/dashboard";
-
 function ShellBody({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -44,6 +43,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
       sidebar={collapsed ? null : <AppSidebar />}
       composer={<VeriComposer />}
       panel={panelCollapsed ? null : <VeriChatPanel />}
+      homeThreadSlot={<HomeThreadSlot />}
     >
       {children}
     </AppShellFrame>
