@@ -19,28 +19,25 @@
 // definitions require a projectId (report_definitions has no formal
 // per-row required-params schema) -- rather than guessing, a 400 error
 // naming the missing param is shown verbatim with an optional "Project ID"
-// retry field.
+// retry field. Same reasoning extends to ReportFilters (date range + free-
+// form params below): no declared schema exists to derive dropdowns from,
+// so these are generic, re-triggering controls rather than fabricated ones.
+//
+// Reports pivot/chart UI (2026-07-27): result rendering now goes through
+// ReportResultView, which adds Table/Pivot/Chart view-mode tabs over the
+// SAME {columns,rows} the inline table used to render alone -- pivoting and
+// charting happen entirely client-side against this already-fetched result
+// (pivot-utils.ts), never a second server call.
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CompanySelector, type Company, type CompanyScope } from "@/components/company-scope";
 import { PlayCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
-type ReportDefinitionResult = {
-  columns: string[];
-  rows: Record<string, string | number>[];
-  narrative?: string;
-  note?: string;
-};
-
-function cellValue(v: string | number | undefined): string {
-  if (v === undefined || v === null || v === "") return "—";
-  return String(v);
-}
+import { ReportResultView, type TabularReportResult } from "@/components/reports/ReportResultView";
+import { ReportFilters } from "@/components/reports/ReportFilters";
 
 export function ReportCatalogRunner({
   definitionId,
@@ -52,17 +49,18 @@ export function ReportCatalogRunner({
   companies: Company[];
 }) {
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<ReportDefinitionResult | null>(null);
+  const [result, setResult] = useState<TabularReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
+  const [filterParams, setFilterParams] = useState<Record<string, string>>({});
 
   const run = async () => {
     setRunning(true);
     setError(null);
     try {
-      const params: Record<string, unknown> = {};
+      const params: Record<string, unknown> = { ...filterParams };
       if (projectId.trim()) params.projectId = projectId.trim();
       if (supportsCompanyScope && scope.companyId) params.companyId = scope.companyId;
       const res = await fetch(`/api/reports/definitions/${encodeURIComponent(definitionId)}/run`, {
@@ -76,7 +74,7 @@ export function ReportCatalogRunner({
         toast.error(data.error ?? "Failed to run this report/analysis.");
         return;
       }
-      setResult(data as ReportDefinitionResult);
+      setResult(data as TabularReportResult);
     } catch {
       setError("Network error while running this report/analysis.");
     } finally {
@@ -86,6 +84,7 @@ export function ReportCatalogRunner({
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-dashed border-px-border p-2.5 bg-muted/20">
+      <ReportFilters onChange={setFilterParams} />
       <div className="flex flex-wrap items-end gap-2">
         {supportsCompanyScope && (
           <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
@@ -127,29 +126,8 @@ export function ReportCatalogRunner({
       )}
 
       {!running && result && (
-        <div className="space-y-2 pt-1">
-          {result.narrative && (
-            <p className="text-xs text-px-ink italic bg-white rounded p-2 border border-px-border">{result.narrative}</p>
-          )}
-          {result.rows.length > 0 ? (
-            <div className="bg-white rounded border border-px-border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>{result.columns.map((c) => <TableHead key={c}>{c}</TableHead>)}</TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.rows.map((row, i) => (
-                    <TableRow key={i}>
-                      {result.columns.map((c) => <TableCell key={c}>{cellValue(row[c])}</TableCell>)}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-xs text-px-muted">No rows returned.</p>
-          )}
-          {result.note && <p className="text-[11px] text-px-muted">{result.note}</p>}
+        <div className="pt-1">
+          <ReportResultView result={result} />
         </div>
       )}
     </div>

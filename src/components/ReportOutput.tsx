@@ -1,4 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PivotTable } from "@/components/reports/PivotTable";
+import { ReportChart } from "@/components/reports/ReportChart";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -20,17 +23,35 @@ export function ReportOutput({ data }: { data: unknown }) {
   if (Array.isArray(data)) {
     if (data.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No rows returned.</p>;
     const columns = isPlainObject(data[0]) ? Object.keys(data[0]) : ["value"];
+    const rows: Record<string, unknown>[] = isPlainObject(data[0])
+      ? (data as Record<string, unknown>[])
+      : data.map((v) => ({ value: v }));
     return (
-      <Table>
-        <TableHeader><TableRow>{columns.map((c) => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
-        <TableBody>
-          {data.map((row, i) => (
-            <TableRow key={i}>
-              {columns.map((c) => <TableCell key={c}>{cellValue(isPlainObject(row) ? row[c] : row)}</TableCell>)}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <Tabs defaultValue="table" className="space-y-2">
+        <TabsList>
+          <TabsTrigger value="table">Table</TabsTrigger>
+          <TabsTrigger value="pivot">Pivot</TabsTrigger>
+          <TabsTrigger value="chart">Chart</TabsTrigger>
+        </TabsList>
+        <TabsContent value="table">
+          <Table>
+            <TableHeader><TableRow>{columns.map((c) => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>
+              {data.map((row, i) => (
+                <TableRow key={i}>
+                  {columns.map((c) => <TableCell key={c}>{cellValue(isPlainObject(row) ? row[c] : row)}</TableCell>)}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TabsContent>
+        <TabsContent value="pivot">
+          <PivotTable columns={columns} rows={rows} />
+        </TabsContent>
+        <TabsContent value="chart">
+          <ReportChart columns={columns} rows={rows} />
+        </TabsContent>
+      </Tabs>
     );
   }
 
