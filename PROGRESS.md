@@ -66,10 +66,15 @@ must not be disturbed or swept into this PR.
       those -- pre-existing bun-vs-playwright test-runner collision,
       unrelated to this change, not touched)
 
+- [x] Open PRs in both repos:
+      - compliance-tracker: https://github.com/FChecklist/compliance-tracker/pull/609
+        (branch `feat/projexa-full-module-chain-api`)
+      - projexa: https://github.com/FChecklist/projexa/pull/59
+        (this branch)
+
 ## Remaining
-- [ ] Open PRs in both repos (in progress this same invocation)
 - [ ] Do NOT merge either PR -- requires a fresh supervisor audit first per
-      task's EXPECTED_OUTPUT
+      task's EXPECTED_OUTPUT. Task is otherwise complete.
 
 ## Deliberately deferred (documented in PR, not silently dropped)
 - Dispatching actions from the new VERI GRC AI / VERI ERP / etc chain modes
