@@ -30,6 +30,13 @@ export { FIXED_MODES };
 
 export type RightPanelView = "overview" | "queries" | "chats" | "todo";
 
+// The route AppShellFrame treats as "Home" for the merge behavior -- shared
+// between layout.tsx (passed to AppShellFrame's `homeRoute` prop) and
+// VeriComposer (to suppress its own inline discuss preview there, since
+// HomeThreadSlot already renders that same conversation in the main
+// content area on that route).
+export const HOME_ROUTE = "/dashboard";
+
 async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
   const res = await fetch("/api/capability-tree");
   const data = await res.json();
