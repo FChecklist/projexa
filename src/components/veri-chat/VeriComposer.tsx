@@ -24,10 +24,11 @@
 // instruction. Types (CapabilityNode/PathSegment/FIXED_MODES) still flow
 // from the shared package transitively via veri-chat-context.tsx.
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutoGrowTextarea } from "@/lib/use-autogrow-textarea";
-import { useVeriChat, FIXED_MODES, type CapabilityNode, type PathSegment } from "./veri-chat-context";
+import { useVeriChat, FIXED_MODES, HOME_ROUTE, type CapabilityNode, type PathSegment } from "./veri-chat-context";
 
 const FIXED_LABELS: Record<string, string> = { discuss: "Discuss", chats: "Chats", todo: "To Do" };
 
@@ -79,6 +80,7 @@ export default function VeriComposer() {
     activeQueryId, activeConversationId, closeThread, bumpRefresh,
     discussMessages, appendDiscussMessage,
   } = useVeriChat();
+  const isHome = usePathname() === HOME_ROUTE;
 
   const [selectedPath, setSelectedPath] = useState<PathSegment[]>([]);
   const [value, setValue] = useState("");
@@ -283,7 +285,10 @@ export default function VeriComposer() {
           </div>
         )}
 
-        {composerMode === "discuss" && discussMessages.length > 0 && !isThreadOpen && (
+        {/* Suppressed on HOME_ROUTE: HomeThreadSlot already renders this same
+            discuss conversation in the main content area there (AppShellFrame's
+            homeThreadSlot), so showing it here too would duplicate it. */}
+        {composerMode === "discuss" && discussMessages.length > 0 && !isThreadOpen && !isHome && (
           <div className="mb-2 max-h-[220px] space-y-2 overflow-y-auto rounded-2xl border border-px-border bg-px-concrete/60 px-3 py-2.5">
             {discussMessages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
