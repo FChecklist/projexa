@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -15,12 +16,22 @@ type Member = { user_id: string; role: string; profiles: { email: string; displa
 
 const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = { owner: "default", admin: "secondary", member: "outline" };
 
+// Mirrors ALL_ORG_ROLES in src/lib/supabase/auth-guard.ts -- kept as a
+// plain client-side list rather than importing that (server-only) module.
+const ASSIGNABLE_ROLES = ["owner", "admin", "pm", "site_engineer", "member", "client_viewer"] as const;
+
+// Owner/admin only -- matches ROLE_GROUPS.ORG_ADMIN's server-side gate on
+// PATCH /api/org-members/[id]; this is a UX affordance only (hides a
+// control the caller couldn't use), not itself the security boundary.
+const CAN_ASSIGN_ROLES = new Set(["owner", "admin"]);
+
 export default function SettingsClient() {
   const router = useRouter();
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -35,6 +46,25 @@ export default function SettingsClient() {
       .catch(() => toast.error("Couldn't load settings"))
       .finally(() => setLoading(false));
   }, []);
+
+  async function changeRole(userId: string, role: string) {
+    setUpdatingId(userId);
+    try {
+      const res = await fetch(`/api/org-members/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update role");
+      setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)));
+      toast.success("Role updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
 
   async function signOut() {
     setSigningOut(true);
@@ -84,7 +114,22 @@ export default function SettingsClient() {
                   <TableRow key={m.user_id}>
                     <TableCell>{m.profiles?.email ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{m.profiles?.display_name ?? "—"}</TableCell>
-                    <TableCell><Badge variant={ROLE_VARIANT[m.role] ?? "outline"}>{m.role}</Badge></TableCell>
+                    <TableCell>
+                      {info && CAN_ASSIGN_ROLES.has(info.role) ? (
+                        <Select
+                          value={m.role}
+                          onValueChange={(role) => changeRole(m.user_id, role)}
+                          disabled={updatingId === m.user_id}
+                        >
+                          <SelectTrigger size="sm" className="w-40"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {ASSIGNABLE_ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant={ROLE_VARIANT[m.role] ?? "outline"}>{m.role}</Badge>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
