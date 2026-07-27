@@ -11,6 +11,47 @@ export type AuthContext = {
   response: NextResponse | null;
 };
 
+// PROJEXA-native tenant role, backed by `memberships.role` (see
+// drizzle/0001_projexa_tenant_schema.sql's check constraint, extended by
+// drizzle/0012_membership_roles_pm_site_engineer.sql). This is PROJEXA's
+// own axis -- separate from VERIDIAN's user_role enum -- because PROJEXA
+// users authenticate against PROJEXA's own Supabase project and PROJEXA's
+// server routes call VERIDIAN with a single shared per-org API key (see
+// veridian-client.ts), not a per-user VERIDIAN identity. `client_viewer` is
+// a real PROJEXA-native role (not routed through VERIDIAN's own
+// client_viewer concept) for exactly that reason: there is no per-user
+// VERIDIAN call for a role check on the VERIDIAN side to attach to, so the
+// gate has to live here to have any effect at the API boundary.
+export type OrgRole = "owner" | "admin" | "pm" | "site_engineer" | "member" | "client_viewer";
+
+// Named role sets for requireRole() call sites, so route handlers read as
+// "PM or above" / "field roles" instead of repeating string arrays that can
+// drift out of sync with each other.
+export const ROLE_GROUPS = {
+  // Schedule baselines, budgets, change orders, purchase orders: PM-level
+  // financial/contractual authority. Deliberately excludes site_engineer
+  // and client_viewer.
+  PM_OR_ABOVE: ["owner", "admin", "pm"] as const,
+  // Site diary / punch list / other field-progress entry: anyone actually
+  // doing on-site work, but not a read-only client_viewer.
+  FIELD: ["owner", "admin", "pm", "site_engineer"] as const,
+};
+
+// Server-side role gate. Must be called after requireAuth() has already
+// confirmed ctx.response is null (i.e. the caller is authenticated and has
+// a resolved membership role) -- mirrors compliance-tracker's own
+// requireRole()/requireRoleOrScope() pattern (auth-guard.ts:443-456 there),
+// adapted to PROJEXA's thinner 'memberships.role' axis instead of VERIDIAN's
+// rank-based user_role enum, since PROJEXA's 6 roles have no linear
+// seniority order that a single rank number could represent (client_viewer
+// isn't "below" site_engineer, they're different axes of restriction).
+export function requireRole(ctx: AuthContext, allowed: readonly string[]): NextResponse | null {
+  if (!ctx.role || !allowed.includes(ctx.role)) {
+    return NextResponse.json({ error: "Forbidden: your role does not permit this action" }, { status: 403 });
+  }
+  return null;
+}
+
 // CONFIRMED ROOT CAUSE (2026-07-13 investigation, see commit message for the
 // full writeup): this used to call `supabase.auth.getUser()`, which makes a
 // live network round-trip to Supabase Auth's `/user` endpoint on *every*

@@ -1,22 +1,16 @@
-# PROGRESS -- task-20260727-101157-projexa-pivot-table---chart-ui-for-repor
+# PROGRESS -- task-20260727-122935-projexa-e2e--pm-site-engineer-role-model
 
 ## Completed
-- [x] Tech decision doc: `ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md` -- adopt PROJEXA's own (already-present, previously-dead) `src/components/ui/chart.tsx`; document that `report_definitions` has no formal param schema
-- [x] `src/components/reports/pivot-utils.ts` -- pure client-side group-by/sum/avg/count, unit tested (`pivot-utils.test.ts`, 9 tests passing)
-- [x] `src/components/reports/PivotTable.tsx` -- row/column/value/aggregation UI
-- [x] `src/components/reports/ReportChart.tsx` -- bar/line/pie via adopted chart.tsx wrapper
-- [x] `src/components/reports/ReportResultView.tsx` -- Table/Pivot/Chart tab switcher
-- [x] `src/components/reports/ReportFilters.tsx` -- date range + generic key/value param controls, re-triggers the report API call
-- [x] Wired into `ReportCatalogRunner.tsx` (report_definitions catalog runner, all domains)
-- [x] Wired into `ReportOutput.tsx` array-of-objects branch (fixed 17-report project list)
-- [x] Chart palette validated via dataviz skill; fixed pre-existing unvalidated `--chart-1..5` tokens + added missing dark-mode overrides in `globals.css`
-- [x] `npx tsc --noEmit` clean
-- [x] `bun test src` passing (21 tests, 0 fail)
-
-- [x] Manual proof against 3 real report_definitions (Sales/demo_co_9_rise, Construction+Interior Design/Meridian Construction Group E2E org) -- called executeReportDefinition() directly against real production DB, fed real results into computePivot/computeChartData, correct aggregates. See tech decision doc "Real-data verification" section for why this substituted for a live browser run (`projexa-ai.com/login` currently serves compliance-tracker's login UI, a pre-existing prod routing issue outside this repo; local Supabase unmigrated; vercel CLI needs interactive login).
-- [x] `e2e/pivot-chart-reports.spec.ts` written (Table/Pivot/Chart tab switch on a real catalog report) -- could not execute against the live site in this sandbox due to the login-routing issue above
-- [x] Verified zero DB/aggregation logic added to PROJEXA (grep review clean)
+- [x] PROJEXA role model: extended `memberships.role` (drizzle/0012, applied live via Supabase MCP) to `owner | admin | pm | site_engineer | member | client_viewer` -- `client_viewer` made a real PROJEXA-native role (justified in PR description: PROJEXA's VERIDIAN calls use one shared per-org API key, not a per-user VERIDIAN identity, so there is nothing on the VERIDIAN side for a per-user client_viewer gate to attach to).
+- [x] Added `requireRole()`/`ROLE_GROUPS` (`PM_OR_ABOVE`, `FIELD`) to `src/lib/supabase/auth-guard.ts`, following the existing `org/provision` inline-check pattern but as a reusable helper.
+- [x] Gated real API routes: `project-budgets` POST, `schedule/baselines` POST, `change-orders` POST + `[id]` PATCH, `purchase-orders` POST -> `PM_OR_ABOVE`; `site-diary` POST, `punch-list` POST -> `FIELD` (site_engineer allowed).
+- [x] `src/lib/supabase/auth-guard.test.ts`: proves site_engineer rejected from PM_OR_ABOVE / allowed on FIELD, pm allowed on both, client_viewer rejected from both.
+- [x] `npx tsc --noEmit` clean; `bun test src/lib/supabase/auth-guard.test.ts` 6/6 pass (full-repo `bun test` has a pre-existing, unrelated e2e/*.spec.ts vs bun-test-glob collision -- confirmed present before this change too, not fixed here per "avoid unrelated changes").
+- [x] `get_advisors(security)` on the `projexa` Supabase project: identical finding set before/after the migration -- zero new findings.
+- [x] PROJEXA PR opened.
 
 ## Remaining
-- [ ] Run `e2e/pivot-chart-reports.spec.ts` for real once projexa-ai.com's login routing is fixed (not this repo's issue)
-- [ ] PR against PROJEXA with audit-verdict comment per AGENTS.md
+- [ ] compliance-tracker: extend `designerTimesheetReport()` in `construction-reports-service.ts` with Category/Designer/Project/Status Budget-vs-Actual breakdown, reusing the existing budget-vs-actual pattern.
+- [ ] compliance-tracker: tests proving correct Budget-vs-Actual figures across all 4 dimensions against a fixture.
+- [ ] compliance-tracker: `bun test` + `npx tsc --noEmit` clean.
+- [ ] compliance-tracker PR opened.
