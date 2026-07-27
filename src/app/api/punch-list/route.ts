@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/supabase/auth-guard";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { notifyOrgMembers, buildPunchListCreatedNotification } from "@/lib/services/notification-service";
 
@@ -19,6 +19,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
+  const roleError = requireRole(ctx, ROLE_GROUPS.FIELD);
+  if (roleError) return roleError;
   const body = await request.json();
   try {
     const data = await callVeridian<{ id: string; description: string; priority: string }>("/punch-list", { organizationId: ctx.organizationId!, method: "POST", body });
