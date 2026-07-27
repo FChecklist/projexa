@@ -226,3 +226,37 @@ describe("work-progress-queue: concurrent sync dedupe (audit finding -- duplicat
     }
   });
 });
+
+// Audit follow-up (non-blocking, "fix if time permits"): a permanently
+// invalid entry (e.g. its activityId was deleted server-side) used to
+// retry forever on every 'online' event with no cap.
+describe("work-progress-queue: max-attempt cap (audit follow-up -- retries forever)", () => {
+  beforeEach(clearAll);
+  afterEach(clearAll);
+
+  test("an entry that fails 5 times in a row is marked 'failed' and stops being retried automatically", async () => {
+    await enqueueWorkProgressEntry(USER_A, baseEntry);
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (() => {
+      fetchCalls += 1;
+      return Promise.resolve(new Response(JSON.stringify({ error: "activity no longer exists" }), { status: 404 }));
+    }) as typeof fetch;
+    try {
+      for (let i = 0; i < 5; i++) {
+        await syncQueuedWorkProgressEntries(USER_A);
+      }
+      expect(fetchCalls).toBe(5);
+      const [entry] = await listQueuedWorkProgressEntries(USER_A);
+      expect(entry.status).toBe("failed");
+      expect(entry.attempts).toBe(5);
+
+      // A 6th sync (e.g. the next 'online' event) must not retry it.
+      await syncQueuedWorkProgressEntries(USER_A);
+      expect(fetchCalls).toBe(5);
+      expect((await listQueuedWorkProgressEntries(USER_A))[0].status).toBe("failed");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

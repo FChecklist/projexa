@@ -20,3 +20,63 @@
 
 ## Remaining
 - [ ] Open PRs against both repos through normal dispatch/review pipeline (no direct push to main)
+
+---
+
+# PROGRESS -- task-20260727-131349-fix-pr-54-audit-findings--per-user-offli
+
+Follow-up task: PR #54's supervisor audit (`gh api repos/FChecklist/projexa/issues/54/comments`,
+last comment) came back `AUDIT: FAIL`, medium severity, 2 blocking findings
+on `src/lib/offline/work-progress-queue.ts` above. Fixing on this same
+branch/PR per the audit's "Corrective Action Owner: Worker" instruction.
+
+## Completed
+- [x] Read full audit verdict -- 2 real blocking findings (cross-user data
+      leak on shared devices; sync race condition), 1 non-blocking follow-up
+      (no backoff/max-attempt cap on permanently-failing entries).
+- [x] Finding #1 (cross-user leak, the primary blocker): every
+      `work-progress-queue.ts` function now takes an explicit `scope` param
+      (the signed-in user's Supabase auth id) and reads/writes a per-scope
+      IndexedDB store -- no unscoped fallback exists. `WorkProgressClient.tsx`
+      resolves `scope` via `createClient().auth.getUser()` on mount and gates
+      every queue read/write on it being resolved (an unresolved scope means
+      "don't know whose queue this is", not "fall back to a shared one").
+- [x] Finding #2 (sync race): added a real mutex to
+      `syncQueuedWorkProgressEntries()` -- overlapping calls for the same
+      scope now dedupe onto a single in-flight drain promise (the lock is
+      set synchronously before the drain's first `await`, so there's no
+      window for a second concurrent call to start its own drain loop).
+- [x] New tests in `work-progress-queue.test.ts`:
+      - cross-user isolation (2 tests): a second scope can't see or drain a
+        first scope's queued entries; the first scope's entry is untouched
+        (still `pending`, not deleted) after the second scope's sync runs.
+      - concurrent-sync dedupe (2 tests): two overlapping sync calls for the
+        same scope produce exactly one POST; the lock releases correctly so
+        a later, non-overlapping call still runs.
+- [x] `npx tsc --noEmit` clean.
+- [x] `bun test src`: 30/30 pass (bare `bun test` also picks up Playwright
+      e2e specs and fails on all of them -- that's the same pre-existing,
+      unrelated bun-test/Playwright harness conflict noted above, not
+      something this task introduced; `bun test src` is this repo's
+      established real unit-test scope).
+- [x] Committed + pushed directly to `feat/pwa-offline-infra` (same PR #54,
+      no new PR opened): commit b5014d9.
+- [x] Time-permitting follow-up (non-blocking per audit): added a
+      `MAX_SYNC_ATTEMPTS = 5` cap. An entry that fails 5 sync attempts in a
+      row (e.g. a real 4xx because its activityId was deleted server-side)
+      is marked terminal `status: "failed"` and permanently excluded from
+      the automatic retry loop -- it no longer burns every future `online`
+      event retrying something that can't succeed. UI badge distinguishes
+      "will retry" (`error`, < 5 attempts) from "sync failed, won't retry"
+      (`failed`, capped). New test proves the 6th sync call makes no
+      further fetch call. `npx tsc --noEmit` clean, `bun test src` 31/31.
+
+## Remaining
+- [ ] Fresh supervisor audit required before merge (per this repo's review
+      pipeline) -- not performed by this task; do not merge PR #54 directly.
+
+## Constraints honored
+- Did not touch `src/app/manifest.ts`, `public/sw.js`,
+  `src/components/ServiceWorkerRegister.tsx` (audit already confirmed these
+  correct).
+- Did not touch any cron/systemd `.timer` state.

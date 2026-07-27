@@ -325,8 +325,8 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
                   <span>{activitiesById.get(q.activityId)?.name ?? q.activityId}</span>
                   <span>{q.quantityDone} qty, {q.percentComplete}%</span>
                   {q.photo && <Camera className="size-3.5" aria-label="Photo saved on this device" />}
-                  <Badge variant={q.status === "error" ? "destructive" : "secondary"}>
-                    {q.status === "syncing" ? "syncing…" : q.status === "error" ? "will retry" : "queued"}
+                  <Badge variant={q.status === "error" || q.status === "failed" ? "destructive" : "secondary"}>
+                    {q.status === "syncing" ? "syncing…" : q.status === "error" ? "will retry" : q.status === "failed" ? "sync failed, won't retry" : "queued"}
                   </Badge>
                 </li>
               ))}

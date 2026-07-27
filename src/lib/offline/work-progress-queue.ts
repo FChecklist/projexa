@@ -51,6 +51,12 @@ function storeForScope(scope: string): UseStore {
 
 export type QueuedPhoto = { blob: Blob; name: string; type: string };
 
+// "failed" (post-audit fix, follow-up item) is distinct from "error": an
+// "error" entry has failed fewer than MAX_SYNC_ATTEMPTS times and is still
+// retried on the next sync; a "failed" entry has hit the cap and is
+// permanently excluded from automatic retries (e.g. its activityId was
+// deleted server-side -- retrying forever against a real 4xx rejection
+// just wastes every future `online` event for no chance of success).
 export type QueuedWorkProgressEntry = {
   localId: string;
   projectId: string;
@@ -60,12 +66,15 @@ export type QueuedWorkProgressEntry = {
   percentComplete: number;
   remarks?: string;
   photo?: QueuedPhoto | null;
-  status: "pending" | "syncing" | "error";
+  status: "pending" | "syncing" | "error" | "failed";
   error?: string;
+  attempts: number;
   queuedAt: string;
 };
 
-export type NewWorkProgressEntry = Omit<QueuedWorkProgressEntry, "localId" | "status" | "error" | "queuedAt">;
+export type NewWorkProgressEntry = Omit<QueuedWorkProgressEntry, "localId" | "status" | "error" | "attempts" | "queuedAt">;
+
+const MAX_SYNC_ATTEMPTS = 5;
 
 function newLocalId(): string {
   return `local-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
@@ -76,6 +85,7 @@ export async function enqueueWorkProgressEntry(scope: string, entry: NewWorkProg
     ...entry,
     localId: newLocalId(),
     status: "pending",
+    attempts: 0,
     queuedAt: new Date().toISOString(),
   };
   await set(record.localId, record, storeForScope(scope));
@@ -91,14 +101,14 @@ export async function removeQueuedWorkProgressEntry(scope: string, localId: stri
   await del(localId, storeForScope(scope));
 }
 
-async function setStatus(scope: string, localId: string, status: QueuedWorkProgressEntry["status"], error?: string) {
+async function patchEntry(scope: string, localId: string, patch: Partial<QueuedWorkProgressEntry>) {
   const store = storeForScope(scope);
   const existing = await get<QueuedWorkProgressEntry>(localId, store);
   if (!existing) return;
-  await set(localId, { ...existing, status, error }, store);
+  await set(localId, { ...existing, ...patch }, store);
 }
 
-export type SyncEvent = { localId: string; phase: "syncing" | "synced" | "error"; error?: string };
+export type SyncEvent = { localId: string; phase: "syncing" | "synced" | "error" | "failed"; error?: string };
 
 // Post-audit fix (PR #54 review): keyed by `scope` so two overlapping
 // `syncQueuedWorkProgressEntries(scope)` calls for the SAME user (a
@@ -125,12 +135,17 @@ export function syncQueuedWorkProgressEntries(scope: string, onEvent?: (event: S
   if (inFlight) return inFlight;
 
   const run = (async () => {
-    const queued = (await listQueuedWorkProgressEntries(scope)).filter((e) => e.status !== "syncing");
+    // "failed" entries have already hit MAX_SYNC_ATTEMPTS and are
+    // permanently excluded here -- they no longer retry on every `online`
+    // event (the audit's disclosed follow-up: previously nothing capped
+    // retries on a permanently-invalid entry, e.g. one whose activityId
+    // was deleted server-side).
+    const queued = (await listQueuedWorkProgressEntries(scope)).filter((e) => e.status !== "syncing" && e.status !== "failed");
     let synced = 0;
     let failed = 0;
 
     for (const entry of queued) {
-      await setStatus(scope, entry.localId, "syncing");
+      await patchEntry(scope, entry.localId, { status: "syncing" });
       onEvent?.({ localId: entry.localId, phase: "syncing" });
       try {
         const res = await fetch("/api/work-progress", {
@@ -151,9 +166,11 @@ export function syncQueuedWorkProgressEntries(scope: string, onEvent?: (event: S
         onEvent?.({ localId: entry.localId, phase: "synced" });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Sync failed";
-        await setStatus(scope, entry.localId, "error", message);
+        const attempts = entry.attempts + 1;
+        const permanentlyFailed = attempts >= MAX_SYNC_ATTEMPTS;
+        await patchEntry(scope, entry.localId, { status: permanentlyFailed ? "failed" : "error", error: message, attempts });
         failed += 1;
-        onEvent?.({ localId: entry.localId, phase: "error", error: message });
+        onEvent?.({ localId: entry.localId, phase: permanentlyFailed ? "failed" : "error", error: message });
       }
     }
 
