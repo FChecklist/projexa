@@ -18,7 +18,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, WifiOff, RefreshCw, Camera } from "lucide-react";
+import {
+  enqueueWorkProgressEntry,
+  listQueuedWorkProgressEntries,
+  syncQueuedWorkProgressEntries,
+  type QueuedWorkProgressEntry,
+} from "@/lib/offline/work-progress-queue";
 
 type Entry = {
   id: string;
@@ -53,8 +59,31 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
   const [newActivityName, setNewActivityName] = useState("");
   const [newActivityUnit, setNewActivityUnit] = useState("");
   const [creatingActivity, setCreatingActivity] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+
+  const [queued, setQueued] = useState<QueuedWorkProgressEntry[]>([]);
+  const [syncing, setSyncing] = useState(false);
 
   const activitiesById = new Map(activities.map((a) => [a.id, a]));
+
+  const refreshQueued = useCallback(async () => {
+    setQueued(await listQueuedWorkProgressEntries());
+  }, []);
+
+  const runSync = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    setSyncing(true);
+    try {
+      const { synced } = await syncQueuedWorkProgressEntries();
+      if (synced > 0) {
+        toast.success(`Synced ${synced} queued progress ${synced === 1 ? "entry" : "entries"}`);
+        load();
+      }
+    } finally {
+      setSyncing(false);
+      refreshQueued();
+    }
+  }, [refreshQueued]);
 
   async function load() {
     setLoading(true);
@@ -89,27 +118,63 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
   useEffect(() => { load(); }, [projectId]);
   useEffect(() => { loadActivities(); }, [loadActivities]);
 
+  // Offline-first sync: drain the local queue on mount (covers entries
+  // queued in a previous, now-closed tab/session) and every time the
+  // browser regains connectivity.
+  useEffect(() => {
+    refreshQueued();
+    runSync();
+    window.addEventListener("online", runSync);
+    return () => window.removeEventListener("online", runSync);
+  }, [refreshQueued, runSync]);
+
   async function createEntry() {
     if (!activityId || !entryDate || quantityDone === "" || percentComplete === "") return;
     setSubmitting(true);
+    const payload = {
+      projectId, activityId, entryDate,
+      quantityDone: Number(quantityDone), percentComplete: Number(percentComplete),
+      remarks: remarks || undefined,
+    };
+    const photoField = photo ? { blob: photo, name: photo.name, type: photo.type } : null;
+
+    // Offline-first: if the browser already reports no connectivity, skip
+    // straight to the local queue rather than waiting on a fetch that's
+    // guaranteed to fail.
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await enqueueWorkProgressEntry({ ...payload, photo: photoField });
+      toast.info("You're offline -- progress saved on this device, will sync automatically");
+      setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
+      refreshQueued();
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/work-progress", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, activityId, entryDate,
-          quantityDone: Number(quantityDone), percentComplete: Number(percentComplete),
-          remarks: remarks || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
         throw new Error(err?.error);
       }
       toast.success("Progress logged");
-      setQuantityDone(""); setPercentComplete(""); setRemarks(""); setOpen(false);
+      setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
       load();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't log progress");
+      // A thrown Error with no `.message` came from the server rejecting a
+      // real request (handled above) -- a network-level failure (offline,
+      // DNS, connection reset) throws before a response ever exists, which
+      // is exactly the case the local queue exists for.
+      if (err instanceof TypeError) {
+        await enqueueWorkProgressEntry({ ...payload, photo: photoField });
+        toast.info("Network unavailable -- progress saved on this device, will sync automatically");
+        setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
+        refreshQueued();
+      } else {
+        toast.error(err instanceof Error && err.message ? err.message : "Couldn't log progress");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -177,8 +242,19 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
                 <div className="space-y-1.5"><Label>% Complete</Label><Input type="number" min={0} max={100} value={percentComplete} onChange={(e) => setPercentComplete(e.target.value)} /></div>
               </div>
               <div className="space-y-1.5"><Label>Remarks (optional)</Label><Input value={remarks} onChange={(e) => setRemarks(e.target.value)} /></div>
+              <div className="space-y-1.5">
+                <Label>Site Photo (optional)</Label>
+                <Input
+                  type="file" accept="image/*" capture="environment"
+                  data-testid="work-progress-photo-input"
+                  onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                />
+                {photo && (
+                  <p className="flex items-center gap-1 text-xs text-px-muted"><Camera className="size-3.5" /> {photo.name}</p>
+                )}
+              </div>
             </div>
-            <DialogFooter><Button onClick={createEntry} disabled={submitting || !activityId}>{submitting ? "Saving…" : "Log Entry"}</Button></DialogFooter>
+            <DialogFooter><Button onClick={createEntry} disabled={submitting || !activityId} data-testid="work-progress-submit">{submitting ? "Saving…" : "Log Entry"}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
 
@@ -199,6 +275,34 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
           </DialogContent>
         </Dialog>
       </div>
+
+      {queued.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50 shadow-card" data-testid="work-progress-queue">
+          <CardContent className="space-y-2 p-4">
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-amber-900">
+                <WifiOff className="size-4" /> {queued.length} {queued.length === 1 ? "entry" : "entries"} queued, will sync
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={runSync} disabled={syncing}>
+                {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Sync now
+              </Button>
+            </div>
+            <ul className="space-y-1 text-xs text-amber-900">
+              {queued.map((q) => (
+                <li key={q.localId} data-testid="work-progress-queue-item" className="flex items-center gap-2">
+                  <span className="font-mono">{new Date(q.entryDate).toLocaleDateString()}</span>
+                  <span>{activitiesById.get(q.activityId)?.name ?? q.activityId}</span>
+                  <span>{q.quantityDone} qty, {q.percentComplete}%</span>
+                  {q.photo && <Camera className="size-3.5" aria-label="Photo saved on this device" />}
+                  <Badge variant={q.status === "error" ? "destructive" : "secondary"}>
+                    {q.status === "syncing" ? "syncing…" : q.status === "error" ? "will retry" : "queued"}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-card">
         <CardContent className="p-0">
