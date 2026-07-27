@@ -24,6 +24,12 @@ export type AuthContext = {
 // gate has to live here to have any effect at the API boundary.
 export type OrgRole = "owner" | "admin" | "pm" | "site_engineer" | "member" | "client_viewer";
 
+// The full set of roles memberships.role's check constraint allows (see
+// drizzle/0012_membership_roles_pm_site_engineer.sql) -- the runtime
+// counterpart to the OrgRole type, for validating a role value received
+// over the wire (e.g. PATCH /api/org-members/[id]'s request body).
+export const ALL_ORG_ROLES: readonly OrgRole[] = ["owner", "admin", "pm", "site_engineer", "member", "client_viewer"];
+
 // Named role sets for requireRole() call sites, so route handlers read as
 // "PM or above" / "field roles" instead of repeating string arrays that can
 // drift out of sync with each other.
@@ -35,6 +41,12 @@ export const ROLE_GROUPS = {
   // Site diary / punch list / other field-progress entry: anyone actually
   // doing on-site work, but not a read-only client_viewer.
   FIELD: ["owner", "admin", "pm", "site_engineer"] as const,
+  // Org-membership management (e.g. reassigning another member's role):
+  // owner/admin only, same as who could already see the full member list
+  // (see org/provision's initial 'owner' insert -- admin is the only other
+  // role capable of granting itself/others elevated access, so both need
+  // to stay tightly held).
+  ORG_ADMIN: ["owner", "admin"] as const,
 };
 
 // Server-side role gate. Must be called after requireAuth() has already
