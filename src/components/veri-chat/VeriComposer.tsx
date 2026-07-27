@@ -3,10 +3,16 @@
 // PROJEXA's port of VERIDIAN's VeriComposer.tsx -- same DOM position on
 // every page (mounted once in the app layout, never remounted on
 // navigation). Mode pills answer "what am I about to do"; the cascading
-// chain rows are pre-seeded from the real construction capability tree
-// (Wave 130's /api/v1/projexa/capability-tree). Sending in a chain mode
-// calls /api/assistant, which dispatches through the same worker-agent
-// pipeline the tree itself was built from.
+// chain rows are pre-seeded from `tree`, which is now the concatenation of
+// two real sources (see veri-chat-context.tsx's fetchCapabilityTree()):
+// PROJEXA's own construction capability tree (Wave 130's
+// /api/v1/projexa/capability-tree) and the org's full linked VERIDIAN
+// module chain (VERI GRC AI / VERI ERP / etc, /api/module-chain, added by
+// the "wire full VERIDIAN module chain into PROJEXA" task). Sending in the
+// construction chain mode calls /api/assistant, which dispatches through
+// the same worker-agent pipeline that tree was built from; the other,
+// newer chain modes are real org-scoped browsable data without a wired
+// dispatch endpoint yet (isDispatchableChain below).
 //
 // veridian-ui-kit migration: investigated adopting the shared package's own
 // VeriComposer (@fchecklist/veridian-ui-kit/composer), and found a real,
@@ -28,7 +34,9 @@ import { usePathname } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutoGrowTextarea } from "@/lib/use-autogrow-textarea";
-import { useVeriChat, FIXED_MODES, HOME_ROUTE, type CapabilityNode, type PathSegment } from "./veri-chat-context";
+import {
+  useVeriChat, FIXED_MODES, HOME_ROUTE, CONSTRUCTION_CHAIN_MODE_KEY, type CapabilityNode, type PathSegment,
+} from "./veri-chat-context";
 
 const FIXED_LABELS: Record<string, string> = { discuss: "Discuss", chats: "Chats", todo: "To Do" };
 
@@ -94,6 +102,15 @@ export default function VeriComposer() {
     return node ? node.key : null;
   };
   const isChainMode = chainModes.includes(composerMode);
+  // Only the construction chain (PROJEXA's own data, Wave 130) resolves to a
+  // codeReference /api/assistant actually knows how to run -- every other
+  // chain mode now offered (the new VERI GRC AI / VERI ERP / etc modules
+  // from /api/module-chain) is real, org-scoped browsable data without a
+  // wired dispatch endpoint yet (see veri-chat-context.tsx's
+  // CONSTRUCTION_CHAIN_MODE_KEY comment). Gating on this, rather than just
+  // disabling nothing, means picking a VERI GRC AI leaf can't silently
+  // no-op or 400 against the construction-only /api/assistant allowlist.
+  const isDispatchableChain = composerMode === CONSTRUCTION_CHAIN_MODE_KEY;
 
   useEffect(() => {
     const preseed = tree.find((n) => n.key === composerMode)?.key ?? null;
@@ -158,7 +175,7 @@ export default function VeriComposer() {
   // for PROJEXA's structured dispatch: no free-text instruction to carry,
   // just the resolved leaf.
   function queueCurrent() {
-    if (!completedLeaf?.codeReference || !chainComplete) return;
+    if (!completedLeaf?.codeReference || !chainComplete || !isDispatchableChain) return;
     setQueue((q) => [...q, {
       codeReference: completedLeaf.codeReference!,
       fixedInputs: completedLeaf.fixedInputs ?? {},
@@ -212,10 +229,12 @@ export default function VeriComposer() {
   async function send() {
     if (sending) return;
     if (composerMode === "discuss" && !isThreadOpen) return sendDiscuss();
-    if (isChainMode && chainComplete && !isThreadOpen) return dispatchQuery();
+    if (isChainMode && chainComplete && isDispatchableChain && !isThreadOpen) return dispatchQuery();
   }
 
-  const disabled = sending || isThreadOpen || (composerMode === "chats") || (composerMode === "todo") || (isChainMode && !chainComplete);
+  const disabled =
+    sending || isThreadOpen || (composerMode === "chats") || (composerMode === "todo") ||
+    (isChainMode && !(chainComplete && isDispatchableChain));
   const placeholder = isThreadOpen
     ? "Open a query above to see its result"
     : composerMode === "discuss"
@@ -225,7 +244,9 @@ export default function VeriComposer() {
         : composerMode === "todo"
           ? "Use the To Do panel to add items"
           : chainComplete
-            ? `Ready — press send for "${completedLeaf?.label}"`
+            ? isDispatchableChain
+              ? `Ready — press send for "${completedLeaf?.label}"`
+              : `Viewing "${completedLeaf?.label}" — live VERIDIAN data, dispatch coming soon for this module`
             : "Select an option above to begin…";
 
   return (
@@ -317,7 +338,7 @@ export default function VeriComposer() {
                 <button
                   type="button"
                   onClick={queueCurrent}
-                  disabled={!chainComplete || sending}
+                  disabled={!chainComplete || sending || !isDispatchableChain}
                   title="Stage this and pick another query"
                   className="px-3 h-9 rounded-lg text-[12.5px] font-semibold text-px-slate border border-px-border hover:bg-px-cloud disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
@@ -329,7 +350,7 @@ export default function VeriComposer() {
                 onClick={send}
                 disabled={
                   sending ||
-                  (composerMode === "discuss" ? !value.trim() : !(isChainMode && chainComplete))
+                  (composerMode === "discuss" ? !value.trim() : !(isChainMode && chainComplete && isDispatchableChain))
                 }
                 className="grid size-9 place-items-center rounded-lg bg-px-orange text-white hover:bg-px-orange-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
@@ -342,7 +363,11 @@ export default function VeriComposer() {
           {isThreadOpen
             ? ""
             : isChainMode
-              ? chainComplete ? "Enter sends, chain resets after each query" : "Complete the chain above to start typing"
+              ? chainComplete
+                ? isDispatchableChain
+                  ? "Enter sends, chain resets after each query"
+                  : "Browse-only for now — this module isn't wired up to send yet"
+                : "Complete the chain above to start typing"
               : composerMode === "discuss"
                 ? "Enter sends — general questions only, not live project data"
                 : composerMode === "chats"
