@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
 const inter = Inter({
@@ -55,6 +56,7 @@ export default async function RootLayout({
             {children}
           </ThemeProvider>
           <Toaster position="top-right" richColors />
+          <ServiceWorkerRegister />
         </NextIntlClientProvider>
       </body>
     </html>

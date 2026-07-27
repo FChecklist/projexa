@@ -42,7 +42,21 @@
 #      message. Keep entries short, factual, and file/directory-scoped so a
 #      session with zero other context can act on them correctly.
 # ============================================================================
-active: []
+active:
+  - session_label: "claude-code (task-20260727-122821-projexa-e2e--pwa-offline-sync---real-tas) -- PWA/offline infra + dependency-blocking enforcement"
+    claimed_at: "2026-07-27T (this session)"
+    claim: |
+      Owner directive PROJEXA_ERP_END_TO_END_REQUIREMENT_ANALYSIS_GAP_FILL_AND_IMPLEMENTATION.
+      In PROJEXA: adding src/app/manifest.ts (PWA manifest), public/sw.js +
+      registration (offline shell caching), and an IndexedDB-backed
+      (idb-keyval) offline queue for work-progress entries (quantity/notes/
+      photo) with a visible "queued, will sync" UI state syncing to the real
+      constructionWorkProgressEntries API. File scope: src/app/manifest.ts,
+      public/sw.js, a new client component registering the SW, a new
+      offline-queue lib module, work-progress entry UI, e2e/ tests. Not
+      touching construction-boq-service.ts or the BoQ schema (separate
+      parallel task's scope). In compliance-tracker (separate repo, separate
+      claim there): pms-issue-service.ts dependency-blocking enforcement.
 recently_completed:
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
