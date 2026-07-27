@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, WifiOff, RefreshCw, Camera } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import {
   enqueueWorkProgressEntry,
   listQueuedWorkProgressEntries,
@@ -63,18 +64,35 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
 
   const [queued, setQueued] = useState<QueuedWorkProgressEntry[]>([]);
   const [syncing, setSyncing] = useState(false);
+  // The offline queue is scoped to this id (the signed-in Supabase auth
+  // user, resolved below) so a second user logging in on the same/shared
+  // device can never see or auto-sync entries a previous user queued
+  // offline -- see work-progress-queue.ts's header for the full audit
+  // writeup. Every queue read/write below is gated on this being resolved:
+  // null means "don't know whose queue this is yet", not "use a shared one".
+  const [scope, setScope] = useState<string | null>(null);
 
   const activitiesById = new Map(activities.map((a) => [a.id, a]));
 
-  const refreshQueued = useCallback(async () => {
-    setQueued(await listQueuedWorkProgressEntries());
+  useEffect(() => {
+    let cancelled = false;
+    createClient().auth.getUser().then(({ data }) => {
+      if (!cancelled) setScope(data.user?.id ?? null);
+    });
+    return () => { cancelled = true; };
   }, []);
 
+  const refreshQueued = useCallback(async () => {
+    if (!scope) return;
+    setQueued(await listQueuedWorkProgressEntries(scope));
+  }, [scope]);
+
   const runSync = useCallback(async () => {
+    if (!scope) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
     setSyncing(true);
     try {
-      const { synced } = await syncQueuedWorkProgressEntries();
+      const { synced } = await syncQueuedWorkProgressEntries(scope);
       if (synced > 0) {
         toast.success(`Synced ${synced} queued progress ${synced === 1 ? "entry" : "entries"}`);
         load();
@@ -83,7 +101,7 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
       setSyncing(false);
       refreshQueued();
     }
-  }, [refreshQueued]);
+  }, [scope, refreshQueued]);
 
   async function load() {
     setLoading(true);
@@ -142,7 +160,16 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
     // straight to the local queue rather than waiting on a fetch that's
     // guaranteed to fail.
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      await enqueueWorkProgressEntry({ ...payload, photo: photoField });
+      // `scope` (the signed-in user's id) gates every queue write -- with
+      // no scope resolved yet, there's no safe store to queue into (see
+      // work-progress-queue.ts: there is deliberately no unscoped
+      // fallback), so surface this honestly instead of guessing.
+      if (!scope) {
+        toast.error("Still verifying your session -- try logging progress again in a moment");
+        setSubmitting(false);
+        return;
+      }
+      await enqueueWorkProgressEntry(scope, { ...payload, photo: photoField });
       toast.info("You're offline -- progress saved on this device, will sync automatically");
       setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
       refreshQueued();
@@ -168,10 +195,14 @@ export default function WorkProgressClient({ projectId }: { projectId: string })
       // DNS, connection reset) throws before a response ever exists, which
       // is exactly the case the local queue exists for.
       if (err instanceof TypeError) {
-        await enqueueWorkProgressEntry({ ...payload, photo: photoField });
-        toast.info("Network unavailable -- progress saved on this device, will sync automatically");
-        setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
-        refreshQueued();
+        if (!scope) {
+          toast.error("Still verifying your session -- try logging progress again in a moment");
+        } else {
+          await enqueueWorkProgressEntry(scope, { ...payload, photo: photoField });
+          toast.info("Network unavailable -- progress saved on this device, will sync automatically");
+          setQuantityDone(""); setPercentComplete(""); setRemarks(""); setPhoto(null); setOpen(false);
+          refreshQueued();
+        }
       } else {
         toast.error(err instanceof Error && err.message ? err.message : "Couldn't log progress");
       }
