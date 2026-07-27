@@ -70,6 +70,6 @@ was a real, confirmed drift matching the spec's description.
       preview route.
 
 ## Remaining
-- [ ] Open PR against PROJEXA `main` with this diff.
-- [ ] No veridian-ui-kit PR needed (nothing to change there).
-- [ ] No compliance-tracker PR needed (dependency pin unchanged, typecheck unaffected).
+- [x] Open PR against PROJEXA `main` with this diff: https://github.com/FChecklist/projexa/pull/52
+- [x] No veridian-ui-kit PR needed (nothing to change there).
+- [x] No compliance-tracker PR needed (dependency pin unchanged, typecheck unaffected).
