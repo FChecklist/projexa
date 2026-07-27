@@ -102,6 +102,33 @@ grep, meaning dark mode was silently reusing the light hexes against a dark
 surface, unvalidated). See `src/app/globals.css` for the values and full
 validator output in the surrounding comments.
 
+## Real-data verification (manual, not just unit tests)
+
+`https://projexa-ai.com/login` currently renders compliance-tracker's login
+UI ("Welcome back / Sign in to your compliance dashboard"), not PROJEXA's
+own ("Log in to PROJEXA", per `messages/en.json`) -- a real, pre-existing
+production deployment/routing issue outside this repo, discovered while
+trying to log in for live E2E verification. This blocked driving the real
+site through a browser in this environment. Two other avenues were also
+ruled out: the local Supabase stacks running in this sandbox have empty
+`compliance` schemas (never migrated/seeded), and `vercel env pull` requires
+interactive browser login (hung, no TTY here).
+
+Compensating verification actually performed: called compliance-tracker's
+real `executeReportDefinition()` directly against the real production
+database (read-only) for one report_definitions row per target domain --
+"New Leads Report" (Sales, `demo_co_9_rise` org), "Project Summary Report"
+(Construction, "Meridian Construction Group (E2E Test Org)"), and "Furniture
+Procurement Report" (Interior Design, same org) -- then fed the real
+`{columns, rows}` results returned into `computePivot()`/`computeChartData()`
+directly. All three produced correct aggregates (e.g. Sales sums summed to
+the real total of 50 leads; Interior Design's 3 real FFE rows summed to the
+real quantity of 6). This is real production data through the real
+dispatcher, just not a live browser click-through -- documented here rather
+than claimed as a full Playwright run. `e2e/pivot-chart-reports.spec.ts` is
+written and ready to run once the login-routing issue above is fixed (it
+follows `kpis-reports.spec.ts`'s existing "run this report" pattern exactly).
+
 ## What was built (scope, for cross-reference)
 
 - `src/components/reports/pivot-utils.ts` -- pure client-side group-by/

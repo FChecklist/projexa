@@ -13,9 +13,10 @@
 - [x] `npx tsc --noEmit` clean
 - [x] `bun test src` passing (21 tests, 0 fail)
 
+- [x] Manual proof against 3 real report_definitions (Sales/demo_co_9_rise, Construction+Interior Design/Meridian Construction Group E2E org) -- called executeReportDefinition() directly against real production DB, fed real results into computePivot/computeChartData, correct aggregates. See tech decision doc "Real-data verification" section for why this substituted for a live browser run (`projexa-ai.com/login` currently serves compliance-tracker's login UI, a pre-existing prod routing issue outside this repo; local Supabase unmigrated; vercel CLI needs interactive login).
+- [x] `e2e/pivot-chart-reports.spec.ts` written (Table/Pivot/Chart tab switch on a real catalog report) -- could not execute against the live site in this sandbox due to the login-routing issue above
+- [x] Verified zero DB/aggregation logic added to PROJEXA (grep review clean)
+
 ## Remaining
-- [ ] Manual/E2E proof against 3 real report_definitions from different domains (Sales, Construction, Interior Design)
-- [ ] Playwright E2E test covering pivot + chart view switch on a real report
-- [ ] Verify zero DB/aggregation logic added to PROJEXA (grep review)
-- [ ] Visual verification via dev server + browser
+- [ ] Run `e2e/pivot-chart-reports.spec.ts` for real once projexa-ai.com's login routing is fixed (not this repo's issue)
 - [ ] PR against PROJEXA with audit-verdict comment per AGENTS.md
