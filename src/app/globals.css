@@ -133,11 +133,20 @@
   --input: #CBD5E1;
   --ring: #F5820A;
 
-  --chart-1: #F5820A;
-  --chart-2: #0E7C6E;
-  --chart-3: #2563EB;
-  --chart-4: #7C3AED;
-  --chart-5: #E67E22;
+  /* Reports pivot/chart UI (2026-07-27): these 5 slots previously carried
+     Priority-11-era placeholder hex values that were never validated for
+     categorical use and were consumed nowhere in the codebase (grep-
+     confirmed before this change). Replaced with the dataviz skill's
+     validated 5-slot categorical order (blue/orange/aqua/yellow/magenta) --
+     passes lightness band, chroma floor, CVD adjacent-pair separation, and
+     normal-vision floor on this surface (#FFFDF9); see
+     ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md for the validator output.
+     Do not reorder -- the slot order IS the CVD-safety mechanism. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
 
   --sidebar: #FFFDF9;
   --sidebar-foreground: #4A5568;
@@ -167,6 +176,18 @@
   --border: #253746;
   --input: #33495C;
   --ring: #F5820A;
+
+  /* Reports pivot/chart UI (2026-07-27): dark-mode chart series were never
+     defined before this change (the .dark block had no --chart-N overrides
+     at all, so dark mode silently reused the light-mode hexes against a
+     dark surface, unvalidated). These are the dataviz skill's own dark
+     steps for the same 5 slots, validated against this app's dark
+     surface (#182430/#10181F). */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
 }
 
 @layer base {
