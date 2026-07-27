@@ -79,6 +79,48 @@ Real Work Progress Report (WPR) feature for PROJEXA.
 
 ## Completed
 - [x] Full investigation (above).
+- [x] compliance-tracker (branch `feat/boq-line-items-in-v1-list`, pushed,
+      cloned fresh into /tmp/wpr-task-scratch -- the shared repo checkout at
+      /opt/veridian/repos/compliance-tracker had unrelated dirty in-flight
+      work, same precedent as prior tasks): claimed scope in
+      ACTIVE-CLAIMS.yaml first, then (a) `GET /api/v1/construction/boq`
+      enriched with `lineItems` per boq, (b)
+      `GET /api/v1/projexa/work-progress/activities` enriched with
+      `categories`. Both read-only, additive, zero schema/service change.
+- [x] projexa schema.ts + drizzle/0013: `work_progress_photos` table + RLS
+      + `work-progress-photos` Storage bucket + storage RLS policies (not
+      applied live -- no Supabase DB/Management API credentials in this
+      sandbox, same disclosed constraint as drizzle/0011).
+- [x] `src/lib/work-progress-report.ts`: pure computation (Prev/Current/
+      Total qty+amt+percentage per BoQ line item, category-wise rollup,
+      manpower-wise/vendor-wise from attendance).
+- [x] `src/app/api/work-progress/report/route.ts`: GET, date-range
+      filtered, assembles 6 parallel VERIDIAN calls into the 4 breakdown
+      views.
+- [x] `src/app/api/work-progress/photos/route.ts`: POST upload (Supabase
+      Storage + DB row via the user's own RLS-scoped session, not a
+      service-role bypass), GET list-by-entry with signed URLs.
+- [x] `work-progress-queue.ts`: sync now best-effort uploads a queued photo
+      after its entry syncs (closes the disclosed PR #54 gap for real);
+      does not alter the main sync's queue-removal/retry semantics.
+- [x] `WorkProgressReportClient.tsx` + a "Report" tab alongside the
+      existing "Daily Entry" tab on the Work Progress page (no sidebar/i18n
+      changes needed -- reuses the existing route).
+- [x] Tests (all real, all passing): `work-progress-report.test.ts` (incl.
+      the exact day1 30%/day2 20%/Prev=30/Current=20/Total=50 scenario from
+      SUCCESS_CRITERIA), `work-progress-offline-to-report.test.ts`
+      (real queue + real IndexedDB + real report builder, proves an
+      offline-captured entry syncs -- including its photo -- and its synced
+      data drives the report's Current column correctly).
+- [x] `npx tsc --noEmit` -- clean (NODE_OPTIONS=--max-old-space-size=6144).
+- [x] `bun test src/lib/offline/work-progress-queue.test.ts` -- 10/10 pass
+      (all pre-existing tests, unmodified, still pass).
+- [x] `bun test src` -- 58/58 pass repo-wide (9 files, incl. the 3 new WPR
+      test files above).
+- [x] `npx eslint` on every new/changed file -- clean.
 
 ## Remaining
-- [ ] Steps 1-10 above, in order.
+- [ ] Open PR on projexa (this branch).
+- [ ] Open PR on compliance-tracker (`feat/boq-line-items-in-v1-list`,
+      already pushed).
+- [ ] Do NOT merge either -- fresh supervisor audit required first.

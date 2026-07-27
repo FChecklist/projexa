@@ -108,6 +108,22 @@ async function patchEntry(scope: string, localId: string, patch: Partial<QueuedW
   await set(localId, { ...existing, ...patch }, store);
 }
 
+// Closes the disclosed gap documented above: uploads a queued photo to the
+// real /api/work-progress/photos route (Supabase Storage-backed, see
+// drizzle/0013) once its entry has actually synced. Deliberately
+// best-effort and separate from the main sync try/catch below -- a photo
+// upload failure must not resurrect an already-synced entry (flip it back
+// to "error"/retry) or change the synced/failed counters the mutex/dedupe
+// tests above assert on; it's a real follow-up write, not a gate on the
+// entry's own sync success.
+async function uploadQueuedPhoto(veridianEntryId: string, photo: QueuedPhoto): Promise<void> {
+  const formData = new FormData();
+  formData.append("veridianEntryId", veridianEntryId);
+  formData.append("file", photo.blob, photo.name);
+  const res = await fetch("/api/work-progress/photos", { method: "POST", body: formData });
+  if (!res.ok) throw new Error(`Photo upload rejected (status ${res.status})`);
+}
+
 export type SyncEvent = { localId: string; phase: "syncing" | "synced" | "error" | "failed"; error?: string };
 
 // Post-audit fix (PR #54 review): keyed by `scope` so two overlapping
@@ -161,9 +177,15 @@ export function syncQueuedWorkProgressEntries(scope: string, onEvent?: (event: S
           }),
         });
         if (!res.ok) throw new Error(`Server rejected sync (status ${res.status})`);
+        const created = (await res.json().catch(() => null)) as { id?: string } | null;
         await removeQueuedWorkProgressEntry(scope, entry.localId);
         synced += 1;
         onEvent?.({ localId: entry.localId, phase: "synced" });
+        if (entry.photo && created?.id) {
+          uploadQueuedPhoto(created.id, entry.photo).catch((photoErr) => {
+            console.warn(`[work-progress-queue] photo upload failed for synced entry ${created.id}:`, photoErr);
+          });
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Sync failed";
         const attempts = entry.attempts + 1;
