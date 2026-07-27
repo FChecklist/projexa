@@ -119,8 +119,9 @@ Real Work Progress Report (WPR) feature for PROJEXA.
       test files above).
 - [x] `npx eslint` on every new/changed file -- clean.
 
+- [x] PR opened on projexa: https://github.com/FChecklist/projexa/pull/58
+- [x] PR opened on compliance-tracker: https://github.com/FChecklist/compliance-tracker/pull/608
+
 ## Remaining
-- [ ] Open PR on projexa (this branch).
-- [ ] Open PR on compliance-tracker (`feat/boq-line-items-in-v1-list`,
-      already pushed).
-- [ ] Do NOT merge either -- fresh supervisor audit required first.
+- [ ] Do NOT merge either -- fresh supervisor audit required first (both PR
+      descriptions say so explicitly).
