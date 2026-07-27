@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/supabase/auth-guard";
+import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): thin proxy over
@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
+  const roleError = requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE);
+  if (roleError) return roleError;
   const body = await request.json();
   try {
     const data = await callVeridian("/purchase-orders", { organizationId: ctx.organizationId!, method: "POST", body });

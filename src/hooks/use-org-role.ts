@@ -7,16 +7,17 @@ import { useEffect, useState } from "react";
 // membership lookup -- see SettingsClient.tsx's existing use of it) but no
 // other client component had a reusable way to consume it. This is NOT the
 // same role axis as VERIDIAN's own user_role enum (admin/manager/member/
-// veridian_admin/...) -- PROJEXA has its own local 'owner' | 'admin' |
-// 'member' tenant role from its own `memberships` table, since PROJEXA
-// users authenticate against PROJEXA's own Supabase project, not
-// VERIDIAN's. Server-side VERIDIAN calls made on a PROJEXA user's behalf
-// still go through the single shared Bearer API key (see
-// veridian-client.ts) -- requireRoleOrScope() on that side is gated on the
-// key's scope, not this role. This hook is a UX affordance only: it hides
-// admin-only actions from users who can't complete them, it is not itself
-// the security boundary.
-export type OrgRole = "owner" | "admin" | "member";
+// veridian_admin/...) -- PROJEXA has its own local tenant role from its own
+// `memberships` table, since PROJEXA users authenticate against PROJEXA's
+// own Supabase project, not VERIDIAN's. Server-side VERIDIAN calls made on
+// a PROJEXA user's behalf still go through the single shared Bearer API key
+// (see veridian-client.ts) -- requireRoleOrScope() on that side is gated on
+// the key's scope, not this role. This hook is a UX affordance only: it
+// hides admin-only actions from users who can't complete them, it is not
+// itself the security boundary -- see requireRole()/ROLE_GROUPS in
+// src/lib/supabase/auth-guard.ts for the actual server-side enforcement,
+// which this type must stay in sync with.
+export type OrgRole = "owner" | "admin" | "pm" | "site_engineer" | "member" | "client_viewer";
 
 const HR_ADMIN_ROLES: ReadonlySet<OrgRole> = new Set(["owner", "admin"]);
 

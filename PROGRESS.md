@@ -81,77 +81,51 @@ branch/PR per the audit's "Corrective Action Owner: Worker" instruction.
   correct).
 - Did not touch any cron/systemd `.timer` state.
 # PROGRESS -- task-20260727-122445-projexa--fix-veridian-ui-kit-appheader-e
+# PROGRESS -- task-20260727-133855-fix-pr-53--last-owner-admin-demotion-pro
 
-## Finding: the spec's premise was stale
+This branch is built on top of `worker/task-20260727-122935-projexa-e2e--pm-site-engineer-role-model`
+(PR #53), merged in locally to get access to the `PATCH /api/org-members/[id]` endpoint this task
+fixes. Per this task's instructions, PR #53's branch itself was NOT touched -- only merged *from*,
+locally, into this task's own branch, which is what gets pushed/PR'd. **This PR is intended to land
+on top of PR #53, not standalone against `main`** (a human should reconcile ordering/rebasing).
 
-The spec's KNOWN_CONTEXT asserted `AppHeader`/`header` prop do not exist anywhere in
-`veridian-ui-kit` (checked node_modules pinned at `v0.2.2`, and tag `v0.3.0`), and that
-`npx tsc --noEmit` currently fails on PROJEXA main with TS2322/TS2305.
+## Inherited from PR #53 branch (not redone here)
+- [x] PROJEXA role model (`memberships.role`: owner|admin|pm|site_engineer|member|client_viewer),
+      `requireRole()`/`ROLE_GROUPS` gating on project-budgets/schedule-baselines/change-orders/
+      purchase-orders/site-diary/punch-list routes.
+- [x] Audit-fix round (commit `77de705`): punch-list PATCH `ROLE_GROUPS.FIELD` gate, and the new
+      `PATCH /api/org-members/[id]` role-assignment endpoint (`ROLE_GROUPS.ORG_ADMIN`) so owner/admin
+      can promote members to the new roles.
 
-Verified directly against a fresh `bun install` + `npx tsc --noEmit` on PROJEXA's actual
-current `main` (commit `5441c50`): **this does not reproduce. `tsc --noEmit` exits 0.**
-
-Root cause of the stale premise: `veridian-ui-kit`'s AppHeader/`header`/`homeThreadSlot`
-work was already added on 2026-07-19 (repo commits `74688aa`, `5465042`, `8dcc5e7`, task
-`task-20260719-024156-veridian-ui-kit--extract-shared-appheade`), *before* the `v0.2.2`
-tag was cut (`v0.2.2` = `66a6527`, created after `74688aa`) and well before PROJEXA's PR
-#42 bumped its pin to `v0.2.2`. So PROJEXA's `AppTopbar.tsx`/`layout.tsx` (which already
-call `AppHeader` and pass a `header` prop, per PR #42) have compiled against a working
-API the whole time. `v0.3.0` also contains these commits (confirmed via
-`git merge-base --is-ancestor`). No new veridian-ui-kit tag or PROJEXA dependency bump
-was needed -- both were already correct.
-
-## Real gap that did exist (spec item 2/4)
-
-`src/app/(app)/layout.tsx` passed `sidebar`/`composer`/`panel`/`header` to
-`AppShellFrame` but never `homeThreadSlot`. Since `AppShellFrame`'s `isHome` branch
-always hides the right panel on `/dashboard` regardless of `homeThreadSlot`, this meant:
-opening a query result or a conversation while on the dashboard (`isThreadOpen`) showed
-nothing at all -- `VeriChatPanel` (which owns `QueryThread`/`ConvoThread` rendering) is
-never mounted on Home, and the composer hides its own UI while a thread is open. This
-was a real, confirmed drift matching the spec's description.
-
-## Completed
-- [x] Investigated veridian-ui-kit (`/opt/veridian/repos/veridian-ui-kit`) and confirmed
-      `AppHeader`, `AppShellFrame`'s `header` prop, and `homeThreadSlot` wiring already
-      exist and are already used correctly by PROJEXA's `AppTopbar.tsx`/`layout.tsx` and
-      by compliance-tracker's `AppShell.tsx` (`homeThreadSlot={<HomeThreadSlot />}`,
-      same pattern used as reference here). No veridian-ui-kit changes needed.
-- [x] Confirmed `npx tsc --noEmit` is already clean on PROJEXA main -- no version bump
-      needed to fix a nonexistent break.
-- [x] Added `src/components/veri-chat/HomeThreadSlot.tsx`: renders PROJEXA's "Discuss"
-      AI-assistant conversation (`discussMessages`) inline via the shared package's
-      `ThreadView`, mirroring compliance-tracker's own `HomeThreadSlot` (whose
-      `aiThreadId`/singleton AI thread is PROJEXA's closest analog: `discussMessages`,
-      not the async Query/Conversation threads, which stay panel-only as before).
-- [x] Exported `HOME_ROUTE` from `veri-chat-context.tsx` (was a private const in
-      `layout.tsx`) so both `layout.tsx` and `VeriComposer.tsx` share one definition.
-- [x] Wired `homeThreadSlot={<HomeThreadSlot />}` into `layout.tsx`'s `AppShellFrame`.
-- [x] `VeriComposer.tsx`: suppressed its own inline discuss-message preview strip on
-      `HOME_ROUTE` (`!isHome` guard) since `HomeThreadSlot` now renders that same
-      conversation in the main content area there -- avoids a duplicate-render
-      regression that wiring `homeThreadSlot` would otherwise have introduced.
-- [x] `npx tsc --noEmit` clean on PROJEXA (exit 0) after the change.
-- [x] `npx tsc --noEmit` clean on compliance-tracker main, verified via a fresh
-      `--depth 1` clone + `bun install` (needed `NODE_OPTIONS=--max-old-space-size=8192`
-      to avoid an OOM in this sandbox -- pre-existing project size issue, unrelated to
-      this change) -- confirmed unaffected, as expected since no veridian-ui-kit or
-      PROJEXA dependency-pin changes were made.
-- [x] Visual proof: built a temporary, unauthenticated preview route
-      (`/shell-preview`, outside middleware's `PROTECTED_PREFIXES`) mounting the same
-      `AppShellFrame`/`AppTopbar`/`HomeThreadSlot` tree `layout.tsx` uses, seeded two
-      fake discuss messages, screenshotted with Playwright (system Chrome, since the
-      sandboxed Playwright-bundled browser was missing shared libs with no sudo
-      available to install them) -- confirms the topbar (sidebar toggle, logo, search
-      w/ ⌘K, notifications, theme toggle, user-account menu) and the merged inline
-      chat content both render. Preview route, `.env.local` placeholder Supabase keys,
-      and the screenshot script were all deleted afterward -- throwaway verification
-      only, not part of the shipped diff.
-- [x] Reverted `next-env.d.ts` (auto-regenerated by `next dev`, unrelated to the fix)
-      and cleared the stale `.next` type-validator cache that referenced the deleted
-      preview route.
+## This task: fix last-owner/admin demotion gap
+- [x] Searched the whole codebase for every endpoint that can change or remove a membership's role:
+      `grep -rl "memberships" src/app/api` -> `org-members/[id]/route.ts` (PATCH, changes role),
+      `org-members/route.ts` (GET only, no mutation), `org/provision/route.ts` (INSERTs the initial
+      `owner` membership only when a user has none yet -- never updates/removes an existing one).
+      Also checked every `DELETE` handler in `src/app/api` (`schedule/sprints/[id]/issues`,
+      `timesheets/[id]`, `floor-plans/.../rooms/[roomId]`, `floor-plans/.../placements/[placementId]`,
+      `todos/[id]`) -- none touch `memberships`. **`PATCH /api/org-members/[id]` is the only real
+      endpoint that can demote/remove an owner/admin membership**, and no membership-removal
+      (DELETE) route exists at all.
+- [x] Added the last-owner/admin guard to `src/app/api/org-members/[id]/route.ts`: before applying a
+      role change, fetches the target membership's *current* role; if it's currently owner/admin and
+      the new role would NOT be owner/admin, counts OTHER owner/admin memberships in the org
+      (excluding the target row itself). If that count is 0, rejects with `409` and a specific
+      message ("every organization must keep at least one owner or admin") instead of applying the
+      change. Reassignments that stay within the owner/admin group (owner<->admin), and reassignments
+      of members who are already non-owner/admin, are never blocked -- the guard only fires on the
+      actual last-one-out transition.
+- [x] Tests added to `src/app/api/org-members/[id]/route.test.ts` (5 new, 10/10 total in this file):
+      sole owner demoted to member -> 409; sole admin demoted to client_viewer -> 409; one of
+      *several* owners/admins demoted -> 200 (guard doesn't over-block); owner<->admin reassignment
+      of the sole owner/admin -> 200 (still admin-group, not a real demotion); reassigning an
+      already-non-owner/admin member -> 200 (guard correctly not triggered).
+- [x] `npx tsc --noEmit`: clean. `find src -name "*.test.ts" | xargs bun test`: 40/40 pass across 6
+      files (up from 35/35 pre-fix). Unqualified `bun test` still hits the same pre-existing,
+      unrelated e2e/*.spec.ts-vs-bun-test-glob Playwright collision noted in the prior audit round --
+      confirmed present on this branch before this change too, not introduced here.
+      `npx eslint` on the changed files: 0 errors/warnings.
 
 ## Remaining
-- [x] Open PR against PROJEXA `main` with this diff: https://github.com/FChecklist/projexa/pull/52
-- [x] No veridian-ui-kit PR needed (nothing to change there).
-- [x] No compliance-tracker PR needed (dependency pin unchanged, typecheck unaffected).
+- [ ] Await supervisor audit + reconciliation with PR #53 (this branch is not meant to merge
+      standalone -- it depends on PR #53's `org-members/[id]` endpoint).
