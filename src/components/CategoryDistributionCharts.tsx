@@ -20,14 +20,21 @@ type CategoryEntry = { categoryId: string; name: string; totalAmount: number; sh
 
 export function CategoryDistributionCharts({ companyId, projectId }: { companyId: string; projectId: string }) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     setCategories(null);
+    setError(false);
     fetch(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setCategories(data?.categories ?? []));
+      .then((res) => {
+        if (!res.ok) throw new Error(`category-distribution fetch failed: ${res.status}`);
+        return res.json();
+      })
+      .then((data) => setCategories(data?.categories ?? []))
+      .catch(() => setError(true));
   }, [companyId, projectId]);
 
+  if (error) return <p className="py-6 text-center text-sm text-destructive">Unable to load category data. Please try again later.</p>;
   if (categories === null) return <p className="py-6 text-center text-sm text-px-muted">Loading category distribution...</p>;
   if (categories.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No BOQ line items found for this project yet.</p>;
 

@@ -30,11 +30,13 @@ type ProgressEntry = { activityId: string; entryDate: string; percentComplete: n
 // summing the ones for this project. Capped at 4 pages (800 invoices) of
 // the org's date-filtered invoices -- generous for a single construction
 // org's realistic invoice volume in a bounded date range, but a real,
-// disclosed limit rather than an unbounded loop.
+// disclosed limit rather than an unbounded loop -- callers get `truncated`
+// on the return value when the cap was actually hit.
 const MAX_INVOICE_PAGES = 4;
 
-async function revenueForProjectInRange(companyId: string, projectId: string, fromDate?: string, toDate?: string): Promise<number> {
+async function revenueForProjectInRange(companyId: string, projectId: string, fromDate?: string, toDate?: string): Promise<{ total: number; truncated: boolean }> {
   let total = 0;
+  let truncated = false;
   for (let page = 1; page <= MAX_INVOICE_PAGES; page++) {
     const qs = new URLSearchParams({ limit: "200", page: String(page) });
     if (fromDate) qs.set("fromDate", fromDate);
@@ -44,8 +46,9 @@ async function revenueForProjectInRange(companyId: string, projectId: string, fr
       if (inv.projectId === projectId && inv.status !== "cancelled") total += Number(inv.grandTotal);
     }
     if (page >= data.totalPages) break;
+    if (page === MAX_INVOICE_PAGES) truncated = true;
   }
-  return total;
+  return { total, truncated };
 }
 
 async function expensesForProjectInRange(companyId: string, projectId: string, fromDate?: string, toDate?: string): Promise<number> {
@@ -103,7 +106,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       projectName: baseline.projectName,
       budget: baseline.budget,
       budgetIsPeriodTotal: true,
-      revenue: revenue ?? baseline.revenue,
+      revenue: revenue?.total ?? baseline.revenue,
+      revenueTruncated: revenue?.truncated ?? false,
       expenses: expenses ?? baseline.expenses,
       progressPercent: dateScopedProgress ?? baseline.progressPercent,
       delayedTaskCount: baseline.delayedTaskCount,

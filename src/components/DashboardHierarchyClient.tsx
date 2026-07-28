@@ -16,7 +16,7 @@ type ProjectSummary = { id: string; name: string; revenue: number; expenses: num
 type OrgDashboard = { totalProjects: number; totalBudget: number; totalRevenue: number; totalExpenses: number; projects: ProjectSummary[] };
 type ProjectDetails = {
   projectId: string; projectName: string; budget: number; budgetIsPeriodTotal: boolean;
-  revenue: number; expenses: number; progressPercent: number; dateRangeApplied: boolean;
+  revenue: number; revenueTruncated: boolean; expenses: number; progressPercent: number; dateRangeApplied: boolean;
 };
 
 function fmt(n: number) {
@@ -178,11 +178,16 @@ export function DashboardHierarchyClient() {
             {loading || !details ? (
               <p className="py-6 text-center text-sm text-px-muted">Loading...</p>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <DashboardCard title="Revenue" value={fmt(details.revenue)} icon={TrendingUp} variant="completed" />
-                <DashboardCard title="Budget" value={fmt(details.budget)} icon={Wallet} variant="total" />
-                <DashboardCard title="Expenses" value={fmt(details.expenses)} icon={Receipt} variant="pending" />
-                <DashboardCard title="Progress" value={`${details.progressPercent}%`} icon={Activity} variant="total" />
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <DashboardCard title="Revenue" value={fmt(details.revenue)} icon={TrendingUp} variant="completed" />
+                  <DashboardCard title="Budget" value={fmt(details.budget)} icon={Wallet} variant="total" />
+                  <DashboardCard title="Expenses" value={fmt(details.expenses)} icon={Receipt} variant="pending" />
+                  <DashboardCard title="Progress" value={`${details.progressPercent}%`} icon={Activity} variant="total" />
+                </div>
+                {details.revenueTruncated && (
+                  <p className="text-xs text-destructive">Revenue figures may be incomplete for this date range (too many invoices to load in full).</p>
+                )}
               </div>
             )}
 
