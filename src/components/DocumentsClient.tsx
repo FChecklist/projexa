@@ -6,7 +6,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, FileText, Plus } from "lucide-react";
 
 type Doc = {
   id: string;
@@ -32,6 +36,28 @@ export default function DocumentsClient({ projectId }: { projectId: string }) {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleUpload(formData: FormData) {
+    formData.set("linkedEntityType", "project");
+    formData.set("linkedEntityId", projectId);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/documents", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to upload document");
+      }
+      toast.success("Document uploaded");
+      setDialogOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload document");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -55,13 +81,44 @@ export default function DocumentsClient({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">
           Documents linked directly to this project (permits, drawings, site photos, etc.). Records attached to a
-          specific RFI, work progress entry, or other item are visible from that record. Listing only — no
-          upload/viewer here.
+          specific RFI, work progress entry, or other item are visible from that record.
         </p>
-        <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-          <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : c.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : c.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
+          </Select>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm"><Plus className="size-4" /> Upload</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Upload Document</DialogTitle></DialogHeader>
+              <form action={handleUpload} className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="doc-name">Name (optional)</Label>
+                  <Input id="doc-name" name="name" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="doc-category">Category</Label>
+                  <Select name="category" defaultValue="other">
+                    <SelectTrigger id="doc-category"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.filter((c) => c !== "all").map((c) => <SelectItem key={c} value={c}>{c.replace(/_/g, " ")}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="doc-file">File (PDF, email, etc.)</Label>
+                  <Input id="doc-file" name="file" type="file" required />
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Upload"}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="shadow-card">
