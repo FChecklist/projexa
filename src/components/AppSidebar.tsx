@@ -29,7 +29,11 @@ type NavSection = { titleKey: string | null; items: NavItem[] };
 const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.overview",
-    items: [{ labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [
+      { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
+      { labelKey: "items.projectsOverview", href: "/dashboard/overview", icon: BarChart3 },
+    ],
   },
   {
     titleKey: "sections.execution",
