@@ -37,10 +37,42 @@ export type RightPanelView = "overview" | "queries" | "chats" | "todo";
 // content area on that route).
 export const HOME_ROUTE = "/dashboard";
 
-async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
-  const res = await fetch("/api/capability-tree");
-  const data = await res.json();
-  return data.nodes ?? [];
+// The one top-level chain-mode key PROJEXA can actually dispatch (its own
+// construction codeReferences, via /api/assistant's fixed allowlist) --
+// see VeriComposer.tsx. Every other top-level node in `tree` comes from
+// /api/module-chain (the full VERI GRC AI / VERI ERP / etc chain PROJEXA's
+// linked VERIDIAN org exposes) and is real, org-scoped, browsable data, but
+// not yet wired to a dispatch endpoint -- dispatching an arbitrary
+// cross-module action from PROJEXA is a separate, larger feature (its own
+// auth/allowlist surface, mirroring how /api/v1/projexa/assistant is
+// deliberately NOT a general dispatchTool() proxy) than this task's
+// SUCCESS_CRITERIA (fetch + render + drill into real scoped records) asks
+// for.
+export const CONSTRUCTION_CHAIN_MODE_KEY = "construction_intelligence";
+
+export async function fetchJsonNodes(url: string): Promise<CapabilityNode[]> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.nodes ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Fetches PROJEXA's own construction tree AND the new full VERIDIAN module
+// chain in parallel and concatenates them -- the shared factory's `tree` is
+// just "every top-level chain mode this composer offers," so merging here is
+// the only change needed to make VeriComposer.tsx (which already renders
+// one pill/chain per top-level tree node, see its own header comment) offer
+// both alongside each other. Neither fetch failing takes the other down.
+export async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
+  const [construction, moduleChain] = await Promise.all([
+    fetchJsonNodes("/api/capability-tree"),
+    fetchJsonNodes("/api/module-chain"),
+  ]);
+  return [...construction, ...moduleChain];
 }
 
 const base = createVeriChatContext<RightPanelView>({
