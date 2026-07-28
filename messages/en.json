@@ -15,6 +15,8 @@
     },
     "items": {
       "dashboard": "Dashboard",
+      "companyDashboard": "Company Dashboard",
+      "projectsOverview": "Projects Overview",
       "schedule": "Schedule",
       "meetings": "Meetings",
       "scope": "Scope of Work (BOQ)",
