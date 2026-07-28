@@ -141,6 +141,33 @@ export async function callVeridianBinary(
   return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
 }
 
+// Priority 13/Wave 143 (Permits/Drawings/Documents real upload): callVeridian()
+// always JSON-encodes its body, which can't carry file bytes. This is the
+// multipart twin -- relays a FormData body (file + fields) straight through
+// with the same Bearer auth/base-URL/error-shape as callVeridianRaw, letting
+// fetch set its own multipart Content-Type/boundary header (setting it
+// manually here would omit the boundary and break the upload).
+export async function callVeridianUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+): Promise<T> {
+  const apiKey = await resolveApiKey(options);
+  const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
+  const res = await fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}` },
+    body: formData,
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({ error: res.statusText }));
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
 // Platform provisioning (Priority 17): calls VERIDIAN's platform-level
 // provisioning endpoint to create a brand-new, fully isolated VERIDIAN org
 // for a PROJEXA customer at signup time. This is a DIFFERENT credential
