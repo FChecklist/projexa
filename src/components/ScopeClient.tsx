@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus } from "lucide-react";
 
 type Boq = {
   id: string;
@@ -20,13 +20,37 @@ type Boq = {
   createdAt: string;
 };
 
-type LineItemDraft = { description: string; unit: string; quantity: string; rate: string };
+type LineItemDraft = { description: string; unit: string; quantity: string; rate: string; itemCode?: string; activityId?: string };
+
+type BoqLineItemRow = {
+  id: string; itemCode: string | null; description: string; unit: string;
+  quantity: string; rate: string; amount: string; activityId: string | null;
+};
+
+type ChangedLineItem = {
+  key: string; previous: BoqLineItemRow; current: BoqLineItemRow;
+  quantityChange: number; rateChange: number; netVariation: number;
+};
+
+type BoqComparison = {
+  added: BoqLineItemRow[]; removed: BoqLineItemRow[]; changed: ChangedLineItem[];
+  warnings: string[]; totalVariation: number;
+};
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
 };
 
 const emptyLine = (): LineItemDraft => ({ description: "", unit: "", quantity: "", rate: "" });
+
+function draftFromRow(row: BoqLineItemRow): LineItemDraft {
+  return { description: row.description, unit: row.unit, quantity: String(row.quantity), rate: String(row.rate), itemCode: row.itemCode ?? undefined, activityId: row.activityId ?? undefined };
+}
+
+function formatVariation(amount: number): string {
+  const sign = amount > 0 ? "+" : "";
+  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
 
 export default function ScopeClient({ projectId }: { projectId: string }) {
   const [boqs, setBoqs] = useState<Boq[]>([]);
@@ -36,12 +60,40 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Variation vs. immediate parent, per revision -- the "running total
+  // variation value" the Owner asked for, fetched from VERIDIAN's compareBoq
+  // rather than stored (this codebase computes diffs at read time, never
+  // denormalizes them).
+  const [variationByBoqId, setVariationByBoqId] = useState<Record<string, number>>({});
+
+  const [revising, setRevising] = useState<Boq | null>(null);
+  const [revisionLines, setRevisionLines] = useState<LineItemDraft[]>([]);
+  const [revisionTitle, setRevisionTitle] = useState("");
+  const [revisionSubmitting, setRevisionSubmitting] = useState(false);
+  const [revisionBlock, setRevisionBlock] = useState<string | null>(null);
+
+  const [comparing, setComparing] = useState<Boq | null>(null);
+  const [comparison, setComparison] = useState<BoqComparison | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
       const res = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json();
-      setBoqs(data.boqs ?? []);
+      const loaded: Boq[] = data.boqs ?? [];
+      setBoqs(loaded);
+
+      const revisions = loaded.filter((b) => b.parentBoqId);
+      const entries = await Promise.all(
+        revisions.map(async (b) => {
+          const cmpRes = await fetch(`/api/scope/${b.id}/compare`);
+          if (!cmpRes.ok) return null;
+          const cmp: BoqComparison = await cmpRes.json();
+          return [b.id, cmp.totalVariation] as const;
+        })
+      );
+      setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
     } catch {
       toast.error("Couldn't load scope of work");
     } finally {
@@ -79,6 +131,83 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
       toast.error("Couldn't create BOQ");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function openRevisionDialog(boq: Boq) {
+    setRevising(boq);
+    setRevisionTitle(boq.title);
+    setRevisionBlock(null);
+    try {
+      const res = await fetch(`/api/scope/${boq.id}`);
+      const data = await res.json();
+      const rows: BoqLineItemRow[] = data.lineItems ?? [];
+      setRevisionLines(rows.length > 0 ? rows.map(draftFromRow) : [emptyLine()]);
+    } catch {
+      toast.error("Couldn't load the current scope to revise");
+      setRevisionLines([emptyLine()]);
+    }
+  }
+
+  function updateRevisionLine(index: number, field: keyof LineItemDraft, value: string) {
+    setRevisionLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
+  }
+
+  async function submitRevision(allowScopeReductionOverride = false) {
+    if (!revising) return;
+    const validLines = revisionLines.filter((l) => l.description.trim() && l.unit.trim() && l.quantity && l.rate);
+    if (validLines.length === 0) {
+      toast.error("Add at least one complete line item");
+      return;
+    }
+    setRevisionSubmitting(true);
+    setRevisionBlock(null);
+    try {
+      const res = await fetch(`/api/scope/${revising.id}/revisions`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: revisionTitle,
+          lineItems: validLines.map((l) => ({
+            description: l.description, unit: l.unit, quantity: Number(l.quantity), rate: Number(l.rate),
+            ...(l.itemCode ? { itemCode: l.itemCode } : {}), ...(l.activityId ? { activityId: l.activityId } : {}),
+          })),
+          allowScopeReductionOverride,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        // Owner's hard-block rule: this revision would reduce/remove scope
+        // already completed on site. Surface the real reason and let the
+        // user explicitly override instead of silently failing or silently
+        // applying it.
+        setRevisionBlock(data.error ?? "This revision reduces scope already completed on site.");
+        return;
+      }
+      if (!res.ok) throw new Error(data.error ?? "Failed to create revision");
+      toast.success(allowScopeReductionOverride ? "Revision created (override applied)" : "Revision created");
+      setRevising(null);
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create revision");
+    } finally {
+      setRevisionSubmitting(false);
+    }
+  }
+
+  async function openCompareDialog(boq: Boq) {
+    setComparing(boq);
+    setComparison(null);
+    setComparisonLoading(true);
+    try {
+      const res = await fetch(`/api/scope/${boq.id}/compare`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to compare revisions");
+      setComparison(data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't compare revisions");
+      setComparing(null);
+    } finally {
+      setComparisonLoading(false);
     }
   }
 
@@ -124,23 +253,132 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead><TableHead>Version</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead>
+                  <TableHead>Title</TableHead><TableHead>Version</TableHead><TableHead>Status</TableHead>
+                  <TableHead>Variation vs. prior</TableHead><TableHead>Created</TableHead><TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boqs.map((b) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="font-medium">{b.title}</TableCell>
-                    <TableCell className="text-px-muted">v{b.version}</TableCell>
-                    <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
-                    <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
-                  </TableRow>
-                ))}
+                {boqs.map((b) => {
+                  const variation = variationByBoqId[b.id];
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="font-medium">{b.title}</TableCell>
+                      <TableCell className="text-px-muted">v{b.version}</TableCell>
+                      <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
+                      <TableCell>
+                        {!b.parentBoqId ? (
+                          <span className="text-px-muted">Baseline (Rev0)</span>
+                        ) : variation === undefined ? (
+                          <span className="text-px-muted">—</span>
+                        ) : (
+                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{formatVariation(variation)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right space-x-1">
+                        {b.parentBoqId && (
+                          <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => openRevisionDialog(b)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!revising} onOpenChange={(o) => !o && setRevising(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>New Revision -- from &quot;{revising?.title}&quot; (v{revising?.version})</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5"><Label>Revision Title</Label><Input value={revisionTitle} onChange={(e) => setRevisionTitle(e.target.value)} /></div>
+            <div className="space-y-2">
+              <Label>Line Items</Label>
+              {revisionLines.map((line, i) => (
+                <div key={i} className="grid grid-cols-[1fr_80px_90px_90px_28px] gap-2">
+                  <Input placeholder="Description" value={line.description} onChange={(e) => updateRevisionLine(i, "description", e.target.value)} />
+                  <Input placeholder="Unit" value={line.unit} onChange={(e) => updateRevisionLine(i, "unit", e.target.value)} />
+                  <Input placeholder="Qty" type="number" value={line.quantity} onChange={(e) => updateRevisionLine(i, "quantity", e.target.value)} />
+                  <Input placeholder="Rate" type="number" value={line.rate} onChange={(e) => updateRevisionLine(i, "rate", e.target.value)} />
+                  <Button variant="ghost" size="icon" onClick={() => setRevisionLines((prev) => prev.filter((_, idx) => idx !== i))}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setRevisionLines((prev) => [...prev, emptyLine()])}>
+                <Plus className="size-3.5" /> Add Line
+              </Button>
+              <p className="text-xs text-px-muted">Removing a line, or reducing its quantity/rate, is blocked if that item is already recorded as complete on site.</p>
+            </div>
+            {revisionBlock && (
+              <Card className="border-px-error-border bg-px-error-light">
+                <CardContent className="space-y-2 p-3 text-sm text-px-error">
+                  <p>{revisionBlock}</p>
+                  <Button size="sm" variant="destructive" onClick={() => submitRevision(true)} disabled={revisionSubmitting}>
+                    Apply anyway (override)
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => submitRevision(false)} disabled={revisionSubmitting}>{revisionSubmitting ? "Creating…" : "Create Revision"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!comparing} onOpenChange={(o) => !o && setComparing(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version}) vs. prior revision</DialogTitle></DialogHeader>
+          {comparisonLoading ? (
+            <div className="grid h-24 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : comparison ? (
+            <div className="space-y-3">
+              <p className="text-sm">
+                Total variation:{" "}
+                <span className={comparison.totalVariation > 0 ? "text-px-success" : comparison.totalVariation < 0 ? "text-px-error" : ""}>
+                  {formatVariation(comparison.totalVariation)}
+                </span>
+              </p>
+              {comparison.warnings.length > 0 && (
+                <Card className="border-px-error-border bg-px-error-light">
+                  <CardContent className="space-y-1 p-3 text-sm text-px-error">
+                    {comparison.warnings.map((w, i) => <p key={i}>{w}</p>)}
+                  </CardContent>
+                </Card>
+              )}
+              {comparison.added.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium">Added</p>
+                  {comparison.added.map((i) => <p key={i.id} className="text-sm text-px-success">+ {i.description} ({i.amount})</p>)}
+                </div>
+              )}
+              {comparison.removed.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium">Removed</p>
+                  {comparison.removed.map((i) => <p key={i.id} className="text-sm text-px-error">- {i.description} ({i.amount})</p>)}
+                </div>
+              )}
+              {comparison.changed.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium">Changed</p>
+                  {comparison.changed.map((c) => (
+                    <p key={c.current.id} className="text-sm">
+                      {c.current.description}: {formatVariation(c.netVariation)}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {comparison.added.length === 0 && comparison.removed.length === 0 && comparison.changed.length === 0 && (
+                <p className="text-sm text-px-muted">No differences between these two revisions.</p>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

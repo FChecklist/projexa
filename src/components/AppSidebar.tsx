@@ -45,6 +45,8 @@ const NAV_SECTIONS: NavSection[] = [
       // from the org-wide Knowledge Base below (see KnowledgeBaseClient.tsx).
       { labelKey: "items.wiki", href: "/wiki", icon: NotebookText },
       { labelKey: "items.permits", href: "/permits", icon: ShieldCheck },
+      { labelKey: "items.drawings", href: "/drawings", icon: LayoutPanelLeft },
+      { labelKey: "items.moms", href: "/moms", icon: NotebookText },
     ],
   },
   {
