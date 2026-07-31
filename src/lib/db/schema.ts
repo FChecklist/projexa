@@ -149,6 +149,32 @@ export const todos = pgTable("todos", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Work Progress Report (WPR): links a site photo captured against a daily
+// work-progress entry to its stored bytes. Deliberately NOT a duplicate of
+// VERIDIAN's real constructionWorkProgressEntries row (quantity/date/
+// activity stay sourced from VERIDIAN, the single source of truth --
+// duplicating them here would let the two drift). veridianEntryId is a
+// plain text FK-by-value into that row's real id (cross-database, so no DB-
+// level foreign key is possible); it's the one column construction
+// domain has today with no home in VERIDIAN (no photo column on that table,
+// and no file-upload API reachable from PROJEXA -- confirmed absent, see
+// PROGRESS.md). storagePath points into the `work-progress-photos` Supabase
+// Storage bucket (see drizzle/0013).
+export const workProgressPhotos = pgTable("work_progress_photos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  veridianEntryId: text("veridian_entry_id").notNull(),
+  uploadedBy: uuid("uploaded_by")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  storagePath: text("storage_path").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Marketing site lead capture ("Talk to an Engineer" -- see
 // src/components/marketing/ContactForm.tsx). Public, unauthenticated,
 // anonymous-visitor rows -- same reasoning as compliance-tracker's own
