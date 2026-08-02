@@ -12,7 +12,7 @@ async function loginAs(key: UserKey, page: import("@playwright/test").Page) {
   await page.goto("/login");
   await page.locator("#email").fill(user.email);
   await page.locator("#password").fill(user.password);
-  await page.getByRole("button", { name: /log in|sign in/i }).click();
+  await page.locator('button[type="submit"]').click();
   await page.waitForURL("**/dashboard", { timeout: 20_000 });
   await expect(page).toHaveURL(/\/dashboard/);
 }
