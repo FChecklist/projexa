@@ -90,6 +90,30 @@ one — not so it can claim the roster already exists.
    than merging it as a normal PR, since it would bypass VERIDIAN's own AI governance
    (`VERIDIAN_AI_CONSTITUTION.md`, `VERIDIAN_TASK_GOVERNANCE_CONSTITUTION.md`) entirely.
 
+7. **Search-Reuse Discipline — Added 2026-08-14 (Owner-approved, addendum to P1
+   UMR-20260806-171945-5767; citation: `OWNER_DECISIONS_NEEDED_2026-07-23.yaml` entry
+   `id=crontab-drift-approved-2026-08-14`, `status=approved`).** Real indexes already exist
+   on the box and are already used by the deterministic dedup reviewer for dispatch-level
+   decisions — `system_index`, `capability_registry`, `wiring_registry` (all three:
+   `/opt/veridian/ai-os/memory/superboss-register.sqlite`), `CLAUDE_MEMORY_INDEX.md`,
+   `dead_ends.json`, `open_questions.json` (all three: `/opt/veridian/ai-os/memory/`). A
+   cross-repo audit on 2026-08-14 found zero instances of any "check the index first"
+   instruction in any real `AGENTS.md`, so different worker tasks were repeatedly
+   re-discovering the same real facts via fresh exploratory search, wasting real tokens.
+   Every worker must: (a) before broad exploratory search, check whether the fact needed is
+   already answered by one of the six indexes above, and cite what was checked in the PR
+   description or progress log, even if the check came up empty; (b) only do fresh search
+   for what those indexes don't already answer — this is not a reason to skip real
+   verification of current state, only a reason not to duplicate a search someone already
+   did; (c) if a fresh search turns up a genuinely new fact worth reuse, write it back to
+   the appropriate index (`capability_registry`/`wiring_registry` via
+   `superboss-register.py`, `CLAUDE_MEMORY_INDEX.md`, `dead_ends.json`,
+   `open_questions.json`) so the next worker doesn't have to rediscover it; (d) this does
+   not relax any rule above — a cited index lookup is never a substitute for the audit,
+   test, or completion requirements this file otherwise imposes. Does not assume zoekt or
+   any other code-search service is running — no zoekt systemd unit exists as of this
+   writing; verify what's actually available before relying on it.
+
 ## Contact
 
 Repository owner: raajat.agarwal@gmail.com
