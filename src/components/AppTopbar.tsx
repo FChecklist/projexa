@@ -7,9 +7,6 @@
 // - userMenuSlot: real Supabase Auth sign-out, matching SettingsClient.tsx's
 //   own signOut() pattern, plus the org's real email/org name from
 //   /api/organization (the same route SettingsClient already calls).
-// - onToggleRightPanel: a real, working toggle (see layout.tsx's
-//   panelCollapsed state) -- closes a real, confirmed gap (no right-panel-
-//   toggle existed before this migration).
 // - MobileSidebarTrigger: PROJEXA's own real mobile nav drawer (unchanged),
 //   relocated here via AppHeader's extraActions slot so it keeps its real
 //   placement inside the header row, same as before this migration.
@@ -19,6 +16,14 @@
 // both backed by real API routes, not the placeholder `false` this repo
 // shipped in PR #42/#43, which was an honest disclosure that neither
 // existed yet, not a permanent state).
+//
+// Column toggle moved 2026-08-16 (Owner directive): the right-panel/middle-
+// assistant-column toggle used to live here (`onToggleRightPanel`, wired to
+// veridian-ui-kit's now-removed AppHeader button). It's now
+// `middleColumnToggle` on `@/components/AppSidebar`, rendered inside the
+// LEFT rail instead of this full-width header -- see that file and
+// (app)/layout.tsx's ShellBody for the real wiring (still the same
+// panelCollapsed state, just passed to a different component).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { User, Settings, LogOut, ChevronDown, Loader2 } from "lucide-react";
@@ -40,11 +45,9 @@ type OrganizationInfo = { email: string; organization: { name: string } };
 export function AppTopbar({
   sidebarCollapsed,
   onToggleSidebar,
-  onToggleRightPanel,
 }: {
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
-  onToggleRightPanel?: () => void;
 }) {
   const router = useRouter();
   const [info, setInfo] = useState<OrganizationInfo | null>(null);
@@ -107,7 +110,6 @@ export function AppTopbar({
       sidebarCollapsed={sidebarCollapsed}
       searchSlot={<SearchTrigger />}
       notificationSlot={<NotificationBell />}
-      onToggleRightPanel={onToggleRightPanel}
       contextLabel={info?.organization?.name ? <span className="hidden md:inline">{info.organization.name}</span> : undefined}
       userMenuSlot={userMenuSlot}
       extraActions={

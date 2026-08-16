@@ -20,3 +20,4 @@ tsconfig.tsbuildinfo
 # package side of the left-rail column-toggle fix (task-20260816-172825) --
 # not a projexa source directory, never intended to be committed here.
 /.ui-kit-work/
+/.visual-evidence/
