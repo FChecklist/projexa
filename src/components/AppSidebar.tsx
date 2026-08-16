@@ -11,7 +11,7 @@ import {
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
 } from "lucide-react";
-import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection } from "@fchecklist/veridian-ui-kit/shell";
+import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Suspense, useEffect, useState } from "react";
@@ -173,7 +173,7 @@ function buildSharedSections(t: ReturnType<typeof useTranslations>, projectId: s
 // PROJEXA wordmark (rendered by the shared component itself) now appears
 // below the switcher instead of above it. Real behavior (which project's
 // data the 17 project-scoped pages render) is unaffected.
-function SidebarInner({ pathname, projectId }: { pathname: string; projectId: string | null }) {
+function SidebarInner({ pathname, projectId, middleColumnToggle }: { pathname: string; projectId: string | null; middleColumnToggle?: MiddleColumnToggle }) {
   const t = useTranslations("Nav");
   const sections = buildSharedSections(t, projectId);
   const logo = <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} className="rounded-sm" />;
@@ -182,7 +182,7 @@ function SidebarInner({ pathname, projectId }: { pathname: string; projectId: st
     <div className="flex h-full min-h-0 flex-col">
       <ProjectSwitcher pathname={pathname} projectId={projectId} />
       <div className="flex min-h-0 flex-1">
-        <SharedAppSidebar sections={sections} logo={logo} productName="PROJEXA" collapsed={false} />
+        <SharedAppSidebar sections={sections} logo={logo} productName="PROJEXA" collapsed={false} middleColumnToggle={middleColumnToggle} />
       </div>
     </div>
   );
@@ -192,9 +192,9 @@ function SidebarInner({ pathname, projectId }: { pathname: string; projectId: st
 // requirement) so it doesn't force the whole app shell into client-only
 // rendering. Falls back to no project param on first paint; hydration
 // fills in the real value immediately after.
-function SidebarInnerWithProject({ pathname }: { pathname: string }) {
+function SidebarInnerWithProject({ pathname, middleColumnToggle }: { pathname: string; middleColumnToggle?: MiddleColumnToggle }) {
   const searchParams = useSearchParams();
-  return <SidebarInner pathname={pathname} projectId={searchParams.get("projectId")} />;
+  return <SidebarInner pathname={pathname} projectId={searchParams.get("projectId")} middleColumnToggle={middleColumnToggle} />;
 }
 
 // Desktop persistent sidebar -- mounted exactly once, from (app)/layout.tsx.
@@ -202,13 +202,25 @@ function SidebarInnerWithProject({ pathname }: { pathname: string }) {
 // layout.tsx being `null` when collapsed) rather than width-toggled: the
 // shared component sets its own min-width internally, which would otherwise
 // fight a wrapper's width:0 (see VERI_CHAT_COMPOSER_DESIGN.md).
-export function AppSidebar() {
+//
+// `middleColumnToggle` (Owner directive 2026-08-16): shows/hides the middle
+// VERI Chat assistant column. Passed straight through to the shared
+// AppSidebar's `middleColumnToggle` prop, which renders it as a rail button
+// structurally inside this LEFT column -- previously this control lived in
+// AppTopbar's header (see (app)/layout.tsx's ShellBody for the real
+// panelCollapsed state this now drives, and AppTopbar.tsx's own header
+// comment for why it moved). `label` is set to "VERI Chat" so the
+// button's title/aria-label read "Show VERI Chat" / "Hide VERI Chat",
+// matching the product's own name for this panel everywhere else in the
+// app (see VeriChatPanel, VERI_CHAT_COMPOSER_DESIGN.md).
+export function AppSidebar({ middleColumnToggle }: { middleColumnToggle?: Omit<MiddleColumnToggle, "label"> } = {}) {
   const pathname = usePathname();
+  const resolvedToggle: MiddleColumnToggle | undefined = middleColumnToggle && { ...middleColumnToggle, label: "VERI Chat" };
 
   return (
     <aside className="hidden h-full lg:block">
-      <Suspense fallback={<SidebarInner pathname={pathname} projectId={null} />}>
-        <SidebarInnerWithProject pathname={pathname} />
+      <Suspense fallback={<SidebarInner pathname={pathname} projectId={null} middleColumnToggle={resolvedToggle} />}>
+        <SidebarInnerWithProject pathname={pathname} middleColumnToggle={resolvedToggle} />
       </Suspense>
     </aside>
   );

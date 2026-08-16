@@ -37,10 +37,17 @@ function ShellBody({ children }: { children: React.ReactNode }) {
         <AppTopbar
           sidebarCollapsed={collapsed}
           onToggleSidebar={() => setCollapsed((v) => !v)}
-          onToggleRightPanel={isHome ? undefined : () => setPanelCollapsed((v) => !v)}
         />
       }
-      sidebar={collapsed ? null : <AppSidebar />}
+      sidebar={
+        collapsed
+          ? null
+          : (
+            <AppSidebar
+              middleColumnToggle={isHome ? undefined : { collapsed: panelCollapsed, onToggle: () => setPanelCollapsed((v) => !v) }}
+            />
+          )
+      }
       composer={<VeriComposer />}
       panel={panelCollapsed ? null : <VeriChatPanel />}
       homeThreadSlot={<HomeThreadSlot />}
