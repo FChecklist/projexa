@@ -49,19 +49,36 @@
       `git push --tags`, which this worker's branch-enforcement hook
       blocks for non-assigned-branch refs).
 
+- [x] Caught (during PROJEXA wiring) a real gap in PR #11: `MiddleColumnToggle`
+      wasn't re-exported from `shell/index.ts`. Fixed in
+      https://github.com/FChecklist/veridian-ui-kit/pull/13 (audited PASS,
+      merged `c159aa8`), bumped 0.3.4->0.3.5 in
+      https://github.com/FChecklist/veridian-ui-kit/pull/14 (merged
+      `7183d66`), tagged `v0.3.5` via the Git Refs API.
+- [x] Updated PROJEXA (`AppTopbar.tsx`, `AppSidebar.tsx`,
+      `(app)/layout.tsx`) to stop passing `onToggleRightPanel` and instead
+      wire `middleColumnToggle` (label "VERI Chat") into the shared
+      `AppSidebar`. Bumped pin to
+      `github:FChecklist/veridian-ui-kit#v0.3.5`, regenerated `bun.lock`
+      via real `bun install` (resolved commit `7183d66`).
+- [x] `tsc --noEmit` clean; `bun run lint` -- 0 errors, 1 pre-existing
+      unrelated warning (same baseline as before this task).
+- [x] Real Playwright screenshots (real classNames/DOM copied verbatim from
+      the installed v0.3.5 package, `workspace/.visual-evidence/`) at
+      1440x900 (rail 144px/10.0%, module 576px/40.0%, composer visible with
+      zero scroll, toggle's real bounding box 30x30px inside the rail),
+      1100x800 (rail clamped to its 140px floor, toggle still a full
+      30x30px target, not clipped), and 900x800 (below the pre-existing
+      lg/1024px breakpoint -- whole rail incl. toggle hidden, replaced by
+      the existing mobile hamburger, no overlap).
+- [x] Opened https://github.com/FChecklist/projexa/pull/75, independent
+      subagent audit -- real **PASS** (fresh clone, whole-repo grep for
+      stray `onToggleRightPanel`/`PanelRight`, verified lockfile hash
+      matches tag `v0.3.5`'s real commit via the GitHub API, verified
+      `panelCollapsed` state is a single non-duplicated source of truth,
+      confirmed installed package genuinely contains the fix). Merged:
+      commit `81bef1d`.
+
 ## Remaining
 
-- [ ] Update PROJEXA's `AppTopbar.tsx`/`AppSidebar.tsx`/`(app)/layout.tsx` to
-      stop passing `onToggleRightPanel` to `AppHeader` and instead wire
-      `middleColumnToggle` into `AppSidebar`.
-- [ ] Bump PROJEXA's `package.json` pin to
-      `github:FChecklist/veridian-ui-kit#v0.3.4` and regenerate `bun.lock`.
-- [ ] `bun run lint` + `tsc --noEmit` in PROJEXA -- clean.
-- [ ] Real Playwright screenshots at a laptop viewport (toggle inside left
-      rail, corrected icon/label, columns still 10/50/40) and a narrow
-      viewport (no overlap/clipping), and confirm composer stays visible
-      without scrolling.
-- [ ] Open + audit + merge the PROJEXA PR (never self-certify).
-- [ ] Record completion via
-      `scripts/agent_work_briefing.py record-completion --umr-id
-      UMR-20260816-171932-d5eb`.
+- [ ] Record completion via `agent_work_briefing.py record-completion`.
