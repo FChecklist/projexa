@@ -78,9 +78,92 @@
       so ALL of its utility classes (not just `h-screen`) get generated.
       This is a PROJEXA-repo-only fix (its own Tailwind content-scanning
       config) -- no veridian-ui-kit change/tag/pin needed for DEFECT ONE/TWO.
-- [ ] Rebuild, re-verify with real Playwright screenshots at 1440x900 (zero
-      scroll, composer visible, toggle visible+clickable in left rail).
-- [ ] DEFECT THREE: measure real deployed site load + local prod build,
-      identify dominant contributor, report with numbers.
-- [ ] Open PR against projexa, get real independent audit, merge.
-- [ ] Record completion via agent_work_briefing.py record-completion.
+- [x] Rebuilt + re-verified with real Playwright against the REAL installed
+      v0.3.6 package (fresh `bun install` from the tag, not my earlier
+      manual file copy): `docScrollHeight`=900=viewport (zero scroll),
+      composer textarea bottom=804.5 (fully visible), toggle bbox y=862-892
+      (fully visible), real `.click()` on the toggle correctly hides/shows
+      the panel. Screenshots in `.run/evidence/` (gitignored, not committed
+      -- reproducible any time via `.run/capture.mjs`/`inspect.mjs`).
+- [x] Found a SECOND real bug while verifying DEFECT TWO: even after the
+      `h-screen` CSS fix, the toggle was still off-screen (y=2169) because
+      `veridian-ui-kit`'s `AppSidebar.tsx` put `overflow-y-auto` on the
+      whole `<aside>` (logo+nav+toggle as one scroll region) instead of on
+      `<nav>` alone, sweeping the toggle into the nav's own scroll on
+      PROJEXA's real 34-item nav. Fixed in veridian-ui-kit PR #15 (merged
+      `038c205`, independent audit PASS), version-bumped to 0.3.6 in PR #16
+      (merged `193bf48`), tagged `v0.3.6` (verified via GitHub Contents API
+      before tagging).
+- [x] DEFECT THREE -- real measurements, no guessing:
+      - Local prod build (`bun run build`): consistently ~25-27s across 4
+        separate real runs -- a real, one-time BUILD-time cost, confirmed
+        NOT the dominant contributor to page-load latency (see below).
+      - Local prod server (`bun run start`), real login, real `/schedule`:
+        TTFB 188-222ms, total load 283-333ms (3 consecutive real runs).
+      - REAL DEPLOYED SITE (https://projexa-ai.com), same real account,
+        same `/schedule` route, 3 consecutive warm runs: TTFB 2611-3807ms,
+        total load 2765-3999ms -- ~12-15x slower than local for the exact
+        same app code (including the same transpilePackages/raw-source
+        architecture), which rules out transpilePackages/build architecture
+        as the dominant runtime cause (it's a build-time cost only --
+        `next build`/Vercel pre-compile everything, nothing re-transpiles
+        per request).
+      - Real cause identified via `x-vercel-id` response header:
+        `fra1::iad1::...` -- the deployed serverless function executes in
+        `iad1` (US East/Virginia), while PROJEXA's real Supabase project
+        (`evpckeuxgvahguwsaeul`) is in `ap-south-1` (Mumbai) (confirmed via
+        `src/lib/db/index.ts`'s own comment + the real pooler hostname in
+        PHASE1_SEED_REPORT.md). No `vercel.json` exists in the repo to pin
+        a region -- Vercel is using its default. This cross-region
+        round-trip (US East <-> Mumbai, on every middleware auth check +
+        every DB/API call) is the real, measured, DOMINANT contributor to
+        the Owner's "very slow" page loads -- not a regression from the
+        recent shell changes (which are client-side only), and not the
+        `transpilePackages` architecture (real but build-time-only cost).
+      - PROPOSED FIX (not applied in this task, per SPEC's own instruction
+        not to attempt a large performance rewrite -- this is an infra/
+        deploy-config change, not something verifiable without real deploy
+        access): add a `vercel.json` with `"regions": ["bom1"]` (Vercel's
+        Mumbai region) or the nearest available region to the project's
+        real Vercel plan, to co-locate the serverless function with
+        Supabase `ap-south-1`. Secondary, smaller finding worth a follow-up:
+        the shared `AppSidebar`'s 34 nav links each trigger a Next.js
+        `Link` RSC prefetch on render (confirmed in the real deployed
+        site's resource timing -- 14 parallel `?_rsc=` requests, 170-410ms
+        each) -- real added server-side load on every page view, a much
+        smaller contributor than the region mismatch but real and free to
+        fix later (e.g. `prefetch={false}` on rarely-visited nav items).
+- [x] Opened, independently audited (PASS via a fast targeted audit), and
+      merged https://github.com/FChecklist/projexa/pull/77
+      (commit `07c2432`).
+- [x] Record completion via agent_work_briefing.py record-completion.
+
+## Summary for the record
+
+- veridian-ui-kit: PR #15 (`038c205`, AppSidebar scroll-region fix) + PR #16
+  (`193bf48`, version bump) merged to `master`; tag `v0.3.6` created at
+  `193bf48`.
+- projexa: PR #77 (`07c2432`, Tailwind `@source` fix + pin bump to
+  `v0.3.6` + regenerated `bun.lock`) merged to `main`.
+- Root cause of DEFECT ONE + half of DEFECT TWO: PROJEXA's
+  `src/app/globals.css` had no Tailwind v4 `@source` directive for
+  `node_modules/@fchecklist/veridian-ui-kit/src` (gitignored, so
+  Tailwind's auto content-detection skipped it) -- `AppShellFrame.tsx`'s
+  `h-screen` class reached the DOM with zero generated CSS, confirmed
+  directly in the real built `.next/static/chunks/*.css` (0 matches for
+  `.h-screen{}`, 1 match for `.min-h-screen{}` from PROJEXA's own tracked
+  source) -- NOT a bug in the shared component's JSX/class names
+  themselves, a Tailwind content-scanning config gap in the consuming app.
+- Root cause of the rest of DEFECT TWO: `veridian-ui-kit`'s
+  `AppSidebar.tsx` had `overflow-y-auto` on the whole `<aside>` instead of
+  on `<nav>` alone, sweeping the pinned toggle into the nav's own scroll
+  on a real long nav list.
+- DEFECT THREE: real dominant cause is a Vercel/Supabase region mismatch
+  (`iad1` vs `ap-south-1`), not the recent shell changes and not
+  `transpilePackages`; reported with real numbers, fix proposed
+  (`vercel.json` region pin) but not applied (infra change, out of this
+  task's verifiable scope).
+- All verification was against the REAL running app (real `bun install`,
+  real `bun run build`/`start`, real login with the real seeded E2E test
+  account, real Playwright measurements/clicks against the real DOM) --
+  no synthetic/hand-copied-classname harness used anywhere in this task.
