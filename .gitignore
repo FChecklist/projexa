@@ -21,3 +21,9 @@ tsconfig.tsbuildinfo
 # not a projexa source directory, never intended to be committed here.
 /.ui-kit-work/
 /.visual-evidence/
+
+# Local bun toolchain + real-app verification scripts/evidence
+# (task-20260817-024638-make-the-composer-visible-without-scroll) -- not
+# projexa source, never intended to be committed here.
+/.bun/
+/.run/

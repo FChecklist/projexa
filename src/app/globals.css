@@ -2,6 +2,26 @@
 @import "tw-animate-css";
 @import "@fchecklist/veridian-ui-kit/tokens/globals.css";
 
+/* Owner directive 2026-08-17 -- REAL root cause of the composer/toggle
+   scroll defect, found by running the real app (not a synthetic harness):
+   @fchecklist/veridian-ui-kit ships raw, unbuilt .tsx source (see this
+   repo's own next.config.ts transpilePackages comment), installed into
+   node_modules via a `github:` dependency. `node_modules` is gitignored
+   (.gitignore:1), and Tailwind v4's automatic content-detection heuristic
+   explicitly skips gitignored paths -- so utility classes that appear ONLY
+   inside the ui-kit's source (e.g. AppShellFrame.tsx's `h-screen` on its
+   outermost shell div) never get a generated CSS rule at all, even though
+   `transpilePackages` makes Next.js compile the file fine. Confirmed live:
+   the real built CSS had zero `.h-screen{` rules while `.min-h-screen{}`
+   (used directly in this repo's own tracked src/) was present. Effect:
+   the shell's height silently falls back to `auto`/content-driven instead
+   of being capped at the viewport, so the whole document grows to fit
+   content and the composer + the left-rail assistant toggle end up far
+   below the fold instead of staying pinned/visible. Fix: explicitly
+   re-include the installed package's real source in Tailwind's content
+   scan, so its classes are treated the same as this repo's own. */
+@source "../../node_modules/@fchecklist/veridian-ui-kit/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
