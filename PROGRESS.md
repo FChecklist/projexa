@@ -1,4 +1,4 @@
-# PROGRESS -- task-20260816-172825-move-the-column-toggle-into-the-left-rai
+# PROGRESS -- task-20260817-024638-make-the-composer-visible-without-scroll
 
 ## Completed
 
