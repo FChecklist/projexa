@@ -3,11 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
+import { requireAuth } from "@/lib/supabase/auth-guard";
 import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
-import { createClient } from "@/lib/supabase/server";
 
 type OrgDashboard = {
   totalProjects: number;
@@ -36,27 +35,47 @@ export default async function DashboardPage() {
   let errorMessage: string | null = null;
   let currencies: CurrencyRow[] = [];
 
-  try {
-    const organizationId = await getServerOrganizationId();
-    data = await callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined });
-  } catch (err) {
+  // Perf fix (2026-08-17, see scripts/measure-perf.mjs + this task's
+  // progress log for the real-browser measurement that found this):
+  // real /dashboard TTFB against the live site measured ~2.8-3.5s on every
+  // single load (x-vercel-cache: MISS every time, cache-control: no-store --
+  // this route is never cached, so this cost is paid on every real visit,
+  // not just a cold start). Root cause was this Server Component awaiting
+  // four independent network round trips one at a time: the org lookup,
+  // the VERIDIAN /dashboard fetch, the VERIDIAN /currencies fetch, and a
+  // *second*, fully redundant live call to Supabase Auth's /user endpoint
+  // for a value (the user's email) requireAuth() below already resolves
+  // for free from the JWT it already verified -- the exact anti-pattern
+  // auth-guard.ts's requireAuth()/getClaimsWithRetry() comment already
+  // documented and fixed everywhere else in this app except here.
+  // Fix: resolve auth once, and run the two independent VERIDIAN calls
+  // concurrently instead of one-after-another (the /currencies call does
+  // not depend on organizationId or on the /dashboard response).
+  const authCtx = await requireAuth();
+  const organizationId = authCtx.organizationId;
+  const userName = authCtx.user?.email?.split("@")[0] ?? "there";
+
+  const [dashboardResult, currencyResult] = await Promise.allSettled([
+    callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
+    callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+  ]);
+
+  if (dashboardResult.status === "fulfilled") {
+    data = dashboardResult.value;
+  } else {
+    const err = dashboardResult.reason;
     errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from VERIDIAN";
   }
-  try {
-    const currencyData = await callVeridian<{ currencies: CurrencyRow[] }>("/currencies");
-    currencies = currencyData.currencies ?? [];
-  } catch {
-    // Non-fatal -- formatCurrency() falls back to "₹" if this list is empty.
+  if (currencyResult.status === "fulfilled") {
+    currencies = currencyResult.value.currencies ?? [];
   }
+  // else: non-fatal -- formatCurrency() falls back to "₹" if this list is empty.
 
   // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
   // mockup): /dashboard is PROJEXA's designated home route (see
   // (app)/layout.tsx's HOME_ROUTE). Real counts only -- delayedProjectCount
   // reuses the same per-project delayedTaskCount this page already fetches
   // above, never a fabricated number.
-  const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  const userName = userData.user?.email?.split("@")[0] ?? "there";
   const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
   const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
 

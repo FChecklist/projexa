@@ -27,3 +27,4 @@ tsconfig.tsbuildinfo
 # projexa source, never intended to be committed here.
 /.bun/
 /.run/
+.env*
