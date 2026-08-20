@@ -366,7 +366,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                         ) : variation === undefined ? (
                           <span className="text-px-muted">—</span>
                         ) : (
-                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{formatVariation(variation)}</span>
+                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
@@ -486,7 +486,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               <p className="text-sm">
                 Total variation:{" "}
                 <span className={comparison.totalVariation > 0 ? "text-px-success" : comparison.totalVariation < 0 ? "text-px-error" : ""}>
-                  {formatVariation(comparison.totalVariation)}
+                  {currencyCode ? `${currencyCode} ` : ""}{formatVariation(comparison.totalVariation)}
                 </span>
               </p>
               {comparison.warnings.length > 0 && (
@@ -499,13 +499,13 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               {comparison.added.length > 0 && (
                 <div>
                   <p className="text-sm font-medium">Added</p>
-                  {comparison.added.map((i) => <p key={i.id} className="text-sm text-px-success">+ {i.description} ({i.amount})</p>)}
+                  {comparison.added.map((i) => <p key={i.id} className="text-sm text-px-success">+ {i.description} ({withCurrency(currencyCode, i.amount)})</p>)}
                 </div>
               )}
               {comparison.removed.length > 0 && (
                 <div>
                   <p className="text-sm font-medium">Removed</p>
-                  {comparison.removed.map((i) => <p key={i.id} className="text-sm text-px-error">- {i.description} ({i.amount})</p>)}
+                  {comparison.removed.map((i) => <p key={i.id} className="text-sm text-px-error">- {i.description} ({withCurrency(currencyCode, i.amount)})</p>)}
                 </div>
               )}
               {comparison.changed.length > 0 && (
