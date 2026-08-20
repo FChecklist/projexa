@@ -20,7 +20,7 @@ type Boq = {
   createdAt: string;
 };
 
-type LineItemDraft = { description: string; unit: string; quantity: string; rate: string; itemCode?: string; activityId?: string };
+type LineItemDraft = { description: string; unit: string; quantity: string; rate: string; itemCode?: string; activityId?: string; parentItemCode?: string; breakdownPercentage?: string };
 
 type BoqLineItemRow = {
   id: string; itemCode: string | null; description: string; unit: string;
@@ -41,7 +41,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
 };
 
-const emptyLine = (): LineItemDraft => ({ description: "", unit: "", quantity: "", rate: "" });
+const emptyLine = (): LineItemDraft => ({ description: "", unit: "", quantity: "", rate: "", itemCode: "", parentItemCode: "", breakdownPercentage: "" });
 
 function draftFromRow(row: BoqLineItemRow): LineItemDraft {
   return { description: row.description, unit: row.unit, quantity: String(row.quantity), rate: String(row.rate), itemCode: row.itemCode ?? undefined, activityId: row.activityId ?? undefined };
@@ -109,7 +109,11 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
 
   async function createBoq() {
     if (!title.trim()) return;
-    const validLines = lines.filter((l) => l.description.trim() && l.unit.trim() && l.quantity && l.rate);
+    const validLines = lines.filter((l) => {
+      if (!l.description.trim() || !l.unit.trim()) return false;
+      if (l.parentItemCode?.trim()) return true;
+      return Boolean(l.quantity && l.rate);
+    });
     if (validLines.length === 0) {
       toast.error("Add at least one complete line item");
       return;
@@ -120,15 +124,24 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, title,
-          lineItems: validLines.map((l) => ({ description: l.description, unit: l.unit, quantity: Number(l.quantity), rate: Number(l.rate) })),
+          lineItems: validLines.map((l) => ({
+            description: l.description,
+            unit: l.unit,
+            quantity: Number(l.quantity),
+            rate: Number(l.rate),
+            ...(l.itemCode?.trim() ? { itemCode: l.itemCode.trim() } : {}),
+            ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
+            ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
+          })),
         }),
       });
-      if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Couldn't create BOQ");
       toast.success("BOQ created");
       setTitle(""); setLines([emptyLine()]); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create BOQ");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create BOQ");
     } finally {
       setSubmitting(false);
     }
@@ -223,12 +236,15 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               <div className="space-y-2">
                 <Label>Line Items</Label>
                 {lines.map((line, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_80px_90px_90px_28px] gap-2">
-                    <Input placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
-                    <Input placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
-                    <Input placeholder="Qty" type="number" value={line.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} />
-                    <Input placeholder="Rate" type="number" value={line.rate} onChange={(e) => updateLine(i, "rate", e.target.value)} />
-                    <Button variant="ghost" size="icon" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))} disabled={lines.length === 1}>
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
+                    <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
+                    <Input className="w-[90px] shrink-0" placeholder="Qty" type="number" value={line.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} />
+                    <Input className="w-[90px] shrink-0" placeholder="Rate" type="number" value={line.rate} onChange={(e) => updateLine(i, "rate", e.target.value)} />
+                    <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateLine(i, "itemCode", e.target.value)} />
+                    <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateLine(i, "parentItemCode", e.target.value)} />
+                    <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)} />
+                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))} disabled={lines.length === 1}>
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
