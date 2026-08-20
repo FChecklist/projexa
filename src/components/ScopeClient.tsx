@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-react";
+import { useCurrencies } from "@/lib/currency";
 
 type Boq = {
   id: string;
@@ -82,6 +83,15 @@ function formatAmount(value: string | number | null | undefined): string {
   return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
 }
 
+// Deliberately NOT currencyLabel() from the shared helper: that returns a
+// hardcoded rupee symbol when no base currency is found, which would be wrong
+// on a UAE contractor's BOQ. Here an unresolved currency degrades to the bare
+// number instead - no label is survivable, the wrong label is not.
+function withCurrency(code: string, value: string | number | null | undefined): string {
+  const n = formatAmount(value);
+  return code ? `${code} ${n}` : n;
+}
+
 // A weighted sub-task's amount is DERIVED from its parent (parent qty x parent
 // rate x breakdown %), so it is already contained in the parent's amount.
 // Summing every row flat double-counts the BOQ. Top-level rows only.
@@ -118,6 +128,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [viewing, setViewing] = useState<Boq | null>(null);
   const [viewRows, setViewRows] = useState<BoqLineItemRow[]>([]);
   const [viewLoading, setViewLoading] = useState(false);
+
+  const currencies = useCurrencies();
+  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
   async function load() {
     setLoading(true);
@@ -404,8 +417,8 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                         </TableCell>
                         <TableCell className="text-px-muted">{r.unit}</TableCell>
                         <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.quantity)}</TableCell>
-                        <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.rate)}</TableCell>
-                        <TableCell className="text-right">{formatAmount(r.amount)}</TableCell>
+                        <TableCell className="text-right text-px-muted">{isSub ? "—" : withCurrency(currencyCode, r.rate)}</TableCell>
+                        <TableCell className="text-right">{withCurrency(currencyCode, r.amount)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -413,7 +426,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               </Table>
               <div className="flex justify-end border-t pt-3 text-sm">
                 <span className="text-px-muted">Total</span>
-                <span className="ml-4 font-medium">{formatAmount(boqTotal(viewRows))}</span>
+                <span className="ml-4 font-medium">{withCurrency(currencyCode, boqTotal(viewRows))}</span>
               </div>
             </div>
           )}
