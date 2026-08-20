@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus } from "lucide-react";
+import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-react";
 
 type Boq = {
   id: string;
@@ -77,6 +77,20 @@ function formatVariation(amount: number): string {
   return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
+function formatAmount(value: string | number | null | undefined): string {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
+}
+
+// A weighted sub-task's amount is DERIVED from its parent (parent qty x parent
+// rate x breakdown %), so it is already contained in the parent's amount.
+// Summing every row flat double-counts the BOQ. Top-level rows only.
+function boqTotal(rows: BoqLineItemRow[]): number {
+  return rows
+    .filter((r) => !r.parentLineItemId)
+    .reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+}
+
 export default function ScopeClient({ projectId }: { projectId: string }) {
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +114,10 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [comparing, setComparing] = useState<Boq | null>(null);
   const [comparison, setComparison] = useState<BoqComparison | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+
+  const [viewing, setViewing] = useState<Boq | null>(null);
+  const [viewRows, setViewRows] = useState<BoqLineItemRow[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -238,6 +256,23 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     }
   }
 
+  async function openViewDialog(boq: Boq) {
+    setViewing(boq);
+    setViewRows([]);
+    setViewLoading(true);
+    try {
+      const res = await fetch(`/api/scope/${boq.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't load this BOQ");
+      setViewRows(data.lineItems ?? []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't load this BOQ");
+      setViewing(null);
+    } finally {
+      setViewLoading(false);
+    }
+  }
+
   async function openCompareDialog(boq: Boq) {
     setComparing(boq);
     setComparison(null);
@@ -323,6 +358,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                       </TableCell>
                       <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right space-x-1">
+                        <Button variant="ghost" size="sm" onClick={() => openViewDialog(b)}><Eye className="size-3.5" /> View</Button>
                         {b.parentBoqId && (
                           <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
                         )}
@@ -336,6 +372,53 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader><DialogTitle>{viewing?.title} (v{viewing?.version})</DialogTitle></DialogHeader>
+          {viewLoading ? (
+            <div className="grid h-24 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : viewRows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-px-muted">This BOQ has no line items.</p>
+          ) : (
+            <div className="space-y-3">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item Code</TableHead><TableHead>Description</TableHead><TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {viewRows.map((r) => {
+                    const isSub = Boolean(r.parentLineItemId);
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell className={isSub ? "pl-8 text-px-muted" : "font-medium"}>{r.itemCode ?? "—"}</TableCell>
+                        <TableCell className={isSub ? "pl-4" : ""}>
+                          {r.description}
+                          {isSub && r.breakdownPercentage != null && (
+                            <span className="ml-2 text-xs text-px-muted">{r.breakdownPercentage}% of parent</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-px-muted">{r.unit}</TableCell>
+                        <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.quantity)}</TableCell>
+                        <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.rate)}</TableCell>
+                        <TableCell className="text-right">{formatAmount(r.amount)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="flex justify-end border-t pt-3 text-sm">
+                <span className="text-px-muted">Total</span>
+                <span className="ml-4 font-medium">{formatAmount(boqTotal(viewRows))}</span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!revising} onOpenChange={(o) => !o && setRevising(null)}>
         <DialogContent className="max-w-2xl">
