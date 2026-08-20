@@ -25,6 +25,7 @@ type LineItemDraft = { description: string; unit: string; quantity: string; rate
 type BoqLineItemRow = {
   id: string; itemCode: string | null; description: string; unit: string;
   quantity: string; rate: string; amount: string; activityId: string | null;
+  parentLineItemId?: string | null; breakdownPercentage?: string | null;
 };
 
 type ChangedLineItem = {
@@ -43,8 +44,32 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 
 const emptyLine = (): LineItemDraft => ({ description: "", unit: "", quantity: "", rate: "", itemCode: "", parentItemCode: "", breakdownPercentage: "" });
 
-function draftFromRow(row: BoqLineItemRow): LineItemDraft {
-  return { description: row.description, unit: row.unit, quantity: String(row.quantity), rate: String(row.rate), itemCode: row.itemCode ?? undefined, activityId: row.activityId ?? undefined };
+function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
+  // Every row needs a resolvable itemCode: the API re-links a sub-task to its
+  // parent by matching parentItemCode to an itemCode in the SAME submission,
+  // and itemCode is nullable in the database. Synthesise one where it is
+  // missing, or a sub-task silently becomes top-level on revision and the
+  // total re-inflates.
+  const codeById = new Map<string, string>();
+  const taken = new Set(rows.map((r) => r.itemCode?.trim()).filter((c): c is string => Boolean(c)));
+  for (const r of rows) {
+    const existing = r.itemCode?.trim();
+    if (existing) { codeById.set(r.id, existing); continue; }
+    let synth = `_row_${r.id}`;
+    while (taken.has(synth)) synth = `${synth}_x`;
+    taken.add(synth);
+    codeById.set(r.id, synth);
+  }
+  return rows.map((row) => ({
+    description: row.description,
+    unit: row.unit,
+    quantity: String(row.quantity),
+    rate: String(row.rate),
+    itemCode: codeById.get(row.id),
+    activityId: row.activityId ?? undefined,
+    parentItemCode: row.parentLineItemId ? codeById.get(row.parentLineItemId) : undefined,
+    breakdownPercentage: row.breakdownPercentage != null ? String(row.breakdownPercentage) : undefined,
+  }));
 }
 
 function formatVariation(amount: number): string {
@@ -155,7 +180,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
       const res = await fetch(`/api/scope/${boq.id}`);
       const data = await res.json();
       const rows: BoqLineItemRow[] = data.lineItems ?? [];
-      setRevisionLines(rows.length > 0 ? rows.map(draftFromRow) : [emptyLine()]);
+      setRevisionLines(rows.length > 0 ? toDrafts(rows) : [emptyLine()]);
     } catch {
       toast.error("Couldn't load the current scope to revise");
       setRevisionLines([emptyLine()]);
@@ -168,7 +193,11 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
 
   async function submitRevision(allowScopeReductionOverride = false) {
     if (!revising) return;
-    const validLines = revisionLines.filter((l) => l.description.trim() && l.unit.trim() && l.quantity && l.rate);
+    const validLines = revisionLines.filter((l) => {
+      if (!l.description.trim() || !l.unit.trim()) return false;
+      if (l.parentItemCode?.trim()) return true;
+      return Boolean(l.quantity && l.rate);
+    });
     if (validLines.length === 0) {
       toast.error("Add at least one complete line item");
       return;
@@ -182,7 +211,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
           title: revisionTitle,
           lineItems: validLines.map((l) => ({
             description: l.description, unit: l.unit, quantity: Number(l.quantity), rate: Number(l.rate),
-            ...(l.itemCode ? { itemCode: l.itemCode } : {}), ...(l.activityId ? { activityId: l.activityId } : {}),
+            ...(l.itemCode?.trim() ? { itemCode: l.itemCode.trim() } : {}), ...(l.activityId ? { activityId: l.activityId } : {}),
+            ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
+            ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
           })),
           allowScopeReductionOverride,
         }),
@@ -314,12 +345,15 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
             <div className="space-y-2">
               <Label>Line Items</Label>
               {revisionLines.map((line, i) => (
-                <div key={i} className="grid grid-cols-[1fr_80px_90px_90px_28px] gap-2">
-                  <Input placeholder="Description" value={line.description} onChange={(e) => updateRevisionLine(i, "description", e.target.value)} />
-                  <Input placeholder="Unit" value={line.unit} onChange={(e) => updateRevisionLine(i, "unit", e.target.value)} />
-                  <Input placeholder="Qty" type="number" value={line.quantity} onChange={(e) => updateRevisionLine(i, "quantity", e.target.value)} />
-                  <Input placeholder="Rate" type="number" value={line.rate} onChange={(e) => updateRevisionLine(i, "rate", e.target.value)} />
-                  <Button variant="ghost" size="icon" onClick={() => setRevisionLines((prev) => prev.filter((_, idx) => idx !== i))}>
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateRevisionLine(i, "description", e.target.value)} />
+                  <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateRevisionLine(i, "unit", e.target.value)} />
+                  <Input className="w-[90px] shrink-0" placeholder="Qty" type="number" value={line.quantity} onChange={(e) => updateRevisionLine(i, "quantity", e.target.value)} />
+                  <Input className="w-[90px] shrink-0" placeholder="Rate" type="number" value={line.rate} onChange={(e) => updateRevisionLine(i, "rate", e.target.value)} />
+                  <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateRevisionLine(i, "itemCode", e.target.value)} />
+                  <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateRevisionLine(i, "parentItemCode", e.target.value)} />
+                  <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateRevisionLine(i, "breakdownPercentage", e.target.value)} />
+                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setRevisionLines((prev) => prev.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
