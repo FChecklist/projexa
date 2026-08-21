@@ -48,16 +48,23 @@ export default async function DashboardPage() {
   // for free from the JWT it already verified -- the exact anti-pattern
   // auth-guard.ts's requireAuth()/getClaimsWithRetry() comment already
   // documented and fixed everywhere else in this app except here.
-  // Fix: resolve auth once, and run the two independent VERIDIAN calls
-  // concurrently instead of one-after-another (the /currencies call does
-  // not depend on organizationId or on the /dashboard response).
+  // Fix: resolve auth once, and run the two VERIDIAN calls concurrently
+  // instead of one-after-another (neither depends on the other's response).
+  //
+  // 2026-08-21: BOTH calls must pass organizationId. callVeridian uses it to
+  // pick WHICH API key to send -- the VERIDIAN server derives the org from
+  // that key, since organizationId is never sent in the request itself. A
+  // call that omits it falls back to the shared VERIDIAN_API_KEY and is
+  // answered as a DIFFERENT org, so /currencies returned an empty list and
+  // currencyLabel() fell through to the hardcoded symbol below. Do not
+  // "simplify" either call by dropping organizationId.
   const authCtx = await requireAuth();
   const organizationId = authCtx.organizationId;
   const userName = authCtx.user?.email?.split("@")[0] ?? "there";
 
   const [dashboardResult, currencyResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
-    callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+    callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
   ]);
 
   if (dashboardResult.status === "fulfilled") {
