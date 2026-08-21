@@ -13,8 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
 
-type RosterEntry = { id: string; name: string; trade: string | null; skillLevel: string | null; dailyRate: string; isActive: boolean };
+type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
+type Vendor = { id: string; vendorName: string };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   present: "default", half_day: "secondary", absent: "destructive",
@@ -23,11 +24,14 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 export default function LabourClient({ projectId }: { projectId: string }) {
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [name, setName] = useState("");
+  const [employeeCode, setEmployeeCode] = useState("");
   const [trade, setTrade] = useState("");
+  const [vendorId, setVendorId] = useState("");
   const [dailyRate, setDailyRate] = useState("");
   const [rosterSubmitting, setRosterSubmitting] = useState(false);
 
@@ -41,14 +45,17 @@ export default function LabourClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const [rosterRes, attRes] = await Promise.all([
+      const [rosterRes, attRes, vendorsRes] = await Promise.all([
         fetch(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`),
         fetch(`/api/attendance?projectId=${encodeURIComponent(projectId)}`),
+        fetch(`/api/vendors`),
       ]);
       const rosterData = await rosterRes.json();
       const attData = await attRes.json();
+      const vendorsData = await vendorsRes.json().catch(() => ({}));
       setRoster(rosterData.roster ?? []);
       setAttendance(attData.attendance ?? []);
+      setVendors(vendorsData.vendors ?? []);
     } catch {
       toast.error("Couldn't load manpower data");
     } finally {
@@ -58,17 +65,22 @@ export default function LabourClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
+  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
+
   async function createRoster() {
     if (!name.trim() || !dailyRate) return;
     setRosterSubmitting(true);
     try {
       const res = await fetch("/api/labour-roster", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, name, trade: trade || undefined, dailyRate: Number(dailyRate) }),
+        body: JSON.stringify({
+          projectId, name, employeeCode: employeeCode || undefined, trade: trade || undefined,
+          vendorId: vendorId || undefined, dailyRate: Number(dailyRate),
+        }),
       });
       if (!res.ok) throw new Error();
       toast.success("Worker added to roster");
-      setName(""); setTrade(""); setDailyRate(""); setRosterOpen(false);
+      setName(""); setEmployeeCode(""); setTrade(""); setVendorId(""); setDailyRate(""); setRosterOpen(false);
       load();
     } catch {
       toast.error("Couldn't add worker");
@@ -115,8 +127,16 @@ export default function LabourClient({ projectId }: { projectId: string }) {
             <DialogContent>
               <DialogHeader><DialogTitle>Add Worker to Roster</DialogTitle></DialogHeader>
               <div className="space-y-3">
+                <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. EMP-001" /></div>
                 <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Mason, Electrician" /></div>
+                <div className="space-y-1.5">
+                  <Label>Company (optional)</Label>
+                  <Select value={vendorId} onValueChange={setVendorId}>
+                    <SelectTrigger><SelectValue placeholder="Select subcontractor" /></SelectTrigger>
+                    <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} /></div>
               </div>
               <DialogFooter><Button onClick={createRoster} disabled={rosterSubmitting}>{rosterSubmitting ? "Adding…" : "Add Worker"}</Button></DialogFooter>
@@ -131,12 +151,15 @@ export default function LabourClient({ projectId }: { projectId: string }) {
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Trade</TableHead><TableHead>Daily Rate</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>S.No</TableHead><TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Trade</TableHead><TableHead>Company</TableHead><TableHead>Daily Rate</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {roster.map((r) => (
+                  {roster.map((r, i) => (
                     <TableRow key={r.id}>
+                      <TableCell className="text-px-muted">{i + 1}</TableCell>
+                      <TableCell className="text-px-muted">{r.employeeCode ?? "—"}</TableCell>
                       <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell className="text-px-muted">{r.trade ?? "—"}</TableCell>
+                      <TableCell className="text-px-muted">{vendorName(r.vendorId)}</TableCell>
                       <TableCell>{r.dailyRate}</TableCell>
                       <TableCell><Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge></TableCell>
                     </TableRow>
