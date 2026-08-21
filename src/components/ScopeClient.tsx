@@ -92,6 +92,23 @@ function withCurrency(code: string, value: string | number | null | undefined): 
   return code ? `${code} ${n}` : n;
 }
 
+// Point 104: reverses PR #81's blanking of sub-task Qty/Rate. His sheet puts
+// the weighting in the RATE alone -- Qty is the parent's, unweighted; Rate
+// is parent rate x breakdownPercentage / 100. Never weight the quantity too
+// -- that would square the percentage. Display-only: nothing is stored, and
+// a sub-task with no breakdownPercentage has no derivable rate at all (still
+// dashes -- inventing one would be worse than blanking).
+function derivedSubQtyRate(row: BoqLineItemRow, allRows: BoqLineItemRow[]): { qty: number; rate: number } | null {
+  if (row.breakdownPercentage == null) return null;
+  const parent = allRows.find((p) => p.id === row.parentLineItemId);
+  if (!parent) return null;
+  const pct = Number(row.breakdownPercentage);
+  const parentQty = Number(parent.quantity);
+  const parentRate = Number(parent.rate);
+  if (!Number.isFinite(pct) || !Number.isFinite(parentQty) || !Number.isFinite(parentRate)) return null;
+  return { qty: parentQty, rate: (parentRate * pct) / 100 };
+}
+
 // A weighted sub-task's amount is DERIVED from its parent (parent qty x parent
 // rate x breakdown %), so it is already contained in the parent's amount.
 // Summing every row flat double-counts the BOQ. Top-level rows only.
@@ -406,6 +423,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                 <TableBody>
                   {viewRows.map((r) => {
                     const isSub = Boolean(r.parentLineItemId);
+                    const derived = isSub ? derivedSubQtyRate(r, viewRows) : null;
                     return (
                       <TableRow key={r.id}>
                         <TableCell className={isSub ? "pl-8 text-px-muted" : "font-medium"}>{r.itemCode ?? "—"}</TableCell>
@@ -416,8 +434,8 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                           )}
                         </TableCell>
                         <TableCell className="text-px-muted">{r.unit}</TableCell>
-                        <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.quantity)}</TableCell>
-                        <TableCell className="text-right text-px-muted">{isSub ? "—" : withCurrency(currencyCode, r.rate)}</TableCell>
+                        <TableCell className="text-right text-px-muted">{!isSub ? formatAmount(r.quantity) : derived ? formatAmount(derived.qty) : "—"}</TableCell>
+                        <TableCell className="text-right text-px-muted">{!isSub ? withCurrency(currencyCode, r.rate) : derived ? withCurrency(currencyCode, derived.rate) : "—"}</TableCell>
                         <TableCell className="text-right">{withCurrency(currencyCode, r.amount)}</TableCell>
                       </TableRow>
                     );
