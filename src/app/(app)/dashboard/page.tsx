@@ -57,7 +57,7 @@ export default async function DashboardPage() {
 
   const [dashboardResult, currencyResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
-    callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+    callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
   ]);
 
   if (dashboardResult.status === "fulfilled") {
