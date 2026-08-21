@@ -30,6 +30,15 @@ const VERIDIAN_API_BASE = process.env.VERIDIAN_API_BASE_URL ?? "https://veridian
 // under this root, one level above the /projexa/* surface.
 const VERIDIAN_API_ROOT = VERIDIAN_API_BASE.replace(/\/projexa$/, "");
 
+// Point 118: the public share-link resolve route lives OUTSIDE /api/v1
+// entirely (compliance-tracker's own /api/reports/share/[token], mirroring
+// /api/veri-meetings/share/[token] -- neither is under /api/v1/*, since
+// they carry no auth of any kind, Bearer or session). Exported so the
+// public share page can reach it with a plain, unauthenticated fetch --
+// never through callVeridian/callVeridianRaw, which always resolve an API
+// key first and would defeat the point of a link that needs no credentials.
+export const VERIDIAN_ORIGIN = VERIDIAN_API_ROOT.replace(/\/api\/v1$/, "");
+
 export class VeridianApiError extends Error {
   constructor(message: string, public status: number) {
     super(message);
