@@ -156,6 +156,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [comparing, setComparing] = useState<Boq | null>(null);
   const [comparison, setComparison] = useState<BoqComparison | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [compareAgainst, setCompareAgainst] = useState<string>("");
 
   const [viewing, setViewing] = useState<Boq | null>(null);
   const [viewRows, setViewRows] = useState<BoqLineItemRow[]>([]);
@@ -318,12 +319,29 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     }
   }
 
-  async function openCompareDialog(boq: Boq) {
-    setComparing(boq);
-    setComparison(null);
+  // Point 106: the comparison engine (compareBoq) already accepts any
+  // in-project `against` BOQ id -- the gap was exposure only. Rajat ruled:
+  // default to the ORIGINAL (the revision whose parentBoqId is null), not
+  // the immediate parent -- "compared to original scope, Rev 1, Rev 2", and
+  // a variation claim is made against the contract, not against last week.
+  // Walk parentBoqId to null rather than assume it's the lowest version
+  // number. A baseline BOQ has no parent, so its own "original" is itself --
+  // comparing it against itself correctly yields an empty diff (a legitimate
+  // answer, not a hidden control -- see the Compare button below).
+  function findOriginalBoqId(boq: Boq): string {
+    let current = boq;
+    while (current.parentBoqId) {
+      const parent = boqs.find((b) => b.id === current.parentBoqId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current.id;
+  }
+
+  async function loadComparison(boq: Boq, against: string) {
     setComparisonLoading(true);
     try {
-      const res = await fetch(`/api/scope/${boq.id}/compare`);
+      const res = await fetch(`/api/scope/${boq.id}/compare?against=${encodeURIComponent(against)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to compare revisions");
       setComparison(data);
@@ -333,6 +351,14 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     } finally {
       setComparisonLoading(false);
     }
+  }
+
+  async function openCompareDialog(boq: Boq) {
+    setComparing(boq);
+    setComparison(null);
+    const original = findOriginalBoqId(boq);
+    setCompareAgainst(original);
+    await loadComparison(boq, original);
   }
 
   return (
@@ -408,9 +434,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                       <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right space-x-1">
                         <Button variant="ghost" size="sm" onClick={() => openViewDialog(b)}><Eye className="size-3.5" /> View</Button>
-                        {b.parentBoqId && (
-                          <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
-                        )}
+                        <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
                         <Button variant="ghost" size="sm" onClick={() => openRevisionDialog(b)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
                       </TableCell>
                     </TableRow>
@@ -519,7 +543,23 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
 
       <Dialog open={!!comparing} onOpenChange={(o) => !o && setComparing(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version}) vs. prior revision</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version})</DialogTitle></DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Against</Label>
+            <Select
+              value={compareAgainst}
+              onValueChange={(v) => { setCompareAgainst(v); if (comparing) void loadComparison(comparing, v); }}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {boqs.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.title} (v{b.version}){!b.parentBoqId ? " — Original" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {comparisonLoading ? (
             <div className="grid h-24 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : comparison ? (
