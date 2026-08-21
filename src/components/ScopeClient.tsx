@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 
@@ -92,6 +93,38 @@ function withCurrency(code: string, value: string | number | null | undefined): 
   return code ? `${code} ${n}` : n;
 }
 
+// Point 104: reverses PR #81's blanking of sub-task Qty/Rate. His sheet puts
+// the weighting in the RATE alone -- Qty is the parent's, unweighted; Rate
+// is parent rate x breakdownPercentage / 100. Never weight the quantity too
+// -- that would square the percentage. Display-only: nothing is stored, and
+// a sub-task with no breakdownPercentage has no derivable rate at all (still
+// dashes -- inventing one would be worse than blanking).
+// Point 105: a live running total of child breakdownPercentage values,
+// grouped by parentItemCode, over the DRAFT rows in the create/revise form
+// (not the database -- these are unsaved, still being typed). Display only,
+// recomputed at render on every keystroke, never persisted. MUST NOT warn,
+// block, or auto-normalise a non-100 total -- his items 1.04/4.02 legitimately
+// sum to 75/65 and that is a deliberate scope statement, not an error. A
+// parent with no children (nothing references its itemCode) shows nothing.
+function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {
+  const code = parentItemCode?.trim();
+  if (!code) return null;
+  const children = lines.filter((l) => l.parentItemCode?.trim() === code);
+  if (children.length === 0) return null;
+  return children.reduce((sum, l) => sum + (Number(l.breakdownPercentage) || 0), 0);
+}
+
+function derivedSubQtyRate(row: BoqLineItemRow, allRows: BoqLineItemRow[]): { qty: number; rate: number } | null {
+  if (row.breakdownPercentage == null) return null;
+  const parent = allRows.find((p) => p.id === row.parentLineItemId);
+  if (!parent) return null;
+  const pct = Number(row.breakdownPercentage);
+  const parentQty = Number(parent.quantity);
+  const parentRate = Number(parent.rate);
+  if (!Number.isFinite(pct) || !Number.isFinite(parentQty) || !Number.isFinite(parentRate)) return null;
+  return { qty: parentQty, rate: (parentRate * pct) / 100 };
+}
+
 // A weighted sub-task's amount is DERIVED from its parent (parent qty x parent
 // rate x breakdown %), so it is already contained in the parent's amount.
 // Summing every row flat double-counts the BOQ. Top-level rows only.
@@ -124,6 +157,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [comparing, setComparing] = useState<Boq | null>(null);
   const [comparison, setComparison] = useState<BoqComparison | null>(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [compareAgainst, setCompareAgainst] = useState<string>("");
 
   const [viewing, setViewing] = useState<Boq | null>(null);
   const [viewRows, setViewRows] = useState<BoqLineItemRow[]>([]);
@@ -286,12 +320,29 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     }
   }
 
-  async function openCompareDialog(boq: Boq) {
-    setComparing(boq);
-    setComparison(null);
+  // Point 106: the comparison engine (compareBoq) already accepts any
+  // in-project `against` BOQ id -- the gap was exposure only. Rajat ruled:
+  // default to the ORIGINAL (the revision whose parentBoqId is null), not
+  // the immediate parent -- "compared to original scope, Rev 1, Rev 2", and
+  // a variation claim is made against the contract, not against last week.
+  // Walk parentBoqId to null rather than assume it's the lowest version
+  // number. A baseline BOQ has no parent, so its own "original" is itself --
+  // comparing it against itself correctly yields an empty diff (a legitimate
+  // answer, not a hidden control -- see the Compare button below).
+  function findOriginalBoqId(boq: Boq): string {
+    let current = boq;
+    while (current.parentBoqId) {
+      const parent = boqs.find((b) => b.id === current.parentBoqId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current.id;
+  }
+
+  async function loadComparison(boq: Boq, against: string) {
     setComparisonLoading(true);
     try {
-      const res = await fetch(`/api/scope/${boq.id}/compare`);
+      const res = await fetch(`/api/scope/${boq.id}/compare?against=${encodeURIComponent(against)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to compare revisions");
       setComparison(data);
@@ -301,6 +352,14 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     } finally {
       setComparisonLoading(false);
     }
+  }
+
+  async function openCompareDialog(boq: Boq) {
+    setComparing(boq);
+    setComparison(null);
+    const original = findOriginalBoqId(boq);
+    setCompareAgainst(original);
+    await loadComparison(boq, original);
   }
 
   return (
@@ -314,7 +373,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Civil Works - Phase 1" /></div>
               <div className="space-y-2">
                 <Label>Line Items</Label>
-                {lines.map((line, i) => (
+                {lines.map((line, i) => {
+                  const childSum = childPercentSum(lines, line.itemCode);
+                  return (
                   <div key={i} className="flex flex-wrap items-center gap-2">
                     <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
                     <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
@@ -323,11 +384,13 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                     <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateLine(i, "itemCode", e.target.value)} />
                     <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateLine(i, "parentItemCode", e.target.value)} />
                     <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)} />
+                    {childSum != null && <span className="text-xs text-px-muted">{childSum}% total</span>}
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))} disabled={lines.length === 1}>
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
                 <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
                   <Plus className="size-3.5" /> Add Line
                 </Button>
@@ -372,9 +435,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                       <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right space-x-1">
                         <Button variant="ghost" size="sm" onClick={() => openViewDialog(b)}><Eye className="size-3.5" /> View</Button>
-                        {b.parentBoqId && (
-                          <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
-                        )}
+                        <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>
                         <Button variant="ghost" size="sm" onClick={() => openRevisionDialog(b)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
                       </TableCell>
                     </TableRow>
@@ -406,6 +467,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                 <TableBody>
                   {viewRows.map((r) => {
                     const isSub = Boolean(r.parentLineItemId);
+                    const derived = isSub ? derivedSubQtyRate(r, viewRows) : null;
                     return (
                       <TableRow key={r.id}>
                         <TableCell className={isSub ? "pl-8 text-px-muted" : "font-medium"}>{r.itemCode ?? "—"}</TableCell>
@@ -416,8 +478,8 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                           )}
                         </TableCell>
                         <TableCell className="text-px-muted">{r.unit}</TableCell>
-                        <TableCell className="text-right text-px-muted">{isSub ? "—" : formatAmount(r.quantity)}</TableCell>
-                        <TableCell className="text-right text-px-muted">{isSub ? "—" : withCurrency(currencyCode, r.rate)}</TableCell>
+                        <TableCell className="text-right text-px-muted">{!isSub ? formatAmount(r.quantity) : derived ? formatAmount(derived.qty) : "—"}</TableCell>
+                        <TableCell className="text-right text-px-muted">{!isSub ? withCurrency(currencyCode, r.rate) : derived ? withCurrency(currencyCode, derived.rate) : "—"}</TableCell>
                         <TableCell className="text-right">{withCurrency(currencyCode, r.amount)}</TableCell>
                       </TableRow>
                     );
@@ -440,7 +502,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
             <div className="space-y-1.5"><Label>Revision Title</Label><Input value={revisionTitle} onChange={(e) => setRevisionTitle(e.target.value)} /></div>
             <div className="space-y-2">
               <Label>Line Items</Label>
-              {revisionLines.map((line, i) => (
+              {revisionLines.map((line, i) => {
+                const childSum = childPercentSum(revisionLines, line.itemCode);
+                return (
                 <div key={i} className="flex flex-wrap items-center gap-2">
                   <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateRevisionLine(i, "description", e.target.value)} />
                   <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateRevisionLine(i, "unit", e.target.value)} />
@@ -449,11 +513,13 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                   <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateRevisionLine(i, "itemCode", e.target.value)} />
                   <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateRevisionLine(i, "parentItemCode", e.target.value)} />
                   <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateRevisionLine(i, "breakdownPercentage", e.target.value)} />
+                  {childSum != null && <span className="text-xs text-px-muted">{childSum}% total</span>}
                   <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setRevisionLines((prev) => prev.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
               <Button variant="outline" size="sm" onClick={() => setRevisionLines((prev) => [...prev, emptyLine()])}>
                 <Plus className="size-3.5" /> Add Line
               </Button>
@@ -478,7 +544,23 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
 
       <Dialog open={!!comparing} onOpenChange={(o) => !o && setComparing(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version}) vs. prior revision</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version})</DialogTitle></DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Against</Label>
+            <Select
+              value={compareAgainst}
+              onValueChange={(v) => { setCompareAgainst(v); if (comparing) void loadComparison(comparing, v); }}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {boqs.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.title} (v{b.version}){!b.parentBoqId ? " — Original" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {comparisonLoading ? (
             <div className="grid h-24 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : comparison ? (

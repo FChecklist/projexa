@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, Share2 } from "lucide-react";
 
 type LineItemRow = {
   lineItemId: string; code: string; description: string; categoryName: string; unit: string; rate: number;
@@ -122,6 +122,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   async function runReport() {
     setLoading(true);
@@ -139,6 +140,27 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
     }
   }
 
+  // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
+  // Business API (explicitly ruled out). Copies the URL so the user can
+  // paste it into WhatsApp themselves.
+  async function shareReport() {
+    setSharing(true);
+    try {
+      const res = await fetch("/api/work-progress/report/share", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, from, to }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error);
+      await navigator.clipboard.writeText(data.url);
+      toast.success(`Share link copied — expires ${new Date(data.expiresAt).toLocaleDateString()}`);
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
+    } finally {
+      setSharing(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="shadow-card">
@@ -148,6 +170,11 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
           <Button onClick={runReport} disabled={loading} data-testid="work-progress-report-run">
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
+          {report && (
+            <Button onClick={shareReport} disabled={sharing} variant="outline">
+              {sharing ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />} Share
+            </Button>
+          )}
         </CardContent>
       </Card>
 

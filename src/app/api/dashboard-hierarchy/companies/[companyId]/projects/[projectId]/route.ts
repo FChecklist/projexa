@@ -12,6 +12,8 @@ type ProjectDashboard = {
   delayedTaskCount: number;
   photoCount: number;
   taskCount: number;
+  // Point 121: COALESCE(user-entered, linked-PO-sum), null when neither exists.
+  projectValue: number | null;
 };
 
 type SalesInvoicesPage = {
@@ -106,6 +108,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       projectName: baseline.projectName,
       budget: baseline.budget,
       budgetIsPeriodTotal: true,
+      projectValue: baseline.projectValue,
       revenue: revenue?.total ?? baseline.revenue,
       revenueTruncated: revenue?.truncated ?? false,
       expenses: expenses ?? baseline.expenses,

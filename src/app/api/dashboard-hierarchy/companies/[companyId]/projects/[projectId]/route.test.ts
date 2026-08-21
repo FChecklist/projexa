@@ -27,7 +27,7 @@ mock.module("@/lib/company-scope", () => ({
 mock.module("@/lib/veridian-client", () => ({
   callVeridian: async (path: string) => {
     if (path.startsWith("/dashboard/")) {
-      return { projectId: "p-1", projectName: "Test Project", budget: 1000, revenue: 0, expenses: 0, progressPercent: 0, delayedTaskCount: 0, photoCount: 0, taskCount: 0 };
+      return { projectId: "p-1", projectName: "Test Project", budget: 1000, revenue: 0, expenses: 0, progressPercent: 0, delayedTaskCount: 0, photoCount: 0, taskCount: 0, projectValue: 750000 };
     }
     if (path.startsWith("/expenses")) return { expenses: [] };
     if (path.startsWith("/work-progress")) return { entries: [] };
@@ -68,5 +68,17 @@ describe("GET .../projects/[projectId] revenue truncation", () => {
     const res = await GET(new NextRequest("http://test/x"), { params: Promise.resolve({ companyId: "org-a", projectId: "p-1" }) });
     const body = await res.json();
     expect(body.revenueTruncated).toBe(false);
+  });
+});
+
+// Point 121: projectValue is passed through from VERIDIAN's baseline
+// unchanged (this route computes nothing about it -- COALESCE(user-entered,
+// linked-PO-sum) happens entirely in construction-dashboard-service.ts).
+describe("GET .../projects[projectId] projectValue passthrough", () => {
+  test("projectValue from the VERIDIAN baseline is forwarded unchanged", async () => {
+    totalPagesForThisTest = TOTAL_PAGES_UNDER_CAP;
+    const res = await GET(new NextRequest("http://test/x"), { params: Promise.resolve({ companyId: "org-a", projectId: "p-1" }) });
+    const body = await res.json();
+    expect(body.projectValue).toBe(750000);
   });
 });

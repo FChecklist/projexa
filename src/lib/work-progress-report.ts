@@ -47,10 +47,27 @@ function num(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function sumQtyInRange(entries: ProgressEntry[], activityId: string, predicate: (date: string) => boolean): number {
-  return entries
-    .filter((e) => e.activityId === activityId && predicate(e.entryDate))
-    .reduce((s, e) => s + num(e.quantityDone), 0);
+function sumQtyInRange(entries: ProgressEntry[], activityId: string, predicate: (date: string) => boolean): { sum: number; touched: boolean } {
+  const matches = entries.filter((e) => e.activityId === activityId && predicate(e.entryDate));
+  return { sum: matches.reduce((s, e) => s + num(e.quantityDone), 0), touched: matches.length > 0 };
+}
+
+// Point 111 (WPR-14): his sheet distinguishes a value that was CALCULATED
+// and came out zero (dash) from a cell for which NO progress entry exists
+// at all (blank) -- both compute to the number 0 today and are otherwise
+// indistinguishable on screen. `touched` on LineItemProgress/CategoryRollup
+// carries that distinction alongside the existing numeric qty/amt/percentage
+// fields (which are left exactly as they were -- this changes nothing about
+// the arithmetic, including the weighted-parent-rollup and category-rollup
+// totals, only what a caller CAN choose to render for a given number).
+// formatProgressCell() is the one place that turns (value, touched) into
+// what actually appears on screen -- "" for never-touched, "-" for a real
+// computed zero, the raw number (for the caller to format "as today")
+// otherwise.
+export function formatProgressCell(value: number, touched: boolean): string | number {
+  if (!touched) return "";
+  if (value === 0) return "-";
+  return value;
 }
 
 export type LineItemProgress = {
@@ -67,6 +84,12 @@ export type LineItemProgress = {
   qty: { prev: number; current: number; total: number };
   amt: { prev: number; current: number; total: number };
   percentage: { prev: number; current: number; total: number };
+  // Point 111 (WPR-14): whether ANY progress entry contributed to each
+  // bucket -- false means never-touched (render blank), true with a 0 value
+  // means a real computed zero (render a dash). Separate from qty/amt/
+  // percentage on purpose so their existing {prev,current,total} shape
+  // (and every existing toEqual() assertion against it) is unchanged.
+  touched: { prev: boolean; current: boolean; total: boolean };
 };
 
 /** Computes one BoQ line item's Prev/Current/Total qty+amt+percentage for the [from, to] window. */
@@ -85,9 +108,12 @@ export function computeLineItemProgress(
   const activity = line.activityId ? activitiesById.get(line.activityId) : undefined;
   const category = activity ? categoriesById.get(activity.categoryId) : undefined;
 
-  const prevQty = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d < from) : 0;
-  const currentQty = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d >= from && d <= to) : 0;
+  const prevResult = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d < from) : { sum: 0, touched: false };
+  const currentResult = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d >= from && d <= to) : { sum: 0, touched: false };
+  const prevQty = prevResult.sum;
+  const currentQty = currentResult.sum;
   const totalQty = prevQty + currentQty;
+  const touched = { prev: prevResult.touched, current: currentResult.touched, total: prevResult.touched || currentResult.touched };
 
   const amtPrev = prevQty * rate;
   const amtCurrent = currentQty * rate;
@@ -109,6 +135,7 @@ export function computeLineItemProgress(
     qty: { prev: prevQty, current: currentQty, total: totalQty },
     amt: { prev: amtPrev, current: amtCurrent, total: amtTotal },
     percentage: { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal) },
+    touched,
   };
 }
 
@@ -223,8 +250,17 @@ function applyWeightedParentRollup(rows: LineItemProgress[], lineItemsById: Map<
     const qty = { prev: cumQty((c) => c.qty.prev), current: cumQty((c) => c.qty.current), total: cumQty((c) => c.qty.total) };
     const amt = { prev: cumAmt((c) => c.qty.prev), current: cumAmt((c) => c.qty.current), total: cumAmt((c) => c.qty.total) };
     const pct = (a: number) => (row.amtTotal > 0 ? Math.round((a / row.amtTotal) * 10000) / 100 : 0);
+    // A parent is "touched" for a bucket iff ANY child was touched for that
+    // same bucket -- its own weighted total is a real computed zero (dash)
+    // when children exist but none had entries in that window, and only
+    // ever blank (never-touched) if not one of its children was ever touched.
+    const touched = {
+      prev: children.some((c) => c.touched.prev),
+      current: children.some((c) => c.touched.current),
+      total: children.some((c) => c.touched.total),
+    };
 
-    return { ...row, qty, amt, percentage: { prev: pct(amt.prev), current: pct(amt.current), total: pct(amt.total) } };
+    return { ...row, qty, amt, percentage: { prev: pct(amt.prev), current: pct(amt.current), total: pct(amt.total) }, touched };
   });
 }
 
