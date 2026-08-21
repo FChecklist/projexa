@@ -5,6 +5,7 @@ import {
   buildVendorBreakdown,
   buildWorkProgressReport,
   computeLineItemProgress,
+  formatProgressCell,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -84,6 +85,78 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
     );
     expect(result.qty).toEqual({ prev: 0, current: 0, total: 0 });
     expect(result.categoryName).toBe("Uncategorized");
+    expect(result.touched).toEqual({ prev: false, current: false, total: false }); // never-touched, not a computed zero
+  });
+});
+
+// Point 111 (WPR-14): a computed zero and a never-touched cell both compute
+// to the number 0 -- his sheet distinguishes them (dash vs. blank) and a UI
+// rendering 0.00 for both loses that distinction. `touched` on
+// LineItemProgress carries which one applies; formatProgressCell() is the
+// pure function that turns (value, touched) into what actually renders.
+// Missing must NEVER be treated as zero in the ARITHMETIC -- only in the
+// display -- so every qty/amt/percentage number above is asserted unchanged
+// throughout; only `touched` and formatProgressCell() are new.
+describe("WPR-14: computed zero (dash) vs. never-touched (blank)", () => {
+  test("entries exist but are all outside the report window -> Current is never-touched, Prev is a real value", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_1", entryDate: "2026-07-01", quantityDone: 30 }];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty).toEqual({ prev: 30, current: 0, total: 30 }); // arithmetic unaffected
+    expect(result.touched).toEqual({ prev: true, current: false, total: true });
+  });
+
+  test("an activity with zero total quantity done still counts as touched if an entry exists (a real computed zero)", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 0 }];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.current).toBe(0);
+    expect(result.touched.current).toBe(true); // an entry WAS recorded, it just summed to 0
+  });
+
+  test("a real nonzero value is touched", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 20 }];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.touched.current).toBe(true);
+  });
+
+  test("a parent with hierarchical children: touched per bucket iff ANY child is touched for that bucket", () => {
+    const parent: BoqLineItem = { id: "parent_1", activityId: null, itemCode: "1.01", description: "Main", unit: "sqm", quantity: 472, rate: 108, amount: 50976 };
+    const childA: BoqLineItem = { id: "child_a", activityId: "act_a", itemCode: "1.01.1", description: "Frame 01", unit: "sqm", quantity: 0, rate: 0, amount: 0, parentLineItemId: "parent_1", breakdownPercentage: 30 };
+    const childB: BoqLineItem = { id: "child_b", activityId: "act_b", itemCode: "1.01.2", description: "Taping Jointing 01", unit: "sqm", quantity: 0, rate: 0, amount: 0, parentLineItemId: "parent_1", breakdownPercentage: 15 };
+    const lineItems = [parent, childA, childB];
+    const activities: Activity[] = [{ id: "act_a", categoryId: "cat_1", name: "Frame" }, { id: "act_b", categoryId: "cat_1", name: "Taping" }];
+    // childA has a recorded entry (a real computed-zero balance is possible downstream); childB has none at all.
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_a", entryDate: "2026-07-01", quantityDone: 0 }];
+    const report = buildWorkProgressReport({ lineItems, entries, activities, categories: CATEGORIES, from: "2026-07-10", to: "2026-07-20" });
+    const parentRow = report.rows.find((r) => r.lineItemId === "parent_1")!;
+    const childARow = report.rows.find((r) => r.lineItemId === "child_a")!;
+    const childBRow = report.rows.find((r) => r.lineItemId === "child_b")!;
+    expect(childARow.touched.prev).toBe(true); // Frame 01: entry exists, before the window -> a real computed zero once rolled up
+    expect(childBRow.touched.prev).toBe(false); // Taping Jointing 01: no entry ever -> never-touched
+    expect(parentRow.touched.prev).toBe(true); // parent touched because childA was
+  });
+});
+
+describe("formatProgressCell (dash vs. blank vs. the real number)", () => {
+  test("never-touched renders blank, not 0", () => {
+    expect(formatProgressCell(0, false)).toBe("");
+  });
+  test("a computed zero renders a dash", () => {
+    expect(formatProgressCell(0, true)).toBe("-");
+  });
+  test("a real value renders unchanged, for the caller to format as today", () => {
+    expect(formatProgressCell(32.4, true)).toBe(32.4);
   });
 });
 
