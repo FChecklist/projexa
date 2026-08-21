@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Wallet, TrendingUp, Receipt, Activity, Building2 } from "lucide-react";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
+import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
@@ -19,8 +20,15 @@ type ProjectDetails = {
   revenue: number; revenueTruncated: boolean; expenses: number; progressPercent: number; dateRangeApplied: boolean;
 };
 
-function fmt(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+// R11 point 6b: this was the last hardcoded rupee-glyph formatter in
+// projexa/src (Priority 17 already converted every sibling component to
+// currencyLabel()). This dashboard aggregates across a company's own
+// projects, not one project's own transaction currency, so -- same as
+// every other currencyLabel() call site with no per-row currencyId -- id
+// is undefined, which resolves to the org's base currency (see
+// currencyLabel()'s own comment).
+function fmt(n: number, currencies: Currency[]) {
+  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -30,6 +38,7 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 export function DashboardHierarchyClient() {
+  const currencies = useCurrencies();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -143,8 +152,8 @@ export function DashboardHierarchyClient() {
                       onClick={() => setProjectId(p.id)}
                     >
                       <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>{fmt(p.revenue)}</TableCell>
-                      <TableCell>{fmt(p.expenses)}</TableCell>
+                      <TableCell>{fmt(p.revenue, currencies)}</TableCell>
+                      <TableCell>{fmt(p.expenses, currencies)}</TableCell>
                       <TableCell>{p.taskCount}</TableCell>
                     </TableRow>
                   ))}
@@ -180,9 +189,9 @@ export function DashboardHierarchyClient() {
             ) : (
               <div className="space-y-2">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <DashboardCard title="Revenue" value={fmt(details.revenue)} icon={TrendingUp} variant="completed" />
-                  <DashboardCard title="Budget" value={fmt(details.budget)} icon={Wallet} variant="total" />
-                  <DashboardCard title="Expenses" value={fmt(details.expenses)} icon={Receipt} variant="pending" />
+                  <DashboardCard title="Revenue" value={fmt(details.revenue, currencies)} icon={TrendingUp} variant="completed" />
+                  <DashboardCard title="Budget" value={fmt(details.budget, currencies)} icon={Wallet} variant="total" />
+                  <DashboardCard title="Expenses" value={fmt(details.expenses, currencies)} icon={Receipt} variant="pending" />
                   <DashboardCard title="Progress" value={`${details.progressPercent}%`} icon={Activity} variant="total" />
                 </div>
                 {details.revenueTruncated && (
