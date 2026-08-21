@@ -15,11 +15,17 @@ import { Loader2, Play, Share2 } from "lucide-react";
 // the third column of every band can read either total (previous +
 // current) or balance (original - total) -- both legitimate, neither
 // persisted, chosen here in component state only.
-type ThirdColumnMode = "total" | "balance";
+export type ThirdColumnMode = "total" | "balance";
 
-type LineItemRow = {
+export type LineItemRow = {
   lineItemId: string; code: string; description: string; categoryName: string; unit: string; rate: number;
   qtyTotal: number; amtTotal: number;
+  // Point 108: which line this is a hierarchical BOQ child of, if any --
+  // WPR-06 says percentages are PARENT-only, so this decides whether the
+  // percent band renders blank for this row (a child) or real numbers
+  // (a parent -- including a childless standalone line, which is a parent
+  // of nothing but still not anyone's own child).
+  parentLineItemId: string | null;
   qty: { prev: number; current: number; total: number; balance: number };
   amt: { prev: number; current: number; total: number; balance: number };
   percentage: { prev: number; current: number; total: number; balance: number };
@@ -34,34 +40,60 @@ function money(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-// The real, Owner-supplied column shape: S.No | Category | Code | Description |
-// Qty[Unit | Rate | Amt] | Amt[Prev | Current | Total] | Percentage[Prev |
-// Current | Total]. Reused for both the scope-wise (one row per BoQ line
-// item) and category-wise (rolled-up) views -- same columns, different
-// grouping, matching the report's own spec.
-function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdColumnMode }) {
+// Point 108 (Rajat, 21 Aug: "FOLLOW THE XLSX ORDER, not the handwritten
+// page" -- the xlsx is the EXECUTED artefact, what his team actually fills
+// in): S.No | Category | Code | Description | Unit | Rate | Amt (identifying
+// columns, unchanged), then THREE bands in XLSX order -- Percent, then
+// Quantity, then Amount -- each Previous | Current | Total-or-Balance
+// (point 11's toggle), visually separated so a reader sees three groups,
+// not nine undifferentiated columns. WPR-06: percentages are PARENT rows
+// only -- a row with a parentLineItemId (a hierarchical BOQ child) renders
+// blank percent cells, not 0.00 and not a number.
+const bandBorder = "border-l-2 border-px-border";
+
+export function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdColumnMode }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">No BoQ line items for this project yet.</p>;
   const thirdLabel = mode === "balance" ? "Balance" : "Total";
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>S.No</TableHead><TableHead>Category</TableHead><TableHead>Code</TableHead><TableHead>Description</TableHead>
-          <TableHead>Unit</TableHead><TableHead>Rate</TableHead><TableHead>Amt</TableHead>
-          <TableHead>Amt Prev</TableHead><TableHead>Amt Current</TableHead><TableHead>Amt {thirdLabel}</TableHead>
-          <TableHead>% Prev</TableHead><TableHead>% Current</TableHead><TableHead>% {thirdLabel}</TableHead>
+          <TableHead rowSpan={2}>S.No</TableHead><TableHead rowSpan={2}>Category</TableHead>
+          <TableHead rowSpan={2}>Code</TableHead><TableHead rowSpan={2}>Description</TableHead>
+          <TableHead rowSpan={2}>Unit</TableHead><TableHead rowSpan={2}>Rate</TableHead><TableHead rowSpan={2}>Amt</TableHead>
+          <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Percent</TableHead>
+          <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Quantity</TableHead>
+          <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Amount</TableHead>
+        </TableRow>
+        <TableRow>
+          <TableHead className={bandBorder}>Previous</TableHead><TableHead>Current</TableHead><TableHead>{thirdLabel}</TableHead>
+          <TableHead className={bandBorder}>Previous</TableHead><TableHead>Current</TableHead><TableHead>{thirdLabel}</TableHead>
+          <TableHead className={bandBorder}>Previous</TableHead><TableHead>Current</TableHead><TableHead>{thirdLabel}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((r, i) => (
-          <TableRow key={r.lineItemId}>
-            <TableCell>{i + 1}</TableCell><TableCell>{r.categoryName}</TableCell>
-            <TableCell className="font-mono text-xs">{r.code || "—"}</TableCell><TableCell>{r.description}</TableCell>
-            <TableCell>{r.unit}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
-            <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt[mode])}</TableCell>
-            <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage[mode]}%</TableCell>
-          </TableRow>
-        ))}
+        {rows.map((r, i) => {
+          const isChild = !!r.parentLineItemId; // WPR-06: percentages are parent-only
+          return (
+            <TableRow key={r.lineItemId}>
+              <TableCell>{i + 1}</TableCell><TableCell>{r.categoryName}</TableCell>
+              <TableCell className="font-mono text-xs">{r.code || "—"}</TableCell><TableCell>{r.description}</TableCell>
+              <TableCell>{r.unit}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
+
+              <TableCell className={bandBorder} data-testid="pct-prev">{isChild ? "" : `${r.percentage.prev}%`}</TableCell>
+              <TableCell data-testid="pct-current">{isChild ? "" : `${r.percentage.current}%`}</TableCell>
+              <TableCell data-testid="pct-third">{isChild ? "" : `${r.percentage[mode]}%`}</TableCell>
+
+              <TableCell className={bandBorder}>{money(r.qty.prev)}</TableCell>
+              <TableCell>{money(r.qty.current)}</TableCell>
+              <TableCell>{money(r.qty[mode])}</TableCell>
+
+              <TableCell className={bandBorder}>{money(r.amt.prev)}</TableCell>
+              <TableCell>{money(r.amt.current)}</TableCell>
+              <TableCell>{money(r.amt[mode])}</TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
