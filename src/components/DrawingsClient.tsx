@@ -5,6 +5,7 @@
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
 // (category='drawing'|'drawing_3d').
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, LayoutPanelLeft, ExternalLink, Plus } from "lucide-react";
+import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 
 type Drawing = {
   id: string;
@@ -73,55 +74,60 @@ export default function DrawingsClient({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">DWG drawings and 3D walkthroughs for this project.</p>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm"><Plus className="size-4" /> Add Drawing</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Add Drawing / 3D Walkthrough</DialogTitle></DialogHeader>
-            <form action={handleCreate} className="space-y-3">
-              <div className="space-y-1">
-                <Label>Kind</Label>
-                <Select value={kind} onValueChange={(v) => setKind(v as "dwg" | "3d_walkthrough")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="dwg">DWG Drawing</SelectItem>
-                    <SelectItem value="3d_walkthrough">3D Walkthrough</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" name="name" required />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="discipline">Discipline (optional)</Label>
-                <Input id="discipline" name="discipline" placeholder="Architectural, Structural, MEP..." />
-              </div>
-              {kind === "3d_walkthrough" && (
-                <div className="flex items-center gap-2 text-sm">
-                  <button type="button" className="underline" onClick={() => setLinkMode((v) => !v)}>
-                    {linkMode ? "Upload a file instead" : "Use an external link instead"}
-                  </button>
-                </div>
-              )}
-              {kind === "3d_walkthrough" && linkMode ? (
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/floor-plans?projectId=${projectId}`}><Box className="size-4" /> Floor Plans / 3D Walkthrough</Link>
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm"><Plus className="size-4" /> Add Drawing</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Add Drawing / 3D Walkthrough</DialogTitle></DialogHeader>
+              <form action={handleCreate} className="space-y-3">
                 <div className="space-y-1">
-                  <Label htmlFor="externalUrl">Walkthrough URL</Label>
-                  <Input id="externalUrl" name="externalUrl" type="url" placeholder="https://..." required />
+                  <Label>Kind</Label>
+                  <Select value={kind} onValueChange={(v) => setKind(v as "dwg" | "3d_walkthrough")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dwg">DWG Drawing</SelectItem>
+                      <SelectItem value="3d_walkthrough">3D Walkthrough</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              ) : (
                 <div className="space-y-1">
-                  <Label htmlFor="file">File{kind === "dwg" ? " (DWG)" : ""}</Label>
-                  <Input id="file" name="file" type="file" required />
+                  <Label htmlFor="name">Name</Label>
+                  <Input id="name" name="name" required />
                 </div>
-              )}
-              <DialogFooter>
-                <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Add"}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="space-y-1">
+                  <Label htmlFor="discipline">Discipline (optional)</Label>
+                  <Input id="discipline" name="discipline" placeholder="Architectural, Structural, MEP..." />
+                </div>
+                {kind === "3d_walkthrough" && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <button type="button" className="underline" onClick={() => setLinkMode((v) => !v)}>
+                      {linkMode ? "Upload a file instead" : "Use an external link instead"}
+                    </button>
+                  </div>
+                )}
+                {kind === "3d_walkthrough" && linkMode ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="externalUrl">Walkthrough URL</Label>
+                    <Input id="externalUrl" name="externalUrl" type="url" placeholder="https://..." required />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label htmlFor="file">File{kind === "dwg" ? " (DWG)" : ""}</Label>
+                    <Input id="file" name="file" type="file" required />
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Add"}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="shadow-card">
