@@ -98,6 +98,21 @@ function withCurrency(code: string, value: string | number | null | undefined): 
 // -- that would square the percentage. Display-only: nothing is stored, and
 // a sub-task with no breakdownPercentage has no derivable rate at all (still
 // dashes -- inventing one would be worse than blanking).
+// Point 105: a live running total of child breakdownPercentage values,
+// grouped by parentItemCode, over the DRAFT rows in the create/revise form
+// (not the database -- these are unsaved, still being typed). Display only,
+// recomputed at render on every keystroke, never persisted. MUST NOT warn,
+// block, or auto-normalise a non-100 total -- his items 1.04/4.02 legitimately
+// sum to 75/65 and that is a deliberate scope statement, not an error. A
+// parent with no children (nothing references its itemCode) shows nothing.
+function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {
+  const code = parentItemCode?.trim();
+  if (!code) return null;
+  const children = lines.filter((l) => l.parentItemCode?.trim() === code);
+  if (children.length === 0) return null;
+  return children.reduce((sum, l) => sum + (Number(l.breakdownPercentage) || 0), 0);
+}
+
 function derivedSubQtyRate(row: BoqLineItemRow, allRows: BoqLineItemRow[]): { qty: number; rate: number } | null {
   if (row.breakdownPercentage == null) return null;
   const parent = allRows.find((p) => p.id === row.parentLineItemId);
@@ -331,7 +346,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Civil Works - Phase 1" /></div>
               <div className="space-y-2">
                 <Label>Line Items</Label>
-                {lines.map((line, i) => (
+                {lines.map((line, i) => {
+                  const childSum = childPercentSum(lines, line.itemCode);
+                  return (
                   <div key={i} className="flex flex-wrap items-center gap-2">
                     <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
                     <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
@@ -340,11 +357,13 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                     <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateLine(i, "itemCode", e.target.value)} />
                     <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateLine(i, "parentItemCode", e.target.value)} />
                     <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)} />
+                    {childSum != null && <span className="text-xs text-px-muted">{childSum}% total</span>}
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))} disabled={lines.length === 1}>
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
                 <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
                   <Plus className="size-3.5" /> Add Line
                 </Button>
@@ -458,7 +477,9 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
             <div className="space-y-1.5"><Label>Revision Title</Label><Input value={revisionTitle} onChange={(e) => setRevisionTitle(e.target.value)} /></div>
             <div className="space-y-2">
               <Label>Line Items</Label>
-              {revisionLines.map((line, i) => (
+              {revisionLines.map((line, i) => {
+                const childSum = childPercentSum(revisionLines, line.itemCode);
+                return (
                 <div key={i} className="flex flex-wrap items-center gap-2">
                   <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateRevisionLine(i, "description", e.target.value)} />
                   <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateRevisionLine(i, "unit", e.target.value)} />
@@ -467,11 +488,13 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
                   <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateRevisionLine(i, "itemCode", e.target.value)} />
                   <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateRevisionLine(i, "parentItemCode", e.target.value)} />
                   <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateRevisionLine(i, "breakdownPercentage", e.target.value)} />
+                  {childSum != null && <span className="text-xs text-px-muted">{childSum}% total</span>}
                   <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setRevisionLines((prev) => prev.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
               <Button variant="outline" size="sm" onClick={() => setRevisionLines((prev) => [...prev, emptyLine()])}>
                 <Plus className="size-3.5" /> Add Line
               </Button>
