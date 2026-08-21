@@ -81,9 +81,9 @@ export type LineItemProgress = {
   rate: number;
   qtyTotal: number; // BoQ's total planned quantity for this line
   amtTotal: number; // BoQ's total value (qty * rate) for this line -- the denominator for Percentage
-  qty: { prev: number; current: number; total: number };
-  amt: { prev: number; current: number; total: number };
-  percentage: { prev: number; current: number; total: number };
+  qty: { prev: number; current: number; total: number; balance: number };
+  amt: { prev: number; current: number; total: number; balance: number };
+  percentage: { prev: number; current: number; total: number; balance: number };
   // Point 111 (WPR-14): whether ANY progress entry contributed to each
   // bucket -- false means never-touched (render blank), true with a 0 value
   // means a real computed zero (render a dash). Separate from qty/amt/
@@ -119,6 +119,15 @@ export function computeLineItemProgress(
   const amtCurrent = currentQty * rate;
   const amtTotal = totalQty * rate;
 
+  // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES --
+  // it's a mathematical formula"): balance = original (this line's own BoQ
+  // total) - total (previous + current). Both are legitimate readings of
+  // the same three stored numbers -- nothing new is persisted. Oracle:
+  // his Gypsum Board 01 row shows 300 + 100 with a third column of 72, and
+  // 472 - 400 = 72.
+  const qtyBalance = qtyTotalBoq - totalQty;
+  const amtBalance = amtTotalBoq - amtTotal;
+
   const pct = (amt: number) => (amtTotalBoq > 0 ? Math.round((amt / amtTotalBoq) * 10000) / 100 : 0);
 
   return {
@@ -132,9 +141,9 @@ export function computeLineItemProgress(
     rate,
     qtyTotal: qtyTotalBoq,
     amtTotal: amtTotalBoq,
-    qty: { prev: prevQty, current: currentQty, total: totalQty },
-    amt: { prev: amtPrev, current: amtCurrent, total: amtTotal },
-    percentage: { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal) },
+    qty: { prev: prevQty, current: currentQty, total: totalQty, balance: qtyBalance },
+    amt: { prev: amtPrev, current: amtCurrent, total: amtTotal, balance: amtBalance },
+    percentage: { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal), balance: pct(amtBalance) },
     touched,
   };
 }
@@ -143,8 +152,8 @@ export type CategoryRollup = {
   categoryId: string | null;
   categoryName: string;
   amtTotal: number;
-  amt: { prev: number; current: number; total: number };
-  percentage: { prev: number; current: number; total: number };
+  amt: { prev: number; current: number; total: number; balance: number };
+  percentage: { prev: number; current: number; total: number; balance: number };
 };
 
 function rollupBy<T>(rows: LineItemProgress[], keyFn: (r: LineItemProgress) => T, nameFn: (r: LineItemProgress) => string) {
@@ -159,17 +168,17 @@ function rollupBy<T>(rows: LineItemProgress[], keyFn: (r: LineItemProgress) => T
     g.total += r.amt.total;
     groups.set(mapKey, g);
   }
-  return Array.from(groups.values()).map((g) => ({
-    key: g.key,
-    name: g.name,
-    amtTotal: g.amtTotal,
-    amt: { prev: g.prev, current: g.current, total: g.total },
-    percentage: {
-      prev: g.amtTotal > 0 ? Math.round((g.prev / g.amtTotal) * 10000) / 100 : 0,
-      current: g.amtTotal > 0 ? Math.round((g.current / g.amtTotal) * 10000) / 100 : 0,
-      total: g.amtTotal > 0 ? Math.round((g.total / g.amtTotal) * 10000) / 100 : 0,
-    },
-  }));
+  return Array.from(groups.values()).map((g) => {
+    const balance = g.amtTotal - g.total;
+    const pct = (a: number) => (g.amtTotal > 0 ? Math.round((a / g.amtTotal) * 10000) / 100 : 0);
+    return {
+      key: g.key,
+      name: g.name,
+      amtTotal: g.amtTotal,
+      amt: { prev: g.prev, current: g.current, total: g.total, balance },
+      percentage: { prev: pct(g.prev), current: pct(g.current), total: pct(g.total), balance: pct(balance) },
+    };
+  });
 }
 
 /**
@@ -247,8 +256,13 @@ function applyWeightedParentRollup(rows: LineItemProgress[], lineItemsById: Map<
     const cumAmt = (pick: (c: LineItemProgress) => number) =>
       children.reduce((sum, c) => sum + pick(c) * (row.rate * (breakdownPctOf(c) / 100)), 0);
 
-    const qty = { prev: cumQty((c) => c.qty.prev), current: cumQty((c) => c.qty.current), total: cumQty((c) => c.qty.total) };
-    const amt = { prev: cumAmt((c) => c.qty.prev), current: cumAmt((c) => c.qty.current), total: cumAmt((c) => c.qty.total) };
+    const totalQty = cumQty((c) => c.qty.total);
+    const totalAmt = cumAmt((c) => c.qty.total);
+    // Point 11: same balance = original - total formula as computeLineItemProgress,
+    // against the PARENT's own unchanged qtyTotal/amtTotal (its own BoQ contract),
+    // not any child's.
+    const qty = { prev: cumQty((c) => c.qty.prev), current: cumQty((c) => c.qty.current), total: totalQty, balance: row.qtyTotal - totalQty };
+    const amt = { prev: cumAmt((c) => c.qty.prev), current: cumAmt((c) => c.qty.current), total: totalAmt, balance: row.amtTotal - totalAmt };
     const pct = (a: number) => (row.amtTotal > 0 ? Math.round((a / row.amtTotal) * 10000) / 100 : 0);
     // A parent is "touched" for a bucket iff ANY child was touched for that
     // same bucket -- its own weighted total is a real computed zero (dash)
@@ -260,7 +274,7 @@ function applyWeightedParentRollup(rows: LineItemProgress[], lineItemsById: Map<
       total: children.some((c) => c.touched.total),
     };
 
-    return { ...row, qty, amt, percentage: { prev: pct(amt.prev), current: pct(amt.current), total: pct(amt.total) }, touched };
+    return { ...row, qty, amt, percentage: { prev: pct(amt.prev), current: pct(amt.current), total: pct(amt.total), balance: pct(amt.balance) }, touched };
   });
 }
 

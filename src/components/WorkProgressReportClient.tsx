@@ -8,16 +8,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play, Share2 } from "lucide-react";
+
+// Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
+// the third column of every band can read either total (previous +
+// current) or balance (original - total) -- both legitimate, neither
+// persisted, chosen here in component state only.
+type ThirdColumnMode = "total" | "balance";
 
 type LineItemRow = {
   lineItemId: string; code: string; description: string; categoryName: string; unit: string; rate: number;
   qtyTotal: number; amtTotal: number;
-  qty: { prev: number; current: number; total: number };
-  amt: { prev: number; current: number; total: number };
-  percentage: { prev: number; current: number; total: number };
+  qty: { prev: number; current: number; total: number; balance: number };
+  amt: { prev: number; current: number; total: number; balance: number };
+  percentage: { prev: number; current: number; total: number; balance: number };
 };
-type CategoryRow = { name: string; amtTotal: number; amt: { prev: number; current: number; total: number }; percentage: { prev: number; current: number; total: number } };
+type CategoryRow = { name: string; amtTotal: number; amt: { prev: number; current: number; total: number; balance: number }; percentage: { prev: number; current: number; total: number; balance: number } };
 type ManpowerRow = { trade: string; workerDays: number; totalCost: number };
 type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 
@@ -32,16 +39,17 @@ function money(n: number) {
 // Current | Total]. Reused for both the scope-wise (one row per BoQ line
 // item) and category-wise (rolled-up) views -- same columns, different
 // grouping, matching the report's own spec.
-function ScopeTable({ rows }: { rows: LineItemRow[] }) {
+function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdColumnMode }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">No BoQ line items for this project yet.</p>;
+  const thirdLabel = mode === "balance" ? "Balance" : "Total";
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>S.No</TableHead><TableHead>Category</TableHead><TableHead>Code</TableHead><TableHead>Description</TableHead>
           <TableHead>Unit</TableHead><TableHead>Rate</TableHead><TableHead>Amt</TableHead>
-          <TableHead>Amt Prev</TableHead><TableHead>Amt Current</TableHead><TableHead>Amt Total</TableHead>
-          <TableHead>% Prev</TableHead><TableHead>% Current</TableHead><TableHead>% Total</TableHead>
+          <TableHead>Amt Prev</TableHead><TableHead>Amt Current</TableHead><TableHead>Amt {thirdLabel}</TableHead>
+          <TableHead>% Prev</TableHead><TableHead>% Current</TableHead><TableHead>% {thirdLabel}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -50,8 +58,8 @@ function ScopeTable({ rows }: { rows: LineItemRow[] }) {
             <TableCell>{i + 1}</TableCell><TableCell>{r.categoryName}</TableCell>
             <TableCell className="font-mono text-xs">{r.code || "—"}</TableCell><TableCell>{r.description}</TableCell>
             <TableCell>{r.unit}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
-            <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt.total)}</TableCell>
-            <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage.total}%</TableCell>
+            <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt[mode])}</TableCell>
+            <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage[mode]}%</TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -59,23 +67,24 @@ function ScopeTable({ rows }: { rows: LineItemRow[] }) {
   );
 }
 
-function CategoryTable({ rows }: { rows: CategoryRow[] }) {
+function CategoryTable({ rows, mode }: { rows: CategoryRow[]; mode: ThirdColumnMode }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">Nothing to break down by category yet.</p>;
+  const thirdLabel = mode === "balance" ? "Balance" : "Total";
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>Category</TableHead><TableHead>Amt Total</TableHead>
-          <TableHead>Amt Prev</TableHead><TableHead>Amt Current</TableHead><TableHead>Amt Total (to date)</TableHead>
-          <TableHead>% Prev</TableHead><TableHead>% Current</TableHead><TableHead>% Total</TableHead>
+          <TableHead>Amt Prev</TableHead><TableHead>Amt Current</TableHead><TableHead>Amt {thirdLabel} (to date)</TableHead>
+          <TableHead>% Prev</TableHead><TableHead>% Current</TableHead><TableHead>% {thirdLabel}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((r) => (
           <TableRow key={r.name}>
             <TableCell>{r.name}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
-            <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt.total)}</TableCell>
-            <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage.total}%</TableCell>
+            <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt[mode])}</TableCell>
+            <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage[mode]}%</TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -123,6 +132,8 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [sharing, setSharing] = useState(false);
+  // Point 11: component state only -- never persisted, never sent to the API.
+  const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
 
   async function runReport() {
     setLoading(true);
@@ -175,6 +186,18 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               {sharing ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />} Share
             </Button>
           )}
+          {report && (
+            <div className="space-y-1.5">
+              <Label>Third column</Label>
+              <Select value={thirdColumnMode} onValueChange={(v) => setThirdColumnMode(v as ThirdColumnMode)}>
+                <SelectTrigger className="w-36" data-testid="third-column-mode"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="total">Total</SelectItem>
+                  <SelectItem value="balance">Balance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -192,8 +215,8 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
                 <TabsTrigger value="manpower">Manpower-wise</TabsTrigger>
                 <TabsTrigger value="vendor">Vendor-wise</TabsTrigger>
               </TabsList>
-              <TabsContent value="scope"><ScopeTable rows={report.rows} /></TabsContent>
-              <TabsContent value="category"><CategoryTable rows={report.byCategory} /></TabsContent>
+              <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} /></TabsContent>
+              <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} /></TabsContent>
               <TabsContent value="manpower"><ManpowerTable rows={report.byManpower} /></TabsContent>
               <TabsContent value="vendor"><VendorTable rows={report.byVendor} /></TabsContent>
             </Tabs>
