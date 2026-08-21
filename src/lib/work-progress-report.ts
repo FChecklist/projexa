@@ -23,6 +23,12 @@ export type BoqLineItem = {
   rate: string | number;
   amount: string | number;
   computedRate?: number | null;
+  // R12 point 10: already present on VERIDIAN's v1 BOQ GET response (the
+  // hierarchical-BOQ fields construction-boq-service.ts's line items always
+  // carry), just never declared on this local type before -- so the field
+  // was present on the wire and silently invisible to TypeScript here.
+  parentLineItemId?: string | null;
+  breakdownPercentage?: string | number | null;
 };
 
 export type Activity = { id: string; categoryId: string; name: string; unit?: string | null };
@@ -49,6 +55,7 @@ function sumQtyInRange(entries: ProgressEntry[], activityId: string, predicate: 
 
 export type LineItemProgress = {
   lineItemId: string;
+  parentLineItemId: string | null; // R12 point 10: which line this is a hierarchical BOQ child of, if any
   code: string;
   description: string;
   categoryId: string | null;
@@ -90,6 +97,7 @@ export function computeLineItemProgress(
 
   return {
     lineItemId: line.id,
+    parentLineItemId: line.parentLineItemId ?? null,
     code: line.itemCode ?? "",
     description: line.description,
     categoryId: category?.id ?? null,
@@ -137,6 +145,89 @@ function rollupBy<T>(rows: LineItemProgress[], keyFn: (r: LineItemProgress) => T
   }));
 }
 
+/**
+ * R12 point 10: weighted parent roll-up. computeLineItemProgress() above
+ * only ever computes a line's OWN directly-recorded progress from its own
+ * activityId -- it knows nothing about hierarchical BOQ children (Main ->
+ * Sub-Task). When a line has children (other lines whose parentLineItemId
+ * points at it), its Qty/Amt/Percentage are REPLACED by a weighted roll-up
+ * of those children:
+ *   cum qty = SUM(child cum qty * child breakdownPercentage / 100)
+ *   cum amt = PLAIN SUM of child cum amts -- each child's own cum amt here
+ *             is computed with a DERIVED rate (the PARENT's own rate *
+ *             that child's breakdownPercentage / 100), not the child's own
+ *             stored rate (typically 0/unset for a hierarchical sub-task
+ *             row -- see construction-boq-service.ts's insertLineItems,
+ *             which stores a child's raw input quantity/rate verbatim,
+ *             usually blank/0 on a real prospect BoQ export, and computes
+ *             `amount` separately via the hierarchical formula). The
+ *             weighting is applied exactly ONCE, inside that derived rate
+ *             -- summing plainly after that is what "never re-weight"
+ *             means; multiplying by breakdownPercentage a second time
+ *             here would double-apply it.
+ *   percent  = cum amt / parent's own total BOQ amount
+ * Deliberately done here, as a roll-up over rows, rather than by mutating
+ * each child row's own rate/amt in place: every child row keeps reading
+ * its own real BOQ-stored qty/rate/amt figures untouched, so byCategory's
+ * plain sum-of-every-row still adds up correctly with no double count --
+ * a child's own (small/zero) amt contributes once, and the parent's new
+ * weighted total is the only place the full weighted value appears.
+ * IF a line has no parentLineItemId THEN it is a parent by definition and
+ * is never anyone's own child (never grouped as such below). IF a parent
+ * has no children (e.g. items 2.01/2.06) it is returned completely
+ * unchanged -- its own directly-recorded progress stands.
+ *
+ * KNOWN LIMITATION (cycle 2, R12 point 10): only ONE level of nesting is
+ * rolled up correctly. Every acceptance figure and oracle datapoint given
+ * across every run so far is a flat Main -> Sub-Task pair; none exercise a
+ * THREE-level chain (Main -> Sub -> Sub-sub). For a middle node, this
+ * function weights its children against ITS OWN `rate` field -- but a
+ * hierarchical child's own stored `rate` is typically 0 (see the comment
+ * above), so a middle node with its own children would roll up to 0, not
+ * a real number. construction-boq-service.ts's OWN computeHierarchicalAmount
+ * establishes the relevant convention already (a descendant's amount is
+ * ROOT-ancestor qty*rate times THAT DESCENDANT'S OWN breakdownPercentage,
+ * never compounded through intermediate levels) -- extending this function
+ * to match would mean weighting every descendant against its ROOT
+ * ancestor's rate directly, not cascading level by level. Deliberately NOT
+ * implemented here without a real 3-level oracle figure to validate
+ * against (there is a real, non-trivial design question -- does a
+ * mid-level node get its own separate rolled-up total at all, or only the
+ * ultimate root? -- that no run's oracle data answers). See the
+ * corresponding test below for what actually happens today.
+ */
+function applyWeightedParentRollup(rows: LineItemProgress[], lineItemsById: Map<string, BoqLineItem>): LineItemProgress[] {
+  const childrenByParentId = new Map<string, LineItemProgress[]>();
+  for (const row of rows) {
+    const parentId = lineItemsById.get(row.lineItemId)?.parentLineItemId;
+    if (!parentId) continue;
+    const list = childrenByParentId.get(parentId) ?? [];
+    list.push(row);
+    childrenByParentId.set(parentId, list);
+  }
+
+  return rows.map((row) => {
+    const children = childrenByParentId.get(row.lineItemId);
+    if (!children || children.length === 0) return row;
+
+    const breakdownPctOf = (child: LineItemProgress) => num(lineItemsById.get(child.lineItemId)?.breakdownPercentage);
+
+    const cumQty = (pick: (c: LineItemProgress) => number) =>
+      children.reduce((sum, c) => sum + pick(c) * (breakdownPctOf(c) / 100), 0);
+
+    // Each child's own cum amt = child cum qty * derived rate (parent's
+    // rate weighted by that child's breakdown %) -- then plainly summed.
+    const cumAmt = (pick: (c: LineItemProgress) => number) =>
+      children.reduce((sum, c) => sum + pick(c) * (row.rate * (breakdownPctOf(c) / 100)), 0);
+
+    const qty = { prev: cumQty((c) => c.qty.prev), current: cumQty((c) => c.qty.current), total: cumQty((c) => c.qty.total) };
+    const amt = { prev: cumAmt((c) => c.qty.prev), current: cumAmt((c) => c.qty.current), total: cumAmt((c) => c.qty.total) };
+    const pct = (a: number) => (row.amtTotal > 0 ? Math.round((a / row.amtTotal) * 10000) / 100 : 0);
+
+    return { ...row, qty, amt, percentage: { prev: pct(amt.prev), current: pct(amt.current), total: pct(amt.total) } };
+  });
+}
+
 export type WorkProgressReport = {
   from: string;
   to: string;
@@ -155,9 +246,11 @@ export function buildWorkProgressReport(params: {
 }): WorkProgressReport {
   const activitiesById = new Map(params.activities.map((a) => [a.id, a]));
   const categoriesById = new Map(params.categories.map((c) => [c.id, c]));
-  const rows = params.lineItems.map((line) =>
+  const lineItemsById = new Map(params.lineItems.map((l) => [l.id, l]));
+  const ownRows = params.lineItems.map((line) =>
     computeLineItemProgress(line, params.entries, activitiesById, categoriesById, params.from, params.to)
   );
+  const rows = applyWeightedParentRollup(ownRows, lineItemsById);
   const byCategory = rollupBy(
     rows,
     (r) => r.categoryId ?? "uncategorized",
