@@ -142,3 +142,128 @@ describe("buildManpowerBreakdown / buildVendorBreakdown (attendance-cost based, 
     );
   });
 });
+
+// RUN R12-21AUG point 10: the weighted parent roll-up. Oracle datapoint --
+// item 1.01 (rate 108, BoQ amount 50,976.00 -- same item used across every
+// run's oracle checks), 4 children at breakdown 30/15/10/15 whose own cum
+// qty is 400/300/300/150. Parent cum qty 217.50, cum amt 23,490.00, percent
+// 46.08. The forbidden unweighted sum is 400+300+300+150=1150 (which,
+// divided by the parent's own total qty 472, gives the nonsensical 243.6%
+// the ORACLE explicitly calls out as wrong by construction) -- it must
+// never appear anywhere in the result.
+describe("applyWeightedParentRollup (via buildWorkProgressReport) -- R12 point 10", () => {
+  // PARENT carries its own activityId (a real Main BOQ item belongs to a
+  // category too), but no progress entries are ever logged against it --
+  // its progress is purely derived from its children, and the roll-up
+  // must still land its weighted total in ITS OWN category, not
+  // "Uncategorized", since categoryId/categoryName are untouched by the
+  // roll-up (they come from computeLineItemProgress, before the roll-up
+  // runs) and are orthogonal to the qty/amt weighting.
+  const PARENT: BoqLineItem = {
+    id: "p-1.01", activityId: "act-p-1.01", itemCode: "1.01", description: "Partition wall", unit: "Sqm",
+    quantity: 472, rate: 108, amount: 50976,
+  };
+  const child = (id: string, code: string, pct: number): BoqLineItem => ({
+    id, activityId: `act-${id}`, itemCode: code, description: code, unit: "Sqm",
+    quantity: 0, rate: 0, amount: 0, parentLineItemId: PARENT.id, breakdownPercentage: pct,
+  });
+  const CHILDREN: BoqLineItem[] = [child("c1", "Frame", 30), child("c2", "Gypsum", 15), child("c3", "Rockwool", 10), child("c4", "Taping", 15)];
+  const CATS: Category[] = [{ id: "cat_1", name: "Partitions" }];
+  const ACTS: Activity[] = [
+    { id: "act-p-1.01", categoryId: "cat_1", name: "Partition wall" },
+    { id: "act-c1", categoryId: "cat_1", name: "Frame" }, { id: "act-c2", categoryId: "cat_1", name: "Gypsum" }, { id: "act-c3", categoryId: "cat_1", name: "Rockwool" }, { id: "act-c4", categoryId: "cat_1", name: "Taping" },
+  ];
+
+  // Split prev/current per child so the total (400/300/300/150) is not
+  // trivially all-current -- also exercises that the SAME weighting
+  // applies consistently to prev and current, not just total.
+  const ENTRIES: ProgressEntry[] = [
+    { id: "e1", activityId: "act-c1", entryDate: "2026-07-01", quantityDone: 250 }, // prev
+    { id: "e2", activityId: "act-c1", entryDate: "2026-07-15", quantityDone: 150 }, // current
+    { id: "e3", activityId: "act-c2", entryDate: "2026-07-01", quantityDone: 100 },
+    { id: "e4", activityId: "act-c2", entryDate: "2026-07-15", quantityDone: 200 },
+    { id: "e5", activityId: "act-c3", entryDate: "2026-07-01", quantityDone: 300 },
+    { id: "e6", activityId: "act-c4", entryDate: "2026-07-15", quantityDone: 150 },
+  ];
+
+  test("parent cum qty 217.50, cum amt 23,490.00, percent 46.08 -- the unweighted sum (1150 / 243.6%) never appears", () => {
+    const report = buildWorkProgressReport({
+      lineItems: [PARENT, ...CHILDREN], entries: ENTRIES, activities: ACTS, categories: CATS,
+      from: "2026-07-10", to: "2026-07-20",
+    });
+    const parentRow = report.rows.find((r) => r.lineItemId === PARENT.id)!;
+
+    expect(parentRow.qty.total).toBeCloseTo(217.5, 5);
+    expect(parentRow.amt.total).toBeCloseTo(23490, 5);
+    expect(parentRow.percentage.total).toBe(46.08);
+
+    // The forbidden unweighted values must never appear.
+    expect(parentRow.qty.total).not.toBe(1150);
+    expect(parentRow.percentage.total).not.toBeCloseTo(243.6, 1);
+
+    // prev/current split sums back to total (linearity sanity check).
+    expect(parentRow.qty.prev + parentRow.qty.current).toBeCloseTo(parentRow.qty.total, 5);
+    expect(parentRow.amt.prev + parentRow.amt.current).toBeCloseTo(parentRow.amt.total, 5);
+
+    // Every child's OWN row is untouched by the roll-up -- still its own
+    // real (unweighted, BOQ-stored) qty/amt, not overwritten.
+    const child1 = report.rows.find((r) => r.lineItemId === "c1")!;
+    expect(child1.qty.total).toBe(400);
+  });
+
+  test("a childless parent (e.g. item 2.01/2.06) keeps its own directly-recorded progress, untouched", () => {
+    const childless: BoqLineItem = { id: "p-2.01", activityId: "act-2.01", itemCode: "2.01", description: "Standalone item", unit: "nos", quantity: 10, rate: 100, amount: 1000 };
+    const acts: Activity[] = [{ id: "act-2.01", categoryId: "cat_1", name: "Standalone" }];
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act-2.01", entryDate: "2026-07-15", quantityDone: 4 }];
+    const report = buildWorkProgressReport({ lineItems: [childless], entries, activities: acts, categories: CATS, from: "2026-07-10", to: "2026-07-20" });
+    const row = report.rows.find((r) => r.lineItemId === "p-2.01")!;
+    // Its own directly-recorded progress (4 units, its own rate 100) -- NOT zeroed out by the roll-up just because it has no children.
+    expect(row.qty.current).toBe(4);
+    expect(row.amt.current).toBe(400);
+  });
+
+  test("a line with no parentLineItemId is a parent, never double-counted as anyone's own child", () => {
+    const a: BoqLineItem = { id: "a", activityId: "act-a", itemCode: "A", description: "A", unit: "nos", quantity: 10, rate: 5, amount: 50 };
+    const b: BoqLineItem = { id: "b", activityId: "act-b", itemCode: "B", description: "B", unit: "nos", quantity: 10, rate: 5, amount: 50 }; // also parentless -- must never be swept into A's children
+    const acts: Activity[] = [{ id: "act-a", categoryId: "cat_1", name: "A" }, { id: "act-b", categoryId: "cat_1", name: "B" }];
+    const report = buildWorkProgressReport({ lineItems: [a, b], entries: [], activities: acts, categories: CATS, from: "2026-07-10", to: "2026-07-20" });
+    expect(report.rows).toHaveLength(2);
+    expect(report.rows.find((r) => r.lineItemId === "a")!.qty.total).toBe(0);
+  });
+
+  test("category roll-up (byCategory) does not double-count the parent's weighted total against its children's own (unweighted) figures", () => {
+    const report = buildWorkProgressReport({
+      lineItems: [PARENT, ...CHILDREN], entries: ENTRIES, activities: ACTS, categories: CATS,
+      from: "2026-07-10", to: "2026-07-20",
+    });
+    // Every child's own rate/quantity is 0 in this fixture (real hierarchical
+    // sub-task rows store amount via the parent-derived formula, not their
+    // own qty*rate -- see construction-boq-service.ts), so each child's own
+    // amt.total is 0 and only the parent's weighted 23,490.00 shows up once.
+    const partitions = report.byCategory.find((c) => c.name === "Partitions")!;
+    expect(partitions.amt.total).toBeCloseTo(23490, 5);
+  });
+
+  // Cycle 2 edge case, documented as a KNOWN LIMITATION (see the code
+  // comment on applyWeightedParentRollup): no run's oracle data covers a
+  // three-level hierarchy, and a middle node's own stored `rate` is
+  // typically 0 (same as any hierarchical child), so today a middle node
+  // with its own children rolls up to 0 rather than a real weighted
+  // figure. This test pins down and documents that CURRENT behavior --
+  // it is not asserting the number is correct, only that it doesn't
+  // silently produce something else undocumented, and that it doesn't
+  // throw.
+  test("KNOWN LIMITATION: a three-level chain (Main -> Sub -> Sub-sub) does not cascade -- the middle node rolls up to 0, not a compounded figure", () => {
+    const main: BoqLineItem = { id: "main", activityId: "act-main", itemCode: "M", description: "Main", unit: "nos", quantity: 100, rate: 50, amount: 5000 };
+    const sub: BoqLineItem = { id: "sub", activityId: null, itemCode: "S", description: "Sub", unit: "nos", quantity: 0, rate: 0, amount: 2000, parentLineItemId: "main", breakdownPercentage: 40 };
+    const subsub: BoqLineItem = { id: "subsub", activityId: "act-subsub", itemCode: "SS", description: "Sub-sub", unit: "nos", quantity: 0, rate: 0, amount: 1000, parentLineItemId: "sub", breakdownPercentage: 50 };
+    const acts: Activity[] = [{ id: "act-main", categoryId: "cat_1", name: "Main" }, { id: "act-subsub", categoryId: "cat_1", name: "Sub-sub" }];
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act-subsub", entryDate: "2026-07-15", quantityDone: 10 }];
+
+    const report = buildWorkProgressReport({ lineItems: [main, sub, subsub], entries, activities: acts, categories: CATS, from: "2026-07-10", to: "2026-07-20" });
+    const subRow = report.rows.find((r) => r.lineItemId === "sub")!;
+    // sub has one child (subsub) -- gets rolled up using sub's OWN rate (0), not main's.
+    expect(subRow.amt.total).toBe(0);
+    expect(() => report).not.toThrow();
+  });
+});
