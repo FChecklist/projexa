@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DashboardCard } from "@/components/ui/dashboard-card";
-import { Wallet, TrendingUp, Receipt, Activity, Building2 } from "lucide-react";
+import { Wallet, TrendingUp, Receipt, Activity, Building2, Landmark } from "lucide-react";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
@@ -18,6 +19,9 @@ type OrgDashboard = { totalProjects: number; totalBudget: number; totalRevenue: 
 type ProjectDetails = {
   projectId: string; projectName: string; budget: number; budgetIsPeriodTotal: boolean;
   revenue: number; revenueTruncated: boolean; expenses: number; progressPercent: number; dateRangeApplied: boolean;
+  // Point 121: COALESCE(user-entered, linked-PO-sum). null (never 0) when
+  // neither source exists -- rendered as no card at all, not a zero.
+  projectValue: number | null;
 };
 
 // R11 point 6b: this was the last hardcoded rupee-glyph formatter in
@@ -78,7 +82,7 @@ export function DashboardHierarchyClient() {
   }, [companyId, departmentId]);
 
   // Details view: Revenue/Budget/Expense/Progress for the selected project, date-range filtered.
-  useEffect(() => {
+  function loadDetails() {
     if (!companyId || !projectId) return;
     setLoading(true);
     const qs = new URLSearchParams();
@@ -87,7 +91,23 @@ export function DashboardHierarchyClient() {
     getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
       .then(setDetails)
       .finally(() => setLoading(false));
-  }, [companyId, projectId, fromDate, toDate]);
+  }
+  useEffect(loadDetails, [companyId, projectId, fromDate, toDate]);
+
+  // Point 121: a user-entered value always wins over the PO-derived
+  // fallback -- editing it here is a deliberate human override.
+  async function editProjectValue() {
+    if (!projectId) return;
+    const raw = window.prompt("Project value (leave blank to clear and fall back to linked purchase orders):", details?.projectValue?.toString() ?? "");
+    if (raw === null) return;
+    const projectValue = raw.trim() === "" ? null : Number(raw);
+    if (projectValue !== null && !Number.isFinite(projectValue)) return;
+    await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectValue }),
+    });
+    loadDetails();
+  }
 
   return (
     <div className="space-y-6">
@@ -182,6 +202,11 @@ export function DashboardHierarchyClient() {
               {details?.budgetIsPeriodTotal && (
                 <p className="text-xs text-px-muted">Budget is an annual allocation and is not affected by the date range.</p>
               )}
+              {details && (
+                <Button variant="outline" size="sm" onClick={editProjectValue}>
+                  {details.projectValue !== null ? "Edit Project Value" : "Set Project Value"}
+                </Button>
+              )}
             </div>
 
             {loading || !details ? (
@@ -189,6 +214,9 @@ export function DashboardHierarchyClient() {
             ) : (
               <div className="space-y-2">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {details.projectValue !== null && (
+                    <DashboardCard title="Project Value" value={fmt(details.projectValue, currencies)} icon={Landmark} variant="total" />
+                  )}
                   <DashboardCard title="Revenue" value={fmt(details.revenue, currencies)} icon={TrendingUp} variant="completed" />
                   <DashboardCard title="Budget" value={fmt(details.budget, currencies)} icon={Wallet} variant="total" />
                   <DashboardCard title="Expenses" value={fmt(details.expenses, currencies)} icon={Receipt} variant="pending" />
