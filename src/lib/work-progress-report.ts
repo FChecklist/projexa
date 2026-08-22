@@ -37,6 +37,15 @@ export type Category = { id: string; name: string };
 export type ProgressEntry = {
   id: string;
   activityId: string;
+  // R12 point 7 (Option B, drizzle/0315): optional direct link to the BOQ
+  // line the progress is actually against -- same field VERIDIAN's own
+  // construction_work_progress_entries.boq_line_item_id column carries and
+  // listProgressEntries() already returns on the wire, just never declared
+  // on this local type before (same situation parentLineItemId was in on
+  // BoqLineItem above). null for every pre-Option-B entry, which keeps
+  // matching by activityId exactly as before -- see sumQtyInRange's
+  // preference order.
+  boqLineItemId?: string | null;
   entryDate: string; // "YYYY-MM-DD"
   quantityDone: string | number;
 };
@@ -47,8 +56,20 @@ function num(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function sumQtyInRange(entries: ProgressEntry[], activityId: string, predicate: (date: string) => boolean): { sum: number; touched: boolean } {
-  const matches = entries.filter((e) => e.activityId === activityId && predicate(e.entryDate));
+// R12 point 7 (Option B): preference-order entry-to-line resolution -- an
+// entry that carries boq_line_item_id is claimed EXCLUSIVELY by the line it
+// names (never also falls through to the activityId rule below, for this
+// line or any other -- that would count the same entry twice under two
+// different rules). Only entries with no boq_line_item_id at all still
+// resolve by activityId, exactly as before -- today's behavior, unchanged,
+// for every line/entry that predates Option B.
+function entryBelongsToLine(e: ProgressEntry, line: Pick<BoqLineItem, "id" | "activityId">): boolean {
+  if (e.boqLineItemId) return e.boqLineItemId === line.id;
+  return line.activityId !== null && e.activityId === line.activityId;
+}
+
+function sumQtyInRange(entries: ProgressEntry[], line: Pick<BoqLineItem, "id" | "activityId">, predicate: (date: string) => boolean): { sum: number; touched: boolean } {
+  const matches = entries.filter((e) => entryBelongsToLine(e, line) && predicate(e.entryDate));
   return { sum: matches.reduce((s, e) => s + num(e.quantityDone), 0), touched: matches.length > 0 };
 }
 
@@ -108,8 +129,13 @@ export function computeLineItemProgress(
   const activity = line.activityId ? activitiesById.get(line.activityId) : undefined;
   const category = activity ? categoriesById.get(activity.categoryId) : undefined;
 
-  const prevResult = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d < from) : { sum: 0, touched: false };
-  const currentResult = line.activityId ? sumQtyInRange(entries, line.activityId, (d) => d >= from && d <= to) : { sum: 0, touched: false };
+  // No `line.activityId ?` guard here anymore -- a line with no activityId
+  // at all can still have real Option-B entries keyed by boq_line_item_id,
+  // and entryBelongsToLine() already returns false for the activityId leg
+  // when line.activityId is null, so this is safe for every pre-existing
+  // (activityId-only) line too.
+  const prevResult = sumQtyInRange(entries, line, (d) => d < from);
+  const currentResult = sumQtyInRange(entries, line, (d) => d >= from && d <= to);
   const prevQty = prevResult.sum;
   const currentQty = currentResult.sum;
   const totalQty = prevQty + currentQty;
