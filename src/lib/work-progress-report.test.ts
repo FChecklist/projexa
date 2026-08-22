@@ -89,6 +89,63 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
   });
 });
 
+// R12 point 7 (Option B) / E-89 (AR-01): preference-order entry-to-line
+// resolution -- boq_line_item_id, when present on an entry, wins over the
+// activityId match, and is never ALSO counted a second time via activityId.
+describe("computeLineItemProgress -- Option B boq_line_item_id preference order (E-89/AR-01)", () => {
+  test("an entry keyed by boqLineItemId is counted once, not twice, even though it shares the line's activityId", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "line_1", entryDate: "2026-07-15", quantityDone: 20 },
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.current).toBe(20); // not 40 -- must not match under both rules
+  });
+
+  test("a boqLineItemId entry pointed at a DIFFERENT line is excluded here, even though activityId matches", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "some_other_line", entryDate: "2026-07-15", quantityDone: 20 },
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.current).toBe(0); // claimed exclusively by "some_other_line", not this one
+    expect(result.touched.current).toBe(false);
+  });
+
+  test("boqLineItemId-keyed and activityId-only entries for the same line both count (no boqLineItemId on the legacy entry)", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "line_1", entryDate: "2026-07-15", quantityDone: 20 },
+      { id: "e2", activityId: "act_1", entryDate: "2026-07-16", quantityDone: 5 }, // legacy, activityId-only
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.current).toBe(25);
+  });
+
+  test("a line with no activityId can still pick up progress via boqLineItemId alone", () => {
+    const unlinked: BoqLineItem = { ...LINE_ITEM, id: "line_3", activityId: null };
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "line_3", entryDate: "2026-07-15", quantityDone: 20 },
+    ];
+    const result = computeLineItemProgress(
+      unlinked, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.current).toBe(20);
+    expect(result.touched.current).toBe(true);
+  });
+});
+
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES -- it's
 // a mathematical formula"): total = previous + current (already existed);
 // balance = original (this line's own BoQ total) - total. Both derive from
