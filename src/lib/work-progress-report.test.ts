@@ -46,9 +46,9 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
       "2026-07-10", "2026-07-20"
     );
 
-    expect(result.qty).toEqual({ prev: 30, current: 20, total: 50 });
-    expect(result.amt).toEqual({ prev: 300, current: 200, total: 500 });
-    expect(result.percentage).toEqual({ prev: 30, current: 20, total: 50 });
+    expect(result.qty).toEqual({ prev: 30, current: 20, total: 50, balance: 50 }); // 100 - 50
+    expect(result.amt).toEqual({ prev: 300, current: 200, total: 500, balance: 500 }); // 1000 - 500
+    expect(result.percentage).toEqual({ prev: 30, current: 20, total: 50, balance: 50 }); // (1000-500)/1000*100
     expect(result.categoryName).toBe("Civil Works");
     expect(result.code).toBe("C-101");
   });
@@ -63,7 +63,7 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
       new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
       "2026-07-10", "2026-07-20"
     );
-    expect(result.qty).toEqual({ prev: 0, current: 25, total: 25 });
+    expect(result.qty).toEqual({ prev: 0, current: 25, total: 25, balance: 75 }); // 100 - 25
     expect(result.percentage.current).toBe(25);
   });
 
@@ -83,9 +83,72 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
       unlinked, [], new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
       "2026-07-10", "2026-07-20"
     );
-    expect(result.qty).toEqual({ prev: 0, current: 0, total: 0 });
+    expect(result.qty).toEqual({ prev: 0, current: 0, total: 0, balance: 100 }); // 100 - 0
     expect(result.categoryName).toBe("Uncategorized");
     expect(result.touched).toEqual({ prev: false, current: false, total: false }); // never-touched, not a computed zero
+  });
+});
+
+// Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES -- it's
+// a mathematical formula"): total = previous + current (already existed);
+// balance = original (this line's own BoQ total) - total. Both derive from
+// the same three stored numbers -- nothing new is persisted. Oracle: his
+// Gypsum Board 01 row shows 300 + 100 with a third column of 72, and
+// 472 - 400 = 72.
+describe("Point 11: TOTAL/BALANCE toggle -- balance = original (BoQ total) - total", () => {
+  const GYPSUM: BoqLineItem = {
+    id: "gypsum_01", activityId: "act_gypsum", itemCode: "1.01.1", description: "Gypsum Board 01",
+    unit: "sqm", quantity: 472, rate: 1, amount: 472,
+  };
+  const GYPSUM_ACTS: Activity[] = [{ id: "act_gypsum", categoryId: "cat_1", name: "Gypsum Board 01" }];
+
+  test("ORACLE: his sheet's 300 (prev) + 100 (current) reproduces his own printed 72 -- balance = 472 - 400", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_gypsum", entryDate: "2026-07-01", quantityDone: 300 },
+      { id: "e2", activityId: "act_gypsum", entryDate: "2026-07-15", quantityDone: 100 },
+    ];
+    const result = computeLineItemProgress(
+      GYPSUM, entries, new Map(GYPSUM_ACTS.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.total).toBe(400); // total = previous + current
+    expect(result.qty.balance).toBe(72); // balance = original - total = 472 - 400 -- THE FIGURE FROM HIS OWN SHEET
+  });
+
+  test("balance goes negative when total exceeds the original BoQ quantity (over-recorded progress)", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_gypsum", entryDate: "2026-07-01", quantityDone: 400 },
+      { id: "e2", activityId: "act_gypsum", entryDate: "2026-07-15", quantityDone: 100 },
+    ];
+    const result = computeLineItemProgress(
+      GYPSUM, entries, new Map(GYPSUM_ACTS.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.qty.total).toBe(500);
+    expect(result.qty.balance).toBe(-28); // 472 - 500
+  });
+
+  test("amt and percentage balance mirror the qty balance formula (original - total), scaled by rate", () => {
+    const rated: BoqLineItem = { ...GYPSUM, id: "gypsum_rated", rate: 10, amount: 4720 };
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_gypsum", entryDate: "2026-07-15", quantityDone: 400 }];
+    const result = computeLineItemProgress(
+      rated, entries, new Map(GYPSUM_ACTS.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    // total = 400*10 = 4000; amtTotalBoq = 4720; balance = 4720 - 4000 = 720
+    expect(result.amt.balance).toBe(720);
+    expect(result.percentage.balance).toBe(Math.round((720 / 4720) * 10000) / 100); // pct() rounds to 2dp, same as every other percentage field
+  });
+
+  test("weighted parent rollup: balance uses the PARENT's own original BoQ qty, never a child's -- same oracle figure, 72", () => {
+    const parent: BoqLineItem = { id: "p_wall", activityId: null, itemCode: "1.02", description: "Wall", unit: "sqm", quantity: 472, rate: 108, amount: 50976 };
+    const child1: BoqLineItem = { id: "c_wall_1", activityId: "act_w1", itemCode: "1.02.1", description: "Frame", unit: "sqm", quantity: 0, rate: 0, amount: 0, parentLineItemId: "p_wall", breakdownPercentage: 100 };
+    const acts: Activity[] = [{ id: "act_w1", categoryId: "cat_1", name: "Frame" }];
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_w1", entryDate: "2026-07-15", quantityDone: 400 }];
+    const report = buildWorkProgressReport({ lineItems: [parent, child1], entries, activities: acts, categories: CATEGORIES, from: "2026-07-10", to: "2026-07-20" });
+    const parentRow = report.rows.find((r) => r.lineItemId === "p_wall")!;
+    expect(parentRow.qty.total).toBe(400); // 400 * 100% breakdown
+    expect(parentRow.qty.balance).toBe(72); // 472 (PARENT's own qty) - 400, not child1's own (0)
   });
 });
 
@@ -105,7 +168,7 @@ describe("WPR-14: computed zero (dash) vs. never-touched (blank)", () => {
       new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
       "2026-07-10", "2026-07-20"
     );
-    expect(result.qty).toEqual({ prev: 30, current: 0, total: 30 }); // arithmetic unaffected
+    expect(result.qty).toEqual({ prev: 30, current: 0, total: 30, balance: 70 }); // arithmetic unaffected; 100 - 30
     expect(result.touched).toEqual({ prev: true, current: false, total: true });
   });
 
@@ -178,8 +241,8 @@ describe("buildWorkProgressReport (scope-wise base report + category-wise rollup
     expect(civil.name).toBe("Civil Works");
     // line_1: amtTotal 1000, prev 300, current 200; line_2 rate 20: prev 30*20=600, current 20*20=400, amtTotal 1000
     expect(civil.amtTotal).toBe(2000);
-    expect(civil.amt).toEqual({ prev: 900, current: 600, total: 1500 });
-    expect(civil.percentage).toEqual({ prev: 45, current: 30, total: 75 });
+    expect(civil.amt).toEqual({ prev: 900, current: 600, total: 1500, balance: 500 }); // 2000 - 1500
+    expect(civil.percentage).toEqual({ prev: 45, current: 30, total: 75, balance: 25 }); // 500/2000*100
   });
 });
 
