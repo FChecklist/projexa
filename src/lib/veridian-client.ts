@@ -9,13 +9,13 @@ import { eq } from "drizzle-orm";
 // Platform provisioning (Priority 17): every new signup gets its own
 // isolated VERIDIAN org + API key via POST /api/v1/platform/provision-org
 // (see provisionVeridianOrg() below), stored per-organization in
-// public.veridian_credentials. getVeridianApiKey(organizationId) is now the
-// PRIMARY path for resolving a caller's key. VERIDIAN_API_KEY (the old
-// single shared demo credential) is now a fallback only, used when a caller
-// passes organizationId but that org has no veridian_credentials row yet
-// (e.g. projexa_demo_org, or any org created before this change) -- see
-// resolveApiKey() below. It also remains the key used when a caller omits
-// organizationId entirely (legacy call sites still being migrated).
+// public.veridian_credentials. getVeridianApiKey(organizationId) is the
+// ONLY path for resolving an org-scoped caller's key -- see resolveApiKey()
+// below. Per AR-04 (fail loud, never silently swap tenants), a caller that
+// passes organizationId but has no veridian_credentials row gets a thrown
+// error, never the shared VERIDIAN_API_KEY. That shared key remains in use
+// only as the key for calls that omit organizationId entirely (legacy call
+// sites still being migrated).
 const VERIDIAN_API_BASE = process.env.VERIDIAN_API_BASE_URL ?? "https://veridian-compliance-ai.vercel.app/api/v1/projexa";
 
 // A handful of real, already-shipped VERIDIAN v1 endpoints PROJEXA needs
@@ -47,7 +47,8 @@ export class VeridianApiError extends Error {
 
 // Looks up this org's own VERIDIAN API key from public.veridian_credentials.
 // Returns null (never throws) when no row exists or the DB is unreachable --
-// callers decide whether/how to fall back (see resolveApiKey()). A thrown
+// resolveApiKey() below turns either case into a thrown, fail-loud AR-04
+// error rather than silently substituting the shared key. A thrown
 // DB-connectivity error here (e.g. DATABASE_URL not yet configured -- see
 // src/lib/db/index.ts) must not take down every request; it should just mean
 // "couldn't resolve a per-org key this time," same as "no row yet."
@@ -61,7 +62,7 @@ export async function getVeridianApiKey(organizationId: string): Promise<string 
     return row?.apiKey ?? null;
   } catch (err) {
     console.error(
-      `[veridian-client] getVeridianApiKey(${organizationId}) failed -- falling back to shared VERIDIAN_API_KEY if configured:`,
+      `[veridian-client] getVeridianApiKey(${organizationId}) failed -- treating as no per-org key found:`,
       err instanceof Error ? err.message : err
     );
     return null;
@@ -71,19 +72,23 @@ export async function getVeridianApiKey(organizationId: string): Promise<string 
 // Single place that decides which key a call uses. Priority order:
 //   1. an explicit apiKey passed by the caller
 //   2. this org's own row in veridian_credentials (the real multi-tenant path)
-//   3. the shared VERIDIAN_API_KEY env var (demo/sandbox fallback -- keeps
-//      pre-existing orgs with no credentials row, e.g. projexa_demo_org,
-//      and any call site that hasn't been migrated to pass organizationId,
-//      working exactly as before)
-async function resolveApiKey(options: { apiKey?: string; organizationId?: string }): Promise<string> {
+//   3. if organizationId was omitted entirely (legacy call sites still being
+//      migrated), the shared VERIDIAN_API_KEY env var (demo/sandbox
+//      fallback). An organizationId that WAS provided but has no per-org
+//      row never falls back to this shared key -- see the AR-04 guard below.
+export async function resolveApiKey(options: { apiKey?: string; organizationId?: string }): Promise<string> {
   if (options.apiKey) return options.apiKey;
 
   if (options.organizationId) {
     const perOrgKey = await getVeridianApiKey(options.organizationId);
     if (perOrgKey) return perOrgKey;
-    if (process.env.VERIDIAN_API_KEY) return process.env.VERIDIAN_API_KEY;
+    // AR-04 fail-loud guard: a request that identifies a tenant but has no
+    // per-org credentials MUST fail, never silently authenticate as whatever
+    // tenant the shared VERIDIAN_API_KEY belongs to. Falling back here would
+    // be a cross-tenant data leak (E-45) -- empty is a legitimate answer, a
+    // shared key never is.
     throw new VeridianApiError(
-      `No VERIDIAN credentials configured for organization ${options.organizationId}, and no fallback VERIDIAN_API_KEY set`,
+      `No VERIDIAN credentials configured for organization ${options.organizationId}, and per-org requests may not fall back to a shared key (AR-04)`,
       500
     );
   }
