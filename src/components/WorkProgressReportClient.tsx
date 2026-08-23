@@ -34,7 +34,10 @@ type CategoryRow = { name: string; amtTotal: number; amt: { prev: number; curren
 type ManpowerRow = { trade: string; workerDays: number; totalCost: number };
 type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 
-type ReportResponse = { boqTitle: string | null; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
+// R36/P5 (B5 decision): additive fields so an existing consumer that
+// doesn't know about them still works exactly as before.
+type BoqOption = { id: string; title: string; status: string; version: number };
+type ReportResponse = { boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[]; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
 
 function money(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -166,15 +169,22 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
+  // R36/P5 (B5 decision, cc_spec point 177): a project can have more than one
+  // independent BOQ at once -- empty string means "let the server auto-pick
+  // the latest, non-superseded one" (the exact previous behaviour); a real
+  // id means the user explicitly chose a specific BOQ to report on.
+  const [selectedBoqId, setSelectedBoqId] = useState<string>("");
 
-  async function runReport() {
+  async function runReport(boqId = selectedBoqId) {
     setLoading(true);
     try {
       const params = new URLSearchParams({ projectId, from, to });
+      if (boqId) params.set("boqId", boqId);
       const res = await fetch(`/api/work-progress/report?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       setReport(data);
+      if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
       setReport(null);
@@ -210,13 +220,31 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <Button onClick={runReport} disabled={loading} data-testid="work-progress-report-run">
+          <Button onClick={() => runReport()} disabled={loading} data-testid="work-progress-report-run">
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
           {report && (
             <Button onClick={shareReport} disabled={sharing} variant="outline">
               {sharing ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />} Share
             </Button>
+          )}
+          {report && report.availableBoqs.length > 1 && (
+            <div className="space-y-1.5">
+              <Label>BOQ</Label>
+              <Select
+                value={selectedBoqId || report.boqId || ""}
+                onValueChange={(v) => { setSelectedBoqId(v); runReport(v); }}
+              >
+                <SelectTrigger className="w-56" data-testid="boq-selector"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {report.availableBoqs.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.title} (v{b.version}{b.status === "superseded" ? ", superseded" : ""})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
           {report && (
             <div className="space-y-1.5">
