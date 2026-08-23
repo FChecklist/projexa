@@ -13,7 +13,10 @@ type OrgDashboard = {
   totalBudget: number;
   totalRevenue: number;
   totalExpenses: number;
-  projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number }[];
+  // R38 (R-50/TC-40): value is the project's active BOQ root-total, null
+  // (not 0) when the project has no BOQ at all yet -- see
+  // construction-dashboard-service.ts#getOrgDashboard's own comment.
+  projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number; value: number | null }[];
 };
 // Local, server-safe copy (not imported from @/lib/currency, which is a
 // "use client" module -- this page is a Server Component and fetches its
@@ -147,6 +150,7 @@ export default async function DashboardPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Project</TableHead>
+                        <TableHead>Value</TableHead>
                         <TableHead>Revenue</TableHead>
                         <TableHead>Expenses</TableHead>
                         <TableHead>Tasks</TableHead>
@@ -157,6 +161,7 @@ export default async function DashboardPage() {
                       {data.projects.map((p) => (
                         <TableRow key={p.id}>
                           <TableCell className="font-medium">{p.name}</TableCell>
+                          <TableCell>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
                           <TableCell>{formatCurrency(p.revenue, currencies)}</TableCell>
                           <TableCell>{formatCurrency(p.expenses, currencies)}</TableCell>
                           <TableCell>{p.taskCount}</TableCell>
