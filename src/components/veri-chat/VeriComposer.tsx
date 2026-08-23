@@ -140,7 +140,16 @@ export default function VeriComposer() {
         inputs: item.fixedInputs,
       }),
     });
-    if (!res.ok) throw new Error();
+    // R38 (R-90/TC-70): the real backend message (e.g. "codeReference must
+    // be one of: ...") was being discarded here -- throw new Error() carried
+    // nothing, so every failure showed the same generic toast below
+    // regardless of what actually went wrong. Read it the same way
+    // ScopeClient.tsx already does (data.error, falling back only when the
+    // response truly isn't JSON or has no error field).
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Couldn't reach the construction assistant");
+    }
   }
 
   function resetChainForMode() {
@@ -161,8 +170,8 @@ export default function VeriComposer() {
       setValue("");
       resetChainForMode();
       bumpRefresh();
-    } catch {
-      toast.error("Couldn't reach the construction assistant — try again");
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Couldn't reach the construction assistant — try again");
     } finally {
       setSending(false);
     }
@@ -191,15 +200,21 @@ export default function VeriComposer() {
     const items = queue;
     setQueue([]);
     let failCount = 0;
+    let firstFailureMessage: string | null = null;
     for (const item of items) {
       try {
         await dispatchLeaf(item);
-      } catch {
+      } catch (err) {
+        if (!firstFailureMessage && err instanceof Error && err.message) firstFailureMessage = err.message;
         failCount += 1;
       }
     }
     if (failCount === 0) toast.success(`Done — ${items.length} ${items.length === 1 ? "query" : "queries"}`);
-    else toast.error(`${failCount} of ${items.length} queries failed — check Queries for details`);
+    // R38 (R-90/TC-70): surface the real backend message from the first
+    // failure alongside the count, instead of only a generic "check Queries"
+    // pointer -- a batch of one still reads naturally ("1 of 1 queries
+    // failed: <real reason>").
+    else toast.error(`${failCount} of ${items.length} queries failed${firstFailureMessage ? `: ${firstFailureMessage}` : " — check Queries for details"}`);
     bumpRefresh();
     setSending(false);
   }
