@@ -28,7 +28,16 @@ type BoqLineItemRow = {
   id: string; itemCode: string | null; description: string; unit: string;
   quantity: string; rate: string; amount: string; activityId: string | null;
   parentLineItemId?: string | null; breakdownPercentage?: string | null;
+  // R39/R-C09: Point 154's budget overlay -- computedBudget is derived
+  // server-side (amount * budgetPercentage / 100, construction-boq-
+  // service.ts#computedBudget), never sent back independently editable.
+  budgetPercentage?: string | null;
+  computedBudget?: number | null;
+  vendorId?: string | null;
+  vendorAmount?: string | null;
 };
+
+type Vendor = { id: string; vendorName: string };
 
 type ChangedLineItem = {
   key: string; previous: BoqLineItemRow; current: BoqLineItemRow;
@@ -162,6 +171,11 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
   const [viewing, setViewing] = useState<Boq | null>(null);
   const [viewRows, setViewRows] = useState<BoqLineItemRow[]>([]);
   const [viewLoading, setViewLoading] = useState(false);
+  // R39/R-C09: budget/vendor overlay on the View dialog -- vendors fetched
+  // once per dialog open (same /api/vendors list point 32's Company field
+  // already uses), savingRowId disables just the one row being PATCHed.
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
@@ -308,15 +322,46 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
     setViewRows([]);
     setViewLoading(true);
     try {
-      const res = await fetch(`/api/scope/${boq.id}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Couldn't load this BOQ");
+      const [boqRes, vendorsRes] = await Promise.all([
+        fetch(`/api/scope/${boq.id}`),
+        vendors.length === 0 ? fetch("/api/vendors") : Promise.resolve(null),
+      ]);
+      const data = await boqRes.json();
+      if (!boqRes.ok) throw new Error(data.error ?? "Couldn't load this BOQ");
       setViewRows(data.lineItems ?? []);
+      if (vendorsRes) {
+        const vendorData = await vendorsRes.json();
+        if (vendorsRes.ok) setVendors(vendorData.vendors ?? []);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't load this BOQ");
       setViewing(null);
     } finally {
       setViewLoading(false);
+    }
+  }
+
+  // R39/R-C09: PATCHes one row's budget/vendor overlay, then re-fetches
+  // that row's fresh computedBudget from the server (never computed here --
+  // computedBudget() is the ONE place this arithmetic lives, D-3) so a
+  // budgetPercentage override is reflected immediately without a full
+  // dialog reload.
+  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null }) {
+    setSavingRowId(rowId);
+    try {
+      const res = await fetch(`/api/scope/line-items/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't save");
+      setViewRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...data } : r)));
+      toast.success("Saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
+    } finally {
+      setSavingRowId(null);
     }
   }
 
@@ -489,6 +534,80 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
               <div className="flex justify-end border-t pt-3 text-sm">
                 <span className="text-px-muted">Total</span>
                 <span className="ml-4 font-medium">{withCurrency(currencyCode, boqTotal(viewRows))}</span>
+              </div>
+
+              {/* R39/R-C09: Budget & Vendor overlay -- Point 154's budget_percentage
+                  (default 25%, editable per line) x amount = budget (server-computed,
+                  never derived here -- see computedBudget() in construction-boq-
+                  service.ts). Entering a vendor + vendor amount computes variance =
+                  vendorAmount - budget live. */}
+              <div className="space-y-2 border-t pt-3">
+                <p className="text-sm font-medium">Budget &amp; Vendor</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right">Budget %</TableHead>
+                      <TableHead className="text-right">Budget</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead className="text-right">Vendor Amount</TableHead>
+                      <TableHead className="text-right">Variance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {viewRows.map((r) => {
+                      const budget = r.computedBudget ?? (Number(r.amount) * (Number(r.budgetPercentage ?? 25) / 100));
+                      const vendorAmount = r.vendorAmount !== null && r.vendorAmount !== undefined ? Number(r.vendorAmount) : null;
+                      const variance = vendorAmount !== null ? vendorAmount - budget : null;
+                      const saving = savingRowId === r.id;
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell className="max-w-[160px] truncate">{r.itemCode ?? r.description}</TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number" disabled={saving} className="w-20 text-right"
+                              defaultValue={r.budgetPercentage ?? "25"}
+                              onBlur={(e) => {
+                                const pct = Number(e.target.value);
+                                if (!Number.isFinite(pct) || String(pct) === (r.budgetPercentage ?? "25")) return;
+                                saveLineItemBudget(r.id, { budgetPercentage: pct });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right text-px-muted">{withCurrency(currencyCode, budget)}</TableCell>
+                          <TableCell>
+                            <Select
+                              disabled={saving}
+                              value={r.vendorId ?? undefined}
+                              onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId })}
+                            >
+                              <SelectTrigger className="w-[160px]"><SelectValue placeholder="No vendor" /></SelectTrigger>
+                              <SelectContent>
+                                {vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number" disabled={saving} className="w-24 text-right"
+                              defaultValue={r.vendorAmount ?? ""}
+                              placeholder="—"
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const amt = raw === "" ? null : Number(raw);
+                                if (raw !== "" && !Number.isFinite(amt)) return;
+                                saveLineItemBudget(r.id, { vendorAmount: amt });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className={`text-right ${variance !== null && variance > 0 ? "text-px-error" : ""}`}>
+                            {variance === null ? <span className="text-px-muted">—</span> : withCurrency(currencyCode, variance)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
