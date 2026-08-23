@@ -29,7 +29,7 @@ type Participant = { id: string; userId: string; responseStatus: string | null }
 type MeetingDetail = Meeting & { agendaItems: AgendaItem[]; outcomes: Outcome[]; participants: Participant[] };
 
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
 export default function MeetingsClient({ projectId }: { projectId: string }) {

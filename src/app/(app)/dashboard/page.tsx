@@ -27,7 +27,7 @@ function currencyLabel(currencies: CurrencyRow[]): string {
   return c ? `${c.code} ` : "₹";
 }
 function formatCurrency(n: number, currencies: CurrencyRow[]) {
-  return `${currencyLabel(currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return `${currencyLabel(currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 export default async function DashboardPage() {

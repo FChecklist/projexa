@@ -24,7 +24,7 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   // now a closure over `currencies` so every existing inr(...) call site
   // below resolves the org's real base currency instead, with zero
   // call-site changes needed.
-  const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN")}`;
+  const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US")}`;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
 

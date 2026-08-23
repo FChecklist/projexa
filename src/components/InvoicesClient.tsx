@@ -37,7 +37,7 @@ const NEW_CUSTOMER = "__new__";
 // independently via useCurrencies()) and resolves the org's real base
 // currency instead.
 function money(v: string | number, currencies: Currency[]) {
-  return `${currencyLabel(undefined, currencies)}${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return `${currencyLabel(undefined, currencies)}${Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 // ---------------------------------------------------------------------------

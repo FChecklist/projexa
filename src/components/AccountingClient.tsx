@@ -51,7 +51,7 @@ type BankLine = { id: string; transactionDate: string; description: string | nul
 // useCurrencies(), and BalanceRows receives it as a prop since it's a
 // shared sub-component) and resolves the org's real base currency instead.
 function money(n: number, currencies: Currency[]) {
-  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 // ---------------------------------------------------------------------------

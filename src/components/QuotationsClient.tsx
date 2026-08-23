@@ -330,7 +330,7 @@ export default function QuotationsClient() {
                     <TableCell className="text-px-muted">{q.quotationDate}</TableCell>
                     <TableCell className="text-px-muted">v{q.version}{q.revisionOf ? " (revision)" : ""}</TableCell>
                     <TableCell className="text-px-muted">
-                      {currencyLabel(q.currencyId, currencies)}{Number(q.grandTotal).toLocaleString("en-IN")}
+                      {currencyLabel(q.currencyId, currencies)}{Number(q.grandTotal).toLocaleString("en-US")}
                     </TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "outline"}>{q.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-right">

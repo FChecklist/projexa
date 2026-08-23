@@ -29,7 +29,7 @@ export default function SalesDashboardClient() {
   // Priority 17 re-sweep fix: was a module-level `inr()` hardcoding "₹" --
   // now a closure over `currencies` so both existing inr(...) call sites
   // below resolve the org's real base currency instead.
-  const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN")}`;
+  const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US")}`;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
 

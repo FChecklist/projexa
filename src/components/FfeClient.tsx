@@ -31,7 +31,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   // -- forced both symbol and grouping to India regardless of the org's real
   // base currency. Closure over `currencies` so every existing
   // formatCurrency(...) call site below is unchanged.
-  const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);

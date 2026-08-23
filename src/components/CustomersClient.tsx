@@ -117,7 +117,7 @@ export default function CustomersClient() {
                       <Link href={`/customers/${c.id}`} className="hover:text-px-orange hover:underline">{c.customerName}</Link>
                     </TableCell>
                     {isIndiaOrg && <TableCell className="text-px-muted">{c.gstin ?? "—"}</TableCell>}
-                    <TableCell className="text-px-muted">{c.creditLimit ? `${currencyLabel(undefined, currencies)}${Number(c.creditLimit).toLocaleString("en-IN")}` : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{c.creditLimit ? `${currencyLabel(undefined, currencies)}${Number(c.creditLimit).toLocaleString("en-US")}` : "—"}</TableCell>
                     <TableCell><Badge variant={c.isActive ? "default" : "outline"}>{c.isActive ? "active" : "inactive"}</Badge></TableCell>
                   </TableRow>
                 ))}
