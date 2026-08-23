@@ -61,6 +61,33 @@ export async function fetchJsonNodes(url: string): Promise<CapabilityNode[]> {
   }
 }
 
+// R38 (R-81/TC-82, Master v5 G-5/P-9: "The 402 unwired pills -- hide, do not
+// wire"). /api/module-chain's own leaf.deterministic flag is exactly the
+// D-13 signal for "has a real codeReference, dispatches as software" vs
+// "browsable data with no dispatch path yet" -- this file's own header
+// comment already documents the latter as real but not-yet-wired. Selecting
+// any of those in the composer either fails outright or forces VERI to
+// improvise (D-13's own "the 5%" case), which is exactly what a buyer must
+// never hit mid-demo. Prunes leaves with deterministic !== true, and any
+// branch left with zero children as a result (an empty branch pill is its
+// own kind of unwired dead end) -- recursively, so a branch several levels
+// deep that loses every leaf disappears too, not just its direct children.
+// PROJEXA's own construction tree (/api/capability-tree) is untouched: it's
+// the one chain this composer can actually dispatch (CONSTRUCTION_CHAIN_MODE_KEY
+// below), already real end-to-end, nothing to hide there.
+function pruneUnwired(nodes: CapabilityNode[]): CapabilityNode[] {
+  const pruned: CapabilityNode[] = [];
+  for (const node of nodes) {
+    if (node.leaf) {
+      if (node.deterministic === true) pruned.push(node);
+      continue;
+    }
+    const children = node.children ? pruneUnwired(node.children) : [];
+    if (children.length > 0) pruned.push({ ...node, children });
+  }
+  return pruned;
+}
+
 // Fetches PROJEXA's own construction tree AND the new full VERIDIAN module
 // chain in parallel and concatenates them -- the shared factory's `tree` is
 // just "every top-level chain mode this composer offers," so merging here is
@@ -72,7 +99,7 @@ export async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
     fetchJsonNodes("/api/capability-tree"),
     fetchJsonNodes("/api/module-chain"),
   ]);
-  return [...construction, ...moduleChain];
+  return [...construction, ...pruneUnwired(moduleChain)];
 }
 
 const base = createVeriChatContext<RightPanelView>({
