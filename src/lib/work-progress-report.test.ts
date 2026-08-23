@@ -89,6 +89,55 @@ describe("computeLineItemProgress (Prev/Current/Total)", () => {
   });
 });
 
+// R39/R-46 (r39_wpr_entry_basis, TC-32): SNAPSHOT entries replace rather than
+// sum. The schema's real ambiguity (quantity_done + percent_complete, both
+// NOT NULL, no discriminator) resolved AIA-G703-style: DELTA is additive
+// (unchanged, see the describe block above), SNAPSHOT is a cumulative-to-
+// date reading that the latest row wins.
+describe("computeLineItemProgress -- SNAPSHOT entry_basis (R39/R-46, TC-32)", () => {
+  test("30% then 60%, both SNAPSHOT -> report shows 60%, not 90% (no double-count) -- both rows stay in history", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", entryDate: "2026-07-05", quantityDone: 0, percentComplete: 30, entryBasis: "SNAPSHOT", createdAt: "2026-07-05T09:00:00Z" },
+      { id: "e2", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 0, percentComplete: 60, entryBasis: "SNAPSHOT", createdAt: "2026-07-15T09:00:00Z" },
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.percentage.total).toBe(60); // latest wins, never 30+60=90
+    expect(result.percentage.prev).toBe(30); // latest SNAPSHOT strictly before `from`
+    expect(result.percentage.current).toBe(30); // 60 - 30
+    expect(entries).toHaveLength(2); // both rows still exist -- SNAPSHOT never deletes/overwrites history
+  });
+
+  test("a same-day double-entry (30 then 60, same entryDate) breaks the tie by createdAt, not insertion order", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e2", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 0, percentComplete: 60, entryBasis: "SNAPSHOT", createdAt: "2026-07-15T09:00:01Z" },
+      { id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 0, percentComplete: 30, entryBasis: "SNAPSHOT", createdAt: "2026-07-15T09:00:00Z" },
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.percentage.total).toBe(60);
+  });
+
+  test("zero regression: a line with ONLY DELTA entries (undefined entryBasis, every pre-R39 row) is untouched by the SNAPSHOT branch -- T-WPR-03/TC-30 byte-identical", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", entryDate: "2026-07-01", quantityDone: 30 },
+      { id: "e2", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 20 },
+    ];
+    const result = computeLineItemProgress(
+      LINE_ITEM, entries,
+      new Map(ACTIVITIES.map((a) => [a.id, a])), new Map(CATEGORIES.map((c) => [c.id, c])),
+      "2026-07-10", "2026-07-20"
+    );
+    expect(result.percentage).toEqual({ prev: 30, current: 20, total: 50, balance: 50 }); // identical to the top describe block's oracle
+  });
+});
+
 // R12 point 7 (Option B) / E-89 (AR-01): preference-order entry-to-line
 // resolution -- boq_line_item_id, when present on an entry, wins over the
 // activityId match, and is never ALSO counted a second time via activityId.

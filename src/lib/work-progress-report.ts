@@ -48,6 +48,14 @@ export type ProgressEntry = {
   boqLineItemId?: string | null;
   entryDate: string; // "YYYY-MM-DD"
   quantityDone: string | number;
+  // R39/R-46 (r39_wpr_entry_basis): 'DELTA' (default, additive -- summed
+  // exactly as before) or 'SNAPSHOT' (cumulative-to-date, REPLACES rather
+  // than sums -- see applySnapshotOverride below). Undefined/missing is
+  // treated as 'DELTA', so every pre-migration entry and every existing
+  // test fixture that never set this field behaves byte-for-byte as before.
+  entryBasis?: "DELTA" | "SNAPSHOT" | string;
+  percentComplete?: string | number;
+  createdAt?: string;
 };
 
 function num(v: string | number | null | undefined): number {
@@ -68,9 +76,31 @@ function entryBelongsToLine(e: ProgressEntry, line: Pick<BoqLineItem, "id" | "ac
   return line.activityId !== null && e.activityId === line.activityId;
 }
 
+function isDelta(e: ProgressEntry): boolean {
+  return e.entryBasis !== "SNAPSHOT"; // undefined/missing (every pre-R39 entry) counts as DELTA -- unchanged behavior
+}
+
+// R39/R-46: only DELTA entries are additive. A SNAPSHOT entry's quantityDone
+// (if any) is NEVER summed here -- it is a cumulative-to-date reading, not a
+// this-period delta, and blindly adding it would double-count exactly the
+// way the schema's own ambiguity (quantity_done + percent_complete on one
+// undiscriminated row) warned about. SNAPSHOT entries are picked up instead
+// by latestSnapshot()/applySnapshotOverride() below.
 function sumQtyInRange(entries: ProgressEntry[], line: Pick<BoqLineItem, "id" | "activityId">, predicate: (date: string) => boolean): { sum: number; touched: boolean } {
-  const matches = entries.filter((e) => entryBelongsToLine(e, line) && predicate(e.entryDate));
+  const matches = entries.filter((e) => entryBelongsToLine(e, line) && isDelta(e) && predicate(e.entryDate));
   return { sum: matches.reduce((s, e) => s + num(e.quantityDone), 0), touched: matches.length > 0 };
+}
+
+// R39/R-46: the latest SNAPSHOT entry (by entryDate, then createdAt) for this
+// line whose date satisfies `predicate` -- "latest" is the whole point of a
+// replacing (not additive) reading, matching AIA G703 col G/C semantics.
+function latestSnapshot(entries: ProgressEntry[], line: Pick<BoqLineItem, "id" | "activityId">, predicate: (date: string) => boolean): ProgressEntry | undefined {
+  const matches = entries.filter((e) => entryBelongsToLine(e, line) && e.entryBasis === "SNAPSHOT" && predicate(e.entryDate));
+  if (matches.length === 0) return undefined;
+  return matches.reduce((latest, e) => {
+    if (e.entryDate !== latest.entryDate) return e.entryDate > latest.entryDate ? e : latest;
+    return (e.createdAt ?? "") > (latest.createdAt ?? "") ? e : latest;
+  });
 }
 
 // Point 111 (WPR-14): his sheet distinguishes a value that was CALCULATED
@@ -156,6 +186,26 @@ export function computeLineItemProgress(
 
   const pct = (amt: number) => (amtTotalBoq > 0 ? Math.round((amt / amtTotalBoq) * 10000) / 100 : 0);
 
+  let percentage = { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal), balance: pct(amtBalance) };
+  let pctTouched = touched;
+
+  // R39/R-46 (TC-32): a SNAPSHOT entry (30% then 60%, both rows kept in
+  // history -- createProgressEntry never overwrites, only inserts) reports
+  // whatever the LATEST reading says, replacing rather than adding. Scoped
+  // to `percentage` only -- qty/amt above are untouched by this branch, so a
+  // line with zero SNAPSHOT entries (every T-WPR-03/TC-30/existing-test
+  // line) produces byte-identical output to before this change. Only a line
+  // that actually has a SNAPSHOT entry takes this path at all.
+  const snapTotal = latestSnapshot(entries, line, (d) => d <= to);
+  if (snapTotal) {
+    const snapPrev = latestSnapshot(entries, line, (d) => d < from);
+    const totalPct = num(snapTotal.percentComplete);
+    const prevPct = snapPrev ? num(snapPrev.percentComplete) : 0;
+    const currentPct = Math.round((totalPct - prevPct) * 100) / 100;
+    percentage = { prev: prevPct, current: currentPct, total: totalPct, balance: Math.round((100 - totalPct) * 100) / 100 };
+    pctTouched = { prev: !!snapPrev, current: true, total: true };
+  }
+
   return {
     lineItemId: line.id,
     parentLineItemId: line.parentLineItemId ?? null,
@@ -169,8 +219,8 @@ export function computeLineItemProgress(
     amtTotal: amtTotalBoq,
     qty: { prev: prevQty, current: currentQty, total: totalQty, balance: qtyBalance },
     amt: { prev: amtPrev, current: amtCurrent, total: amtTotal, balance: amtBalance },
-    percentage: { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal), balance: pct(amtBalance) },
-    touched,
+    percentage,
+    touched: pctTouched,
   };
 }
 
