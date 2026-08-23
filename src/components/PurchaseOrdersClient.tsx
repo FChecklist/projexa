@@ -218,7 +218,7 @@ export default function PurchaseOrdersClient() {
                     <TableCell className="text-px-muted">{vendors.find((v) => v.id === po.vendorId)?.vendorName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{po.orderDate}</TableCell>
                     <TableCell className="text-px-muted">
-                      {currencyLabel(po.currencyId, currencies)}{Number(po.grandTotal).toLocaleString("en-IN")}
+                      {currencyLabel(po.currencyId, currencies)}{Number(po.grandTotal).toLocaleString("en-US")}
                     </TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[po.status] ?? "outline"}>{po.status.replace("_", " ")}</Badge></TableCell>
                   </TableRow>

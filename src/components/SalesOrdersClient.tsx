@@ -304,7 +304,7 @@ export default function SalesOrdersClient() {
                     <TableCell className="text-px-muted">{o.customerName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{o.orderDate}</TableCell>
                     <TableCell className="text-px-muted">
-                      {currencyLabel(o.currencyId, currencies)}{Number(o.grandTotal).toLocaleString("en-IN")}
+                      {currencyLabel(o.currencyId, currencies)}{Number(o.grandTotal).toLocaleString("en-US")}
                     </TableCell>
                     <TableCell>
                       <Select value={o.status} onValueChange={(v) => updateStatus(o, v)}>

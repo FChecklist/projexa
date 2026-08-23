@@ -211,7 +211,7 @@ export default function OpportunitiesClient() {
                     </TableCell>
                     <TableCell className="font-medium">{o.name}</TableCell>
                     <TableCell className="text-px-muted">{customerName(o.erpCustomerId)}</TableCell>
-                    <TableCell className="text-px-muted">{o.estimatedValue ? `${currencyLabel(undefined, currencies)}${Number(o.estimatedValue).toLocaleString("en-IN")}` : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{o.estimatedValue ? `${currencyLabel(undefined, currencies)}${Number(o.estimatedValue).toLocaleString("en-US")}` : "—"}</TableCell>
                     <TableCell>
                       <Select value={o.stage} onValueChange={(v) => updateStage(o, v)}>
                         <SelectTrigger className="h-7 w-32 border-none p-0 shadow-none">

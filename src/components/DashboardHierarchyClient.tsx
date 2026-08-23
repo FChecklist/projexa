@@ -32,7 +32,7 @@ type ProjectDetails = {
 // is undefined, which resolves to the org's base currency (see
 // currencyLabel()'s own comment).
 function fmt(n: number, currencies: Currency[]) {
-  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
