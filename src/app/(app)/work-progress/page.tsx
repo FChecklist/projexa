@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import WorkProgressClient from "@/components/WorkProgressClient";
+import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 
 export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
@@ -29,7 +29,7 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
               <TabsTrigger value="entry">Daily Entry</TabsTrigger>
               <TabsTrigger value="report">Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="entry"><WorkProgressClient projectId={project.id} /></TabsContent>
+            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
             <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
