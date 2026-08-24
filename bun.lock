@@ -5,7 +5,7 @@
     "": {
       "name": "projexa",
       "dependencies": {
-        "@fchecklist/veridian-ui-kit": "github:FChecklist/veridian-ui-kit#v0.5.0",
+        "@fchecklist/veridian-ui-kit": "github:FChecklist/veridian-ui-kit#v0.6.2",
         "@paralleldrive/cuid2": "^2.2.2",
         "@radix-ui/react-accordion": "^1.2.11",
         "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -209,7 +209,7 @@
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.4.1", "", { "dependencies": { "@eslint/core": "^0.17.0", "levn": "^0.4.1" } }, "sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA=="],
 
-    "@fchecklist/veridian-ui-kit": ["@fchecklist/veridian-ui-kit@github:FChecklist/veridian-ui-kit#fb7ae61", { "peerDependencies": { "lucide-react": ">=0.4", "next": ">=15", "react": ">=18", "react-dom": ">=18", "react-resizable-panels": ">=3", "sonner": ">=1", "tailwindcss": ">=4" } }, "FChecklist-veridian-ui-kit-fb7ae61", "sha512-uMqB/8Ux21dUgBaDyh4DkX90U+aoea6goyNZ5r8/m3MNjjaPwXGamTB+6sB2vjxuq489v3g8w6wzWEV2FA8HZg=="],
+    "@fchecklist/veridian-ui-kit": ["@fchecklist/veridian-ui-kit@github:FChecklist/veridian-ui-kit#5c2e70e", { "peerDependencies": { "lucide-react": ">=0.4", "next": ">=15", "react": ">=18", "react-dom": ">=18", "react-resizable-panels": ">=3", "sonner": ">=1", "tailwindcss": ">=4" } }, "FChecklist-veridian-ui-kit-5c2e70e", "sha512-5mMvmmwQm3FOJl1frY/36faHFrzroBgYu+k/OwSCbEpNuz9Hktex0bqo1osTC/H3tx0990+d8LqWO1zcuoF/Ww=="],
 
     "@floating-ui/core": ["@floating-ui/core@1.7.5", "", { "dependencies": { "@floating-ui/utils": "^0.2.11" } }, "sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ=="],
 

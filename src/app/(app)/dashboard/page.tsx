@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -164,7 +165,10 @@ export default async function DashboardPage() {
                     <TableBody>
                       {data.projects.map((p) => (
                         <TableRow key={p.id}>
-                          <TableCell className="font-medium">{p.name}</TableCell>
+                          {/* R42 seq24: the real per-project DASHBOARD.PROJECT screen this org table had no link to before -- was a dead end otherwise. */}
+                          <TableCell className="font-medium">
+                            <Link href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink hover:underline">{p.name}</Link>
+                          </TableCell>
                           <TableCell>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
                           <TableCell>
                             {p.earnedValue === null ? (

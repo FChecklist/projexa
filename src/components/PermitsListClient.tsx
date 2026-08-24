@@ -38,17 +38,20 @@ function daysLeftTone(days: number | null): StatusTone {
   return "done";
 }
 
-export default function PermitsListClient({ projectId }: { projectId: string }) {
+export default function PermitsListClient({ projectId, withinDays }: { projectId: string; withinDays?: string }) {
   const router = useRouter();
   const [permits, setPermits] = useState<Permit[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/permits?projectId=${encodeURIComponent(projectId)}&all=true`)
+    const params = new URLSearchParams({ projectId });
+    if (withinDays) params.set("withinDays", withinDays);
+    else params.set("all", "true");
+    fetch(`/api/permits?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => setPermits(data.permits ?? []))
       .finally(() => setLoading(false));
-  }, [projectId]);
+  }, [projectId, withinDays]);
 
   return (
     <ScreenFrame
