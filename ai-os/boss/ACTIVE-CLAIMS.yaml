@@ -57,6 +57,19 @@ active:
       touching construction-boq-service.ts or the BoQ schema (separate
       parallel task's scope). In compliance-tracker (separate repo, separate
       claim there): pms-issue-service.ts dependency-blocking enforcement.
+  - session_label: "Super Boss (Claude Code, laptop, Sonnet 5) -- R43 seq2: permits.list reads from the screen_definitions registry"
+    claimed_at: "2026-08-24T (this session)"
+    claim: |
+      Sibling of compliance-tracker's ACTIVE-CLAIMS entry with the same
+      title -- that repo gets the new resolve-definition.ts + Bearer-key
+      route (/api/v1/projexa/screen-definitions/[functionId]); this repo's
+      change is the consumer side: src/app/(app)/permits/page.tsx (add a
+      callVeridian('/screen-definitions/permits.list') call, server-side,
+      passed down as a prop) and src/components/PermitsListClient.tsx
+      (accept an optional columns prop from the registry; keep the existing
+      hardcoded COLUMNS const as the fallback when the registry call 404s or
+      errors, never a hard crash). Not touching permits/[id]/page.tsx or
+      permits/new/page.tsx (PERMITS.OBJECT is a separate r43_queue row).
 recently_completed:
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"

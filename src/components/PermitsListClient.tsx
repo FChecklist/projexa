@@ -1,13 +1,16 @@
 "use client";
 
-// R42 seq21/22: registry-driven replacement for PermitsClient.tsx (190
-// lines, 21 Dialog refs, zero back/next/cancel/save/draft -- per
-// screen_spec's own PERMITS.LIST row). Renders from the kit's ListScreen
-// against real /api/permits data. Kept thin per GLOBAL's own rule ("route
-// files must stay THIN, ~40 lines -- if one grows past that, something
-// module-specific is leaking into projexa that belongs in the kit or the
-// registry"); the real column/importance decisions live in the
-// screen_definitions row (permits.list) this reads structurally, not here.
+// R42 seq21/22 built this against the kit's ListScreen but its COLUMNS
+// below was always a hardcoded const, DESPITE this file's own prior comment
+// claiming it "reads structurally" from a screen_definitions row -- that
+// claim was false (R43 seq2 caught it: compliance.screen_definitions had
+// ZERO rows). R43 seq2 makes it real: permits/page.tsx resolves the
+// permits.list row server-side via VERIDIAN's /screen-definitions/
+// permits.list and passes it down as `registryColumns`. COLUMNS below is
+// now ONLY the fallback for when that row doesn't exist yet (404) or the
+// call errors -- kept, per r43_queue seq2's own instruction, until the
+// registry path is verified live, then removable in a follow-up PR once
+// every screen using this pattern has a seeded row.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
@@ -21,6 +24,11 @@ type Permit = {
   endDate: string | null;
   daysToExpiry: number | null;
 };
+
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// intentionally the same fields as ScreenColumn so a registry row can be
+// passed straight to ListScreen with no reshaping.
+export type RegistryColumn = ScreenColumn;
 
 const COLUMNS: ScreenColumn[] = [
   { label: "Permit no.", field: "permitNumber", type: "text", importance: "High" },
@@ -38,10 +46,19 @@ function daysLeftTone(days: number | null): StatusTone {
   return "done";
 }
 
-export default function PermitsListClient({ projectId, withinDays }: { projectId: string; withinDays?: string }) {
+export default function PermitsListClient({
+  projectId,
+  withinDays,
+  registryColumns,
+}: {
+  projectId: string;
+  withinDays?: string;
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const router = useRouter();
   const [permits, setPermits] = useState<Permit[]>([]);
   const [loading, setLoading] = useState(true);
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
   useEffect(() => {
     const params = new URLSearchParams({ projectId });
@@ -72,7 +89,7 @@ export default function PermitsListClient({ projectId, withinDays }: { projectId
       ) : (
         <ListScreen
           functionId="permits.list"
-          columns={COLUMNS}
+          columns={columns}
           rows={permits as unknown as Record<string, unknown>[]}
           getRowId={(row) => row.id as string}
           onRowClick={(row) => router.push(`/permits/${row.id}`)}
