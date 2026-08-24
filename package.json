@@ -12,7 +12,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@fchecklist/veridian-ui-kit": "github:FChecklist/veridian-ui-kit#v0.4.1",
+    "@fchecklist/veridian-ui-kit": "github:FChecklist/veridian-ui-kit#v0.4.2",
     "@paralleldrive/cuid2": "^2.2.2",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
