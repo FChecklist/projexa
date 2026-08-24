@@ -138,6 +138,102 @@ describe("computeLineItemProgress -- SNAPSHOT entry_basis (R39/R-46, TC-32)", ()
   });
 });
 
+// R46 L2 01 (SNAPSHOT progress-entry bug, closure R45SEQ8-R46-L2-01): before
+// this fix, qty/amt were summed via sumQtyInRange() regardless of
+// entry_basis -- so a line whose latest entry was SNAPSHOT (entryBasis
+// filtered OUT of that sum by isDelta()) reported percentage=60% but
+// qty/amt=0 (or whatever stale DELTA history happened to predate it), a
+// real internal contradiction on the same report row. Fixed by deriving
+// qty/amt from the SAME resolved percentage reading used above (schema.ts's
+// own R39/R-46 comment: percent_complete, not quantity_done, is the
+// authoritative field on a SNAPSHOT row -- every existing TC-32 fixture
+// above already encodes this by using quantityDone: 0 on its SNAPSHOT rows).
+// This regression test asserts the resulting mutual-consistency invariant
+// (amt = percentage/100 * amtTotal, qty = percentage/100 * qtyTotal) holds
+// for EVERY row buildWorkProgressReport() -- the real function route.ts
+// calls, not a reimplementation -- returns, for both a pure-DELTA line and a
+// mixed DELTA+SNAPSHOT line whose latest entry is SNAPSHOT-basis.
+describe("buildWorkProgressReport -- qty/amt/percentage mutual consistency (R46 L2 01)", () => {
+  const PURE_DELTA_LINE: BoqLineItem = { ...LINE_ITEM, id: "line_delta", activityId: "act_delta", itemCode: "D-1" };
+  const MIXED_LINE: BoqLineItem = { ...LINE_ITEM, id: "line_mixed", activityId: "act_mixed", itemCode: "M-1" };
+  const MIXED_ACTIVITIES: Activity[] = [
+    { id: "act_delta", categoryId: "cat_1", name: "Delta Only" },
+    { id: "act_mixed", categoryId: "cat_1", name: "Delta then Snapshot" },
+  ];
+
+  function assertRowIsMutuallyConsistent(row: { qty: { prev: number; current: number; total: number }; amt: { prev: number; current: number; total: number }; percentage: { prev: number; current: number; total: number }; qtyTotal: number; amtTotal: number }) {
+    for (const bucket of ["prev", "current", "total"] as const) {
+      const expectedAmt = (row.percentage[bucket] / 100) * row.amtTotal;
+      const expectedQty = (row.percentage[bucket] / 100) * row.qtyTotal;
+      // Tolerance accounts for percentage's own 2-decimal-place rounding
+      // (pct() in work-progress-report.ts) -- not a magic slop factor, the
+      // max possible drift is amtTotal/qtyTotal * 0.005 (half a rounding
+      // step), which is well under 1 for this fixture's scale (amtTotal
+      // 1000, qtyTotal 100).
+      expect(row.amt[bucket]).toBeCloseTo(expectedAmt, 0);
+      expect(row.qty[bucket]).toBeCloseTo(expectedQty, 0);
+    }
+  }
+
+  test("pure-DELTA history: qty/amt/percentage stay mutually consistent (sanity -- this already worked pre-fix)", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_delta", entryDate: "2026-07-01", quantityDone: 30 },
+      { id: "e2", activityId: "act_delta", entryDate: "2026-07-15", quantityDone: 20 },
+    ];
+    const report = buildWorkProgressReport({
+      lineItems: [PURE_DELTA_LINE], entries, activities: MIXED_ACTIVITIES, categories: CATEGORIES,
+      from: "2026-07-10", to: "2026-07-20",
+    });
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0].qty).toEqual({ prev: 30, current: 20, total: 50, balance: 50 });
+    for (const row of report.rows) assertRowIsMutuallyConsistent(row);
+  });
+
+  test("mixed DELTA+SNAPSHOT history, latest entry is SNAPSHOT: qty/amt now read off the snapshot's percentage, not summed with the prior DELTA row (the bug)", () => {
+    const entries: ProgressEntry[] = [
+      // An early DELTA entry -- pre-R39 style, additive.
+      { id: "e1", activityId: "act_mixed", entryDate: "2026-07-01", quantityDone: 15 },
+      // Then the site switches to SNAPSHOT-basis cumulative readings for
+      // this activity: 30% as of 07-05 (before the window), 60% as of
+      // 07-15 (inside the window) -- the latest SNAPSHOT reading in [from,
+      // to] must win outright, not be added to the DELTA 15 units above.
+      { id: "e2", activityId: "act_mixed", entryDate: "2026-07-05", quantityDone: 0, percentComplete: 30, entryBasis: "SNAPSHOT", createdAt: "2026-07-05T09:00:00Z" },
+      { id: "e3", activityId: "act_mixed", entryDate: "2026-07-15", quantityDone: 0, percentComplete: 60, entryBasis: "SNAPSHOT", createdAt: "2026-07-15T09:00:00Z" },
+    ];
+    const report = buildWorkProgressReport({
+      lineItems: [MIXED_LINE], entries, activities: MIXED_ACTIVITIES, categories: CATEGORIES,
+      from: "2026-07-10", to: "2026-07-20",
+    });
+    expect(report.rows).toHaveLength(1);
+    const row = report.rows[0];
+
+    // The bug: qty/amt used to come out {prev:0, current:0, total:0} here
+    // (isDelta() filters both SNAPSHOT rows out of sumQtyInRange, and the
+    // one DELTA entry -- 15 units on 07-01 -- predates `from` so it would
+    // have landed in qty.prev, not total 0 -- either way, NOT consistent
+    // with percentage.total=60%). Fixed: qty/amt now derive from the same
+    // 30%/60% snapshot reading percentage already used.
+    expect(row.percentage).toEqual({ prev: 30, current: 30, total: 60, balance: 40 });
+    expect(row.qty.total).toBe(60); // 60% of qtyTotal=100, NOT 15 (the stale DELTA entry) and NOT 0
+    expect(row.amt.total).toBe(600); // 60% of amtTotal=1000
+    assertRowIsMutuallyConsistent(row);
+  });
+
+  test("mixed history, byCategory rollup also reflects the snapshot-derived amt (not the pre-fix 0)", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_mixed", entryDate: "2026-07-05", quantityDone: 0, percentComplete: 30, entryBasis: "SNAPSHOT", createdAt: "2026-07-05T09:00:00Z" },
+      { id: "e2", activityId: "act_mixed", entryDate: "2026-07-15", quantityDone: 0, percentComplete: 60, entryBasis: "SNAPSHOT", createdAt: "2026-07-15T09:00:00Z" },
+    ];
+    const report = buildWorkProgressReport({
+      lineItems: [MIXED_LINE], entries, activities: MIXED_ACTIVITIES, categories: CATEGORIES,
+      from: "2026-07-10", to: "2026-07-20",
+    });
+    expect(report.byCategory).toHaveLength(1);
+    expect(report.byCategory[0].amt.total).toBe(600); // not 0
+    expect(report.byCategory[0].percentage.total).toBe(60);
+  });
+});
+
 // R12 point 7 (Option B) / E-89 (AR-01): preference-order entry-to-line
 // resolution -- boq_line_item_id, when present on an entry, wins over the
 // activityId match, and is never ALSO counted a second time via activityId.

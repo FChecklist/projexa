@@ -166,36 +166,42 @@ export function computeLineItemProgress(
   // (activityId-only) line too.
   const prevResult = sumQtyInRange(entries, line, (d) => d < from);
   const currentResult = sumQtyInRange(entries, line, (d) => d >= from && d <= to);
-  const prevQty = prevResult.sum;
-  const currentQty = currentResult.sum;
-  const totalQty = prevQty + currentQty;
-  const touched = { prev: prevResult.touched, current: currentResult.touched, total: prevResult.touched || currentResult.touched };
+  let prevQty = prevResult.sum;
+  let currentQty = currentResult.sum;
+  let totalQty = prevQty + currentQty;
+  let touched = { prev: prevResult.touched, current: currentResult.touched, total: prevResult.touched || currentResult.touched };
 
-  const amtPrev = prevQty * rate;
-  const amtCurrent = currentQty * rate;
-  const amtTotal = totalQty * rate;
-
-  // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES --
-  // it's a mathematical formula"): balance = original (this line's own BoQ
-  // total) - total (previous + current). Both are legitimate readings of
-  // the same three stored numbers -- nothing new is persisted. Oracle:
-  // his Gypsum Board 01 row shows 300 + 100 with a third column of 72, and
-  // 472 - 400 = 72.
-  const qtyBalance = qtyTotalBoq - totalQty;
-  const amtBalance = amtTotalBoq - amtTotal;
+  let amtPrev = prevQty * rate;
+  let amtCurrent = currentQty * rate;
+  let amtTotal = totalQty * rate;
 
   const pct = (amt: number) => (amtTotalBoq > 0 ? Math.round((amt / amtTotalBoq) * 10000) / 100 : 0);
 
-  let percentage = { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal), balance: pct(amtBalance) };
-  let pctTouched = touched;
+  let percentage = { prev: pct(amtPrev), current: pct(amtCurrent), total: pct(amtTotal), balance: pct(amtTotalBoq - amtTotal) };
 
-  // R39/R-46 (TC-32): a SNAPSHOT entry (30% then 60%, both rows kept in
-  // history -- createProgressEntry never overwrites, only inserts) reports
-  // whatever the LATEST reading says, replacing rather than adding. Scoped
-  // to `percentage` only -- qty/amt above are untouched by this branch, so a
-  // line with zero SNAPSHOT entries (every T-WPR-03/TC-30/existing-test
-  // line) produces byte-identical output to before this change. Only a line
-  // that actually has a SNAPSHOT entry takes this path at all.
+  // R39/R-46 (TC-32) + SNAPSHOT progress-entry bug (R46 L2 01): a SNAPSHOT
+  // entry (30% then 60%, both rows kept in history -- createProgressEntry
+  // never overwrites, only inserts) reports whatever the LATEST reading
+  // says, replacing rather than adding -- and that now applies to qty/amt
+  // exactly as it already applied to percentage, not just percentage alone.
+  // schema.ts's own R39/R-46 comment (construction_work_progress_entries)
+  // is explicit that quantity_done and percent_complete are "two mutually
+  // exclusive measurement bases": for a SNAPSHOT row the meaningful,
+  // authoritative reading is the cumulative-to-date PERCENTAGE (G703 col
+  // G/C) -- quantity_done on a SNAPSHOT row is not a this-period delta and
+  // is not guaranteed to be a populated/authoritative figure (every existing
+  // SNAPSHOT fixture in this file's own TC-32 tests carries quantityDone: 0
+  // for exactly this reason). So qty/amt for a SNAPSHOT-basis line are
+  // derived FROM the already-resolved percentage (qty = pct/100 * qtyTotal,
+  // amt = pct/100 * amtTotal) rather than from that entry's own
+  // quantityDone -- this is what keeps qty/amt/percentage mutually
+  // consistent by construction, and is the literal meaning of "the same
+  // entry_basis-aware logic already used for percentage": one resolved
+  // reading, expressed in all three units, not three independent readings
+  // that can drift apart. Scoped to a line that actually has a SNAPSHOT
+  // entry -- a line with zero SNAPSHOT entries (every T-WPR-03/TC-30/
+  // existing-test line) takes neither branch and produces byte-identical
+  // output to before this change.
   const snapTotal = latestSnapshot(entries, line, (d) => d <= to);
   if (snapTotal) {
     const snapPrev = latestSnapshot(entries, line, (d) => d < from);
@@ -203,8 +209,27 @@ export function computeLineItemProgress(
     const prevPct = snapPrev ? num(snapPrev.percentComplete) : 0;
     const currentPct = Math.round((totalPct - prevPct) * 100) / 100;
     percentage = { prev: prevPct, current: currentPct, total: totalPct, balance: Math.round((100 - totalPct) * 100) / 100 };
-    pctTouched = { prev: !!snapPrev, current: true, total: true };
+    touched = { prev: !!snapPrev, current: true, total: true };
+
+    prevQty = (percentage.prev / 100) * qtyTotalBoq;
+    currentQty = (percentage.current / 100) * qtyTotalBoq;
+    totalQty = (percentage.total / 100) * qtyTotalBoq;
+    amtPrev = (percentage.prev / 100) * amtTotalBoq;
+    amtCurrent = (percentage.current / 100) * amtTotalBoq;
+    amtTotal = (percentage.total / 100) * amtTotalBoq;
   }
+
+  // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES --
+  // it's a mathematical formula"): balance = original (this line's own BoQ
+  // total) - total (previous + current). Both are legitimate readings of
+  // the same three stored numbers -- nothing new is persisted. Oracle:
+  // his Gypsum Board 01 row shows 300 + 100 with a third column of 72, and
+  // 472 - 400 = 72. (percentage.balance was already set above -- via
+  // pct(amtTotalBoq - amtTotal) on the DELTA path, or directly from
+  // percentComplete on the SNAPSHOT path -- both read the SAME final
+  // amtTotal used here, so qty/amt/percentage balance stay consistent too.)
+  const qtyBalance = qtyTotalBoq - totalQty;
+  const amtBalance = amtTotalBoq - amtTotal;
 
   return {
     lineItemId: line.id,
@@ -220,7 +245,7 @@ export function computeLineItemProgress(
     qty: { prev: prevQty, current: currentQty, total: totalQty, balance: qtyBalance },
     amt: { prev: amtPrev, current: amtCurrent, total: amtTotal, balance: amtBalance },
     percentage,
-    touched: pctTouched,
+    touched,
   };
 }
 
