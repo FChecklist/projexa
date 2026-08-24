@@ -10,7 +10,13 @@ import VeriComposer from "@/components/veri-chat/VeriComposer";
 import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
 import HomeThreadSlot from "@/components/veri-chat/HomeThreadSlot";
 
-// Owner directive 2026-07-18: navigation/shell behavior must exactly match
+// SUPERSEDED by M24 (platform.claude_log, status='standing') -- R42 seq10, 24 Aug 2026.
+// M24 is the current binding frame: two panes, LEFT 30% Task Master, RIGHT 70%
+// traditional ERP, five-band rule, nothing appears twice. Left in place (not
+// deleted) per R42 instruction -- see M24/M25 for the governing spec instead
+// of the text below.
+//
+// Owner directive 2026-07-18 (historical, superseded): navigation/shell behavior must exactly match
 // compliance-tracker/veridian-scope-selector-in-home.html (the agreed UI/UX
 // reference) -- including the merged-Home-page pattern, where VeriChatPanel
 // merges into the main content area instead of sitting in its own side
