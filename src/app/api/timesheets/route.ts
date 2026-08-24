@@ -25,6 +25,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// R39/R-C12 fix-2: forward actorEmail so VERIDIAN can resolve a real acting
+// user (this route was equally dead-on-arrival before that fix -- see
+// timesheets/[id]/submit/route.ts's header comment for the full evidence
+// trail; same root cause, predates R39).
 export async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -33,7 +37,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "issueId, hours, and spentOn are required" }, { status: 400 });
   }
   try {
-    const data = await callVeridian("/timesheets", { organizationId: ctx.organizationId!, method: "POST", body });
+    const data = await callVeridian("/timesheets", {
+      organizationId: ctx.organizationId!,
+      method: "POST",
+      body: { ...body, actorEmail: ctx.user?.email ?? null },
+    });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log time entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
