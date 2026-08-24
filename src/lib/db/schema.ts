@@ -183,6 +183,24 @@ export const workProgressPhotos = pgTable("work_progress_photos", {
 // @paralleldrive/cuid2 -- already a dependency of this repo) rather than
 // this schema's usual uuid().defaultRandom(), matching that same sibling
 // table's own id shape.
+// R-A1 / TC-R-A1-20260824: platform-level security events (not tenant-
+// scoped -- same reasoning as contactRequests above). First and, as of this
+// migration, only writer is the rotate-demo-password-r38 Edge Function,
+// which appends exactly one row here after it rotates the public demo
+// admin's password (demo_manager@projexa-ai.com) -- never the password
+// itself, only the fact and time that a rotation happened. Gives this
+// requirement a real, queryable audit trail instead of relying solely on
+// Supabase Auth's internal (not app-visible) audit_log_entries table.
+export const securityAuditLog = pgTable("security_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  event: text("event").notNull(),
+  targetUserId: uuid("target_user_id"),
+  targetEmail: text("target_email"),
+  actor: text("actor").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const contactRequests = pgTable("contact_requests", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
