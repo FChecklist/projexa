@@ -37,7 +37,9 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const [hasDraft, setHasDraft] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
   const valuesRef = useRef(values);
-  valuesRef.current = values;
+  useEffect(() => {
+    valuesRef.current = values;
+  }, [values]);
 
   async function load() {
     const permitRes = await fetch(`/api/permits/${permitId}`).then((r) => r.json());
@@ -60,7 +62,6 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permitId]);
 
   async function handleEdit() {
