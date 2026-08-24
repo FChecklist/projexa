@@ -2,7 +2,7 @@ import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import PermitsClient from "@/components/PermitsClient";
+import PermitsListClient from "@/components/PermitsListClient";
 
 export default async function PermitsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
@@ -21,7 +21,7 @@ export default async function PermitsPage({ searchParams }: { searchParams: Prom
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <PermitsClient projectId={project.id} />}
+        {project && <PermitsListClient projectId={project.id} />}
       </main>
     </>
   );
