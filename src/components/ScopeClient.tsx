@@ -12,6 +12,40 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
+import { CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
+
+// R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
+// RegistryColumn): intentionally the same fields as ScreenColumn so a
+// registry row (compliance.screen_definitions, function_id "boq.compare")
+// can be passed straight in with no reshaping.
+export type RegistryColumn = ScreenColumn;
+
+// Fallback when no registry row is seeded yet (or the resolve call errors) --
+// mirrors the registry seed 1:1, so there is no visible difference between
+// "resolved from the DB" and "resolved from this hardcoded default" (M28: keep
+// the hardcoded version behind a flag until verified).
+const DEFAULT_COMPARE_COLUMNS: ScreenColumn[] = [
+  { field: "description", label: "Description", type: "text", importance: "High" },
+  { field: "unit", label: "Unit", type: "text", importance: "High" },
+  { field: "quantity", label: "Qty", type: "number", importance: "High" },
+  { field: "rate", label: "Rate", type: "number", importance: "High" },
+  { field: "amount", label: "Amount", type: "number", importance: "High" },
+];
+
+// Reshapes VERIDIAN's BoqComparison (added/removed/changed + a flat
+// netVariation per changed row) into CompareScreen's generic CompareResult
+// (changedFields drives which cells highlight) -- CompareScreen itself knows
+// nothing about BOQs, quantity, or rate.
+function toCompareResult(cmp: BoqComparison): CompareResult {
+  const changed: CompareChangedRow[] = cmp.changed.map((c) => {
+    const changedFields: string[] = [];
+    if (c.quantityChange !== 0) changedFields.push("quantity");
+    if (c.rateChange !== 0) changedFields.push("rate");
+    if (c.quantityChange !== 0 || c.rateChange !== 0) changedFields.push("amount");
+    return { key: c.key, previous: c.previous, current: c.current, changedFields };
+  });
+  return { added: cmp.added, removed: cmp.removed, changed, warnings: cmp.warnings };
+}
 
 type Boq = {
   id: string;
@@ -143,7 +177,8 @@ function boqTotal(rows: BoqLineItemRow[]): number {
     .reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
 }
 
-export default function ScopeClient({ projectId }: { projectId: string }) {
+export default function ScopeClient({ projectId, compareColumns }: { projectId: string; compareColumns?: RegistryColumn[] | null }) {
+  const columns = compareColumns && compareColumns.length > 0 ? compareColumns : DEFAULT_COMPARE_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -662,7 +697,7 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
       </Dialog>
 
       <Dialog open={!!comparing} onOpenChange={(o) => !o && setComparing(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Compare -- &quot;{comparing?.title}&quot; (v{comparing?.version})</DialogTitle></DialogHeader>
           <div className="space-y-1.5">
             <Label>Against</Label>
@@ -683,45 +718,28 @@ export default function ScopeClient({ projectId }: { projectId: string }) {
           {comparisonLoading ? (
             <div className="grid h-24 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : comparison ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               <p className="text-sm">
                 Total variation:{" "}
                 <span className={comparison.totalVariation > 0 ? "text-px-success" : comparison.totalVariation < 0 ? "text-px-error" : ""}>
                   {currencyCode ? `${currencyCode} ` : ""}{formatVariation(comparison.totalVariation)}
                 </span>
               </p>
-              {comparison.warnings.length > 0 && (
-                <Card className="border-px-error-border bg-px-error-light">
-                  <CardContent className="space-y-1 p-3 text-sm text-px-error">
-                    {comparison.warnings.map((w, i) => <p key={i}>{w}</p>)}
-                  </CardContent>
-                </Card>
-              )}
-              {comparison.added.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium">Added</p>
-                  {comparison.added.map((i) => <p key={i.id} className="text-sm text-px-success">+ {i.description} ({withCurrency(currencyCode, i.amount)})</p>)}
-                </div>
-              )}
-              {comparison.removed.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium">Removed</p>
-                  {comparison.removed.map((i) => <p key={i.id} className="text-sm text-px-error">- {i.description} ({withCurrency(currencyCode, i.amount)})</p>)}
-                </div>
-              )}
-              {comparison.changed.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium">Changed</p>
-                  {comparison.changed.map((c) => (
-                    <p key={c.current.id} className="text-sm">
-                      {c.current.description}: {formatVariation(c.netVariation)}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {comparison.added.length === 0 && comparison.removed.length === 0 && comparison.changed.length === 0 && (
-                <p className="text-sm text-px-muted">No differences between these two revisions.</p>
-              )}
+              {/* M28 COMPARE archetype (R44 seq3) -- zero bespoke rendering:
+                  CompareScreen owns Added/Removed/Changed sections, warnings,
+                  and per-cell highlighting; this component only reshapes
+                  VERIDIAN's BoqComparison into its generic CompareResult. */}
+              <div className="h-[420px] rounded-md border border-ct-border">
+                <CompareScreen
+                  functionId="boq.compare"
+                  breadcrumb={`v${compareAgainst ? boqs.find((b) => b.id === compareAgainst)?.version ?? "?" : "?"} → v${comparing?.version ?? "?"}`}
+                  columns={columns}
+                  fromLabel={`v${boqs.find((b) => b.id === compareAgainst)?.version ?? "?"}`}
+                  toLabel={`v${comparing?.version ?? "?"}`}
+                  result={toCompareResult(comparison)}
+                  getRowId={(row) => String(row.id)}
+                />
+              </div>
             </div>
           ) : null}
         </DialogContent>
