@@ -91,15 +91,42 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data, error } = await getClaimsWithRetry(supabase);
-  if (error) {
-    // Non-fatal by design (a transient JWKS-fetch or refresh failure here
-    // must not be indistinguishable from "not logged in" without a trace),
-    // but no longer silent -- this is exactly the failure mode that used to
-    // produce unexplained logouts.
-    console.error("[middleware] getClaims() failed:", error.message);
+  // R45 seq4 follow-up (platform.r43_queue seq4): getClaimsWithRetry()'s
+  // `{ data, error }` return shape only covers Supabase's OWN reported auth
+  // failures -- it does NOT cover a THROWN exception, which is exactly what
+  // real production telemetry showed happening here (Vercel runtime logs,
+  // 2026-08-24: repeated `[error/edge-middleware] Invalid UTF-8 sequence`
+  // bursts across every route -- page routes AND every /api/* route alike --
+  // all in the same few-second window, consistent with the Edge runtime's
+  // cookie-header parser throwing on a malformed cookie byte sequence while
+  // decoding the JWT during getClaims()). Before this fix, that throw was
+  // uncaught: it escaped this whole middleware function, which Next.js's
+  // Edge runtime turns into a hard 500 for the ENTIRE request -- not a
+  // graceful "treat as logged out," a real request failure on every single
+  // route this middleware's matcher covers (i.e. almost everything,
+  // including every page navigation and every one of the ~10 API calls the
+  // app shell fires in parallel on load). A user mid-session hitting this on
+  // even one of those parallel calls would see partial/broken data for that
+  // request while the rest of the shell looks fine -- a plausible source of
+  // "some interaction on this page just doesn't work" reports that never
+  // show up as a clean, single reproducible error. Wrapping in try/catch so
+  // ANY failure here (reported or thrown) degrades to "logged out for this
+  // one request" -- consistent with the non-fatal-by-design intent already
+  // documented above -- instead of taking the whole request down.
+  let userId: string | null = null;
+  try {
+    const { data, error } = await getClaimsWithRetry(supabase);
+    if (error) {
+      // Non-fatal by design (a transient JWKS-fetch or refresh failure here
+      // must not be indistinguishable from "not logged in" without a trace),
+      // but no longer silent -- this is exactly the failure mode that used to
+      // produce unexplained logouts.
+      console.error("[middleware] getClaims() failed:", error.message);
+    }
+    userId = (data?.claims?.sub as string | undefined) ?? null;
+  } catch (err) {
+    console.error("[middleware] getClaims() threw:", err instanceof Error ? err.message : err);
   }
-  const userId = (data?.claims?.sub as string | undefined) ?? null;
 
   const PROTECTED_PREFIXES = [
     "/dashboard", "/schedule", "/scope", "/work-progress", "/site-diary", "/documents",

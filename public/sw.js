@@ -16,7 +16,13 @@
 // network. This does NOT cache API responses/data -- that's the queue's
 // job, not the SW's; caching live API GETs here would risk silently
 // serving stale organisation/project data with no invalidation story.
-const CACHE_NAME = "projexa-shell-v1";
+// R45 seq4 follow-up (platform.r43_queue seq4) -- CACHE_NAME bumped v1->v2
+// (see `activate` below, which already purges any cache whose name isn't
+// CACHE_NAME) specifically to force every already-installed client to drop
+// its old cache on next activate, since the bug fixed below means some
+// fraction of real production sessions may be holding cached entries for
+// URLs this SW should never have cached in the first place.
+const CACHE_NAME = "projexa-shell-v2";
 const APP_SHELL_URLS = ["/", "/login", "/logo-mark.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -33,10 +39,30 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Network-first for navigations (always prefer live content when online),
-// falling back to the cached shell -- specifically the cached "/" -- only
-// when the network genuinely fails. Non-navigation GETs (JS/CSS/fonts/
-// images) use cache-first since they're content-hashed/rarely change.
+// R45 seq4 follow-up bugfix (platform.r43_queue seq4): the previous version
+// of this handler cache-first'd EVERY non-API, non-navigation same-origin
+// GET -- which is not just "JS/CSS/fonts/images" as the old comment claimed.
+// Next's App Router does its own client-side route transitions (sidebar
+// <Link> clicks, router.push, etc.) via a `fetch()` to the route's own URL
+// (e.g. GET /work-progress) carrying an `RSC`/`Next-Router-State-Tree`
+// header -- NOT `request.mode === "navigate"`, so the old code fell through
+// to the cache-first branch below and could cache an RSC PAYLOAD response
+// under a plain route URL like "/work-progress". Any later request for that
+// same URL -- including a real full-page navigation's own network-first
+// fetch failing over, or another RSC fetch with different router-state
+// headers -- could then be served that stale, header-mismatched payload
+// from cache, desyncing the client's module tree from what the server
+// actually rendered: a real, previously-undiagnosed vector for the
+// "hydration mismatch on every route" symptom this cache was never meant to
+// cause (see this file's own header comment: "does NOT cache API responses/
+// data" was already the stated intent for exactly this reason -- RSC
+// payloads are live data by the same logic, they just don't live under
+// /api/). Fix: only cache-first true static build output under
+// /_next/static/ (Next's own content-hashed, genuinely-immutable chunk/CSS/
+// font URLs -- the ONLY case where "rarely changes" was ever actually true)
+// and the fixed APP_SHELL_URLS above. Every other non-navigation GET
+// (RSC payload fetches, /_next/image, etc.) now passes straight through to
+// the network, uncached -- matching how this file already treats /api/.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -51,6 +77,15 @@ self.addEventListener("fetch", (event) => {
         caches.match(request).then((cached) => cached || caches.match("/"))
       )
     );
+    return;
+  }
+
+  const isImmutableBuildAsset = url.pathname.startsWith("/_next/static/");
+  const isAppShellUrl = APP_SHELL_URLS.includes(url.pathname);
+  if (!isImmutableBuildAsset && !isAppShellUrl) {
+    // Not a content-hashed asset and not the fixed app shell -- e.g. an RSC
+    // payload fetch for a route transition, or /_next/image. Always live,
+    // never cached.
     return;
   }
 
