@@ -25,7 +25,10 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   try {
     const body = await request.json();
-    const data = await callVeridian("/screen-drafts", { organizationId: ctx.organizationId!, method: "POST", body });
+    // R42 seq21 fix: VERIDIAN authenticates this call with a shared per-org
+    // API key, so it needs this real session's own email to resolve who's
+    // actually acting -- same actorEmail pattern the timesheets routes use.
+    const data = await callVeridian("/screen-drafts", { organizationId: ctx.organizationId!, method: "POST", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to start draft" }, { status: err instanceof VeridianApiError ? err.status : 502 });

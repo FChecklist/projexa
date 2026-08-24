@@ -10,7 +10,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   try {
     const body = await request.json();
-    const data = await callVeridian(`/screen-drafts/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    // R42 seq21 fix: see screen-drafts/route.ts's own comment -- same
+    // shared-API-key -> actorEmail requirement.
+    const data = await callVeridian(`/screen-drafts/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to autosave draft" }, { status: err instanceof VeridianApiError ? err.status : 502 });
@@ -22,7 +24,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/screen-drafts/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
+    const data = await callVeridian(`/screen-drafts/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "DELETE", body: { actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to discard draft" }, { status: err instanceof VeridianApiError ? err.status : 502 });
