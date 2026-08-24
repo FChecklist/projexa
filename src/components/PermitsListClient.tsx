@@ -54,8 +54,14 @@ export default function PermitsListClient({ projectId }: { projectId: string }) 
     <ScreenFrame
       breadcrumb="Permits"
       newAction={{ label: "+ New", onClick: () => router.push(`/permits/new?projectId=${projectId}`) }}
-      exportAction={{ label: "Export" }}
-      filterAction={{ label: "Filter" }}
+      // R42 seq23 live-user finding: these rendered as live, enabled,
+      // no-op buttons -- clickable but silently did nothing, no error, no
+      // feedback. GLOBAL: "ACTIONS ARE DISABLED BY CONDITION, NEVER HIDDEN,
+      // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
+      // Filter/Export aren't built for this module yet -- say so instead of
+      // faking availability.
+      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
       {loading ? (
