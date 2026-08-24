@@ -2,12 +2,34 @@ import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import PermitsListClient from "@/components/PermitsListClient";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import PermitsListClient, { type RegistryColumn } from "@/components/PermitsListClient";
+
+// R43 seq2 (M28 registry-model proof): resolved server-side, same place
+// organizationId/project already are, so PermitsListClient (a client
+// component) never needs its own Bearer-key-authenticated fetch. A missing
+// or errored registry row is NOT fatal -- PermitsListClient falls back to
+// its own hardcoded COLUMNS when this is null, exactly the "keep the
+// hardcoded version behind a flag until verified" instruction from
+// platform.r43_queue seq2.
+async function resolvePermitsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
+  try {
+    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/permits.list", {
+      organizationId: organizationId ?? undefined,
+    });
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
+  } catch (err) {
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
+    console.error("[permits/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export default async function PermitsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; withinDays?: string }> }) {
   const { projectId, withinDays } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const registryColumns = await resolvePermitsListColumns(organizationId);
 
   return (
     <>
@@ -26,7 +48,7 @@ export default async function PermitsPage({ searchParams }: { searchParams: Prom
             not on the unfiltered list -- withinDays passes straight through
             to the same /api/permits?withinDays= param the KPI count itself
             used, so the two always agree. */}
-        {project && <PermitsListClient projectId={project.id} withinDays={withinDays} />}
+        {project && <PermitsListClient projectId={project.id} withinDays={withinDays} registryColumns={registryColumns} />}
       </main>
     </>
   );
