@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Play, Share2 } from "lucide-react";
+import { Loader2, Play, Share2, Download } from "lucide-react";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -54,9 +55,48 @@ function money(n: number) {
 // blank percent cells, not 0.00 and not a number.
 const bandBorder = "border-l-2 border-px-border";
 
-export function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdColumnMode }) {
+// R42 seq24 (REPORT.GLOBAL): the arithmetic identity this report must hold
+// -- GROUP SUBTOTALS (here, byCategory) and a GRAND TOTAL that ties. Parent
+// rows carry the real BoQ contract value (D-3: parent-lines-only); child
+// rows' own amtTotal is a separate, informational figure (see
+// applyWeightedParentRollup's own comment -- it is NOT a portion carved out
+// of the parent's amtTotal), so the "Amt" grand total sums PARENT rows
+// only, matching earnedValueReport()'s own contractValue convention
+// exactly (never a second summation rule). The Amount-band totals
+// (Previous/Current/Total-or-Balance = progress-to-date, in AED) are safe
+// to sum over every row by that same comment's own construction.
+function computeGrandTotal(rows: LineItemRow[], mode: ThirdColumnMode) {
+  const parents = rows.filter((r) => !r.parentLineItemId);
+  return {
+    amtTotal: parents.reduce((s, r) => s + r.amtTotal, 0),
+    amt: {
+      prev: rows.reduce((s, r) => s + r.amt.prev, 0),
+      current: rows.reduce((s, r) => s + r.amt.current, 0),
+      third: rows.reduce((s, r) => s + r.amt[mode], 0),
+    },
+  };
+}
+
+// Tie check: byCategory groups the SAME rows this table renders (rollupBy
+// in work-progress-report.ts) -- its own amt-band sums must equal this
+// table's own sums of the identical rows. A mismatch means a row silently
+// fell outside every category group (a real, on-paper B-3-shaped defect),
+// not a rounding artefact -- REPORT.GLOBAL: "the report is wrong and MUST
+// SAY SO LOUDLY, not render anyway."
+function checkTies(rows: LineItemRow[], byCategory: CategoryRow[], mode: ThirdColumnMode): string | null {
+  const grand = computeGrandTotal(rows, mode);
+  const categorySum = byCategory.reduce((s, c) => s + c.amt[mode], 0);
+  const diff = Math.abs(grand.amt.third - categorySum);
+  if (diff > 0.01) {
+    return `Category subtotals (${money(categorySum)}) do not sum to the grand total (${money(grand.amt.third)}) -- a row is missing from a category group. Export is disabled until this is fixed.`;
+  }
+  return null;
+}
+
+export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">No BoQ line items for this project yet.</p>;
   const thirdLabel = mode === "balance" ? "Balance" : "Total";
+  const grand = computeGrandTotal(rows, mode);
   return (
     <Table>
       <TableHeader>
@@ -80,7 +120,11 @@ export function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdCol
           return (
             <TableRow key={r.lineItemId}>
               <TableCell>{i + 1}</TableCell><TableCell>{r.categoryName}</TableCell>
-              <TableCell className="font-mono text-xs">{r.code || "—"}</TableCell><TableCell>{r.description}</TableCell>
+              {/* R42 seq24: every item code is a hyperlink to its BOQ (REPORT.GLOBAL) -- ScopeClient is the real, live screen for that line (no BOQ-line OBJECT screen exists; see this seq's own screen_spec finding). */}
+              <TableCell className="font-mono text-xs">
+                {r.code ? <Link href={`/scope?projectId=${projectId}`} className="text-px-ink underline">{r.code}</Link> : "—"}
+              </TableCell>
+              <TableCell>{r.description}</TableCell>
               <TableCell>{r.unit}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
 
               <TableCell className={bandBorder} data-testid="pct-prev">{isChild ? "" : `${r.percentage.prev}%`}</TableCell>
@@ -97,12 +141,24 @@ export function ScopeTable({ rows, mode }: { rows: LineItemRow[]; mode: ThirdCol
             </TableRow>
           );
         })}
+        {/* R42 seq24: GRAND TOTAL, always visible, never requiring a scroll (REPORT.GLOBAL). */}
+        <TableRow className="font-semibold border-t-2 border-px-border" data-testid="grand-total-row">
+          <TableCell colSpan={6}>Grand Total</TableCell>
+          <TableCell>{money(grand.amtTotal)}</TableCell>
+          <TableCell className={bandBorder} />
+          <TableCell /><TableCell />
+          <TableCell className={bandBorder} />
+          <TableCell /><TableCell />
+          <TableCell className={bandBorder}>{money(grand.amt.prev)}</TableCell>
+          <TableCell>{money(grand.amt.current)}</TableCell>
+          <TableCell data-testid="grand-total-amount">{money(grand.amt.third)}</TableCell>
+        </TableRow>
       </TableBody>
     </Table>
   );
 }
 
-function CategoryTable({ rows, mode }: { rows: CategoryRow[]; mode: ThirdColumnMode }) {
+function CategoryTable({ rows, mode, projectId }: { rows: CategoryRow[]; mode: ThirdColumnMode; projectId: string }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">Nothing to break down by category yet.</p>;
   const thirdLabel = mode === "balance" ? "Balance" : "Total";
   return (
@@ -117,7 +173,11 @@ function CategoryTable({ rows, mode }: { rows: CategoryRow[]; mode: ThirdColumnM
       <TableBody>
         {rows.map((r) => (
           <TableRow key={r.name}>
-            <TableCell>{r.name}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
+            {/* R42 seq24: every group subtotal links to the ANALYTICAL page filtered to that group (REPORT.GLOBAL) -- the real destination this seq built (WorkProgressAnalyticalClient), not a dead end. */}
+            <TableCell>
+              <Link href={`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(r.name)}`} className="text-px-ink underline">{r.name}</Link>
+            </TableCell>
+            <TableCell>{money(r.amtTotal)}</TableCell>
             <TableCell>{money(r.amt.prev)}</TableCell><TableCell>{money(r.amt.current)}</TableCell><TableCell>{money(r.amt[mode])}</TableCell>
             <TableCell>{r.percentage.prev}%</TableCell><TableCell>{r.percentage.current}%</TableCell><TableCell>{r.percentage[mode]}%</TableCell>
           </TableRow>
@@ -175,6 +235,10 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
 
+  // R42 seq24: recomputed every render (cheap, no memo needed) so it always
+  // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
+  const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
+
   async function runReport(boqId = selectedBoqId) {
     setLoading(true);
     try {
@@ -191,6 +255,33 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
     } finally {
       setLoading(false);
     }
+  }
+
+  // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
+  // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a
+  // binary .xlsx -- Excel opens CSV natively and every value is checkable,
+  // without adding an xlsx-writing dependency to this bundle for one
+  // export button (compliance-tracker's own xlsx package is read-only,
+  // used for BOQ import, not export). Honestly labelled "Export CSV", not
+  // claimed as XLSX. Disabled when the tie check fails -- an export of a
+  // report that doesn't add up is worse than no export.
+  function exportCsv() {
+    if (!report) return;
+    const lines = [
+      ["S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt", "% Prev", "% Current", `% ${thirdColumnMode === "balance" ? "Balance" : "Total"}`, "Qty Prev", "Qty Current", "Qty Third", "Amt Prev", "Amt Current", "Amt Third"].join(","),
+      ...report.rows.map((r, i) => [
+        i + 1, `"${r.categoryName}"`, r.code ?? "", `"${r.description}"`, r.unit, r.rate,
+        r.amtTotal, r.parentLineItemId ? "" : r.percentage.prev, r.parentLineItemId ? "" : r.percentage.current, r.parentLineItemId ? "" : r.percentage[thirdColumnMode],
+        r.qty.prev, r.qty.current, r.qty[thirdColumnMode], r.amt.prev, r.amt.current, r.amt[thirdColumnMode],
+      ].join(",")),
+      ["", "", "", "Grand Total", "", "", tieError ? "" : String(computeGrandTotal(report.rows, thirdColumnMode).amtTotal)].join(","),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `wpr-${projectId}-${from}-to-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
@@ -228,6 +319,11 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               {sharing ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />} Share
             </Button>
           )}
+          {report && (
+            <Button onClick={exportCsv} disabled={!!tieError} title={tieError ?? undefined} variant="outline" data-testid="export-csv">
+              <Download className="size-4" /> Export CSV
+            </Button>
+          )}
           {report && report.availableBoqs.length > 1 && (
             <div className="space-y-1.5">
               <Label>BOQ</Label>
@@ -261,6 +357,16 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         </CardContent>
       </Card>
 
+      {/* R42 seq24 (REPORT.GLOBAL): "IF THE SUBTOTALS DO NOT SUM TO THE GRAND
+          TOTAL THE REPORT IS WRONG AND MUST SAY SO LOUDLY, not render
+          anyway." Shown, not hidden -- the tables below still render (a QS
+          still needs to see the numbers to find the bug), only export is blocked. */}
+      {tieError && (
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error" data-testid="tie-error">{tieError}</CardContent>
+        </Card>
+      )}
+
       <Card className="shadow-card">
         <CardContent className="p-4">
           {loading ? (
@@ -275,8 +381,8 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
                 <TabsTrigger value="manpower">Manpower-wise</TabsTrigger>
                 <TabsTrigger value="vendor">Vendor-wise</TabsTrigger>
               </TabsList>
-              <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} /></TabsContent>
-              <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} /></TabsContent>
+              <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} /></TabsContent>
+              <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} /></TabsContent>
               <TabsContent value="manpower"><ManpowerTable rows={report.byManpower} /></TabsContent>
               <TabsContent value="vendor"><VendorTable rows={report.byVendor} /></TabsContent>
             </Tabs>
