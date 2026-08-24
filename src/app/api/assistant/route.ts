@@ -28,11 +28,35 @@ export async function GET() {
   return NextResponse.json({ queries: data });
 }
 
+// R42 seq14 (M25 pipeline): the real submission -> segmentation -> task
+// pipeline, additive alongside the existing codeReference dispatch below
+// (never a replacement -- see VERIDIAN's own route.ts header for why a full
+// replacement here would have regressed R-80/R-82/R-90). No local
+// assistant_queries row for this path: that table was always a stand-in for
+// VERIDIAN's real async Tasks system (this file's own header comment,
+// unchanged above); now that compliance.pipeline_tasks is that real system,
+// this path talks to it directly and has nothing local left to shim.
+async function postPipeline(ctx: Awaited<ReturnType<typeof requireAuth>>, body: Record<string, unknown>) {
+  try {
+    const data = await callVeridian("/assistant", {
+      organizationId: ctx.organizationId!,
+      method: "POST",
+      body: { rawInput: body.rawInput, mode: body.mode, projectId: body.projectId, selectedChain: body.selectedChain },
+    });
+    return NextResponse.json(data, { status: 201 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to run submission pipeline" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
   const body = await request.json();
+
+  if (typeof body.rawInput === "string") return postPipeline(ctx, body);
+
   const codeReference = String(body.codeReference ?? "");
   const breadcrumb = String(body.breadcrumb ?? codeReference);
   const inputs = body.inputs ?? {};
