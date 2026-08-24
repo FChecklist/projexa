@@ -52,7 +52,18 @@ export default function WorkProgressListClient({
   }));
 
   return (
-    <ScreenFrame breadcrumb="Work Progress" messages={[]}>
+    // R42 seq23 live-user finding: same GLOBAL rule as PermitsListClient's
+    // own fix -- Filter/Export shown disabled-with-reason rather than
+    // omitted (never HIDDEN) or faked as live. +New is intentionally
+    // omitted here, not hidden-by-oversight: this LIST is already paired
+    // directly with the FORM (WorkProgressPageClient's other column), so a
+    // separate "+ New" would just duplicate what's already on screen.
+    <ScreenFrame
+      breadcrumb="Work Progress"
+      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      messages={[]}
+    >
       {loading ? (
         <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
       ) : (

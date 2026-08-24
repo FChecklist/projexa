@@ -193,6 +193,13 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     return () => window.removeEventListener("online", run);
   }, [scope]);
 
+  // R42 seq23 live-user finding: same fail-after-click gap caught on
+  // Permits' Save applies here too -- Log Entry was clickable with required
+  // fields still empty. See PermitObjectClient.tsx's own comment for the
+  // GLOBAL rule this violated.
+  const requiredFields = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
+  const missingCount = requiredFields.filter((f) => values[f] === undefined || values[f] === null || values[f] === "").length;
+
   return (
     <FormScreen
       breadcrumb="Work Progress / Log entry"
@@ -200,6 +207,8 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       onSubmit={handleSubmit}
       submitLabel="Log Entry"
       submitting={submitting}
+      submitDisabled={missingCount > 0}
+      submitDisabledReason={missingCount > 0 ? `${missingCount} required field${missingCount === 1 ? "" : "s"}` : undefined}
       messages={messages}
       banner={queued.length > 0 ? (
         <div className="mx-4 mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">

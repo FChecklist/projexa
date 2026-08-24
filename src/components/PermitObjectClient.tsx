@@ -17,6 +17,7 @@ type Permit = {
   endDate: string | null;
   notes: string | null;
   tags: string[];
+  projectId: string;
 };
 
 const REQUIRED_COLUMNS: ScreenColumn[] = [
@@ -122,6 +123,14 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
 
   if (!permit) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
+  // R42 seq23 live-user finding: Save was clickable with required fields
+  // still empty -- a real fail-after-click, against GLOBAL's own idiot-proof
+  // rule ("Primary action disabled while mandatory fields are empty, with
+  // the count beside it" / "ACTIONS ARE DISABLED BY CONDITION ... NEVER
+  // FAIL-AFTER-CLICK"). Computed on every render so the button's disabled
+  // state always matches what handleSave would actually reject.
+  const missingCount = mode === "edit" ? REQUIRED_COLUMNS.filter((c) => !values[c.field]).length : 0;
+
   return (
     <ObjectScreen
       breadcrumb="Permits / Permit"
@@ -132,8 +141,17 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       onEdit={mode === "display" ? handleEdit : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
       onCancel={mode === "edit" ? handleCancel : undefined}
-      onBack={() => router.push("/permits")}
+      // R42 seq23 live-user finding: Back dropped ?projectId= entirely,
+      // landing on a different (or empty) project's list -- the GLOBAL "Back
+      // restores filters/sort/scroll/page" rule can't hold if the list
+      // isn't even the same project's list. Preserve it explicitly rather
+      // than relying on router.back() (a page reload -- e.g. this seq's own
+      // full-reload draft-persistence proof -- has no history entry to go
+      // back to).
+      onBack={() => router.push(`/permits?projectId=${permit.projectId}`)}
       onAutosave={scheduleAutosave}
+      saveDisabled={missingCount > 0}
+      saveDisabledReason={missingCount > 0 ? `${missingCount} required field${missingCount === 1 ? "" : "s"}` : undefined}
       messages={messages}
       documentFlow={{ from: [], to: [] }}
     >
