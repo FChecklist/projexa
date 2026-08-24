@@ -108,15 +108,22 @@ async function patchEntry(scope: string, localId: string, patch: Partial<QueuedW
   await set(localId, { ...existing, ...patch }, store);
 }
 
-// Closes the disclosed gap documented above: uploads a queued photo to the
-// real /api/work-progress/photos route (Supabase Storage-backed, see
-// drizzle/0013) once its entry has actually synced. Deliberately
+// Closes the disclosed gap documented above: uploads a photo to the real
+// /api/work-progress/photos route (Supabase Storage-backed, see
+// drizzle/0013) once its entry has actually been created. Deliberately
 // best-effort and separate from the main sync try/catch below -- a photo
 // upload failure must not resurrect an already-synced entry (flip it back
 // to "error"/retry) or change the synced/failed counters the mutex/dedupe
 // tests above assert on; it's a real follow-up write, not a gate on the
 // entry's own sync success.
-async function uploadQueuedPhoto(veridianEntryId: string, photo: QueuedPhoto): Promise<void> {
+//
+// R42 seq22 finding: exported (was module-private) because the ONLINE
+// immediate-submit path (WorkProgressFormClient.tsx) had never called this
+// at all -- a photo attached while online was silently dropped, only ever
+// uploaded via the offline-queue sync path below. Same function, same
+// contract, for both callers -- generalising the one real implementation
+// (GLOBAL's own instruction) rather than writing a second copy.
+export async function uploadQueuedPhoto(veridianEntryId: string, photo: QueuedPhoto): Promise<void> {
   const formData = new FormData();
   formData.append("veridianEntryId", veridianEntryId);
   formData.append("file", photo.blob, photo.name);
