@@ -1,5 +1,17 @@
 "use client";
 
+// R46 P8 seq128: registry-driven LIST archetype, same pattern R43 seq2
+// established for permits.list and R46 P8 seq134 established for
+// variations.list (see PermitsListClient.tsx's and ChangeOrdersClient.tsx's
+// header comments for the full history). This screen never adopted the
+// kit's ListScreen component -- it's a plain shadcn Table with its own
+// category filter (kept exactly as-is, outside the registry-driven table)
+// -- so only the 6 real data columns (Name/Category/Type/Size/Expiry/Added)
+// are registry-driven: COLUMNS is now the fallback used when
+// documents/page.tsx's server-side resolve of the documents.list
+// screen_definitions row returns null (404/error), same "keep the
+// hardcoded version behind a flag until verified" contract as permits and
+// change-orders.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, FileText, Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 type Doc = {
   id: string;
@@ -23,6 +36,20 @@ type Doc = {
   createdAt: string;
 };
 
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
+// RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const COLUMNS: ScreenColumn[] = [
+  { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Category", field: "category", type: "text", importance: "High" },
+  { label: "Type", field: "fileType", type: "text", importance: "High" },
+  { label: "Size", field: "fileSize", type: "number", importance: "High" },
+  { label: "Expiry", field: "expiryDate", type: "date", importance: "High" },
+  { label: "Added", field: "createdAt", type: "date", importance: "High" },
+];
+
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
 function formatSize(bytes: number | null) {
@@ -32,12 +59,42 @@ function formatSize(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function DocumentsClient({ projectId }: { projectId: string }) {
+// Per-field cell renderer -- this screen isn't built on the kit's
+// ListScreen, so unlike PermitsListClient there's no generic
+// column-type-driven renderer to hand columns to. A registry row can still
+// reorder/relabel these 6 columns live (the hard-stop test); the actual
+// cell value for each known field is still this project's own formatting
+// logic, looked up by field name so reordering doesn't change what renders.
+function renderDocumentCell(field: string, d: Doc) {
+  switch (field) {
+    case "name":
+      return (
+        <span className="flex items-center gap-2 font-medium">
+          <FileText className="size-4 text-px-muted" />{d.name}
+        </span>
+      );
+    case "category":
+      return <Badge variant="outline">{d.category.replace(/_/g, " ")}</Badge>;
+    case "fileType":
+      return <span className="text-px-muted">{d.fileType ?? "—"}</span>;
+    case "fileSize":
+      return <span className="text-px-muted">{formatSize(d.fileSize)}</span>;
+    case "expiryDate":
+      return <span className="text-px-muted">{d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : "—"}</span>;
+    case "createdAt":
+      return <span className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</span>;
+    default:
+      return String((d as unknown as Record<string, unknown>)[field] ?? "—");
+  }
+}
+
+export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
   async function handleUpload(formData: FormData) {
     formData.set("linkedEntityType", "project");
@@ -131,19 +188,15 @@ export default function DocumentsClient({ projectId }: { projectId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead><TableHead>Category</TableHead><TableHead>Type</TableHead>
-                  <TableHead>Size</TableHead><TableHead>Expiry</TableHead><TableHead>Added</TableHead>
+                  {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {docs.map((d) => (
                   <TableRow key={d.id}>
-                    <TableCell className="flex items-center gap-2 font-medium"><FileText className="size-4 text-px-muted" />{d.name}</TableCell>
-                    <TableCell><Badge variant="outline">{d.category.replace(/_/g, " ")}</Badge></TableCell>
-                    <TableCell className="text-px-muted">{d.fileType ?? "—"}</TableCell>
-                    <TableCell className="text-px-muted">{formatSize(d.fileSize)}</TableCell>
-                    <TableCell className="text-px-muted">{d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : "—"}</TableCell>
-                    <TableCell className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</TableCell>
+                    {columns.map((col) => (
+                      <TableCell key={col.field}>{renderDocumentCell(col.field, d)}</TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
