@@ -91,7 +91,28 @@ export function requireRole(ctx: AuthContext, allowed: readonly string[]): NextR
 // instead of just relocating it.
 export async function requireAuth(): Promise<AuthContext> {
   const supabase = await createClient();
-  const { data, error } = await getClaimsWithRetry(supabase);
+
+  // R46 (production incident, 2026-08-25: 39 uncaught 500s across 13 routes
+  // for one user in a 13s window, "SyntaxError: Expected ',' or '}' after
+  // property value in JSON" from getClaims()): middleware.ts already wraps
+  // this identical call in try/catch (its own R45 seq4 follow-up comment
+  // above documents why -- a malformed cookie/JWT can make the Edge
+  // runtime's claims decoder THROW, not just return an `error`, and an
+  // uncaught throw here escapes as a hard 500 instead of degrading to
+  // "unauthenticated" the way every other failure mode in this function
+  // already does). That fix was never carried over to this Route Handler
+  // path, which every /api/* route calls independently of middleware --
+  // so the exact same malformed-cookie condition that middleware already
+  // handles gracefully (redirect to /login) instead took down 13 separate
+  // API routes with uncaught 500s for the one affected request. Mirrors
+  // middleware.ts's try/catch exactly, same non-fatal-by-design intent.
+  let data: Awaited<ReturnType<typeof getClaimsWithRetry>>["data"] = null;
+  let error: Awaited<ReturnType<typeof getClaimsWithRetry>>["error"] = null;
+  try {
+    ({ data, error } = await getClaimsWithRetry(supabase));
+  } catch (err) {
+    console.error("[requireAuth] getClaims() threw -- treating as unauthenticated:", err instanceof Error ? err.message : err);
+  }
 
   if (error || !data?.claims) {
     if (error) {

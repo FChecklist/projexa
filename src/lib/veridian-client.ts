@@ -45,6 +45,36 @@ export class VeridianApiError extends Error {
   }
 }
 
+// R46 (production incident, 2026-08-25: "Vercel Runtime Timeout Error: Task
+// timed out after 300 seconds" on /api/projects, /api/scope, /api/module-chain,
+// /api/currencies, /dashboard, /dashboard/overview and others -- 5 real
+// users affected, 20:00:14Z-03:08:19Z, still recurring). Root cause:
+// VERIDIAN's own backend independently hangs on some of these same logical
+// endpoints (confirmed via its own Vercel runtime errors, an identical
+// timeout error group recurring there since 2026-07-15 -- a pre-existing,
+// chronic condition, not something this incident's investigation caused or
+// could fix from this side). Every fetch() in this file had NO timeout at
+// all, so a VERIDIAN hang meant the calling PROJEXA route just sat on the
+// unbounded fetch until Vercel's own 300s function cap killed the whole
+// request -- the single shared choke point behind failures on otherwise
+// unrelated routes, since virtually every PROJEXA API route goes through
+// this one client. This does not fix VERIDIAN's hang (that's a separate,
+// upstream investigation) -- it bounds PROJEXA's own exposure to it: a
+// hung upstream now fails fast with a clear, catchable VeridianApiError
+// instead of consuming the full 300s Vercel limit on every affected route.
+const VERIDIAN_FETCH_TIMEOUT_MS = 20_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new VeridianApiError(`VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms: ${url}`, 504);
+    }
+    throw err;
+  }
+}
+
 // Looks up this org's own VERIDIAN API key from public.veridian_credentials.
 // Returns null (never throws) when no row exists or the DB is unreachable --
 // resolveApiKey() below turns either case into a thrown, fail-loud AR-04
@@ -108,7 +138,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetchWithTimeout(`${base}${path}`, {
     method: options.method ?? "GET",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -142,7 +172,7 @@ export async function callVeridianBinary(
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetchWithTimeout(`${base}${path}`, {
     method: "GET",
     headers: { "Authorization": `Bearer ${apiKey}` },
     cache: "no-store",
@@ -168,7 +198,7 @@ export async function callVeridianUpload<T = unknown>(
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetchWithTimeout(`${base}${path}`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}` },
     body: formData,
@@ -223,7 +253,7 @@ export async function provisionVeridianOrg(params: ProvisionVeridianOrgParams): 
     throw new VeridianApiError("customerOrgName is required to provision a VERIDIAN org", 400);
   }
 
-  const res = await fetch(`${VERIDIAN_API_ROOT}/platform/provision-org`, {
+  const res = await fetchWithTimeout(`${VERIDIAN_API_ROOT}/platform/provision-org`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${platformKey}`,
