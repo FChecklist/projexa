@@ -198,6 +198,60 @@ function boqTotal(rows: BoqLineItemRow[]): number {
     .reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
 }
 
+// R47-003 (fault R47_SILENT_DROP_01, reproduced live 2026-08-25): both the
+// create and revise paths used to filter incomplete rows out with
+// `lines.filter(...)` and then submit the survivors. A row the user had
+// genuinely typed into but not finished was DISCARDED WITH NO WARNING and the
+// ordinary green success toast still appeared -- silent data loss on a write
+// path, reported as success.
+//
+// Reproduced: a TC-10 BOQ (parent M1 + children M1-A/40, M1-B/35, M1-C/25)
+// submitted with M1-B's Unit blank sent only ["M1","M1-A","M1-C"], persisted 3
+// rows, and said "BOQ created". The worse second-order effect is that the
+// surviving weights then total 65 instead of 100, so every earned-value and
+// percent-complete figure derived from that BOQ is quietly wrong.
+//
+// The distinction that matters is UNTOUCHED vs INCOMPLETE. The form always
+// renders a trailing empty row, so a wholly blank row must stay ignorable --
+// otherwise every submit would fail. A row with ANY content in it, though, is
+// something a human meant, and dropping it is never the right answer.
+// Returns the rows to submit, or a message naming the offending row.
+function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: string | null } {
+  const val = (s: string | undefined) => (s ?? "").trim();
+  const isUntouched = (l: LineItemDraft) =>
+    !val(l.description) && !val(l.unit) && !val(l.quantity) && !val(l.rate) &&
+    !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage);
+
+  const missingFrom = (l: LineItemDraft): string[] => {
+    const missing: string[] = [];
+    if (!val(l.description)) missing.push("Description");
+    if (!val(l.unit)) missing.push("Unit");
+    if (val(l.parentItemCode)) {
+      // A sub-task prices off its parent, so it needs no Qty/Rate of its own --
+      // but VERIDIAN rejects a child with no breakdown % (construction-boq-
+      // service.ts deriveLineItemQuantityAndRate), so catch that here with a
+      // field name instead of letting it come back as a generic 400.
+      if (!val(l.breakdownPercentage)) missing.push("Breakdown %");
+    } else {
+      if (!val(l.quantity)) missing.push("Qty");
+      if (!val(l.rate)) missing.push("Rate");
+    }
+    return missing;
+  };
+
+  const valid: LineItemDraft[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isUntouched(lines[i])) continue;
+    const missing = missingFrom(lines[i]);
+    if (missing.length > 0) {
+      return { valid: [], error: `Line ${i + 1} is incomplete — add ${missing.join(", ")}. Nothing was saved.` };
+    }
+    valid.push(lines[i]);
+  }
+  if (valid.length === 0) return { valid: [], error: "Add at least one complete line item" };
+  return { valid, error: null };
+}
+
 export default function ScopeClient({ projectId, compareColumns, listColumns }: { projectId: string; compareColumns?: RegistryColumn[] | null; listColumns?: RegistryColumn[] | null }) {
   const columns = compareColumns && compareColumns.length > 0 ? compareColumns : DEFAULT_COMPARE_COLUMNS;
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
@@ -270,13 +324,9 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
 
   async function createBoq() {
     if (!title.trim()) return;
-    const validLines = lines.filter((l) => {
-      if (!l.description.trim() || !l.unit.trim()) return false;
-      if (l.parentItemCode?.trim()) return true;
-      return Boolean(l.quantity && l.rate);
-    });
-    if (validLines.length === 0) {
-      toast.error("Add at least one complete line item");
+    const { valid: validLines, error: lineError } = collectLines(lines);
+    if (lineError) {
+      toast.error(lineError);
       return;
     }
     setSubmitting(true);
@@ -329,13 +379,9 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
 
   async function submitRevision(allowScopeReductionOverride = false) {
     if (!revising) return;
-    const validLines = revisionLines.filter((l) => {
-      if (!l.description.trim() || !l.unit.trim()) return false;
-      if (l.parentItemCode?.trim()) return true;
-      return Boolean(l.quantity && l.rate);
-    });
-    if (validLines.length === 0) {
-      toast.error("Add at least one complete line item");
+    const { valid: validLines, error: lineError } = collectLines(revisionLines);
+    if (lineError) {
+      toast.error(lineError);
       return;
     }
     setRevisionSubmitting(true);
