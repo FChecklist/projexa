@@ -30,7 +30,7 @@ import {
 
 type Activity = { id: string; name: string; unit: string | null };
 type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
-type Boq = { id: string; version: number; status: string };
+type Boq = { id: string; version: number; status: string; title: string };
 
 const ENTRY_BASIS_OPTIONS = [
   { value: "DELTA", label: "Delta -- this entry adds to progress already logged" },
@@ -44,6 +44,11 @@ function todayIso() {
 export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
+  // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
+  // currently selected. Before this, the form resolved exactly ONE "current"
+  // BOQ and offered no way to reach any other.
+  const [boqs, setBoqs] = useState<Boq[]>([]);
+  const [selectedBoqId, setSelectedBoqId] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({ entryDate: todayIso(), entryBasis: "DELTA" });
   const [messages, setMessages] = useState<FieldMessage[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -69,28 +74,74 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       .then((data) => setActivities(data.activities ?? []))
       .catch(() => toast.error("Couldn't load activities"));
 
-    // Resolve "the current BOQ" the same way ScopeClient shows it: prefer
-    // approved, then submitted, then the highest version -- a BOQ line link
-    // is optional (createProgressEntry's own contract), so no BOQ existing
-    // yet just means the picker is empty, never an error.
+    // R47-005 (fault R46M13_TC30_01, reproduced live in production 2026-08-25):
+    // this used to resolve ONE "current" BOQ -- approved, else submitted, else
+    // highest version -- fetch only that BOQ's line items, and offer no BOQ
+    // selector anywhere on the form. Every other BOQ in the project was
+    // therefore unreachable for recording progress against.
+    //
+    // Measured on Oakwood Residence at the time: 31 BOQs carrying 79 line items
+    // in the project, and the picker offered TWO ("PP1 -- Parent PP1",
+    // "PP1-A -- Child A"). The winner was an unrelated leftover test BOQ,
+    // "R45-B3 pct-only 1787594876935", which won on ONE property: it was the
+    // only version-2 row. The project has zero approved and zero submitted
+    // BOQs, so both preference branches missed and resolution fell through to
+    // version DESC. A freshly created BOQ is draft/version 1 and could NEVER
+    // outrank it -- so a user who had just built a weighted BOQ could not
+    // select its sub-task at all. That is TC-30, unrunnable by a real user.
+    //
+    // The resolution order is KEPT as the DEFAULT selection (so the common
+    // single-BOQ case behaves exactly as before), but the full list is now
+    // retained and offered whenever the project holds more than one -- the
+    // same shape projexa#94 already established for the work-progress REPORT,
+    // rather than inventing a second convention for the same problem.
     fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
       .then((r) => r.json())
-      .then(async (data) => {
-        const boqs: Boq[] = data.boqs ?? [];
-        if (boqs.length === 0) return;
+      .then((data) => {
+        const all: Boq[] = data.boqs ?? [];
+        if (all.length === 0) return;
+        setBoqs(all);
         const current =
-          boqs.find((b) => b.status === "approved") ??
-          boqs.find((b) => b.status === "submitted") ??
-          [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boqRes = await fetch(`/api/scope/${current.id}`);
-        const boq = await boqRes.json();
-        setLineItems(boq.lineItems ?? []);
+          all.find((b) => b.status === "approved") ??
+          all.find((b) => b.status === "submitted") ??
+          [...all].sort((a, b) => b.version - a.version)[0];
+        setSelectedBoqId(current.id);
+        // Reflect the default in the control itself, so the user can SEE which
+        // BOQ they are recording against instead of having to infer it.
+        setValues((v) => ({ ...v, boqId: current.id }));
       })
       .catch(() => { /* optional context -- a missing BOQ link is not a form-blocking error */ });
   }, [projectId]);
 
+  // Loads the selected BOQ's line items. Split out of the effect above so
+  // changing the BOQ re-populates the picker, which is the whole point of the
+  // selector. Org and project scoping are unchanged: this only ever fetches a
+  // BOQ id that /api/scope?projectId= already returned for this project, and
+  // that route is org-scoped server-side -- so widening the CHOICE here does
+  // not widen ACCESS.
+  useEffect(() => {
+    if (!selectedBoqId) return;
+    let cancelled = false;
+    fetch(`/api/scope/${selectedBoqId}`)
+      .then((r) => r.json())
+      .then((boq) => { if (!cancelled) setLineItems(boq.lineItems ?? []); })
+      .catch(() => { if (!cancelled) setLineItems([]); });
+    return () => { cancelled = true; };
+  }, [selectedBoqId]);
+
   const columns: ScreenColumn[] = [
     { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },
+    // Shown only when the project actually holds more than one BOQ -- with a
+    // single BOQ the choice is not a choice, and an extra control on a site
+    // engineer's form is cost with no benefit (projexa#94's own rule).
+    ...(boqs.length > 1
+      ? [{
+          label: "BOQ", field: "boqId", control: "SELECT", type: "text", required: false, fieldStatus: "OPTIONAL",
+          options: [...boqs]
+            .sort((a, b) => b.version - a.version || a.title.localeCompare(b.title))
+            .map((b) => ({ value: b.id, label: `${b.title} (v${b.version}, ${b.status})` })),
+        } as ScreenColumn]
+      : []),
     { label: "BOQ line item", field: "boqLineItemId", control: "SELECT", type: "text", required: false, fieldStatus: "OPTIONAL", options: lineItems.map((l) => ({ value: l.id, label: l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description })) },
     { label: "Line item description", field: "description", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
     { label: "Unit", field: "unit", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
@@ -104,6 +155,14 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   ];
 
   function handleFieldChange(field: string, value: unknown) {
+    if (field === "boqId") {
+      // Switching BOQ invalidates the line selected from the previous one, so
+      // clear it and the fields derived from it. Leaving a stale line id in
+      // place would post progress against a line the user can no longer see.
+      setSelectedBoqId(value as string);
+      setValues((v) => ({ ...v, boqId: value, boqLineItemId: undefined, description: null, unit: null, rate: null }));
+      return;
+    }
     if (field === "boqLineItemId") {
       const line = lineItems.find((l) => l.id === value);
       setValues((v) => ({ ...v, boqLineItemId: value, description: line?.description ?? null, unit: line?.unit ?? null, rate: line?.rate ?? null }));
