@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { formatProgressCell } from "@/lib/work-progress-report";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -31,6 +32,15 @@ export type LineItemRow = {
   qty: { prev: number; current: number; total: number; balance: number };
   amt: { prev: number; current: number; total: number; balance: number };
   percentage: { prev: number; current: number; total: number; balance: number };
+  // T-WPR-14-1 / Point 111 (WPR-14): whether ANY progress entry contributed
+  // to each bucket -- see work-progress-report.ts's own LineItemProgress
+  // comment, which is where this is actually computed. money() alone can't
+  // tell a real computed zero (dash) from a bucket nothing has ever touched
+  // (blank) -- both are the JS number 0. Always present on the real API
+  // response (buildWorkProgressReport -> computeLineItemProgress populates
+  // it unconditionally); required here, not optional, so a test fixture
+  // that omits it is a type error, not a silent blank/zero mismatch.
+  touched: { prev: boolean; current: boolean; total: boolean };
 };
 type CategoryRow = { name: string; amtTotal: number; amt: { prev: number; current: number; total: number; balance: number }; percentage: { prev: number; current: number; total: number; balance: number } };
 type ManpowerRow = { trade: string; workerDays: number; totalCost: number };
@@ -43,6 +53,23 @@ type ReportResponse = { boqTitle: string | null; boqId: string | null; available
 
 function money(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+// T-WPR-14-1 (WPR-14, point 111): money() alone renders every Qty/Amt cell
+// as a plain formatted number, so a real computed zero (e.g. a line that is
+// fully complete, balance = 0) and a bucket with NO progress entry in this
+// window at all (both the JS number 0 today) were visually identical --
+// exactly the bug this test caught. formatProgressCell (work-progress-
+// report.ts) is the canonical (value, touched) -> "" / "-" / real-number
+// rule; this just layers this table's own money() thousands-formatting on
+// top of its real-number case, so a genuine value still reads "20,833.20"
+// rather than an unformatted raw number. NOT used for the Percent band --
+// WPR-06 already gives percent cells their own, deliberately different,
+// parent-only blanking rule (isChild below / formatParentOnlyPercent on the
+// share page), unrelated to whether a bucket was ever touched.
+function moneyCell(value: number, touched: boolean): string {
+  const cell = formatProgressCell(value, touched);
+  return typeof cell === "number" ? money(cell) : cell;
 }
 
 // Point 108 (Rajat, 21 Aug: "FOLLOW THE XLSX ORDER, not the handwritten
@@ -132,13 +159,19 @@ export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mod
               <TableCell data-testid="pct-current">{isChild ? "" : `${r.percentage.current}%`}</TableCell>
               <TableCell data-testid="pct-third">{isChild ? "" : `${r.percentage[mode]}%`}</TableCell>
 
-              <TableCell className={bandBorder}>{money(r.qty.prev)}</TableCell>
-              <TableCell>{money(r.qty.current)}</TableCell>
-              <TableCell>{money(r.qty[mode])}</TableCell>
+              {/* T-WPR-14-1: third-column mode toggles between "total" and
+                  "balance", but touched only tracks prev/current/total (see
+                  the type's own comment) -- balance is algebraically total's
+                  own complement (qtyTotal/amtTotal - total), so it is a real
+                  computed figure exactly when total is, and touched.total is
+                  the correct signal for it in either mode. */}
+              <TableCell className={bandBorder} data-testid="qty-prev">{moneyCell(r.qty.prev, r.touched.prev)}</TableCell>
+              <TableCell data-testid="qty-current">{moneyCell(r.qty.current, r.touched.current)}</TableCell>
+              <TableCell data-testid="qty-third">{moneyCell(r.qty[mode], r.touched.total)}</TableCell>
 
-              <TableCell className={bandBorder}>{money(r.amt.prev)}</TableCell>
-              <TableCell>{money(r.amt.current)}</TableCell>
-              <TableCell>{money(r.amt[mode])}</TableCell>
+              <TableCell className={bandBorder} data-testid="amt-prev">{moneyCell(r.amt.prev, r.touched.prev)}</TableCell>
+              <TableCell data-testid="amt-current">{moneyCell(r.amt.current, r.touched.current)}</TableCell>
+              <TableCell data-testid="amt-third">{moneyCell(r.amt[mode], r.touched.total)}</TableCell>
             </TableRow>
           );
         })}

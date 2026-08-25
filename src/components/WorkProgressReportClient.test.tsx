@@ -37,6 +37,7 @@ const PARENT: LineItemRow = {
   qty: { prev: 150, current: 67.5, total: 217.5, balance: 254.5 },
   amt: { prev: 16200, current: 7290, total: 23490, balance: 27486 },
   percentage: { prev: 31.79, current: 14.3, total: 46.08, balance: 53.92 },
+  touched: { prev: true, current: true, total: true }, // real entries underlie every bucket here
 };
 const child = (id: string, code: string): LineItemRow => ({
   lineItemId: id, code, description: code, categoryName: "Partitions", unit: "Sqm", rate: 0,
@@ -44,6 +45,7 @@ const child = (id: string, code: string): LineItemRow => ({
   qty: { prev: 0, current: 0, total: 0, balance: 0 },
   amt: { prev: 0, current: 0, total: 0, balance: 0 },
   percentage: { prev: 0, current: 0, total: 0, balance: 0 }, // never rendered -- child rows are blank regardless
+  touched: { prev: false, current: false, total: false }, // no entries -- these fixtures exist only to test percent blanking
 });
 const CHILDREN: LineItemRow[] = [child("c1", "Frame"), child("c2", "Gypsum"), child("c3", "Rockwool"), child("c4", "Taping")];
 
@@ -91,5 +93,49 @@ describe("ScopeTable (point 108: banded layout)", () => {
     const standalone: LineItemRow = { ...PARENT, lineItemId: "p-2.01", code: "2.01", parentLineItemId: null };
     const html = renderToStaticMarkup(<ScopeTable rows={[standalone]} mode="total" />);
     expect(textsByTestId(html, "pct-third")[0]).toBe("46.08%");
+  });
+});
+
+// T-WPR-14-1 (WPR-14, point 111): "a computed zero is a dash, a never-touched
+// cell is blank" -- the oracle is "Frame 01 balance renders '-' " (Frame 01
+// is fully complete: balance computes to a real 0) and "Taping Jointing 01
+// current renders '' " (no entry logged in this window at all). Neither may
+// render a bare "0.00" or "0" -- that was the actual FAIL this test caught
+// (money() rendered every Qty/Amt cell as a plain number, touched or not).
+describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", () => {
+  test("Frame 01: balance computes to a real zero -- renders a dash, not 0.00", () => {
+    const frame01: LineItemRow = {
+      lineItemId: "c-frame01", code: "1.01.1", description: "Frame 01", categoryName: "Partitions",
+      unit: "Sqm", rate: 108, qtyTotal: 400, amtTotal: 43200, parentLineItemId: "p-1.01",
+      qty: { prev: 300, current: 100, total: 400, balance: 0 }, // fully progressed -- real, computed 0
+      amt: { prev: 32400, current: 10800, total: 43200, balance: 0 },
+      percentage: { prev: 75, current: 25, total: 100, balance: 0 },
+      touched: { prev: true, current: true, total: true },
+    };
+    const html = renderToStaticMarkup(<ScopeTable rows={[frame01]} mode="balance" />);
+    expect(textsByTestId(html, "qty-third")[0]).toBe("-");
+    expect(textsByTestId(html, "amt-third")[0]).toBe("-");
+  });
+
+  test("Taping Jointing 01: no entry in this window -- renders blank, not 0.00", () => {
+    const taping: LineItemRow = {
+      lineItemId: "c-taping01", code: "1.01.4", description: "Taping Jointing 01", categoryName: "Partitions",
+      unit: "Sqm", rate: 108, qtyTotal: 150, amtTotal: 16200, parentLineItemId: "p-1.01",
+      qty: { prev: 50, current: 0, total: 50, balance: 100 }, // current never touched this window
+      amt: { prev: 5400, current: 0, total: 5400, balance: 10800 },
+      percentage: { prev: 33.33, current: 0, total: 33.33, balance: 66.67 },
+      touched: { prev: true, current: false, total: true },
+    };
+    const html = renderToStaticMarkup(<ScopeTable rows={[taping]} mode="total" />);
+    expect(textsByTestId(html, "qty-current")[0]).toBe("");
+    expect(textsByTestId(html, "amt-current")[0]).toBe("");
+    // prev WAS touched, so it still renders as a real formatted number.
+    expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400");
+  });
+
+  test("a real touched value still uses money()'s thousands formatting, not a raw number", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
+    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
   });
 });
