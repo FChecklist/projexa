@@ -559,8 +559,12 @@ export default function ScopeClient({ projectId, compareColumns }: { projectId: 
                           )}
                         </TableCell>
                         <TableCell className="text-px-muted">{r.unit}</TableCell>
-                        <TableCell className="text-right text-px-muted">{!isSub ? formatAmount(r.quantity) : derived ? formatAmount(derived.qty) : "—"}</TableCell>
-                        <TableCell className="text-right text-px-muted">{!isSub ? withCurrency(currencyCode, r.rate) : derived ? withCurrency(currencyCode, derived.rate) : "—"}</TableCell>
+                        {/* R46 seq110 (T-BOQ-02-2): muted styling is DERIVED-figure signaling,
+                            not a row-level "this is a sub-task" indicator -- parent Qty/Rate are
+                            directly entered and must render un-muted so users can tell a computed
+                            sub-task figure apart from one someone actually typed in. */}
+                        <TableCell className={isSub ? "text-right text-px-muted" : "text-right"} title={isSub ? "Qty derived from parent line item" : undefined}>{!isSub ? formatAmount(r.quantity) : derived ? formatAmount(derived.qty) : "—"}</TableCell>
+                        <TableCell className={isSub ? "text-right text-px-muted" : "text-right"} title={isSub ? "Rate derived from parent rate × breakdown %" : undefined}>{!isSub ? withCurrency(currencyCode, r.rate) : derived ? withCurrency(currencyCode, derived.rate) : "—"}</TableCell>
                         <TableCell className="text-right">{withCurrency(currencyCode, r.amount)}</TableCell>
                       </TableRow>
                     );
