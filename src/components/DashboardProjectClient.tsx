@@ -103,7 +103,15 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       oneNumber={
         <KpiCard
           size="primary"
-          label="% Complete by Value"
+          // CONS-01 (R46 P4 consistency sweep): relabelled from "% Complete
+          // by Value" to spell out "BOQ" -- this KPI's onClick below sends
+          // the user straight to the Work Progress > Analytics screen,
+          // which shows its own, genuinely different, "Avg % Complete
+          // (Activity Log)" KPI (flat average over all logged entries, no
+          // BOQ scoping). Without the distinguishing word here, a user
+          // following that link sees a second unlabelled "percent complete"
+          // number that disagrees with the one they just clicked.
+          label="% Complete by BOQ Value"
           value={hasEv ? `${dashboard.percentByValue}%` : "No BOQ yet"}
           trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this" }}
           baseline={hasEv ? `of ${money(dashboard.contractValue!, currency)} contract value` : ""}

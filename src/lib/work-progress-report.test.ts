@@ -5,7 +5,9 @@ import {
   buildVendorBreakdown,
   buildWorkProgressReport,
   computeLineItemProgress,
+  formatParentOnlyPercent,
   formatProgressCell,
+  sumRootAmtTotal,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -422,6 +424,41 @@ describe("formatProgressCell (dash vs. blank vs. the real number)", () => {
   });
   test("a real value renders unchanged, for the caller to format as today", () => {
     expect(formatProgressCell(32.4, true)).toBe(32.4);
+  });
+});
+
+// CONS-05 (R46 P4 consistency sweep): the public share-link page previously
+// blanked a PARENT row's percent cell whenever it was untouched, disagreeing
+// with the live Report tab's ScopeTable, which shows a real "0%" for every
+// parent regardless of touched -- only a hierarchical child ever blanks.
+describe("formatParentOnlyPercent (WPR-06: percent cells are parent rows only)", () => {
+  test("a parent line always renders a real number, even an untouched/computed zero", () => {
+    expect(formatParentOnlyPercent(0, false)).toBe("0%");
+  });
+  test("a parent line's real non-zero value renders with a % suffix", () => {
+    expect(formatParentOnlyPercent(48, false)).toBe("48%");
+  });
+  test("a child line always renders blank, regardless of its value", () => {
+    expect(formatParentOnlyPercent(0, true)).toBe("");
+    expect(formatParentOnlyPercent(75, true)).toBe("");
+  });
+});
+
+// CONS-04 (R46 P4 consistency sweep): the public share-link page previously
+// carried no Rate/Contract-Amt/Grand-Total field at all. sumRootAmtTotal is
+// the same D-3 "parent BOQ lines only" rule WorkProgressReportClient.tsx's
+// computeGrandTotal() already applies to this exact figure.
+describe("sumRootAmtTotal (Grand Total: parent/root BOQ lines only, D-3)", () => {
+  test("sums only rows with no parentLineItemId, ignoring children entirely", () => {
+    const rows = [
+      { amtTotal: 5000, parentLineItemId: null },
+      { amtTotal: 999, parentLineItemId: "parent_1" }, // child -- informational only, never counted here
+      { amtTotal: 2000, parentLineItemId: null },
+    ];
+    expect(sumRootAmtTotal(rows)).toBe(7000);
+  });
+  test("empty report sums to zero", () => {
+    expect(sumRootAmtTotal([])).toBe(0);
   });
 });
 
