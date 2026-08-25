@@ -24,6 +24,51 @@
 // default) so browsers always revalidate the SW script itself against the
 // network instead of serving a stale copy from the HTTP cache -- the other
 // classic way an old SW keeps re-installing itself indefinitely.
+//
+// R46 (platform.r43_faults F_022/F_023): the navigate handler below carried
+// an independent bug from this file's public/sw.js days, ported over
+// verbatim by the F_015 move above (that move fixed cache INVALIDATION
+// across deploys; it didn't touch this handler's own fallback logic) --
+// real production repro: /ffe never rendered FF&E content, and separately
+// /dashboard/hierarchy client-side "redirected" to /ffe within ~500ms of
+// mount even though the route itself served a real 200 with no server
+// Location header (ruling out a server redirect).
+//
+// Root cause: on a failed navigation, `caches.match(request).then((cached)
+// => cached || caches.match("/"))` fell back to whatever this SW cached at
+// INSTALL TIME for the app-shell route "/" -- which is itself a redirect
+// target (src/app/page.tsx `redirect()`s a logged-in visitor to
+// /dashboard), so the cached Response's own `.url`/`.redirected` describe
+// /dashboard, not "/". Per the Fetch/Service Worker spec, when a service
+// worker satisfies a NAVIGATION with a Response that was itself the product
+// of a redirect, the browser adopts that Response's URL as the
+// navigated-to URL -- i.e. serving this cached Response for a failed
+// navigation to ANY other route (e.g. /ffe, /dashboard/hierarchy) silently
+// carried the browser's address bar to wherever "/" last pointed, and with
+// stale data ("No active projects yet" despite a real project existing --
+// whatever "/" looked like at install time, not a live fetch), which is
+// exactly what both faults reported. `fetch(request)` rejects (not just
+// resolves with an error status) when the connection is torn down rather
+// than answered -- exactly what a hard Vercel function-execution timeout
+// does; Vercel's own runtime error logs show a real, confirmed "Task timed
+// out after 300 seconds" incident on /dashboard, /dashboard/overview and
+// /api/dashboard-hierarchy/.../dashboard in the hours immediately before
+// these faults were filed (the server-side half of that incident was
+// already fixed by veridian-client.ts's 20s fetchWithTimeout -- this is the
+// client-side fallout of the same window). This also explains why
+// fetch('/dashboard/hierarchy', {redirect:'manual'}) correctly showed a
+// plain 200 with no Location header when F_023 was verified that way: a
+// plain fetch() call isn't a navigation (request.mode isn't "navigate"), so
+// it never goes through this handler at all -- only a real browser
+// navigation (the actual repro path) does.
+//
+// Fix: never substitute a DIFFERENT route's cached content for a failed
+// navigation. offlineNavigationFallback() below serves a freshly-built,
+// same-URL, honest "couldn't reach PROJEXA -- Retry" response instead (no
+// `.redirected`/foreign `.url` for the browser to adopt as a different
+// address) -- no CACHE_NAME bump needed this time, since the F_015 fix
+// above already makes every deploy's SW script (this one included)
+// automatically supersede whatever any earlier deploy's SW cached.
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -89,14 +134,17 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   // Network-first for real navigations (always prefer live content when
-  // online), falling back to this request's own cache entry or, failing
-  // that, the cached app shell "/" -- only when the network genuinely
-  // fails (offline).
+  // online). R46 (platform.r43_faults F_022/F_023, see this file's route.ts
+  // header for the full writeup): on a genuine network-level failure this
+  // used to fall back to whatever "/" was cached as at install time --
+  // which, because "/" itself redirects to /dashboard, silently carried the
+  // browser to /dashboard (stale, install-time data) instead of the route
+  // the user actually asked for. Never substitute a DIFFERENT route's
+  // cached content for a failed navigation -- serve a same-URL, honest
+  // fallback instead.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.match(request).then((cached) => cached || caches.match("/"))
-      )
+      fetch(request).catch(() => offlineNavigationFallback(request))
     );
     return;
   }
@@ -123,6 +171,42 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+// R46 (platform.r43_faults F_022/F_023): the honest, same-URL fallback for a
+// navigation whose fetch() rejected at the network level -- see this file's
+// route.ts header for the full root-cause writeup. Built fresh with the
+// Response constructor -- NOT caches.match(...) of any cached page -- so it
+// carries no .redirected/foreign .url for the browser to adopt as the
+// navigated-to address. Status 200 (this IS the real response for this
+// navigation, not an error the browser should chrome-decorate) with a Retry
+// link back to the SAME url -- request.url already carries whatever path
+// the user was trying to reach, so no route-specific knowledge is needed
+// here for this to work for every route, present or future.
+function offlineNavigationFallback(request) {
+  const html = \`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connection problem — PROJEXA</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f6f5f2; color: #14213d; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+  .card { max-width: 420px; text-align: center; }
+  h1 { font-size: 1.15rem; margin-bottom: 8px; }
+  p { font-size: 0.9rem; color: #5b6478; line-height: 1.5; }
+  a { display: inline-block; margin-top: 16px; padding: 8px 20px; background: #14213d; color: #fff; border-radius: 8px; text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Couldn't reach PROJEXA</h1>
+    <p>This page didn't load -- your connection dropped or the request took too long. Nothing else has changed; try again.</p>
+    <a href="\${request.url}">Retry</a>
+  </div>
+</body>
+</html>\`;
+  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
 `
 
 export async function GET() {

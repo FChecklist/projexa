@@ -35,6 +35,15 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // R46 (platform.r43_faults F_022): load() used to only toast on failure
+  // (a toast that auto-dismisses) and otherwise fall through to the same
+  // render as a genuinely-empty, working list ("No FF&E items yet.") --
+  // dishonest: a VERIDIAN timeout and an org with zero FF&E items were
+  // visually identical once the toast faded. Track the real failure and
+  // render an inline, retry-able error Card instead (below), matching the
+  // pattern the rest of this app already uses for a failed server-side
+  // fetch (e.g. this route's own page.tsx `errorMessage` Card).
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState("");
   const [roomOrArea, setRoomOrArea] = useState("");
@@ -49,17 +58,25 @@ export default function FfeClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [itemsRes, marginRes] = await Promise.all([
         fetch(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
         fetch(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
       ]);
+      if (!itemsRes.ok || !marginRes.ok) {
+        const failed = !itemsRes.ok ? itemsRes : marginRes;
+        const body = await failed.json().catch(() => ({}));
+        throw new Error(body.error || `Couldn't load FF&E items (${failed.status})`);
+      }
       const itemsData = await itemsRes.json();
       const marginData = await marginRes.json();
       setItems(itemsData.items ?? []);
       setMargin(marginData);
-    } catch {
-      toast.error("Couldn't load FF&E items");
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Couldn't load FF&E items";
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -107,6 +124,17 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   }
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+
+  if (loadError) {
+    return (
+      <Card className="border-px-error-border bg-px-error-light">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-px-error">
+          <span>Could not load FF&amp;E items: {loadError}</span>
+          <Button variant="outline" size="sm" onClick={load}>Retry</Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">

@@ -35,61 +35,100 @@ function fmt(n: number, currencies: Currency[]) {
   return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-async function getJson<T>(url: string): Promise<T | null> {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+// R46 (platform.r43_faults F_023): every caller used to collapse a failed
+// fetch (network error OR a non-2xx response, e.g. the VERIDIAN timeout
+// /api/dashboard-hierarchy/companies/[companyId]/dashboard turns into a 504 --
+// see that route's own try/catch) into a silent `null`/no-op. Nothing ever
+// told the user their company dashboard failed to load; the page just sat
+// there with an empty Projects section and no explanation -- indistinguishable
+// from "this org genuinely has no projects", which is the opposite of the
+// "real, honest error state" this route is supposed to show on a backend
+// failure. Now returns the real error message on failure instead of null, so
+// every call site below can render it instead of swallowing it.
+async function getJson<T>(url: string): Promise<{ data: T } | { error: string }> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: body.error || `Request failed (${res.status})` };
+    }
+    return { data: await res.json() };
+  } catch {
+    return { error: "Network error -- couldn't reach PROJEXA" };
+  }
 }
 
 export function DashboardHierarchyClient() {
   const currencies = useCurrencies();
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string>("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentId, setDepartmentId] = useState<string>("__all__");
   const [orgDashboard, setOrgDashboard] = useState<OrgDashboard | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [projectId, setProjectId] = useState<string>("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [details, setDetails] = useState<ProjectDetails | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+  const retry = () => setReloadToken((n) => n + 1);
 
   // Company level: load the current user's real memberships once.
   useEffect(() => {
-    getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((data) => {
-      if (!data) return;
-      setCompanies(data.companies);
-      if (data.companies.length > 0) setCompanyId(data.companies[0].id);
+    setCompaniesError(null);
+    getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((result) => {
+      if ("error" in result) { setCompaniesError(result.error); return; }
+      setCompanies(result.data.companies);
+      if (result.data.companies.length > 0) setCompanyId(result.data.companies[0].id);
     });
-  }, []);
+  }, [reloadToken]);
 
   // Department level: real HR departments for the selected company.
   useEffect(() => {
     if (!companyId) return;
     setDepartmentId("__all__");
-    getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((data) => {
-      if (data) setDepartments(data.departments);
+    getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((result) => {
+      if ("data" in result) setDepartments(result.data.departments);
+      // Non-fatal here: the department filter is a nice-to-have, and the
+      // dashboard fetch below (same companyId) surfaces its own honest error
+      // for anything more serious (e.g. an org the caller no longer has
+      // access to) without a second, redundant error banner for one screen.
     });
-  }, [companyId]);
+  }, [companyId, reloadToken]);
 
   // Project level: the company's (optionally department-filtered) project list.
   useEffect(() => {
     if (!companyId) return;
     setProjectId("");
     setDetails(null);
+    setDashboardError(null);
+    setDashboardLoading(true);
     const qs = departmentId !== "__all__" ? `?departmentId=${departmentId}` : "";
-    getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${qs}`).then(setOrgDashboard);
-  }, [companyId, departmentId]);
+    getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${qs}`)
+      .then((result) => {
+        if ("error" in result) { setDashboardError(result.error); return; }
+        setOrgDashboard(result.data);
+      })
+      .finally(() => setDashboardLoading(false));
+  }, [companyId, departmentId, reloadToken]);
 
   // Details view: Revenue/Budget/Expense/Progress for the selected project, date-range filtered.
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   function loadDetails() {
     if (!companyId || !projectId) return;
     setLoading(true);
+    setDetailsError(null);
     const qs = new URLSearchParams();
     if (fromDate) qs.set("from", fromDate);
     if (toDate) qs.set("to", toDate);
     getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
-      .then(setDetails)
+      .then((result) => {
+        if ("error" in result) { setDetailsError(result.error); return; }
+        setDetails(result.data);
+      })
       .finally(() => setLoading(false));
   }
   useEffect(loadDetails, [companyId, projectId, fromDate, toDate]);
@@ -141,8 +180,30 @@ export function DashboardHierarchyClient() {
         </CardContent>
       </Card>
 
-      {companies.length === 0 && (
+      {companiesError && (
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-px-error">
+            <span>Could not load your companies: {companiesError}</span>
+            <Button variant="outline" size="sm" onClick={retry}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!companiesError && companies.length === 0 && (
         <p className="text-sm text-px-muted">No company memberships found for this account.</p>
+      )}
+
+      {dashboardError && (
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-px-error">
+            <span>Could not load the company dashboard: {dashboardError}</span>
+            <Button variant="outline" size="sm" onClick={retry}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!dashboardError && dashboardLoading && !orgDashboard && (
+        <p className="py-6 text-center text-sm text-px-muted">Loading company dashboard...</p>
       )}
 
       {orgDashboard && (
@@ -209,7 +270,14 @@ export function DashboardHierarchyClient() {
               )}
             </div>
 
-            {loading || !details ? (
+            {detailsError ? (
+              <Card className="border-px-error-border bg-px-error-light">
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-px-error">
+                  <span>Could not load this project's details: {detailsError}</span>
+                  <Button variant="outline" size="sm" onClick={loadDetails}>Retry</Button>
+                </CardContent>
+              </Card>
+            ) : loading || !details ? (
               <p className="py-6 text-center text-sm text-px-muted">Loading...</p>
             ) : (
               <div className="space-y-2">
