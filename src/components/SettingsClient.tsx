@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format-date";
+import OrgInvitesCard from "@/components/OrgInvitesCard";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
@@ -101,6 +102,13 @@ export default function SettingsClient() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* R48_NO_INVITE_UI_01: org-admin user provisioning, placed with the
+          rest of organisation administration (ruled at L5 -- SAP, Dynamics
+          365 and Odoo all put it here). Rendered for owner/admin only, which
+          is a UX affordance; the real gate is requireRole(ORG_ADMIN) on the
+          API plus RLS in drizzle/0015_org_invites.sql. */}
+      {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
 
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>
