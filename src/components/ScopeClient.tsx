@@ -33,6 +33,26 @@ const DEFAULT_COMPARE_COLUMNS: ScreenColumn[] = [
   { field: "amount", label: "Amount", type: "number", importance: "High" },
 ];
 
+// R46 P8 seq121 (M28 registry-model, CUSTOM archetype -- function_id
+// "boq.custom"): the main BOQ table below stays a fully hand-rolled <Table>
+// (not the kit's generic ListScreen -- revisions/variation/hierarchy don't
+// fit a plain LIST renderer), but its column LABELS are now registry-driven
+// the same way every other converted screen's are. Only label text reads
+// from the registry row; the "Actions" column has no backing field and
+// always stays hardcoded. Mirrors DEFAULT_COMPARE_COLUMNS 1:1 so there is no
+// visible difference between "resolved from the DB" and this fallback.
+const DEFAULT_LIST_COLUMNS: ScreenColumn[] = [
+  { field: "title", label: "Title", type: "text", importance: "High" },
+  { field: "version", label: "Version", type: "text", importance: "High" },
+  { field: "status", label: "Status", type: "text", importance: "High" },
+  { field: "variation", label: "Variation vs. prior", type: "text", importance: "High" },
+  { field: "createdAt", label: "Created", type: "date", importance: "High" },
+];
+
+function columnLabel(columns: ScreenColumn[], field: string, fallback: string): string {
+  return columns.find((c) => c.field === field)?.label || fallback;
+}
+
 // Reshapes VERIDIAN's BoqComparison (added/removed/changed + a flat
 // netVariation per changed row) into CompareScreen's generic CompareResult
 // (changedFields drives which cells highlight) -- CompareScreen itself knows
@@ -178,8 +198,9 @@ function boqTotal(rows: BoqLineItemRow[]): number {
     .reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
 }
 
-export default function ScopeClient({ projectId, compareColumns }: { projectId: string; compareColumns?: RegistryColumn[] | null }) {
+export default function ScopeClient({ projectId, compareColumns, listColumns }: { projectId: string; compareColumns?: RegistryColumn[] | null; listColumns?: RegistryColumn[] | null }) {
   const columns = compareColumns && compareColumns.length > 0 ? compareColumns : DEFAULT_COMPARE_COLUMNS;
+  const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -492,8 +513,12 @@ export default function ScopeClient({ projectId, compareColumns }: { projectId: 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead><TableHead>Version</TableHead><TableHead>Status</TableHead>
-                  <TableHead>Variation vs. prior</TableHead><TableHead>Created</TableHead><TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
+                  <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
+                  <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
+                  <TableHead>{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
+                  <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
