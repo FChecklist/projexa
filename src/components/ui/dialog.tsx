@@ -38,7 +38,23 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        // R46 F_007 fix: Radix's Presence only unmounts this node once the
+        // browser fires `animationend` for the data-[state=closed] exit
+        // animation (fade-out-0). That event depends on the tab actually
+        // getting compositor frames -- if it's backgrounded/occluded (or a
+        // frame is otherwise dropped) right as a dialog closes, the
+        // animation can stall indefinitely: data-state flips to "closed"
+        // (confirmed correct -- the app's open state is fine) but the node
+        // stays mounted at opacity:1/pointer-events:auto, a full-screen
+        // overlay silently swallowing every click until a hard reload.
+        // Verified live against projexa-ai.com's change-orders Create flow
+        // (getComputedStyle + Animation.playState showed the exit
+        // animation frozen at currentTime:0 while data-state was already
+        // "closed"). Dropping pointer-events the instant state is closed
+        // makes the overlay non-blocking regardless of whether its exit
+        // animation ever completes -- purely defensive, no visible change
+        // in the normal case where the animation finishes in ~150ms.
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:pointer-events-none fixed inset-0 z-50 bg-black/50",
         className
       )}
       {...props}
@@ -60,7 +76,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
+          // R46 F_007 fix: same defensive guard as DialogOverlay above --
+          // see the comment there for the full root-cause writeup. Without
+          // this, a stalled exit animation leaves a 512x356 interactive
+          // box (pointer-events:auto) centered on screen even after
+          // data-state is "closed".
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:pointer-events-none fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
           className
         )}
         {...props}
