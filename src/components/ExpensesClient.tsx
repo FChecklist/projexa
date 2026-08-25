@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 
 type Expense = { id: string; expenseHead: string; description: string | null; amount: string; expenseDate: string };
 
@@ -101,7 +102,7 @@ export default function ExpensesClient({ projectId }: { projectId: string }) {
               <TableBody>
                 {expenses.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell className="text-px-muted">{new Date(e.expenseDate).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-px-muted">{formatDate(e.expenseDate)}</TableCell>
                     <TableCell><Badge variant="outline">{e.expenseHead}</Badge></TableCell>
                     <TableCell className="text-px-muted">{e.description ?? "—"}</TableCell>
                     <TableCell className="text-right font-medium">{Number(e.amount).toLocaleString()}</TableCell>

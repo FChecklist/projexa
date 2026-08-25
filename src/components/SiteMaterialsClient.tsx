@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 
 type Material = { id: string; spec: string; unit: string; unitCost: string; qtyOnHand: string };
 type Inbound = { id: string; materialId: string; receivedDate: string; quantityReceived: string; unitCost: string; totalCost: string; vendorName: string | null };
@@ -102,7 +103,7 @@ export default function SiteMaterialsClient({ projectId }: { projectId: string }
         <Card className="shadow-card"><CardContent className="p-0">
           {inbound.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No receipts recorded yet.</p>
           : <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Qty</TableHead><TableHead>Unit Cost</TableHead><TableHead>Total</TableHead><TableHead>Vendor</TableHead></TableRow></TableHeader>
-            <TableBody>{inbound.map((e) => <TableRow key={e.id}><TableCell>{new Date(e.receivedDate).toLocaleDateString()}</TableCell><TableCell>{specFor(e.materialId)}</TableCell><TableCell>{e.quantityReceived}</TableCell><TableCell>{e.unitCost}</TableCell><TableCell>{e.totalCost}</TableCell><TableCell className="text-px-muted">{e.vendorName ?? "—"}</TableCell></TableRow>)}</TableBody></Table>}
+            <TableBody>{inbound.map((e) => <TableRow key={e.id}><TableCell>{formatDate(e.receivedDate)}</TableCell><TableCell>{specFor(e.materialId)}</TableCell><TableCell>{e.quantityReceived}</TableCell><TableCell>{e.unitCost}</TableCell><TableCell>{e.totalCost}</TableCell><TableCell className="text-px-muted">{e.vendorName ?? "—"}</TableCell></TableRow>)}</TableBody></Table>}
         </CardContent></Card>
       </TabsContent>
 

@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -274,7 +275,7 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
                 <TableBody>
                   {attendance.map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell className="text-px-muted">{new Date(a.attendanceDate).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
                       <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[a.status] ?? "outline"}>{a.status.replace(/_/g, " ")}</Badge></TableCell>
                       <TableCell>{a.hoursWorked ?? "—"}</TableCell>

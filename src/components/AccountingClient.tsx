@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
 import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, companyScopeQuery, CompanySelector } from "@/components/company-scope";
+import { formatDate } from "@/lib/format-date";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -282,7 +283,7 @@ function GeneralLedgerPanel() {
                 {entries.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="text-px-muted">{e.entryNumber}</TableCell>
-                    <TableCell>{new Date(e.postingDate).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(e.postingDate)}</TableCell>
                     <TableCell className="text-px-muted">{e.userRemark ?? e.referenceType ?? "—"}</TableCell>
                     <TableCell>{money(Number(e.totalDebit), currencies)}</TableCell>
                     <TableCell>{money(Number(e.totalCredit), currencies)}</TableCell>
@@ -659,7 +660,7 @@ function BankReconciliationPanel() {
               {imports.map((imp) => (
                 <button key={imp.id} onClick={() => viewImport(imp.id)} className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedImportId === imp.id ? "bg-px-orange/10 text-px-ink" : "hover:bg-muted"}`}>
                   <div className="font-medium">{imp.fileName}</div>
-                  <div className="text-xs text-px-muted">{imp.totalLines} lines &middot; {new Date(imp.importedAt).toLocaleDateString()}</div>
+                  <div className="text-xs text-px-muted">{imp.totalLines} lines &middot; {formatDate(imp.importedAt)}</div>
                 </button>
               ))}
             </CardContent>
@@ -674,7 +675,7 @@ function BankReconciliationPanel() {
                     <TableBody>
                       {lines.map((l) => (
                         <TableRow key={l.id}>
-                          <TableCell>{new Date(l.transactionDate).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatDate(l.transactionDate)}</TableCell>
                           <TableCell className="text-px-muted">{l.description ?? "—"}</TableCell>
                           <TableCell className="text-right">{Number(l.debitAmount) > 0 ? money(Number(l.debitAmount), currencies) : "—"}</TableCell>
                           <TableCell className="text-right">{Number(l.creditAmount) > 0 ? money(Number(l.creditAmount), currencies) : "—"}</TableCell>

@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, PlayCircle, Trash2, FileDown, FileText } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 
 type PayrollRun = { id: string; month: number; year: number; status: string; processedAt: string | null };
 type PayslipLine = { id: string; label: string; lineType: "earning" | "deduction"; amount: string };
@@ -357,7 +358,7 @@ export default function PayrollClient() {
   const runColumns: ColumnDef<PayrollRun>[] = useMemo(() => [
     { id: "period", header: "Period", cell: ({ row }) => <span className="font-medium">{MONTHS[row.original.month - 1]} {row.original.year}</span> },
     { accessorKey: "status", header: "Status", cell: ({ row }) => <Badge variant={row.original.status === "processed" ? "default" : "secondary"}>{row.original.status}</Badge> },
-    { id: "processedAt", header: "Processed", cell: ({ row }) => row.original.processedAt ? new Date(row.original.processedAt).toLocaleString() : "—" },
+    { id: "processedAt", header: "Processed", cell: ({ row }) => row.original.processedAt ? formatDateTime(row.original.processedAt) : "—" },
     {
       id: "actions", header: "", cell: ({ row }) => (
         <div className="flex gap-2">
@@ -382,7 +383,7 @@ export default function PayrollClient() {
 
   const structureColumns: ColumnDef<SalaryStructure>[] = [
     { id: "employee", header: "Employee", cell: ({ row }) => <span className="font-medium">{row.original.employeeName}</span> },
-    { id: "effectiveFrom", header: "Effective From", cell: ({ row }) => new Date(row.original.effectiveFrom).toLocaleDateString() },
+    { id: "effectiveFrom", header: "Effective From", cell: ({ row }) => formatDate(row.original.effectiveFrom) },
     { id: "ctc", header: "Annual CTC", cell: ({ row }) => Number(row.original.ctcAnnual).toLocaleString() },
     { id: "state", header: "State", cell: ({ row }) => row.original.state ?? "—" },
     { id: "components", header: "Components", cell: ({ row }) => row.original.components.length },
@@ -590,7 +591,7 @@ export default function PayrollClient() {
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.ruleType.replace(/_/g, " ")}</TableCell>
                       <TableCell>{r.state ?? "—"}</TableCell>
-                      <TableCell>{new Date(r.effectiveFrom).toLocaleDateString()}</TableCell>
+                      <TableCell>{formatDate(r.effectiveFrom)}</TableCell>
                       <TableCell>{r.employeeRate ? `${r.employeeRate}%` : (r.slabs ? `${r.slabs.length} slab(s)` : "—")}</TableCell>
                       <TableCell>{r.employerRate ? `${r.employerRate}%` : "—"}</TableCell>
                       <TableCell>{r.wageCeiling ?? "—"}</TableCell>
@@ -648,7 +649,7 @@ export default function PayrollClient() {
                     {slabs.map((s) => (
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.name}</TableCell>
-                        <TableCell>{new Date(s.effectiveFrom).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDate(s.effectiveFrom)}</TableCell>
                         <TableCell>{s.standardDeduction}</TableCell>
                         <TableCell>{s.rates.length}</TableCell>
                       </TableRow>

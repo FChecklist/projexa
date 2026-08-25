@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
 
 // Point 33: was a 73-line empty-state-only stock ledger listing (no master,
 // no create form). His words: "material database. material inbound, spec,
@@ -230,7 +231,7 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
                 <TableBody>
                   {receipts.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="text-px-muted">{new Date(r.receivedDate).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
                       <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
                       <TableCell>{r.quantity}</TableCell>
                       <TableCell>{r.unitCost ?? "—"}</TableCell>

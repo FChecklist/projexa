@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, History } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { formatDate } from "@/lib/format-date";
 
 type Opportunity = {
   id: string; name: string; leadId: string | null; erpCustomerId: string | null; stage: string;
@@ -251,7 +252,7 @@ export default function OpportunitiesClient() {
             ) : history.map((h) => (
               <div key={h.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                 <span>{h.fromStage ? `${h.fromStage} → ${h.toStage}` : `Created as ${h.toStage}`}</span>
-                <span className="text-px-muted">{new Date(h.changedAt).toLocaleDateString()}</span>
+                <span className="text-px-muted">{formatDate(h.changedAt)}</span>
               </div>
             ))}
           </div>

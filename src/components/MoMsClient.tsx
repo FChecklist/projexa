@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, NotebookText, Download, Sparkles, Send, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDateTime } from "@/lib/format-date";
 
 type Meeting = {
   id: string;
@@ -67,7 +68,7 @@ function renderMeetingCell(field: string, m: Meeting) {
         </span>
       );
     case "scheduledAt":
-      return <span className="text-px-muted">{new Date(m.scheduledAt).toLocaleString()}</span>;
+      return <span className="text-px-muted">{formatDateTime(m.scheduledAt)}</span>;
     case "status":
       return <Badge variant="outline">{m.status}</Badge>;
     default:

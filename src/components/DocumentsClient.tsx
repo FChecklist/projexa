@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
 
 type Doc = {
   id: string;
@@ -80,9 +81,9 @@ function renderDocumentCell(field: string, d: Doc) {
     case "fileSize":
       return <span className="text-px-muted">{formatSize(d.fileSize)}</span>;
     case "expiryDate":
-      return <span className="text-px-muted">{d.expiryDate ? new Date(d.expiryDate).toLocaleDateString() : "—"}</span>;
+      return <span className="text-px-muted">{d.expiryDate ? formatDate(d.expiryDate) : "—"}</span>;
     case "createdAt":
-      return <span className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</span>;
+      return <span className="text-px-muted">{formatDate(d.createdAt)}</span>;
     default:
       return String((d as unknown as Record<string, unknown>)[field] ?? "—");
   }

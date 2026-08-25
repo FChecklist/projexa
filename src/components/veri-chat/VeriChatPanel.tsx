@@ -15,6 +15,7 @@ import { Loader2, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PanelShell } from "@fchecklist/veridian-ui-kit/panel";
 import { useVeriChat, type RightPanelView } from "./veri-chat-context";
+import { formatDateTime } from "@/lib/format-date";
 
 type QuerySummary = {
   id: string;
@@ -178,7 +179,7 @@ function QueryList({ queries, onOpen }: { queries: QuerySummary[]; onOpen: (id: 
             <span className="text-[13px] font-semibold text-px-ink truncate flex-1">{q.breadcrumb}</span>
             <span className={`text-[11px] shrink-0 ${STATUS_COLOR[q.status]}`}>{STATUS_LABEL[q.status]}</span>
           </div>
-          <p className="text-[11px] text-px-muted mt-0.5">{new Date(q.created_at).toLocaleString()}</p>
+          <p className="text-[11px] text-px-muted mt-0.5">{formatDateTime(q.created_at)}</p>
         </button>
       ))}
     </div>

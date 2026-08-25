@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { formatDate } from "@/lib/format-date";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
@@ -84,7 +85,7 @@ export default function SettingsClient() {
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div><div className="text-xs text-px-muted">Name</div><div className="font-medium text-px-ink">{info?.organization.name ?? "—"}</div></div>
           <div><div className="text-xs text-px-muted">Slug</div><div className="font-medium text-px-ink">{info?.organization.slug ?? "—"}</div></div>
-          <div><div className="text-xs text-px-muted">Member since</div><div className="font-medium text-px-ink">{info ? new Date(info.organization.created_at).toLocaleDateString() : "—"}</div></div>
+          <div><div className="text-xs text-px-muted">Member since</div><div className="font-medium text-px-ink">{info ? formatDate(info.organization.created_at) : "—"}</div></div>
         </CardContent>
       </Card>
 
