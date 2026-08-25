@@ -11,7 +11,7 @@
 // (QueryList/ChatList/TodoPanel/QueryThread/ConvoThread/Overview) stays
 // local and unchanged, rendered as PanelShell's children.
 import { useEffect, useState } from "react";
-import { Loader2, MessageSquare, Plus } from "lucide-react";
+import { Check, Loader2, MessageSquare, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { PanelShell } from "@fchecklist/veridian-ui-kit/panel";
 import { useVeriChat, type RightPanelView } from "./veri-chat-context";
@@ -312,11 +312,11 @@ function Overview({
   queries: QuerySummary[]; conversations: ConvoSummary[]; todos: TodoItem[];
   onOpenQuery: (id: string) => void; onOpenConvo: (id: string) => void; onGoToTodo: () => void;
 }) {
-  type Item = { key: string; type: "query" | "chat" | "todo"; ts: number; title: string; sub: string; onClick: () => void };
+  type Item = { key: string; type: "query" | "chat" | "todo"; ts: number; title: string; sub: string; onClick: () => void; status?: QuerySummary["status"] };
 
   const items: Item[] = [
     ...queries.slice(0, 10).map((q) => ({
-      key: `q-${q.id}`, type: "query" as const, ts: new Date(q.created_at).getTime(), title: q.breadcrumb, sub: STATUS_LABEL[q.status], onClick: () => onOpenQuery(q.id),
+      key: `q-${q.id}`, type: "query" as const, ts: new Date(q.created_at).getTime(), title: q.breadcrumb, sub: STATUS_LABEL[q.status], status: q.status, onClick: () => onOpenQuery(q.id),
     })),
     ...conversations.filter((c) => c.lastMessage).map((c) => ({
       key: `c-${c.id}`, type: "chat" as const, ts: new Date(c.lastMessage!.created_at).getTime(), title: c.name, sub: c.lastMessage!.content, onClick: () => onOpenConvo(c.id),
@@ -329,13 +329,35 @@ function Overview({
   if (items.length === 0) return <EmptyState text="Nothing needs your attention right now." />;
 
   const ICON_BG: Record<Item["type"], string> = { query: "bg-px-orange", chat: "bg-px-ink", todo: "bg-px-success" };
+  // A query badge must state that query's OWN outcome. This used to pick the
+  // glyph from item.type, so a failed or still-running query rendered the same
+  // success tick as a completed one -- the only failure signal was the muted
+  // sub-label. Colour and glyph now both derive from status.
+  const QUERY_BG: Record<NonNullable<Item["status"]>, string> = {
+    pending: "bg-px-warning",
+    done: "bg-px-success",
+    error: "bg-px-error",
+  };
+
+  const badgeClass = (item: Item) =>
+    item.type === "query" && item.status ? QUERY_BG[item.status] : ICON_BG[item.type];
+
+  const badgeGlyph = (item: Item) => {
+    if (item.type === "query") {
+      if (item.status === "error") return <X className="size-3" aria-label="Failed" />;
+      if (item.status === "pending") return <Loader2 className="size-3 animate-spin" aria-label="Working" />;
+      return <Check className="size-3" aria-label="Done" />;
+    }
+    if (item.type === "chat") return <MessageSquare className="size-3" />;
+    return "☐";
+  };
 
   return (
     <div>
       {items.map((item) => (
-        <button key={item.key} type="button" onClick={item.onClick} className="flex items-start gap-2.5 w-full text-left px-4 py-3 border-b border-px-border/60 hover:bg-px-concrete/60 transition-colors">
-          <div className={`grid place-items-center size-[26px] rounded-lg shrink-0 text-white ${ICON_BG[item.type]}`}>
-            {item.type === "query" ? "✓" : item.type === "chat" ? <MessageSquare className="size-3" /> : "☐"}
+        <button key={item.key} type="button" onClick={item.onClick} data-testid="overview-item" data-item-type={item.type} data-status={item.type === "query" ? item.status : undefined} className="flex items-start gap-2.5 w-full text-left px-4 py-3 border-b border-px-border/60 hover:bg-px-concrete/60 transition-colors">
+          <div className={`grid place-items-center size-[26px] rounded-lg shrink-0 text-white ${badgeClass(item)}`}>
+            {badgeGlyph(item)}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold text-px-ink truncate">{item.title}</p>
