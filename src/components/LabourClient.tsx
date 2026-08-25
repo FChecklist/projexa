@@ -1,5 +1,21 @@
 "use client";
 
+// R46 P8 seq132: registry-driven LIST archetype, same pattern R43 seq2
+// established for permits.list and R46 P8 seq128/seq134/seq127 established
+// for documents.list/variations.list/drawings.list (see DocumentsClient.tsx's
+// header comment for the full history). This screen never adopted the
+// kit's ListScreen component -- it's a plain shadcn Table -- so only the
+// Roster tab's 6 real data columns (ID/Name/Trade/Company/Daily Rate/
+// Status) are registry-driven: COLUMNS is now the fallback used when
+// labour/page.tsx's server-side resolve of the manpower.list
+// screen_definitions row returns null (404/error), same "keep the
+// hardcoded version behind a flag until verified" contract as permits,
+// documents, drawings and change-orders. The Attendance tab is a separate
+// transactional log (not the "manpower list" itself) and stays fully
+// hardcoded, same as Documents' category filter or ChangeOrders' Actions
+// column staying outside their registry-driven columns. The row-index
+// (S.No) column is likewise not real data and stays hardcoded, always
+// rendered first.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,16 +28,57 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
 type Vendor = { id: string; vendorName: string };
 
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as DocumentsClient.tsx's / ChangeOrdersClient.tsx's
+// RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const COLUMNS: ScreenColumn[] = [
+  { label: "ID", field: "employeeCode", type: "text", importance: "High" },
+  { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Trade", field: "trade", type: "text", importance: "High" },
+  { label: "Company", field: "vendorId", type: "text", importance: "High" },
+  { label: "Daily Rate", field: "dailyRate", type: "number", importance: "High" },
+  { label: "Status", field: "isActive", type: "text", importance: "High" },
+];
+
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   present: "default", half_day: "secondary", absent: "destructive",
 };
 
-export default function LabourClient({ projectId }: { projectId: string }) {
+// Per-field cell renderer -- this screen isn't built on the kit's
+// ListScreen, so unlike a generic column-type-driven renderer, the actual
+// cell value for each known field is still this project's own formatting
+// logic (including the vendorId -> company-name lookup), looked up by
+// field name so a registry row can reorder/relabel these 6 columns live
+// (the hard-stop test) without changing what renders.
+function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string) {
+  switch (field) {
+    case "employeeCode":
+      return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
+    case "name":
+      return <span className="font-medium">{r.name}</span>;
+    case "trade":
+      return <span className="text-px-muted">{r.trade ?? "—"}</span>;
+    case "vendorId":
+      return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
+    case "dailyRate":
+      return <span>{r.dailyRate}</span>;
+    case "isActive":
+      return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
+    default:
+      return String((r as unknown as Record<string, unknown>)[field] ?? "—");
+  }
+}
+
+export default function LabourClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -151,17 +208,19 @@ export default function LabourClient({ projectId }: { projectId: string }) {
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>S.No</TableHead><TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Trade</TableHead><TableHead>Company</TableHead><TableHead>Daily Rate</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>S.No</TableHead>
+                    {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {roster.map((r, i) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
-                      <TableCell className="text-px-muted">{r.employeeCode ?? "—"}</TableCell>
-                      <TableCell className="font-medium">{r.name}</TableCell>
-                      <TableCell className="text-px-muted">{r.trade ?? "—"}</TableCell>
-                      <TableCell className="text-px-muted">{vendorName(r.vendorId)}</TableCell>
-                      <TableCell>{r.dailyRate}</TableCell>
-                      <TableCell><Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge></TableCell>
+                      {columns.map((col) => (
+                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName)}</TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>
