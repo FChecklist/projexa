@@ -25,7 +25,16 @@ export default function SignupPage() {
     setLoading(true);
     const supabase = createClient();
 
-    const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+    // R48_SIGNUP_UNCOMPLETABLE_01: the emailed confirmation link must come
+    // back to /auth/callback, which is the only route that consumes a
+    // credential and finishes provisioning (see auth/callback/page.tsx).
+    // Without emailRedirectTo the link falls back to the project's Site URL
+    // and the recipient lands somewhere that drops the credential silently.
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
     if (signUpError) {
       setError(signUpError.message);
       setLoading(false);
