@@ -175,9 +175,27 @@ export function ReportCatalogSection() {
     });
   }, [catalog, search, statusFilter]);
 
+  // R46 F_028 real root cause (confirmed live against production, 2026-08-25:
+  // this exact line threw "Cannot read properties of undefined (reading
+  // 'push')" on a real click of the Full Catalog tab, which is the crash
+  // F_028 describes -- caught by reports/error.tsx's new boundary instead of
+  // taking down the whole page, but the actual bug is right here). `entry`
+  // is real JSON from VERIDIAN's own /reports/catalog response (see
+  // api/reports/catalog/route.ts), cast to the `FullCatalogEntry` type at
+  // the type level only -- TypeScript's `ReportDomain` union is never
+  // enforced at runtime, so a `domain` value VERIDIAN returns that isn't one
+  // of this UI's 5 known buckets (a new catalog domain added upstream,
+  // malformed data, anything) makes `grouped[entry.domain]` undefined, and
+  // `.push()` on that throws. Guarding the lookup means an unrecognized
+  // domain's entries are dropped from this grouped-by-domain view (they
+  // still count toward definitionCount/runnableHereCount above) instead of
+  // crashing the page -- the honest fix, not a blanket try/catch.
   const byDomain = useMemo(() => {
     const grouped: Record<ReportDomain, FullCatalogEntry[]> = { compliance: [], ERP: [], construction: [], "AI-ops": [], custom: [] };
-    for (const entry of filtered) grouped[entry.domain].push(entry);
+    for (const entry of filtered) {
+      const bucket = grouped[entry.domain];
+      if (bucket) bucket.push(entry);
+    }
     return grouped;
   }, [filtered]);
 
