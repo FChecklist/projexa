@@ -89,6 +89,37 @@ export default function AuthCallbackPage() {
           return;
         }
 
+        // R48_SIGNUP_UNCOMPLETABLE_01: signup defers org creation whenever
+        // email confirmation is required -- it stashes the name and expects a
+        // later authenticated page to finish the job (see signup/page.tsx).
+        // login/page.tsx already did that, but the confirmation link does NOT
+        // go through /login, it lands HERE. Without this block a user who
+        // confirms by email arrives at /dashboard authenticated but with no
+        // organization at all, and every API route answers "No organization"
+        // (400) -- a signed-in account that cannot use the product. Provision
+        // before navigating, and surface a failure instead of dropping them
+        // into a dashboard that cannot work.
+        const pendingOrgName = window.localStorage.getItem("projexa_pending_org_name");
+        if (pendingOrgName) {
+          const res = await fetch("/api/org/provision", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orgName: pendingOrgName }),
+          });
+          if (res.ok) {
+            window.localStorage.removeItem("projexa_pending_org_name");
+          } else {
+            const body = await res.json().catch(() => ({}));
+            if (!cancelled) {
+              setError(
+                (body as { error?: string }).error ??
+                  "Your email is confirmed, but we could not finish setting up your organisation. Sign in to retry."
+              );
+            }
+            return;
+          }
+        }
+
         if (cancelled) return;
         const target = url.searchParams.get("redirectTo") ?? url.searchParams.get("next") ?? "/dashboard";
         // Only ever navigate to a same-origin path, so a crafted link cannot
