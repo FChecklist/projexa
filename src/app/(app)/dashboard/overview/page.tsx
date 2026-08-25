@@ -1,62 +1,44 @@
-import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { fetchProjectProgressBars } from "@/lib/dashboard-overview";
+import ProjectsOverviewClient, { type RegistryColumn } from "@/components/ProjectsOverviewClient";
 
-type OrgDashboard = { projects: { id: string; name: string }[] };
-type ProjectDashboard = { projectId: string; progressPercent: number };
-
-// The lightweight multi-project overview from the Owner's sketch: one
-// horizontal status bar per project, % complete only -- deliberately a
-// separate, simpler screen from /dashboard/hierarchy's full Company ->
-// Department -> Project drill-down (Revenue/Budget/Expense/date-range/
-// category charts), not folded into it. Real percentComplete per project,
-// sourced the same way the drill-down Details view's Progress figure is
-// (getProjectDashboard's "latest logged entry per activity, averaged").
-export default async function ProjectsOverviewPage() {
-  let bars: { id: string; name: string; progressPercent: number }[] = [];
-  let errorMessage: string | null = null;
-
+// R46 P8 seq124 (M28 registry-model proof, same try/catch/404-is-not-an-error
+// resolver shape as budgets/page.tsx's resolveBudgetsListColumns /
+// scope/page.tsx's resolveBoqCompareColumns). function_id is
+// "dashboard.overview", NOT "dashboard.dashboard" -- this task was
+// originally assigned "dashboard.dashboard", but seq125 (PR #142, merged
+// concurrently with this seq) already claimed that exact function_id for
+// the DIFFERENT /dashboard/project screen (its columns are that screen's
+// KPI-tile labels -- percentByValue/contractValue/budgetVsActual/etc,
+// nothing to do with this page's project-progress-bar list). Reusing it
+// here would have silently served /dashboard/project's labels onto this
+// page, or raced with its resolver over which row is "the" global row for
+// that id (both org_id IS NULL, no uniqueness constraint on function_id
+// alone). "dashboard.overview" is a distinct id for a distinct screen, and
+// leaves seq125's shipped row untouched. A missing or errored registry row
+// is NOT fatal -- ProjectsOverviewClient falls back to its own hardcoded
+// labels when this is null. Data fetching (fetchProjectProgressBars) is
+// completely unrelated to this lookup and untouched by it.
+async function resolveDashboardOverviewLabels(organizationId: string | null): Promise<RegistryColumn[] | null> {
   try {
-    const organizationId = await getServerOrganizationId();
-    const orgDashboard = await callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined });
-    const withProgress = await Promise.all(
-      orgDashboard.projects.map(async (p) => {
-        try {
-          const detail = await callVeridian<ProjectDashboard>(`/dashboard/${p.id}`, { organizationId: organizationId ?? undefined });
-          return { id: p.id, name: p.name, progressPercent: detail.progressPercent };
-        } catch {
-          return { id: p.id, name: p.name, progressPercent: 0 };
-        }
-      })
-    );
-    bars = withProgress;
+    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/dashboard.overview", {
+      organizationId: organizationId ?? undefined,
+    });
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
   } catch (err) {
-    errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load project progress";
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
+    console.error("[dashboard/overview/page] screen_definitions resolve failed, falling back to hardcoded labels:", err instanceof Error ? err.message : err);
+    return null;
   }
+}
 
-  return (
-    <main className="flex-1 space-y-6 p-6">
-      <PageHeading title="Projects Overview" />
-      {errorMessage && <p className="text-sm text-px-error">Could not load live data: {errorMessage}</p>}
-      <Card className="shadow-card">
-        <CardContent className="space-y-5 pt-6">
-          {bars.length === 0 ? (
-            <p className="py-8 text-center text-sm text-px-muted">No active projects yet.</p>
-          ) : (
-            bars.map((p) => (
-              <div key={p.id} className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-px-muted">{p.progressPercent}%</span>
-                </div>
-                <Progress value={p.progressPercent} />
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
-    </main>
-  );
+export default async function ProjectsOverviewPage() {
+  const organizationId = await getServerOrganizationId();
+  const [labels, { bars, errorMessage }] = await Promise.all([
+    resolveDashboardOverviewLabels(organizationId),
+    fetchProjectProgressBars(organizationId),
+  ]);
+
+  return <ProjectsOverviewClient bars={bars} errorMessage={errorMessage} labels={labels} />;
 }
