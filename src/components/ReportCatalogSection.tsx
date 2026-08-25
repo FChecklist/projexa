@@ -134,17 +134,35 @@ export function ReportCatalogSection() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   useEffect(() => {
+    let cancelled = false;
+    // R46 F_028 hardening: this route's default tab (no active project --
+    // see reports/page.tsx/ReportsClient.tsx's own header comments) fires
+    // these two fetches unconditionally, unlike every sibling project-scoped
+    // page which mounts no client component at all once resolveSelectedProject
+    // has already failed server-side. Both proxy routes (api/reports/catalog,
+    // api/companies) already catch their own VERIDIAN error and return a
+    // non-2xx JSON error body (see their route.ts files) rather than throwing,
+    // so `fetch()` itself never rejects on a VERIDIAN timeout -- checking
+    // `res.ok` here (matching ProjectSwitcher.tsx's identical pattern for the
+    // same underlying VERIDIAN call) treats that error body as an error
+    // immediately, instead of relying solely on shape-sniffing a `catalog`/
+    // `companies` key that a genuinely malformed or future response shape
+    // might satisfy by accident. `cancelled` avoids committing either fetch's
+    // result after this component has unmounted (e.g. the user switched back
+    // to the "Project Reports" tab before either resolved).
     fetch("/api/reports/catalog")
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`catalog fetch failed (${r.status})`))))
       .then((d) => {
+        if (cancelled) return;
         if (!Array.isArray(d.catalog)) { setLoadError(true); setCatalog([]); return; }
         setCatalog(d.catalog);
       })
-      .catch(() => { setLoadError(true); setCatalog([]); });
+      .catch(() => { if (!cancelled) { setLoadError(true); setCatalog([]); } });
     fetch("/api/companies")
-      .then((r) => r.json())
-      .then((d) => setCompanies(Array.isArray(d.companies) ? d.companies : []))
-      .catch(() => {});
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`companies fetch failed (${r.status})`))))
+      .then((d) => { if (!cancelled) setCompanies(Array.isArray(d.companies) ? d.companies : []); })
+      .catch(() => { if (!cancelled) setCompanies([]); });
+    return () => { cancelled = true; };
   }, []);
 
   const filtered = useMemo(() => {
