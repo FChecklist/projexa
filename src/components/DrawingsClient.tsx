@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 type Drawing = {
   id: string;
@@ -27,7 +28,59 @@ type Drawing = {
   createdAt: string;
 };
 
-export default function DrawingsClient({ projectId }: { projectId: string }) {
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// intentionally the same fields as ScreenColumn (R46 P8 seq127, same
+// pattern as PermitsListClient.tsx / R43 seq2).
+export type RegistryColumn = ScreenColumn;
+
+// R46 P8 seq127: the table used to render these 4 headers as hardcoded
+// inline JSX (Name | Kind | Discipline | Added), plus a non-data "Open"
+// action column. This COLUMNS const is now ONLY the fallback for when the
+// compliance.screen_definitions row for drawings.list doesn't exist yet
+// (404) or the call errors -- the "Open" action column is intentionally
+// NOT part of it and is always rendered separately below.
+const COLUMNS: ScreenColumn[] = [
+  { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Kind", field: "kind", type: "text", importance: "High" },
+  { label: "Discipline", field: "discipline", type: "text", importance: "High" },
+  { label: "Added", field: "createdAt", type: "date", importance: "High" },
+];
+
+function renderDrawingCell(column: ScreenColumn, d: Drawing) {
+  switch (column.field) {
+    case "name":
+      return (
+        <TableCell key={column.field} className="flex items-center gap-2 font-medium">
+          <LayoutPanelLeft className="size-4 text-px-muted" />{d.name}
+        </TableCell>
+      );
+    case "kind":
+      return (
+        <TableCell key={column.field}>
+          <Badge variant="outline">{d.kind === "3d_walkthrough" ? "3D Walkthrough" : "DWG"}</Badge>
+        </TableCell>
+      );
+    case "discipline":
+      return <TableCell key={column.field} className="text-px-muted">{d.discipline ?? "—"}</TableCell>;
+    case "createdAt":
+      return <TableCell key={column.field} className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</TableCell>;
+    default:
+      return (
+        <TableCell key={column.field} className="text-px-muted">
+          {String((d as unknown as Record<string, unknown>)[column.field] ?? "—")}
+        </TableCell>
+      );
+  }
+}
+
+export default function DrawingsClient({
+  projectId,
+  registryColumns,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+}) {
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -140,17 +193,14 @@ export default function DrawingsClient({ projectId }: { projectId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead><TableHead>Kind</TableHead><TableHead>Discipline</TableHead>
-                  <TableHead>Added</TableHead><TableHead className="text-right">Open</TableHead>
+                  {columns.map((c) => <TableHead key={c.field}>{c.label}</TableHead>)}
+                  <TableHead className="text-right">Open</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {drawings.map((d) => (
                   <TableRow key={d.id}>
-                    <TableCell className="flex items-center gap-2 font-medium"><LayoutPanelLeft className="size-4 text-px-muted" />{d.name}</TableCell>
-                    <TableCell><Badge variant="outline">{d.kind === "3d_walkthrough" ? "3D Walkthrough" : "DWG"}</Badge></TableCell>
-                    <TableCell className="text-px-muted">{d.discipline ?? "—"}</TableCell>
-                    <TableCell className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</TableCell>
+                    {columns.map((c) => renderDrawingCell(c, d))}
                     <TableCell className="text-right">
                       {d.documentUrl ? (
                         <Button variant="ghost" size="sm" asChild>
