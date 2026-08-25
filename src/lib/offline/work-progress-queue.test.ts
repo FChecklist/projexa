@@ -101,6 +101,67 @@ describe("work-progress-queue (offline capture + sync)", () => {
     }
   });
 
+  // R47_OFFLINE_QUEUE_DROPS_FIELDS_01, found live on 2026-08-25 when a real
+  // network blip diverted a production submit into this queue: the entry
+  // synced and reported success, but landed with boq_line_item_id = NULL
+  // (compliance.construction_work_progress_entries id
+  // mcfi3mjpaqt997spezqdmq9h) even though the user had explicitly selected
+  // "F01 -- Frame 01". Neither boqLineItemId nor entryBasis existed on the
+  // queued type or in the sync body, so both were silently discarded on the
+  // way to the server.
+  //
+  // An orphaned entry contributes nothing to that BOQ line's earned value,
+  // and a SNAPSHOT entry that arrives basis-less is treated as DELTA, which
+  // corrupts the running total instead of merely mislabelling it (M25:
+  // quantity SUMS, percent REPLACES).
+  //
+  // This test FAILS against the pre-fix module -- both keys are simply absent
+  // from the POST body -- which is the only reason to trust it.
+  test("syncing carries boqLineItemId and entryBasis through to the server, not just the activity", async () => {
+    await enqueueWorkProgressEntry(USER_A, {
+      ...baseEntry,
+      boqLineItemId: "line_F01",
+      entryBasis: "SNAPSHOT",
+    });
+    const originalFetch = globalThis.fetch;
+    const calls: { body: Record<string, unknown> }[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      calls.push({ body: init?.body ? JSON.parse(init.body as string) : {} });
+      return Promise.resolve(new Response(JSON.stringify({ id: "srv_linked" }), { status: 201 }));
+    }) as typeof fetch;
+    try {
+      const result = await syncQueuedWorkProgressEntries(USER_A);
+      expect(result).toEqual({ synced: 1, failed: 0 });
+      expect(calls[0].body.boqLineItemId).toBe("line_F01");
+      expect(calls[0].body.entryBasis).toBe("SNAPSHOT");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // The other half of the same contract: an entry queued by an OLDER build has
+  // neither field, and must still sync rather than throw or post nulls. A
+  // missing boqLineItemId keeps meaning "no BOQ link"; a missing entryBasis
+  // defers to the server default. JSON.stringify drops undefined, so neither
+  // key should appear at all.
+  test("an entry queued without those fields still syncs, and omits the keys rather than sending null", async () => {
+    await enqueueWorkProgressEntry(USER_A, baseEntry);
+    const originalFetch = globalThis.fetch;
+    const calls: { body: Record<string, unknown> }[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      calls.push({ body: init?.body ? JSON.parse(init.body as string) : {} });
+      return Promise.resolve(new Response(JSON.stringify({ id: "srv_legacy" }), { status: 201 }));
+    }) as typeof fetch;
+    try {
+      const result = await syncQueuedWorkProgressEntries(USER_A);
+      expect(result).toEqual({ synced: 1, failed: 0 });
+      expect("boqLineItemId" in calls[0].body).toBe(false);
+      expect("entryBasis" in calls[0].body).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("a previously-failed entry is retried and lands on the next sync once the network is back", async () => {
     const record = await enqueueWorkProgressEntry(USER_A, baseEntry);
     const originalFetch = globalThis.fetch;

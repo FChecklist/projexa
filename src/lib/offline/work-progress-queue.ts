@@ -64,6 +64,20 @@ export type QueuedWorkProgressEntry = {
   entryDate: string;
   quantityDone: number;
   percentComplete: number;
+  // R47 (fault R47_OFFLINE_QUEUE_DROPS_FIELDS_01): these two were MISSING from
+  // this type and from the sync payload, so every entry recorded offline
+  // reached the server with no BOQ line link and no basis. The form was always
+  // passing both -- handleSubmit spreads its full payload in here -- so they
+  // were sitting in IndexedDB the whole time and were simply never POSTed.
+  // Declared explicitly now so they are carried by contract rather than by the
+  // accident of an object spread.
+  //
+  // Optional on purpose: entries queued by an older build are already sitting
+  // in real browsers without these fields, and they must still sync rather
+  // than throw. A missing boqLineItemId then means what it has always meant --
+  // no BOQ link -- and a missing entryBasis falls back to the server default.
+  boqLineItemId?: string;
+  entryBasis?: "DELTA" | "SNAPSHOT";
   remarks?: string;
   photo?: QueuedPhoto | null;
   status: "pending" | "syncing" | "error" | "failed";
@@ -177,6 +191,15 @@ export function syncQueuedWorkProgressEntries(scope: string, onEvent?: (event: S
           body: JSON.stringify({
             projectId: entry.projectId,
             activityId: entry.activityId,
+            // R47_OFFLINE_QUEUE_DROPS_FIELDS_01: both of these used to be
+            // absent here, so an offline entry synced with a NULL BOQ line
+            // link -- recorded, but contributing nothing to that line's
+            // earned value, and silent about it -- and with the basis
+            // defaulted, which for a SNAPSHOT entry corrupts the running
+            // total rather than merely mislabelling it (M25: quantity SUMS,
+            // percent REPLACES).
+            boqLineItemId: entry.boqLineItemId || undefined,
+            entryBasis: entry.entryBasis || undefined,
             entryDate: entry.entryDate,
             quantityDone: entry.quantityDone,
             percentComplete: entry.percentComplete,
