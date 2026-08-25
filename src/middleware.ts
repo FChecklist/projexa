@@ -74,23 +74,6 @@ export async function middleware(request: NextRequest) {
 
   const locale = resolveLocale(request);
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options));
-        },
-      },
-    }
-  );
-
   // R45 seq4 follow-up (platform.r43_queue seq4): getClaimsWithRetry()'s
   // `{ data, error }` return shape only covers Supabase's OWN reported auth
   // failures -- it does NOT cover a THROWN exception, which is exactly what
@@ -109,12 +92,50 @@ export async function middleware(request: NextRequest) {
   // even one of those parallel calls would see partial/broken data for that
   // request while the rest of the shell looks fine -- a plausible source of
   // "some interaction on this page just doesn't work" reports that never
-  // show up as a clean, single reproducible error. Wrapping in try/catch so
-  // ANY failure here (reported or thrown) degrades to "logged out for this
-  // one request" -- consistent with the non-fatal-by-design intent already
-  // documented above -- instead of taking the whole request down.
+  // show up as a clean, single reproducible error.
+  //
+  // R46 F_015 follow-up: the try/catch used to start AFTER
+  // createServerClient(...) -- only wrapping getClaimsWithRetry(). That left
+  // client CONSTRUCTION itself as an uncaught throw vector (Supabase's own
+  // client throws synchronously -- "Your project's URL and Key are required
+  // to create a Supabase client!" -- when NEXT_PUBLIC_SUPABASE_URL/ANON_KEY
+  // are empty), invisible in practice only because every route this
+  // matcher covers already sat behind Vercel's own SSO/deployment
+  // protection wall on non-production deployments, so nothing unauthenticated
+  // ever reached this line to prove it. Moving src/app/sw.js/route.ts's
+  // service worker off static hosting onto this same middleware-covered
+  // request pipeline surfaced it immediately: Vercel's protection layer lets
+  // *.js-looking asset paths like /sw.js through unauthenticated (by design,
+  // so SW registration/PWA installs aren't blocked by a login wall), so it
+  // was the first path able to actually execute this line against a preview
+  // deployment missing those two env vars, confirmed via
+  // get_runtime_logs: "GET /sw.js 500 [error/edge-middleware] ... Your
+  // project's URL and Key are required...". Same non-fatal-by-design intent
+  // as the rest of this block -- widened to cover client construction, not
+  // just the claims check, so ANY failure here (reported, thrown during the
+  // claims check, or thrown constructing the client at all) degrades to
+  // "logged out for this one request" instead of taking the whole request
+  // down.
+  let supabase: ReturnType<typeof createServerClient> | null = null;
   let userId: string | null = null;
   try {
+    supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+            supabaseResponse = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options));
+          },
+        },
+      }
+    );
+
     const { data, error } = await getClaimsWithRetry(supabase);
     if (error) {
       // Non-fatal by design (a transient JWKS-fetch or refresh failure here
@@ -125,7 +146,7 @@ export async function middleware(request: NextRequest) {
     }
     userId = (data?.claims?.sub as string | undefined) ?? null;
   } catch (err) {
-    console.error("[middleware] getClaims() threw:", err instanceof Error ? err.message : err);
+    console.error("[middleware] auth check threw:", err instanceof Error ? err.message : err);
   }
 
   const PROTECTED_PREFIXES = [
@@ -156,7 +177,9 @@ export async function middleware(request: NextRequest) {
     // equivalent "resume" logic and re-running supabase.auth.signUp() for an
     // already-authenticated session isn't a real use case.
     if (request.nextUrl.pathname === "/login") {
-      const { data: membership } = await supabase
+      // supabase is guaranteed non-null here: userId only ever gets set
+      // (above) after createServerClient succeeded in the same try block.
+      const { data: membership } = await supabase!
         .from("memberships")
         .select("organization_id")
         .eq("user_id", userId)
