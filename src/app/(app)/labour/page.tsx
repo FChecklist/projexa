@@ -2,12 +2,36 @@ import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import LabourClient from "@/components/LabourClient";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import LabourClient, { type RegistryColumn } from "@/components/LabourClient";
+
+// R46 P8 seq132 (registry-model proof, same shape as R43 seq2's
+// resolvePermitsListColumns in permits/page.tsx, R46 P8 seq128's
+// resolveDocumentsListColumns in documents/page.tsx, and R46 P8 seq134's
+// resolveVariationsListColumns in change-orders/page.tsx): resolved
+// server-side, same place organizationId/project already are, so
+// LabourClient (a client component) never needs its own
+// Bearer-key-authenticated fetch. A missing or errored registry row is NOT
+// fatal -- LabourClient falls back to its own hardcoded COLUMNS when this
+// is null.
+async function resolveLabourListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
+  try {
+    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/manpower.list", {
+      organizationId: organizationId ?? undefined,
+    });
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
+  } catch (err) {
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
+    console.error("[labour/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const registryColumns = await resolveLabourListColumns(organizationId);
 
   return (
     <>
@@ -21,7 +45,7 @@ export default async function LabourPage({ searchParams }: { searchParams: Promi
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <LabourClient projectId={project.id} />}
+        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} />}
       </main>
     </>
   );
