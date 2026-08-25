@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play, Share2, Download } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -297,7 +298,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       await navigator.clipboard.writeText(data.url);
-      toast.success(`Share link copied — expires ${new Date(data.expiresAt).toLocaleDateString()}`);
+      toast.success(`Share link copied — expires ${formatDate(data.expiresAt)}`);
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
     } finally {

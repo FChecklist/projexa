@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import { CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -512,7 +513,7 @@ export default function ScopeClient({ projectId, compareColumns }: { projectId: 
                           <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-px-muted">{new Date(b.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-px-muted">{formatDate(b.createdAt)}</TableCell>
                       <TableCell className="text-right space-x-1">
                         <Button variant="ghost" size="sm" onClick={() => openViewDialog(b)}><Eye className="size-3.5" /> View</Button>
                         <Button variant="ghost" size="sm" onClick={() => openCompareDialog(b)}><GitCompare className="size-3.5" /> Compare</Button>

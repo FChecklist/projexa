@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, History } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 // Priority 17 remaining gap (2026-07-15): crm_leads gained a companyId
 // column (was orgId-only before this wave) -- reuses the exact selector
 // AccountingClient.tsx already built, not a second copy. consolidate has no
@@ -286,7 +287,7 @@ export default function LeadsClient() {
             ) : history.map((h) => (
               <div key={h.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                 <span>{h.fromStage ? `${h.fromStage} → ${h.toStage}` : `Created as ${h.toStage}`}</span>
-                <span className="text-px-muted">{new Date(h.changedAt).toLocaleDateString()}</span>
+                <span className="text-px-muted">{formatDate(h.changedAt)}</span>
               </div>
             ))}
           </div>

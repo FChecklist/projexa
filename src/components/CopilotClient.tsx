@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, LayoutDashboard, Clock, Wallet, AlertTriangle, Target, FileText, ShieldAlert, MessageSquare } from "lucide-react";
 import { useVeriChat } from "@/components/veri-chat/veri-chat-context";
 import { ReportOutput } from "@/components/ReportOutput";
+import { formatDateTime } from "@/lib/format-date";
 
 // This page is deliberately NOT a second chat UI. The real AI Copilot --
 // Discuss chat, every registered tool (not just construction's 7), team
@@ -135,7 +136,7 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
                 <div key={q.id} className="flex items-center justify-between rounded-lg border border-px-border px-3 py-2 text-sm">
                   <span className="text-px-ink">{q.breadcrumb}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-px-muted">{new Date(q.created_at).toLocaleString()}</span>
+                    <span className="text-xs text-px-muted">{formatDateTime(q.created_at)}</span>
                     <Badge variant={q.status === "done" ? "default" : q.status === "error" ? "destructive" : "secondary"}>{q.status}</Badge>
                   </div>
                 </div>

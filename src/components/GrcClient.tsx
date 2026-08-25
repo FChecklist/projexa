@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, ShieldAlert, ChevronRight } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { formatDate } from "@/lib/format-date";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -407,7 +408,7 @@ function AuditsPanel() {
                           <TableCell>{f.title}</TableCell>
                           <TableCell><Badge variant={SEVERITY_VARIANT[f.severity] ?? "outline"} className="capitalize">{f.severity}</Badge></TableCell>
                           <TableCell><Badge variant={f.capaStatus === "closed" ? "default" : "outline"} className="capitalize">{f.capaStatus.replace("_", " ")}</Badge></TableCell>
-                          <TableCell className="text-px-muted">{f.dueDate ? new Date(f.dueDate).toLocaleDateString() : "—"}</TableCell>
+                          <TableCell className="text-px-muted">{f.dueDate ? formatDate(f.dueDate) : "—"}</TableCell>
                           <TableCell className="text-right">
                             {f.capaStatus !== "closed" && <Button variant="ghost" size="sm" onClick={() => advanceCapa(f.id)}>Advance CAPA <ChevronRight className="size-3.5" /></Button>}
                           </TableCell>
@@ -943,7 +944,7 @@ function ComplianceRegisterPanel() {
                     <TableCell className="font-medium">{i.title}</TableCell>
                     <TableCell className="text-px-muted">{i.complianceType}</TableCell>
                     <TableCell className="text-px-muted">{i.department?.name ?? "—"}</TableCell>
-                    <TableCell className="text-px-muted">{i.dueDate ? new Date(i.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{i.dueDate ? formatDate(i.dueDate) : "—"}</TableCell>
                     <TableCell><Badge variant="outline" className="capitalize">{i.priority}</Badge></TableCell>
                     <TableCell><Badge variant={i.status === "completed" ? "default" : i.status === "overdue" ? "destructive" : "outline"} className="capitalize">{i.status.replace("_", " ")}</Badge></TableCell>
                   </TableRow>

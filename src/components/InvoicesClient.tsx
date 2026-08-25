@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, Banknote, Ban } from "lucide-react";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+import { formatDate } from "@/lib/format-date";
 
 type Invoice = { id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null; grandTotal: string; outstandingAmount: string; status: string };
 type CreditNote = { id: string; creditNoteNumber: number; customerId: string; salesInvoiceId: string | null; postingDate: string; reason: string | null; status: string; totalAmount: string };
@@ -216,8 +217,8 @@ function InvoicesPanel() {
                   <TableRow key={inv.id}>
                     <TableCell className="text-px-muted">{inv.invoiceNumber}</TableCell>
                     <TableCell className="font-medium">{inv.customerName ?? "—"}</TableCell>
-                    <TableCell>{new Date(inv.postingDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-px-muted">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell>{formatDate(inv.postingDate)}</TableCell>
+                    <TableCell className="text-px-muted">{inv.dueDate ? formatDate(inv.dueDate) : "—"}</TableCell>
                     <TableCell className="text-right">{money(inv.grandTotal, currencies)}</TableCell>
                     <TableCell className="text-right">{money(inv.outstandingAmount, currencies)}</TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[inv.status] ?? "outline"} className="capitalize">{inv.status.replace("_", " ")}</Badge></TableCell>
@@ -367,7 +368,7 @@ function CreditNotesPanel() {
                 {notes.map((n) => (
                   <TableRow key={n.id}>
                     <TableCell className="text-px-muted">{n.creditNoteNumber}</TableCell>
-                    <TableCell>{new Date(n.postingDate).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(n.postingDate)}</TableCell>
                     <TableCell className="text-px-muted">{n.reason ?? "—"}</TableCell>
                     <TableCell className="text-right">{money(n.totalAmount, currencies)}</TableCell>
                     <TableCell><Badge variant={n.status === "submitted" ? "default" : "outline"} className="capitalize">{n.status}</Badge></TableCell>
@@ -425,7 +426,7 @@ function ArAgingPanel() {
                   <TableRow key={inv.invoiceId}>
                     <TableCell className="font-medium">#{inv.invoiceNumber}</TableCell>
                     <TableCell className="text-px-muted">{inv.customerName ?? "—"}</TableCell>
-                    <TableCell className="text-px-muted">{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : "—"}</TableCell>
+                    <TableCell className="text-px-muted">{inv.dueDate ? formatDate(inv.dueDate) : "—"}</TableCell>
                     <TableCell className={inv.daysOverdue > 0 ? "text-red-600" : "text-px-muted"}>{inv.daysOverdue}d</TableCell>
                     <TableCell><Badge variant="outline">{inv.bucket}</Badge></TableCell>
                     <TableCell className="text-right">{money(inv.outstandingAmount, currencies)}</TableCell>

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
 
 type Drawing = {
   id: string;
@@ -63,7 +64,7 @@ function renderDrawingCell(column: ScreenColumn, d: Drawing) {
     case "discipline":
       return <TableCell key={column.field} className="text-px-muted">{d.discipline ?? "—"}</TableCell>;
     case "createdAt":
-      return <TableCell key={column.field} className="text-px-muted">{new Date(d.createdAt).toLocaleDateString()}</TableCell>;
+      return <TableCell key={column.field} className="text-px-muted">{formatDate(d.createdAt)}</TableCell>;
     default:
       return (
         <TableCell key={column.field} className="text-px-muted">

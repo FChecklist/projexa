@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, Check, X, Users, Building2, Network } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+import { formatDate } from "@/lib/format-date";
 // Priority 17 remaining gap (2026-07-15): employee_profiles/leave_requests
 // gained a companyId column (were orgId-only before this wave) -- reuses
 // the exact selector AccountingClient.tsx/LeadsClient.tsx already use, not
@@ -333,7 +334,7 @@ export default function EmployeesClient() {
     { id: "employeeCode", header: "Emp. Code", cell: ({ row }) => row.original.profile?.employeeCode ?? "—" },
     {
       id: "dateOfJoining", header: "Joined",
-      cell: ({ row }) => row.original.profile?.dateOfJoining ? new Date(row.original.profile.dateOfJoining).toLocaleDateString() : "—",
+      cell: ({ row }) => row.original.profile?.dateOfJoining ? formatDate(row.original.profile.dateOfJoining) : "—",
     },
     {
       id: "employmentStatus", header: "Status",
@@ -572,7 +573,7 @@ export default function EmployeesClient() {
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">{employeeName(r.userId)}</TableCell>
                         <TableCell className="text-px-muted">{r.leaveType}</TableCell>
-                        <TableCell className="text-px-muted">{new Date(r.startDate).toLocaleDateString()} – {new Date(r.endDate).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-px-muted">{formatDate(r.startDate)} – {formatDate(r.endDate)}</TableCell>
                         <TableCell>{r.numDays}</TableCell>
                         <TableCell><Badge variant={LEAVE_STATUS_VARIANT[r.status] ?? "outline"}>{r.status}</Badge></TableCell>
                         <TableCell>
@@ -660,7 +661,7 @@ export default function EmployeesClient() {
                 <div><p className="text-xs text-px-muted">Reports To</p><p>{employeeName(viewEmployee.reportingToId)}</p></div>
                 <div><p className="text-xs text-px-muted">Employee Code</p><p>{viewEmployee.profile?.employeeCode ?? "—"}</p></div>
                 <div><p className="text-xs text-px-muted">Employment Type</p><p>{viewEmployee.profile?.employmentType?.replace(/_/g, " ") ?? "—"}</p></div>
-                <div><p className="text-xs text-px-muted">Joined</p><p>{viewEmployee.profile?.dateOfJoining ? new Date(viewEmployee.profile.dateOfJoining).toLocaleDateString() : "—"}</p></div>
+                <div><p className="text-xs text-px-muted">Joined</p><p>{viewEmployee.profile?.dateOfJoining ? formatDate(viewEmployee.profile.dateOfJoining) : "—"}</p></div>
                 <div>
                   <p className="text-xs text-px-muted">Employment Status</p>
                   {viewEmployee.profile?.employmentStatus ? (

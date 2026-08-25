@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 
 type Diary = {
   id: string;
@@ -112,7 +113,7 @@ export default function SiteDiaryClient({ projectId }: { projectId: string }) {
               <TableBody>
                 {diaries.map((d) => (
                   <TableRow key={d.id}>
-                    <TableCell className="text-px-muted">{new Date(d.diaryDate).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-px-muted">{formatDate(d.diaryDate)}</TableCell>
                     <TableCell>{d.weather ?? "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{d.workDone ?? "—"}</TableCell>
                     <TableCell>{d.labourCount ?? "—"}</TableCell>
