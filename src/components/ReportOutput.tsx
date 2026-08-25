@@ -18,8 +18,22 @@ function cellValue(v: unknown): string {
  * returns a different shape, so this renders arrays-of-objects as tables
  * and scalar object fields as a key/value summary grid, recursing into
  * nested arrays/objects, rather than hand-building a bespoke view per
- * report/tool. */
-export function ReportOutput({ data }: { data: unknown }) {
+ * report/tool.
+ *
+ * `fieldLabels` (optional): CONS-02 (R46 P4 consistency sweep) -- the
+ * project-status report's own JSON legitimately carries two differently
+ * -derived, intentionally-distinct percent-complete fields side by side
+ * (percentByValue: value-weighted against the current BOQ; progressPercent:
+ * a flat average of each activity's latest logged percentComplete, no BOQ
+ * scoping -- see construction-dashboard-service.ts#getProjectDashboard()).
+ * Rendered generically with their bare JSON key names, a real user reading
+ * this screen sees two unexplained numbers disagreeing with no indication
+ * they measure different things. Callers that know their report's field
+ * semantics may supply a key -> human label override map here so this
+ * still-generic renderer can show it without hand-building a bespoke view
+ * for every report shape; reports that pass nothing keep today's exact
+ * bare-key-name display. */
+export function ReportOutput({ data, fieldLabels }: { data: unknown; fieldLabels?: Record<string, string> }) {
   if (Array.isArray(data)) {
     if (data.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No rows returned.</p>;
     const columns = isPlainObject(data[0]) ? Object.keys(data[0]) : ["value"];
@@ -64,7 +78,7 @@ export function ReportOutput({ data }: { data: unknown }) {
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
             {scalarEntries.map(([k, v]) => (
               <div key={k}>
-                <div className="text-xs text-px-muted">{k}</div>
+                <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
                 <div className="font-medium text-px-ink">{cellValue(v)}</div>
               </div>
             ))}
@@ -72,8 +86,8 @@ export function ReportOutput({ data }: { data: unknown }) {
         )}
         {nestedEntries.map(([k, v]) => (
           <div key={k} className="space-y-2">
-            <div className="text-sm font-semibold text-px-ink">{k}</div>
-            <ReportOutput data={v} />
+            <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? k}</div>
+            <ReportOutput data={v} fieldLabels={fieldLabels} />
           </div>
         ))}
       </div>

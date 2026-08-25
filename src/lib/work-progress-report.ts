@@ -121,6 +121,40 @@ export function formatProgressCell(value: number, touched: boolean): string | nu
   return value;
 }
 
+// CONS-05 (R46 P4 consistency sweep): WPR-06's own rule -- percentage cells
+// are PARENT rows only; a hierarchical child always renders blank, never a
+// number -- already shipped as one-off inline JSX inside
+// WorkProgressReportClient.tsx's ScopeTable (`isChild ? "" : `${value}%`),
+// with no shared, testable home. The public share-link page instead called
+// formatProgressCell(value, touched) below, which answers a different
+// question ("was this bucket ever logged at all?") and blanks an
+// UNTOUCHED PARENT row exactly like a child row -- that mismatch is the
+// real CONS-05 bug: a parent whose report window has no logged entries
+// read blank on the share page but "0%" on the authenticated Report tab
+// and the PDF export. `touched` is irrelevant to WPR-06's actual rule -- a
+// parent line always renders a real number (0% included); only a child's
+// cell is ever blank. Factored out here so the share page can apply the
+// exact same rule the live tab already does, rather than re-deriving it.
+export function formatParentOnlyPercent(value: number, isChild: boolean): string {
+  return isChild ? "" : `${value}%`;
+}
+
+// CONS-04 (R46 P4 consistency sweep): the public share-link page's table
+// previously carried no Rate/Contract-Amt/Grand-Total field at all (only
+// Item/Prev%/Current%/Total%), unlike the Dashboard, the live Report tab,
+// and (as of CONS-03) the PDF export. Grand Total sums root (non-child)
+// lines' own amtTotal only -- the SAME D-3 "parent BOQ lines only" rule
+// WorkProgressReportClient.tsx's own computeGrandTotal() and the CONS-03
+// PDF fix both already use for this exact figure (a child's own amtTotal
+// is a separate, informational number, never a portion carved out of its
+// parent's -- see applyWeightedParentRollup's own comment above). Factored
+// out here, once, so every consumer of this figure -- the live tab, the
+// PDF, and now the share page -- stays computed by the identical rule
+// instead of three independently hand-copied sums that could drift apart.
+export function sumRootAmtTotal(rows: Pick<LineItemProgress, "amtTotal" | "parentLineItemId">[]): number {
+  return rows.filter((r) => !r.parentLineItemId).reduce((s, r) => s + r.amtTotal, 0);
+}
+
 export type LineItemProgress = {
   lineItemId: string;
   parentLineItemId: string | null; // R12 point 10: which line this is a hierarchical BOQ child of, if any

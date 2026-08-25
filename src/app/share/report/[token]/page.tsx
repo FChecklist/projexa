@@ -1,6 +1,14 @@
 import { notFound } from "next/navigation";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
-import { buildWorkProgressReport, formatProgressCell, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
+import { buildWorkProgressReport, formatParentOnlyPercent, sumRootAmtTotal, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
+
+// CONS-03's PDF fix and WorkProgressReportClient.tsx's own money() both
+// format plain numbers, no currency code (the code/symbol is a per-org
+// setting this unauthenticated, no-session page has no way to resolve) --
+// matched here rather than inventing a third formatting rule.
+function money(n: number) {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
 
 // Point 118: the PUBLIC, read-only view a share-link token resolves to.
 // Deliberately outside src/app/(app)/ -- no sidebar, no nav, no app chrome,
@@ -39,20 +47,47 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
         <thead>
           <tr style={{ borderBottom: "2px solid #ddd", textAlign: "right" }}>
             <th style={{ textAlign: "left", padding: "0.5rem" }}>Item</th>
+            {/* CONS-04: Rate + Amt (Contract Value) -- present on the
+                Dashboard and the live Report tab, and (as of CONS-03) the
+                PDF export, but previously absent here entirely. */}
+            <th style={{ padding: "0.5rem" }}>Rate</th>
+            <th style={{ padding: "0.5rem" }}>Amt</th>
             <th style={{ padding: "0.5rem" }}>Prev %</th>
             <th style={{ padding: "0.5rem" }}>Current %</th>
             <th style={{ padding: "0.5rem" }}>Total %</th>
           </tr>
         </thead>
         <tbody>
-          {report.rows.map((r) => (
-            <tr key={r.lineItemId} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "0.5rem", paddingLeft: r.parentLineItemId ? "1.5rem" : "0.5rem" }}>{r.code} {r.description}</td>
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatProgressCell(r.percentage.prev, r.touched.prev)}</td>
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatProgressCell(r.percentage.current, r.touched.current)}</td>
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatProgressCell(r.percentage.total, r.touched.total)}</td>
-            </tr>
-          ))}
+          {report.rows.map((r) => {
+            const isChild = !!r.parentLineItemId; // WPR-06: percent cells are parent rows only
+            return (
+              <tr key={r.lineItemId} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "0.5rem", paddingLeft: isChild ? "1.5rem" : "0.5rem" }}>{r.code} {r.description}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{money(r.rate)}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{money(r.amtTotal)}</td>
+                {/* CONS-05: matches the live Report tab's ScopeTable exactly
+                    -- a parent always renders a real number (0% included),
+                    only a child ever blanks. touched is not consulted here
+                    (that was the bug: an untouched PARENT used to blank
+                    like a child instead of showing "0%"). */}
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatParentOnlyPercent(r.percentage.prev, isChild)}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatParentOnlyPercent(r.percentage.current, isChild)}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{formatParentOnlyPercent(r.percentage.total, isChild)}</td>
+              </tr>
+            );
+          })}
+          {/* CONS-04: Grand Total row, root/parent BOQ lines only (D-3) --
+              same rule as WorkProgressReportClient.tsx's computeGrandTotal()
+              and the CONS-03 PDF fix, factored into sumRootAmtTotal() so
+              all three stay in agreement. */}
+          <tr style={{ borderTop: "2px solid #ddd", fontWeight: 600 }}>
+            <td style={{ padding: "0.5rem" }}>Grand Total</td>
+            <td style={{ padding: "0.5rem" }} />
+            <td style={{ padding: "0.5rem", textAlign: "right" }}>{money(sumRootAmtTotal(report.rows))}</td>
+            <td style={{ padding: "0.5rem" }} />
+            <td style={{ padding: "0.5rem" }} />
+            <td style={{ padding: "0.5rem" }} />
+          </tr>
         </tbody>
       </table>
     </main>

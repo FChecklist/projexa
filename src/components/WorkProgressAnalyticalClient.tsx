@@ -74,7 +74,18 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       kpiTags={
         <>
           <KpiTag label="Total entries" value={String(entries.length)} />
-          <KpiTag label="Avg % complete" value={`${avgPercent}%`} />
+          {/* CONS-01 (R46 P4 consistency sweep): this is a flat, BOQ-agnostic
+              average of percentComplete across every raw work-progress entry
+              ever logged (no value-weighting, no current-BOQ scoping) --
+              genuinely a different metric than Dashboard's "% Complete by
+              BOQ Value" (value-weighted against the current BOQ revision
+              only), which is where this screen's own kpiTags docstring
+              above says the Dashboard's KPI links to. The two are
+              intentionally distinct, not a bug to reconcile into one
+              number, so this label calls out exactly what it is measuring
+              instead of a bare "Avg % complete" that reads as the same
+              headline figure as Dashboard's when it is not. */}
+          <KpiTag label="Avg % Complete (Activity Log)" value={`${avgPercent}%`} />
           <KpiTag label="Categories" value={String(categories.length)} />
         </>
       }

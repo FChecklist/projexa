@@ -32,6 +32,25 @@ const REPORTS: { value: string; label: string }[] = [
   { value: "expense", label: "Expense" },
 ];
 
+// CONS-02 (R46 P4 consistency sweep): project-status's own response
+// legitimately returns two differently-derived, intentionally-distinct
+// percent-complete fields on one payload (percentByValue: value-weighted
+// against the current BOQ; progressPercent: flat average of each
+// activity's latest logged percentComplete, no BOQ scoping -- both real,
+// both documented in construction-dashboard-service.ts#getProjectDashboard()).
+// ReportOutput's generic renderer otherwise shows bare JSON key names, so
+// this page previously showed "percentByValue" and "progressPercent" next
+// to each other with nothing telling a real user they measure different
+// things. Keyed by report value so only project-status is affected; every
+// other report in REPORTS keeps ReportOutput's default bare-key-name
+// display untouched.
+const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
+  "project-status": {
+    percentByValue: "% Complete by BOQ Value",
+    progressPercent: "% Complete by Activity Log",
+  },
+};
+
 // Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16, Owner: "look at the PROJEXA reports
 // gaps and fill it. For customer facing app, reports and analysis is
@@ -116,7 +135,7 @@ function ProjectReportsPanel({ projectId }: { projectId: string }) {
           ) : result === null ? (
             <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
           ) : (
-            <ReportOutput data={result} />
+            <ReportOutput data={result} fieldLabels={REPORT_FIELD_LABELS[reportName]} />
           )}
         </CardContent>
       </Card>
