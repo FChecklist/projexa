@@ -106,6 +106,26 @@ export const messages = pgTable("messages", {
 
 // Auto-populated by the auth.users insert trigger (see drizzle/0004) --
 // never written to directly from application code.
+// R48_NO_INVITE_UI_01: org-admin user provisioning (drizzle/0015). The
+// invite is bound to its email -- public.accept_org_invite() refuses a token
+// whose email does not match the redeeming user's own profile -- so the link
+// is a delivery convenience, not a bearer credential.
+export const orgInvites = pgTable("org_invites", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  token: text("token").notNull().unique(),
+  invitedBy: uuid("invited_by").references(() => profiles.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedBy: uuid("accepted_by").references(() => profiles.id, { onDelete: "set null" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull(),
