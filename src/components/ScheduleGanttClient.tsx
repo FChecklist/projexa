@@ -7,13 +7,48 @@
 // visualization are SVAR's own PRO-only features, so those are surfaced
 // here as a grid column + a separate stats panel instead of relying on
 // SVAR's built-in (paid) highlighting.
+//
+// R46 P8 seq130 (M28 registry-model proof, TIMELINE archetype -- function_id
+// "schedule.timeline"): the real SVAR Gantt/dependency/critical-path/
+// baseline-capture behaviour is genuinely bespoke -- no generic renderer in
+// the kit reproduces it (the kit's own TimelineScreen is a plain bars+
+// markers component with no dependency lines, no critical-path grid, no
+// baseline capture; swapping it in would be a lossy rewrite, not a registry
+// wiring) -- so this stays a fully hand-rolled component, same call as R46
+// P8 seq121's boq.custom (CUSTOM archetype) for /scope. What IS
+// registry-driven: the Gantt grid's column LABELS (Task/Start/Due/Critical
+// Path) and the three summary-card labels (Tasks/On Critical Path/
+// Milestones), resolved server-side in schedule/page.tsx and passed down as
+// `registryColumns`. DEFAULT_COLUMNS is the fallback when the row is
+// missing or the resolve call errors -- identical text, so there is no
+// visible difference between "resolved from the DB" and this default.
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import "@svar-ui/react-gantt/all.css";
+
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as PermitsListClient.tsx's / ScopeClient.tsx's
+// RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const DEFAULT_COLUMNS: RegistryColumn[] = [
+  { field: "task", label: "Task", type: "text", importance: "High" },
+  { field: "start", label: "Start", type: "date", importance: "High" },
+  { field: "due", label: "Due", type: "date", importance: "High" },
+  { field: "critical", label: "Critical Path", type: "text", importance: "High" },
+  { field: "taskCount", label: "Tasks", type: "number", importance: "Medium" },
+  { field: "criticalCount", label: "On Critical Path", type: "number", importance: "Medium" },
+  { field: "milestoneCount", label: "Milestones", type: "number", importance: "Medium" },
+];
+
+function columnLabel(columns: RegistryColumn[], field: string, fallback: string): string {
+  return columns.find((c) => c.field === field)?.label || fallback;
+}
 
 const Gantt = dynamic(() => import("@svar-ui/react-gantt").then((m) => m.Gantt), { ssr: false });
 const Willow = dynamic(() => import("@svar-ui/react-gantt").then((m) => m.Willow), { ssr: false });
@@ -26,7 +61,8 @@ type GanttTask = {
 type GanttDependency = { predecessorId: string; successorId: string; lagDays: number };
 type Milestone = { id: string; name: string; targetDate: string | null };
 
-export default function ScheduleGanttClient({ projectId }: { projectId: string }) {
+export default function ScheduleGanttClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+  const labelColumns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
   const [tasks, setTasks] = useState<GanttTask[]>([]);
   const [dependencies, setDependencies] = useState<GanttDependency[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -117,11 +153,11 @@ export default function ScheduleGanttClient({ projectId }: { projectId: string }
   }));
 
   const columns = [
-    { id: "text", header: "Task", flexGrow: 2 },
-    { id: "start", header: "Start", width: 100 },
-    { id: "end", header: "Due", width: 100 },
+    { id: "text", header: columnLabel(labelColumns, "task", "Task"), flexGrow: 2 },
+    { id: "start", header: columnLabel(labelColumns, "start", "Start"), width: 100 },
+    { id: "end", header: columnLabel(labelColumns, "due", "Due"), width: 100 },
     {
-      id: "critical", header: "Critical Path", width: 110,
+      id: "critical", header: columnLabel(labelColumns, "critical", "Critical Path"), width: 110,
       // SVAR's ICellProps["row"] (IRow) doesn't publicly expose an `id`
       // field in its shipped types despite carrying one at runtime (it's
       // the task row) -- any is the pragmatic escape hatch here.
@@ -138,9 +174,9 @@ export default function ScheduleGanttClient({ projectId }: { projectId: string }
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
-        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">Tasks</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
-        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">On Critical Path</p><p className="text-2xl font-heading text-px-error">{criticalCount}</p></CardContent></Card>
-        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">Milestones</p><p className="text-2xl font-heading text-px-ink">{milestones.length}</p></CardContent></Card>
+        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "taskCount", "Tasks")}</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
+        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p><p className="text-2xl font-heading text-px-error">{criticalCount}</p></CardContent></Card>
+        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "milestoneCount", "Milestones")}</p><p className="text-2xl font-heading text-px-ink">{milestones.length}</p></CardContent></Card>
         <Button onClick={captureBaseline} disabled={capturing} variant="outline">
           {capturing ? "Capturing…" : "Capture Baseline"}
         </Button>
