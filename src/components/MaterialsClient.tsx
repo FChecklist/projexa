@@ -11,15 +11,62 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 // Point 33: was a 73-line empty-state-only stock ledger listing (no master,
 // no create form). His words: "material database. material inbound, spec,
 // cost, qty." -- a master (spec/unit/cost) and inbound receipts against it.
 // No outbound/consumption/stock-on-hand -- not requested, not built.
+//
+// R46 P8 seq131: registry-driven LIST archetype, same pattern R43 seq2
+// established for permits.list (see PermitsListClient.tsx's header comment
+// for the full history). Only the Material Master table (4 real data
+// columns: Name/Spec/Unit/Unit Cost) is registry-driven -- Inbound Receipts
+// has no registry equivalent (it's a movements ledger against the master,
+// not a second list screen) and stays exactly as it was, same "one table
+// only" contract Documents/ChangeOrders used for their own non-registry
+// pieces. MASTER_COLUMNS is now the fallback used when materials/page.tsx's
+// server-side resolve of the material.list screen_definitions row returns
+// null (404/error), same "keep the hardcoded version behind a flag until
+// verified" contract as permits/documents/change-orders.
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
 
-export default function MaterialsClient({ projectId }: { projectId: string }) {
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
+// RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const MASTER_COLUMNS: ScreenColumn[] = [
+  { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Spec", field: "spec", type: "text", importance: "Medium" },
+  { label: "Unit", field: "unit", type: "text", importance: "High" },
+  { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
+];
+
+// Per-field cell renderer for the Material Master table -- same reasoning
+// as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
+// still reorder/relabel these 4 columns live (the hard-stop test), looked
+// up by field name so reordering doesn't change what renders. `default`
+// covers any field a future registry row names that this component doesn't
+// know about yet.
+function renderMaterialCell(field: string, m: Material) {
+  switch (field) {
+    case "name":
+      return <span className="font-medium">{m.name}</span>;
+    case "spec":
+      return <span className="text-px-muted">{m.spec ?? "—"}</span>;
+    case "unit":
+      return m.unit;
+    case "unitCost":
+      return m.unitCost;
+    default:
+      return String((m as unknown as Record<string, unknown>)[field] ?? "—");
+  }
+}
+
+export default function MaterialsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,14 +182,11 @@ export default function MaterialsClient({ projectId }: { projectId: string }) {
               <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Spec</TableHead><TableHead>Unit</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
                 <TableBody>
                   {materials.map((m) => (
                     <TableRow key={m.id}>
-                      <TableCell className="font-medium">{m.name}</TableCell>
-                      <TableCell className="text-px-muted">{m.spec ?? "—"}</TableCell>
-                      <TableCell>{m.unit}</TableCell>
-                      <TableCell>{m.unitCost}</TableCell>
+                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m)}</TableCell>)}
                     </TableRow>
                   ))}
                 </TableBody>
