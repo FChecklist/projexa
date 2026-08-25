@@ -6,6 +6,19 @@
 // CRUD (/api/meetings). WhatsApp-send is a disclosed gap -- no such
 // integration exists anywhere in this codebase (see PROGRESS.md) -- so that
 // button stays disabled with an explicit label rather than faking it.
+//
+// R46 P8 seq129: registry-driven LIST archetype, same pattern R43 seq2
+// established for permits.list (see PermitsListClient.tsx's header comment
+// for the full history) and R46 P8 seq134 established for
+// variations.list/ChangeOrdersClient.tsx. This screen never adopted the
+// kit's ListScreen component -- it's a plain shadcn Table with a static
+// Actions column (Minutes/PDF/WhatsApp buttons) that has no registry
+// equivalent -- so only the 3 real data columns (Meeting/Date/Status) are
+// registry-driven: COLUMNS is now the fallback used when moms/page.tsx's
+// server-side resolve of the moms.list screen_definitions row returns null
+// (404/error), same "keep the hardcoded version behind a flag until
+// verified" contract as permits/change-orders/documents. Actions stays
+// hardcoded outside the columns map, always.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, NotebookText, Download, Sparkles, Send, Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 type Meeting = {
   id: string;
@@ -27,7 +41,41 @@ type Meeting = {
   aiSummary: string | null;
 };
 
-export default function MoMsClient({ projectId }: { projectId: string }) {
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as PermitsListClient.tsx's / DocumentsClient.tsx's
+// RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const COLUMNS: ScreenColumn[] = [
+  { label: "Meeting", field: "title", type: "text", importance: "High" },
+  { label: "Date", field: "scheduledAt", type: "date", importance: "High" },
+  { label: "Status", field: "status", type: "text", importance: "High" },
+];
+
+// Per-field cell renderer -- this screen isn't built on the kit's
+// ListScreen, so unlike PermitsListClient there's no generic
+// column-type-driven renderer to hand columns to. A registry row can still
+// reorder/relabel these 3 columns live (the hard-stop test); the actual
+// cell value for each known field is still this project's own formatting
+// logic, looked up by field name so reordering doesn't change what renders.
+function renderMeetingCell(field: string, m: Meeting) {
+  switch (field) {
+    case "title":
+      return (
+        <span className="flex items-center gap-2 font-medium">
+          <NotebookText className="size-4 text-px-muted" />{m.title}
+        </span>
+      );
+    case "scheduledAt":
+      return <span className="text-px-muted">{new Date(m.scheduledAt).toLocaleString()}</span>;
+    case "status":
+      return <Badge variant="outline">{m.status}</Badge>;
+    default:
+      return String((m as unknown as Record<string, unknown>)[field] ?? "—");
+  }
+}
+
+export default function MoMsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -35,6 +83,7 @@ export default function MoMsClient({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<Meeting | null>(null);
   const [minutesDraft, setMinutesDraft] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
   async function load() {
     setLoading(true);
@@ -149,15 +198,16 @@ export default function MoMsClient({ projectId }: { projectId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Meeting</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                  {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {meetings.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="flex items-center gap-2 font-medium"><NotebookText className="size-4 text-px-muted" />{m.title}</TableCell>
-                    <TableCell className="text-px-muted">{new Date(m.scheduledAt).toLocaleString()}</TableCell>
-                    <TableCell><Badge variant="outline">{m.status}</Badge></TableCell>
+                    {columns.map((col) => (
+                      <TableCell key={col.field}>{renderMeetingCell(col.field, m)}</TableCell>
+                    ))}
                     <TableCell className="text-right space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => { setSelected(m); setMinutesDraft(m.minutes ?? ""); }}>Minutes</Button>
                       <Button variant="ghost" size="sm" asChild>
