@@ -16,7 +16,37 @@ import {
   LineChart,
   LinkListCard,
   type BarChartDatum,
+  type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+
+// R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
+// "dashboard.dashboard", first DASHBOARD conversion this session):
+// intentionally the same fields as ScreenColumn, same as every prior LIST/
+// CUSTOM conversion's RegistryColumn -- but unlike a LIST screen (one row =
+// one table column), a DASHBOARD row's `columns` are {field, label} pairs
+// naming each KPI/section heading on this page. Every KPI's value, click
+// destination, trend direction, and every chart's data stay exactly as
+// hand-built below -- only the label TEXT is registry-driven.
+export type RegistryColumn = ScreenColumn;
+
+// Fallback when no registry row is seeded yet (or the resolve call errors) --
+// mirrors the registry seed 1:1, so there is no visible difference between
+// "resolved from the DB" and "resolved from this hardcoded default" (M28:
+// keep the hardcoded version behind a flag until verified).
+const DEFAULT_LABELS: ScreenColumn[] = [
+  { field: "percentByValue", label: "% Complete by BOQ Value", type: "text" },
+  { field: "contractValue", label: "Contract Value", type: "text" },
+  { field: "budgetVsActual", label: "Budget vs Actual", type: "text" },
+  { field: "permitsExpiring", label: "Permits Expiring", type: "text" },
+  { field: "progressOverTimeHeading", label: "Progress logged over time", type: "text" },
+  { field: "progressByCategoryHeading", label: "Progress by scope category", type: "text" },
+  { field: "quickActionsTitle", label: "Quick actions", type: "text" },
+  { field: "recentActivityHeading", label: "Recent progress entries", type: "text" },
+];
+
+function labelFor(labels: ScreenColumn[], field: string, fallback: string): string {
+  return labels.find((c) => c.field === field)?.label || fallback;
+}
 
 type ProjectDashboard = {
   projectId: string;
@@ -45,8 +75,9 @@ function money(n: number, currency: Currency | undefined) {
   return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-export default function DashboardProjectClient({ projectId }: { projectId: string }) {
+export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
   const router = useRouter();
+  const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
   const [dashboard, setDashboard] = useState<ProjectDashboard | null>(null);
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -111,7 +142,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
           // BOQ scoping). Without the distinguishing word here, a user
           // following that link sees a second unlabelled "percent complete"
           // number that disagrees with the one they just clicked.
-          label="% Complete by BOQ Value"
+          label={labelFor(dashboardLabels, "percentByValue", "% Complete by BOQ Value")}
           value={hasEv ? `${dashboard.percentByValue}%` : "No BOQ yet"}
           trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this" }}
           baseline={hasEv ? `of ${money(dashboard.contractValue!, currency)} contract value` : ""}
@@ -123,7 +154,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       secondaryKpis={
         <>
           <KpiCard
-            label="Contract Value"
+            label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
             value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
@@ -131,7 +162,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
           <KpiCard
-            label="Budget vs Actual"
+            label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
             value={money(dashboard.expenses, currency)}
             trend={{
               direction: dashboard.expenses > dashboard.budget ? "up" : "down",
@@ -144,7 +175,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
             onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
           />
           <KpiCard
-            label="Permits Expiring"
+            label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
             value={String(expiringCount)}
             trend={{
               direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
@@ -159,7 +190,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       }
       trendColumn={
         <>
-          <h3 className="text-[13px] font-medium text-ct-navy mb-2">Progress logged over time</h3>
+          <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressOverTimeHeading", "Progress logged over time")}</h3>
           {/* Honest scope note: a real AED-denominated "earned value over time"
               trend needs historical earned-value snapshots this codebase
               doesn't persist yet -- plotting one here would mean fabricating
@@ -171,7 +202,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       }
       breakdownColumn={
         <>
-          <h3 className="text-[13px] font-medium text-ct-navy mb-2">Progress by scope category</h3>
+          <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressByCategoryHeading", "Progress by scope category")}</h3>
           {categoryBars.length > 0 ? (
             <BarChart data={categoryBars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />
           ) : (
@@ -181,7 +212,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       }
       linkList={
         <LinkListCard
-          title="Quick actions"
+          title={labelFor(dashboardLabels, "quickActionsTitle", "Quick actions")}
           items={[
             { label: "Record progress", onClick: () => router.push(`/work-progress?projectId=${projectId}`) },
             { label: "New BOQ revision", onClick: () => router.push(`/scope?projectId=${projectId}`) },
@@ -192,7 +223,7 @@ export default function DashboardProjectClient({ projectId }: { projectId: strin
       }
       recentActivity={
         <div className="rounded-md border border-ct-border p-3">
-          <h3 className="text-[13px] font-medium text-ct-navy mb-2">Recent progress entries</h3>
+          <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "recentActivityHeading", "Recent progress entries")}</h3>
           {recent.length === 0 ? (
             <p className="text-[12.5px] text-ct-muted">No entries logged yet.</p>
           ) : (
