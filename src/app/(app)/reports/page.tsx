@@ -2,12 +2,37 @@ import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import ReportsClient from "@/components/ReportsClient";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import ReportsClient, { type RegistryColumn } from "@/components/ReportsClient";
+
+// R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
+// "reports.report"): same shape as R43 seq2's resolvePermitsListColumns and
+// R46 P8 seq121's boq.custom lookup on /scope. ReportsClient's own report
+// EXECUTION (fixed 17-report picker + weekly-project param + the org-wide
+// Full Catalog tab over report_definitions) has real complexity a generic
+// registry renderer can't represent, so it stays a fully hand-built
+// component, same rationale as boq.custom for ScopeClient -- only the
+// picker's report LABELS are registry-driven here. A missing or errored
+// registry row is NOT fatal -- ReportsClient falls back to its own
+// hardcoded labels when this is null.
+async function resolveReportsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
+  try {
+    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/reports.report", {
+      organizationId: organizationId ?? undefined,
+    });
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
+  } catch (err) {
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
+    console.error("[reports/page] screen_definitions resolve failed, falling back to hardcoded labels:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const registryColumns = await resolveReportsListColumns(organizationId);
 
   // Priority 17 follow-on (projexa_reports_dispatch_2026_07_16): previously
   // this page refused to render ReportsClient at all when the org had no
@@ -26,7 +51,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
           </Card>
         )}
-        <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} />
+        <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} registryColumns={registryColumns} />
       </main>
     </>
   );
