@@ -1,5 +1,16 @@
 "use client";
 
+// R46 P8 seq134: registry-driven LIST archetype, same pattern R43 seq2
+// established for permits.list (see PermitsListClient.tsx's header comment
+// for the full history). This screen never adopted the kit's ListScreen
+// component -- it's a plain shadcn Table with a bespoke, live e-signature
+// Actions column (SignatureStatusCell below) that has no registry
+// equivalent -- so only the 5 real data columns (#/Title/Cost Impact/
+// Schedule Impact/Status) are registry-driven: COLUMNS is now the fallback
+// used when change-orders/page.tsx's server-side resolve of the
+// variations.list screen_definitions row returns null (404/error), same
+// "keep the hardcoded version behind a flag until verified" contract as
+// permits. Actions stays hardcoded outside the columns map, always.
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,10 +23,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 type ChangeOrder = {
   id: string; number: number; title: string; reason: string | null; costImpact: string; scheduleImpactDays: number; status: string;
 };
+
+// Shape returned by compliance-tracker's screen_definitions.columns jsonb --
+// same convention as PermitsListClient.tsx's RegistryColumn.
+export type RegistryColumn = ScreenColumn;
+
+const COLUMNS: ScreenColumn[] = [
+  { label: "#", field: "number", type: "text", importance: "High" },
+  { label: "Title", field: "title", type: "text", importance: "High" },
+  { label: "Cost Impact", field: "costImpact", type: "number", importance: "High" },
+  { label: "Schedule Impact", field: "scheduleImpactDays", type: "number", importance: "High" },
+  { label: "Status", field: "status", type: "text", importance: "High" },
+];
 
 type SignatureStatus = {
   signatureRequest: {
@@ -27,6 +51,38 @@ type SignatureStatus = {
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", pending_approval: "secondary", approved: "default", rejected: "destructive",
 };
+
+// Per-field cell renderer -- this screen isn't built on the kit's ListScreen
+// (its Actions column needs the live SignatureStatusCell below, which has no
+// registry equivalent), so unlike PermitsListClient there's no generic
+// column-type-driven renderer to hand columns to. A registry row can still
+// reorder/relabel these 5 columns live (the hard-stop test); the actual cell
+// value for each known field is still this project's own formatting logic,
+// looked up by field name so reordering doesn't change what renders.
+function renderChangeOrderCell(field: string, c: ChangeOrder, formatCurrency: (n: number) => string) {
+  switch (field) {
+    case "number":
+      return <span className="font-mono text-xs">CO-{c.number}</span>;
+    case "title":
+      return <span className="font-medium">{c.title}</span>;
+    case "costImpact":
+      return (
+        <span className={Number(c.costImpact) >= 0 ? "text-px-error" : "text-px-success"}>
+          {formatCurrency(Number(c.costImpact))}
+        </span>
+      );
+    case "scheduleImpactDays":
+      return (
+        <span className="text-px-muted">
+          {c.scheduleImpactDays > 0 ? `+${c.scheduleImpactDays}d` : c.scheduleImpactDays === 0 ? "—" : `${c.scheduleImpactDays}d`}
+        </span>
+      );
+    case "status":
+      return <Badge variant={STATUS_VARIANT[c.status]}>{c.status.replace(/_/g, " ")}</Badge>;
+    default:
+      return String((c as unknown as Record<string, unknown>)[field] ?? "—");
+  }
+}
 
 // Real, honest signature-progress summary for a pending_approval change
 // order -- deliberately NOT a one-click approve/reject button. A naive
@@ -61,13 +117,14 @@ function SignatureStatusCell({ data, loading }: { data: SignatureStatus | undefi
   );
 }
 
-export default function ChangeOrdersClient({ projectId }: { projectId: string }) {
+export default function ChangeOrdersClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
   const currencies = useCurrencies();
   // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
   // -- forced both symbol and grouping to India regardless of the org's real
   // base currency. Closure over `currencies` so every existing
   // formatCurrency(...) call site below is unchanged.
   const formatCurrency = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [items, setItems] = useState<ChangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [signatureStatuses, setSignatureStatuses] = useState<Record<string, SignatureStatus>>({});
@@ -189,18 +246,16 @@ export default function ChangeOrdersClient({ projectId }: { projectId: string })
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>#</TableHead><TableHead>Title</TableHead><TableHead>Cost Impact</TableHead>
-                  <TableHead>Schedule Impact</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                  {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-mono text-xs">CO-{c.number}</TableCell>
-                    <TableCell className="font-medium">{c.title}</TableCell>
-                    <TableCell className={Number(c.costImpact) >= 0 ? "text-px-error" : "text-px-success"}>{formatCurrency(Number(c.costImpact))}</TableCell>
-                    <TableCell className="text-px-muted">{c.scheduleImpactDays > 0 ? `+${c.scheduleImpactDays}d` : c.scheduleImpactDays === 0 ? "—" : `${c.scheduleImpactDays}d`}</TableCell>
-                    <TableCell><Badge variant={STATUS_VARIANT[c.status]}>{c.status.replace(/_/g, " ")}</Badge></TableCell>
+                    {columns.map((col) => (
+                      <TableCell key={col.field}>{renderChangeOrderCell(col.field, c, formatCurrency)}</TableCell>
+                    ))}
                     <TableCell className="text-right">
                       {c.status === "draft" && <Button size="sm" variant="outline" onClick={() => setSubmittingId(c)}>Send for Approval</Button>}
                       {c.status === "pending_approval" && (
