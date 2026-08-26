@@ -5,6 +5,7 @@
 // draft lifecycle. No detail route existed for ANY of projexa's 49 modules
 // before this (only 3 [id] routes existed app-wide) -- this is the first.
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -19,6 +20,10 @@ type Permit = {
   notes: string | null;
   tags: string[];
   projectId: string;
+  // F_012: GET /api/permits/{id} has always returned this -- a signed
+  // Storage link to the permit PDF -- and the page never rendered it
+  // anywhere. It was missing from this type, so nothing could.
+  documentUrl?: string | null;
 };
 
 const REQUIRED_COLUMNS: ScreenColumn[] = [
@@ -84,7 +89,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       setValues(draftRes.draft.payload ?? {});
       setMode("edit");
     } else {
-      setValues(permitRes);
+      setValues(permitRes as unknown as Record<string, unknown>);
     }
   }
 
@@ -191,6 +196,47 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       messages={messages}
       documentFlow={{ from: [], to: [] }}
     >
+      {/* F_012. The permit PDF is the record's core artefact -- the create
+          form will not even submit without one (PermitCreateClient.tsx:71,
+          `required` on the file input) -- and GET /api/permits/{id} has
+          always returned a signed Storage link to it. The detail page
+          rendered it nowhere: REQUIRED_COLUMNS and OPTIONAL_COLUMNS list
+          only name/permitNumber/permitAuthority/issueDate/endDate/notes.
+          You were forced to upload a document you could then never see.
+
+          Deliberately NOT added as an OPTIONAL_COLUMNS field: (a) this is a
+          link, not an editable value, and ScreenColumn.control has no LINK
+          member -- FILE is for uploading, not for viewing what is already
+          there; (b) OPTIONAL_COLUMNS renders inside the "More details"
+          section, which is itself broken and unreachable (fault F_011), so
+          putting the link there would have closed nothing. It renders here,
+          first, in display mode, independent of that section's state.
+
+          The absent case is stated rather than left blank -- same rule as
+          everywhere else in this pass: a missing document and a document
+          the page failed to surface must not look identical. */}
+      {mode === "display" && (
+        <section className="mb-4 rounded-md border border-px-border p-3">
+          <h3 className="text-[13px] font-semibold text-px-ink">Permit document</h3>
+          {permit.documentUrl ? (
+            <a
+              href={permit.documentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-1.5 text-[13px] underline underline-offset-2"
+            >
+              <FileText className="size-3.5" aria-hidden />
+              View the uploaded permit PDF
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          ) : (
+            <p className="mt-1 text-[13px] text-ct-muted">
+              No document came back with this permit. Every permit is created with a PDF, so if you expected
+              one here, it did not load rather than not existing.
+            </p>
+          )}
+        </section>
+      )}
       <FormSection
         title="Permit details"
         columns={REQUIRED_COLUMNS}
