@@ -24,8 +24,8 @@ import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 // outside any component, so it cannot call useTranslations() itself (hooks
 // only work inside components) -- it carries translation keys, and the
 // actual t() lookups happen in SidebarInner below, which is a component.
-type NavItem = { labelKey: string; href: string; icon: React.ComponentType<{ className?: string }> };
-type NavSection = { titleKey: string | null; items: NavItem[] };
+export type NavItem = { labelKey: string; href: string; icon: React.ComponentType<{ className?: string }> };
+export type NavSection = { titleKey: string | null; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
   {
@@ -156,7 +156,11 @@ const NAV_SECTIONS: NavSection[] = [
 // SIDEBAR was never the source of the unwired-pill risk (see
 // veri-chat-context.tsx's fetchCapabilityTree for where that risk actually
 // lives).
-const VISIBLE_NAV_SECTIONS: NavSection[] = filterShippedNav(NAV_SECTIONS);
+// R52: exported so HOME's module directory renders the SAME groups from the
+// SAME filtered source. M24 deletes the left rail and makes HOME the grouped
+// module directory that replaces it -- if the directory rebuilt its own list,
+// the two would drift and a module could exist in one and not the other.
+export const VISIBLE_NAV_SECTIONS: NavSection[] = filterShippedNav(NAV_SECTIONS);
 
 // veridian-ui-kit migration: the shared AppSidebar component owns only the
 // generic nav-sections shell/style (logo row + scrollable section list, per

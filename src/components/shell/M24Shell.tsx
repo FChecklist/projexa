@@ -32,6 +32,8 @@ import {
   type HistoryEntry,
   type PillSelection,
   type PillUsage,
+  type RankedPill,
+  type TaskRow,
   type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
 import VeriComposer from "@/components/veri-chat/VeriComposer";
@@ -48,6 +50,69 @@ const HISTORY_KEY = "veri.chain.history";
 const PILL_USAGE_KEY = "veri.pill.usage";
 
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
+
+// R53's task shape, from GET /api/v1/projexa/tasks (contract: claude_log id=35).
+type ApiTask = {
+  id: string;
+  projectId?: string | null;
+  derivedChain?: { full?: string; mode?: string; root?: string; steps?: string[] } | null;
+  functionId?: string | null;
+  status?: string | null;
+  error?: string | null;
+  rawInput?: string | null;
+  mode?: string | null;
+};
+type ApiTasks = {
+  counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
+  groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
+  tasks?: ApiTask[];
+};
+
+// M24: "Line 1 must START WITH A VERB from a CLOSED SET ... Six words the user
+// learns once." Task names are system-generated, which is exactly why the
+// convention is enforceable. The verb is derived from the functionId rather
+// than from free text, so it can never drift outside the set.
+function verbFor(functionId?: string | null): TaskRow["verb"] {
+  const f = (functionId ?? "").toLowerCase();
+  if (f.startsWith("record_") || f.includes("progress")) return "Record";
+  if (f.startsWith("import_") || f.includes("import")) return "Import";
+  if (f.includes("approve")) return "Approve";
+  if (f.includes("confirm")) return "Confirm";
+  if (f.includes("sign")) return "Sign off";
+  return "Review";
+}
+
+function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked"): TaskRow {
+  const steps = t.derivedChain?.steps ?? [];
+  const root = t.derivedChain?.root ?? null;
+  // M24's four glyphs are needs-you / running / waiting / done. A BLOCKED task
+  // is one that needs you -- it is stuck on a decision or a correction only
+  // the user can make -- so it takes the needs-you glyph and the loud pill.
+  const state: TaskRow["state"] =
+    group === "done" ? "done" : group === "running" ? "running" : "needs-you";
+  return {
+    id: t.id,
+    state,
+    verb: verbFor(t.functionId),
+    // The chain's steps read as the object of the sentence: "Record Work
+    // Progress > New entry". Falling back to the functionId is deliberate --
+    // a row with no label at all would be worse than a technical one.
+    object: steps.length ? steps.join(" > ") : (t.functionId ?? "task"),
+    // M24: "line 2 is the DECIDING information - without it the user clicks in
+    // to find out, which is the load being removed." R53 says render the
+    // backend's OWN words on a blocked row; never a generic failure.
+    detail: t.error ?? t.rawInput ?? undefined,
+    urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
+    urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
+    chain: {
+      mode: (t.mode?.toLowerCase() as ChainMode) ?? DEFAULT_CHAIN_MODE,
+      segments: [
+        ...(root ? [{ id: t.projectId ?? root, label: root, kind: "root" as const }] : []),
+        ...steps.map((label, i) => ({ id: `${t.id}-s${i}`, label, kind: "step" as const })),
+      ],
+    },
+  };
+}
 type Project = { id: string; name: string };
 
 export default function M24Shell({ children }: { children: React.ReactNode }) {
@@ -60,6 +125,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
+  const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
+  const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
+  const [waiting, setWaiting] = useState<TaskRow[]>([]);
+  const [tasksError, setTasksError] = useState<string | null>(null);
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
   const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
@@ -120,29 +189,66 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
-  // clicking." The ruled source is compliance.pipeline_tasks (NOT
-  // compliance.tasks, a different older system with 1,913 rows). PROJEXA has no
-  // endpoint that reads it yet -- error_log E-120, and R53's handshake
-  // (claude_log id=28) confirms the table is live with 0 rows and the read API
-  // is still to come. The wiring is here and correct, so the counts light up
-  // the moment that endpoint exists; until then a failed fetch leaves them at
-  // zero and no badge renders. Deliberately NOT wired to /api/todos, which
-  // exists but reads the wrong system and would contradict the ruling.
+  // clicking." Both the counts and the rows come from ONE call to
+  // GET /api/tasks, which proxies VERIDIAN's /api/v1/projexa/tasks. R53's
+  // handshake (claude_log id=35) is explicit that counts and groups are the
+  // SAME rows -- which is why the tabs can never disagree with the list under
+  // them. Reading counts from a second endpoint is how those two drift.
+  //
+  // The source is compliance.pipeline_tasks, as M24 rules -- NOT
+  // compliance.tasks, the older 1,913-row system that /api/todos reads.
   useEffect(() => {
     let live = true;
     (async () => {
       try {
-        const res = await fetch("/api/tasks/counts");
+        const res = await fetch("/api/tasks?limit=50");
+        // Status before body: an error body parses perfectly well as JSON, and
+        // treating it as data is how a failed request becomes a confident
+        // empty list.
+        const d = await res.json().catch(() => null);
+        if (!live) return;
+        if (!res.ok) {
+          setTasksError(
+            d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
+          );
+          return;
+        }
+        const data = (d ?? {}) as ApiTasks;
+        setTasksError(null);
+        setCounts({
+          home: Number(data.counts?.total) || 0,
+          approval: Number(data.counts?.needsYou) || 0,
+          queue: Number(data.counts?.running) || 0,
+        });
+        const g = data.groups ?? {};
+        // "Needs you" carries what is stuck on the user: blocked first, because
+        // a blocked row is the only loud one and the one that costs time.
+        setNeedsYou([
+          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
+          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
+        ]);
+        // "Waiting on others" is everything not on the user's desk.
+        setWaiting([
+          ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
+          ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
+        ]);
+      } catch {
+        if (live) setTasksError("Couldn't reach the task service.");
+      }
+    })();
+
+    // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
+    // order, never re-sorted here. isNewUser true means "nothing earned yet",
+    // which must not look like a failed call.
+    (async () => {
+      try {
+        const res = await fetch("/api/pill-usage?limit=6");
         if (!res.ok) return;
         const d = await res.json();
-        if (!live) return;
-        setCounts({
-          home: Number(d?.home) || 0,
-          approval: Number(d?.approvalPending) || 0,
-          queue: Number(d?.inQueue) || 0,
-        });
+        if (live && Array.isArray(d?.pills)) setRankedPills(d.pills as RankedPill[]);
       } catch {}
     })();
+
     return () => {
       live = false;
     };
@@ -250,14 +356,35 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
       taskMaster={
+        tasksError ? (
+          // Never an empty list in place of an error -- that is the exact
+          // defect this codebase has shipped repeatedly, and it makes a broken
+          // backend indistinguishable from "you have nothing to do". The
+          // backend's OWN words, with a retry that costs one click.
+          <div className="flex h-full flex-col">
+            <div className="m-2 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+              <p role="alert" className="text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
+                {tasksError}
+              </p>
+              <button
+                type="button"
+                onClick={() => router.refresh()}
+                className="veri-view-tab mt-2"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : (
         <TaskMaster
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          needsYou={[]}
-          waitingOnOthers={[]}
+          needsYou={needsYou}
+          waitingOnOthers={waiting}
           onLoad={onLoadChain}
         />
+        )
       }
       composer={
         <Composer
@@ -280,6 +407,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               <PillStrip
                 usage={pillUsage}
                 now={Date.now()}
+                // Server ranking wins and is rendered verbatim; the local
+                // ranking is only the fallback when the call did not answer.
+                ordered={showAllPills ? undefined : rankedPills}
                 onSelect={onPillSelect}
                 onTogglePin={onTogglePin}
                 limit={showAllPills ? UNIVERSAL_PILLS.length : 6}
