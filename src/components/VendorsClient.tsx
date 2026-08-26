@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 type Vendor = {
   id: string; vendorName: string; vendorType: string | null; gst: string | null;
@@ -110,7 +110,7 @@ export default function VendorsClient() {
             // yet." used to render here on a load where GET /api/vendors had
             // returned 500 on 3 of 3 attempts. The screen stated a fact about
             // the user's data that the failed read makes unknowable.
-            <LoadFailure error={loadError} onRetry={load} className="m-4" />
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : vendors.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No vendors added yet.</p>
           ) : (

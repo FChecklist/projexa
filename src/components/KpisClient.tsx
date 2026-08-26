@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Target } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 type KpiDefinition = { id: string; metricName: string; targetValue: string | null; unit: string | null; period: string };
 type KpiEntry = { id: string; period: string; actualValue: string; approvalStatus: string; createdAt: string };
@@ -151,7 +151,7 @@ export default function KpisClient({ projectId }: { projectId: string }) {
           ) : loadError ? (
             // A4S14_kpis_01: /kpis surfaced the PROJECT fetch failure (in
             // kpis/page.tsx) but said nothing when its own KPI read failed.
-            <LoadFailure error={loadError} onRetry={loadDefinitions} className="m-4" />
+            <DataLoadError messages={[loadError]} onRetry={loadDefinitions} />
           ) : definitions.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No KPIs defined for this project yet.</p>
           ) : (
