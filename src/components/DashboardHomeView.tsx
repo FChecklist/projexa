@@ -7,6 +7,7 @@ import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -117,13 +118,22 @@ export default function DashboardHomeView({
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
           already renders a real "Good morning, {name}." heading; a second
           "Dashboard" label above it would be redundant. */}
+      {/* R46S11_01: this sentence used to fall through to "No active
+          projects yet" whenever `data` was null -- INCLUDING when data was
+          null because the read had FAILED. On the primary owner-facing
+          screen, for an org with 5 real active projects, a 504 rendered as a
+          confident "you have none", directly above an error card saying the
+          load failed. Same shape the sibling screen /dashboard/overview was
+          fixed for below; this one is the higher-blast-radius instance,
+          because it is the first page an owner lands on after login.
+          dashboardSummary() (src/lib/read-outcome.ts) will not state a count
+          the read could not produce. */}
       <HomeGreeting
         userName={userName}
-        summary={
-          data && data.totalProjects > 0
-            ? `You have ${data.totalProjects} active project${data.totalProjects === 1 ? "" : "s"}. ${delayedProjectCount > 0 ? `${delayedProjectCount} of them ${delayedProjectCount === 1 ? "has" : "have"} delayed tasks needing attention.` : "None of them have delayed tasks right now."}`
-            : "No active projects yet — use VERI Chat below to get started."
-        }
+        summary={dashboardSummary(
+          data ? { totalProjects: data.totalProjects, delayedProjectCount } : null,
+          errorMessage
+        )}
         stats={[
           ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
           ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
@@ -166,7 +176,15 @@ export default function DashboardHomeView({
               </CardHeader>
               <CardContent>
                 {data.projects.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-px-muted">No active projects yet.</p>
+                  // Same rule as the greeting above: only a read that
+                  // succeeded may report "none". Today `data` and
+                  // `errorMessage` are mutually exclusive (dashboard/page.tsx
+                  // sets one or the other), so this guard costs nothing --
+                  // it is here so the honest branch cannot be lost if that
+                  // ever changes.
+                  <p className="py-8 text-center text-sm text-px-muted">
+                    {mayAssertEmpty(errorMessage) ? "No active projects yet." : "Couldn't load the project list — see the error above."}
+                  </p>
                 ) : (
                   <Table>
                     <TableHeader>
