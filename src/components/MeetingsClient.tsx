@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Users } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { LoadFailure } from "@/components/LoadFailure";
 
 type Meeting = {
   id: string;
@@ -35,6 +37,7 @@ function formatDateTime(iso: string) {
 export default function MeetingsClient({ projectId }: { projectId: string }) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -52,12 +55,14 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/meetings?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/meetings?projectId=${encodeURIComponent(projectId)}`);
       setMeetings(data.meetings ?? []);
-    } catch {
-      toast.error("Couldn't load meetings");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load meetings");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -159,6 +164,8 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <LoadFailure error={loadError} onRetry={load} className="m-4" />
           ) : meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings scheduled yet.</p>
           ) : (

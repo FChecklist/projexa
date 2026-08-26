@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Target } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { LoadFailure } from "@/components/LoadFailure";
 
 type KpiDefinition = { id: string; metricName: string; targetValue: string | null; unit: string | null; period: string };
 type KpiEntry = { id: string; period: string; actualValue: string; approvalStatus: string; createdAt: string };
@@ -22,6 +24,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 export default function KpisClient({ projectId }: { projectId: string }) {
   const [definitions, setDefinitions] = useState<KpiDefinition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<KpiDefinition | null>(null);
   const [entries, setEntries] = useState<KpiEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -39,12 +42,14 @@ export default function KpisClient({ projectId }: { projectId: string }) {
 
   async function loadDefinitions() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/kpis?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/kpis?projectId=${encodeURIComponent(projectId)}`);
       setDefinitions(data.definitions ?? []);
-    } catch {
-      toast.error("Couldn't load KPIs");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load KPIs");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -56,11 +61,10 @@ export default function KpisClient({ projectId }: { projectId: string }) {
     setSelected(def);
     setEntriesLoading(true);
     try {
-      const res = await fetch(`/api/kpi-entries?kpiDefinitionId=${encodeURIComponent(def.id)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/kpi-entries?kpiDefinitionId=${encodeURIComponent(def.id)}`);
       setEntries(data.entries ?? []);
-    } catch {
-      toast.error("Couldn't load KPI entries");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load KPI entries"));
     } finally {
       setEntriesLoading(false);
     }
@@ -144,6 +148,10 @@ export default function KpisClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            // A4S14_kpis_01: /kpis surfaced the PROJECT fetch failure (in
+            // kpis/page.tsx) but said nothing when its own KPI read failed.
+            <LoadFailure error={loadError} onRetry={loadDefinitions} className="m-4" />
           ) : definitions.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No KPIs defined for this project yet.</p>
           ) : (

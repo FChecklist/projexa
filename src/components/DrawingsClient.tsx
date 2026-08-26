@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Drawing = {
   id: string;
@@ -92,11 +93,10 @@ export default function DrawingsClient({
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
       setDrawings(data.drawings ?? []);
-    } catch {
-      toast.error("Couldn't load drawings");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load drawings"));
     } finally {
       setLoading(false);
     }

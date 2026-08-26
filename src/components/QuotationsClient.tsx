@@ -18,6 +18,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 // consolidate has no meaning for a flat quotations list (no parent/sub-
 // company tree to roll up), so the toggle is hidden here, same as Leads.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type QuotationItem = { id: string; description: string; quantity: string; rate: string; amount: string };
 type Quotation = {
@@ -87,12 +88,11 @@ export default function QuotationsClient() {
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (scope.companyId) params.set("companyId", scope.companyId);
-      const res = await fetch(`/api/quotations?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/quotations?${params.toString()}`);
       setQuotations(data.quotations ?? []);
       setTotal(data.total ?? 0);
-    } catch {
-      toast.error("Couldn't load quotations");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load quotations"));
     } finally {
       setLoading(false);
     }
@@ -104,10 +104,9 @@ export default function QuotationsClient() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/companies");
-        const data = await res.json();
+        const data = await fetchJson("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }

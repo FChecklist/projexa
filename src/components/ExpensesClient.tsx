@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Expense = { id: string; expenseHead: string; description: string | null; amount: string; expenseDate: string };
 
@@ -30,11 +31,10 @@ export default function ExpensesClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/expenses?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/expenses?projectId=${encodeURIComponent(projectId)}`);
       setExpenses(data.expenses ?? []);
-    } catch {
-      toast.error("Couldn't load expenses");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load expenses"));
     } finally {
       setLoading(false);
     }

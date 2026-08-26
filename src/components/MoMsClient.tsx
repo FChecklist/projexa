@@ -32,6 +32,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Loader2, NotebookText, Download, Sparkles, Send, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Meeting = {
   id: string;
@@ -89,11 +90,10 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/moms?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/moms?projectId=${encodeURIComponent(projectId)}`);
       setMeetings(data.meetings ?? []);
-    } catch {
-      toast.error("Couldn't load meeting minutes");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load meeting minutes"));
     } finally {
       setLoading(false);
     }

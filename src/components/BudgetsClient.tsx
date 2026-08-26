@@ -31,6 +31,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // since Wave 70 (createBudget already accepted it) -- this wires the UI
 // selector, reusing AccountingClient.tsx's exact component.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Budget = { id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null; status: string; actionIfExceeded: string | null };
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
@@ -129,7 +130,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
       try {
         const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is empty.
       }
     })();

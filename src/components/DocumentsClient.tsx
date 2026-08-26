@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Loader2, FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Doc = {
   id: string;
@@ -122,11 +123,10 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
     try {
       const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
       if (category !== "all") params.set("category", category);
-      const res = await fetch(`/api/documents?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/documents?${params.toString()}`);
       setDocs(data.documents ?? []);
-    } catch {
-      toast.error("Couldn't load documents");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load documents"));
     } finally {
       setLoading(false);
     }

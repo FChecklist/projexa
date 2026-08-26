@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, History } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Opportunity = {
   id: string; name: string; leadId: string | null; erpCustomerId: string | null; stage: string;
@@ -57,13 +58,12 @@ export default function OpportunitiesClient() {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search.trim()) params.set("search", search.trim());
       if (stageFilter !== "all") params.set("stage", stageFilter);
-      const res = await fetch(`/api/opportunities?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/opportunities?${params.toString()}`);
       setOpportunities(data.opportunities ?? []);
       setTotal(data.total ?? 0);
       setSelected(new Set());
-    } catch {
-      toast.error("Couldn't load opportunities");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load opportunities"));
     } finally {
       setLoading(false);
     }
@@ -126,11 +126,10 @@ export default function OpportunitiesClient() {
   async function openHistory(opp: Opportunity) {
     setHistoryFor(opp);
     try {
-      const res = await fetch(`/api/opportunities/${opp.id}/history`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/opportunities/${opp.id}/history`);
       setHistory(data.history ?? []);
-    } catch {
-      toast.error("Couldn't load history");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load history"));
     }
   }
 

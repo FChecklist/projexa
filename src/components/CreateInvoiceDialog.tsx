@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Receipt } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Customer = { id: string; customerName: string };
 
@@ -39,11 +40,10 @@ export function CreateInvoiceDialog() {
     if (!next) return;
     setLoadingCustomers(true);
     try {
-      const res = await fetch("/api/customers");
-      const data = await res.json();
+      const data = await fetchJson("/api/customers");
       setCustomers(data.customers ?? []);
-    } catch {
-      toast.error("Couldn't load customers from VERIDIAN");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load customers from VERIDIAN"));
     } finally {
       setLoadingCustomers(false);
     }

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { LoadFailure } from "@/components/LoadFailure";
 
 type Vendor = {
   id: string; vendorName: string; vendorType: string | null; gst: string | null;
@@ -26,6 +28,7 @@ export default function VendorsClient() {
   const { isIndiaOrg } = useOrgRole();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [vendorName, setVendorName] = useState("");
   const [vendorType, setVendorType] = useState("");
@@ -36,12 +39,14 @@ export default function VendorsClient() {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch("/api/vendors");
-      const data = await res.json();
+      const data = await fetchJson("/api/vendors");
       setVendors(data.vendors ?? []);
-    } catch {
-      toast.error("Couldn't load vendors");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load vendors");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -100,6 +105,12 @@ export default function VendorsClient() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            // R48_VENDORS_500_RENDERED_AS_EMPTY_STATE_01: "No vendors added
+            // yet." used to render here on a load where GET /api/vendors had
+            // returned 500 on 3 of 3 attempts. The screen stated a fact about
+            // the user's data that the failed read makes unknowable.
+            <LoadFailure error={loadError} onRetry={load} className="m-4" />
           ) : vendors.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No vendors added yet.</p>
           ) : (

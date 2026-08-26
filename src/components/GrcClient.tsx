@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, ShieldAlert, ChevronRight } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 // ---------------------------------------------------------------------------
 // Shared types

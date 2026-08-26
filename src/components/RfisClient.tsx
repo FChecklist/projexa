@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Rfi = {
   id: string; number: number; subject: string; question: string; status: string; ballInCourt: string;
@@ -34,11 +35,10 @@ export default function RfisClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/rfis?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/rfis?projectId=${encodeURIComponent(projectId)}`);
       setRfis(data.rfis ?? []);
-    } catch {
-      toast.error("Couldn't load RFIs");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load RFIs"));
     } finally {
       setLoading(false);
     }

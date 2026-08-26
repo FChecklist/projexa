@@ -39,7 +39,13 @@ export class ApiError extends Error {
  * non-2xx response, so callers can show the real reason instead of inventing
  * a generic one. Resolves to the parsed body on success.
  */
-export async function fetchJson<T = unknown>(
+// The generic defaults to `any` on purpose, matching what these call sites
+// already had: the DOM lib types Response.json() as Promise<any>, so every
+// `const data = await res.json()` was already `any`. Defaulting to `unknown`
+// here would turn a pure error-handling fix into a 63-site typing rewrite,
+// which is a different change with different risk. Call sites that want a
+// real shape can still pass one.
+export async function fetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
