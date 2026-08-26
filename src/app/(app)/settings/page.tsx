@@ -4,10 +4,10 @@ import SettingsClient from "@/components/SettingsClient";
 export default function SettingsPage() {
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Settings" />
         <SettingsClient />
-      </main>
+      </div>
     </>
   );
 }

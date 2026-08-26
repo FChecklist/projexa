@@ -8,8 +8,8 @@ import PermitObjectClient from "@/components/PermitObjectClient";
 export default async function PermitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <PermitObjectClient permitId={id} />
-    </main>
+    </div>
   );
 }

@@ -7,10 +7,10 @@ import KnowledgeBaseClient from "@/components/KnowledgeBaseClient";
 export default function KnowledgeBasePage() {
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Knowledge Base" />
         <KnowledgeBaseClient />
-      </main>
+      </div>
     </>
   );
 }

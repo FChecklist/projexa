@@ -129,7 +129,7 @@ export default function DashboardHomeView({
           ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
         ]}
       />
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">
@@ -219,7 +219,7 @@ export default function DashboardHomeView({
             </Card>
           </>
         )}
-      </main>
+      </div>
     </>
   );
 }

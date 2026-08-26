@@ -33,7 +33,7 @@ export default async function PermitsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Permits" />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
@@ -49,7 +49,7 @@ export default async function PermitsPage({ searchParams }: { searchParams: Prom
             to the same /api/permits?withinDays= param the KPI count itself
             used, so the two always agree. */}
         {project && <PermitsListClient projectId={project.id} withinDays={withinDays} registryColumns={registryColumns} />}
-      </main>
+      </div>
     </>
   );
 }

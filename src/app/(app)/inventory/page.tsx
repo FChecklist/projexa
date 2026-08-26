@@ -4,10 +4,10 @@ import InventoryClient from "@/components/InventoryClient";
 export default function InventoryPage() {
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Inventory" />
         <InventoryClient />
-      </main>
+      </div>
     </>
   );
 }

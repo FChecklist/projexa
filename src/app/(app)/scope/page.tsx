@@ -42,7 +42,7 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Scope of Work (BOQ)" />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
@@ -67,7 +67,7 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
             <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
-      </main>
+      </div>
     </>
   );
 }

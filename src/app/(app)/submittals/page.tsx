@@ -11,12 +11,12 @@ export default async function SubmittalsPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Submittals" />
         {errorMessage && <Card className="border-px-error-border bg-px-error-light"><CardContent className="p-4 text-sm text-px-error">{errorMessage}</CardContent></Card>}
         {!errorMessage && !project && <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>}
         {project && <SubmittalsClient projectId={project.id} />}
-      </main>
+      </div>
     </>
   );
 }
