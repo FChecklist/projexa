@@ -329,25 +329,59 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
       toast.error(lineError);
       return;
     }
+    const payloadLineItems = validLines.map((l) => ({
+      description: l.description,
+      unit: l.unit,
+      quantity: Number(l.quantity),
+      rate: Number(l.rate),
+      ...(l.itemCode?.trim() ? { itemCode: l.itemCode.trim() } : {}),
+      ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
+      ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
+    }));
     setSubmitting(true);
     try {
       const res = await fetch("/api/scope", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, title,
-          lineItems: validLines.map((l) => ({
-            description: l.description,
-            unit: l.unit,
-            quantity: Number(l.quantity),
-            rate: Number(l.rate),
-            ...(l.itemCode?.trim() ? { itemCode: l.itemCode.trim() } : {}),
-            ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
-            ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
-          })),
-        }),
+        body: JSON.stringify({ projectId, title, lineItems: payloadLineItems }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't create BOQ");
+
+      // R46M13_TC10_01 (reproduced 3x live, 2026-08-25, parent + 3 weighted
+      // children): this dialog reported "BOQ created" for a create that
+      // persisted NOTHING -- server-verified, no row at all in
+      // compliance.construction_boqs for any of the three attempts.
+      //
+      // Two things here made a non-write indistinguishable from a write.
+      // First, `res.json().catch(() => ({}))` swallowed an unparseable body
+      // outright and fell through on an empty object, so a 2xx that carried
+      // no JSON at all still reached the success toast. Keep the two failure
+      // modes apart: a response that will not parse is itself a failed
+      // create, never something to continue past.
+      let data: { id?: unknown; lineItems?: unknown; error?: unknown } | null = null;
+      let parseFailed = false;
+      try {
+        data = await res.json();
+      } catch {
+        parseFailed = true;
+      }
+
+      if (!res.ok) throw new Error((typeof data?.error === "string" && data.error) || "Couldn't create BOQ");
+      if (parseFailed || !data) throw new Error("Couldn't create BOQ — the server's response was unreadable, so nothing is confirmed saved.");
+
+      // Second, success was declared from `res.ok` ALONE: nothing ever
+      // checked that a BOQ actually came back. Never report a write we have
+      // not seen return. /api/scope now only sends 201 once the scope
+      // service has echoed a real row id and the line items read back after
+      // insert -- re-check both here too, so a drift on either side of that
+      // contract fails loudly instead of quietly reverting to "trust the
+      // status code". The weighted-children shape is exactly the one that
+      // regressed, so the count check is what protects it.
+      const savedId = typeof data.id === "string" ? data.id.trim() : "";
+      if (!savedId) throw new Error("Couldn't create BOQ — the server did not confirm a saved BOQ. Nothing was saved.");
+      const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
+      if (savedLineItems < payloadLineItems.length) {
+        throw new Error(`Couldn't create BOQ — ${payloadLineItems.length} line item(s) were submitted but only ${savedLineItems} came back saved.`);
+      }
+
       toast.success("BOQ created");
       setTitle(""); setLines([emptyLine()]); setOpen(false);
       load();
