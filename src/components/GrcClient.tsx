@@ -12,6 +12,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,14 +58,18 @@ const RISK_STATUS_FLOW: Record<string, string> = { open: "mitigating", mitigatin
 function DashboardPanel() {
   const [data, setData] = useState<GrcDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/grc-dashboard");
-        setData(await res.json());
-      } catch {
-        toast.error("Couldn't load GRC dashboard");
+        // This used to be setData(await res.json()), which stored the ERROR
+        // BODY as the dashboard on a non-2xx: `!data` was then false and the
+        // panel rendered against undefined fields instead of reporting it.
+        setData(await fetchJson<GrcDashboard>("/api/grc-dashboard"));
+        setLoadError(null);
+      } catch (err) {
+        toast.error(errorMessage(err, "Couldn't load GRC dashboard"));
       } finally {
         setLoading(false);
       }
@@ -70,7 +77,13 @@ function DashboardPanel() {
   }, []);
 
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
-  if (!data) return <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the GRC dashboard.</p>;
+  if (!data)
+    return loadError ? (
+      // The backend's own words, not a dead-end generic line.
+      <DataLoadError messages={[loadError]} onRetry={() => window.location.reload()} />
+    ) : (
+      <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the GRC dashboard.</p>
+    );
 
   const maxHeat = Math.max(1, ...data.risks.heatmap.map((h) => h.count));
 
@@ -143,6 +156,7 @@ function DashboardPanel() {
 function RiskRegisterPanel() {
   const [risks, setRisks] = useState<Risk[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [title, setTitle] = useState("");
@@ -153,31 +167,37 @@ function RiskRegisterPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/risks");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ risks?: Risk[] }>("/api/risks");
       setRisks(data.risks ?? []);
-    } catch {
-      toast.error("Couldn't load risk register");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load risk register"));
+      setRisks([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const riskMissing = title.trim() ? [] : ["Title"];
+
   async function createRisk() {
     if (!title.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/risks", {
+      await fetchJson("/api/risks", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, category, likelihood: Number(likelihood), impact: Number(impact) }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Risk logged");
       setTitle(""); setCategory("operational"); setLikelihood("3"); setImpact("3"); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create risk");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create risk"));
     } finally {
       setSubmitting(false);
     }
@@ -187,14 +207,13 @@ function RiskRegisterPanel() {
     const nextStatus = RISK_STATUS_FLOW[risk.status];
     if (nextStatus === risk.status) return;
     try {
-      const res = await fetch(`/api/risks/${risk.id}`, {
+      await fetchJson(`/api/risks/${risk.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: nextStatus }),
       });
-      if (!res.ok) throw new Error();
       toast.success(`Risk moved to ${nextStatus}`);
       load();
-    } catch {
-      toast.error("Couldn't update risk status");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't update risk status"));
     }
   }
 
@@ -221,7 +240,11 @@ function RiskRegisterPanel() {
                 <div className="space-y-1.5"><Label>Impact (1-5)</Label><Input type="number" min={1} max={5} value={impact} onChange={(e) => setImpact(e.target.value)} /></div>
               </div>
             </div>
-            <DialogFooter><Button onClick={createRisk} disabled={submitting}>{submitting ? "Logging…" : "Log Risk"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={riskMissing} submitting={submitting} submittingLabel="Logging…" onClick={createRisk}>
+                Log Risk
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -229,6 +252,8 @@ function RiskRegisterPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : risks.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No risks logged yet.</p>
           ) : (
@@ -266,6 +291,7 @@ function RiskRegisterPanel() {
 function AuditsPanel() {
   const [engagements, setEngagements] = useState<AuditEngagement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [findingOpen, setFindingOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -278,49 +304,59 @@ function AuditsPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/audit-engagements");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ engagements?: AuditEngagement[] }>("/api/audit-engagements");
       setEngagements(data.engagements ?? []);
-    } catch {
-      toast.error("Couldn't load audit engagements");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load audit engagements"));
+      setEngagements([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const engagementMissing = name.trim() ? [] : ["Name"];
+
   async function createEngagement() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/audit-engagements", {
+      await fetchJson("/api/audit-engagements", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, auditType }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Audit engagement planned");
       setName(""); setAuditType("internal"); setEngagementOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create audit engagement");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create audit engagement"));
     } finally {
       setSubmitting(false);
     }
   }
 
+  const findingMissing = [
+    ...(findingEngagementId ? [] : ["Engagement"]),
+    ...(findingTitle.trim() ? [] : ["Title"]),
+  ];
+
   async function createFinding() {
     if (!findingEngagementId || !findingTitle.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/audit-findings", {
+      await fetchJson("/api/audit-findings", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ auditEngagementId: findingEngagementId, title: findingTitle, severity: findingSeverity }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Finding recorded");
       setFindingEngagementId(""); setFindingTitle(""); setFindingSeverity("medium"); setFindingOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't record finding");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't record finding"));
     } finally {
       setSubmitting(false);
     }
@@ -328,12 +364,11 @@ function AuditsPanel() {
 
   async function advanceCapa(findingId: string) {
     try {
-      const res = await fetch(`/api/audit-findings/${findingId}`, { method: "PATCH" });
-      if (!res.ok) throw new Error();
+      await fetchJson(`/api/audit-findings/${findingId}`, { method: "PATCH" });
       toast.success("CAPA status advanced");
       load();
-    } catch {
-      toast.error("Couldn't advance CAPA status");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't advance CAPA status"));
     }
   }
 
@@ -361,7 +396,11 @@ function AuditsPanel() {
                 </Select>
               </div>
             </div>
-            <DialogFooter><Button onClick={createFinding} disabled={submitting}>{submitting ? "Recording…" : "Record Finding"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={findingMissing} submitting={submitting} submittingLabel="Recording…" onClick={createFinding}>
+                Record Finding
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
         <Dialog open={engagementOpen} onOpenChange={setEngagementOpen}>
@@ -378,13 +417,19 @@ function AuditsPanel() {
                 </Select>
               </div>
             </div>
-            <DialogFooter><Button onClick={createEngagement} disabled={submitting}>{submitting ? "Planning…" : "Plan Audit"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={engagementMissing} submitting={submitting} submittingLabel="Planning…" onClick={createEngagement}>
+                Plan Audit
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       {loading ? (
         <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+      ) : loadError ? (
+        <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
       ) : engagements.length === 0 ? (
         <p className="py-10 text-center text-sm text-px-muted">No audit engagements planned yet.</p>
       ) : (
@@ -432,6 +477,7 @@ function AuditsPanel() {
 function PoliciesPanel() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [title, setTitle] = useState("");
@@ -440,30 +486,36 @@ function PoliciesPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/policies");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ policies?: Policy[] }>("/api/policies");
       setPolicies(data.policies ?? []);
-    } catch {
-      toast.error("Couldn't load policies");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load policies"));
+      setPolicies([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const policyMissing = title.trim() ? [] : ["Title"];
+
   async function createPolicy() {
     if (!title.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/policies", {
+      await fetchJson("/api/policies", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, category }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Policy drafted");
       setTitle(""); setCategory("governance"); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't draft policy");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't draft policy"));
     } finally {
       setSubmitting(false);
     }
@@ -471,14 +523,13 @@ function PoliciesPanel() {
 
   async function requestPublish(id: string) {
     try {
-      const res = await fetch(`/api/policies/${id}`, {
+      await fetchJson(`/api/policies/${id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "request_publish" }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Publish requested — awaiting approval");
       load();
-    } catch {
-      toast.error("Couldn't request publish");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't request publish"));
     }
   }
 
@@ -499,7 +550,11 @@ function PoliciesPanel() {
                 </Select>
               </div>
             </div>
-            <DialogFooter><Button onClick={createPolicy} disabled={submitting}>{submitting ? "Drafting…" : "Draft Policy"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={policyMissing} submitting={submitting} submittingLabel="Drafting…" onClick={createPolicy}>
+                Draft Policy
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -507,6 +562,8 @@ function PoliciesPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : policies.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No policies drafted yet.</p>
           ) : (
@@ -540,6 +597,7 @@ function PoliciesPanel() {
 function VendorRiskPanel() {
   const [vendors, setVendors] = useState<VendorRiskProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState("");
@@ -548,30 +606,36 @@ function VendorRiskPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/vendor-risk");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ vendors?: VendorRiskProfile[] }>("/api/vendor-risk");
       setVendors(data.vendors ?? []);
-    } catch {
-      toast.error("Couldn't load vendor risk profiles");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load vendor risk profiles"));
+      setVendors([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const vendorMissing = name.trim() ? [] : ["Name"];
+
   async function createVendor() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/vendor-risk", {
+      await fetchJson("/api/vendor-risk", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, riskTier }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Vendor added for risk tracking");
       setName(""); setRiskTier("medium"); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't add vendor");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't add vendor"));
     } finally {
       setSubmitting(false);
     }
@@ -594,7 +658,11 @@ function VendorRiskPanel() {
                 </Select>
               </div>
             </div>
-            <DialogFooter><Button onClick={createVendor} disabled={submitting}>{submitting ? "Adding…" : "Add Vendor"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={vendorMissing} submitting={submitting} submittingLabel="Adding…" onClick={createVendor}>
+                Add Vendor
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -602,6 +670,8 @@ function VendorRiskPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : vendors.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No vendors under risk tracking yet.</p>
           ) : (
@@ -635,6 +705,7 @@ function FraudCasesPanel() {
   const currencies = useCurrencies();
   const [cases, setCases] = useState<FraudCase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [title, setTitle] = useState("");
@@ -645,31 +716,40 @@ function FraudCasesPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/fraud-cases");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ cases?: FraudCase[] }>("/api/fraud-cases");
       setCases(data.cases ?? []);
-    } catch {
-      toast.error("Couldn't load fraud/incident cases");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load fraud/incident cases"));
+      setCases([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const caseMissing = [
+    ...(title.trim() ? [] : ["Title"]),
+    ...(reportedDate ? [] : ["Reported Date"]),
+  ];
+
   async function createCase() {
     if (!title.trim() || !reportedDate) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/fraud-cases", {
+      await fetchJson("/api/fraud-cases", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, fraudType, reportedDate, description: description || undefined }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Case logged");
       setTitle(""); setFraudType("other"); setDescription(""); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't log case");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't log case"));
     } finally {
       setSubmitting(false);
     }
@@ -677,14 +757,13 @@ function FraudCasesPanel() {
 
   async function transition(caseId: string, status: string) {
     try {
-      const res = await fetch(`/api/fraud-cases/${caseId}`, {
+      await fetchJson(`/api/fraud-cases/${caseId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error();
       toast.success(`Case moved to ${status}`);
       load();
-    } catch {
-      toast.error("Couldn't update case status");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't update case status"));
     }
   }
 
@@ -709,7 +788,11 @@ function FraudCasesPanel() {
               </div>
               <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} /></div>
             </div>
-            <DialogFooter><Button onClick={createCase} disabled={submitting}>{submitting ? "Logging…" : "Log Case"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={caseMissing} submitting={submitting} submittingLabel="Logging…" onClick={createCase}>
+                Log Case
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -717,6 +800,8 @@ function FraudCasesPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : cases.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No cases logged yet.</p>
           ) : (
@@ -752,6 +837,7 @@ function FraudCasesPanel() {
 function AccessReviewPanel() {
   const [cycles, setCycles] = useState<AccessReviewCycle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState("");
@@ -762,30 +848,36 @@ function AccessReviewPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/access-review");
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ cycles?: AccessReviewCycle[] }>("/api/access-review");
       setCycles(data.cycles ?? []);
-    } catch {
-      toast.error("Couldn't load access review cycles");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load access review cycles"));
+      setCycles([]);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, []);
 
+  const cycleMissing = name.trim() ? [] : ["Name"];
+
   async function openCycle() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/access-review", {
+      await fetchJson("/api/access-review", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Access review cycle opened");
       setName(""); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't open access review cycle");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't open access review cycle"));
     } finally {
       setSubmitting(false);
     }
@@ -795,11 +887,12 @@ function AccessReviewPanel() {
     setSelectedCycleId(cycleId);
     setCertLoading(true);
     try {
-      const res = await fetch(`/api/access-review?cycleId=${cycleId}`);
-      const data = await res.json();
+      const data = await fetchJson<{ cycle?: { certifications?: AccessReviewCertification[] } }>(
+        `/api/access-review?cycleId=${cycleId}`
+      );
       setCertifications(data.cycle?.certifications ?? []);
-    } catch {
-      toast.error("Couldn't load cycle certifications");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load cycle certifications"));
     } finally {
       setCertLoading(false);
     }
@@ -807,14 +900,13 @@ function AccessReviewPanel() {
 
   async function decide(certId: string, decision: "confirmed" | "revoked") {
     try {
-      const res = await fetch(`/api/access-review/certifications/${certId}`, {
+      await fetchJson(`/api/access-review/certifications/${certId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }),
       });
-      if (!res.ok) throw new Error();
       toast.success(`Certification ${decision}`);
       if (selectedCycleId) viewCycle(selectedCycleId);
-    } catch {
-      toast.error("Couldn't record decision");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't record decision"));
     }
   }
 
@@ -829,13 +921,19 @@ function AccessReviewPanel() {
               <p className="text-sm text-px-muted">Snapshots every active team member&apos;s current role for confirm/revoke review.</p>
               <div className="space-y-1.5"><Label>Cycle Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q3 2026 Access Certification" /></div>
             </div>
-            <DialogFooter><Button onClick={openCycle} disabled={submitting}>{submitting ? "Opening…" : "Open Cycle"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={cycleMissing} submitting={submitting} submittingLabel="Opening…" onClick={openCycle}>
+                Open Cycle
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       {loading ? (
         <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+      ) : loadError ? (
+        <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
       ) : cycles.length === 0 ? (
         <p className="py-10 text-center text-sm text-px-muted">No access review cycles opened yet.</p>
       ) : (
@@ -896,6 +994,7 @@ function AccessReviewPanel() {
 function ComplianceRegisterPanel() {
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
 
@@ -905,11 +1004,16 @@ function ComplianceRegisterPanel() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (status !== "all") params.set("status", status);
-      const res = await fetch(`/api/compliance-register?${params.toString()}`);
-      const data = await res.json();
+      // Status read before body. The previous `await res.json()` never
+      // looked at the HTTP status, so an error body parsed cleanly, the
+      // `?? []` produced an empty array, and a failing backend rendered
+      // as a confident "nothing here" empty state.
+      const data = await fetchJson<{ register?: ComplianceItem[] }>(`/api/compliance-register?${params.toString()}`);
       setItems(data.register ?? []);
-    } catch {
-      toast.error("Couldn't load compliance register");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load compliance register"));
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -933,6 +1037,8 @@ function ComplianceRegisterPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No compliance obligations found.</p>
           ) : (

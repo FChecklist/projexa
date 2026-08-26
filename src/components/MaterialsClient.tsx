@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
@@ -72,6 +75,7 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string }>({});
 
   const [masterOpen, setMasterOpen] = useState(false);
   const [name, setName] = useState("");
@@ -91,25 +95,35 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
 
   async function load() {
     setLoading(true);
-    try {
-      const [materialsRes, receiptsRes] = await Promise.all([
-        fetch(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      ]);
-      const materialsData = await materialsRes.json();
-      const receiptsData = await receiptsRes.json();
-      setMaterials(materialsData.materials ?? []);
-      setReceipts(receiptsData.receipts ?? []);
-    } catch {
-      toast.error("Couldn't load materials");
-    } finally {
-      setLoading(false);
-    }
+    const [matR, recR] = await Promise.allSettled([
+      fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
+    ]);
+
+    const errors: { materials?: string; receipts?: string } = {};
+    if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
+    else { setMaterials([]); errors.materials = errorMessage(matR.reason, "Material master"); }
+
+    if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
+    else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
+
+    setLoadErrors(errors);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, [projectId]);
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
+
+  const materialMissing = [
+    ...(name.trim() ? [] : ["Name"]),
+    ...(unit.trim() ? [] : ["Unit"]),
+  ];
+  const receiptMissing = [
+    ...(materialId ? [] : ["Material"]),
+    ...(receivedDate ? [] : ["Received Date"]),
+    ...(quantity ? [] : ["Quantity"]),
+  ];
 
   async function createMaterial() {
     // R52 fix for F_002. The recorded symptom: clicking "Add Material" with the
@@ -132,16 +146,15 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
 
     setMasterSubmitting(true);
     try {
-      const res = await fetch("/api/materials/master", {
+      await fetchJson("/api/materials/master", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, name, spec: spec || undefined, unit, unitCost: unitCost ? Number(unitCost) : undefined }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Material added");
       setName(""); setSpec(""); setUnit(""); setUnitCost(""); setMasterErrors({}); setMasterOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't add material");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't add material"));
     } finally {
       setMasterSubmitting(false);
     }
@@ -151,22 +164,18 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
     if (!materialId || !receivedDate || !quantity) return;
     setReceiptSubmitting(true);
     try {
-      const res = await fetch("/api/materials", {
+      await fetchJson("/api/materials", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, materialId, receivedDate, quantity: Number(quantity),
           unitCost: receiptUnitCost ? Number(receiptUnitCost) : undefined,
         }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
       toast.success("Receipt recorded");
       setQuantity(""); setReceiptUnitCost(""); setReceiptOpen(false);
       load();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't record receipt");
+      toast.error(errorMessage(err, "Couldn't record receipt"));
     } finally {
       setReceiptSubmitting(false);
     }
@@ -199,7 +208,11 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
                   {(f) => <Input {...f} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />}
                 </FormField>
               </div>
-              <DialogFooter><Button onClick={createMaterial} disabled={masterSubmitting}>{masterSubmitting ? "Adding…" : "Add Material"}</Button></DialogFooter>
+              <DialogFooter>
+                <PrimarySubmit missing={materialMissing} submitting={masterSubmitting} submittingLabel="Adding…" onClick={createMaterial}>
+                  Add Material
+                </PrimarySubmit>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -207,6 +220,8 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
           <CardContent className="p-0">
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : loadErrors.materials ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={load} /></div>
             ) : materials.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
             ) : (
@@ -243,7 +258,11 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
                 <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Unit Cost (optional — defaults to the master cost)</Label><Input type="number" value={receiptUnitCost} onChange={(e) => setReceiptUnitCost(e.target.value)} /></div>
               </div>
-              <DialogFooter><Button onClick={createReceipt} disabled={receiptSubmitting}>{receiptSubmitting ? "Saving…" : "Record"}</Button></DialogFooter>
+              <DialogFooter>
+                <PrimarySubmit missing={receiptMissing} submitting={receiptSubmitting} submittingLabel="Saving…" onClick={createReceipt}>
+                  Record
+                </PrimarySubmit>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -251,6 +270,8 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
           <CardContent className="p-0">
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : loadErrors.receipts ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={load} /></div>
             ) : receipts.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
             ) : (

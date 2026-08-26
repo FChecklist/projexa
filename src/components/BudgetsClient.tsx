@@ -18,6 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
@@ -78,6 +81,7 @@ function renderBudgetCell(field: string, b: Budget) {
 export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
@@ -105,11 +109,14 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
     setLoading(true);
     try {
       const qs = companyId ? `?companyId=${companyId}` : "";
-      const res = await fetch(`/api/project-budgets${qs}`);
-      const data = await res.json();
+      // Status before body: the old `await res.json()` + `?? []` rendered a
+      // failing upstream as "No budgets found."
+      const data = await fetchJson<{ projectBudgets?: Budget[] }>(`/api/project-budgets${qs}`);
       setBudgets(data.projectBudgets ?? []);
-    } catch {
-      toast.error("Couldn't load budgets");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load budgets"));
+      setBudgets([]);
     } finally {
       setLoading(false);
     }
@@ -120,8 +127,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/companies");
-        const data = await res.json();
+        const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
         setCompanies(data.companies ?? []);
       } catch {
         // Non-fatal -- CompanySelector renders nothing when companies is empty.
@@ -132,13 +138,16 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   async function loadLookups() {
     setLookupsLoading(true);
     try {
-      const [fyRes, ccRes, acRes] = await Promise.all([fetch("/api/fiscal-years"), fetch("/api/cost-centers"), fetch("/api/accounts")]);
-      const [fyData, ccData, acData] = await Promise.all([fyRes.json(), ccRes.json(), acRes.json()]);
+      const [fyData, ccData, acData] = await Promise.all([
+        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
+        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts"),
+      ]);
       setFiscalYears(fyData.fiscalYears ?? []);
       setCostCenters(ccData.costCenters ?? []);
       setAccounts(acData.accounts ?? []);
-    } catch {
-      toast.error("Couldn't load fiscal years / cost centers / accounts from VERIDIAN");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
     } finally {
       setLookupsLoading(false);
     }
@@ -190,7 +199,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
     if (hasErrors(errors)) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/project-budgets", {
+      await fetchJson("/api/project-budgets", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name, fiscalYearId, costCenterId: costCenterId || undefined,
@@ -198,12 +207,11 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
           lineItems: [{ accountId, annualAmount: Number(annualAmount) }],
         }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Budget created");
       setName(""); setFiscalYearId(""); setCostCenterId(""); setAccountId(""); setAnnualAmount(""); setBudgetCompanyId("__none__"); setOpen(false);
       load(scope.companyId);
-    } catch {
-      toast.error("Couldn't create budget");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create budget"));
     } finally {
       setSubmitting(false);
     }
@@ -292,6 +300,8 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={() => load(scope.companyId)} /></div>
           ) : budgets.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No budgets found.</p>
           ) : (
