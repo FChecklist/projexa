@@ -12,6 +12,7 @@ import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
+import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
@@ -108,6 +109,7 @@ export default function SettingsClient() {
           365 and Odoo all put it here). Rendered for owner/admin only, which
           is a UX affordance; the real gate is requireRole(ORG_ADMIN) on the
           API plus RLS in drizzle/0015_org_invites.sql. */}
+      {info && <WorkspaceConnectionCard canRepair={CAN_ASSIGN_ROLES.has(info.role)} />}
       {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
 
       <Card className="shadow-card">
