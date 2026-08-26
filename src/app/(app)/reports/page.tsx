@@ -1,5 +1,5 @@
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
+import ProjectLoadError from "@/components/ProjectLoadError";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
@@ -46,11 +46,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     <>
       <main className="flex-1 space-y-6 p-6">
         <PageHeading title="Reports" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
+        {/* R52 GATE 2 fix for F_026's second route. This was an INERT error
+            card: it named the failure and then left the user with nothing to
+            do about it, on a page whose Project Reports tab is unusable until
+            the project resolves. ProjectLoadError keeps the backend's own
+            words and adds the retry, the same control the other 23
+            project-scoped pages already got. */}
+        {errorMessage && <ProjectLoadError message={`Could not load projects: ${errorMessage}`} />}
         <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} registryColumns={registryColumns} />
       </main>
     </>
