@@ -111,3 +111,63 @@ describe("AppSidebar's declared nav entries (R-81 regression guard)", () => {
     expect(sidebarHrefs().length).toBeGreaterThan(0);
   });
 });
+
+// R52 / R48_NAV_OMITS_LIVE_MODULE_ROUTE_01. The guard above only ever asked
+// one of the two questions -- "does every nav entry have a page behind it?"
+// It never asked the reverse, "does every page have a nav entry in front of
+// it?", and that is the direction /site-materials fell through: a live,
+// fully-rendering module (HTTP 200, its own heading, three working tabs) with
+// no nav entry at all, reachable only by typing the URL. C01 REACHABLE calls
+// that a fail in its own words -- "reachable by clicking through the app shell
+// from the home screen, without typing a URL".
+//
+// The fault record asked for exactly this check to become standing rather than
+// a one-off measurement, so here it is. The allowlist below is the whole point
+// of the test: a route may only be absent from the nav if someone wrote down
+// WHY, which makes the next omission a deliberate decision instead of an
+// oversight nobody notices for months.
+const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
+  // Public and auth surfaces -- outside the authenticated app shell entirely,
+  // so a sidebar entry would be meaningless.
+  "/",
+  "/how-it-works",
+  "/login",
+  "/signup",
+  "/auth/callback",
+  "/invite/[token]",
+  "/share/report/[token]",
+
+  // Reached from their own parent flow, never from the top-level nav: you
+  // open a customer from the customers list, a permit from the permits list,
+  // a project dashboard by clicking a project row. Listing these would put an
+  // href with no id in it into the sidebar.
+  "/customers/[id]",
+  "/permits/[id]",
+  "/permits/new",
+  "/floor-plans/[id]",
+  "/floor-plans/[id]/walkthrough",
+  "/dashboard/project",
+]);
+
+describe("every module route is reachable by clicking (C01 REACHABLE)", () => {
+  test("no page.tsx exists without either a nav entry or a written reason", () => {
+    const navHrefs = new Set(sidebarHrefs().map((h) => h.split("?")[0].split("#")[0]));
+    const unreachable = routesOnDisk().filter(
+      (route) => !navHrefs.has(route) && !ROUTES_INTENTIONALLY_NOT_IN_NAV.has(route)
+    );
+    // If this fails: either add the route to AppSidebar's NAV_SECTIONS, or add
+    // it to ROUTES_INTENTIONALLY_NOT_IN_NAV above WITH a comment saying why.
+    // Do not delete this assertion.
+    expect(unreachable).toEqual([]);
+  });
+
+  test("the allowlist itself stays honest -- every excused route still exists on disk", () => {
+    const onDisk = new Set(routesOnDisk());
+    const stale = [...ROUTES_INTENTIONALLY_NOT_IN_NAV].filter((route) => !onDisk.has(route));
+    expect(stale).toEqual([]);
+  });
+
+  test("/site-materials specifically is in the nav -- the route this guard was written for", () => {
+    expect(sidebarHrefs()).toContain("/site-materials");
+  });
+});
