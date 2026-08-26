@@ -27,6 +27,16 @@ import M24Shell from "@/components/shell/M24Shell";
 // inputSlot. Its real /api/assistant and /api/discuss wiring is untouched.
 // Phase C replaces it with the pill strip; Phase A does not rebuild it twice.
 //
+// LANDMARKS (R52, fault R48_DUAL_MAIN_LANDMARK_01): the SHELL owns the one
+// <main>. The kit's AppShell wraps {children} in it (AppShell.tsx:94), so a
+// page under (app) must render a plain <div>, never a <main> of its own --
+// two visible `main` landmarks is invalid per HTML/WAI-ARIA, and it also
+// breaks every automated check that reads document.querySelector("main"),
+// which returns the FIRST one. Enforced by
+// src/lib/single-main-landmark.test.ts. Pages OUTSIDE this layout
+// (auth/callback, invite/[token], share/report/[token]) get no shell, so
+// their own <main> is correct and is deliberately left alone.
+//
 // VeriChatProvider still wraps everything -- VeriComposer depends on it.
 // The Toaster stays mounted once in the root layout (src/app/layout.tsx); a
 // second instance here used to duplicate every toast.error() call, because

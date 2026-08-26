@@ -31,10 +31,10 @@ export default async function BudgetsPage() {
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Budgets" />
         <BudgetsClient registryColumns={registryColumns} />
-      </main>
+      </div>
     </>
   );
 }

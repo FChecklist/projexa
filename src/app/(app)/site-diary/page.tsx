@@ -11,7 +11,7 @@ export default async function SiteDiaryPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Site Diary" />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
@@ -22,7 +22,7 @@ export default async function SiteDiaryPage({ searchParams }: { searchParams: Pr
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
         {project && <SiteDiaryClient projectId={project.id} />}
-      </main>
+      </div>
     </>
   );
 }

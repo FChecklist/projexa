@@ -43,7 +43,7 @@ export default function ProjectsOverviewClient({
   const columns = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
 
   return (
-    <main className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6 p-6">
       <PageHeading title={label(columns, "title", "Projects Overview")} />
       {errorMessage && <p className="text-sm text-px-error">Could not load live data: {errorMessage}</p>}
       <Card className="shadow-card">
@@ -63,6 +63,6 @@ export default function ProjectsOverviewClient({
           )}
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }

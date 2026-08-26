@@ -17,15 +17,15 @@ export default async function NewPermitPage({ searchParams }: { searchParams: Pr
 
   if (errorMessage || !project) {
     return (
-      <main className="flex-1 p-6">
+      <div className="flex-1 p-6">
         <Card><CardContent className="p-8 text-center text-sm text-px-muted">{errorMessage ?? "No active project selected."}</CardContent></Card>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1 p-6">
+    <div className="flex-1 p-6">
       <PermitCreateClient projectId={project.id} />
-    </main>
+    </div>
   );
 }
