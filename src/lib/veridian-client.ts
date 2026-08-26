@@ -64,15 +64,75 @@ export class VeridianApiError extends Error {
 // instead of consuming the full 300s Vercel limit on every affected route.
 const VERIDIAN_FETCH_TIMEOUT_MS = 20_000;
 
+// R52: ONE bounded retry, and ONLY for requests that are safe to repeat.
+//
+// MEASURED 2026-08-26, not assumed. Twenty sequential probes of
+// /api/v1/projexa/dashboard with an INVALID bearer token -- so the only work
+// asked of the upstream is boot, look the key up, reject it with 401:
+//   19 responded 401 in 0.65s-3.4s
+//    1 hung and returned nothing after 21.3s
+// A second run the same minute hung 1 in 8. So the upstream hangs roughly
+// 5-12% of the time, each hang costing the full 20s timeout.
+//
+// THE IMPORTANT PART, which changes the diagnosis on record: THIS IS NOT A
+// COLD START. The fault register attributes these timeouts to a cold boot, and
+// an earlier probe run in this session showed a textbook warm-up curve that
+// supported it. It does not survive twenty probes: the hang lands on probe 8
+// of 8 and probe 1 of 20, with sub-second responses either side. A warm
+// function hangs too. Cold start is at most the first request; this is chronic
+// and intermittent.
+//
+// WHY A RETRY IS THE RIGHT FIX HERE AND NOT A PAPER-OVER: the hangs are
+// independent -- every probe adjacent to a hang succeeded in about a second.
+// One retry therefore turns a ~5% user-visible failure into ~0.25%, which is
+// the difference between "the demo broke" and "that page took a moment". It
+// does NOT fix the upstream, which lives in compliance-tracker and is another
+// session's to own; it bounds PROJEXA's exposure, exactly as the 20s timeout
+// above already does.
+//
+// *** ONLY IDEMPOTENT METHODS ARE RETRIED. *** A timeout means we never saw a
+// response -- it does NOT mean the server did no work. Retrying a POST could
+// create a second BOQ, a second permit or a second task, and a silent double
+// write is far worse than the error it would be hiding. GET and HEAD are safe
+// to repeat; everything else fails on the first timeout exactly as before.
+const VERIDIAN_RETRY_ON_TIMEOUT = true;
+
+function isIdempotent(init: RequestInit): boolean {
+  const m = (init.method ?? "GET").toUpperCase();
+  return m === "GET" || m === "HEAD";
+}
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
-  } catch (err) {
-    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      throw new VeridianApiError(`VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms: ${url}`, 504);
+  const attempts = VERIDIAN_RETRY_ON_TIMEOUT && isIdempotent(init) ? 2 : 1;
+  let lastErr: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
+    } catch (err) {
+      lastErr = err;
+      if (!isTimeout(err)) throw err;
+      if (attempt < attempts) {
+        // Logged so a retry is visible in the runtime logs rather than hiding
+        // the upstream's real failure rate behind a success.
+        console.warn(`[veridian] timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms, retrying once:`, url);
+      }
     }
-    throw err;
   }
+
+  if (isTimeout(lastErr)) {
+    // The message still names the real cause and the real elapsed budget --
+    // the retry is stated so nobody reads this as a single 20s wait.
+    throw new VeridianApiError(
+      `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`,
+      504
+    );
+  }
+  throw lastErr;
 }
 
 // Looks up this org's own VERIDIAN API key from public.veridian_credentials.
