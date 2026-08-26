@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getClaimsWithRetry } from "@/lib/supabase/get-claims-with-retry";
 import { db, organizations, memberships, veridianCredentials } from "@/lib/db";
-import { provisionVeridianOrg, VeridianApiError } from "@/lib/veridian-client";
+import { getVeridianApiKey, provisionVeridianOrg, VeridianApiError } from "@/lib/veridian-client";
 
 // Priority 17 (VERIDIAN platform provisioning): the ONLY place PROJEXA
 // creates a new organization row. Called from signup/page.tsx right after
@@ -51,7 +51,22 @@ export async function POST(req: Request) {
     .limit(1)
     .maybeSingle();
   if (existingMembership) {
-    return NextResponse.json({ organizationId: existingMembership.organization_id, alreadyProvisioned: true });
+    // R48 UAT: this guard used to answer a flat `alreadyProvisioned: true`,
+    // which is only half true. "Has a membership" does not mean "is
+    // provisioned" -- an org whose step-3 credentials insert failed below
+    // has a membership and no working VERIDIAN backend, and every per-org
+    // call it makes throws the AR-04 fail-loud error forever. Answering
+    // `alreadyProvisioned: true` told the caller everything was fine and
+    // left it with no way to discover, or fix, the broken half. Report the
+    // real state and point at the repair path (POST /api/org/repair).
+    const organizationId = existingMembership.organization_id as string;
+    const veridianConnected = (await getVeridianApiKey(organizationId)) !== null;
+    return NextResponse.json({
+      organizationId,
+      alreadyProvisioned: true,
+      veridianConnected,
+      ...(veridianConnected ? {} : { repairRequired: true, repairPath: "/api/org/repair" }),
+    });
   }
 
   // Step 1: provision the VERIDIAN side first. If this fails, fail the
