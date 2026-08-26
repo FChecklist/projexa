@@ -40,6 +40,8 @@ export default function PayrollClient() {
   const [slabs, setSlabs] = useState<IncomeTaxSlab[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  // R52 F_031: a 504 must never render as an empty state -- see load().
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const [registerRun, setRegisterRun] = useState<PayrollRun | null>(null);
@@ -92,27 +94,90 @@ export default function PayrollClient() {
   const [assignSlabId, setAssignSlabId] = useState("");
   const [assignSubmitting, setAssignSubmitting] = useState(false);
 
+  // R52 fix for F_031. RECORDED SYMPTOM: on the first two page loads every
+  // payroll call returned 504, reproduced 2/2 on a full reload, while the same
+  // endpoints answered 200 to direct curl in ~21s each -- i.e. right at
+  // whatever edge timeout was killing the in-app fetch. The owner is very
+  // likely to see a blank/broken Payroll page on a normal visit.
+  //
+  // WHAT IS AND IS NOT FIXED HERE. The ~21s backend latency is a VERIDIAN-side
+  // condition (veridian-client.ts's own header comment documents the chronic
+  // upstream hang and the 20s bound PROJEXA puts on it) and is NOT fixable from
+  // this repo. Two things that ARE this component's fault are fixed:
+  //
+  //  1. SIX SIMULTANEOUS CALLS FOR ONE TAB. Every one of the six fired on
+  //     mount even though the default tab ("runs") needs only two of them.
+  //     Against a backend at ~20s/call that is the burst that pushes the whole
+  //     page past the edge timeout. Now the two the first paint actually needs
+  //     are fetched first and rendered as soon as they land; the four lookups
+  //     that back the other tabs follow afterwards and never block first paint.
+  //
+  //  2. A FAILED CALL RENDERED AS AN EMPTY STATE. `(await res.json()).runs ?? []`
+  //     does not check res.ok -- a 504 body is {"error": "..."}, which has no
+  //     `runs` key, so `?? []` turned a timeout into "No payroll runs yet."
+  //     A fake zero on a payroll screen is worse than an error. Every response
+  //     is now checked, and a section that failed says so instead of claiming
+  //     the org has no data. Promise.allSettled means one failed lookup no
+  //     longer discards the five that succeeded, which is what Promise.all did.
+  async function readList<T>(res: Response, key: string, label: string): Promise<T[]> {
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error ? `${label}: ${body.error}` : `${label}: request failed (${res.status})`);
+    }
+    const body = await res.json();
+    return (body?.[key] ?? []) as T[];
+  }
+
   async function load() {
     setLoading(true);
+    setLoadErrors([]);
+    const failures: string[] = [];
+
+    // Pass 1 -- only what the default "Payroll Runs" tab renders.
     try {
-      const [runsRes, compRes, structRes, rulesRes, slabsRes, empRes] = await Promise.all([
-        fetch("/api/payroll/runs"),
-        fetch("/api/payroll/salary-components"),
-        fetch("/api/payroll/salary-structures"),
-        fetch("/api/payroll/statutory-rules"),
-        fetch("/api/payroll/income-tax-slabs"),
-        fetch("/api/employees"),
+      const [runsRes, empRes] = await Promise.all([fetch("/api/payroll/runs"), fetch("/api/employees")]);
+      const [runsList, empList] = await Promise.all([
+        readList<PayrollRun>(runsRes, "runs", "Payroll runs"),
+        readList<Employee>(empRes, "employees", "Employees"),
       ]);
-      setRuns((await runsRes.json()).runs ?? []);
-      setComponents((await compRes.json()).components ?? []);
-      setStructures((await structRes.json()).structures ?? []);
-      setRules((await rulesRes.json()).rules ?? []);
-      setSlabs((await slabsRes.json()).slabs ?? []);
-      setEmployees((await empRes.json()).employees ?? []);
-    } catch {
-      toast.error("Couldn't load payroll data");
-    } finally {
-      setLoading(false);
+      setRuns(runsList);
+      setEmployees(empList);
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : "Payroll runs: request failed");
+    }
+    setLoading(false);
+
+    // Pass 2 -- the lookups behind the other tabs. allSettled so one 504 does
+    // not discard the others, which is exactly what the old Promise.all did.
+    const [compRes, structRes, rulesRes, slabsRes] = await Promise.allSettled([
+      fetch("/api/payroll/salary-components"),
+      fetch("/api/payroll/salary-structures"),
+      fetch("/api/payroll/statutory-rules"),
+      fetch("/api/payroll/income-tax-slabs"),
+    ]);
+
+    const secondary: [PromiseSettledResult<Response>, string, string, (v: never[]) => void][] = [
+      [compRes, "components", "Salary components", setComponents as (v: never[]) => void],
+      [structRes, "structures", "Salary structures", setStructures as (v: never[]) => void],
+      [rulesRes, "rules", "Statutory rules", setRules as (v: never[]) => void],
+      [slabsRes, "slabs", "Income tax slabs", setSlabs as (v: never[]) => void],
+    ];
+
+    for (const [settled, key, label, setter] of secondary) {
+      if (settled.status !== "fulfilled") {
+        failures.push(`${label}: request failed`);
+        continue;
+      }
+      try {
+        setter((await readList(settled.value, key, label)) as never[]);
+      } catch (err) {
+        failures.push(err instanceof Error ? err.message : `${label}: request failed`);
+      }
+    }
+
+    if (failures.length) {
+      setLoadErrors(failures);
+      toast.error("Some payroll data couldn't be loaded");
     }
   }
 
@@ -394,6 +459,16 @@ export default function PayrollClient() {
   }
 
   return (
+    <>
+    {loadErrors.length > 0 && (
+      <div role="alert" className="mb-4 space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+        <p className="font-medium">Some payroll data could not be loaded. The sections below may be incomplete — this is a load failure, not an empty organisation.</p>
+        <ul className="list-inside list-disc">
+          {loadErrors.map((e) => <li key={e}>{e}</li>)}
+        </ul>
+        <button type="button" onClick={() => load()} className="underline underline-offset-2">Retry</button>
+      </div>
+    )}
     <Tabs defaultValue="runs" className="space-y-4">
       <TabsList>
         <TabsTrigger value="runs">Payroll Runs</TabsTrigger>
@@ -762,5 +837,6 @@ export default function PayrollClient() {
         </DialogContent>
       </Dialog>
     </Tabs>
+    </>
   );
 }
