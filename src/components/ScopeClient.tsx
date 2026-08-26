@@ -15,7 +15,7 @@ import { useCurrencies } from "@/lib/currency";
 import { CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -612,7 +612,7 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : loadError ? (
-            <LoadFailure error={loadError} onRetry={load} className="m-4" />
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : boqs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
           ) : (

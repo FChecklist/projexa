@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Overview = {
@@ -53,7 +53,7 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
-  if (loadError) return <LoadFailure error={loadError} onRetry={load} />;
+  if (loadError) return <DataLoadError messages={[loadError]} onRetry={load} />;
   // Only reachable now when the read SUCCEEDED and genuinely returned no
   // customer -- which really is "not found".
   if (!data?.customer) return <p className="py-10 text-center text-sm text-px-muted">Customer not found.</p>;

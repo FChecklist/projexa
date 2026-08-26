@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type FfeItem = {
@@ -157,7 +157,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
         <CardHeader><CardTitle className="font-heading text-base">FF&E Schedule</CardTitle></CardHeader>
         <CardContent className="p-0">
           {loadError ? (
-            <LoadFailure error={loadError} onRetry={load} />
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No FF&E items yet.</p>
           ) : (

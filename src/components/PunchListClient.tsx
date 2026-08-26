@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 type PunchItem = {
   id: string; number: number; description: string; location: string | null; trade: string | null; priority: string; status: string;
@@ -105,7 +105,7 @@ export default function PunchListClient({ projectId }: { projectId: string }) {
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : loadError ? (
-            <LoadFailure error={loadError} onRetry={load} className="m-4" />
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">Nothing on the punch list yet.</p>
           ) : (

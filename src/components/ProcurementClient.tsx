@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Send, ArrowRight, PackageCheck } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Requisition = {
@@ -336,7 +336,7 @@ export default function ProcurementClient() {
               // working New Requisition button beside it, while
               // /api/procurement/requisitions, /purchase-orders and /vendors
               // were all returning 504. A real outage, painted as an empty list.
-              <LoadFailure error={loadError} onRetry={load} />
+              <DataLoadError messages={[loadError]} onRetry={load} />
             ) : requisitions.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No purchase requisitions yet.</p>
             ) : (

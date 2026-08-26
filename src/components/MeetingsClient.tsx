@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Users } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 type Meeting = {
   id: string;
@@ -165,7 +165,7 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : loadError ? (
-            <LoadFailure error={loadError} onRetry={load} className="m-4" />
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings scheduled yet.</p>
           ) : (

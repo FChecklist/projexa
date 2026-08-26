@@ -24,7 +24,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, Banknote, Ban } from "lucide-react";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
-import { LoadFailure } from "@/components/LoadFailure";
 
 type Invoice = { id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null; grandTotal: string; outstandingAmount: string; status: string };
 type CreditNote = { id: string; creditNoteNumber: number; customerId: string; salesInvoiceId: string | null; postingDate: string; reason: string | null; status: string; totalAmount: string };

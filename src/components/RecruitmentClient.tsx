@@ -15,7 +15,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, UserCheck } from "lucide-react";
 import { formatDateTime } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { LoadFailure } from "@/components/LoadFailure";
+import DataLoadError from "@/components/DataLoadError";
 
 type JobOpening = { id: string; title: string; departmentId: string | null; jobDescription: string | null; employmentType: string; numPositions: number; status: string };
 type Candidate = { id: string; name: string; email: string; phone: string | null; source: string | null };
@@ -393,7 +393,7 @@ export default function RecruitmentClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
-            {loadError ? <LoadFailure error={loadError} onRetry={load} /> : filteredOpenings.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No job openings yet.</p> : <DataTable columns={openingColumns} data={filteredOpenings} searchKey="title" searchPlaceholder="Search job openings…" />}
+            {loadError ? <DataLoadError messages={[loadError]} onRetry={load} /> : filteredOpenings.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No job openings yet.</p> : <DataTable columns={openingColumns} data={filteredOpenings} searchKey="title" searchPlaceholder="Search job openings…" />}
           </CardContent>
         </Card>
       </TabsContent>
