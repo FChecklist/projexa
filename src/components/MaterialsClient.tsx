@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
@@ -78,6 +79,8 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
   const [unit, setUnit] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [masterSubmitting, setMasterSubmitting] = useState(false);
+  // R52 F_002: replaces the bare `return` below -- see createMaterial().
+  const [masterErrors, setMasterErrors] = useState<FieldErrors<"name" | "unit" | "unitCost">>({});
 
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [materialId, setMaterialId] = useState("");
@@ -109,7 +112,24 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
   async function createMaterial() {
-    if (!name.trim() || !unit.trim()) return;
+    // R52 fix for F_002. The recorded symptom: clicking "Add Material" with the
+    // fields blank produced no error text, no aria-invalid, no HTML `required`
+    // attribute and no network request -- the user got nothing at all. The
+    // cause was this one line, verbatim as it stood:
+    //     if (!name.trim() || !unit.trim()) return;
+    // CORRECTION TO THE RECORDED DESCRIPTION: the fault row lists "Name/Unit/
+    // Unit Cost" as the required trio, but Unit Cost was never in that guard --
+    // POST /api/materials/master takes unitCost as optional and the field is
+    // genuinely optional. Only Name and Unit are required, and only those two
+    // are marked required here; inventing a third requirement to match the
+    // description would have been a fabricated fix.
+    const errors: FieldErrors<"name" | "unit" | "unitCost"> = {};
+    if (!name.trim()) errors.name = "Name is required.";
+    if (!unit.trim()) errors.unit = "Unit is required (e.g. bag, cum, kg).";
+    if (unitCost.trim() && Number.isNaN(Number(unitCost))) errors.unitCost = "Unit cost must be a number.";
+    setMasterErrors(errors);
+    if (hasErrors(errors)) return;
+
     setMasterSubmitting(true);
     try {
       const res = await fetch("/api/materials/master", {
@@ -118,7 +138,7 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
       });
       if (!res.ok) throw new Error();
       toast.success("Material added");
-      setName(""); setSpec(""); setUnit(""); setUnitCost(""); setMasterOpen(false);
+      setName(""); setSpec(""); setUnit(""); setUnitCost(""); setMasterErrors({}); setMasterOpen(false);
       load();
     } catch {
       toast.error("Couldn't add material");
@@ -166,10 +186,18 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
             <DialogContent>
               <DialogHeader><DialogTitle>Add Material</DialogTitle></DialogHeader>
               <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Spec (optional)</Label><Input value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="e.g. 43-grade OPC" /></div>
-                <div className="space-y-1.5"><Label>Unit</Label><Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. bag, cum, kg" /></div>
-                <div className="space-y-1.5"><Label>Unit Cost</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
+                <FormField label="Name" required error={masterErrors.name}>
+                  {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
+                </FormField>
+                <FormField label="Spec (optional)">
+                  {(f) => <Input {...f} value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="e.g. 43-grade OPC" />}
+                </FormField>
+                <FormField label="Unit" required error={masterErrors.unit}>
+                  {(f) => <Input {...f} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. bag, cum, kg" />}
+                </FormField>
+                <FormField label="Unit Cost (optional)" error={masterErrors.unitCost}>
+                  {(f) => <Input {...f} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />}
+                </FormField>
               </div>
               <DialogFooter><Button onClick={createMaterial} disabled={masterSubmitting}>{masterSubmitting ? "Adding…" : "Add Material"}</Button></DialogFooter>
             </DialogContent>

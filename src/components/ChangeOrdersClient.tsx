@@ -19,7 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -135,6 +135,9 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
   const [costImpact, setCostImpact] = useState("");
   const [scheduleImpactDays, setScheduleImpactDays] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // R52 F_008: per-field validation messages, replacing two bare `return`s.
+  const [createErrors, setCreateErrors] = useState<FieldErrors<"title" | "costImpact" | "scheduleImpactDays">>({});
+  const [signerErrors, setSignerErrors] = useState<FieldErrors<"signerName" | "signerEmail">>({});
   const [submittingId, setSubmittingId] = useState<ChangeOrder | null>(null);
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
@@ -174,7 +177,18 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
   useEffect(() => { load(); }, [projectId]);
 
   async function createChangeOrder() {
-    if (!title.trim()) return;
+    // R52 fix for F_008's other half. The recorded fault is the missing
+    // htmlFor/id pairing (fixed in the markup below), but the same dialog also
+    // failed silently: `if (!title.trim()) return;` -- the same silent-no-op
+    // shape recorded separately as F_002 on /materials. Fixed together because
+    // they are one defect seen from two sides.
+    const errors: FieldErrors<"title" | "costImpact" | "scheduleImpactDays"> = {};
+    if (!title.trim()) errors.title = "Title is required.";
+    if (costImpact.trim() && Number.isNaN(Number(costImpact))) errors.costImpact = "Cost impact must be a number.";
+    if (scheduleImpactDays.trim() && Number.isNaN(Number(scheduleImpactDays))) errors.scheduleImpactDays = "Schedule impact must be a number of days.";
+    setCreateErrors(errors);
+    if (hasErrors(errors)) return;
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/change-orders", {
@@ -187,7 +201,7 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
       });
       if (!res.ok) throw new Error();
       toast.success("Change order created");
-      setTitle(""); setReason(""); setCostImpact(""); setScheduleImpactDays(""); setOpen(false);
+      setTitle(""); setReason(""); setCostImpact(""); setScheduleImpactDays(""); setCreateErrors({}); setOpen(false);
       load();
     } catch {
       toast.error("Couldn't create change order");
@@ -197,7 +211,14 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
   }
 
   async function submitForApproval() {
-    if (!submittingId || !signerName.trim() || !signerEmail.trim()) return;
+    if (!submittingId) return;
+    const errors: FieldErrors<"signerName" | "signerEmail"> = {};
+    if (!signerName.trim()) errors.signerName = "Signer name is required.";
+    if (!signerEmail.trim()) errors.signerEmail = "Signer email is required.";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail.trim())) errors.signerEmail = `"${signerEmail.trim()}" is not a valid email address.`;
+    setSignerErrors(errors);
+    if (hasErrors(errors)) return;
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/change-orders/${submittingId.id}`, {
@@ -224,11 +245,19 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
           <DialogContent>
             <DialogHeader><DialogTitle>New Change Order</DialogTitle></DialogHeader>
             <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label>Reason (optional)</Label><Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} /></div>
+              <FormField label="Title" required error={createErrors.title}>
+                {(f) => <Input {...f} value={title} onChange={(e) => setTitle(e.target.value)} />}
+              </FormField>
+              <FormField label="Reason (optional)">
+                {(f) => <Textarea {...f} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />}
+              </FormField>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Cost Impact ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} placeholder="+/- amount" /></div>
-                <div className="space-y-1.5"><Label>Schedule Impact (days)</Label><Input type="number" value={scheduleImpactDays} onChange={(e) => setScheduleImpactDays(e.target.value)} placeholder="+/- days" /></div>
+                <FormField label={`Cost Impact (${currencyLabel(undefined, currencies).trim()})`} error={createErrors.costImpact}>
+                  {(f) => <Input {...f} type="number" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} placeholder="+/- amount" />}
+                </FormField>
+                <FormField label="Schedule Impact (days)" error={createErrors.scheduleImpactDays}>
+                  {(f) => <Input {...f} type="number" value={scheduleImpactDays} onChange={(e) => setScheduleImpactDays(e.target.value)} placeholder="+/- days" />}
+                </FormField>
               </div>
             </div>
             <DialogFooter><Button onClick={createChangeOrder} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
@@ -275,8 +304,12 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
           <DialogHeader><DialogTitle>Send for E-Signature Approval</DialogTitle></DialogHeader>
           <p className="text-sm text-px-muted">Real signing request, tamper-evident audit trail (same workflow used for contracts).</p>
           <div className="space-y-3">
-            <div className="space-y-1.5"><Label>Signer name</Label><Input value={signerName} onChange={(e) => setSignerName(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Signer email</Label><Input type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} /></div>
+            <FormField label="Signer name" required error={signerErrors.signerName}>
+              {(f) => <Input {...f} value={signerName} onChange={(e) => setSignerName(e.target.value)} />}
+            </FormField>
+            <FormField label="Signer email" required error={signerErrors.signerEmail}>
+              {(f) => <Input {...f} type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} />}
+            </FormField>
           </div>
           <DialogFooter><Button onClick={submitForApproval} disabled={submitting}>{submitting ? "Sending…" : "Send"}</Button></DialogFooter>
         </DialogContent>

@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -95,6 +96,8 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   const [fiscalYearId, setFiscalYearId] = useState("");
   const [costCenterId, setCostCenterId] = useState("");
   const [accountId, setAccountId] = useState("");
+  // R52 F_004: per-field messages, replacing the bare `return` in createBudget().
+  const [budgetErrors, setBudgetErrors] = useState<FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount">>({});
   const [annualAmount, setAnnualAmount] = useState("");
   const [budgetCompanyId, setBudgetCompanyId] = useState<string>("__none__");
 
@@ -146,8 +149,45 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
     if (next) loadLookups();
   }
 
+  // R52 fix for F_004. THE RECORDED SYMPTOM HAS TWO HALVES and only one of
+  // them is fixable on this side:
+  //
+  //  (a) FIXABLE HERE -- submitting with only Budget Name + Annual Amount
+  //      filled produced "no POST and no error message", the same silent-no-op
+  //      shape as F_002. That was this function's first line. It now reports
+  //      which required field is missing.
+  //
+  //  (b) NOT FIXABLE HERE, RECORDED AND REPORTED INSTEAD -- Fiscal Year and
+  //      Account are looked up live from VERIDIAN's ERP module, and for this
+  //      org all three lookups return zero rows (GET /api/fiscal-years ->
+  //      {"fiscalYears":[]}, /api/accounts -> {"accounts":[]},
+  //      /api/cost-centers -> {"costCenters":[]}, all HTTP 200). No fiscal
+  //      year or chart of accounts has ever been provisioned for this org's
+  //      VERIDIAN ERP link, so the two required selectors CANNOT be populated
+  //      from PROJEXA. That is a compliance-tracker/provisioning gap and this
+  //      session must not touch that repo. What this side can stop doing is
+  //      presenting a form that looks fillable and then does nothing:
+  //      blockedReason below names exactly what is missing and where it has to
+  //      be created, the Create button is disabled carrying that reason, and
+  //      the user finds out BEFORE clicking rather than by watching a button
+  //      do nothing.
+  const missingLookups = [
+    fiscalYears.length === 0 ? "fiscal years" : null,
+    accounts.length === 0 ? "a chart of accounts" : null,
+  ].filter(Boolean) as string[];
+  const blockedReason = missingLookups.length
+    ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
+    : null;
+
   async function createBudget() {
-    if (!name.trim() || !fiscalYearId || !accountId.trim() || !annualAmount) return;
+    const errors: FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount"> = {};
+    if (!name.trim()) errors.name = "Budget name is required.";
+    if (!fiscalYearId) errors.fiscalYearId = fiscalYears.length ? "Select a fiscal year." : "No fiscal years exist in VERIDIAN for this organisation.";
+    if (!accountId.trim()) errors.accountId = accounts.length ? "Select an account." : "No chart of accounts exists in VERIDIAN for this organisation.";
+    if (!annualAmount) errors.annualAmount = "Annual amount is required.";
+    else if (Number.isNaN(Number(annualAmount))) errors.annualAmount = "Annual amount must be a number.";
+    setBudgetErrors(errors);
+    if (hasErrors(errors)) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/project-budgets", {
@@ -185,35 +225,47 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : (
               <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Budget Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div className="space-y-1.5">
-                  <Label>Fiscal Year</Label>
-                  <Select value={fiscalYearId} onValueChange={setFiscalYearId}>
-                    <SelectTrigger><SelectValue placeholder={fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN"} /></SelectTrigger>
-                    <SelectContent>
-                      {fiscalYears.map((fy) => <SelectItem key={fy.id} value={fy.id}>{fy.yearName}{fy.isClosed ? " (closed)" : ""}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Cost Center (optional)</Label>
-                  <Select value={costCenterId} onValueChange={setCostCenterId}>
-                    <SelectTrigger><SelectValue placeholder={costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN"} /></SelectTrigger>
-                    <SelectContent>
-                      {costCenters.map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Account</Label>
-                  <Select value={accountId} onValueChange={setAccountId}>
-                    <SelectTrigger><SelectValue placeholder={accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Annual Amount</Label><Input type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} /></div>
+                {blockedReason && (
+                  <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                    {blockedReason}
+                  </p>
+                )}
+                <FormField label="Budget Name" required error={budgetErrors.name}>
+                  {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
+                </FormField>
+                <FormField label="Fiscal Year" required error={budgetErrors.fiscalYearId}>
+                  {(f) => (
+                    <Select value={fiscalYearId} onValueChange={setFiscalYearId}>
+                      <SelectTrigger {...f} disabled={fiscalYears.length === 0}><SelectValue placeholder={fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN"} /></SelectTrigger>
+                      <SelectContent>
+                        {fiscalYears.map((fy) => <SelectItem key={fy.id} value={fy.id}>{fy.yearName}{fy.isClosed ? " (closed)" : ""}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </FormField>
+                <FormField label="Cost Center (optional)">
+                  {(f) => (
+                    <Select value={costCenterId} onValueChange={setCostCenterId}>
+                      <SelectTrigger {...f} disabled={costCenters.length === 0}><SelectValue placeholder={costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN"} /></SelectTrigger>
+                      <SelectContent>
+                        {costCenters.map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </FormField>
+                <FormField label="Account" required error={budgetErrors.accountId}>
+                  {(f) => (
+                    <Select value={accountId} onValueChange={setAccountId}>
+                      <SelectTrigger {...f} disabled={accounts.length === 0}><SelectValue placeholder={accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
+                      <SelectContent>
+                        {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </FormField>
+                <FormField label="Annual Amount" required error={budgetErrors.annualAmount}>
+                  {(f) => <Input {...f} type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} />}
+                </FormField>
                 {companies.length > 0 && (
                   <div className="space-y-1.5">
                     <Label>Company / Office (optional)</Label>
@@ -228,7 +280,11 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
                 )}
               </div>
             )}
-            <DialogFooter><Button onClick={createBudget} disabled={submitting || lookupsLoading}>{submitting ? "Creating…" : "Create Budget"}</Button></DialogFooter>
+            <DialogFooter>
+              <Button onClick={createBudget} disabled={submitting || lookupsLoading || blockedReason !== null} title={blockedReason ?? undefined}>
+                {submitting ? "Creating…" : "Create Budget"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
