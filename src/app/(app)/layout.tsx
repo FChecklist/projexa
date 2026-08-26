@@ -1,78 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import { AppShellFrame } from "@fchecklist/veridian-ui-kit/shell";
-import { AppSidebar } from "@/components/AppSidebar";
-import { AppTopbar } from "@/components/AppTopbar";
-import { VeriChatProvider, HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
-import VeriComposer from "@/components/veri-chat/VeriComposer";
-import VeriChatPanel from "@/components/veri-chat/VeriChatPanel";
-import HomeThreadSlot from "@/components/veri-chat/HomeThreadSlot";
+import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
+import M24Shell from "@/components/shell/M24Shell";
 
-// SUPERSEDED by M24 (platform.claude_log, status='standing') -- R42 seq10, 24 Aug 2026.
-// M24 is the current binding frame: two panes, LEFT 30% Task Master, RIGHT 70%
-// traditional ERP, five-band rule, nothing appears twice. Left in place (not
-// deleted) per R42 instruction -- see M24/M25 for the governing spec instead
-// of the text below.
+// R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
+// cc_spec point 187). It is the ONE place that governs all 53 app routes, so
+// re-parenting here puts every routed screen inside the RIGHT 70% pane at once
+// rather than editing 53 files.
 //
-// Owner directive 2026-07-18 (historical, superseded): navigation/shell behavior must exactly match
-// compliance-tracker/veridian-scope-selector-in-home.html (the agreed UI/UX
-// reference) -- including the merged-Home-page pattern, where VeriChatPanel
-// merges into the main content area instead of sitting in its own side
-// panel. AppShellFrame (from @fchecklist/veridian-ui-kit) now owns that
-// merge mechanics generically -- ported from compliance-tracker's own real
-// migration (PR #471) to the shared package's real shell/composer/panel/
-// header components, unconditionally (PROJEXA has no existing feature-flag
-// gate to preserve, unlike compliance-tracker's veriChatV2Enabled branch --
-// this is a newer, smaller product with less blast radius). VeriComposer/
-// VeriChatPanel stay PROJEXA's own components (real, already-working
-// /api/assistant, /api/discuss, /api/todos, /api/conversations wiring) --
-// only their outer chrome now comes from the shared package, see those
-// files' own header comments for exactly what did and didn't move.
-function ShellBody({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const isHome = pathname === HOME_ROUTE;
-
-  return (
-    <AppShellFrame
-      homeRoute={HOME_ROUTE}
-      header={
-        <AppTopbar
-          sidebarCollapsed={collapsed}
-          onToggleSidebar={() => setCollapsed((v) => !v)}
-        />
-      }
-      sidebar={
-        collapsed
-          ? null
-          : (
-            <AppSidebar
-              middleColumnToggle={isHome ? undefined : { collapsed: panelCollapsed, onToggle: () => setPanelCollapsed((v) => !v) }}
-            />
-          )
-      }
-      composer={<VeriComposer />}
-      panel={panelCollapsed ? null : <VeriChatPanel />}
-      homeThreadSlot={<HomeThreadSlot />}
-    >
-      {children}
-    </AppShellFrame>
-  );
-}
-
+// WHAT WAS REMOVED AND WHY:
+//   AppShellFrame -> AppShell. The old frame was sidebar + fixed-width LEFT
+//     working column + right column. M24 rules two panes only: LEFT 30% Task
+//     Master, RIGHT 70% traditional ERP.
+//   AppSidebar    -> DELETED from the shell. M24: "HOME = THE GROUPED MODULE
+//     DIRECTORY, rendered in the RIGHT pane. It REPLACES the left rail, which
+//     is why the rail could be deleted at all." The component still exists in
+//     the repo and in the kit; it is simply no longer mounted here.
+//   AppTopbar     -> TopRail. One ~36px line carrying brand | organisation |
+//     PROJECT | search | alerts | account. The project is now visible at all
+//     times in the only band the composer never covers, which M24 calls the
+//     most expensive mistake in the product to get wrong.
+//   VeriChatPanel -> no longer a separate pane. The conversation belongs
+//     INSIDE the box (M24-A: "EVERYTHING HAPPENS INSIDE OUR CHAT BOX").
+//
+// WHAT WAS KEPT: VeriComposer, unchanged, mounted through the kit Composer's
+// inputSlot. Its real /api/assistant and /api/discuss wiring is untouched.
+// Phase C replaces it with the pill strip; Phase A does not rebuild it twice.
+//
+// VeriChatProvider still wraps everything -- VeriComposer depends on it.
+// The Toaster stays mounted once in the root layout (src/app/layout.tsx); a
+// second instance here used to duplicate every toast.error() call, because
+// both instances subscribe to the same global sonner store.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <VeriChatProvider>
-      <ShellBody>{children}</ShellBody>
-      {/* Toaster is mounted once in the root layout (src/app/layout.tsx)
-          with position="top-right" richColors -- a second instance here
-          used to duplicate every toast.error() call (both instances
-          subscribe to the same global sonner store), which made write
-          failures look inconsistent/easy to miss during testing instead
-          of a single clear error. */}
+      <M24Shell>{children}</M24Shell>
     </VeriChatProvider>
   );
 }
