@@ -27,6 +27,7 @@ export function CreateProjectDialog() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [productId, setProductId] = useState("");
   const [name, setName] = useState("");
@@ -38,12 +39,31 @@ export function CreateProjectDialog() {
     setOpen(next);
     if (!next) return;
     setLoadingProducts(true);
+    setLoadError(null);
+    setProducts([]);
     try {
       const res = await fetch("/api/products");
-      const data = await res.json();
-      setProducts(data.products ?? []);
-    } catch {
-      toast.error("Couldn't load products from VERIDIAN");
+      // /api/products answers a failure with { error } and a real status. Parsing
+      // the body without checking res.ok turned that error into `undefined`, and
+      // `?? []` then turned it into an empty product list -- so the picker opened
+      // silently empty and no project could ever be created, with nothing on
+      // screen saying why. Read the status first, and keep the backend's own words.
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg =
+          data && typeof data.error === "string" && data.error.trim()
+            ? data.error
+            : `Couldn't load products from VERIDIAN (HTTP ${res.status})`;
+        setLoadError(msg);
+        toast.error(msg);
+        return;
+      }
+      setProducts(data?.products ?? []);
+    } catch (err) {
+      const detail = err instanceof Error && err.message ? `: ${err.message}` : "";
+      const msg = `Couldn't load products from VERIDIAN${detail}`;
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoadingProducts(false);
     }
@@ -62,12 +82,26 @@ export function CreateProjectDialog() {
           targetDate: targetDate || undefined,
         }),
       });
-      if (!res.ok) throw new Error();
+      // Same rule on the way out: never replace the backend's reason with a
+      // generic one. A user who is told "Couldn't create project" cannot act;
+      // a user who is told what the server actually refused, can.
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          body && typeof body.error === "string" && body.error.trim()
+            ? body.error
+            : `HTTP ${res.status}`
+        );
+      }
       toast.success("Project created");
       setProductId(""); setName(""); setDescription(""); setStartDate(""); setTargetDate(""); setOpen(false);
       router.refresh();
-    } catch {
-      toast.error("Couldn't create project");
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? `Couldn't create project: ${err.message}`
+          : "Couldn't create project"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -86,12 +120,25 @@ export function CreateProjectDialog() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Product</Label>
-              <Select value={productId} onValueChange={setProductId}>
-                <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
-                <SelectContent>
-                  {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              {/* An empty picker is not an answer. Say which of the two it is:
+                  the product list could not be loaded, or it loaded and is empty. */}
+              {loadError ? (
+                <p role="alert" className="rounded-md border border-px-error-border bg-px-error-light p-2 text-sm text-px-error">
+                  {loadError}
+                </p>
+              ) : products.length === 0 ? (
+                <p role="status" className="rounded-md border border-px-border bg-px-cloud p-2 text-sm text-px-muted">
+                  No products are set up for this organisation yet. An administrator must add a
+                  product before a project can be created.
+                </p>
+              ) : (
+                <Select value={productId} onValueChange={setProductId}>
+                  <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
+                  <SelectContent>
+                    {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-1.5"><Label>Project Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeview Residence — Phase 2" /></div>
             <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} /></div>
