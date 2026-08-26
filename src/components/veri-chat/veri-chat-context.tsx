@@ -47,7 +47,11 @@ export const HOME_ROUTE = "/dashboard";
 // auth/allowlist surface, mirroring how /api/v1/projexa/assistant is
 // deliberately NOT a general dispatchTool() proxy) than this task's
 // SUCCESS_CRITERIA (fetch + render + drill into real scoped records) asks
-// for.
+// for. Those other top-level nodes are no longer offered as pills at all --
+// see SHOW_UNDISPATCHABLE_MODULE_CHAINS below for why "not yet wired to a
+// dispatch endpoint" and "safe to show a buyer" turned out to be different
+// questions. This key is therefore now the ONE chain the composer offers,
+// and R-80's "one full pill path works end to end" is exactly this path.
 export const CONSTRUCTION_CHAIN_MODE_KEY = "construction_intelligence";
 
 export async function fetchJsonNodes(url: string): Promise<CapabilityNode[]> {
@@ -88,18 +92,60 @@ function pruneUnwired(nodes: CapabilityNode[]): CapabilityNode[] {
   return pruned;
 }
 
-// Fetches PROJEXA's own construction tree AND the new full VERIDIAN module
-// chain in parallel and concatenates them -- the shared factory's `tree` is
-// just "every top-level chain mode this composer offers," so merging here is
-// the only change needed to make VeriComposer.tsx (which already renders
-// one pill/chain per top-level tree node, see its own header comment) offer
-// both alongside each other. Neither fetch failing takes the other down.
+// R-81, second pass ("NO visible pill may be unwired -- HIDE, do not wire").
+//
+// pruneUnwired() above hides leaves VERIDIAN itself cannot dispatch, and that
+// was necessary but NOT sufficient -- which is why R-81 stayed open after it
+// landed. `deterministic` is set upstream by compliance-tracker's
+// markDeterministic() as `Boolean(codeReference || engineKey || reportUrl)`,
+// i.e. "VERIDIAN can run this". PROJEXA's reach is far narrower: /api/assistant
+// proxies VERIDIAN's /api/v1/projexa/assistant, whose ALLOWED_CODE_REFERENCES
+// is exactly 7 entries, ALL construction (verified three ways on 2026-08-26 --
+// the 7-entry allowlist in that route, the identical 7-entry codeRefs array in
+// buildConstructionNodes(), and 7 matching tier='global' rows in
+// platform.worker_agents). So a module-chain leaf could carry
+// deterministic:true, survive the prune, render as a pill, and STILL dead-end:
+// VeriComposer's own isDispatchableChain gate is hard-coded to the
+// construction chain, so completing any other chain leaves the send button
+// disabled under "Browse-only for now -- this module isn't wired up to send
+// yet." A prospect clicking at random drills a full cascade and arrives at a
+// disabled button. That is the dead end R-81 exists to prevent.
+//
+// So the rule enforced here is the one that matches what the composer can
+// actually DO: a chain is offered only if PROJEXA can dispatch it. Today that
+// is exactly PROJEXA's own construction tree.
+//
+// This HIDES; it deletes nothing. pruneUnwired() and the module-chain fetch
+// are both kept intact and come back by flipping this one flag the day
+// cross-module dispatch ships (its own auth/allowlist surface -- see
+// CONSTRUCTION_CHAIN_MODE_KEY above). Keeping the flag false also spares the
+// composer a dependency on /api/module-chain, one of the routes named in the
+// R46 production incident as hanging until Vercel's 300s cap.
+export const SHOW_UNDISPATCHABLE_MODULE_CHAINS: boolean = false;
+
+// Pure, directly testable core of the merge, split out from the fetch so both
+// flag states are unit-testable without stubbing module state.
+export function mergeChainTrees(
+  construction: CapabilityNode[],
+  moduleChain: CapabilityNode[],
+  showUndispatchable: boolean = SHOW_UNDISPATCHABLE_MODULE_CHAINS
+): CapabilityNode[] {
+  if (!showUndispatchable) return construction;
+  return [...construction, ...pruneUnwired(moduleChain)];
+}
+
+// Fetches PROJEXA's own construction tree, plus -- only when the flag above is
+// on -- the full VERIDIAN module chain, in parallel. The shared factory's
+// `tree` is just "every top-level chain mode this composer offers," so this is
+// the single place that decides what VeriComposer.tsx (which renders one
+// pill/chain per top-level tree node, see its own header comment) can show.
+// Neither fetch failing takes the other down.
 export async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
   const [construction, moduleChain] = await Promise.all([
     fetchJsonNodes("/api/capability-tree"),
-    fetchJsonNodes("/api/module-chain"),
+    SHOW_UNDISPATCHABLE_MODULE_CHAINS ? fetchJsonNodes("/api/module-chain") : Promise.resolve<CapabilityNode[]>([]),
   ]);
-  return [...construction, ...pruneUnwired(moduleChain)];
+  return mergeChainTrees(construction, moduleChain);
 }
 
 const base = createVeriChatContext<RightPanelView>({
