@@ -39,9 +39,16 @@ const VERIDIAN_API_ROOT = VERIDIAN_API_BASE.replace(/\/projexa$/, "");
 // key first and would defeat the point of a link that needs no credentials.
 export const VERIDIAN_ORIGIN = VERIDIAN_API_ROOT.replace(/\/api\/v1$/, "");
 
+// R52 / R46S11_03. `message` is what the user reads: virtually every /api
+// route in this repo returns it verbatim as { error: <message> }, and several
+// screens render that string directly. So it must never carry anything the
+// user should not see. `detail` is the operator's half -- the internal URL and
+// the exact budget -- and is only ever logged server-side, never returned.
 export class VeridianApiError extends Error {
-  constructor(message: string, public status: number) {
+  readonly detail?: string;
+  constructor(message: string, public status: number, detail?: string) {
     super(message);
+    this.detail = detail;
   }
 }
 
@@ -125,11 +132,25 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 
   if (isTimeout(lastErr)) {
-    // The message still names the real cause and the real elapsed budget --
-    // the retry is stated so nobody reads this as a single 20s wait.
+    // R52 / R46S11_03. This message used to end in `: ${url}`, and that string
+    // reached owner-facing UI intact -- "VERIDIAN request timed out after
+    // 20000ms: https://veridian-compliance-ai.vercel.app/api/v1/projexa/dashboard"
+    // was rendered on /dashboard/project, /dashboard/overview and /reports. It
+    // leaked the internal backend hostname, the internal path and the exact
+    // timeout budget to every user who hit a slow call.
+    //
+    // The real cause is kept -- the user is told a timeout happened, on which
+    // service, and that it was retried -- which is what C19 ERROR_TRUTHFUL
+    // asks for. The internal address and the millisecond budget move to
+    // `detail`, which is logged here and never returned to a client.
+    const detail = `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`;
+    console.error(`[veridian] ${detail}`);
     throw new VeridianApiError(
-      `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`,
-      504
+      attempts > 1
+        ? "The construction data service did not respond in time, on two attempts. Please retry."
+        : "The construction data service did not respond in time. Please retry.",
+      504,
+      detail
     );
   }
   throw lastErr;

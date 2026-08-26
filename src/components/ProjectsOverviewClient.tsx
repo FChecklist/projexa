@@ -1,6 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageHeading } from "@/components/PageHeading";
+import { Button } from "@/components/ui/button";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -40,16 +44,49 @@ export default function ProjectsOverviewClient({
   errorMessage: string | null;
   labels?: RegistryColumn[] | null;
 }) {
+  const router = useRouter();
   const columns = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
 
   return (
     <main className="flex-1 space-y-6 p-6">
       <PageHeading title={label(columns, "title", "Projects Overview")} />
-      {errorMessage && <p className="text-sm text-px-error">Could not load live data: {errorMessage}</p>}
       <Card className="shadow-card">
         <CardContent className="space-y-5 pt-6">
-          {bars.length === 0 ? (
-            <p className="py-8 text-center text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
+          {/*
+            R52 / F_026 and R46S11_02. This block used to render the error line
+            AND the empty state together, because `bars.length === 0` was tested
+            without asking WHY the list was empty. On a VERIDIAN timeout
+            fetchProjectProgressBars returns bars: [] with an errorMessage, so
+            the page told a CEO "No active projects yet." for an org that has
+            five -- proven in the same session by /dashboard, a different code
+            path, listing all five. A false zero on the portfolio screen is
+            worse than an error, because it reads as an answer.
+
+            The two states are now mutually exclusive, and the failure branch
+            carries the two affordances R46S11_02 recorded as missing: a way to
+            retry, and a way to create a project. router.refresh() re-runs the
+            server component that fetched this, which is the actual retry --
+            not a client-side re-render of the same empty array.
+          */}
+          {errorMessage ? (
+            <div role="alert" className="space-y-3 py-8 text-center">
+              <p className="text-sm text-px-error">Could not load live data: {errorMessage}</p>
+              <p className="text-sm text-px-muted">
+                This is not the same as having no projects. Nothing is being shown because the request failed.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => router.refresh()}>Retry</Button>
+                <Link href="/dashboard"><Button size="sm" variant="ghost">Go to Dashboard</Button></Link>
+              </div>
+            </div>
+          ) : bars.length === 0 ? (
+            <div className="space-y-3 py-8 text-center">
+              <p className="text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
+              {/* The real dialog, not a link to the page that has it -- R46S11_02
+                  recorded /dashboard offering a Create Project button here and
+                  this screen offering nothing. */}
+              <div className="flex justify-center"><CreateProjectDialog /></div>
+            </div>
           ) : (
             bars.map((p) => (
               <div key={p.id} className="space-y-1.5">
