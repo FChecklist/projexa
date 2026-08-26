@@ -222,10 +222,27 @@ function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: 
     !val(l.description) && !val(l.unit) && !val(l.quantity) && !val(l.rate) &&
     !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage);
 
+  // A sub-task inherits its unit from the parent it prices off. Requiring the
+  // user to retype it is friction with no meaning -- and it was the single most
+  // likely field to be left blank on a child row, which used to cost the whole
+  // submit. Inherited here, from the parent in the SAME submission, so the row
+  // still reaches the server with a unit and cannot come back as a NOT NULL
+  // violation.
+  const unitFor = (l: LineItemDraft): string => {
+    const own = val(l.unit);
+    if (own) return own;
+    const parentCode = val(l.parentItemCode);
+    if (!parentCode) return "";
+    const parent = lines.find((p) => val(p.itemCode) === parentCode);
+    return parent ? val(parent.unit) : "";
+  };
+
   const missingFrom = (l: LineItemDraft): string[] => {
     const missing: string[] = [];
     if (!val(l.description)) missing.push("Description");
-    if (!val(l.unit)) missing.push("Unit");
+    // Checked against the INHERITED unit, so a child with a blank Unit whose
+    // parent has one is complete rather than rejected.
+    if (!unitFor(l)) missing.push("Unit");
     if (val(l.parentItemCode)) {
       // A sub-task prices off its parent, so it needs no Qty/Rate of its own --
       // but VERIDIAN rejects a child with no breakdown % (construction-boq-
@@ -246,7 +263,10 @@ function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: 
     if (missing.length > 0) {
       return { valid: [], error: `Line ${i + 1} is incomplete — add ${missing.join(", ")}. Nothing was saved.` };
     }
-    valid.push(lines[i]);
+    // Push the row WITH its resolved unit, so what the server receives matches
+    // what the form accepted. Validating against an inherited value and then
+    // sending a blank one would be its own quiet lie.
+    valid.push({ ...lines[i], unit: unitFor(lines[i]) });
   }
   if (valid.length === 0) return { valid: [], error: "Add at least one complete line item" };
   return { valid, error: null };
