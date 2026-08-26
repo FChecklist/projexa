@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import DataLoadError from "@/components/DataLoadError";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Overview = {
   customer: { id: string; customerName: string; gstin: string | null; creditLimit: string | null };
@@ -27,16 +29,33 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US")}`;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/customers/${customerId}/overview`)
-      .then((r) => r.json())
+  // A4S14_customerid_01: GET /api/customers/{id}/overview returned 504 on
+  // 2 of 2 attempts for a REAL customer id, and this used to parse the error
+  // body as if it were the overview. `data` then had no `customer` key, so
+  // the page told the user "Customer not found." -- a false statement about
+  // a customer that demonstrably exists, with nothing on screen saying the
+  // read had failed. Read the status first, and keep the backend's words.
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    fetchJson<Overview>(`/api/customers/${customerId}/overview`)
       .then((d) => setData(d))
-      .catch(() => toast.error("Couldn't load customer overview"))
+      .catch((err) => {
+        const msg = errorMessage(err, "Couldn't load customer overview");
+        setLoadError(msg);
+        toast.error(msg);
+      })
       .finally(() => setLoading(false));
   }, [customerId]);
 
+  useEffect(() => { load(); }, [load]);
+
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+  if (loadError) return <DataLoadError messages={[loadError]} onRetry={load} />;
+  // Only reachable now when the read SUCCEEDED and genuinely returned no
+  // customer -- which really is "not found".
   if (!data?.customer) return <p className="py-10 text-center text-sm text-px-muted">Customer not found.</p>;
 
   return (

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Diary = {
   id: string;
@@ -36,11 +37,10 @@ export default function SiteDiaryClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/site-diary?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/site-diary?projectId=${encodeURIComponent(projectId)}`);
       setDiaries(data.diaries ?? []);
-    } catch {
-      toast.error("Couldn't load site diary");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load site diary"));
     } finally {
       setLoading(false);
     }

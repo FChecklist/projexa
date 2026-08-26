@@ -19,6 +19,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 // consolidate has no meaning for a flat sales-orders list, so the toggle is
 // hidden here, same as Leads/Quotations.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type SalesOrderItem = { id: string; description: string; quantity: string; rate: string; amount: string; deliveredQuantity: string };
 type SalesOrder = {
@@ -75,13 +76,12 @@ export default function SalesOrdersClient() {
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (scope.companyId) params.set("companyId", scope.companyId);
-      const res = await fetch(`/api/sales-orders?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/sales-orders?${params.toString()}`);
       setOrders(data.salesOrders ?? []);
       setTotal(data.total ?? 0);
       setSelected(new Set());
-    } catch {
-      toast.error("Couldn't load sales orders");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load sales orders"));
     } finally {
       setLoading(false);
     }
@@ -93,10 +93,9 @@ export default function SalesOrdersClient() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/companies");
-        const data = await res.json();
+        const data = await fetchJson("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }

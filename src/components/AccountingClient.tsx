@@ -23,6 +23,7 @@ import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 }
 import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, companyScopeQuery, CompanySelector } from "@/components/company-scope";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -66,10 +67,9 @@ function DashboardPanel() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/finance-dashboard");
-        setData(await res.json());
-      } catch {
-        toast.error("Couldn't load finance dashboard");
+        setData(await fetchJson("/api/finance-dashboard"));
+      } catch (err) {
+        toast.error(errorMessage(err, "Couldn't load finance dashboard"));
       } finally {
         setLoading(false);
       }
@@ -167,12 +167,11 @@ function GeneralLedgerPanel() {
       const params = new URLSearchParams({ page: String(page), limit: "25" });
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search) params.set("search", search);
-      const res = await fetch(`/api/journal-entries?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/journal-entries?${params.toString()}`);
       setEntries(data.entries ?? []);
       setTotalPages(data.totalPages ?? 1);
-    } catch {
-      toast.error("Couldn't load the General Ledger");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load the General Ledger"));
     } finally {
       setLoading(false);
     }
@@ -183,11 +182,10 @@ function GeneralLedgerPanel() {
     setOpen(next);
     if (!next || accountsLoaded) return;
     try {
-      const res = await fetch("/api/accounts");
-      const data = await res.json();
+      const data = await fetchJson("/api/accounts");
       setAccounts(data.accounts ?? []);
-    } catch {
-      toast.error("Couldn't load chart of accounts");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load chart of accounts"));
     } finally {
       setAccountsLoaded(true);
     }
@@ -336,10 +334,9 @@ function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/trial-balance?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate trial balance");
+      setReport(await fetchJson(`/api/trial-balance?asOfDate=${asOfDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't generate trial balance"));
     } finally {
       setLoading(false);
     }
@@ -380,10 +377,9 @@ function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate P&L");
+      setReport(await fetchJson(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't generate P&L"));
     } finally {
       setLoading(false);
     }
@@ -417,10 +413,9 @@ function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/balance-sheet?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate balance sheet");
+      setReport(await fetchJson(`/api/balance-sheet?asOfDate=${asOfDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't generate balance sheet"));
     } finally {
       setLoading(false);
     }
@@ -462,10 +457,9 @@ function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/profit-and-loss-by-project?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate per-project P&L");
+      setReport(await fetchJson(`/api/profit-and-loss-by-project?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't generate per-project P&L"));
     } finally {
       setLoading(false);
     }
@@ -621,11 +615,10 @@ function BankReconciliationPanel() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/bank-reconciliation");
-        const data = await res.json();
+        const data = await fetchJson("/api/bank-reconciliation");
         setImports(data.imports ?? []);
-      } catch {
-        toast.error("Couldn't load bank statement imports");
+      } catch (err) {
+        toast.error(errorMessage(err, "Couldn't load bank statement imports"));
       } finally {
         setLoading(false);
       }
@@ -636,11 +629,10 @@ function BankReconciliationPanel() {
     setSelectedImportId(id);
     setLinesLoading(true);
     try {
-      const res = await fetch(`/api/bank-reconciliation?importId=${id}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/bank-reconciliation?importId=${id}`);
       setLines(data.lines ?? []);
-    } catch {
-      toast.error("Couldn't load statement lines");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load statement lines"));
     } finally {
       setLinesLoading(false);
     }
@@ -710,11 +702,10 @@ export default function AccountingClient() {
   async function loadCompanies() {
     setCompaniesLoading(true);
     try {
-      const res = await fetch("/api/companies");
-      const data = await res.json();
+      const data = await fetchJson("/api/companies");
       setCompanies(data.companies ?? []);
-    } catch {
-      toast.error("Couldn't load companies");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load companies"));
     } finally {
       setCompaniesLoading(false);
     }

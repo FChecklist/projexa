@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Image as ImageIcon } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type MoodBoardItem = { id: string; label: string | null; notes: string | null };
 type MoodBoard = { id: string; title: string; roomOrArea: string | null; status: string; items: MoodBoardItem[] };
@@ -32,11 +33,10 @@ export default function MoodBoardsClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/mood-boards?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/mood-boards?projectId=${encodeURIComponent(projectId)}`);
       setBoards(data.boards ?? []);
-    } catch {
-      toast.error("Couldn't load mood boards");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load mood boards"));
     } finally {
       setLoading(false);
     }

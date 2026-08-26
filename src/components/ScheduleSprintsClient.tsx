@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Sprint = {
   id: string; name: string; goal: string | null; startDate: string | null; endDate: string | null;
@@ -63,11 +64,10 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     setExpanded(sprintId);
     if (!sprintIssues[sprintId]) {
       try {
-        const res = await fetch(`/api/schedule/sprints/${encodeURIComponent(sprintId)}/issues`);
-        const data = await res.json();
+        const data = await fetchJson(`/api/schedule/sprints/${encodeURIComponent(sprintId)}/issues`);
         setSprintIssues((prev) => ({ ...prev, [sprintId]: data.issues ?? [] }));
-      } catch {
-        toast.error("Couldn't load sprint issues");
+      } catch (err) {
+        toast.error(errorMessage(err, "Couldn't load sprint issues"));
       }
     }
   }

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Customer = { id: string; customerName: string; gstin: string | null; defaultPaymentTermsDays: number | null; creditLimit: string | null; isActive: boolean };
 
@@ -43,12 +44,11 @@ export default function CustomersClient() {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (search.trim()) params.set("search", search.trim());
-      const res = await fetch(`/api/customers?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/customers?${params.toString()}`);
       setCustomers(data.customers ?? []);
       setTotal(data.total ?? data.customers?.length ?? 0);
-    } catch {
-      toast.error("Couldn't load customers");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load customers"));
     } finally {
       setLoading(false);
     }

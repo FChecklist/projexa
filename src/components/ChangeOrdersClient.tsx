@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { fetchJson } from "@/lib/fetch-json";
 
 type ChangeOrder = {
   id: string; number: number; title: string; reason: string | null; costImpact: string; scheduleImpactDays: number; status: string;
@@ -145,8 +146,7 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/change-orders?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/change-orders?projectId=${encodeURIComponent(projectId)}`);
       const changeOrders: ChangeOrder[] = data.changeOrders ?? [];
       setItems(changeOrders);
       // Only pending_approval rows have anything to show here -- draft has
@@ -156,10 +156,9 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
       setSignatureStatusLoading(Object.fromEntries(pending.map((c) => [c.id, true])));
       await Promise.all(pending.map(async (c) => {
         try {
-          const sRes = await fetch(`/api/change-orders/${c.id}/signature-status`);
-          const sData = await sRes.json();
+          const sData = await fetchJson(`/api/change-orders/${c.id}/signature-status`);
           setSignatureStatuses((prev) => ({ ...prev, [c.id]: sData }));
-        } catch {
+        } catch (err) {
           // Leave this row's entry unset -- SignatureStatusCell already
           // renders an honest "No signature request created yet" fallback
           // for undefined, no separate error state needed for one row.

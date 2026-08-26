@@ -19,6 +19,7 @@ import { formatDate } from "@/lib/format-date";
 // meaning for a flat leads list (no parent/sub-company tree to roll up),
 // so the toggle is hidden here.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Lead = {
   id: string; name: string; contactEmail: string | null; contactPhone: string | null;
@@ -69,13 +70,12 @@ export default function LeadsClient() {
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (scope.companyId) params.set("companyId", scope.companyId);
-      const res = await fetch(`/api/leads?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/leads?${params.toString()}`);
       setLeads(data.leads ?? []);
       setTotal(data.total ?? 0);
       setSelected(new Set());
-    } catch {
-      toast.error("Couldn't load leads");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load leads"));
     } finally {
       setLoading(false);
     }
@@ -86,10 +86,9 @@ export default function LeadsClient() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/companies");
-        const data = await res.json();
+        const data = await fetchJson("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }
@@ -151,11 +150,10 @@ export default function LeadsClient() {
   async function openHistory(lead: Lead) {
     setHistoryFor(lead);
     try {
-      const res = await fetch(`/api/leads/${lead.id}/history`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/leads/${lead.id}/history`);
       setHistory(data.history ?? []);
-    } catch {
-      toast.error("Couldn't load history");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load history"));
     }
   }
 

@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import DataLoadError from "@/components/DataLoadError";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type FfeItem = {
   id: string; itemName: string; roomOrArea: string | null; category: string; quantity: number;
@@ -35,6 +37,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState("");
   const [roomOrArea, setRoomOrArea] = useState("");
@@ -49,17 +52,18 @@ export default function FfeClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [itemsRes, marginRes] = await Promise.all([
-        fetch(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
+      const [itemsData, marginData] = await Promise.all([
+        fetchJson(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
+        fetchJson(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
       ]);
-      const itemsData = await itemsRes.json();
-      const marginData = await marginRes.json();
       setItems(itemsData.items ?? []);
       setMargin(marginData);
-    } catch {
-      toast.error("Couldn't load FF&E items");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load FF&E items");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -152,7 +156,9 @@ export default function FfeClient({ projectId }: { projectId: string }) {
       <Card className="shadow-card">
         <CardHeader><CardTitle className="font-heading text-base">FF&E Schedule</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {items.length === 0 ? (
+          {loadError ? (
+            <DataLoadError messages={[loadError]} onRetry={load} />
+          ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No FF&E items yet.</p>
           ) : (
             <Table>

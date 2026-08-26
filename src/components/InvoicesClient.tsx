@@ -7,7 +7,7 @@
 // replacing it -- payments/cancel are new sub-actions on the same
 // resource. Sized for 500-project scale: filter by status/customer/date
 // range, paginated list.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -428,21 +428,32 @@ function ArAgingPanel() {
   const currencies = useCurrencies();
   const [report, setReport] = useState<AgingReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/ar-aging");
-        setReport(await res.json());
-      } catch {
-        toast.error("Couldn't load AR aging report");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  // The last site in this file still reading a body without the status. An
+  // error body from /api/ar-aging parsed cleanly and was stored AS the
+  // report, so the numbers below were rendered off an object that had none of
+  // them -- and when it did fall through, the screen said only "Couldn't load
+  // the AR aging report", never WHY, and offered no way to try again.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setReport(await fetchJson<AgingReport>("/api/ar-aging"));
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load AR aging report");
+      setReport(null);
+      setLoadError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+  if (loadError) return <DataLoadError messages={[loadError]} onRetry={load} />;
   if (!report) return <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the AR aging report.</p>;
 
   return (

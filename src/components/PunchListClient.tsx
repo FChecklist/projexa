@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
 
 type PunchItem = {
   id: string; number: number; description: string; location: string | null; trade: string | null; priority: string; status: string;
@@ -25,6 +27,7 @@ const PRIORITY_VARIANT: Record<string, "default" | "secondary" | "destructive" |
 export default function PunchListClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<PunchItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -33,12 +36,14 @@ export default function PunchListClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/punch-list?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/punch-list?projectId=${encodeURIComponent(projectId)}`);
       setItems(data.items ?? []);
-    } catch {
-      toast.error("Couldn't load punch list");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load punch list");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -99,6 +104,8 @@ export default function PunchListClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <DataLoadError messages={[loadError]} onRetry={load} />
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">Nothing on the punch list yet.</p>
           ) : (

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Submittal = {
   id: string; number: number; title: string; specSection: string | null; type: string; status: string; reviewComments: string | null;
@@ -33,11 +34,10 @@ export default function SubmittalsClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/submittals?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/submittals?projectId=${encodeURIComponent(projectId)}`);
       setItems(data.submittals ?? []);
-    } catch {
-      toast.error("Couldn't load submittals");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load submittals"));
     } finally {
       setLoading(false);
     }

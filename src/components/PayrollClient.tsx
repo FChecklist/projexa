@@ -15,6 +15,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, PlayCircle, Trash2, FileDown, FileText } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { formatDate, formatDateTime } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type PayrollRun = { id: string; month: number; year: number; status: string; processedAt: string | null };
 type PayslipLine = { id: string; label: string; lineType: "earning" | "deduction"; amount: string };
@@ -220,11 +221,14 @@ export default function PayrollClient() {
     setRegisterRun(run);
     setRegisterLoading(true);
     try {
-      const res = await fetch(`/api/payroll/runs/${run.id}/payslips`);
-      const data = await res.json();
+      // The last site in this file still reading a body without the status.
+      // A failed payslip read used to render the salary register as if the
+      // run had no payslips at all.
+      const data = await fetchJson<{ payslips?: Payslip[] }>(`/api/payroll/runs/${run.id}/payslips`);
       setRegisterPayslips(data.payslips ?? []);
-    } catch {
-      toast.error("Couldn't load payslips");
+    } catch (err) {
+      setRegisterPayslips([]);
+      toast.error(errorMessage(err, "Couldn't load payslips"));
     } finally {
       setRegisterLoading(false);
     }
