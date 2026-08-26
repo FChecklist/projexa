@@ -45,33 +45,54 @@ const GROUPS: { key: keyof SearchResults; heading: string; icon: typeof Search; 
   { key: "todos", heading: "To-Dos", icon: ListTodo, route: () => "/dashboard" },
 ];
 
-let openDialog: (() => void) | null = null;
-
-function SearchDialog({ projectId }: { projectId: string | null }) {
-  const [open, setOpen] = useState(false);
+// R52 / R48_GLOBAL_SEARCH_OPENS_NOTHING_01.
+//
+// THE RECORDED DIAGNOSIS -- "the advertised capability is entirely absent" --
+// is wrong. The palette is fully built: a real debounced query, real grouped
+// results, a real /api/search behind it. Only the button was disconnected
+// from it, and by a race rather than a missing handler, which is why the click
+// demonstrably landed (activeElement became the Search button) and still
+// opened nothing.
+//
+// WHAT WAS THERE: `let openDialog: (() => void) | null = null` -- a
+// MODULE-LEVEL singleton. Each mounted SearchDialog wrote its own setOpen into
+// that one slot on mount and wrote `null` back on unmount, unconditionally,
+// without checking whether it still owned the slot.
+//
+// SearchTrigger renders TWO SearchDialogs by construction:
+//
+//     <Suspense fallback={<SearchDialog projectId={null} />}>
+//       <SearchDialogWithProject />      // a second SearchDialog
+//     </Suspense>
+//
+// So: the fallback mounts and claims the slot; the real child mounts and
+// overwrites it; the fallback then unmounts and its cleanup sets the shared
+// slot to null -- clobbering the registration belonging to the child that is
+// still mounted. `openDialog?.()` is a no-op from that moment on. Nothing
+// throws and nothing logs, which is exactly the reported signature.
+//
+// Cmd+K was the mirror image of the same bug: each instance registered its own
+// document keydown listener, so with both mounted the two listeners fired on
+// one keypress and toggled the SAME intent twice -- open then closed.
+//
+// THE FIX: delete the singleton. `open` lives in SearchTrigger, the one
+// component that owns both the button and the dialog, and is passed down. The
+// keyboard shortcut is registered ONCE there, next to the state it drives, so
+// it cannot double-fire no matter how many times the dialog subtree remounts.
+function SearchDialog({
+  projectId,
+  open,
+  onOpenChange,
+}: {
+  projectId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    openDialog = () => setOpen(true);
-    return () => {
-      openDialog = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setOpen((prev) => !prev);
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -107,7 +128,7 @@ function SearchDialog({ projectId }: { projectId: string | null }) {
   }, [query, projectId]);
 
   function handleSelect(group: (typeof GROUPS)[number], item: ResultItem) {
-    setOpen(false);
+    onOpenChange(false);
     setQuery("");
     setResults(null);
     router.push(group.route(item));
@@ -119,7 +140,7 @@ function SearchDialog({ projectId }: { projectId: string | null }) {
     <CommandDialog
       open={open}
       onOpenChange={(o) => {
-        setOpen(o);
+        onOpenChange(o);
         if (!o) {
           setQuery("");
           setResults(null);
@@ -167,21 +188,40 @@ function SearchDialog({ projectId }: { projectId: string | null }) {
 
 // Isolates useSearchParams() behind a Suspense boundary, same convention as
 // AppSidebar.tsx's SidebarInnerWithProject.
-function SearchDialogWithProject() {
+function SearchDialogWithProject({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const searchParams = useSearchParams();
-  return <SearchDialog projectId={searchParams.get("projectId")} />;
+  return <SearchDialog projectId={searchParams.get("projectId")} open={open} onOpenChange={onOpenChange} />;
 }
 
 export function SearchTrigger() {
+  // The single owner of "is the palette open". Both the button and every
+  // SearchDialog instance below read and write this one piece of state, so the
+  // question of which instance "owns" the opener cannot arise again.
+  const [open, setOpen] = useState(false);
+
+  // Registered here, once, rather than inside SearchDialog -- the subtree
+  // below renders more than one SearchDialog (Suspense fallback plus child),
+  // and two listeners toggling one boolean is a no-op, not a shortcut.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setOpen((prev) => !prev);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
     <>
-      <Suspense fallback={<SearchDialog projectId={null} />}>
-        <SearchDialogWithProject />
+      <Suspense fallback={<SearchDialog projectId={null} open={open} onOpenChange={setOpen} />}>
+        <SearchDialogWithProject open={open} onOpenChange={setOpen} />
       </Suspense>
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => openDialog?.()}
+        onClick={() => setOpen(true)}
         aria-label="Search"
         className="gap-1.5 px-2.5 text-ct-muted hover:bg-ct-cloud hover:text-ct-navy"
       >
