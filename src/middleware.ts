@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getClaimsWithRetry } from "./lib/supabase/get-claims-with-retry";
+import { checkApiWriteAccess, MUTATING_METHODS } from "./lib/authz/api-write-policy";
+import { requiresAuthenticatedPage } from "./lib/authz/page-access";
 
 // CONFIRMED ROOT CAUSE of the random mid-session logouts + silent write
 // failures (investigated 2026-07-13, see auth-guard.ts for the full
@@ -149,13 +151,61 @@ export async function middleware(request: NextRequest) {
     console.error("[middleware] auth check threw:", err instanceof Error ? err.message : err);
   }
 
-  const PROTECTED_PREFIXES = [
-    "/dashboard", "/schedule", "/scope", "/work-progress", "/site-diary", "/documents",
-    "/rfis", "/submittals", "/punch-list", "/change-orders", "/mood-boards", "/ffe", "/floor-plans",
-    "/manpower", "/labour", "/materials", "/site-materials", "/vendors", "/budgets", "/expenses", "/kpis",
-    "/reports", "/ai-copilot", "/settings",
-  ];
-  const isProtected = PROTECTED_PREFIXES.some((prefix) => request.nextUrl.pathname.startsWith(prefix));
+  const pathname = request.nextUrl.pathname;
+
+  // R48_API_WRITES_WITHOUT_ROLE_CHECK_01: the single server-side choke point
+  // for role-gated writes. 146 of 159 mutating /api routes had no role check at
+  // all, so any authenticated member of the tenant -- including the read-only
+  // client_viewer -- could run payroll, create employees, raise purchase orders
+  // or rewrite the BOQ. See src/lib/authz/api-write-policy.ts for the tier
+  // table and api-write-policy.test.ts for the drift guard that keeps it
+  // honest against the filesystem.
+  //
+  // WHY HERE RATHER THAN 146 requireRole() CALLS: this middleware already runs
+  // ahead of every /api route (its matcher covers them), and a per-file guard
+  // is precisely the hand-maintained mechanism that drifted on the page side
+  // below. One table + one enforcement point + one test that regenerates the
+  // route set from disk.
+  //
+  // COST IS BOUNDED TO WRITES: the membership lookup below only runs for
+  // POST/PUT/PATCH/DELETE on /api/*, never for a GET or a page navigation, so
+  // the read path this middleware handles is unchanged.
+  if (pathname.startsWith("/api/") && MUTATING_METHODS.has(request.method) && userId && supabase) {
+    const { data: membership, error: membershipError } = await supabase
+      .from("memberships")
+      .select("role")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) {
+      // Same honest failure shape requireAuth() already uses for this case: a
+      // transient membership-lookup failure is NOT a "no organization" and is
+      // NOT a role refusal. Fail closed on the write, but say why.
+      console.error("[middleware] memberships lookup failed on a write -- refusing rather than guessing:", membershipError.message);
+      return NextResponse.json({ error: "Could not verify organization membership, please retry" }, { status: 503 });
+    }
+
+    const role = (membership as { role?: string } | null)?.role ?? null;
+    const decision = checkApiWriteAccess(request.method, pathname, role);
+    if (!decision.allowed) {
+      // Byte-identical to requireRole()'s own body so the 13 routes that
+      // already gate themselves and the 146 gated here are indistinguishable
+      // to a client.
+      return NextResponse.json({ error: "Forbidden: your role does not permit this action" }, { status: 403 });
+    }
+  }
+
+  // R48_PAGE_AUTH_GATE_COVERS_HALF_THE_NAV_01: this used to be
+  // PROTECTED_PREFIXES, a hand-written array of 24 strings matched by
+  // startsWith, which had drifted so far that 23 of the 46 nav destinations
+  // were ungated -- including "/copilot", which the list thought it was
+  // protecting under the stale name "/ai-copilot", and "/manpower", an entry
+  // matching no page route at all. Inverted to deny-by-default in
+  // src/lib/authz/page-access.ts (which keeps the mandatory !/api/ clause --
+  // without it every API 401 JSON turns into a 307 redirect to an HTML login
+  // page) and pinned to the filesystem by page-access.test.ts.
+  const isProtected = requiresAuthenticatedPage(pathname);
 
   if (!userId && isProtected) {
     const url = request.nextUrl.clone();
