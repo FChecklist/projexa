@@ -19,6 +19,23 @@ export default function PermitCreateClient({ projectId }: { projectId: string })
   const router = useRouter();
   const [saving, setSaving] = useState(false);
 
+  // R52 fix for F_010. The recorded fault is "the only in-app entry point to
+  // this route is a dead no-op". It is not a Radix fault and not a routing
+  // fault: `name` and `file` are both `required`, and Create was only
+  // disabled while saving, so clicking it with no PDF chosen failed NATIVE
+  // HTML constraint validation and did nothing visible. No React, no Radix,
+  // no hydration involved.
+  //
+  // The DEFINITION OF DONE for every screen forbids exactly this: "NO
+  // FAIL-AFTER-CLICK (primary action disabled while required fields are
+  // empty, with the count beside it)". So the button is now disabled until
+  // both required fields are satisfied, and the count of what is still
+  // missing is rendered next to it -- the user is told what is wrong BEFORE
+  // clicking rather than getting silence after.
+  const [name, setName] = useState("");
+  const [hasFile, setHasFile] = useState(false);
+  const missing = (name.trim() ? 0 : 1) + (hasFile ? 0 : 1);
+
   async function handleCreate(formData: FormData) {
     formData.set("projectId", projectId);
     setSaving(true);
@@ -44,7 +61,7 @@ export default function PermitCreateClient({ projectId }: { projectId: string })
         <form action={handleCreate} className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="name">Permit name</Label>
-            <Input id="name" name="name" required />
+            <Input id="name" name="name" required value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -68,11 +85,19 @@ export default function PermitCreateClient({ projectId }: { projectId: string })
           </div>
           <div className="space-y-1">
             <Label htmlFor="file">Permit PDF</Label>
-            <Input id="file" name="file" type="file" accept="application/pdf" required />
+            <Input id="file" name="file" type="file" accept="application/pdf" required
+              onChange={(e) => setHasFile(Boolean(e.target.files && e.target.files.length > 0))} />
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex items-center justify-end gap-2">
+            {missing > 0 && (
+              <span className="mr-auto text-xs text-px-muted">
+                {missing} required field{missing > 1 ? "s" : ""} still needed
+                {name.trim() ? "" : " — permit name"}
+                {hasFile ? "" : (name.trim() ? " — permit PDF" : ", permit PDF")}
+              </span>
+            )}
             <Button type="button" variant="outline" onClick={() => router.push("/permits")}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Create"}</Button>
+            <Button type="submit" disabled={saving || missing > 0}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Create"}</Button>
           </div>
         </form>
       </CardContent>

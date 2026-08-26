@@ -4,6 +4,7 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import ChangeOrdersClient, { type RegistryColumn } from "@/components/ChangeOrdersClient";
+import ProjectLoadError from "@/components/ProjectLoadError";
 
 // R46 P8 seq134 (registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns in permits/page.tsx): resolved server-side, same
@@ -34,7 +35,7 @@ export default async function ChangeOrdersPage({ searchParams }: { searchParams:
     <>
       <main className="flex-1 space-y-6 p-6">
         <PageHeading title="Change Orders" />
-        {errorMessage && <Card className="border-px-error-border bg-px-error-light"><CardContent className="p-4 text-sm text-px-error">{errorMessage}</CardContent></Card>}
+        {errorMessage && <ProjectLoadError message={errorMessage} />}
         {!errorMessage && !project && <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>}
         {project && <ChangeOrdersClient projectId={project.id} registryColumns={registryColumns} />}
       </main>

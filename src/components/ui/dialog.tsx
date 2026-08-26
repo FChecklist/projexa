@@ -38,23 +38,41 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        // R46 F_007 fix: Radix's Presence only unmounts this node once the
-        // browser fires `animationend` for the data-[state=closed] exit
-        // animation (fade-out-0). That event depends on the tab actually
-        // getting compositor frames -- if it's backgrounded/occluded (or a
-        // frame is otherwise dropped) right as a dialog closes, the
-        // animation can stall indefinitely: data-state flips to "closed"
-        // (confirmed correct -- the app's open state is fine) but the node
-        // stays mounted at opacity:1/pointer-events:auto, a full-screen
-        // overlay silently swallowing every click until a hard reload.
-        // Verified live against projexa-ai.com's change-orders Create flow
-        // (getComputedStyle + Animation.playState showed the exit
-        // animation frozen at currentTime:0 while data-state was already
-        // "closed"). Dropping pointer-events the instant state is closed
-        // makes the overlay non-blocking regardless of whether its exit
-        // animation ever completes -- purely defensive, no visible change
-        // in the normal case where the animation finishes in ~150ms.
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:pointer-events-none fixed inset-0 z-50 bg-black/50",
+        // R52 fix for R48_DIALOG_CLOSE_LEAK_01. THE R46 F_007 GUARD BELOW THIS
+        // LINE WAS INERT, AND SAYING SO MATTERS: the next auditor would
+        // otherwise read the old comment and mark this fault already
+        // mitigated. `data-[state=closed]:pointer-events-none` emits a
+        // specificity-(0,2,0) author rule, but Radix writes
+        // `pointer-events: auto` as an INLINE STYLE on this same node
+        // (@radix-ui/react-dialog dist/index.mjs:116, and
+        // react-dismissable-layer dist/index.mjs:145 for the content node).
+        // Inline beats any non-!important author rule, so the guard never
+        // took effect.
+        //
+        // ROOT CAUSE, which the guard was only ever papering over: Radix
+        // Presence unmounts this node immediately ONLY when the computed
+        // animation-name is `none`. With an exit animation present it goes to
+        // unmountSuspended and waits for `animationend` -- FOREVER, with no
+        // timeout fallback. One dropped frame (backgrounded or occluded tab)
+        // and the node is stranded permanently. That matters far beyond
+        // clicks: Radix wraps the overlay in RemoveScroll, which holds
+        // non-passive wheel/touchmove listeners that preventDefault and a
+        // refcounted `data-scroll-locked` attribute on <body>. Never
+        // unmounted means PAGE SCROLL IS DEAD until a reload -- which is
+        // exactly the reported symptom, and which no pointer-events guard
+        // could ever have fixed.
+        //
+        // THE FIX: drop the exit-animation utilities. With computed
+        // animation-name `none` on close, Presence takes its explicit
+        // immediate branch and the node, the RemoveScroll listeners and the
+        // body attribute all come down synchronously in the same commit.
+        // Cost is the ~150ms close fade. The OPEN path keeps its animation --
+        // it is not gated on anything.
+        //
+        // The pointer-events guard is kept as defence in depth and given `!`
+        // so it can actually beat the inline style if a node is ever stranded
+        // some other way.
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:!pointer-events-none fixed inset-0 z-50 bg-black/50",
         className
       )}
       {...props}
@@ -76,12 +94,12 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          // R46 F_007 fix: same defensive guard as DialogOverlay above --
-          // see the comment there for the full root-cause writeup. Without
-          // this, a stalled exit animation leaves a 512x356 interactive
-          // box (pointer-events:auto) centered on screen even after
-          // data-state is "closed".
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:pointer-events-none fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
+          // R52: same change as DialogOverlay above -- see that comment for
+          // the root cause. The exit animation is what stranded this node;
+          // the pointer-events guard alone was inert against Radix's inline
+          // style, and would not have released the scroll lock even if it
+          // had worked.
+          "bg-background data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:!pointer-events-none fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
           className
         )}
         {...props}
