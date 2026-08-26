@@ -24,7 +24,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, Banknote, Ban } from "lucide-react";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { LoadFailure } from "@/components/LoadFailure";
 
 type Invoice = { id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null; grandTotal: string; outstandingAmount: string; status: string };
