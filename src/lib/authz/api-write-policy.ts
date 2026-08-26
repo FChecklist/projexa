@@ -225,6 +225,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/timesheets/[id]/approve": "PM_OR_ABOVE",
   "/timesheets/[id]/reject": "PM_OR_ABOVE",
   "/timesheets/[id]/submit": "ANY_MEMBER",
+  // R52: the composer's submit target. Same class as /discuss and /todos --
+  // any member may ask the assistant to do something, and what they are
+  // ALLOWED to do is re-checked server-side at execution, per R53's rule that
+  // classification never authorizes. Listed explicitly because
+  // DEFAULT_WRITE_TIER is FIELD: without an entry an ordinary member would
+  // get a 403 submitting a task, which is a denial the design does not intend.
+  "/tasks": "ANY_MEMBER",
   "/todos": "ANY_MEMBER",
   "/todos/[id]": "ANY_MEMBER",
   "/vendor-risk": "ORG_ADMIN",

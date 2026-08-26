@@ -1,6 +1,7 @@
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import DashboardHomeView, { type OrgDashboard, type CurrencyRow, type RegistryColumn } from "@/components/DashboardHomeView";
+import ModuleDirectory from "@/components/shell/ModuleDirectory";
 
 // R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard"): same pattern as permits/page.tsx's
@@ -53,7 +54,25 @@ export default async function DashboardPage() {
   if (currencyResult.status === "fulfilled") {
     currencies = currencyResult.value.currencies ?? [];
   }
-  // else: non-fatal -- formatCurrency() falls back to "₹" if this list is empty.
+  // else: non-fatal. NOTE, corrected R52: this used to say formatCurrency()
+  // falls back to a rupee. It no longer does -- PR #156 removed that fallback
+  // because it was the DEFAULT RENDER, not a rare degradation path, and a UAE
+  // buyer saw rupees on the landing screen. An empty list now renders the
+  // deployment default (NEXT_PUBLIC_DEFAULT_CURRENCY_CODE=AED in production)
+  // or a bare number. Leaving the old comment would have told the next reader
+  // something false about live behaviour.
 
-  return <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} />;
+  // M24: HOME is the grouped module directory, and it is what REPLACES the
+  // deleted left rail. Rendered beneath the greeting/summary so a returning
+  // user still lands on their numbers first, while a new user -- who has none
+  // of the earned affordances (history, pinning, ranking) -- can still see
+  // every module the product has, grouped by domain.
+  return (
+    <div className="space-y-8 pb-4">
+      <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} />
+      <div className="px-6">
+        <ModuleDirectory />
+      </div>
+    </div>
+  );
 }
