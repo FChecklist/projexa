@@ -94,7 +94,7 @@ export default function VeriComposer() {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const [queue, setQueue] = useState<{ codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }[]>([]);
-  const textareaRef = useAutoGrowTextarea(value, 160);
+  const textareaRef = useAutoGrowTextarea(value, 96);
 
   const chainModes = tree.filter((n) => !FIXED_MODES.includes(n.key as never)).map((n) => n.key);
   const preseedKeyForMode = (mode: string): string | null => {
@@ -265,31 +265,21 @@ export default function VeriComposer() {
             : "Select an option above to begin…";
 
   return (
-    <div className="shrink-0 border-t border-px-border bg-white/95 backdrop-blur px-6 py-3">
+    <div className="shrink-0 px-3 pb-2 pt-1">
       <div className="w-full max-w-5xl mx-auto">
-        <div className="inline-flex flex-wrap gap-0.5 rounded-full bg-px-cloud p-1 mb-2">
-          {FIXED_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setComposerMode(m)}
-              className={`text-xs font-medium px-2.5 py-1.5 rounded-full whitespace-nowrap ${composerMode === m && !isThreadOpen ? "bg-white text-px-ink shadow-sm" : "text-px-muted"}`}
-            >
-              {FIXED_LABELS[m]}
-            </button>
-          ))}
-          {tree.filter((n) => !FIXED_MODES.includes(n.key as never)).map((n) => (
-            <button
-              key={n.key}
-              type="button"
-              onClick={() => setComposerMode(n.key)}
-              className={`text-xs font-medium px-2.5 py-1.5 rounded-full whitespace-nowrap ${composerMode === n.key && !isThreadOpen ? "bg-white text-px-ink shadow-sm" : "text-px-muted"}`}
-            >
-              {n.label}
-            </button>
-          ))}
-        </div>
-
+        {/* R52: THE MODE ROW WAS REMOVED HERE.
+            It rendered Discuss | Chats | To Do | Construction Intelligence as a
+            pill row directly beneath the M24 control strip, which already owns
+            Mode (Projects | Customers | Vendors). Two bands answering the same
+            question is the one thing M24's band rule forbids: "Five bands, each
+            answering exactly ONE question, NOTHING appearing twice. If a control
+            could plausibly live in two bands, THE MORE SPECIFIC ONE WINS."
+            Confirmed on the live shell 2026-08-26 before removing it.
+            composerMode still exists in state and every behaviour it drives is
+            untouched -- only the duplicate selector is gone. Mode selection now
+            happens once, on the strip, and what to DO is chosen from the kit's
+            ranked PillStrip in band 3. */}
+        
         {isChainMode && !isThreadOpen && (
           <div className="rounded-2xl border border-px-orange/30 bg-px-orange/5 px-4 py-2.5 mb-2">
             <div className="flex items-center justify-between mb-1">
