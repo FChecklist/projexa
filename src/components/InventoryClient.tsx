@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Warehouse, ArrowDownToLine } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 
 type WarehouseRow = { id: string; warehouseName: string; parentWarehouseId: string | null };
 type ItemRow = { id: string; itemCode: string; itemName: string; uom: string | null; hasBatchNo: boolean };
@@ -27,6 +30,10 @@ export default function InventoryClient() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
+  // Keyed by dataset, not a flat list: each tab panel has to be able to tell
+  // "this is genuinely empty" from "this call failed", so no panel can render
+  // an empty state where an error belongs.
+  const [loadErrors, setLoadErrors] = useState<{ warehouses?: string; items?: string; balances?: string }>({});
 
   const [whOpen, setWhOpen] = useState(false);
   const [whName, setWhName] = useState("");
@@ -48,39 +55,63 @@ export default function InventoryClient() {
 
   async function load() {
     setLoading(true);
-    try {
-      const [whRes, itemRes, balRes] = await Promise.all([
-        fetch("/api/inventory/warehouses"),
-        fetch("/api/inventory/items"),
-        fetch("/api/inventory/stock-balance"),
-      ]);
-      const [whData, itemData, balData] = await Promise.all([whRes.json(), itemRes.json(), balRes.json()]);
-      setWarehouses(whData.warehouses ?? []);
-      setItems(itemData.items ?? []);
-      setBalances(balData.balances ?? []);
-    } catch {
-      toast.error("Couldn't load inventory data");
-    } finally {
-      setLoading(false);
-    }
+    // allSettled, not all: one failing endpoint must not blank the other two.
+    // Each failure is reported in the backend's OWN words rather than being
+    // collapsed into a single generic toast that the user cannot act on.
+    const [wh, item, bal] = await Promise.allSettled([
+      fetchJson<{ warehouses?: WarehouseRow[] }>("/api/inventory/warehouses"),
+      fetchJson<{ items?: ItemRow[] }>("/api/inventory/items"),
+      fetchJson<{ balances?: Balance[] }>("/api/inventory/stock-balance"),
+    ]);
+
+    const errors: { warehouses?: string; items?: string; balances?: string } = {};
+    // Previously each of these read `await res.json()` with the status never
+    // checked, so a 5xx body parsed fine, `?? []` produced an empty array, and
+    // the page rendered "No stock on hand yet" / "No warehouses yet." -- the
+    // confident empty state recorded on A4S14_08. Reset on failure so stale
+    // rows can never be mistaken for fresh ones.
+    if (wh.status === "fulfilled") setWarehouses(wh.value.warehouses ?? []);
+    else { setWarehouses([]); errors.warehouses = errorMessage(wh.reason, "Warehouses"); }
+
+    if (item.status === "fulfilled") setItems(item.value.items ?? []);
+    else { setItems([]); errors.items = errorMessage(item.reason, "Items"); }
+
+    if (bal.status === "fulfilled") setBalances(bal.value.balances ?? []);
+    else { setBalances([]); errors.balances = errorMessage(bal.reason, "Stock balance"); }
+
+    setLoadErrors(errors);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
+
+  // What still blocks each primary action. PrimarySubmit disables the button on
+  // these and names the count, so the silent `return` guards below become
+  // unreachable by clicking -- which is what made these buttons look dead.
+  const whMissing = whName.trim() ? [] : ["Warehouse Name"];
+  const itemMissing = [
+    ...(itemCode.trim() ? [] : ["Item Code"]),
+    ...(itemName.trim() ? [] : ["Item Name"]),
+  ];
+  const entryMissing = [
+    ...(entryItemId ? [] : ["Item"]),
+    ...(entryWarehouseId ? [] : ["Warehouse"]),
+    ...(entryQty ? [] : ["Quantity"]),
+  ];
 
   async function createWarehouse() {
     if (!whName.trim()) return;
     setWhSubmitting(true);
     try {
-      const res = await fetch("/api/inventory/warehouses", {
+      await fetchJson("/api/inventory/warehouses", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ warehouseName: whName }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Warehouse added");
       setWhName(""); setWhOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't add warehouse");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't add warehouse"));
     } finally {
       setWhSubmitting(false);
     }
@@ -90,29 +121,25 @@ export default function InventoryClient() {
     if (!itemCode.trim() || !itemName.trim()) return;
     setItemSubmitting(true);
     try {
-      const res = await fetch("/api/inventory/items", {
+      await fetchJson("/api/inventory/items", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemCode, itemName, uom: itemUom || undefined }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Item added");
       setItemCode(""); setItemName(""); setItemUom(""); setItemOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't add item");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't add item"));
     } finally {
       setItemSubmitting(false);
     }
   }
 
   async function recordEntry() {
-    if (!entryItemId || !entryWarehouseId || !entryQty) {
-      toast.error("Item, warehouse, and quantity are required");
-      return;
-    }
+    if (!entryItemId || !entryWarehouseId || !entryQty) return;
     setEntrySubmitting(true);
     try {
-      const res = await fetch("/api/inventory/stock-entries", {
+      await fetchJson("/api/inventory/stock-entries", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: entryType, itemId: entryItemId, warehouseId: entryWarehouseId,
@@ -120,10 +147,6 @@ export default function InventoryClient() {
           postingDate: new Date().toISOString().slice(0, 10),
         }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed");
-      }
       toast.success(entryType === "receipt" ? "Stock receipt recorded" : "Stock issue recorded");
       setEntryQty(""); setEntryRate(""); setEntryOpen(false);
       load();
@@ -142,7 +165,11 @@ export default function InventoryClient() {
           <DialogContent>
             <DialogHeader><DialogTitle>New Warehouse</DialogTitle></DialogHeader>
             <div className="space-y-1.5"><Label>Warehouse Name</Label><Input value={whName} onChange={(e) => setWhName(e.target.value)} placeholder="e.g. Site Store - Block A" /></div>
-            <DialogFooter><Button onClick={createWarehouse} disabled={whSubmitting}>{whSubmitting ? "Adding…" : "Add Warehouse"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={whMissing} submitting={whSubmitting} submittingLabel="Adding…" onClick={createWarehouse}>
+                Add Warehouse
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
@@ -155,7 +182,11 @@ export default function InventoryClient() {
               <div className="space-y-1.5"><Label>Item Name</Label><Input value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="e.g. OPC 53 Grade Cement" /></div>
               <div className="space-y-1.5"><Label>Unit of Measure (optional)</Label><Input value={itemUom} onChange={(e) => setItemUom(e.target.value)} placeholder="e.g. Bag, Kg, Nos" /></div>
             </div>
-            <DialogFooter><Button onClick={createItem} disabled={itemSubmitting}>{itemSubmitting ? "Adding…" : "Add Item"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={itemMissing} submitting={itemSubmitting} submittingLabel="Adding…" onClick={createItem}>
+                Add Item
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
@@ -199,7 +230,11 @@ export default function InventoryClient() {
                 )}
               </div>
             </div>
-            <DialogFooter><Button onClick={recordEntry} disabled={entrySubmitting}>{entrySubmitting ? "Recording…" : "Record Movement"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={entryMissing} submitting={entrySubmitting} submittingLabel="Recording…" onClick={recordEntry}>
+                Record Movement
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -214,10 +249,15 @@ export default function InventoryClient() {
             <TabsTrigger value="items">Items</TabsTrigger>
           </TabsList>
 
+          {/* Rendered BELOW the tab strip on purpose: an alert above it would
+              push every tab down after load, which is the very defect
+              R48_LAYOUT_REFLOW_01 tracks. */}
+          <DataLoadError messages={Object.values(loadErrors).filter(Boolean) as string[]} onRetry={load} />
+
           <TabsContent value="balances">
             <Card className="shadow-card">
               <CardContent className="p-0">
-                {balances.length === 0 ? (
+                {loadErrors.balances ? null : balances.length === 0 ? (
                   <p className="py-10 text-center text-sm text-px-muted">No stock on hand yet. Record a receipt to get started.</p>
                 ) : (
                   <Table>
@@ -244,7 +284,7 @@ export default function InventoryClient() {
           <TabsContent value="warehouses">
             <Card className="shadow-card">
               <CardContent className="p-0">
-                {warehouses.length === 0 ? (
+                {loadErrors.warehouses ? null : warehouses.length === 0 ? (
                   <p className="py-10 text-center text-sm text-px-muted">No warehouses yet.</p>
                 ) : (
                   <Table>
@@ -263,7 +303,7 @@ export default function InventoryClient() {
           <TabsContent value="items">
             <Card className="shadow-card">
               <CardContent className="p-0">
-                {items.length === 0 ? (
+                {loadErrors.items ? null : items.length === 0 ? (
                   <p className="py-10 text-center text-sm text-px-muted">No items yet.</p>
                 ) : (
                   <Table>

@@ -27,6 +27,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -84,6 +87,7 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [name, setName] = useState("");
@@ -102,46 +106,58 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
 
   async function load() {
     setLoading(true);
-    try {
-      const [rosterRes, attRes, vendorsRes] = await Promise.all([
-        fetch(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/attendance?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/vendors`),
-      ]);
-      const rosterData = await rosterRes.json();
-      const attData = await attRes.json();
-      const vendorsData = await vendorsRes.json().catch(() => ({}));
-      setRoster(rosterData.roster ?? []);
-      setAttendance(attData.attendance ?? []);
-      setVendors(vendorsData.vendors ?? []);
-    } catch {
-      toast.error("Couldn't load manpower data");
-    } finally {
-      setLoading(false);
-    }
+    // allSettled: a failing vendors lookup must not blank the roster, and a
+    // failing roster must not be reported to the user as "no workers".
+    const [rosterR, attR, vendorsR] = await Promise.allSettled([
+      fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ attendance?: AttendanceEntry[] }>(`/api/attendance?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`),
+    ]);
+
+    const errors: { roster?: string; attendance?: string } = {};
+    if (rosterR.status === "fulfilled") setRoster(rosterR.value.roster ?? []);
+    else { setRoster([]); errors.roster = errorMessage(rosterR.reason, "Roster"); }
+
+    if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
+    else { setAttendance([]); errors.attendance = errorMessage(attR.reason, "Attendance"); }
+
+    // Vendors is a display-only lookup (company name); its failure degrades to
+    // an em-dash rather than to an alert.
+    setVendors(vendorsR.status === "fulfilled" ? (vendorsR.value.vendors ?? []) : []);
+
+    setLoadErrors(errors);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, [projectId]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
 
+  const rosterMissing = [
+    ...(name.trim() ? [] : ["Name"]),
+    ...(dailyRate ? [] : ["Daily Rate"]),
+  ];
+  const attMissing = [
+    ...(rosterId ? [] : ["Worker"]),
+    ...(attendanceDate ? [] : ["Date"]),
+  ];
+
   async function createRoster() {
     if (!name.trim() || !dailyRate) return;
     setRosterSubmitting(true);
     try {
-      const res = await fetch("/api/labour-roster", {
+      await fetchJson("/api/labour-roster", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, name, employeeCode: employeeCode || undefined, trade: trade || undefined,
           vendorId: vendorId || undefined, dailyRate: Number(dailyRate),
         }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Worker added to roster");
       setName(""); setEmployeeCode(""); setTrade(""); setVendorId(""); setDailyRate(""); setRosterOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't add worker");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't add worker"));
     } finally {
       setRosterSubmitting(false);
     }
@@ -151,19 +167,15 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
     if (!rosterId || !attendanceDate) return;
     setAttSubmitting(true);
     try {
-      const res = await fetch("/api/attendance", {
+      await fetchJson("/api/attendance", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
       toast.success("Attendance recorded");
       setHoursWorked(""); setAttOpen(false);
       load();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't record attendance");
+      toast.error(errorMessage(err, "Couldn't record attendance"));
     } finally {
       setAttSubmitting(false);
     }
@@ -197,7 +209,11 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
                 </div>
                 <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} /></div>
               </div>
-              <DialogFooter><Button onClick={createRoster} disabled={rosterSubmitting}>{rosterSubmitting ? "Adding…" : "Add Worker"}</Button></DialogFooter>
+              <DialogFooter>
+                <PrimarySubmit missing={rosterMissing} submitting={rosterSubmitting} submittingLabel="Adding…" onClick={createRoster}>
+                  Add Worker
+                </PrimarySubmit>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -205,6 +221,8 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
           <CardContent className="p-0">
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : loadErrors.roster ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={load} /></div>
             ) : roster.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
             ) : (
@@ -259,7 +277,11 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
                 </div>
                 <div className="space-y-1.5"><Label>Hours Worked (optional)</Label><Input type="number" value={hoursWorked} onChange={(e) => setHoursWorked(e.target.value)} /></div>
               </div>
-              <DialogFooter><Button onClick={createAttendance} disabled={attSubmitting}>{attSubmitting ? "Saving…" : "Record"}</Button></DialogFooter>
+              <DialogFooter>
+                <PrimarySubmit missing={attMissing} submitting={attSubmitting} submittingLabel="Saving…" onClick={createAttendance}>
+                  Record
+                </PrimarySubmit>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -267,6 +289,8 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
           <CardContent className="p-0">
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : loadErrors.attendance ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={load} /></div>
             ) : attendance.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No attendance recorded yet.</p>
             ) : (

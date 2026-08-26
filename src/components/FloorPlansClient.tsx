@@ -10,12 +10,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus, LayoutPanelLeft, Box } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 
 type FloorPlan = { id: string; name: string; floorLevel: string | null; status: string };
 
 export default function FloorPlansClient({ projectId }: { projectId: string }) {
   const [plans, setPlans] = useState<FloorPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [floorLevel, setFloorLevel] = useState("");
@@ -24,11 +28,19 @@ export default function FloorPlansClient({ projectId }: { projectId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/floor-plans?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      // fetchJson reads the STATUS before the body. The previous
+      // `await res.json()` + `?? []` turned a failing VERIDIAN proxy into
+      // "No floor plans yet." -- the exact confident-empty-state recorded on
+      // A4S14_03/A4S14_02 as "the list is always empty".
+      const data = await fetchJson<{ floorPlans?: FloorPlan[] }>(
+        `/api/floor-plans?projectId=${encodeURIComponent(projectId)}`
+      );
       setPlans(data.floorPlans ?? []);
-    } catch {
-      toast.error("Couldn't load floor plans");
+      setLoadError(null);
+    } catch (err) {
+      // Keep the backend's own words; never replace them with a generic line.
+      setLoadError(errorMessage(err, "Couldn't load floor plans"));
+      setPlans([]);
     } finally {
       setLoading(false);
     }
@@ -36,20 +48,24 @@ export default function FloorPlansClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
+  // The single source of truth for what still blocks Create. PrimarySubmit
+  // disables the button on this and shows the count, so the silent guard
+  // inside createPlan() is no longer reachable by clicking.
+  const missing = name.trim() ? [] : ["Name"];
+
   async function createPlan() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/floor-plans", {
+      await fetchJson("/api/floor-plans", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, name, floorLevel: floorLevel || undefined }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Floor plan created");
       setName(""); setFloorLevel(""); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create floor plan");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create floor plan"));
     } finally {
       setSubmitting(false);
     }
@@ -68,12 +84,19 @@ export default function FloorPlansClient({ projectId }: { projectId: string }) {
               <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Living + Dining Layout" /></div>
               <div className="space-y-1.5"><Label>Floor Level (optional)</Label><Input value={floorLevel} onChange={(e) => setFloorLevel(e.target.value)} placeholder="e.g. Ground Floor" /></div>
             </div>
-            <DialogFooter><Button onClick={createPlan} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={missing} submitting={submitting} submittingLabel="Creating…" onClick={createPlan}>
+                Create
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      {plans.length === 0 ? (
+      {/* Below the create control, never above it -- see DataLoadError. */}
+      {loadError && <DataLoadError messages={[loadError]} onRetry={load} />}
+
+      {loadError ? null : plans.length === 0 ? (
         <Card><CardContent className="p-10 text-center text-sm text-px-muted">No floor plans yet.</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

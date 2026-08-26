@@ -10,6 +10,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import PrimarySubmit from "@/components/PrimarySubmit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,6 +51,7 @@ function InvoicesPanel() {
   const currencies = useCurrencies();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -75,12 +79,17 @@ function InvoicesPanel() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: "25" });
       if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await fetch(`/api/sales-invoices?${params.toString()}`);
-      const data = await res.json();
+      // Status read before body -- the old `await res.json()` turned a failing
+      // upstream into "No invoices found." (A4S14_10's empty invoice table).
+      const data = await fetchJson<{ salesInvoices?: Invoice[]; totalPages?: number }>(
+        `/api/sales-invoices?${params.toString()}`
+      );
       setInvoices(data.salesInvoices ?? []);
       setTotalPages(data.totalPages ?? 1);
-    } catch {
-      toast.error("Couldn't load invoices");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load invoices"));
+      setInvoices([]);
     } finally {
       setLoading(false);
     }
@@ -89,12 +98,14 @@ function InvoicesPanel() {
 
   async function loadLookups() {
     try {
-      const [custRes, acctRes] = await Promise.all([fetch("/api/customers"), fetch("/api/accounts")]);
-      const [custData, acctData] = await Promise.all([custRes.json(), acctRes.json()]);
+      const [custData, acctData] = await Promise.all([
+        fetchJson<{ customers?: Customer[] }>("/api/customers"),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts"),
+      ]);
       setCustomers(custData.customers ?? []);
       setAccounts(acctData.accounts ?? []);
-    } catch {
-      toast.error("Couldn't load customers / accounts from VERIDIAN");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load customers / accounts from VERIDIAN"));
     }
   }
 
@@ -103,6 +114,15 @@ function InvoicesPanel() {
     if (next && customers.length === 0) loadLookups();
   }
 
+  // What still blocks Create. Drives the disabled state AND the count shown
+  // beside the button, so the silent guards below cannot be reached by a click.
+  const createMissing = [
+    ...(customerId ? [] : ["Customer"]),
+    ...(customerId === NEW_CUSTOMER && !newCustomerName.trim() ? ["New customer name"] : []),
+    ...(description.trim() ? [] : ["Description"]),
+    ...(rate ? [] : ["Rate"]),
+  ];
+
   async function createInvoice() {
     if (!description.trim() || !rate) return;
     if (!customerId || (customerId === NEW_CUSTOMER && !newCustomerName.trim())) return;
@@ -110,20 +130,21 @@ function InvoicesPanel() {
     try {
       let resolvedCustomerId = customerId;
       if (customerId === NEW_CUSTOMER) {
-        const res = await fetch("/api/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerName: newCustomerName }) });
-        if (!res.ok) throw new Error();
-        resolvedCustomerId = (await res.json()).id;
+        const created = await fetchJson<{ id: string }>("/api/customers", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customerName: newCustomerName }),
+        });
+        resolvedCustomerId = created.id;
       }
-      const res = await fetch("/api/sales-invoices", {
+      await fetchJson("/api/sales-invoices", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customerId: resolvedCustomerId, postingDate, items: [{ description, quantity: Number(quantity), rate: Number(rate) }] }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Invoice created");
       setCustomerId(""); setNewCustomerName(""); setDescription(""); setQuantity("1"); setRate(""); setCreateOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create invoice");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create invoice"));
     } finally {
       setSubmitting(false);
     }
@@ -139,11 +160,10 @@ function InvoicesPanel() {
     if (!paymentInvoice || !paymentAmount || !paymentAccountId) return;
     setPaymentSubmitting(true);
     try {
-      const res = await fetch(`/api/sales-invoices/${paymentInvoice.id}/payments`, {
+      await fetchJson(`/api/sales-invoices/${paymentInvoice.id}/payments`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(paymentAmount), bankOrCashAccountId: paymentAccountId, postingDate: paymentDate }),
       });
-      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
       toast.success("Payment recorded");
       setPaymentInvoice(null); setPaymentAmount(""); setPaymentAccountId("");
       load();
@@ -156,8 +176,7 @@ function InvoicesPanel() {
 
   async function cancelInvoice(id: string) {
     try {
-      const res = await fetch(`/api/sales-invoices/${id}/cancel`, { method: "POST" });
-      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
+      await fetchJson(`/api/sales-invoices/${id}/cancel`, { method: "POST" });
       toast.success("Invoice cancelled");
       load();
     } catch (err) {
@@ -198,7 +217,11 @@ function InvoicesPanel() {
                 <div className="space-y-1.5"><Label>Rate</Label><Input type="number" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
               </div>
             </div>
-            <DialogFooter><Button onClick={createInvoice} disabled={submitting}>{submitting ? "Creating…" : "Create Invoice"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={createMissing} submitting={submitting} submittingLabel="Creating…" onClick={createInvoice}>
+                Create Invoice
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -207,6 +230,9 @@ function InvoicesPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            // Never an empty table where an error belongs.
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : invoices.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No invoices found.</p>
           ) : (
@@ -275,6 +301,7 @@ function CreditNotesPanel() {
   const currencies = useCurrencies();
   const [notes, setNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -286,11 +313,12 @@ function CreditNotesPanel() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/credit-notes");
-      const data = await res.json();
+      const data = await fetchJson<{ creditNotes?: CreditNote[] }>("/api/credit-notes");
       setNotes(data.creditNotes ?? []);
-    } catch {
-      toast.error("Couldn't load credit notes");
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load credit notes"));
+      setNotes([]);
     } finally {
       setLoading(false);
     }
@@ -301,32 +329,36 @@ function CreditNotesPanel() {
     setOpen(next);
     if (!next || invoices.length > 0) return;
     try {
-      const res = await fetch("/api/sales-invoices?limit=100");
-      const data = await res.json();
+      const data = await fetchJson<{ salesInvoices?: Invoice[] }>("/api/sales-invoices?limit=100");
       setInvoices(data.salesInvoices ?? []);
-    } catch {
-      toast.error("Couldn't load invoices to link");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load invoices to link"));
     }
   }
+
+  const noteMissing = [
+    ...(invoices.find((i) => i.id === salesInvoiceId) ? [] : ["Invoice"]),
+    ...(description.trim() ? [] : ["Description"]),
+    ...(amount ? [] : ["Amount"]),
+  ];
 
   async function createNote() {
     const invoice = invoices.find((i) => i.id === salesInvoiceId);
     if (!invoice || !description.trim() || !amount) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/credit-notes", {
+      await fetchJson("/api/credit-notes", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: invoice.customerId, salesInvoiceId: invoice.id, postingDate: new Date().toISOString().slice(0, 10),
           reason: reason || undefined, items: [{ description, quantity: 1, rate: Number(amount) }],
         }),
       });
-      if (!res.ok) throw new Error();
       toast.success("Credit note created");
       setSalesInvoiceId(""); setReason(""); setDescription(""); setAmount(""); setOpen(false);
       load();
-    } catch {
-      toast.error("Couldn't create credit note");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't create credit note"));
     } finally {
       setSubmitting(false);
     }
@@ -351,7 +383,11 @@ function CreditNotesPanel() {
               <div className="space-y-1.5"><Label>Description</Label><Input value={description} onChange={(e) => setDescription(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>Amount</Label><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
             </div>
-            <DialogFooter><Button onClick={createNote} disabled={submitting}>{submitting ? "Creating…" : "Create Credit Note"}</Button></DialogFooter>
+            <DialogFooter>
+              <PrimarySubmit missing={noteMissing} submitting={submitting} submittingLabel="Creating…" onClick={createNote}>
+                Create Credit Note
+              </PrimarySubmit>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -359,6 +395,8 @@ function CreditNotesPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={load} /></div>
           ) : notes.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No credit notes yet.</p>
           ) : (
