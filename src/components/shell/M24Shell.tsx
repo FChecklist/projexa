@@ -135,6 +135,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
   const [waiting, setWaiting] = useState<TaskRow[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  // What the SHELL itself could not load, separate from the task read.
+  const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
   // R53's PILL PATH: { functionId, params } -- no classifier, no model call
   // ever. When null, the typed path { rawInput } is used and the server
@@ -178,29 +180,55 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // em-dash on the live shell. /api/organization returns
   // { organization, role, email } -- the name is one level down. Confirmed
   // against src/app/api/organization/route.ts:26 rather than guessed.
+  //
+  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01. Reading the status was
+  // only half the job. `if (!res.ok) return;` reads it and then DROPS it, so
+  // these two failures were invisible on every screen in the product -- the
+  // task read beside them already reports itself (tasksError, below), but a
+  // failed org or projects read said nothing at all. The user could not tell
+  // the shell was degraded, and the top rail simply rendered an em-dash for
+  // the organisation and an empty project switcher as if that were the answer.
+  //
+  // Now recorded with the backend's OWN message and shown in the Task Master
+  // pane alongside tasksError, which is the one place in the shell that
+  // already owns "something did not load".
+  const noteFailure = useCallback((what: string, detail: string) => {
+    setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
+  }, []);
+
   useEffect(() => {
     let live = true;
     (async () => {
       try {
         const res = await fetch("/api/organization");
-        if (!res.ok) return;
-        const d = (await res.json()) as OrgInfo;
+        const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
+        if (!res.ok) {
+          if (live) noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
+          return;
+        }
         if (live && d?.organization?.name) setInfo(d);
-      } catch {}
+      } catch (err) {
+        if (live) noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
+      }
     })();
     (async () => {
       try {
         const res = await fetch("/api/projects");
-        if (!res.ok) return;
-        const d = await res.json();
+        const d = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (live) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
+          return;
+        }
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
         if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-      } catch {}
+      } catch (err) {
+        if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
+      }
     })();
     return () => {
       live = false;
     };
-  }, []);
+  }, [noteFailure]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
@@ -435,7 +463,32 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
       taskMaster={
-        tasksError ? (
+        <div className="flex h-full min-h-0 flex-col">
+          {/* R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01: the org and
+              projects reads fail silently. This pane is where the shell
+              already admits a failure, so it is where the other two belong --
+              rather than the user being reassured by a Task Master sitting on
+              top of two unreported backend errors. */}
+          {shellErrors.length > 0 && (
+            <div
+              role="status"
+              className="m-2 shrink-0 rounded-lg border p-3 text-[12px]"
+              style={{ borderColor: "var(--color-ct-border)" }}
+            >
+              <p className="font-semibold" style={{ color: "var(--color-veri-status-late)" }}>
+                This panel is showing less than it should.
+              </p>
+              <ul className="mt-1 space-y-0.5" style={{ color: "var(--color-ct-muted)" }}>
+                {shellErrors.map((e) => (
+                  <li key={e.what}>
+                    Couldn&apos;t load {e.what}: {e.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
+        {tasksError ? (
           // Never an empty list in place of an error -- that is the exact
           // defect this codebase has shipped repeatedly, and it makes a broken
           // backend indistinguishable from "you have nothing to do". The
@@ -463,7 +516,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           waitingOnOthers={waiting}
           onLoad={onLoadChain}
         />
-        )
+        )}
+          </div>
+        </div>
       }
       composer={
         <Composer
