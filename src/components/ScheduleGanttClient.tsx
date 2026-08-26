@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
 import "@svar-ui/react-gantt/all.css";
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -123,13 +124,16 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
 
   const criticalCount = tasks.filter((t) => t.isCritical).length;
 
+  // F_018: these dates used to be fabricated -- a null startDate became
+  // `new Date()` (today), and the `duration: 1` that came with it made SVAR
+  // overwrite the real dueDate with start+1 day (tomorrow). See
+  // src/lib/gantt-task-dates.ts for the mechanism and the oracle test.
+  // Nothing here may invent a value the API did not send.
   const ganttTasks = [
     ...tasks.map((t) => ({
       id: t.id,
       text: t.title,
-      start: t.startDate ? new Date(t.startDate) : new Date(),
-      end: t.dueDate ? new Date(t.dueDate) : new Date(),
-      duration: t.startDate && t.dueDate ? undefined : 1,
+      ...toGanttDateFields(t.startDate, t.dueDate),
       progress: t.completionPercentage,
       type: "task" as const,
     })),
@@ -152,10 +156,23 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
     lag: d.lagDays,
   }));
 
+  // F_018 again, from the other side: the Start/Due CELLS read the original
+  // API values, not SVAR's normalised copy of them. Whatever a chart library
+  // does internally to position a bar, the text a user reads is the real
+  // recorded date -- and an unset one is an em-dash, never a guess.
+  const scheduleDateCell = (field: "startDate" | "dueDate") => (props: any) => {
+    const task = tasks.find((t) => t.id === String(props.row?.id));
+    if (!task) return null;
+    const value = task[field];
+    return value
+      ? <span className="text-xs">{displayScheduleDate(value)}</span>
+      : <span className="text-xs text-px-muted" title="Not scheduled">{EMPTY_DATE_CELL}</span>;
+  };
+
   const columns = [
     { id: "text", header: columnLabel(labelColumns, "task", "Task"), flexGrow: 2 },
-    { id: "start", header: columnLabel(labelColumns, "start", "Start"), width: 100 },
-    { id: "end", header: columnLabel(labelColumns, "due", "Due"), width: 100 },
+    { id: "start", header: columnLabel(labelColumns, "start", "Start"), width: 100, cell: scheduleDateCell("startDate") },
+    { id: "end", header: columnLabel(labelColumns, "due", "Due"), width: 100, cell: scheduleDateCell("dueDate") },
     {
       id: "critical", header: columnLabel(labelColumns, "critical", "Critical Path"), width: 110,
       // SVAR's ICellProps["row"] (IRow) doesn't publicly expose an `id`
