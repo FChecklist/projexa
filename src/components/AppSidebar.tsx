@@ -12,6 +12,7 @@ import {
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
+import { filterShippedNav } from "@/lib/nav-routes";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Suspense, useEffect, useState } from "react";
@@ -134,6 +135,29 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// R-80/R-81 ("ONE full pill path works end to end" / "NO visible pill may be
+// unwired -- HIDE, do not wire"). The single gate every sidebar pill passes
+// through: an entry whose href has no matching src/app/**/page.tsx is dropped
+// here, and a section left empty by that drop is dropped with it. Filtering
+// the DATA once at module scope (rather than adding a condition to the render
+// path) means there is exactly one place a reviewer has to look to know what
+// the sidebar can possibly show, and no code path that can bypass it.
+//
+// Nothing is deleted by this: an entry that disappears is hidden, not removed
+// from NAV_SECTIONS above, and it comes back by itself the moment its page
+// ships. See src/lib/nav-routes.ts for the shipped-route registry and the
+// test that keeps that registry honest against the real filesystem.
+//
+// MEASURED as of 2026-08-26: NAV_SECTIONS declares 46 entries (three
+// independent counts agreed -- 46 `href:` keys, 46 `labelKey:` keys, and 46
+// Nav.items keys in messages/en.json), and all 46 resolve to a real page, so
+// this filter currently hides 0 of 46. It is a standing guard against the
+// next unwired entry, not a mass cull -- the honest finding is that PROJEXA's
+// SIDEBAR was never the source of the unwired-pill risk (see
+// veri-chat-context.tsx's fetchCapabilityTree for where that risk actually
+// lives).
+const VISIBLE_NAV_SECTIONS: NavSection[] = filterShippedNav(NAV_SECTIONS);
+
 // veridian-ui-kit migration: the shared AppSidebar component owns only the
 // generic nav-sections shell/style (logo row + scrollable section list, per
 // that package's own README scope boundary) -- PROJEXA's real nav DATA
@@ -161,7 +185,7 @@ function SidebarIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: s
 
 function buildSharedSections(t: ReturnType<typeof useTranslations>, projectId: string | null): SharedNavSection[] {
   const suffix = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-  return NAV_SECTIONS.map((section) => ({
+  return VISIBLE_NAV_SECTIONS.map((section) => ({
     label: section.titleKey ? t(section.titleKey) : undefined,
     items: section.items.map((item) => toSharedItem(item.href + suffix, t(item.labelKey), item.icon)),
   }));
