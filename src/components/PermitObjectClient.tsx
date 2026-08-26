@@ -44,7 +44,6 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const valuesRef = useRef(values);
   useEffect(() => {
     valuesRef.current = values;
@@ -90,7 +89,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       setValues(draftRes.draft.payload ?? {});
       setMode("edit");
     } else {
-      setValues(permitBody as Record<string, unknown>);
+      setValues(permitRes as unknown as Record<string, unknown>);
     }
   }
 
