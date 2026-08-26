@@ -33,9 +33,22 @@ export type OrgDashboard = {
 // Intl.NumberFormat(..., { currency: "INR" }), forcing both symbol and
 // grouping to India regardless of the org's real base currency.
 export type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+// R51 (R-62): the fallback was the literal "₹". This component IS the
+// landing screen, so that constant was the single most visible instance of
+// the bug -- a UAE buyer's first view of the product showed rupees whenever
+// the currencies list was empty, which for an org with no erp_currencies
+// base row (4 of 5 real orgs, measured 2026-08-26) is permanently. Same
+// rule as @/lib/currency: never render a currency token we cannot source.
+// The value is duplicated rather than imported because that module is
+// "use client" and this is a Server Component -- see the note above; the
+// two must be kept in step.
+const CURRENCY_FALLBACK_LABEL = (() => {
+  const code = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY_CODE ?? "").trim();
+  return code ? `${code} ` : "";
+})();
 function currencyLabel(currencies: CurrencyRow[]): string {
   const c = currencies.find((c) => c.isBaseCurrency);
-  return c ? `${c.code} ` : "₹";
+  return c ? `${c.code} ` : CURRENCY_FALLBACK_LABEL;
 }
 function formatCurrency(n: number, currencies: CurrencyRow[]) {
   return `${currencyLabel(currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
