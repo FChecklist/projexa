@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,16 +43,25 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
   const [lastResult, setLastResult] = useState<{ tool: Tool; result: unknown } | null>(null);
   const [history, setHistory] = useState<QueryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
+  // R52 / A4S14_copilot_01 (the load half). runTool below already reads res.ok
+  // and surfaces the backend's own message, so a 504 on a "Run" card is
+  // reported honestly -- that part of the recorded fault no longer holds. This
+  // function did not: res.ok was unread, so a failed GET /api/assistant became
+  // `data.queries === undefined`, `?? []` made it an empty array, and the
+  // Recent Construction Queries list rendered as "none" instead of "failed".
   async function loadHistory() {
     setHistoryLoading(true);
+    setHistoryError(null);
     try {
-      const res = await fetch("/api/assistant");
-      const data = await res.json();
-      const rows: QueryRow[] = (data.queries ?? []).filter((q: QueryRow) => CONSTRUCTION_REFS.has(q.code_reference));
-      setHistory(rows);
-    } catch {
-      toast.error("Couldn't load Copilot history");
+      const data = await fetchJson<{ queries?: QueryRow[] }>("/api/assistant");
+      setHistory((data.queries ?? []).filter((q) => CONSTRUCTION_REFS.has(q.code_reference)));
+    } catch (err) {
+      const message = errorMessage(err, "Couldn't load Copilot history");
+      setHistory([]);
+      setHistoryError(message);
+      toast.error(message);
     } finally {
       setHistoryLoading(false);
     }
@@ -128,6 +138,11 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
         <CardContent>
           {historyLoading ? (
             <div className="grid h-20 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : historyError ? (
+            <div className="space-y-2 py-6 text-center">
+              <p role="alert" className="text-sm text-px-error">{historyError}</p>
+              <Button size="sm" variant="outline" onClick={() => loadHistory()}>Retry</Button>
+            </div>
           ) : history.length === 0 ? (
             <p className="py-6 text-center text-sm text-px-muted">No construction Copilot queries yet — run one above.</p>
           ) : (

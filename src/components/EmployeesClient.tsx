@@ -15,6 +15,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, Check, X, Users, Building2, Network } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 // Priority 17 remaining gap (2026-07-15): employee_profiles/leave_requests
 // gained a companyId column (were orgId-only before this wave) -- reuses
 // the exact selector AccountingClient.tsx/LeadsClient.tsx already use, not
@@ -50,6 +51,15 @@ type Department = { id: string; name: string; description: string | null; headNa
 type OrgChartNode = Employee;
 type OrgChart = { employees: OrgChartNode[]; roots: OrgChartNode[]; byManager: Record<string, OrgChartNode[]> };
 
+// The render path indexes into `roots` and `byManager` directly, so anything
+// that is not actually that shape must become null before it is stored --
+// see the comment on load() for the crash this prevents.
+function isOrgChart(value: unknown): value is OrgChart {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<OrgChart>;
+  return Array.isArray(candidate.roots) && !!candidate.byManager && typeof candidate.byManager === "object";
+}
+
 type LeaveRequest = {
   id: string;
   userId: string;
@@ -76,6 +86,9 @@ export default function EmployeesClient() {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState(true);
+  // C19 ERROR_TRUTHFUL: what failed has to be visible, not inferred from a
+  // blank tab. One entry per endpoint that did not answer.
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
 
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [leaveStatusFilter, setLeaveStatusFilter] = useState<string>("pending");
@@ -125,34 +138,57 @@ export default function EmployeesClient() {
   const [balTotalDays, setBalTotalDays] = useState("");
   const [balanceSubmitting, setBalanceSubmitting] = useState(false);
 
+  // R52 / R48_EMPLOYEES_PAGE_CLIENT_CRASH_01. This whole route rendered
+  // nothing at all -- 0 <main> elements, body text "This page couldn't load",
+  // an unhandled TypeError "Cannot read properties of undefined (reading
+  // 'length')" on five consecutive loads.
+  //
+  // The cause was one line: setOrgChart(chartData) stored the response body
+  // WITHOUT reading res.ok. GET /api/hr/org-chart answers a VERIDIAN failure
+  // with { error: "..." } and a real status (src/app/api/hr/org-chart/route.ts:12).
+  // That body parses fine and is truthy, so `!orgChart` below did not catch it,
+  // and `orgChart.roots.length` read .length off undefined. Note it crashed on
+  // the Directory tab too: the Org Chart tab's JSX expression is evaluated
+  // eagerly here in this component's render to build TabsContent's children,
+  // long before Radix decides which tab to mount.
+  //
+  // Two changes, both needed. (1) fetchJson reads the status first and throws
+  // the backend's own message, so an error can never be mistaken for data.
+  // (2) allSettled, not all -- one 502 must not blank the other four tabs, and
+  // whatever DID load still renders beside an honest banner naming what didn't.
   async function load() {
     setLoading(true);
-    try {
-      const [empRes, deptRes, chartRes, leaveRes, balRes, companiesRes] = await Promise.all([
-        fetch("/api/employees"),
-        fetch("/api/hr/departments"),
-        fetch("/api/hr/org-chart"),
-        fetch("/api/leave/requests"),
-        fetch("/api/leave/balances"),
-        fetch("/api/companies"),
-      ]);
-      const empData = await empRes.json();
-      const deptData = await deptRes.json();
-      const chartData = await chartRes.json();
-      const leaveData = await leaveRes.json();
-      const balData = await balRes.json();
-      const companiesData = await companiesRes.json().catch(() => ({}));
-      setEmployees(empData.employees ?? []);
-      setDepartments(deptData.departments ?? []);
-      setOrgChart(chartData);
-      setLeaveRequests(leaveData.requests ?? []);
-      setLeaveBalances(balData.balances ?? []);
-      setCompanies(companiesData.companies ?? []);
-    } catch {
-      toast.error("Couldn't load HR data");
-    } finally {
-      setLoading(false);
+    setLoadErrors([]);
+    const [empRes, deptRes, chartRes, leaveRes, balRes, companiesRes] = await Promise.allSettled([
+      fetchJson<{ employees?: Employee[] }>("/api/employees"),
+      fetchJson<{ departments?: Department[] }>("/api/hr/departments"),
+      fetchJson<unknown>("/api/hr/org-chart"),
+      fetchJson<{ requests?: LeaveRequest[] }>("/api/leave/requests"),
+      fetchJson<{ balances?: LeaveBalance[] }>("/api/leave/balances"),
+      fetchJson<{ companies?: Company[] }>("/api/companies"),
+    ]);
+
+    const failures: string[] = [];
+    function value<T>(result: PromiseSettledResult<T>, what: string): T | null {
+      if (result.status === "fulfilled") return result.value;
+      failures.push(errorMessage(result.reason, what));
+      return null;
     }
+
+    setEmployees(value(empRes, "Employees")?.employees ?? []);
+    setDepartments(value(deptRes, "Departments")?.departments ?? []);
+    // Shape-checked, not just status-checked: a 200 that does not carry the
+    // roots/byManager arrays this component indexes into is equally unusable,
+    // and null is the state the render path is already written to handle.
+    const chart = value(chartRes, "Org chart");
+    setOrgChart(isOrgChart(chart) ? chart : null);
+    setLeaveRequests(value(leaveRes, "Leave requests")?.requests ?? []);
+    setLeaveBalances(value(balRes, "Leave balances")?.balances ?? []);
+    setCompanies(value(companiesRes, "Companies")?.companies ?? []);
+
+    setLoadErrors(failures);
+    if (failures.length > 0) toast.error(failures[0]);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -376,6 +412,17 @@ export default function EmployeesClient() {
 
   return (
     <Tabs defaultValue="directory" className="space-y-4">
+      {loadErrors.length > 0 && (
+        <Card role="alert" className="border-px-error-border bg-px-error-light">
+          <CardContent className="space-y-2 p-4 text-sm text-px-error">
+            <p className="font-medium">Some HR data could not be loaded. What is shown below is incomplete.</p>
+            <ul className="list-disc space-y-0.5 pl-5">
+              {loadErrors.map((message) => <li key={message}>{message}</li>)}
+            </ul>
+            <Button size="sm" variant="outline" onClick={() => load()}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
       <TabsList>
         <TabsTrigger value="directory"><Users className="size-4" /> Directory</TabsTrigger>
         <TabsTrigger value="departments"><Building2 className="size-4" /> Departments</TabsTrigger>

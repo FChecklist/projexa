@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Permit = {
   id: string;
@@ -32,6 +33,7 @@ const OPTIONAL_COLUMNS: ScreenColumn[] = [{ label: "Notes", field: "notes", type
 export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const router = useRouter();
   const [permit, setPermit] = useState<Permit | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -42,15 +44,40 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     valuesRef.current = values;
   }, [values]);
 
+  // R52 / F_011 partial. The recorded diagnosis for this route blamed the kit's
+  // ObjectScreen/FormSection click-handler attachment. Reading the kit source,
+  // that does not hold: Edit and Back are plain React onClick handlers
+  // (veridian-ui-kit/src/screens/ObjectScreen.tsx:107-108 and :136-137), and
+  // this file wires real functions into both. Whether the three controls are
+  // live still needs an authenticated click to settle.
+  //
+  // What IS wrong here and is fixed below: res.ok was never read. GET
+  // /api/permits/[id] answers a failure with { error: "..." }, and that body
+  // was stored as the permit. It is truthy, so the `!permit` guard passed it
+  // through and the page rendered a permit-shaped screen out of an error --
+  // titled "New Permit" (permit.name undefined), with Back pointing at
+  // /permits?projectId=undefined. Same defect as A4S14_04/A4S14_05.
   async function load() {
-    const permitRes = await fetch(`/api/permits/${permitId}`).then((r) => r.json());
+    let permitRes: Permit;
+    try {
+      permitRes = await fetchJson<Permit>(`/api/permits/${permitId}`);
+    } catch (err) {
+      setPermit(null);
+      setLoadError(errorMessage(err, "Couldn't load this permit"));
+      return;
+    }
+    setLoadError(null);
     setPermit(permitRes);
 
     // Resume a draft left from a previous session -- proves "draft survives
     // ... AND reload the page" (R42 seq21 oracle): a page reload remounts
     // this component from scratch, and this fetch is the only thing telling
     // it a draft exists server-side.
-    const draftRes = await fetch(`/api/screen-drafts?functionId=permits.object&objectId=${permitId}`).then((r) => r.json());
+    // A failed draft lookup must not decide the screen's mode. Treat it as
+    // "no draft" -- the permit itself already loaded and is still viewable.
+    const draftRes = await fetchJson<{ draft?: { id: string; payload?: Record<string, unknown> } }>(
+      `/api/screen-drafts?functionId=permits.object&objectId=${permitId}`
+    ).catch(() => ({ draft: undefined }));
     if (draftRes.draft) {
       setDraftId(draftRes.draft.id);
       setHasDraft(true);
@@ -121,6 +148,15 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     setValues(permit ?? {});
   }
 
+  // "Loading" forever is its own lie. Once the load has failed, say so.
+  if (loadError) {
+    return (
+      <div className="space-y-3 p-6">
+        <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
+        <button type="button" onClick={() => load()} className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px]">Retry</button>
+      </div>
+    );
+  }
   if (!permit) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
   // R42 seq23 live-user finding: Save was clickable with required fields
