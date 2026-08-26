@@ -4,10 +4,10 @@ import ProcurementClient from "@/components/ProcurementClient";
 export default function ProcurementPage() {
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Procurement" />
         <ProcurementClient />
-      </main>
+      </div>
     </>
   );
 }

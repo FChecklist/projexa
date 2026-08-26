@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type Vendor = {
   id: string; vendorName: string; vendorType: string | null; gst: string | null;
@@ -26,6 +28,7 @@ export default function VendorsClient() {
   const { isIndiaOrg } = useOrgRole();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [vendorName, setVendorName] = useState("");
   const [vendorType, setVendorType] = useState("");
@@ -34,14 +37,23 @@ export default function VendorsClient() {
   const [creditLimit, setCreditLimit] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R52 Gate 2 / R48_VENDORS_500_RENDERED_AS_EMPTY_STATE_01, confirmed verbatim
+  // in this file: GET /api/vendors 500s, res.ok is never read, the error body
+  // parses, data.vendors is undefined, `?? []` empties the list, and the screen
+  // states a FACT the app cannot know -- "No vendors added yet." -- with no
+  // banner, no toast and (because catch only fires on network/parse failures)
+  // nothing in the console either.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch("/api/vendors");
-      const data = await res.json();
+      const data = await fetchJson<{ vendors?: Vendor[] }>("/api/vendors");
       setVendors(data.vendors ?? []);
-    } catch {
-      toast.error("Couldn't load vendors");
+    } catch (err) {
+      setVendors([]);
+      const msg = errorMessage(err, "Couldn't load vendors");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -100,6 +112,10 @@ export default function VendorsClient() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            /* Error BEFORE empty. The empty state states a fact about the
+               user's data and may only be shown when the read succeeded. */
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
           ) : vendors.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No vendors added yet.</p>
           ) : (

@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type FfeItem = {
   id: string; itemName: string; roomOrArea: string | null; category: string; quantity: number;
@@ -35,6 +37,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState("");
   const [roomOrArea, setRoomOrArea] = useState("");
@@ -47,22 +50,34 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [heightCm, setHeightCm] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R52 Gate 2. Two defects, same as elsewhere: res.ok unread on both calls,
+  // and Promise.all meaning a dead margin-summary blanked the item schedule too.
+  // The margin summary is a money figure -- if it cannot be read it must be
+  // absent and said, never silently rendered from an error body.
   async function load() {
     setLoading(true);
-    try {
-      const [itemsRes, marginRes] = await Promise.all([
-        fetch(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
-        fetch(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
-      ]);
-      const itemsData = await itemsRes.json();
-      const marginData = await marginRes.json();
-      setItems(itemsData.items ?? []);
-      setMargin(marginData);
-    } catch {
-      toast.error("Couldn't load FF&E items");
-    } finally {
-      setLoading(false);
+    setLoadError(null);
+    const [itemsRes, marginRes] = await Promise.allSettled([
+      fetchJson<{ items?: FfeItem[] }>(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<MarginSummary>(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
+    ]);
+
+    if (itemsRes.status === "fulfilled") {
+      setItems(itemsRes.value.items ?? []);
+    } else {
+      setItems([]);
+      const msg = errorMessage(itemsRes.reason, "Couldn't load FF&E items");
+      setLoadError(msg);
+      toast.error(msg);
     }
+
+    if (marginRes.status === "fulfilled") setMargin(marginRes.value);
+    else {
+      setMargin(null);
+      toast.error(errorMessage(marginRes.reason, "Couldn't load FF&E margin summary"));
+    }
+
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, [projectId]);
@@ -152,7 +167,9 @@ export default function FfeClient({ projectId }: { projectId: string }) {
       <Card className="shadow-card">
         <CardHeader><CardTitle className="font-heading text-base">FF&E Schedule</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {items.length === 0 ? (
+          {loadError ? (
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
+          ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No FF&E items yet.</p>
           ) : (
             <Table>

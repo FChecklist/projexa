@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type Overview = {
   customer: { id: string; customerName: string; gstin: string | null; creditLimit: string | null };
@@ -27,16 +29,34 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   const inr = (n: number) => `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US")}`;
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/customers/${customerId}/overview`)
-      .then((r) => r.json())
-      .then((d) => setData(d))
-      .catch(() => toast.error("Couldn't load customer overview"))
-      .finally(() => setLoading(false));
+  // R52 Gate 2 / A4S14_customerid_01. GET /api/customers/{id}/overview 504s and
+  // res.ok was never read, so the error body was stored AS the overview. It has
+  // no `customer` key, so the guard below fell through to "Customer not found."
+  // -- the app telling a CRM user that a customer it just linked to does not
+  // exist, when the truth is the read failed. Those two answers must never share
+  // a branch: one is about the data, the other is about the request.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const d = await fetchJson<Overview>(`/api/customers/${customerId}/overview`);
+      setData(d);
+    } catch (err) {
+      setData(null);
+      const msg = errorMessage(err, "Couldn't load customer overview");
+      setLoadError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   }, [customerId]);
 
+  useEffect(() => { load(); }, [load]);
+
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+  if (loadError) return <LoadError message={loadError} onRetry={load} />;
   if (!data?.customer) return <p className="py-10 text-center text-sm text-px-muted">Customer not found.</p>;
 
   return (

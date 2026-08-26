@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Target } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type KpiDefinition = { id: string; metricName: string; targetValue: string | null; unit: string | null; period: string };
 type KpiEntry = { id: string; period: string; actualValue: string; approvalStatus: string; createdAt: string };
@@ -22,6 +24,8 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 export default function KpisClient({ projectId }: { projectId: string }) {
   const [definitions, setDefinitions] = useState<KpiDefinition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
   const [selected, setSelected] = useState<KpiDefinition | null>(null);
   const [entries, setEntries] = useState<KpiEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -37,14 +41,23 @@ export default function KpisClient({ projectId }: { projectId: string }) {
   const [actualValue, setActualValue] = useState("");
   const [entrySubmitting, setEntrySubmitting] = useState(false);
 
+  // R52 Gate 2 / A4S14_kpis_01. The recorded diagnosis is about the PAGE-level
+  // error ("Could not load projects: VERIDIAN request timed out ...") having no
+  // retry affordance -- that half is fixed in kpis/page.tsx, which now renders
+  // ProjectLoadError (backend's own words + a working Retry) instead of an inert
+  // red Card. This half is the module's own call, which had the usual res.ok
+  // swallow: a 504 became "No KPIs defined for this project yet."
   async function loadDefinitions() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/kpis?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ definitions?: KpiDefinition[] }>(`/api/kpis?projectId=${encodeURIComponent(projectId)}`);
       setDefinitions(data.definitions ?? []);
-    } catch {
-      toast.error("Couldn't load KPIs");
+    } catch (err) {
+      setDefinitions([]);
+      const msg = errorMessage(err, "Couldn't load KPIs");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -55,12 +68,17 @@ export default function KpisClient({ projectId }: { projectId: string }) {
   async function loadEntries(def: KpiDefinition) {
     setSelected(def);
     setEntriesLoading(true);
+    setEntriesError(null);
     try {
-      const res = await fetch(`/api/kpi-entries?kpiDefinitionId=${encodeURIComponent(def.id)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ entries?: KpiEntry[] }>(`/api/kpi-entries?kpiDefinitionId=${encodeURIComponent(def.id)}`);
       setEntries(data.entries ?? []);
-    } catch {
-      toast.error("Couldn't load KPI entries");
+    } catch (err) {
+      // An unreadable KPI history must not read as "this metric was never
+      // recorded" -- that is a number a reviewer would act on.
+      setEntries([]);
+      const msg = errorMessage(err, "Couldn't load KPI entries");
+      setEntriesError(msg);
+      toast.error(msg);
     } finally {
       setEntriesLoading(false);
     }
@@ -144,6 +162,10 @@ export default function KpisClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            /* Error BEFORE empty. The empty state states a fact about the
+               user's data and may only be shown when the read succeeded. */
+            <div className="p-4"><LoadError message={loadError} onRetry={loadDefinitions} /></div>
           ) : definitions.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No KPIs defined for this project yet.</p>
           ) : (
@@ -175,6 +197,8 @@ export default function KpisClient({ projectId }: { projectId: string }) {
             </div>
             {entriesLoading ? (
               <div className="grid h-20 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : entriesError ? (
+              <LoadError message={entriesError} onRetry={() => loadEntries(selected)} />
             ) : entries.length === 0 ? (
               <p className="py-6 text-center text-sm text-px-muted">No actual values submitted yet.</p>
             ) : (

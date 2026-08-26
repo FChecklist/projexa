@@ -27,10 +27,32 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+// R52 Gate 2 / F_025. THE RECORDED DIAGNOSIS NO LONGER HOLDS, and it matters
+// which half of it survives.
+//
+// F_025 reads: "the account/user menu shown in the LEFT SIDEBAR displays
+// democeo@projexa-ai.com ... the app falls back to a cached/default profile
+// (democeo@) instead of erroring". Two things are now false. The left sidebar
+// is gone -- M24 deleted the rail and this control replaced the inline menu in
+// AppTopbar. And there is no cached/default profile anywhere in this path:
+// `email` is threaded from GET /api/organization, which returns
+// `email: ctx.user!.email` -- the authenticated principal itself
+// (src/app/api/organization/route.ts:26). Nothing here can display a different
+// user's address; grep for "democeo" across src/ returns nothing.
+//
+// What DID survive is the honest core of the fault -- identity display must
+// never be quietly wrong. With the org call failing, `email` arrived undefined
+// and this menu simply rendered a "PX" avatar and no address at all, which
+// reads as "signed in, nothing to report" rather than "we could not read who
+// you are". A profile-less session is exactly the case the fault was raised
+// from. So the unknown case is now stated instead of styled away.
 export default function AccountMenu({ email }: { email?: string }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const initials = (email || "PX").slice(0, 2).toUpperCase();
+  const identityKnown = Boolean(email);
+  // "?" rather than the product's own initials: a placeholder that looks like a
+  // real account badge is how an unknown identity passes for a known one.
+  const initials = identityKnown ? email!.slice(0, 2).toUpperCase() : "?";
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -45,7 +67,7 @@ export default function AccountMenu({ email }: { email?: string }) {
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-[var(--color-ct-cloud)]"
-          aria-label={email ? `Account: ${email}` : "Account"}
+          aria-label={identityKnown ? `Account: ${email}` : "Account — signed-in identity could not be read"}
         >
           <Avatar className="h-5 w-5">
             <AvatarFallback className="bg-ct-saffron text-white text-[9px] font-bold">{initials}</AvatarFallback>
@@ -54,14 +76,10 @@ export default function AccountMenu({ email }: { email?: string }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        {email && (
-          <>
-            <div className="truncate px-2 py-1.5 text-xs" style={{ color: "var(--color-ct-muted)" }}>
-              {email}
-            </div>
-            <DropdownMenuSeparator />
-          </>
-        )}
+        <div className="truncate px-2 py-1.5 text-xs" style={{ color: identityKnown ? "var(--color-ct-muted)" : "var(--color-veri-status-late)" }}>
+          {identityKnown ? email : "Signed-in identity unavailable"}
+        </div>
+        <DropdownMenuSeparator />
         <DropdownMenuItem className="gap-2" onClick={() => router.push("/settings")}>
           <User className="size-4" />
           Profile

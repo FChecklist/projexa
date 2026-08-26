@@ -1,3 +1,4 @@
+import ProjectLoadError from "@/components/ProjectLoadError";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
@@ -44,15 +45,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   // empty state when there is not one, instead of the whole page.
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Reports" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
+        {errorMessage && <ProjectLoadError message={errorMessage} />}
         <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} registryColumns={registryColumns} />
-      </main>
+      </div>
     </>
   );
 }

@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type PunchItem = {
   id: string; number: number; description: string; location: string | null; trade: string | null; priority: string; status: string;
@@ -25,20 +27,32 @@ const PRIORITY_VARIANT: Record<string, "default" | "secondary" | "destructive" |
 export default function PunchListClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<PunchItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [trade, setTrade] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R52 Gate 2 / F_033. The recorded diagnosis blamed a shared server-side
+  // "compliance summary widget" whose unhandled failure replaced the whole page
+  // body. That does not survive reading: punch-list/page.tsx wraps its project
+  // resolution in resolveSelectedProject's own try/catch and renders
+  // PageHeading + ProjectLoadError (now with a retry) on failure -- the page
+  // body is not replaced by anything, and no such shared widget exists. What IS
+  // real, and is fixed here, is this module's own /api/punch-list call never
+  // reading res.ok.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/punch-list?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ items?: PunchItem[] }>(`/api/punch-list?projectId=${encodeURIComponent(projectId)}`);
       setItems(data.items ?? []);
-    } catch {
-      toast.error("Couldn't load punch list");
+    } catch (err) {
+      setItems([]);
+      const msg = errorMessage(err, "Couldn't load punch list");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -99,6 +113,10 @@ export default function PunchListClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            /* Error BEFORE empty. The empty state states a fact about the
+               user's data and may only be shown when the read succeeded. */
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
           ) : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">Nothing on the punch list yet.</p>
           ) : (

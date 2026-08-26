@@ -37,7 +37,7 @@ export default function ReportsError({ error, reset }: { error: Error & { digest
   }, [error]);
 
   return (
-    <main className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Reports" />
       <Card className="border-px-error-border bg-px-error-light">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -50,6 +50,6 @@ export default function ReportsError({ error, reset }: { error: Error & { digest
           </Button>
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }

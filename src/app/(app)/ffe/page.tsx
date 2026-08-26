@@ -12,12 +12,12 @@ export default async function FfePage({ searchParams }: { searchParams: Promise<
 
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="FF&E Specification" />
         {errorMessage && <ProjectLoadError message={errorMessage} />}
         {!errorMessage && !project && <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>}
         {project && <FfeClient projectId={project.id} />}
-      </main>
+      </div>
     </>
   );
 }

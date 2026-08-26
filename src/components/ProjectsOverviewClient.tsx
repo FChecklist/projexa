@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import type { ProgressBar } from "@/lib/dashboard-overview";
+import ProjectLoadError from "@/components/ProjectLoadError";
 
 // R46 P8 seq124 (M28 registry-model proof, function_id "dashboard.overview"
 // -- see dashboard/overview/page.tsx's resolver comment for why this isn't
@@ -43,26 +44,44 @@ export default function ProjectsOverviewClient({
   const columns = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
 
   return (
-    <main className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6 p-6">
       <PageHeading title={label(columns, "title", "Projects Overview")} />
-      {errorMessage && <p className="text-sm text-px-error">Could not load live data: {errorMessage}</p>}
-      <Card className="shadow-card">
-        <CardContent className="space-y-5 pt-6">
-          {bars.length === 0 ? (
-            <p className="py-8 text-center text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
-          ) : (
-            bars.map((p) => (
-              <div key={p.id} className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-px-muted">{p.progressPercent}%</span>
+      {/* R52 Gate 2 / R48_OVERVIEW_ASSERTS_ZERO_PROJECTS_OVER_A_500_01,
+          confirmed verbatim in this file: the truthful AR-04 error rendered
+          here, and then the card immediately below asserted "No active projects
+          yet." on the same screen. Two statements that contradict each other --
+          one says the read failed, the other reports its result. fetchProjectProgressBars
+          returns bars: [] on failure, so the empty state fired on exactly the
+          load where it could not be true.
+
+          The error branch now REPLACES the empty state rather than sitting above
+          it. When the read succeeds and there genuinely are no projects, the
+          empty state is still the right thing to say -- and now it is only ever
+          said then. */}
+      {errorMessage ? (
+        <ProjectLoadError message={errorMessage} context="Could not load live data" />
+      ) : (
+        <Card className="shadow-card">
+          <CardContent className="space-y-5 pt-6">
+            {bars.length === 0 ? (
+              <p className="py-8 text-center text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
+            ) : (
+              bars.map((p) => (
+                <div key={p.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{p.name}</span>
+                    {/* A per-project detail call can fail on its own while the
+                        org list succeeds. That project's progress is unknown --
+                        the bar must not draw a confident empty 0%. */}
+                    <span className="text-px-muted">{p.progressPercent === null ? "Progress unavailable" : `${p.progressPercent}%`}</span>
+                  </div>
+                  {p.progressPercent !== null && <Progress value={p.progressPercent} />}
                 </div>
-                <Progress value={p.progressPercent} />
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
-    </main>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

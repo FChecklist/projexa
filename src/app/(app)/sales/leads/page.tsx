@@ -4,10 +4,10 @@ import LeadsClient from "@/components/LeadsClient";
 export default function LeadsPage() {
   return (
     <>
-      <main className="flex-1 space-y-6 p-6">
+      <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Leads" />
         <LeadsClient />
-      </main>
+      </div>
     </>
   );
 }

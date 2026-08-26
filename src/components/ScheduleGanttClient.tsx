@@ -27,7 +27,9 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import "@svar-ui/react-gantt/all.css";
 
@@ -48,6 +50,26 @@ const DEFAULT_COLUMNS: RegistryColumn[] = [
 
 function columnLabel(columns: RegistryColumn[], field: string, fallback: string): string {
   return columns.find((c) => c.field === field)?.label || fallback;
+}
+
+// R52 Gate 2 / F_018. The dash is the whole point: an unset date is a REAL
+// FACT about the schedule ("nobody has committed a start yet") and a quantity
+// surveyor reads it as one. Rendering anything else there -- today, the due
+// date, a guess -- replaces a fact with a fabrication.
+const NO_DATE = "—";
+function displayDate(value: string | null): string {
+  return value ? formatDate(value) : NO_DATE;
+}
+
+// Where a bar may honestly be drawn. A task with only a due date is a point on
+// its due date, NOT a bar starting today; a task with only a start date runs
+// from that start. A task with NEITHER has no position on a timeline at all and
+// is listed separately rather than invented onto one.
+function barRange(t: GanttTask): { start: Date; end: Date } | null {
+  const startIso = t.startDate ?? t.dueDate;
+  const endIso = t.dueDate ?? t.startDate;
+  if (!startIso || !endIso) return null;
+  return { start: new Date(startIso), end: new Date(endIso) };
 }
 
 const Gantt = dynamic(() => import("@svar-ui/react-gantt").then((m) => m.Gantt), { ssr: false });
@@ -123,16 +145,43 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
 
   const criticalCount = tasks.filter((t) => t.isCritical).length;
 
+  // R52 Gate 2 / F_018 -- THE DEFECT, and it was exactly two lines:
+  //
+  //     start: t.startDate ? new Date(t.startDate) : new Date(),
+  //     end:   t.dueDate   ? new Date(t.dueDate)   : new Date(),
+  //     duration: t.startDate && t.dueDate ? undefined : 1,
+  //
+  // `new Date()` with no argument is NOW. Every task whose startDate was null
+  // got TODAY, and because `duration: 1` was then passed alongside, SVAR
+  // resolved the bar to today..tomorrow -- which is precisely what the fault
+  // recorded seeing (Start 25-08-2026, Due 26-08-2026) for three tasks whose
+  // real rows are start_date NULL and due_date 2026-10-15, verified again this
+  // session by direct SQL against compliance.pms_issues for project
+  // g555imnoq4wihavpwc7t64um. A viewer was being shown "due tomorrow" for work
+  // genuinely due in seven weeks.
+  //
+  // Now: bars are placed from real dates only (barRange), and tasks that carry
+  // no date at all are not placed on the timeline at all -- they are listed
+  // under it by name, so nothing is silently dropped either.
+  const scheduled = tasks.filter((t) => barRange(t) !== null);
+  const unscheduled = tasks.filter((t) => barRange(t) === null);
+
   const ganttTasks = [
-    ...tasks.map((t) => ({
-      id: t.id,
-      text: t.title,
-      start: t.startDate ? new Date(t.startDate) : new Date(),
-      end: t.dueDate ? new Date(t.dueDate) : new Date(),
-      duration: t.startDate && t.dueDate ? undefined : 1,
-      progress: t.completionPercentage,
-      type: "task" as const,
-    })),
+    ...scheduled.map((t) => {
+      const range = barRange(t)!;
+      const sameDay = range.start.getTime() === range.end.getTime();
+      return {
+        id: t.id,
+        text: t.title,
+        start: range.start,
+        end: range.end,
+        // A single-day marker needs a length to be drawable; a real range must
+        // NOT be overridden by one, which is the other half of the old bug.
+        duration: sameDay ? 1 : undefined,
+        progress: t.completionPercentage,
+        type: "task" as const,
+      };
+    }),
     ...milestones
       .filter((m) => m.targetDate)
       .map((m) => ({
@@ -152,10 +201,31 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
     lag: d.lagDays,
   }));
 
+  // The grid's Start/Due cells read the ORIGINAL row, not the bar geometry.
+  // Without this, a task placed on its due date (because its start is unset)
+  // would report that due date as its START -- swapping one fabrication for
+  // another. `props.row?.id` is a milestone id for milestone rows, which find()
+  // simply misses, so those keep SVAR's own rendering.
   const columns = [
     { id: "text", header: columnLabel(labelColumns, "task", "Task"), flexGrow: 2 },
-    { id: "start", header: columnLabel(labelColumns, "start", "Start"), width: 100 },
-    { id: "end", header: columnLabel(labelColumns, "due", "Due"), width: 100 },
+    {
+      id: "start", header: columnLabel(labelColumns, "start", "Start"), width: 100,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (props: any) => {
+        const task = tasks.find((t) => t.id === String(props.row?.id));
+        if (!task) return null;
+        return <span className={task.startDate ? undefined : "text-px-muted"}>{displayDate(task.startDate)}</span>;
+      },
+    },
+    {
+      id: "end", header: columnLabel(labelColumns, "due", "Due"), width: 100,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (props: any) => {
+        const task = tasks.find((t) => t.id === String(props.row?.id));
+        if (!task) return null;
+        return <span className={task.dueDate ? undefined : "text-px-muted"}>{displayDate(task.dueDate)}</span>;
+      },
+    },
     {
       id: "critical", header: columnLabel(labelColumns, "critical", "Critical Path"), width: 110,
       // SVAR's ICellProps["row"] (IRow) doesn't publicly expose an `id`
@@ -187,10 +257,83 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
         <CardContent className="p-0" style={{ height: 480 }}>
           {tasks.length === 0 ? (
             <p className="py-16 text-center text-sm text-px-muted">No scheduled tasks yet.</p>
+          ) : ganttTasks.length === 0 ? (
+            <p className="py-16 text-center text-sm text-px-muted">
+              None of these {tasks.length} tasks has a start or due date yet, so none can be placed on a timeline. They are listed below.
+            </p>
           ) : (
             <Willow>
               <Gantt tasks={ganttTasks} links={ganttLinks} columns={columns} readonly />
             </Willow>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* R52 Gate 2 / F_017. The fault: "GET /api/schedule/gantt returns all 3
+          pms_issues rows ... the rendered Timeline table only shows the first 2
+          -- 'Site safety induction for new crew' never appears in the DOM
+          despite the Tasks stat tile correctly reading 3."
+
+          The recorded diagnosis was "likely a key/filter bug dropping one row".
+          Read against this file that does not hold: there is no filter and no
+          key logic anywhere between `tasks` and the rendered rows -- the old
+          code mapped tasks 1:1 -- and I re-checked the three rows by direct SQL
+          (compliance.pms_issues, project g555imnoq4wihavpwc7t64um): they are
+          IDENTICAL in every field the renderer reads (start_date NULL, due_date
+          2026-10-15, completion 0, no parent, no milestone). Nothing
+          data-dependent can drop exactly one of three identical rows.
+
+          What CAN is the row virtualisation inside SVAR's own canvas grid --
+          which is third-party, was being fed a degenerate one-day date range by
+          the F_018 bug above, and which this codebase cannot assert against.
+          So rather than guess at SVAR's internals, the task rows now also exist
+          as ordinary DOM in a table this component fully owns. Its row count is
+          `tasks.length` by construction, so "the timeline renders 100% of what
+          its API returns" stops depending on a dependency's viewport maths. It
+          is also the only surface that can honour F_018's own stated oracle --
+          an unset start must render as an empty-state dash, which a Gantt bar
+          cannot express at all. */}
+      <Card className="shadow-card">
+        <CardHeader>
+          <CardTitle className="font-heading text-base">
+            All tasks ({tasks.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{columnLabel(labelColumns, "task", "Task")}</TableHead>
+                <TableHead>{columnLabel(labelColumns, "start", "Start")}</TableHead>
+                <TableHead>{columnLabel(labelColumns, "due", "Due")}</TableHead>
+                <TableHead>Progress</TableHead>
+                <TableHead>{columnLabel(labelColumns, "critical", "Critical Path")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.title}</TableCell>
+                  <TableCell className={t.startDate ? undefined : "text-px-muted"}>{displayDate(t.startDate)}</TableCell>
+                  <TableCell className={t.dueDate ? undefined : "text-px-muted"}>{displayDate(t.dueDate)}</TableCell>
+                  <TableCell>{t.completionPercentage}%</TableCell>
+                  <TableCell>
+                    {t.floatDays === null ? (
+                      <span className="text-px-muted">{NO_DATE}</span>
+                    ) : t.isCritical ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-px-error"><AlertTriangle className="size-3" /> Critical</span>
+                    ) : (
+                      <span className="text-xs text-px-muted">{t.floatDays}d slack</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {unscheduled.length > 0 && (
+            <p className="border-t px-4 py-3 text-xs text-px-muted">
+              {unscheduled.length} of these {tasks.length} task{tasks.length === 1 ? "" : "s"} {unscheduled.length === 1 ? "has" : "have"} no start or due date and so {unscheduled.length === 1 ? "does" : "do"} not appear on the timeline above. {unscheduled.length === 1 ? "It is" : "They are"} listed here, not hidden.
+            </p>
           )}
         </CardContent>
       </Card>

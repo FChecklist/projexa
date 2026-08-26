@@ -10,25 +10,40 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus, LayoutPanelLeft, Box } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type FloorPlan = { id: string; name: string; floorLevel: string | null; status: string };
 
 export default function FloorPlansClient({ projectId }: { projectId: string }) {
   const [plans, setPlans] = useState<FloorPlan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [floorLevel, setFloorLevel] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R52 Gate 2 / A4S14_02. The recorded diagnosis said the page "silently falls
+  // through to the generic empty state" when its data call fails, and that is
+  // right -- but the mechanism is here, not in routing: res.ok was never read,
+  // so a 504's { error: "VERIDIAN request timed out after 20000ms: ..." } body
+  // parsed fine, data.floorPlans came back undefined, and `?? []` turned a dead
+  // backend into "No floor plans yet." The try/catch could not help -- catch
+  // never fires on an HTTP status.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/floor-plans?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ floorPlans?: FloorPlan[] }>(`/api/floor-plans?projectId=${encodeURIComponent(projectId)}`);
       setPlans(data.floorPlans ?? []);
-    } catch {
-      toast.error("Couldn't load floor plans");
+    } catch (err) {
+      // Drop stale rows rather than showing a previous project's plans beside
+      // an error about this one.
+      setPlans([]);
+      const msg = errorMessage(err, "Couldn't load floor plans");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -73,7 +88,11 @@ export default function FloorPlansClient({ projectId }: { projectId: string }) {
         </Dialog>
       </div>
 
-      {plans.length === 0 ? (
+      {/* Error BEFORE empty: "no floor plans" is a fact about the user's data
+          and may only be stated when the read actually succeeded. */}
+      {loadError ? (
+        <LoadError message={loadError} onRetry={load} />
+      ) : plans.length === 0 ? (
         <Card><CardContent className="p-10 text-center text-sm text-px-muted">No floor plans yet.</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -41,6 +41,7 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -129,6 +130,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
   const [waiting, setWaiting] = useState<TaskRow[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  // R52 Gate 2 / R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01. The shell's
+  // own reads used to fail SILENTLY -- see the two `if (!res.ok) return;` lines
+  // this replaces. The status WAS checked, so no error body was mistaken for
+  // data; the failure was simply dropped on the floor, and the top rail then
+  // showed no organisation and no project with nothing to say why. That is the
+  // same defect the fault records against the old assistant column, on the
+  // surface that replaced it.
+  const [shellError, setShellError] = useState<string | null>(null);
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
   const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
@@ -167,21 +176,34 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let live = true;
     (async () => {
-      try {
-        const res = await fetch("/api/organization");
-        if (!res.ok) return;
-        const d = (await res.json()) as OrgInfo;
-        if (live && d?.organization?.name) setInfo(d);
-      } catch {}
-    })();
-    (async () => {
-      try {
-        const res = await fetch("/api/projects");
-        if (!res.ok) return;
-        const d = await res.json();
+      const failures: string[] = [];
+      const [orgRes, projRes] = await Promise.allSettled([
+        fetchJson<OrgInfo>("/api/organization"),
+        fetchJson<{ projects?: Project[] } | Project[]>("/api/projects"),
+      ]);
+      if (!live) return;
+
+      if (orgRes.status === "fulfilled") {
+        const d = orgRes.value;
+        if (d?.organization?.name) setInfo(d);
+      } else {
+        // F_025 note: the identity shown in the account menu comes from THIS
+        // call -- /api/organization returns `email: ctx.user!.email`, the
+        // authenticated principal itself (src/app/api/organization/route.ts:26).
+        // When it fails, the menu must not quietly render a blank identity as
+        // though nobody were signed in; say the read failed.
+        failures.push(errorMessage(orgRes.reason, "Organisation and signed-in identity"));
+      }
+
+      if (projRes.status === "fulfilled") {
+        const d = projRes.value;
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-      } catch {}
+        if (Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+      } else {
+        failures.push(errorMessage(projRes.reason, "Projects"));
+      }
+
+      setShellError(failures.length > 0 ? failures.join(" · ") : null);
     })();
     return () => {
       live = false;
@@ -429,6 +451,24 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
+      {/* R52 Gate 2 / R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01. The
+          shell reads the organisation (which carries the signed-in identity
+          the account menu shows) and the project list on every page. Both
+          failures used to be dropped without a word, so the rail rendered a
+          nameless org and no project and the user had no way to know the app
+          was degraded. It sits above the module surface because that is where
+          the user is looking, and it is deliberately separate from the module's
+          own error -- these are different reads that fail independently. */}
+      {shellError && (
+        <div className="m-3 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+          <p role="alert" className="text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
+            Workspace details could not be loaded: {shellError}
+          </p>
+          <button type="button" onClick={() => router.refresh()} className="veri-view-tab mt-2">
+            Retry
+          </button>
+        </div>
+      )}
       {children}
     </AppShell>
   );

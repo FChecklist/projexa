@@ -9,9 +9,9 @@ import { DashboardHierarchyClient } from "@/components/DashboardHierarchyClient"
 // membership rather than VERIDIAN's separate erp_companies concept.
 export default function DashboardHierarchyPage() {
   return (
-    <main className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Company Dashboard" />
       <DashboardHierarchyClient />
-    </main>
+    </div>
   );
 }

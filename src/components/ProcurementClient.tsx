@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Send, ArrowRight, PackageCheck } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { PartialLoadErrors } from "@/components/LoadError";
 
 type Requisition = {
   id: string; requisitionNumber: number; purpose: string | null; status: string; postingDate: string;
@@ -56,36 +58,52 @@ export default function ProcurementClient() {
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
 
+  // R52 Gate 2 / F_032. The fault records that /api/procurement/requisitions,
+  // /purchase-orders and /vendors 504 while /rfqs, /quotations, /goods-receipts
+  // and /inventory/items return 200 on the SAME load -- and that the Requisitions
+  // tab still rendered "No purchase requisitions yet." That is two defects, and
+  // both are fixed here.
+  //
+  // (1) res.ok was never read on any of the eight, so each failing call's
+  //     { error } body was coerced to [] and its tab claimed to be empty.
+  // (2) Promise.all means one rejection blanks the OTHER SEVEN. allSettled keeps
+  //     whatever loaded on screen beside an honest list naming what did not --
+  //     which is what makes the fault's own "endpoint-specific, not universal"
+  //     observation visible to the user instead of only to curl.
   async function load() {
     setLoading(true);
-    try {
-      const [reqRes, rfqRes, quoteRes, poRes, grRes, vendorRes, whRes, itemRes] = await Promise.all([
-        fetch("/api/procurement/requisitions"),
-        fetch("/api/procurement/rfqs"),
-        fetch("/api/procurement/quotations"),
-        fetch("/api/procurement/purchase-orders"),
-        fetch("/api/procurement/goods-receipts"),
-        fetch("/api/vendors"),
-        fetch("/api/inventory/warehouses"),
-        fetch("/api/inventory/items"),
-      ]);
-      const [reqData, rfqData, quoteData, poData, grData, vendorData, whData, itemData] = await Promise.all([
-        reqRes.json(), rfqRes.json(), quoteRes.json(), poRes.json(), grRes.json(), vendorRes.json(), whRes.json(), itemRes.json(),
-      ]);
-      setRequisitions(reqData.requisitions ?? []);
-      setRfqs(rfqData.rfqs ?? []);
-      setQuotations(quoteData.quotations ?? []);
-      setPurchaseOrders(poData.purchaseOrders ?? []);
-      setGoodsReceipts(grData.goodsReceipts ?? []);
-      setVendors(vendorData.vendors ?? []);
-      setWarehouses(whData.warehouses ?? []);
-      setItems(itemData.items ?? []);
-    } catch {
-      toast.error("Couldn't load procurement data");
-    } finally {
-      setLoading(false);
+    const results = await Promise.allSettled([
+      fetchJson<{ requisitions?: Requisition[] }>("/api/procurement/requisitions"),
+      fetchJson<{ rfqs?: Rfq[] }>("/api/procurement/rfqs"),
+      fetchJson<{ quotations?: Quotation[] }>("/api/procurement/quotations"),
+      fetchJson<{ purchaseOrders?: PurchaseOrder[] }>("/api/procurement/purchase-orders"),
+      fetchJson<{ goodsReceipts?: GoodsReceipt[] }>("/api/procurement/goods-receipts"),
+      fetchJson<{ vendors?: Vendor[] }>("/api/vendors"),
+      fetchJson<{ warehouses?: WarehouseRow[] }>("/api/inventory/warehouses"),
+      fetchJson<{ items?: ItemRow[] }>("/api/inventory/items"),
+    ]);
+
+    const failures: string[] = [];
+    function value<T>(result: PromiseSettledResult<T>, what: string): T | null {
+      if (result.status === "fulfilled") return result.value;
+      failures.push(errorMessage(result.reason, what));
+      return null;
     }
+
+    setRequisitions(value(results[0], "Requisitions")?.requisitions ?? []);
+    setRfqs(value(results[1], "RFQs")?.rfqs ?? []);
+    setQuotations(value(results[2], "Supplier quotations")?.quotations ?? []);
+    setPurchaseOrders(value(results[3], "Purchase orders")?.purchaseOrders ?? []);
+    setGoodsReceipts(value(results[4], "Goods receipts")?.goodsReceipts ?? []);
+    setVendors(value(results[5], "Vendors")?.vendors ?? []);
+    setWarehouses(value(results[6], "Warehouses")?.warehouses ?? []);
+    setItems(value(results[7], "Items")?.items ?? []);
+
+    setLoadErrors(failures);
+    if (failures.length > 0) toast.error(failures[0]);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -299,6 +317,12 @@ export default function ProcurementClient() {
   }
 
   return (
+    <div className="space-y-4">
+      {/* Above the tabs on purpose: a failure on a tab the user is not
+          currently looking at must still be visible, which is exactly the
+          case the fault records -- some sources dead while the sibling tabs
+          loaded fine. */}
+      <PartialLoadErrors errors={loadErrors} onRetry={load} />
     <Tabs defaultValue="requisitions">
       <TabsList className="flex-wrap h-auto">
         <TabsTrigger value="requisitions">1. Requisitions</TabsTrigger>
@@ -599,5 +623,6 @@ export default function ProcurementClient() {
         </Card>
       </TabsContent>
     </Tabs>
+    </div>
   );
 }

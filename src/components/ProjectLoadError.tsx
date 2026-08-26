@@ -31,7 +31,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
 
-export default function ProjectLoadError({ message }: { message: string }) {
+// R52 Gate 2: `context` added. C19's pass_means is "A clear error naming WHAT
+// failed", and the 21 pages that still had the inert red Card said "Could not
+// load projects: <backend message>" while the 8 already using this component
+// dropped that half and showed the bare backend string. Naming the failed read
+// is the better of the two, so it moves in here and every caller gets it --
+// rather than 29 call sites each re-deciding how to phrase the same sentence.
+export default function ProjectLoadError({
+  message,
+  context = "Could not load projects",
+}: {
+  message: string;
+  context?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [attempts, setAttempts] = useState(0);
@@ -42,7 +54,7 @@ export default function ProjectLoadError({ message }: { message: string }) {
         {/* The backend's own words. A generic "something went wrong" here would
             hide which upstream is degraded and for how long. */}
         <p role="alert" className="text-sm text-px-error">
-          {message}
+          {context}: {message}
         </p>
         <div className="flex items-center gap-3">
           <Button

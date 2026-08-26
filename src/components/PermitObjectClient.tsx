@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { ExternalLink } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Permit = {
@@ -19,6 +20,12 @@ type Permit = {
   notes: string | null;
   tags: string[];
   projectId: string;
+  // R52 Gate 2 / F_012. GET /api/permits/{id} has always returned this -- a
+  // signed Supabase Storage link to the permit's uploaded PDF -- and the screen
+  // never had anywhere to put it. It was missing from this type, from
+  // REQUIRED_COLUMNS and from OPTIONAL_COLUMNS, so the record's core artefact,
+  // the permit itself, was invisible in the UI that exists to show it.
+  documentUrl?: string | null;
 };
 
 const REQUIRED_COLUMNS: ScreenColumn[] = [
@@ -199,6 +206,32 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
         onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))}
       />
       <FormSection title="More details" columns={OPTIONAL_COLUMNS} values={values} mode={mode} onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} defaultOptionalCollapsed />
+      {/* Deliberately NOT a FormSection column. Two reasons: the kit's field
+          controls (TEXT/DATE/SELECT/FILE/...) have no "link to an existing
+          document" renderer, and F_011 records the "More details" section as
+          unreachable -- putting a permit's own PDF behind a section that may not
+          open would leave the artefact just as invisible as it is today. This is
+          plain markup, always rendered, in both display and edit mode.
+          The absent case says so out loud rather than rendering nothing, so
+          "this permit has no PDF" is distinguishable from "the UI forgot". */}
+      <section className="space-y-1.5 px-4 py-3">
+        <h3 className="text-[13px] font-medium text-px-ink">Permit document</h3>
+        {permit.documentUrl ? (
+          // Same affordance DrawingsClient.tsx:206-210 already uses for the
+          // identical job, rather than a third house style for "open the file".
+          <a
+            href={permit.documentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[13px] text-px-ink underline underline-offset-2"
+          >
+            Open the uploaded permit document
+            <ExternalLink className="size-3.5" aria-hidden />
+          </a>
+        ) : (
+          <p className="text-[13px] text-px-muted">No document uploaded for this permit.</p>
+        )}
+      </section>
     </ObjectScreen>
   );
 }

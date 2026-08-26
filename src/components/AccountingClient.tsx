@@ -8,7 +8,7 @@
 // Balance / P&L / Balance Sheet as generated reports with a date-range
 // picker, a P&L-by-project rollup (the view a 500-project firm actually
 // needs, not just company-wide), and a read-only Bank Reconciliation view.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 }
 import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, companyScopeQuery, CompanySelector } from "@/components/company-scope";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -62,21 +64,32 @@ function DashboardPanel() {
   const currencies = useCurrencies();
   const [data, setData] = useState<FinanceDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/finance-dashboard");
-        setData(await res.json());
-      } catch {
-        toast.error("Couldn't load finance dashboard");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  // R52 Gate 2. `setData(await res.json())` stored the ERROR BODY as the
+  // dashboard on any non-2xx: truthy, so the `!data` guard below waved it
+  // through, and the render then read data.revenue.lastMonth off undefined.
+  // The two answers must be separated -- "the ERP module isn't set up" is a
+  // setup fact, "the read failed" is not.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      setData(await fetchJson<FinanceDashboard>("/api/finance-dashboard"));
+    } catch (err) {
+      setData(null);
+      const msg = errorMessage(err, "Couldn't load finance dashboard");
+      setLoadError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+  if (loadError) return <LoadError message={loadError} onRetry={load} />;
   if (!data) return <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the finance dashboard. (An org needs its ERP module + a chart of accounts set up first.)</p>;
 
   const revenueChange = data.revenue.lastMonth > 0 ? ((data.revenue.thisMonth - data.revenue.lastMonth) / data.revenue.lastMonth) * 100 : null;
@@ -332,14 +345,21 @@ function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
+  // R52 Gate 2: res.ok unread, and the render below does `!report ? null` -- so
+  // a failed statement drew a completely blank panel under a Generate button
+  // that looked as though it had worked.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/trial-balance?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate trial balance");
+      setReport(await fetchJson<TrialBalanceReport>(`/api/trial-balance?asOfDate=${asOfDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      setReport(null);
+      const msg = errorMessage(err, "Couldn't generate trial balance");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -355,6 +375,7 @@ function TrialBalancePanel({ scope }: { scope: CompanyScope }) {
       <Card className="shadow-card">
         <CardContent className="p-0">
           {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            : loadError ? <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
             : !report || report.accounts.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No postings yet.</p>
             : (<>
               <BalanceRows rows={report.accounts} currencies={currencies} />
@@ -376,14 +397,18 @@ function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
   const [toDate, setToDate] = useState(() => now.toISOString().slice(0, 10));
   const [report, setReport] = useState<PnlReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate P&L");
+      setReport(await fetchJson<PnlReport>(`/api/profit-and-loss?fromDate=${fromDate}&toDate=${toDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      setReport(null);
+      const msg = errorMessage(err, "Couldn't generate P&L");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -397,7 +422,7 @@ function ProfitAndLossPanel({ scope }: { scope: CompanyScope }) {
         <div className="space-y-1.5"><Label>To</Label><Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></div>
         <Button size="sm" onClick={load}>Generate</Button>
       </div>
-      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
+      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : loadError ? <LoadError message={loadError} onRetry={load} /> : !report ? null : (
         <div className="space-y-4">
           <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Income</CardTitle></CardHeader><CardContent className="p-0">{report.income.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No income postings.</p> : <BalanceRows rows={report.income} currencies={currencies} />}</CardContent></Card>
           <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Expense</CardTitle></CardHeader><CardContent className="p-0">{report.expense.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No expense postings.</p> : <BalanceRows rows={report.expense} currencies={currencies} />}</CardContent></Card>
@@ -413,14 +438,18 @@ function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<BalanceSheetReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/balance-sheet?asOfDate=${asOfDate}${companyScopeQuery(scope)}`);
-      setReport(await res.json());
-    } catch {
-      toast.error("Couldn't generate balance sheet");
+      setReport(await fetchJson<BalanceSheetReport>(`/api/balance-sheet?asOfDate=${asOfDate}${companyScopeQuery(scope)}`));
+    } catch (err) {
+      setReport(null);
+      const msg = errorMessage(err, "Couldn't generate balance sheet");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -433,7 +462,7 @@ function BalanceSheetPanel({ scope }: { scope: CompanyScope }) {
         <div className="space-y-1.5"><Label>As of</Label><Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} /></div>
         <Button size="sm" onClick={load}>Generate</Button>
       </div>
-      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : !report ? null : (
+      {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div> : loadError ? <LoadError message={loadError} onRetry={load} /> : !report ? null : (
         <div className="space-y-4">
           <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Assets — {money(report.totalAssets, currencies)}</CardTitle></CardHeader><CardContent className="p-0">{report.assets.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No asset postings.</p> : <BalanceRows rows={report.assets} currencies={currencies} />}</CardContent></Card>
           <Card className="shadow-card"><CardHeader><CardTitle className="text-base">Liabilities — {money(report.totalLiabilities, currencies)}</CardTitle></CardHeader><CardContent className="p-0">{report.liabilities.length === 0 ? <p className="py-6 text-center text-sm text-px-muted">No liability postings.</p> : <BalanceRows rows={report.liabilities} currencies={currencies} />}</CardContent></Card>

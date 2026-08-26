@@ -14,6 +14,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, UserCheck } from "lucide-react";
 import { formatDateTime } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { PartialLoadErrors } from "@/components/LoadError";
 
 type JobOpening = { id: string; title: string; departmentId: string | null; jobDescription: string | null; employmentType: string; numPositions: number; status: string };
 type Candidate = { id: string; name: string; email: string; phone: string | null; source: string | null };
@@ -46,6 +48,7 @@ export default function RecruitmentClient() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [jobStatusFilter, setJobStatusFilter] = useState("all");
 
@@ -91,26 +94,38 @@ export default function RecruitmentClient() {
   const [hireEmployeeProfileId, setHireEmployeeProfileId] = useState("");
   const [hireSubmitting, setHireSubmitting] = useState(false);
 
+  // R52 Gate 2 / F_034, confirmed in this file. Both /recruitment/job-openings
+  // and /recruitment/candidates 504, res.ok was never read on any of the five
+  // calls, and the Job Openings tab rendered "No job openings yet." beside a
+  // working New Job Opening button -- an integration outage dressed as a
+  // legitimately empty pipeline. allSettled so one dead source cannot blank the
+  // other four tabs, and every failure is named on screen.
   async function load() {
     setLoading(true);
-    try {
-      const [openRes, candRes, appRes, empRes, deptRes] = await Promise.all([
-        fetch("/api/recruitment/job-openings"),
-        fetch("/api/recruitment/candidates"),
-        fetch("/api/recruitment/applications"),
-        fetch("/api/employees"),
-        fetch("/api/hr/departments"),
-      ]);
-      setOpenings((await openRes.json()).jobOpenings ?? []);
-      setCandidates((await candRes.json()).candidates ?? []);
-      setApplications((await appRes.json()).applications ?? []);
-      setEmployees((await empRes.json()).employees ?? []);
-      setDepartments((await deptRes.json()).departments ?? []);
-    } catch {
-      toast.error("Couldn't load recruitment data");
-    } finally {
-      setLoading(false);
+    const results = await Promise.allSettled([
+      fetchJson<{ jobOpenings?: JobOpening[] }>("/api/recruitment/job-openings"),
+      fetchJson<{ candidates?: Candidate[] }>("/api/recruitment/candidates"),
+      fetchJson<{ applications?: Application[] }>("/api/recruitment/applications"),
+      fetchJson<{ employees?: Employee[] }>("/api/employees"),
+      fetchJson<{ departments?: Department[] }>("/api/hr/departments"),
+    ]);
+
+    const failures: string[] = [];
+    function value<T>(result: PromiseSettledResult<T>, what: string): T | null {
+      if (result.status === "fulfilled") return result.value;
+      failures.push(errorMessage(result.reason, what));
+      return null;
     }
+
+    setOpenings(value(results[0], "Job openings")?.jobOpenings ?? []);
+    setCandidates(value(results[1], "Candidates")?.candidates ?? []);
+    setApplications(value(results[2], "Applications")?.applications ?? []);
+    setEmployees(value(results[3], "Employees")?.employees ?? []);
+    setDepartments(value(results[4], "Departments")?.departments ?? []);
+
+    setLoadErrors(failures);
+    if (failures.length > 0) toast.error(failures[0]);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
@@ -331,6 +346,12 @@ export default function RecruitmentClient() {
   }
 
   return (
+    <div className="space-y-4">
+      {/* Above the tabs on purpose: a failure on a tab the user is not
+          currently looking at must still be visible, which is exactly the
+          case the fault records -- some sources dead while the sibling tabs
+          loaded fine. */}
+      <PartialLoadErrors errors={loadErrors} onRetry={load} />
     <Tabs defaultValue="openings" className="space-y-4">
       <TabsList>
         <TabsTrigger value="openings">Job Openings</TabsTrigger>
@@ -601,5 +622,6 @@ export default function RecruitmentClient() {
         </DialogContent>
       </Dialog>
     </Tabs>
+    </div>
   );
 }

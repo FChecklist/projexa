@@ -21,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Receipt, ChevronLeft, ChevronRight, Banknote, Ban } from "lucide-react";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type Invoice = { id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null; grandTotal: string; outstandingAmount: string; status: string };
 type CreditNote = { id: string; creditNoteNumber: number; customerId: string; salesInvoiceId: string | null; postingDate: string; reason: string | null; status: string; totalAmount: string };
@@ -48,6 +50,7 @@ function InvoicesPanel() {
   const currencies = useCurrencies();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -70,32 +73,50 @@ function InvoicesPanel() {
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
+  // R52 Gate 2 / A4S14_09 -- the fault register's own clearest PROVEN instance
+  // of this class: the page said "No invoices found." while four real draft
+  // invoices (AED 210,000 / 475,000 / 210,000 / 475,000 for Al Reem Holdings LLC
+  // and Meridian Hospitality Group) existed and the call had 504'd. Ground truth
+  // was established by a retry that returned 200 with all four. Mechanism, read
+  // from this file: res.ok unchecked, so the 504's { error } body parsed,
+  // data.salesInvoices was undefined, and `?? []` published a financial zero.
+  //
+  // Note totalPages too -- `?? 1` on a failed read told the pager there was
+  // exactly one page of results, which is the same invented fact one level down.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: "25" });
       if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await fetch(`/api/sales-invoices?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchJson<{ salesInvoices?: Invoice[]; totalPages?: number }>(`/api/sales-invoices?${params.toString()}`);
       setInvoices(data.salesInvoices ?? []);
       setTotalPages(data.totalPages ?? 1);
-    } catch {
-      toast.error("Couldn't load invoices");
+    } catch (err) {
+      setInvoices([]);
+      setTotalPages(1);
+      const msg = errorMessage(err, "Couldn't load invoices");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { load(); }, [page, statusFilter]);
 
+  // These feed the New Invoice customer picker and the payment account picker.
+  // Silently empty pickers are how a user gets a dialog they cannot complete and
+  // no idea why (cf. R48_PROJECT_CREATE_NO_PRODUCTS_01), so a failure here has
+  // to say the backend's own words rather than render zero options.
   async function loadLookups() {
-    try {
-      const [custRes, acctRes] = await Promise.all([fetch("/api/customers"), fetch("/api/accounts")]);
-      const [custData, acctData] = await Promise.all([custRes.json(), acctRes.json()]);
-      setCustomers(custData.customers ?? []);
-      setAccounts(acctData.accounts ?? []);
-    } catch {
-      toast.error("Couldn't load customers / accounts from VERIDIAN");
-    }
+    const [custRes, acctRes] = await Promise.allSettled([
+      fetchJson<{ customers?: Customer[] }>("/api/customers"),
+      fetchJson<{ accounts?: Account[] }>("/api/accounts"),
+    ]);
+    if (custRes.status === "fulfilled") setCustomers(custRes.value.customers ?? []);
+    else toast.error(errorMessage(custRes.reason, "Couldn't load customers"));
+    if (acctRes.status === "fulfilled") setAccounts(acctRes.value.accounts ?? []);
+    else toast.error(errorMessage(acctRes.reason, "Couldn't load accounts"));
   }
 
   function onCreateOpenChange(next: boolean) {
@@ -207,6 +228,10 @@ function InvoicesPanel() {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            /* Error BEFORE empty. "No invoices found." is a claim about this
+               org's finances and may only be made when the read succeeded. */
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
           ) : invoices.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No invoices found.</p>
           ) : (

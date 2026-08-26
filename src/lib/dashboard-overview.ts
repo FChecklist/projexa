@@ -2,7 +2,12 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 type OrgDashboard = { projects: { id: string; name: string }[] };
 type ProjectDashboard = { projectId: string; progressPercent: number };
-export type ProgressBar = { id: string; name: string; progressPercent: number };
+// R52 Gate 2: progressPercent is now NULLABLE. It used to be coerced to 0 when
+// the per-project detail call failed (see the catch below), which rendered a
+// full-width "0%" progress bar for a project whose progress the app had just
+// failed to read. 0% and "unknown" are different answers, and on a progress bar
+// the difference is the whole message.
+export type ProgressBar = { id: string; name: string; progressPercent: number | null };
 
 // R46 P8 seq124: factored out of dashboard/overview/page.tsx verbatim (no
 // behavior change) so the route file can stay thin per the M28
@@ -20,7 +25,9 @@ export async function fetchProjectProgressBars(organizationId: string | null): P
           const detail = await callVeridian<ProjectDashboard>(`/dashboard/${p.id}`, { organizationId: organizationId ?? undefined });
           return { id: p.id, name: p.name, progressPercent: detail.progressPercent };
         } catch {
-          return { id: p.id, name: p.name, progressPercent: 0 };
+          // Unknown, NOT zero. The row still renders -- the project exists and
+          // dropping it would be its own lie -- but it says so.
+          return { id: p.id, name: p.name, progressPercent: null };
         }
       })
     );

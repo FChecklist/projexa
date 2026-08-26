@@ -14,6 +14,8 @@ import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-re
 import { useCurrencies } from "@/lib/currency";
 import { CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -257,6 +259,7 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
@@ -291,11 +294,16 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
+  // R52 Gate 2. /scope is one of the three routes R48_BLANK_CONTENT_NO_CREDENTIALS_01
+  // measured, and it is the BOQ screen -- the surface a quantity surveyor reads
+  // money off. A failed read that renders "No BOQs yet for this project." is the
+  // worst possible version of this bug: it does not look degraded, it looks like
+  // an answer.
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
       const loaded: Boq[] = data.boqs ?? [];
       setBoqs(loaded);
 
@@ -309,8 +317,11 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         })
       );
       setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
-    } catch {
-      toast.error("Couldn't load scope of work");
+    } catch (err) {
+      setBoqs([]);
+      const msg = errorMessage(err, "Couldn't load scope of work");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -587,6 +598,8 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
           ) : boqs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
           ) : (

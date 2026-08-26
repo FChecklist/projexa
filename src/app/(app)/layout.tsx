@@ -31,6 +31,21 @@ import M24Shell from "@/components/shell/M24Shell";
 // The Toaster stays mounted once in the root layout (src/app/layout.tsx); a
 // second instance here used to duplicate every toast.error() call, because
 // both instances subscribe to the same global sonner store.
+// R52 Gate 2 / R48_DUAL_MAIN_LANDMARK_01 -- THE ONE <main> LIVES IN THE KIT.
+// AppShell renders the right-hand module pane as <main> and the Task Master
+// column as <aside> (veridian-ui-kit/src/shell/AppShell.tsx:83-96). Every page
+// under this layout ALSO opened its own <main className="flex-1 space-y-6 p-6">
+// inside that one, so each route shipped two main landmarks -- nested, which
+// HTML forbids outright, and which gives a screen-reader user two "main"
+// regions with no way to tell which is the page. Those 51 page-level elements
+// are now <div>. NOTHING under (app) may reintroduce a <main>; the pages
+// outside this group (auth/callback, invite/[token], share/report/[token]) do
+// not mount AppShell and correctly keep their own.
+//
+// The fault also records the measurement damage this caused --
+// document.querySelector("main") returning the assistant column -- and that is
+// why R48_BLANK_CONTENT_NO_CREDENTIALS_01's "127 characters of rendered main"
+// evidence has to be re-taken rather than trusted.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <VeriChatProvider>

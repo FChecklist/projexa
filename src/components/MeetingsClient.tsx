@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Users } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import LoadError from "@/components/LoadError";
 
 type Meeting = {
   id: string;
@@ -35,6 +37,7 @@ function formatDateTime(iso: string) {
 export default function MeetingsClient({ projectId }: { projectId: string }) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -50,14 +53,22 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
   const [outcomeNotes, setOutcomeNotes] = useState("");
   const [addingOutcome, setAddingOutcome] = useState(false);
 
+  // R52 Gate 2 / F_030. Recorded as "the route does a server-side fetch with no
+  // try/catch fallback, so the raw error replaces the entire page body". Not so:
+  // meetings/page.tsx renders PageHeading + ProjectLoadError and gates only the
+  // module slot. The live defect is here -- res.ok unread on the module's own
+  // list call, which turns a 504 into "No meetings scheduled yet."
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/meetings?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson<{ meetings?: Meeting[] }>(`/api/meetings?projectId=${encodeURIComponent(projectId)}`);
       setMeetings(data.meetings ?? []);
-    } catch {
-      toast.error("Couldn't load meetings");
+    } catch (err) {
+      setMeetings([]);
+      const msg = errorMessage(err, "Couldn't load meetings");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -159,6 +170,10 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            /* Error BEFORE empty. The empty state states a fact about the
+               user's data and may only be shown when the read succeeded. */
+            <div className="p-4"><LoadError message={loadError} onRetry={load} /></div>
           ) : meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings scheduled yet.</p>
           ) : (

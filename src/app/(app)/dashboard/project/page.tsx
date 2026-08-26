@@ -1,3 +1,4 @@
+import ProjectLoadError from "@/components/ProjectLoadError";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
@@ -34,17 +35,29 @@ export default async function DashboardProjectPage({ searchParams }: { searchPar
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const labels = await resolveDashboardLabels(organizationId);
 
-  if (errorMessage || !project) {
+  // R52 Gate 2: an ERROR was being rendered into the MUTED empty-state card --
+  // same colour, same shape and same wording slot as "No active project
+  // selected.", so a failed read was indistinguishable from a chosen-nothing
+  // state and offered no retry. Split: the error gets the error surface, the
+  // genuine empty case keeps the muted one.
+  if (errorMessage) {
     return (
-      <main className="flex-1 p-6">
-        <Card><CardContent className="p-8 text-center text-sm text-px-muted">{errorMessage ?? "No active project selected."}</CardContent></Card>
-      </main>
+      <div className="flex-1 p-6">
+        <ProjectLoadError message={errorMessage} />
+      </div>
+    );
+  }
+  if (!project) {
+    return (
+      <div className="flex-1 p-6">
+        <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active project selected.</CardContent></Card>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1">
+    <div className="flex-1">
       <DashboardProjectClient projectId={project.id} labels={labels} />
-    </main>
+    </div>
   );
 }

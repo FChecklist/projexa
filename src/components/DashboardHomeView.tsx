@@ -6,6 +6,7 @@ import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-re
 import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
+import ProjectLoadError from "@/components/ProjectLoadError";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
@@ -117,26 +118,43 @@ export default function DashboardHomeView({
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
           already renders a real "Good morning, {name}." heading; a second
           "Dashboard" label above it would be redundant. */}
+      {/* R52 Gate 2 / R46S11_01. The greeting had TWO states and the failure
+          case fell into the wrong one: with data === null (the /dashboard call
+          504'd) it said "No active projects yet — use VERI Chat below to get
+          started." That is a definite count of the org's portfolio, stated on
+          the FIRST screen after login, at a moment when the app had just failed
+          to find out. The fault proves it false: a retry in the same session
+          returned five real projects (Cedar Heights Villa - Phase 1, Riverside
+          Business Park - Tower B, Harbor View Corporate HQ - Interior Fit-out,
+          Oakwood Residence - Full Renovation, Lakeview Residency - Phase 2) with
+          AED 685,000 revenue and AED 1,855,000 expenses.
+
+          Three states now, not two: loaded-with-projects, loaded-and-genuinely-
+          empty, and could-not-load. Only the middle one may claim zero. */}
       <HomeGreeting
         userName={userName}
         summary={
-          data && data.totalProjects > 0
+          errorMessage
+            ? "Live data could not be loaded, so your project figures are unknown right now — not zero. The error below has the details and a retry."
+            : data && data.totalProjects > 0
             ? `You have ${data.totalProjects} active project${data.totalProjects === 1 ? "" : "s"}. ${delayedProjectCount > 0 ? `${delayedProjectCount} of them ${delayedProjectCount === 1 ? "has" : "have"} delayed tasks needing attention.` : "None of them have delayed tasks right now."}`
             : "No active projects yet — use VERI Chat below to get started."
         }
-        stats={[
-          ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
-          ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
-        ]}
+        stats={
+          errorMessage
+            ? []
+            : [
+                ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
+                ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
+              ]
+        }
       />
-      <main className="flex-1 space-y-6 p-6">
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">
-              Could not load live data: {errorMessage}
-            </CardContent>
-          </Card>
-        )}
+      <div className="flex-1 space-y-6 p-6">
+        {/* Was an inert red box. No PM/ERP dashboard renders its home screen as
+            a zero-state on a failed fetch without a retry affordance -- and the
+            fault's own evidence is that the very next attempt succeeded, so a
+            retry is not cosmetic here, it is the fix. */}
+        {errorMessage && <ProjectLoadError message={errorMessage} context="Could not load live data" />}
 
         <div className="flex justify-end">
           <CreateProjectDialog />
@@ -219,7 +237,7 @@ export default function DashboardHomeView({
             </Card>
           </>
         )}
-      </main>
+      </div>
     </>
   );
 }
