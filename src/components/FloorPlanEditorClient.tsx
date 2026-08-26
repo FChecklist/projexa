@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Pencil, Trash2, RotateCw, Box, X } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Point = { x: number; y: number };
 type Material = { id: string; name: string; category: string; colorHex: string };
@@ -44,6 +45,7 @@ function centroid(points: Point[]): Point {
 
 export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: string }) {
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [ffeItems, setFfeItems] = useState<FfeItem[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,25 +57,49 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
   const svgRef = useRef<SVGSVGElement>(null);
   const draggingRef = useRef<{ placementId: string; offsetX: number; offsetY: number } | null>(null);
 
+  // R52 / A4S14_04. Opening a floor plan whose GET failed tore down the whole
+  // React tree: an uncaught "Cannot read properties of undefined (reading
+  // 'flatMap')" left the browser on its own "This page could not load" screen,
+  // with no app shell and no in-app error state at all.
+  //
+  // Both recorded symptoms came from the two lines below. GET
+  // /api/floor-plans/[id] answers a failure with { error: "..." } and a real
+  // status (src/app/api/floor-plans/[id]/route.ts:15). res.ok was never read,
+  // so that error body was stored AS the floor plan -- truthy, so the
+  // `!floorPlan` guard let it through, and `floorPlan.rooms.flatMap(...)` then
+  // read .flatMap off undefined. The same body also explains the malformed
+  // request in the fault record: data.projectId was undefined, and
+  // encodeURIComponent(undefined) is the literal string "undefined", which is
+  // exactly the GET /api/ffe?projectId=undefined that was observed.
+  //
+  // fetchJson reads the status first and throws the backend's own message.
+  // FF&E and materials are fetched only once a real plan is in hand, and their
+  // own failures are non-fatal -- the plan still draws without them.
   async function load() {
     setLoading(true);
+    setLoadError(null);
+    let plan: FloorPlan;
     try {
-      const res = await fetch(`/api/floor-plans/${floorPlanId}`);
-      const data: FloorPlan = await res.json();
-      setFloorPlan(data);
-      const [ffeRes, matRes] = await Promise.all([
-        fetch(`/api/ffe?projectId=${encodeURIComponent(data.projectId)}`),
-        fetch(`/api/design-materials`),
-      ]);
-      const ffeData = await ffeRes.json();
-      const matData = await matRes.json();
-      setFfeItems(ffeData.items ?? []);
-      setMaterials(matData.materials ?? []);
-    } catch {
-      toast.error("Couldn't load floor plan");
-    } finally {
+      plan = await fetchJson<FloorPlan>(`/api/floor-plans/${floorPlanId}`);
+    } catch (err) {
+      const message = errorMessage(err, "Couldn't load floor plan");
+      setLoadError(message);
+      toast.error(message);
+      setFloorPlan(null);
       setLoading(false);
+      return;
     }
+    setFloorPlan(plan);
+
+    const [ffeRes, matRes] = await Promise.allSettled([
+      fetchJson<{ items?: FfeItem[] }>(`/api/ffe?projectId=${encodeURIComponent(plan.projectId)}`),
+      fetchJson<{ materials?: Material[] }>(`/api/design-materials`),
+    ]);
+    setFfeItems(ffeRes.status === "fulfilled" ? ffeRes.value.items ?? [] : []);
+    setMaterials(matRes.status === "fulfilled" ? matRes.value.materials ?? [] : []);
+    if (ffeRes.status === "rejected") toast.error(errorMessage(ffeRes.reason, "Couldn't load FF&E items"));
+    if (matRes.status === "rejected") toast.error(errorMessage(matRes.reason, "Couldn't load materials"));
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, [floorPlanId]);
@@ -136,7 +162,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
 
   async function placeFurniture(ffeItemId: string) {
     if (!floorPlan) return;
-    const firstRoom = floorPlan.rooms[0];
+    const firstRoom = (floorPlan.rooms ?? [])[0];
     const pos = firstRoom ? centroid(firstRoom.polygon) : { x: 200, y: 200 };
     try {
       const res = await fetch(`/api/floor-plans/${floorPlanId}/placements`, {
@@ -165,7 +191,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     const newY = pt.y - draggingRef.current.offsetY;
     setFloorPlan({
       ...floorPlan,
-      placements: floorPlan.placements.map((pl) =>
+      placements: (floorPlan.placements ?? []).map((pl) =>
         pl.id === draggingRef.current!.placementId ? { ...pl, x: String(newX), y: String(newY) } : pl
       ),
     });
@@ -175,7 +201,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     if (!draggingRef.current || !floorPlan) return;
     const { placementId } = draggingRef.current;
     draggingRef.current = null;
-    const placement = floorPlan.placements.find((p) => p.id === placementId);
+    const placement = (floorPlan.placements ?? []).find((p) => p.id === placementId);
     if (!placement) return;
     try {
       await fetch(`/api/floor-plans/${floorPlanId}/placements/${placementId}`, {
@@ -189,7 +215,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
 
   async function rotateSelected() {
     if (!selectedPlacementId || !floorPlan) return;
-    const placement = floorPlan.placements.find((p) => p.id === selectedPlacementId);
+    const placement = (floorPlan.placements ?? []).find((p) => p.id === selectedPlacementId);
     if (!placement) return;
     const nextRotation = (Number(placement.rotationDeg) + 15) % 360;
     try {
@@ -214,11 +240,32 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     }
   }
 
-  if (loading || !floorPlan) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+
+  // An error is not an empty editor. Say what went wrong, in the app, with a
+  // way back and a way to retry -- never the browser's own crash screen.
+  if (!floorPlan) {
+    return (
+      <Card className="shadow-card">
+        <CardContent className="space-y-3 p-8 text-center">
+          <p role="alert" className="text-sm text-px-error">{loadError ?? "Couldn't load this floor plan."}</p>
+          <div className="flex justify-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => load()}>Retry</Button>
+            <Link href="/floor-plans"><Button size="sm" variant="ghost">Back to floor plans</Button></Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Defensive even now that the error body can no longer reach here: a 200
+  // that omits either array is still not something to read .flatMap off.
+  const rooms = Array.isArray(floorPlan.rooms) ? floorPlan.rooms : [];
+  const placements = Array.isArray(floorPlan.placements) ? floorPlan.placements : [];
 
   const allPoints = [
-    ...floorPlan.rooms.flatMap((r) => r.polygon),
-    ...floorPlan.placements.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
+    ...rooms.flatMap((r) => r.polygon ?? []),
+    ...placements.map((p) => ({ x: Number(p.x), y: Number(p.y) })),
     ...drawPoints,
   ];
   const minX = allPoints.length ? Math.min(...allPoints.map((p) => p.x)) - 100 : 0;
@@ -226,7 +273,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
   const maxX = allPoints.length ? Math.max(...allPoints.map((p) => p.x)) + 100 : 600;
   const maxY = allPoints.length ? Math.max(...allPoints.map((p) => p.y)) + 100 : 600;
 
-  const unplacedItems = ffeItems.filter((i) => !floorPlan.placements.some((p) => p.ffeItemId === i.id));
+  const unplacedItems = ffeItems.filter((i) => !placements.some((p) => p.ffeItemId === i.id));
   const floorMaterials = materials.filter((m) => m.category === "flooring");
   const wallMaterials = materials.filter((m) => m.category === "wall");
   const ceilingMaterials = materials.filter((m) => m.category === "ceiling");
@@ -260,7 +307,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
           >
-            {floorPlan.rooms.map((r) => (
+            {rooms.map((r) => (
               <g key={r.id}>
                 <polygon
                   points={r.polygon.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -279,7 +326,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
             )}
             {drawPoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={5} fill="#F5820A" />)}
 
-            {floorPlan.placements.map((p) => {
+            {placements.map((p) => {
               const w = Number(p.item?.widthCm ?? 60);
               const d = Number(p.item?.depthCm ?? 60);
               const x = Number(p.x), y = Number(p.y);
@@ -312,8 +359,8 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
         <Card className="shadow-card">
           <CardHeader><CardTitle className="font-heading text-sm">Rooms</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {floorPlan.rooms.length === 0 && <p className="text-xs text-px-muted">No rooms yet -- draw one on the canvas.</p>}
-            {floorPlan.rooms.map((r) => (
+            {rooms.length === 0 && <p className="text-xs text-px-muted">No rooms yet -- draw one on the canvas.</p>}
+            {rooms.map((r) => (
               <div key={r.id} className="space-y-1.5 rounded-lg border border-px-border p-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-px-ink">{r.name}</p>
