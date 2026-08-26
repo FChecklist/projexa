@@ -76,6 +76,14 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { labelKey: "items.labour", href: "/labour", icon: Users },
       { labelKey: "items.materials", href: "/materials", icon: Package },
+      // R52 / R48_NAV_OMITS_LIVE_MODULE_ROUTE_01: /site-materials is a live,
+      // fully-rendering module (HTTP 200, its own "Site Materials" heading,
+      // three working tabs) that had no nav entry at all, so it could only be
+      // opened by typing the URL -- a direct C01 REACHABLE failure. It is the
+      // mirror of the unwired-pill problem this file already guards against:
+      // a route with no nav item in front of it, rather than a nav item with
+      // no route behind it. The test file now asserts BOTH directions.
+      { labelKey: "items.siteMaterials", href: "/site-materials", icon: Package },
       { labelKey: "items.inventory", href: "/inventory", icon: Warehouse },
       { labelKey: "items.vendors", href: "/vendors", icon: Building2 },
       { labelKey: "items.procurement", href: "/procurement", icon: ClipboardCheck },
@@ -148,10 +156,12 @@ const NAV_SECTIONS: NavSection[] = [
 // ships. See src/lib/nav-routes.ts for the shipped-route registry and the
 // test that keeps that registry honest against the real filesystem.
 //
-// MEASURED as of 2026-08-26: NAV_SECTIONS declares 46 entries (three
+// MEASURED as of 2026-08-26: NAV_SECTIONS declared 46 entries (three
 // independent counts agreed -- 46 `href:` keys, 46 `labelKey:` keys, and 46
-// Nav.items keys in messages/en.json), and all 46 resolve to a real page, so
-// this filter currently hides 0 of 46. It is a standing guard against the
+// Nav.items keys in messages/en.json), and all 46 resolved to a real page, so
+// this filter hid 0 of 46. R52 added the 47th, /site-materials, which was a
+// live module with no nav entry (R48_NAV_OMITS_LIVE_MODULE_ROUTE_01); the
+// three counts are 47 each now and the filter still hides 0. It is a standing guard against the
 // next unwired entry, not a mass cull -- the honest finding is that PROJEXA's
 // SIDEBAR was never the source of the unwired-pill risk (see
 // veri-chat-context.tsx's fetchCapabilityTree for where that risk actually
