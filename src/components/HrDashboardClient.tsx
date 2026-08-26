@@ -7,6 +7,7 @@ import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Users, Briefcase, CalendarClock, Wallet, Building2 } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Employee = { id: string; departmentId: string | null };
 type Department = { id: string; name: string };
@@ -28,20 +29,20 @@ export default function HrDashboardClient() {
     async function load() {
       setLoading(true);
       try {
-        const [empRes, deptRes, leaveRes, openRes, runsRes] = await Promise.all([
-          fetch("/api/employees"),
-          fetch("/api/hr/departments"),
-          fetch("/api/leave/requests"),
-          fetch("/api/recruitment/job-openings"),
-          fetch("/api/payroll/runs"),
+        const [empData, deptData, leaveData, openData, runsData] = await Promise.all([
+          fetchJson("/api/employees"),
+          fetchJson("/api/hr/departments"),
+          fetchJson("/api/leave/requests"),
+          fetchJson("/api/recruitment/job-openings"),
+          fetchJson("/api/payroll/runs"),
         ]);
-        setEmployees((await empRes.json()).employees ?? []);
-        setDepartments((await deptRes.json()).departments ?? []);
-        setLeaveRequests((await leaveRes.json()).requests ?? []);
-        setOpenings((await openRes.json()).jobOpenings ?? []);
-        setRuns((await runsRes.json()).runs ?? []);
-      } catch {
-        toast.error("Couldn't load HR dashboard");
+        setEmployees(empData.employees ?? []);
+        setDepartments(deptData.departments ?? []);
+        setLeaveRequests(leaveData.requests ?? []);
+        setOpenings(openData.jobOpenings ?? []);
+        setRuns(runsData.runs ?? []);
+      } catch (err) {
+        toast.error(errorMessage(err, "Couldn't load HR dashboard"));
       } finally {
         setLoading(false);
       }

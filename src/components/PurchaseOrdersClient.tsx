@@ -18,6 +18,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 // not a second copy. consolidate has no meaning for a flat PO list, so the
 // toggle is hidden here, same as Leads/Quotations/Sales Orders.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): the first Purchase
 // Order creation UI in PROJEXA -- VendorsClient.tsx only ever managed
@@ -67,11 +68,10 @@ export default function PurchaseOrdersClient() {
       const params = new URLSearchParams();
       if (scope.companyId) params.set("companyId", scope.companyId);
       const qs = params.toString();
-      const res = await fetch(`/api/purchase-orders${qs ? `?${qs}` : ""}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/purchase-orders${qs ? `?${qs}` : ""}`);
       setOrders(data.purchaseOrders ?? []);
-    } catch {
-      toast.error("Couldn't load purchase orders");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load purchase orders"));
     } finally {
       setLoading(false);
     }
@@ -82,10 +82,9 @@ export default function PurchaseOrdersClient() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/companies");
-        const data = await res.json();
+        const data = await fetchJson("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }

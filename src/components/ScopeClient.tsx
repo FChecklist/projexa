@@ -14,6 +14,8 @@ import { Loader2, Plus, Trash2, GitCompare, GitBranchPlus, Eye } from "lucide-re
 import { useCurrencies } from "@/lib/currency";
 import { CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { LoadFailure } from "@/components/LoadFailure";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -277,6 +279,7 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
@@ -313,9 +316,9 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
       const loaded: Boq[] = data.boqs ?? [];
       setBoqs(loaded);
 
@@ -329,8 +332,10 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         })
       );
       setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
-    } catch {
-      toast.error("Couldn't load scope of work");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load scope of work");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -417,12 +422,11 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
     setRevisionTitle(boq.title);
     setRevisionBlock(null);
     try {
-      const res = await fetch(`/api/scope/${boq.id}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/scope/${boq.id}`);
       const rows: BoqLineItemRow[] = data.lineItems ?? [];
       setRevisionLines(rows.length > 0 ? toDrafts(rows) : [emptyLine()]);
-    } catch {
-      toast.error("Couldn't load the current scope to revise");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load the current scope to revise"));
       setRevisionLines([emptyLine()]);
     }
   }
@@ -607,6 +611,8 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadError ? (
+            <LoadFailure error={loadError} onRetry={load} className="m-4" />
           ) : boqs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
           ) : (

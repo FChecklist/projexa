@@ -129,7 +129,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
       try {
         const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch {
+      } catch (err) {
         // Non-fatal -- CompanySelector renders nothing when companies is empty.
       }
     })();

@@ -27,6 +27,7 @@ export default function FloorPlansClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
       // fetchJson reads the STATUS before the body. The previous
       // `await res.json()` + `?? []` turned a failing VERIDIAN proxy into

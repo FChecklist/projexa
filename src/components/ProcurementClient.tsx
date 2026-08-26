@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, Send, ArrowRight, PackageCheck } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { LoadFailure } from "@/components/LoadFailure";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Requisition = {
   id: string; requisitionNumber: number; purpose: string | null; status: string; postingDate: string;
@@ -56,22 +58,21 @@ export default function ProcurementClient() {
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [reqRes, rfqRes, quoteRes, poRes, grRes, vendorRes, whRes, itemRes] = await Promise.all([
-        fetch("/api/procurement/requisitions"),
-        fetch("/api/procurement/rfqs"),
-        fetch("/api/procurement/quotations"),
-        fetch("/api/procurement/purchase-orders"),
-        fetch("/api/procurement/goods-receipts"),
-        fetch("/api/vendors"),
-        fetch("/api/inventory/warehouses"),
-        fetch("/api/inventory/items"),
-      ]);
       const [reqData, rfqData, quoteData, poData, grData, vendorData, whData, itemData] = await Promise.all([
-        reqRes.json(), rfqRes.json(), quoteRes.json(), poRes.json(), grRes.json(), vendorRes.json(), whRes.json(), itemRes.json(),
+        fetchJson("/api/procurement/requisitions"),
+        fetchJson("/api/procurement/rfqs"),
+        fetchJson("/api/procurement/quotations"),
+        fetchJson("/api/procurement/purchase-orders"),
+        fetchJson("/api/procurement/goods-receipts"),
+        fetchJson("/api/vendors"),
+        fetchJson("/api/inventory/warehouses"),
+        fetchJson("/api/inventory/items"),
       ]);
       setRequisitions(reqData.requisitions ?? []);
       setRfqs(rfqData.rfqs ?? []);
@@ -81,8 +82,10 @@ export default function ProcurementClient() {
       setVendors(vendorData.vendors ?? []);
       setWarehouses(whData.warehouses ?? []);
       setItems(itemData.items ?? []);
-    } catch {
-      toast.error("Couldn't load procurement data");
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load procurement data");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -328,7 +331,13 @@ export default function ProcurementClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {requisitions.length === 0 ? (
+            {loadError ? (
+              // F_032: "No purchase requisitions yet." rendered, with a
+              // working New Requisition button beside it, while
+              // /api/procurement/requisitions, /purchase-orders and /vendors
+              // were all returning 504. A real outage, painted as an empty list.
+              <LoadFailure error={loadError} onRetry={load} />
+            ) : requisitions.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No purchase requisitions yet.</p>
             ) : (
               <Table>

@@ -14,6 +14,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus, UserCheck } from "lucide-react";
 import { formatDateTime } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { LoadFailure } from "@/components/LoadFailure";
 
 type JobOpening = { id: string; title: string; departmentId: string | null; jobDescription: string | null; employmentType: string; numPositions: number; status: string };
 type Candidate = { id: string; name: string; email: string; phone: string | null; source: string | null };
@@ -47,6 +49,7 @@ export default function RecruitmentClient() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [jobStatusFilter, setJobStatusFilter] = useState("all");
 
   const [openingOpen, setOpeningOpen] = useState(false);
@@ -93,21 +96,24 @@ export default function RecruitmentClient() {
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [openRes, candRes, appRes, empRes, deptRes] = await Promise.all([
-        fetch("/api/recruitment/job-openings"),
-        fetch("/api/recruitment/candidates"),
-        fetch("/api/recruitment/applications"),
-        fetch("/api/employees"),
-        fetch("/api/hr/departments"),
+      const [openData, candData, appData, empData, deptData] = await Promise.all([
+        fetchJson("/api/recruitment/job-openings"),
+        fetchJson("/api/recruitment/candidates"),
+        fetchJson("/api/recruitment/applications"),
+        fetchJson("/api/employees"),
+        fetchJson("/api/hr/departments"),
       ]);
-      setOpenings((await openRes.json()).jobOpenings ?? []);
-      setCandidates((await candRes.json()).candidates ?? []);
-      setApplications((await appRes.json()).applications ?? []);
-      setEmployees((await empRes.json()).employees ?? []);
-      setDepartments((await deptRes.json()).departments ?? []);
-    } catch {
-      toast.error("Couldn't load recruitment data");
+      setOpenings(openData.jobOpenings ?? []);
+      setCandidates(candData.candidates ?? []);
+      setApplications(appData.applications ?? []);
+      setEmployees(empData.employees ?? []);
+      setDepartments(deptData.departments ?? []);
+    } catch (err) {
+      const msg = errorMessage(err, "Couldn't load recruitment data");
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -198,11 +204,10 @@ export default function RecruitmentClient() {
     setHireEmployeeProfileId("");
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/recruitment/applications/${app.id}/interviews`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/recruitment/applications/${app.id}/interviews`);
       setDetailInterviews(data.interviews ?? []);
-    } catch {
-      toast.error("Couldn't load interview history");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't load interview history"));
     } finally {
       setDetailLoading(false);
     }
@@ -388,7 +393,7 @@ export default function RecruitmentClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
-            {filteredOpenings.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No job openings yet.</p> : <DataTable columns={openingColumns} data={filteredOpenings} searchKey="title" searchPlaceholder="Search job openings…" />}
+            {loadError ? <LoadFailure error={loadError} onRetry={load} /> : filteredOpenings.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No job openings yet.</p> : <DataTable columns={openingColumns} data={filteredOpenings} searchKey="title" searchPlaceholder="Search job openings…" />}
           </CardContent>
         </Card>
       </TabsContent>

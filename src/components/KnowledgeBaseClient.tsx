@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, FileText, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type KbPage = { id: string; slug: string; title: string; content: string | null; version: number };
 
@@ -58,11 +59,10 @@ export default function KnowledgeBaseClient() {
     if (!q.trim()) { load(); return; }
     setSearching(true);
     try {
-      const res = await fetch(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
+      const data = await fetchJson(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
       setPages(data.pages ?? []);
-    } catch {
-      toast.error("Search failed");
+    } catch (err) {
+      toast.error(errorMessage(err, "Search failed"));
     } finally {
       setSearching(false);
     }
