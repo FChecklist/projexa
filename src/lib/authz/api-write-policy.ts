@@ -132,6 +132,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/opportunities": "PM_OR_ABOVE",
   "/opportunities/[id]": "PM_OR_ABOVE",
   "/opportunities/bulk-reassign": "PM_OR_ABOVE",
+  // R48_NO_CURRENCY_UI_01: changing the org's base currency re-denominates
+  // every money figure in the product; owner/admin only, matching the
+  // requireRole() gate VERIDIAN's own PUT enforces for its own session
+  // callers (this table is what enforces it for PROJEXA's, since the
+  // shared per-org API key carries no per-user role -- see the route).
+  "/organization/currency": "ORG_ADMIN",
   // Accepting an invite addressed to you is how you GET a role -- gating it on
   // one would be circular.
   "/org/invites/accept": "ANY_ROLE",
