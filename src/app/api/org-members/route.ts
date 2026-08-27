@@ -13,5 +13,12 @@ export async function GET() {
     .eq("organization_id", ctx.organizationId!);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ members: (data ?? []).filter((m) => m.user_id !== ctx.user!.id) });
+  // A4S14_settings_01: this previously filtered out `ctx.user!.id`, so the
+  // Settings Team table never included the currently authenticated member
+  // (owner or otherwise) -- even though GET /api/organization (which powers
+  // the "Your Account" card on the same page) reads that same person's
+  // role/email straight off ctx with no such filter. The roster is the full
+  // membership list for the org; every member, including the caller, is a
+  // real teammate and belongs in it.
+  return NextResponse.json({ members: data ?? [] });
 }
