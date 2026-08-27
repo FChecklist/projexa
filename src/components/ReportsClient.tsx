@@ -12,6 +12,7 @@ import { Loader2, Play } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -71,12 +72,45 @@ function buildReports(registryColumns: RegistryColumn[] | null | undefined): { v
 // to each other with nothing telling a real user they measure different
 // things. Keyed by report value so only project-status is affected; every
 // other report keeps ReportOutput's default bare-key-name display untouched.
+//
+// R55_REPORTS_RUN_REPORT_RAW_DUMP_01: project-status's remaining fields
+// (budget/revenue/expenses/contractValue/projectValue/earnedValue/
+// delayedTaskCount/photoCount/taskCount/projectId/projectName) had no entry
+// here either, so the same raw-camelCase-key-as-label defect applied to
+// all of them, not just the two percent fields above. Adding real labels
+// for the rest closes that gap the same way.
 const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
   "project-status": {
     percentByValue: "% Complete by BOQ Value",
     progressPercent: "% Complete by Activity Log",
+    contractValue: "Contract Value",
+    budget: "Budget",
+    revenue: "Revenue",
+    expenses: "Expenses",
+    projectValue: "Project Value",
+    earnedValue: "Earned Value",
+    delayedTaskCount: "Delayed Tasks",
+    photoCount: "Site Photos",
+    taskCount: "Tasks",
+    projectId: "Project ID",
+    projectName: "Project Name",
   },
 };
+
+// R55_REPORTS_CONTRACTVALUE_NO_AED_01: contractValue rendered as a bare
+// number with no currency token -- same defect class as
+// R55_LABOUR_RATE_NO_AED_01/R55_MATERIALS_UNITCOST_NO_AED_01 (PR #182/#183),
+// fixed there with the shared currencyLabel()+useCurrencies() helper.
+// contractValue has no per-row currencyId of its own (same "org base
+// currency" case those two used), so the value-formatter override just
+// prefixes the same live label ReportOutput's cellValue() would otherwise
+// skip. Built inside ProjectReportsPanel (below) since it needs the live
+// `currencies` list from useCurrencies().
+function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencies>): Record<string, (v: unknown) => string> {
+  return {
+    contractValue: (v) => (v === null || v === undefined ? "—" : `${currencyLabel(undefined, currencies)}${v}`),
+  };
+}
 
 // Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16, Owner: "look at the PROJEXA reports
@@ -99,6 +133,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [ranOnce, setRanOnce] = useState(false);
+  const currencies = useCurrencies();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
@@ -162,7 +197,11 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           ) : result === null ? (
             <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
           ) : (
-            <ReportOutput data={result} fieldLabels={REPORT_FIELD_LABELS[reportName]} />
+            <ReportOutput
+              data={result}
+              fieldLabels={REPORT_FIELD_LABELS[reportName]}
+              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
+            />
           )}
         </CardContent>
       </Card>

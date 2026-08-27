@@ -32,8 +32,26 @@ function cellValue(v: unknown): string {
  * semantics may supply a key -> human label override map here so this
  * still-generic renderer can show it without hand-building a bespoke view
  * for every report shape; reports that pass nothing keep today's exact
- * bare-key-name display. */
-export function ReportOutput({ data, fieldLabels }: { data: unknown; fieldLabels?: Record<string, string> }) {
+ * bare-key-name display.
+ *
+ * `fieldFormatters` (optional, R55): same opt-in per-key override shape as
+ * `fieldLabels`, but for the rendered VALUE instead of the label -- e.g. a
+ * currency field (project-status's contractValue) needs its org's live
+ * currency code prefixed (see LabourClient.tsx / MaterialsClient.tsx's
+ * currencyLabel()+useCurrencies() fix, same defect class: a bare number
+ * with no currency token is not self-explanatory). Left undefined, a key
+ * renders exactly as before via cellValue() -- no behavioural change for
+ * the other 16 reports or the AI Copilot's 7 tool results that don't pass
+ * one. */
+export function ReportOutput({
+  data,
+  fieldLabels,
+  fieldFormatters,
+}: {
+  data: unknown;
+  fieldLabels?: Record<string, string>;
+  fieldFormatters?: Record<string, (v: unknown) => string>;
+}) {
   if (Array.isArray(data)) {
     if (data.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No rows returned.</p>;
     const columns = isPlainObject(data[0]) ? Object.keys(data[0]) : ["value"];
@@ -79,7 +97,7 @@ export function ReportOutput({ data, fieldLabels }: { data: unknown; fieldLabels
             {scalarEntries.map(([k, v]) => (
               <div key={k}>
                 <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
-                <div className="font-medium text-px-ink">{cellValue(v)}</div>
+                <div className="font-medium text-px-ink">{fieldFormatters?.[k] ? fieldFormatters[k](v) : cellValue(v)}</div>
               </div>
             ))}
           </div>
@@ -87,7 +105,7 @@ export function ReportOutput({ data, fieldLabels }: { data: unknown; fieldLabels
         {nestedEntries.map(([k, v]) => (
           <div key={k} className="space-y-2">
             <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? k}</div>
-            <ReportOutput data={v} fieldLabels={fieldLabels} />
+            <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} />
           </div>
         ))}
       </div>
