@@ -16,6 +16,13 @@ import { Loader2, Plus, PlayCircle, Trash2, FileDown, FileText } from "lucide-re
 import { useOrgRole } from "@/hooks/use-org-role";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+
+// R43 F_031: which of the six data sources a given tab renders, so a tab
+// whose own source failed can say so instead of falling into its
+// `array.length === 0` empty-state copy. Keyed the same as the `key` values
+// passed to readList() below.
+type PayrollLoadKey = "runs" | "employees" | "components" | "structures" | "rules" | "slabs";
 
 type PayrollRun = { id: string; month: number; year: number; status: string; processedAt: string | null };
 type PayslipLine = { id: string; label: string; lineType: "earning" | "deduction"; amount: string };
@@ -43,6 +50,9 @@ export default function PayrollClient() {
   const [loading, setLoading] = useState(true);
   // R52 F_031: a 504 must never render as an empty state -- see load().
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
+  // R43 F_031 follow-up: per-source, so each tab can gate on its OWN failure
+  // instead of only the combined banner above the tabs -- see load().
+  const [sourceErrors, setSourceErrors] = useState<Partial<Record<PayrollLoadKey, string>>>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const [registerRun, setRegisterRun] = useState<PayrollRun | null>(null);
@@ -132,19 +142,35 @@ export default function PayrollClient() {
   async function load() {
     setLoading(true);
     setLoadErrors([]);
+    setSourceErrors({});
     const failures: string[] = [];
+    const bySource: Partial<Record<PayrollLoadKey, string>> = {};
 
-    // Pass 1 -- only what the default "Payroll Runs" tab renders.
-    try {
-      const [runsRes, empRes] = await Promise.all([fetch("/api/payroll/runs"), fetch("/api/employees")]);
-      const [runsList, empList] = await Promise.all([
-        readList<PayrollRun>(runsRes, "runs", "Payroll runs"),
-        readList<Employee>(empRes, "employees", "Employees"),
-      ]);
-      setRuns(runsList);
-      setEmployees(empList);
-    } catch (err) {
-      failures.push(err instanceof Error ? err.message : "Payroll runs: request failed");
+    // Pass 1 -- only what the default "Payroll Runs" tab renders. allSettled
+    // (not Promise.all) so: (a) if BOTH calls fail, both errors are named
+    // instead of only the first rejection's reason, which is all Promise.all
+    // ever surfaces, and (b) a successful sibling still lands via its own
+    // setter instead of being discarded because the other one failed.
+    const [runsRes, empRes] = await Promise.allSettled([fetch("/api/payroll/runs"), fetch("/api/employees")]);
+    const primary: [PromiseSettledResult<Response>, PayrollLoadKey, string, (v: never[]) => void][] = [
+      [runsRes, "runs", "Payroll runs", setRuns as (v: never[]) => void],
+      [empRes, "employees", "Employees", setEmployees as (v: never[]) => void],
+    ];
+
+    for (const [settled, key, label, setter] of primary) {
+      if (settled.status !== "fulfilled") {
+        const msg = `${label}: request failed`;
+        failures.push(msg);
+        bySource[key] = msg;
+        continue;
+      }
+      try {
+        setter((await readList(settled.value, key, label)) as never[]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : `${label}: request failed`;
+        failures.push(msg);
+        bySource[key] = msg;
+      }
     }
     setLoading(false);
 
@@ -157,7 +183,7 @@ export default function PayrollClient() {
       fetch("/api/payroll/income-tax-slabs"),
     ]);
 
-    const secondary: [PromiseSettledResult<Response>, string, string, (v: never[]) => void][] = [
+    const secondary: [PromiseSettledResult<Response>, PayrollLoadKey, string, (v: never[]) => void][] = [
       [compRes, "components", "Salary components", setComponents as (v: never[]) => void],
       [structRes, "structures", "Salary structures", setStructures as (v: never[]) => void],
       [rulesRes, "rules", "Statutory rules", setRules as (v: never[]) => void],
@@ -166,18 +192,23 @@ export default function PayrollClient() {
 
     for (const [settled, key, label, setter] of secondary) {
       if (settled.status !== "fulfilled") {
-        failures.push(`${label}: request failed`);
+        const msg = `${label}: request failed`;
+        failures.push(msg);
+        bySource[key] = msg;
         continue;
       }
       try {
         setter((await readList(settled.value, key, label)) as never[]);
       } catch (err) {
-        failures.push(err instanceof Error ? err.message : `${label}: request failed`);
+        const msg = err instanceof Error ? err.message : `${label}: request failed`;
+        failures.push(msg);
+        bySource[key] = msg;
       }
     }
 
     if (failures.length) {
       setLoadErrors(failures);
+      setSourceErrors(bySource);
       toast.error("Some payroll data couldn't be loaded");
     }
   }
@@ -506,7 +537,16 @@ export default function PayrollClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
-            {runs.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No payroll runs yet.</p> : <DataTable columns={runColumns} data={runs} />}
+            {sourceErrors.runs ? (
+              // R43 F_031: this tab is open by default, so it is the surface
+              // most likely to be seen right after a failed load -- it must
+              // not say "No payroll runs yet." about data that was never read.
+              <DataLoadError messages={[sourceErrors.runs]} onRetry={load} />
+            ) : runs.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">No payroll runs yet.</p>
+            ) : (
+              <DataTable columns={runColumns} data={runs} />
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -556,7 +596,13 @@ export default function PayrollClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
-            {structures.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No salary structures yet.</p> : <DataTable columns={structureColumns} data={structures} />}
+            {sourceErrors.structures ? (
+              <DataLoadError messages={[sourceErrors.structures]} onRetry={load} />
+            ) : structures.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">No salary structures yet.</p>
+            ) : (
+              <DataTable columns={structureColumns} data={structures} />
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -603,7 +649,13 @@ export default function PayrollClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
-            {components.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No salary components yet.</p> : <DataTable columns={componentColumns} data={components} />}
+            {sourceErrors.components ? (
+              <DataLoadError messages={[sourceErrors.components]} onRetry={load} />
+            ) : components.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">No salary components yet.</p>
+            ) : (
+              <DataTable columns={componentColumns} data={components} />
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -662,7 +714,9 @@ export default function PayrollClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {rules.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No statutory rules yet.</p> : (
+            {sourceErrors.rules ? (
+              <DataLoadError messages={[sourceErrors.rules]} onRetry={load} />
+            ) : rules.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No statutory rules yet.</p> : (
               <Table>
                 <TableHeader><TableRow><TableHead>Rule</TableHead><TableHead>State</TableHead><TableHead>Effective From</TableHead><TableHead>Employee Rate</TableHead><TableHead>Employer Rate</TableHead><TableHead>Wage Ceiling</TableHead></TableRow></TableHeader>
                 <TableBody>
@@ -721,7 +775,9 @@ export default function PayrollClient() {
           </div>
           <Card className="shadow-card">
             <CardContent className="p-0">
-              {slabs.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No income tax slabs yet.</p> : (
+              {sourceErrors.slabs ? (
+                <DataLoadError messages={[sourceErrors.slabs]} onRetry={load} />
+              ) : slabs.length === 0 ? <p className="py-10 text-center text-sm text-px-muted">No income tax slabs yet.</p> : (
                 <Table>
                   <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Effective From</TableHead><TableHead>Standard Deduction</TableHead><TableHead>Rate Bands</TableHead></TableRow></TableHeader>
                   <TableBody>
