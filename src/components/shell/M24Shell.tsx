@@ -55,6 +55,13 @@ const MODE_KEY = "veri.chain.mode";
 const HISTORY_KEY = "veri.chain.history";
 const PILL_USAGE_KEY = "veri.pill.usage";
 
+// R55_BUDGETS_TAB_NOT_IN_URL_01 / R55_SCHEDULE_TAB_NOT_IN_URL_01: the Task
+// Master status tabs (Home/Approval Pending/In Queue/Completed/History)
+// live in this ONE shell that wraps all 53 app routes, so the URL param
+// lives here too rather than in any one page.
+const TASK_TAB_PARAM = "taskTab";
+const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
+
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
 // R53's task shape, from GET /api/v1/projexa/tasks (contract: claude_log id=35).
@@ -441,6 +448,39 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   ];
   const [activeTab, setActiveTab] = useState<TaskTab["id"]>("home");
 
+  // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
+  // written to the URL -- a hard reload always fell back to "home", the
+  // filter could not be shared or bookmarked, and browser back/forward did
+  // nothing. Read on mount (covers the reload) and on `popstate` (covers
+  // back/forward); "home" is the default and is kept OUT of the URL rather
+  // than written as ?taskTab=home.
+  useEffect(() => {
+    const readTabFromUrl = () => {
+      const raw = new URLSearchParams(window.location.search).get(TASK_TAB_PARAM);
+      setActiveTab(raw && (TASK_TAB_IDS as readonly string[]).includes(raw) ? (raw as TaskTab["id"]) : "home");
+    };
+    readTabFromUrl();
+    window.addEventListener("popstate", readTabFromUrl);
+    return () => window.removeEventListener("popstate", readTabFromUrl);
+  }, []);
+
+  // Writes the other direction: a click updates the URL (so it is shareable
+  // and bookmarkable) in addition to the local state TaskMaster renders from.
+  const onTabChange = useCallback(
+    (id: TaskTab["id"]) => {
+      setActiveTab(id);
+      const params = new URLSearchParams(window.location.search);
+      if (id === "home") {
+        params.delete(TASK_TAB_PARAM);
+      } else {
+        params.set(TASK_TAB_PARAM, id);
+      }
+      const qs = params.toString();
+      router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router]
+  );
+
   return (
     <AppShell
       topRail={
@@ -511,7 +551,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         <TaskMaster
           tabs={tabs}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={onTabChange}
           needsYou={needsYou}
           waitingOnOthers={waiting}
           onLoad={onLoadChain}
