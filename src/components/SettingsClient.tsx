@@ -16,8 +16,27 @@ import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
+type OrgCurrency = { baseCurrency: { id: string; code: string; name: string; symbol: string | null } | null; country: string | null };
 
 const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = { owner: "default", admin: "secondary", member: "outline" };
+
+// R48_NO_CURRENCY_UI_01: mirrors compliance-tracker's erp-accounting-service.ts
+// CURRENCY_NAMES -- the codes VERIDIAN already knows a display name for.
+// setBaseCurrency() accepts any 3-letter ISO code, but a curated dropdown
+// (this product's real markets: India + the Gulf) beats a free-text field
+// that invites typos an org would then be silently mis-denominated by.
+const CURRENCY_OPTIONS: { code: string; name: string }[] = [
+  { code: "AED", name: "UAE Dirham" },
+  { code: "INR", name: "Indian Rupee" },
+  { code: "USD", name: "US Dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "Pound Sterling" },
+  { code: "SAR", name: "Saudi Riyal" },
+  { code: "QAR", name: "Qatari Riyal" },
+  { code: "OMR", name: "Omani Rial" },
+  { code: "BHD", name: "Bahraini Dinar" },
+  { code: "KWD", name: "Kuwaiti Dinar" },
+];
 
 // Mirrors ALL_ORG_ROLES in src/lib/supabase/auth-guard.ts -- kept as a
 // plain client-side list rather than importing that (server-only) module.
@@ -35,6 +54,9 @@ export default function SettingsClient() {
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<OrgCurrency | null>(null);
+  const [currencyLoading, setCurrencyLoading] = useState(true);
+  const [savingCurrency, setSavingCurrency] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -49,6 +71,39 @@ export default function SettingsClient() {
       .catch(() => toast.error("Couldn't load settings"))
       .finally(() => setLoading(false));
   }, []);
+
+  // R48_NO_CURRENCY_UI_01: independent of the load above -- a currency-fetch
+  // hiccup should never block Name/Slug/Team from rendering. baseCurrency
+  // coming back null is a genuine, reportable "not set" (see
+  // CURRENCY_FALLBACK_LABEL in lib/currency.ts for why this app never
+  // silently guesses a currency); currencyLoading distinguishes that from
+  // "still loading" so a slow response can't briefly read as "not set".
+  useEffect(() => {
+    fetch("/api/organization/currency")
+      .then((r) => r.json())
+      .then((d) => { if (!d.error) setCurrency(d); })
+      .catch(() => {})
+      .finally(() => setCurrencyLoading(false));
+  }, []);
+
+  async function changeCurrency(code: string) {
+    setSavingCurrency(true);
+    try {
+      const res = await fetch("/api/organization/currency", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update currency");
+      setCurrency(data);
+      toast.success(`Organization currency set to ${data.baseCurrency?.code ?? code}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update currency");
+    } finally {
+      setSavingCurrency(false);
+    }
+  }
 
   async function changeRole(userId: string, role: string) {
     setUpdatingId(userId);
@@ -84,10 +139,30 @@ export default function SettingsClient() {
     <div className="space-y-6">
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Organization</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div><div className="text-xs text-px-muted">Name</div><div className="font-medium text-px-ink">{info?.organization.name ?? "—"}</div></div>
           <div><div className="text-xs text-px-muted">Slug</div><div className="font-medium text-px-ink">{info?.organization.slug ?? "—"}</div></div>
           <div><div className="text-xs text-px-muted">Member since</div><div className="font-medium text-px-ink">{info ? formatDate(info.organization.created_at) : "—"}</div></div>
+          {/* R48_NO_CURRENCY_UI_01: the org's base currency, previously
+              settable nowhere in the product (compliance.erp_currencies had
+              the data -- see PUT /api/organization/currency's comment -- but
+              nothing surfaced it). "Not set" is rendered honestly when
+              baseCurrency is null, never defaulted to a guess. */}
+          <div>
+            <div className="text-xs text-px-muted">Currency</div>
+            {currencyLoading ? (
+              <div className="font-medium text-px-muted">—</div>
+            ) : info && CAN_ASSIGN_ROLES.has(info.role) ? (
+              <Select value={currency?.baseCurrency?.code ?? ""} onValueChange={changeCurrency} disabled={savingCurrency}>
+                <SelectTrigger size="sm" className="w-28"><SelectValue placeholder="Not set" /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCY_OPTIONS.map((c) => <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="font-medium text-px-ink">{currency?.baseCurrency?.code ?? "Not set"}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
