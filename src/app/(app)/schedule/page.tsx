@@ -4,7 +4,8 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { type RegistryColumn } from "@/components/ScheduleGanttClient";
-import { ScheduleTabsClient, isScheduleTab } from "@/components/ScheduleTabsClient";
+import { ScheduleTabsClient } from "@/components/ScheduleTabsClient";
+import { isScheduleTab } from "@/lib/schedule-tabs";
 
 // R46 P8 seq130 (M28 registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns and R46 P8 seq121's resolveRegistryColumns in
@@ -25,6 +26,16 @@ async function resolveScheduleTimelineColumns(organizationId: string | null): Pr
   }
 }
 
+// F_016 fix (2026-08-27): isScheduleTab now comes from src/lib/schedule-tabs.ts
+// (a plain, non-"use client" module) instead of from ScheduleTabsClient.tsx.
+// This Server Component was calling isScheduleTab(tab) directly below, and a
+// function exported from a "use client" file becomes an opaque client
+// reference when imported into a Server Component -- it can only be rendered
+// as a Component or passed as a prop, never invoked. That mismatch 500'd
+// every GET /schedule in production with "Attempted to call isScheduleTab()
+// from the server but isScheduleTab is on the client" (digest 1240219489,
+// confirmed live 2026-08-27, first seen minutes after R57/PR#185 -- which
+// introduced this exact call -- went live).
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
