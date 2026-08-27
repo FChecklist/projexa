@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
 // Point 33: was a 73-line empty-state-only stock ledger listing (no master,
 // no create form). His words: "material database. material inbound, spec,
@@ -55,7 +56,7 @@ const MASTER_COLUMNS: ScreenColumn[] = [
 // up by field name so reordering doesn't change what renders. `default`
 // covers any field a future registry row names that this component doesn't
 // know about yet.
-function renderMaterialCell(field: string, m: Material) {
+function renderMaterialCell(field: string, m: Material, currencies: Currency[]) {
   switch (field) {
     case "name":
       return <span className="font-medium">{m.name}</span>;
@@ -64,7 +65,13 @@ function renderMaterialCell(field: string, m: Material) {
     case "unit":
       return m.unit;
     case "unitCost":
-      return m.unitCost;
+      // R55_MATERIALS_UNITCOST_NO_AED_01: was a bare `m.unitCost`, same
+      // defect class as R55_LABOUR_RATE_NO_AED_01 -- the column rendered
+      // unlabelled numbers with no currency anywhere on the page. Materials
+      // carry no per-item currencyId (unlike quotations/orders), so this is
+      // always the org base currency -- currencyLabel(undefined, ...) is
+      // exactly the "org base currency" lookup per its own doc comment.
+      return `${currencyLabel(undefined, currencies)}${m.unitCost}`;
     default:
       return String((m as unknown as Record<string, unknown>)[field] ?? "—");
   }
@@ -72,6 +79,7 @@ function renderMaterialCell(field: string, m: Material) {
 
 export default function MaterialsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+  const currencies = useCurrencies();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -230,7 +238,7 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
                 <TableBody>
                   {materials.map((m) => (
                     <TableRow key={m.id}>
-                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m)}</TableCell>)}
+                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
                     </TableRow>
                   ))}
                 </TableBody>
