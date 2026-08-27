@@ -47,6 +47,14 @@ const STATUS_VARIANT: Record<string, "default" | "outline" | "secondary"> = {
   completed: "default", partially_received: "secondary",
 };
 
+// R43 F_032: which of the eight concurrent data sources backs which of the
+// five tabs, so a tab whose own source failed can say so instead of falling
+// into its `array.length === 0` empty-state copy. vendors/warehouses/items
+// are shared lookups (dialog dropdowns), not a tab of their own.
+type ProcurementLoadKey =
+  | "requisitions" | "rfqs" | "quotations" | "purchaseOrders" | "goodsReceipts"
+  | "vendors" | "warehouses" | "items";
+
 export default function ProcurementClient() {
   const currencies = useCurrencies();
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
@@ -58,36 +66,52 @@ export default function ProcurementClient() {
   const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // R43 F_032: per-source, so each tab can gate on its OWN failure instead
+  // of a single generic loadError that only ever named "some request" and,
+  // being one flag, hid every tab except the one wired to read it
+  // (Requisitions) behind the same fake "No X yet." the fault is about.
+  const [loadErrors, setLoadErrors] = useState<Partial<Record<ProcurementLoadKey, string>>>({});
 
   async function load() {
     setLoading(true);
-    setLoadError(null);
-    try {
-      const [reqData, rfqData, quoteData, poData, grData, vendorData, whData, itemData] = await Promise.all([
-        fetchJson("/api/procurement/requisitions"),
-        fetchJson("/api/procurement/rfqs"),
-        fetchJson("/api/procurement/quotations"),
-        fetchJson("/api/procurement/purchase-orders"),
-        fetchJson("/api/procurement/goods-receipts"),
-        fetchJson("/api/vendors"),
-        fetchJson("/api/inventory/warehouses"),
-        fetchJson("/api/inventory/items"),
-      ]);
-      setRequisitions(reqData.requisitions ?? []);
-      setRfqs(rfqData.rfqs ?? []);
-      setQuotations(quoteData.quotations ?? []);
-      setPurchaseOrders(poData.purchaseOrders ?? []);
-      setGoodsReceipts(grData.goodsReceipts ?? []);
-      setVendors(vendorData.vendors ?? []);
-      setWarehouses(whData.warehouses ?? []);
-      setItems(itemData.items ?? []);
-    } catch (err) {
-      const msg = errorMessage(err, "Couldn't load procurement data");
-      setLoadError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
+    setLoadErrors({});
+
+    // allSettled (not Promise.all) so one failing source never discards the
+    // seven siblings that succeeded, and so EVERY failure is named instead
+    // of only the first rejection's reason -- what Promise.all did here.
+    const sources: {
+      key: ProcurementLoadKey;
+      url: string;
+      respKey: string;
+      label: string;
+      setter: (v: never[]) => void;
+    }[] = [
+      { key: "requisitions", url: "/api/procurement/requisitions", respKey: "requisitions", label: "Requisitions", setter: setRequisitions as (v: never[]) => void },
+      { key: "rfqs", url: "/api/procurement/rfqs", respKey: "rfqs", label: "RFQs", setter: setRfqs as (v: never[]) => void },
+      { key: "quotations", url: "/api/procurement/quotations", respKey: "quotations", label: "Quotations", setter: setQuotations as (v: never[]) => void },
+      { key: "purchaseOrders", url: "/api/procurement/purchase-orders", respKey: "purchaseOrders", label: "Purchase orders", setter: setPurchaseOrders as (v: never[]) => void },
+      { key: "goodsReceipts", url: "/api/procurement/goods-receipts", respKey: "goodsReceipts", label: "Goods receipts", setter: setGoodsReceipts as (v: never[]) => void },
+      { key: "vendors", url: "/api/vendors", respKey: "vendors", label: "Vendors", setter: setVendors as (v: never[]) => void },
+      { key: "warehouses", url: "/api/inventory/warehouses", respKey: "warehouses", label: "Warehouses", setter: setWarehouses as (v: never[]) => void },
+      { key: "items", url: "/api/inventory/items", respKey: "items", label: "Items", setter: setItems as (v: never[]) => void },
+    ];
+
+    const results = await Promise.allSettled(sources.map((s) => fetchJson<Record<string, unknown>>(s.url)));
+
+    const errors: Partial<Record<ProcurementLoadKey, string>> = {};
+    results.forEach((result, i) => {
+      const s = sources[i];
+      if (result.status === "fulfilled") {
+        s.setter(((result.value[s.respKey] as never[]) ?? []) as never[]);
+      } else {
+        errors[s.key] = errorMessage(result.reason, s.label);
+      }
+    });
+
+    setLoading(false);
+    if (Object.keys(errors).length > 0) {
+      setLoadErrors(errors);
+      toast.error("Some procurement data couldn't be loaded");
     }
   }
 
@@ -331,12 +355,12 @@ export default function ProcurementClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loadError ? (
+            {loadErrors.requisitions ? (
               // F_032: "No purchase requisitions yet." rendered, with a
               // working New Requisition button beside it, while
               // /api/procurement/requisitions, /purchase-orders and /vendors
               // were all returning 504. A real outage, painted as an empty list.
-              <DataLoadError messages={[loadError]} onRetry={load} />
+              <DataLoadError messages={[loadErrors.requisitions]} onRetry={load} />
             ) : requisitions.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No purchase requisitions yet.</p>
             ) : (
@@ -406,7 +430,9 @@ export default function ProcurementClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {rfqs.length === 0 ? (
+            {loadErrors.rfqs ? (
+              <DataLoadError messages={[loadErrors.rfqs]} onRetry={load} />
+            ) : rfqs.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No RFQs yet.</p>
             ) : (
               <Table>
@@ -469,7 +495,9 @@ export default function ProcurementClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {quotations.length === 0 ? (
+            {loadErrors.quotations ? (
+              <DataLoadError messages={[loadErrors.quotations]} onRetry={load} />
+            ) : quotations.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No supplier quotations recorded yet.</p>
             ) : (
               <Table>
@@ -500,7 +528,9 @@ export default function ProcurementClient() {
       <TabsContent value="purchase-orders" className="space-y-3">
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {purchaseOrders.length === 0 ? (
+            {loadErrors.purchaseOrders ? (
+              <DataLoadError messages={[loadErrors.purchaseOrders]} onRetry={load} />
+            ) : purchaseOrders.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No purchase orders yet. Convert a quotation to create one.</p>
             ) : (
               <Table>
@@ -584,7 +614,9 @@ export default function ProcurementClient() {
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {goodsReceipts.length === 0 ? (
+            {loadErrors.goodsReceipts ? (
+              <DataLoadError messages={[loadErrors.goodsReceipts]} onRetry={load} />
+            ) : goodsReceipts.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No goods receipts recorded yet.</p>
             ) : (
               <Table>
