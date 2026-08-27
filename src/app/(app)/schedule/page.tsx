@@ -1,13 +1,10 @@
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import ScheduleGanttClient, { type RegistryColumn } from "@/components/ScheduleGanttClient";
-import ScheduleBoardClient from "@/components/ScheduleBoardClient";
-import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
-import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
+import { type RegistryColumn } from "@/components/ScheduleGanttClient";
+import { ScheduleTabsClient, isScheduleTab } from "@/components/ScheduleTabsClient";
 
 // R46 P8 seq130 (M28 registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns and R46 P8 seq121's resolveRegistryColumns in
@@ -28,11 +25,12 @@ async function resolveScheduleTimelineColumns(organizationId: string | null): Pr
   }
 }
 
-export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
+  const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const timelineColumns = await resolveScheduleTimelineColumns(organizationId);
+  const initialTab = isScheduleTab(tab) ? tab : "timeline";
 
   return (
     <>
@@ -49,26 +47,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
         {project && (
           <>
             <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
-            <Tabs defaultValue="timeline">
-              <TabsList>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                <TabsTrigger value="board">Board</TabsTrigger>
-                <TabsTrigger value="sprints">Sprints</TabsTrigger>
-                <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
-              </TabsList>
-              <TabsContent value="timeline">
-                <ScheduleGanttClient projectId={project.id} registryColumns={timelineColumns} />
-              </TabsContent>
-              <TabsContent value="board">
-                <ScheduleBoardClient projectId={project.id} />
-              </TabsContent>
-              <TabsContent value="sprints">
-                <ScheduleSprintsClient projectId={project.id} />
-              </TabsContent>
-              <TabsContent value="timesheet">
-                <ScheduleTimesheetClient projectId={project.id} />
-              </TabsContent>
-            </Tabs>
+            <ScheduleTabsClient projectId={project.id} initialTab={initialTab} timelineColumns={timelineColumns} />
           </>
         )}
       </div>
