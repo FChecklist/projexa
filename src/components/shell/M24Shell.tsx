@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation";
 import {
   AppShell,
   Composer,
+  COMPOSER_PILLS_BAND_RESERVE,
   PillStrip,
   TaskMaster,
   TopRail,
@@ -483,6 +484,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShell
+      // F_019 fix (2026-08-27): this shell always renders the composer's
+      // `pills` slot below (never gated on a "composing" state -- see that
+      // prop's own comment: hiding the module shortcuts "would be a dead
+      // end, and M24 forbids dead ends"), so the composer's real resting
+      // height is always taller than AppShell's own default reserve, which
+      // assumes "control strip + one input line" with no pills band. Without
+      // this, the composer's pointer-events-auto box silently overlaps
+      // whatever page content has scrolled to the pane's bottom edge --
+      // reproduced live on /reports: a real click on the report-catalog
+      // "Run" button landed on the composer's own wrapper div
+      // (document.elementFromPoint), not the button, and produced zero
+      // network requests. See veridian-ui-kit's AppShell.tsx/Composer.tsx
+      // for the full mechanism this constant accounts for.
+      composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
       topRail={
         <TopRail
           brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
