@@ -37,7 +37,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<FfeItem[]>([]);
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrors, setLoadErrors] = useState<{ items?: string; margin?: string }>({});
   const [open, setOpen] = useState(false);
   const [itemName, setItemName] = useState("");
   const [roomOrArea, setRoomOrArea] = useState("");
@@ -52,21 +52,25 @@ export default function FfeClient({ projectId }: { projectId: string }) {
 
   async function load() {
     setLoading(true);
-    setLoadError(null);
-    try {
-      const [itemsData, marginData] = await Promise.all([
-        fetchJson(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
-        fetchJson(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
-      ]);
-      setItems(itemsData.items ?? []);
-      setMargin(marginData);
-    } catch (err) {
-      const msg = errorMessage(err, "Couldn't load FF&E items");
-      setLoadError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
+    // Salvaged from PR #179 (R52 Gate 2 follow-up, same defect class as
+    // R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01): allSettled, not all -- a
+    // failing margin-summary read must not blank an already-successful items
+    // read, and vice versa. Each failure is reported in the backend's OWN
+    // words rather than collapsed into one generic message for two sources.
+    const [itemsR, marginR] = await Promise.allSettled([
+      fetchJson<{ items?: FfeItem[] }>(`/api/ffe?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<MarginSummary>(`/api/ffe/margin-summary?projectId=${encodeURIComponent(projectId)}`),
+    ]);
+
+    const errors: { items?: string; margin?: string } = {};
+    if (itemsR.status === "fulfilled") setItems(itemsR.value.items ?? []);
+    else { setItems([]); errors.items = errorMessage(itemsR.reason, "FF&E items"); }
+
+    if (marginR.status === "fulfilled") setMargin(marginR.value);
+    else { setMargin(null); errors.margin = errorMessage(marginR.reason, "Margin summary"); }
+
+    setLoadErrors(errors);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, [projectId]);
@@ -153,12 +157,17 @@ export default function FfeClient({ projectId }: { projectId: string }) {
         </Dialog>
       </div>
 
+      {/* Rendered BELOW the New Item button on purpose: an alert above it
+          would push the button down after load, the layout-reflow defect
+          R48_LAYOUT_REFLOW_01 tracks. Combines both sources' errors -- items
+          and margin are fetched independently, so this can report one, the
+          other, both, or neither. */}
+      <DataLoadError messages={Object.values(loadErrors).filter(Boolean) as string[]} onRetry={load} />
+
       <Card className="shadow-card">
         <CardHeader><CardTitle className="font-heading text-base">FF&E Schedule</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {loadError ? (
-            <DataLoadError messages={[loadError]} onRetry={load} />
-          ) : items.length === 0 ? (
+          {loadErrors.items ? null : items.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No FF&E items yet.</p>
           ) : (
             <Table>
