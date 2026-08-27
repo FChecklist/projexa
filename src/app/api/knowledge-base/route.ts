@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   if (!body.title) return NextResponse.json({ error: "title is required" }, { status: 400 });
   try {
-    const data = await callVeridian("/knowledge-base", { method: "POST", body });
+    const data = await callVeridian("/knowledge-base", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create knowledge base page" }, { status: err instanceof VeridianApiError ? err.status : 502 });
