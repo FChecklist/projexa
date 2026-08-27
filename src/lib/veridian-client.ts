@@ -1,5 +1,6 @@
 import { db, veridianCredentials } from "@/lib/db";
 import { eq } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
 
 // PROJEXA's only connection to construction data: every call goes through
 // VERIDIAN's /api/v1/projexa/* surface with a Bearer API key. This file
@@ -366,4 +367,50 @@ export async function provisionVeridianOrg(params: ProvisionVeridianOrgParams): 
   }
 
   return { organisationId: data.organisationId, apiKey: data.apiKey };
+}
+
+// Perf, 2026-08-27: cached counterpart to callVeridian() for GET-only,
+// read-heavy, slowly-changing reference/lookup data -- currency master list,
+// cost centers, fiscal years. Deliberately NOT used for anything that shows
+// a live/current figure (dashboard totals, AR aging, balance sheet, invoice
+// status) or any write path; those keep calling callVeridian() directly with
+// its existing cache: "no-store".
+//
+// SECURITY, read before reusing this for a new route: every VERIDIAN call
+// in this file is per-tenant -- the exact same `path` (e.g. "/currencies")
+// returns a DIFFERENT org's data depending solely on which per-org Bearer
+// token resolveApiKey() attached (see AR-04 above), never on the URL. Next's
+// ordinary `fetch()` cache keys on URL + method + body only, NOT headers --
+// so naively adding `next: { revalidate }` to the shared fetch() inside
+// fetchWithTimeout() would silently serve org A's cached response to org B
+// on org B's next request. That is a real cross-tenant leak (same class as
+// E-45), not a theoretical one, which is why this helper exists instead of
+// touching that shared fetch call.
+//
+// unstable_cache's cache key is derived from `keyParts` PLUS the serialized
+// arguments passed to the wrapped function -- organizationId is both an
+// explicit keyPart and the function's sole argument, so it is org-scoped
+// two independent ways. Define the returned fetcher ONCE per route at
+// module scope (as every call site below does) rather than inside the
+// request handler -- unstable_cache is meant to be created once, not
+// re-wrapped on every request.
+//
+// This uses Next's built-in Data Cache -- the same mechanism ISR/`fetch`
+// revalidation uses. It ships on every Vercel plan including Hobby; it is
+// not a paid add-on.
+//
+// Caller must already have run requireAuth() (or equivalent) and confirmed
+// the request is authorized BEFORE calling the returned fetcher -- this
+// only caches the downstream data for an already-authorized org, it never
+// substitutes for the authorization check itself.
+export function createCachedVeridianGet<T = unknown>(
+  cacheKey: string,
+  path: string,
+  revalidateSeconds: number
+): (organizationId: string) => Promise<T> {
+  return unstable_cache(
+    (organizationId: string) => callVeridian<T>(path, { organizationId }),
+    [cacheKey, path],
+    { revalidate: revalidateSeconds, tags: [cacheKey] }
+  );
 }
