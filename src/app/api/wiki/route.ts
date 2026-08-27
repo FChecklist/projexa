@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "projectId and title are required" }, { status: 400 });
   }
   try {
-    const data = await callVeridian("/wiki", { method: "POST", body });
+    const data = await callVeridian("/wiki", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create wiki page" }, { status: err instanceof VeridianApiError ? err.status : 502 });
