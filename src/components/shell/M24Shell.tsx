@@ -47,6 +47,7 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+import { createClient } from "@/lib/supabase/client";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -203,21 +204,39 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
+  // F_025 fix: this used to run exactly once, inline in the mount effect
+  // below, with no way to re-invoke it. That made the account menu's
+  // identity a snapshot of whoever was signed in at the moment THIS TAB
+  // first mounted -- reproduced live: sign in as user A in one tab (menu
+  // correctly shows A), then in a SEPARATE tab of the SAME browser sign in
+  // as user B (Supabase's cookie-backed session is shared per-origin, so
+  // this silently replaces A's session for every open tab). The first tab,
+  // never having re-fetched, went on showing A indefinitely -- while a
+  // fresh `fetch("/api/organization")` issued from that exact same tab
+  // (same cookies) correctly returned B, because that route always reads
+  // the CURRENT request's session fresh. The mismatch was never in
+  // /api/organization or requireAuth() (both were already correct, per
+  // that route's `email: ctx.user!.email` straight off the verified JWT) --
+  // it was this component's `info` state going stale relative to the
+  // session that now owns the tab. Extracted to a stable callback so it can
+  // be re-run below on any Supabase auth-state change, not just on mount.
+  const loadOrgInfo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/organization");
+      const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
+      if (!res.ok) {
+        noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
+        return;
+      }
+      if (d?.organization?.name) setInfo(d);
+    } catch (err) {
+      noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
+    }
+  }, [noteFailure]);
+
   useEffect(() => {
     let live = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/organization");
-        const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
-        if (!res.ok) {
-          if (live) noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        if (live && d?.organization?.name) setInfo(d);
-      } catch (err) {
-        if (live) noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
+    void loadOrgInfo();
     (async () => {
       try {
         const res = await fetch("/api/projects");
@@ -235,7 +254,50 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     return () => {
       live = false;
     };
-  }, [noteFailure]);
+  }, [noteFailure, loadOrgInfo]);
+
+  // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
+  // reports a session change -- a sign-in/sign-out in this same tab (also
+  // covers a token silently refreshing to the same user; re-fetching then
+  // is a harmless no-op, not a reason to special-case which events fire).
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") {
+        void loadOrgInfo();
+      } else if (event === "SIGNED_OUT") {
+        setInfo(null);
+      }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [loadOrgInfo]);
+
+  // F_025, second half of the fix: onAuthStateChange above only catches a
+  // session change that THIS tab's own GoTrueClient instance initiated or
+  // observed. It does NOT cover the reproduction that actually matched the
+  // fault report -- @supabase/ssr's browser client persists the session via
+  // cookies, not localStorage, so the OTHER-tab-signed-in-as-someone-else
+  // case (GoTrueClient's multi-tab sync is a `window` `storage` event
+  // listener, which only fires for localStorage/sessionStorage writes, never
+  // for a cookie set by another tab) leaves this tab's `info` state stale
+  // with no event of any kind to react to, even though the cookie -- and
+  // therefore every server-verified read, including this exact tab's own
+  // fetch("/api/organization") -- has already moved on. Re-validating on
+  // focus/visibility closes that gap the same way every other "did the data
+  // under me change while I wasn't looking" case is handled: don't trust a
+  // long-idle tab's state, confirm it against the server the moment a human
+  // actually looks at it again.
+  useEffect(() => {
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === "visible") void loadOrgInfo();
+    };
+    window.addEventListener("focus", onFocusOrVisible);
+    document.addEventListener("visibilitychange", onFocusOrVisible);
+    return () => {
+      window.removeEventListener("focus", onFocusOrVisible);
+      document.removeEventListener("visibilitychange", onFocusOrVisible);
+    };
+  }, [loadOrgInfo]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
