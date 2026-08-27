@@ -5,13 +5,20 @@ import ScheduleGanttClient, { type RegistryColumn } from "@/components/ScheduleG
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
 import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
+import { SCHEDULE_TABS, isScheduleTab, type ScheduleTab } from "@/lib/schedule-tabs";
 
-export const SCHEDULE_TABS = ["timeline", "board", "sprints", "timesheet"] as const;
-export type ScheduleTab = (typeof SCHEDULE_TABS)[number];
-
-export function isScheduleTab(value: string | undefined): value is ScheduleTab {
-  return !!value && (SCHEDULE_TABS as readonly string[]).includes(value);
-}
+// F_016 fix (2026-08-27): SCHEDULE_TABS / ScheduleTab / isScheduleTab used to
+// be defined in this file. This file is "use client", and
+// schedule/page.tsx (a Server Component) imported isScheduleTab from here
+// and CALLED it directly while resolving initialTab -- a function exported
+// from a "use client" module becomes an opaque client reference when
+// imported into a Server Component, so invoking it server-side throws
+// "Attempted to call isScheduleTab() from the server but isScheduleTab is
+// on the client", which 500'd every GET /schedule in production (confirmed
+// live 2026-08-27, digest 1240219489). Moved to src/lib/schedule-tabs.ts,
+// which has no "use client" directive, and re-exported here so anything
+// that imports these three from this file keeps working unchanged.
+export { SCHEDULE_TABS, isScheduleTab, type ScheduleTab };
 
 // R57 fix for R55_SCHEDULE_TAB_NOT_IN_URL_01: the Timeline/Board/Sprints/
 // Timesheet sub-tabs used Radix Tabs' uncontrolled `defaultValue`, so
