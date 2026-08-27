@@ -33,6 +33,7 @@ import PrimarySubmit from "@/components/PrimarySubmit";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -62,7 +63,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 // logic (including the vendorId -> company-name lookup), looked up by
 // field name so a registry row can reorder/relabel these 6 columns live
 // (the hard-stop test) without changing what renders.
-function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string) {
+function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, rateCurrencyLabel: string) {
   switch (field) {
     case "employeeCode":
       return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
@@ -73,7 +74,7 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
     case "dailyRate":
-      return <span>{r.dailyRate}</span>;
+      return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
     case "isActive":
       return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
     default:
@@ -86,6 +87,11 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const currencies = useCurrencies();
+  // dailyRate has no per-row currencyId (roster entries are always in the
+  // org's base currency) -- same undefined-id "org base currency" lookup
+  // QuotationsClient.tsx etc. use for currencyLabel().
+  const rosterCurrencyLabel = currencyLabel(undefined, currencies);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
 
@@ -238,7 +244,7 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
                     <TableRow key={r.id}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
-                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName)}</TableCell>
+                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
                       ))}
                     </TableRow>
                   ))}
