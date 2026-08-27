@@ -9,7 +9,12 @@
 // Requisitions fell back to its plain "No X yet." empty copy on a real
 // outage. Same defect class as F_031/PayrollClient.tsx, same fix shape.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-GlobalRegistrator.register();
+// Registering twice in one process throws ("Failed to register. Happy DOM
+// has already been globally registered."), and `bun test` runs every file in
+// ONE process -- see src/components/ui/form-field.test.tsx's own comment on
+// this. Register only if no DOM is installed yet, so this suite still passes
+// standalone AND alongside every other happy-dom-based suite.
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";

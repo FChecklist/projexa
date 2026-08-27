@@ -8,7 +8,12 @@
 // "Payroll Runs" tab still showed "No payroll runs yet." underneath a banner
 // that had already named a real failure.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-GlobalRegistrator.register();
+// Registering twice in one process throws ("Failed to register. Happy DOM
+// has already been globally registered."), and `bun test` runs every file in
+// ONE process -- see src/components/ui/form-field.test.tsx's own comment on
+// this. Register only if no DOM is installed yet, so this suite still passes
+// standalone AND alongside every other happy-dom-based suite.
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
