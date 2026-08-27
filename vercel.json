@@ -1,3 +1,6 @@
 {
-  "regions": ["bom1"]
+  "regions": [
+    "bom1"
+  ],
+  "ignoreCommand": "sh -c 'git log -1 --pretty=%s | grep -qE \"^chore:\" && exit 0; git diff --quiet HEAD^ HEAD -- . \":(exclude)*.md\" \":(exclude)docs/**\"'"
 }
