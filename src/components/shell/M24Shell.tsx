@@ -48,6 +48,7 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+import { createClient } from "@/lib/supabase/client";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -204,39 +205,107 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
+  // Tracks component lifetime so a fetch that resolves after unmount (e.g.
+  // a slow /api/organization response arriving after navigation away from
+  // this shell -- it is only ever unmounted by a hard reload, but a fetch
+  // can still be in flight at that instant) never calls setState on an
+  // unmounted tree. A plain ref rather than a per-call local flag because
+  // this same load function is now called from more than one place (mount,
+  // and the auth-state listener below) and must share one lifetime signal.
+  const mountedRef = useRef(true);
   useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/organization");
-        const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
-        if (!res.ok) {
-          if (live) noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        if (live && d?.organization?.name) setInfo(d);
-      } catch (err) {
-        if (live) noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
-    (async () => {
-      try {
-        const res = await fetch("/api/projects");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-      } catch (err) {
-        if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
+    mountedRef.current = true;
     return () => {
-      live = false;
+      mountedRef.current = false;
     };
+  }, []);
+
+  // Org + projects for the top rail. Read the STATUS before the body: an error
+  // body parses perfectly well as JSON, and treating it as data is how a failed
+  // request becomes a confident-looking empty state.
+  //
+  // R52 FIX: this previously read `d.id` and so always rendered the org as an
+  // em-dash on the live shell. /api/organization returns
+  // { organization, role, email } -- the name is one level down. Confirmed
+  // against src/app/api/organization/route.ts:26 rather than guessed.
+  //
+  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01. Reading the status was
+  // only half the job. `if (!res.ok) return;` reads it and then DROPS it, so
+  // these two failures were invisible on every screen in the product -- the
+  // task read beside them already reports itself (tasksError, below), but a
+  // failed org or projects read said nothing at all. The user could not tell
+  // the shell was degraded, and the top rail simply rendered an em-dash for
+  // the organisation and an empty project switcher as if that were the answer.
+  //
+  // Now recorded with the backend's OWN message and shown in the Task Master
+  // pane alongside tasksError, which is the one place in the shell that
+  // already owns "something did not load".
+  //
+  // F_025 FIX: extracted to a callback (previously an inline effect body,
+  // fetched exactly once on mount and never again) so it can also be re-run
+  // by the auth-state-change listener below. `info.email` -- read straight
+  // through here from GET /api/organization, which itself reads the LIVE
+  // JWT's own email claim (src/lib/supabase/auth-guard.ts's requireAuth(),
+  // never a cached/DB copy) -- is what AccountMenu renders in the top rail.
+  // The API was never the problem; a mounted shell that fetched this once
+  // and then had no way to hear "the session changed" was. See the listener
+  // below for the mechanism that was missing.
+  const loadIdentity = useCallback(async () => {
+    try {
+      const res = await fetch("/api/organization");
+      const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
+      if (!res.ok) {
+        if (mountedRef.current) noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
+        return;
+      }
+      if (mountedRef.current && d?.organization?.name) setInfo(d);
+    } catch (err) {
+      if (mountedRef.current) noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
+    }
+    try {
+      const res = await fetch("/api/projects");
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (mountedRef.current) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
+        return;
+      }
+      const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
+      if (mountedRef.current && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+    } catch (err) {
+      if (mountedRef.current) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
+    }
   }, [noteFailure]);
+
+  useEffect(() => {
+    void loadIdentity();
+  }, [loadIdentity]);
+
+  // F_025 root cause: the identity shown in AccountMenu (email, and the org
+  // name/project list beside it) was fetched exactly once on mount and never
+  // invalidated. Supabase's browser client persists the session in
+  // localStorage and syncs it across every OTHER tab of the same browser via
+  // a `storage` listener inside GoTrueClient -- which fires
+  // onAuthStateChange in those other tabs, but nothing in this shell was
+  // ever listening for it. Concretely: a tab left open while signed in as
+  // one account (e.g. a seeded demo user) kept rendering THAT account's
+  // email in the top-rail menu after a DIFFERENT account signed in via
+  // another tab sharing the same Supabase auth storage -- a fresh
+  // GET /api/organization (and the session JWT's own sub/email claims,
+  // confirmed against src/lib/supabase/auth-guard.ts) already reflected the
+  // new session; only this already-rendered tab's `info` state did not,
+  // because it was never told to re-fetch. Re-running loadIdentity() on
+  // every real session-changing event closes that gap. INITIAL_SESSION is
+  // excluded: it fires once immediately on subscribing and would otherwise
+  // just duplicate the mount-effect fetch above.
+  useEffect(() => {
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED" || event === "TOKEN_REFRESHED") {
+        void loadIdentity();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [loadIdentity]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
