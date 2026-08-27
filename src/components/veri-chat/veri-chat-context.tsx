@@ -22,8 +22,10 @@
 //   equivalent in the shared factory, which never fetches/stores messages
 //   itself.
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { createVeriChatContext, FIXED_MODES } from "@fchecklist/veridian-ui-kit/context";
 import type { CapabilityNode, CapabilityInputField, PathSegment } from "@fchecklist/veridian-ui-kit/context";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 export type { CapabilityNode, CapabilityInputField, PathSegment };
 export { FIXED_MODES };
@@ -54,13 +56,30 @@ export const HOME_ROUTE = "/dashboard";
 // and R-80's "one full pill path works end to end" is exactly this path.
 export const CONSTRUCTION_CHAIN_MODE_KEY = "construction_intelligence";
 
+// R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
+// `if (!res.ok) return [];` / `catch { return []; }` -- the exact
+// HTTP-error-swallowed-as-empty-list defect src/lib/fetch-json.ts's
+// fetchJson()/errorMessage() exist to kill (see that file's own header),
+// and this fault named /api/capability-tree specifically as one of the two
+// endpoints silently swallowed here.
+//
+// fetchTree() runs inside the shared kit's own VeriChatProvider
+// (github:FChecklist/veridian-ui-kit, a package this repo does not own),
+// whose own contract is explicit: "Return `[]` on any error; this factory
+// never throws out of a failed fetch." So `[]` still has to come back to
+// the caller -- that part of the shape is not this file's to change. What
+// changes is that the failure stops being silent: toast + errorMessage is
+// the same house-wide surface every other page-load fetch in this app
+// already uses for this exact class of bug (AccountingClient,
+// BudgetsClient, CustomersClient, CreateInvoiceDialog, ...), so a broken
+// /api/capability-tree now says so instead of just rendering an empty pill
+// strip with zero indication anything failed.
 export async function fetchJsonNodes(url: string): Promise<CapabilityNode[]> {
   try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
+    const data = await fetchJson<{ nodes?: CapabilityNode[] }>(url);
     return data.nodes ?? [];
-  } catch {
+  } catch (err) {
+    toast.error(errorMessage(err, "Couldn't load the capability tree"));
     return [];
   }
 }

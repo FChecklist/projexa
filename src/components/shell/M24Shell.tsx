@@ -296,11 +296,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
     // order, never re-sorted here. isNewUser true means "nothing earned yet",
     // which must not look like a failed call.
+    //
+    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
+    // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
+    // org/projects effect above was fixed for in the first PR, just never
+    // applied here. Same noteFailure() pattern, same shape: status read
+    // before the body is treated as data, the backend's own message kept.
     (async () => {
       try {
         const res = await fetch("/api/pill-usage?limit=6");
-        if (!res.ok) return;
-        const d = await res.json();
+        const d = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
+          return;
+        }
         if (live && Array.isArray(d?.pills)) {
           setRankedPills(d.pills as RankedPill[]);
           // R53's payload carries functionId per pill. Held in a ref so the
@@ -311,13 +320,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               .map((x) => [x.pillKey, x.functionId as string])
           );
         }
-      } catch {}
+      } catch (err) {
+        if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
+      }
     })();
 
     return () => {
       live = false;
     };
-  }, []);
+  }, [noteFailure]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
