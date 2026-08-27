@@ -11,8 +11,19 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import PayrollClient from "./PayrollClient";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+
+// Dynamically imported (not a static top-level import) so this module -- and
+// therefore its transitive @radix-ui/react-tabs -> @radix-ui/react-presence
+// -> @radix-ui/react-use-layout-effect chain -- is only evaluated AFTER
+// GlobalRegistrator.register() has run. @radix-ui/react-use-layout-effect
+// decides real-vs-noop useLayoutEffect with a module-scope
+// `globalThis?.document ? ... : ...` check; with a static import that check
+// runs at this file's hoisted-import time, BEFORE register() has created
+// `document`, permanently wiring Radix's Presence (tab-content mount/unmount
+// on switch) to a no-op for the rest of the process. A dynamic import here
+// defers evaluation to this line, by which point `document` already exists.
+const PayrollClient = (await import("./PayrollClient")).default;
 
 afterEach(() => {
   cleanup();
@@ -81,21 +92,31 @@ describe("PayrollClient (R43 F_031: first-wave Promise.all -> Promise.allSettled
     expect(getByText(/Employees down/)).toBeDefined();
   });
 
-  test("a tab whose OWN source failed shows a real error, not a fake empty state, even while the default tab is a genuine empty state", async () => {
+  test("a tab whose OWN source failed shows a real error INSIDE ITS OWN PANEL, not a fake empty state, even while the default tab is a genuine empty state", async () => {
     globalThis.fetch = router({
       ...DEFAULTS,
       "/api/payroll/salary-components": () => jsonRes({ error: "Salary components down" }, 500),
     });
 
-    const { getAllByText, getByRole, getByText, queryByText } = render(<PayrollClient />);
+    const { getByRole, getByText, queryByText } = render(<PayrollClient />);
 
     // Runs tab (default, open on mount): genuinely empty, not a failure --
     // must show the real empty-state copy, not an error.
     await waitFor(() => expect(getByText("No payroll runs yet.")).toBeDefined());
 
-    fireEvent.click(getByRole("tab", { name: /Salary Components/i }));
+    // Radix Tabs switches on mousedown (see @radix-ui/react-tabs), not click.
+    fireEvent.mouseDown(getByRole("tab", { name: /Salary Components/i }), { button: 0 });
 
-    await waitFor(() => expect(getAllByText(/Salary components down/).length).toBeGreaterThan(0));
+    // Scoped to the tabpanel itself (getByRole excludes the hidden, inactive
+    // ones) -- NOT the always-visible summary banner above the tabs, which
+    // would show this same message regardless of which tab is open. This is
+    // what actually proves the fix threaded the per-tab error into the tab's
+    // OWN empty-state branch, not just into the pre-existing banner.
+    await waitFor(() => {
+      const panel = within(getByRole("tabpanel"));
+      expect(panel.getByText(/Salary components down/)).toBeDefined();
+      expect(panel.queryByText("No salary components yet.")).toBeNull();
+    });
     expect(queryByText("No salary components yet.")).toBeNull();
   });
 });
