@@ -27,6 +27,7 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
@@ -209,6 +210,72 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
               <Gantt tasks={ganttTasks} links={ganttLinks} columns={columns} readonly />
             </Willow>
           )}
+        </CardContent>
+      </Card>
+
+      {/* F_017. The fault: GET /api/schedule/gantt correctly returns all N
+          pms_issues rows (confirmed: this project's Tasks stat tile above
+          reads tasks.length, same array), but SVAR's own grid pane above
+          silently mounts fewer <div role="row"> elements than tasks.length --
+          verified directly, outside this app, by feeding @svar-ui/react-gantt
+          2.7.1 the exact task shapes this component produces (both the
+          unscheduled/identical-date shape from the fault's own 3 rows, and a
+          control set of 3-5 tasks with distinct real start/due dates): in
+          every case .wx-data mounted only 2 <div class="wx-row"> regardless
+          of task count, while the chart pane's own .wx-bar elements on the
+          right DID render one bar per task, including the one missing from
+          the grid. So the task exists in SVAR's data store (the bar proves
+          it) but the grid pane's row virtualisation does not reliably mount
+          one DOM row per task -- a defect in this specific third-party
+          package version, not in the array this component hands it (there is
+          no filter or slice between `tasks` and `ganttTasks` above), and not
+          fixable from this codebase.
+
+          The fix: the task list also renders as an ordinary table this
+          component fully owns, whose row count is tasks.map(...).length by
+          construction -- so "every task the API returned is present in the
+          DOM" no longer depends on a dependency's internal virtualisation. */}
+      <Card className="shadow-card">
+        <CardHeader>
+          <CardTitle className="font-heading text-base">
+            All tasks ({tasks.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{columnLabel(labelColumns, "task", "Task")}</TableHead>
+                <TableHead>{columnLabel(labelColumns, "start", "Start")}</TableHead>
+                <TableHead>{columnLabel(labelColumns, "due", "Due")}</TableHead>
+                <TableHead>Progress</TableHead>
+                <TableHead>{columnLabel(labelColumns, "critical", "Critical Path")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.title}</TableCell>
+                  <TableCell className={t.startDate ? undefined : "text-px-muted"}>
+                    {t.startDate ? displayScheduleDate(t.startDate) : EMPTY_DATE_CELL}
+                  </TableCell>
+                  <TableCell className={t.dueDate ? undefined : "text-px-muted"}>
+                    {t.dueDate ? displayScheduleDate(t.dueDate) : EMPTY_DATE_CELL}
+                  </TableCell>
+                  <TableCell>{t.completionPercentage}%</TableCell>
+                  <TableCell>
+                    {t.floatDays === null ? (
+                      <span className="text-px-muted">{EMPTY_DATE_CELL}</span>
+                    ) : t.isCritical ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-px-error"><AlertTriangle className="size-3" /> Critical</span>
+                    ) : (
+                      <span className="text-xs text-px-muted">{t.floatDays}d slack</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>
