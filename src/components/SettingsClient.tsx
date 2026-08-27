@@ -16,6 +16,25 @@ import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
+type BaseCurrency = { id: string; code: string; name: string; symbol: string | null } | null;
+
+// R48_NO_CURRENCY_UI_01. Mirrors the fixed set erp-accounting-service.ts's
+// setBaseCurrency() already knows a display name for (CURRENCY_NAMES) --
+// PUT accepts any 3-letter ISO code, but a bounded dropdown of the codes
+// this org's markets actually use (AED/GCC + the existing INR base) is
+// safer than a free-text field nobody can validate at a glance.
+const CURRENCY_OPTIONS = [
+  { code: "AED", name: "UAE Dirham" },
+  { code: "INR", name: "Indian Rupee" },
+  { code: "USD", name: "US Dollar" },
+  { code: "EUR", name: "Euro" },
+  { code: "GBP", name: "Pound Sterling" },
+  { code: "SAR", name: "Saudi Riyal" },
+  { code: "QAR", name: "Qatari Riyal" },
+  { code: "OMR", name: "Omani Rial" },
+  { code: "BHD", name: "Bahraini Dinar" },
+  { code: "KWD", name: "Kuwaiti Dinar" },
+] as const;
 
 const ROLE_VARIANT: Record<string, "default" | "secondary" | "outline"> = { owner: "default", admin: "secondary", member: "outline" };
 
@@ -32,9 +51,11 @@ export default function SettingsClient() {
   const router = useRouter();
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [currency, setCurrency] = useState<BaseCurrency>(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [savingCurrency, setSavingCurrency] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -48,6 +69,18 @@ export default function SettingsClient() {
       })
       .catch(() => toast.error("Couldn't load settings"))
       .finally(() => setLoading(false));
+
+    // Fetched outside the Promise.all above, deliberately: this proxies to
+    // VERIDIAN (see R46, the documented chronic upstream-timeout history),
+    // and a slow/failed currency read must not block Name/Slug/Team from
+    // ever rendering. Failure here just leaves currency showing "Not set"
+    // rather than surfacing a toast for a field nobody asked to change yet.
+    fetch("/api/organization/currency")
+      .then((r) => r.json())
+      .then((d: { baseCurrency?: BaseCurrency; error?: string }) => {
+        if (!d.error) setCurrency(d.baseCurrency ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   async function changeRole(userId: string, role: string) {
@@ -69,6 +102,25 @@ export default function SettingsClient() {
     }
   }
 
+  async function changeCurrency(code: string) {
+    setSavingCurrency(true);
+    try {
+      const res = await fetch("/api/organization/currency", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update currency");
+      setCurrency(data.baseCurrency ?? null);
+      toast.success(`Organization currency set to ${data.baseCurrency?.code ?? code}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update currency");
+    } finally {
+      setSavingCurrency(false);
+    }
+  }
+
   async function signOut() {
     setSigningOut(true);
     const supabase = createClient();
@@ -84,10 +136,35 @@ export default function SettingsClient() {
     <div className="space-y-6">
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Organization</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div><div className="text-xs text-px-muted">Name</div><div className="font-medium text-px-ink">{info?.organization.name ?? "—"}</div></div>
           <div><div className="text-xs text-px-muted">Slug</div><div className="font-medium text-px-ink">{info?.organization.slug ?? "—"}</div></div>
           <div><div className="text-xs text-px-muted">Member since</div><div className="font-medium text-px-ink">{info ? formatDate(info.organization.created_at) : "—"}</div></div>
+          {/* R48_NO_CURRENCY_UI_01: the org's base currency, explicit rather
+              than an implicit default -- "Not set" is shown as-is rather
+              than silently assumed, per R-62/R-63 (a company currency must
+              be a visible setting or a visible config error, never a guess).
+              Edit control gated the same way Team-table role assignment is:
+              a UX affordance mirroring the real gate, which is
+              API_WRITE_POLICY's ORG_ADMIN tier on PUT (middleware.ts), not
+              this client-side check. */}
+          <div>
+            <div className="text-xs text-px-muted">Currency</div>
+            {info && CAN_ASSIGN_ROLES.has(info.role) ? (
+              <Select value={currency?.code ?? ""} onValueChange={changeCurrency} disabled={savingCurrency}>
+                <SelectTrigger size="sm" className="h-7 w-full sm:w-28">
+                  <SelectValue placeholder="Not set" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>{c.code} — {c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="font-medium text-px-ink">{currency?.code ?? "Not set"}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
