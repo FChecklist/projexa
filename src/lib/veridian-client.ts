@@ -208,7 +208,7 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
   throw new VeridianApiError("No VERIDIAN API key configured", 500);
 }
 
-type CallVeridianOptions = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
 
 // Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
 // route (a real binary response, not JSON) can reuse the exact same
