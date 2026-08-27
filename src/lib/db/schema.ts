@@ -44,7 +44,12 @@ export const veridianCredentials = pgTable("veridian_credentials", {
   organizationId: uuid("organization_id")
     .primaryKey()
     .references(() => organizations.id, { onDelete: "cascade" }),
-  veridianOrgId: text("veridian_org_id").notNull(),
+  // UNIQUE as of 2026-08-27 (drizzle/0016_veridian_org_id_unique.sql) --
+  // defense-in-depth found via R43_EXEC_03 (false-positive cross-tenant
+  // fault investigation): compliance-tracker's own tenant isolation is
+  // entirely keyed on this column, so two rows ever sharing a value would
+  // be a real leak even though nothing writes a duplicate today.
+  veridianOrgId: text("veridian_org_id").notNull().unique(),
   veridianApiKey: text("veridian_api_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
