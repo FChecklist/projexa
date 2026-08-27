@@ -142,6 +142,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // membership row exists.
   "/org/provision": "PUBLIC",
   "/org/repair": "ORG_ADMIN",
+  // R48_NO_CURRENCY_UI_01: PUT sets the org's base currency -- matches the
+  // requireRole(ctx, ROLE_GROUPS.ORG_ADMIN) gate already in the route
+  // (src/app/api/organization/currency/route.ts's own comment explains why
+  // the gate has to live in THIS app, not on VERIDIAN's side of the call).
+  "/organization/currency": "ORG_ADMIN",
   "/payroll/employees/[id]/income-tax-slab": "ORG_ADMIN",
   "/payroll/employees/[id]/tax-exemptions": "ORG_ADMIN",
   "/payroll/income-tax-slabs": "ORG_ADMIN",
