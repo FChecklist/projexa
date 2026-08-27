@@ -80,9 +80,28 @@ function DashboardPanel() {
   if (!data) return <p className="py-10 text-center text-sm text-px-muted">Couldn&apos;t load the finance dashboard. (An org needs its ERP module + a chart of accounts set up first.)</p>;
 
   const revenueChange = data.revenue.lastMonth > 0 ? ((data.revenue.thisMonth - data.revenue.lastMonth) / data.revenue.lastMonth) * 100 : null;
+  // F_020: no GL activity posted yet for this org -- every card below would
+  // read zero with zero explanation. Every sibling tab in this file already
+  // renders an honest "No postings yet." / "No journal entries found."
+  // empty state instead of bare zeroes (see TrialBalancePanel,
+  // ProfitAndLossPanel, BalanceSheetPanel, GeneralLedgerPanel,
+  // CompaniesPanel below) -- Dashboard was the one tab missing that
+  // pattern. The underlying numbers aren't wrong: this panel is GL-only by
+  // design (real double-entry postings, per the banner above the tabs), and
+  // deliberately doesn't source from the revenue/expense figures Projects
+  // shows per-project -- those aren't linked to Accounting until actually
+  // submitted/posted here. AED 0 with no context reads as a broken
+  // calculation instead of an unposted ledger; this banner makes that
+  // distinction explicit instead of silently rendering zeroes.
+  const noPostedActivity = data.cashPosition === 0 && data.arAging.totalOutstanding === 0 && data.revenue.thisMonth === 0 && data.revenue.lastMonth === 0 && data.topOverdueInvoices.length === 0;
 
   return (
     <div className="space-y-4">
+      {noPostedActivity && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          No journal entries have been posted to the General Ledger yet, so every figure below reads {money(0, currencies)}. Submit a sales/purchase invoice or post a manual entry from the General Ledger tab to see real postings here — these figures are independent of the revenue/expenses shown per-project under Projects, which aren&apos;t linked to Accounting until posted.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">Cash Position</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.cashPosition, currencies)}</p></CardContent></Card>
         <Card className="shadow-card"><CardContent className="p-4"><p className="text-xs font-medium text-px-muted uppercase">AR Outstanding</p><p className="mt-1 text-2xl font-bold text-px-ink">{money(data.arAging.totalOutstanding, currencies)}</p></CardContent></Card>
