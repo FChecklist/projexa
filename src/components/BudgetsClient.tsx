@@ -31,6 +31,14 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // since Wave 70 (createBudget already accepted it) -- this wires the UI
 // selector, reusing AccountingClient.tsx's exact component.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+// R48_REPORTS_BUDGETS_NO_CURRENCY_01 (gap 2): the "Annual Amount" input had
+// zero currency labeling anywhere in this file -- grepped for
+// currencyLabel/useCurrencies/toLocaleString/formatCurrency/the rupee
+// symbol, zero matches (verified 2026-08-28). Same shared helper every
+// other fixed money surface in this repo already uses (LabourClient.tsx's
+// Daily Rate, ChangeOrdersClient.tsx's Cost Impact, compliance-tracker's
+// own PMS budgets page for this identical underlying data).
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type Budget = { id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null; status: string; actionIfExceeded: string | null };
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
@@ -85,6 +93,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const currencies = useCurrencies();
 
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
@@ -271,7 +280,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
                     </Select>
                   )}
                 </FormField>
-                <FormField label="Annual Amount" required error={budgetErrors.annualAmount}>
+                <FormField label={`Annual Amount (${currencyLabel(undefined, currencies).trim()})`} required error={budgetErrors.annualAmount}>
                   {(f) => <Input {...f} type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} />}
                 </FormField>
                 {companies.length > 0 && (
