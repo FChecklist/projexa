@@ -41,3 +41,28 @@ jobs:
           DATABASE_URL: postgresql://postgres:placeholder@localhost:5432/postgres
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+  secret-scan:
+    # R60 T9: replaces GitHub's own secret scanning/push protection, which
+    # was auto-disabled when this repo went private (GitHub Free has
+    # neither for private repos, GHAS is paid and declined). Deliberately
+    # a real, blocking check -- no continue-on-error -- proven against a
+    # planted fake secret on a throwaway branch (never merged; run
+    # 33138756098/job 98744618501, conclusion failure, caught github-pat +
+    # stripe-access-token) before landing this as the permanent gate.
+    # permissions block required: gitleaks-action's PR-scan mode calls the
+    # GitHub API to diff the PR and failed with "Resource not accessible
+    # by integration" using this repo's default (more restrictive) token
+    # scope, even though the identical action config worked unmodified on
+    # compliance-tracker -- the two repos evidently have different
+    # Settings > Actions > default workflow permissions.
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v3
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
