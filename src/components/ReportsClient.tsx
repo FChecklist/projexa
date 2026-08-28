@@ -97,19 +97,69 @@ const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
   },
 };
 
-// R55_REPORTS_CONTRACTVALUE_NO_AED_01: contractValue rendered as a bare
-// number with no currency token -- same defect class as
-// R55_LABOUR_RATE_NO_AED_01/R55_MATERIALS_UNITCOST_NO_AED_01 (PR #182/#183),
-// fixed there with the shared currencyLabel()+useCurrencies() helper.
-// contractValue has no per-row currencyId of its own (same "org base
-// currency" case those two used), so the value-formatter override just
-// prefixes the same live label ReportOutput's cellValue() would otherwise
-// skip. Built inside ProjectReportsPanel (below) since it needs the live
-// `currencies` list from useCurrencies().
-function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencies>): Record<string, (v: unknown) => string> {
-  return {
-    contractValue: (v) => (v === null || v === undefined ? "—" : `${currencyLabel(undefined, currencies)}${v}`),
-  };
+// R48_REPORTS_BUDGETS_NO_CURRENCY_01 (gap 1, part B): ReportsClient.tsx used
+// to hand-patch exactly ONE money field (contractValue) in exactly ONE
+// report (project-status) via a bespoke buildProjectStatusFormatters() --
+// every other money-shaped field, including project-status's OWN
+// remaining five (budget/revenue/expenses/projectValue/earnedValue, all
+// already given real labels above) rendered as a bare unlabeled number via
+// ReportOutput's default cellValue() path. Field names below were verified
+// directly against construction-reports-service.ts's real return shapes
+// (2026-08-28), not guessed from labels -- each report a field is listed
+// under really does return that key, at the nesting level ReportOutput
+// actually recurses into (top-level scalar OR inside a nested array row --
+// both are covered the same way since ReportOutput.tsx's own R48 fix now
+// honors fieldFormatters on both branches).
+//
+// Every table below (erp_budget_line_items, erp_budgets,
+// construction_attendance, construction_expense_entries,
+// construction_boq_line_items, erp_stock_ledger_entries, pms_time_entries,
+// pms_budget_line_items) has NO per-row currency_id column of its own --
+// checked directly in schema.ts -- so, same as contractValue's own
+// precedent comment used to say, the org's base currency is the correct
+// (and only available) label. erp_sales_invoices (the revenue report's
+// `invoices` rows) DOES carry its own currencyId, but this matches
+// InvoicesClient.tsx's own already-shipped, already-live handling of this
+// exact table (`money()` -> currencyLabel(undefined, currencies) on
+// grandTotal) rather than introducing a new assumption.
+//
+// Deliberately excluded (verified NOT money-shaped): project-completion,
+// work-progress, category-progress, site-picture, and kpi (kpi's
+// actualValue/targetValue are unit-agnostic -- construction_kpi_definitions
+// has a free-text `unit` column, so a KPI can just as easily be measured in
+// hours/%/count as currency; labelling it "AED" unconditionally would be a
+// confidently WRONG currency claim, the exact failure mode lib/currency.ts's
+// own header comment warns against -- worse than the current bare number).
+const REPORT_MONEY_FIELDS: Record<string, string[]> = {
+  "project-status": ["contractValue", "budget", "revenue", "expenses", "projectValue", "earnedValue"],
+  "weekly-project": ["labourCost", "expenseTotal"],
+  attendance: ["cost"],
+  "manpower-cost": ["totalCost"],
+  scope: ["totalValue"],
+  "budget-summary": ["total"],
+  "budget-vs-actual": ["budget", "actual", "variance", "total"],
+  "material-consumption": ["totalValue"],
+  "vendor-cost": ["total"],
+  "designer-timesheet": ["budget", "actual", "variance", "overallBudget", "overallActual", "overallVariance"],
+  revenue: ["total", "subtotal", "taxAmount", "grandTotal", "outstandingAmount"],
+  expense: ["total"],
+};
+
+/** Exported for direct unit testing (ReportsClient.test.tsx) -- a pure
+ * function over REPORT_MONEY_FIELDS + the live currencies list, same
+ * currencyLabel()+useCurrencies() helper every other fixed money surface in
+ * this repo already uses. Returns undefined (not an empty object) for a
+ * report with no known money fields, matching ReportOutput's "left
+ * undefined, a key renders exactly as before" contract. */
+export function buildMoneyFormatters(
+  reportName: string,
+  currencies: ReturnType<typeof useCurrencies>
+): Record<string, (v: unknown) => string> | undefined {
+  const fields = REPORT_MONEY_FIELDS[reportName];
+  if (!fields || fields.length === 0) return undefined;
+  const label = currencyLabel(undefined, currencies);
+  const money = (v: unknown) => (v === null || v === undefined ? "—" : `${label}${v}`);
+  return Object.fromEntries(fields.map((f) => [f, money]));
 }
 
 // Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
@@ -200,7 +250,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
             <ReportOutput
               data={result}
               fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
+              fieldFormatters={buildMoneyFormatters(reportName, currencies)}
             />
           )}
         </CardContent>
