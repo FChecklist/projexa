@@ -41,8 +41,17 @@ function cellValue(v: unknown): string {
  * currencyLabel()+useCurrencies() fix, same defect class: a bare number
  * with no currency token is not self-explanatory). Left undefined, a key
  * renders exactly as before via cellValue() -- no behavioural change for
- * the other 16 reports or the AI Copilot's 7 tool results that don't pass
- * one. */
+ * reports that don't pass one, or the AI Copilot's 7 tool results.
+ *
+ * R48_REPORTS_BUDGETS_NO_CURRENCY_01: this override used to be applied only
+ * on the scalar key/value grid below (the isPlainObject(data) branch) --
+ * the array/table branch above it called cellValue() unconditionally, so a
+ * caller-supplied formatter for an array-of-rows report (a money column
+ * inside a table, not a single summary object -- e.g. budget-summary's
+ * byAccount rows, manpower-cost's byTrade rows) was silently ignored even
+ * though the prop was accepted and documented. Both branches now check
+ * fieldFormatters the same way, so a formatter map behaves identically
+ * regardless of which shape a given report happens to return. */
 export function ReportOutput({
   data,
   fieldLabels,
@@ -71,7 +80,10 @@ export function ReportOutput({
             <TableBody>
               {data.map((row, i) => (
                 <TableRow key={i}>
-                  {columns.map((c) => <TableCell key={c}>{cellValue(isPlainObject(row) ? row[c] : row)}</TableCell>)}
+                  {columns.map((c) => {
+                    const v = isPlainObject(row) ? row[c] : row;
+                    return <TableCell key={c}>{fieldFormatters?.[c] ? fieldFormatters[c](v) : cellValue(v)}</TableCell>;
+                  })}
                 </TableRow>
               ))}
             </TableBody>
