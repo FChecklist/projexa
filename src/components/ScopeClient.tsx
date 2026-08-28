@@ -274,6 +274,50 @@ function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: 
   return { valid, error: null };
 }
 
+// R46M13_TC10_01 (reproduced 3x live, 2026-08-25, parent + 3 weighted
+// children): the "New BOQ" dialog reported "BOQ created" for a create that
+// persisted NOTHING -- server-verified, no row at all in
+// compliance.construction_boqs for any of the three attempts.
+//
+// Two things made a non-write indistinguishable from a write.
+// First, `res.json().catch(() => ({}))` swallowed an unparseable body
+// outright and fell through on an empty object, so a 2xx that carried no
+// JSON at all still reached the success toast. Keep the two failure modes
+// apart: a response that will not parse is itself a failed create, never
+// something to continue past.
+// Second, success was declared from `res.ok` ALONE: nothing ever checked
+// that a BOQ actually came back. Never report a write we have not seen
+// return. /api/scope only sends 201 once the scope service has echoed a
+// real row id and the line items read back after insert -- re-check both
+// here too, so a drift on either side of that contract fails loudly instead
+// of quietly reverting to "trust the status code". The weighted-children
+// shape is exactly the one that regressed, so the count check is what
+// protects it.
+//
+// Extracted to a pure function (exported) so it can be regression-tested
+// directly: this repo's happy-dom + React 19 test environment cannot
+// reliably fire a text-input change event through the full "New BOQ" form
+// (no @testing-library/user-event installed), so exercising this contract
+// through fireEvent-typed form fields is not currently reliable here --
+// unit-testing the extracted contract is.
+export function confirmBoqCreated(
+  ok: boolean,
+  data: { id?: unknown; lineItems?: unknown; error?: unknown } | null,
+  parseFailed: boolean,
+  submittedCount: number
+): string {
+  if (!ok) throw new Error((typeof data?.error === "string" && data.error) || "Couldn't create BOQ");
+  if (parseFailed || !data) throw new Error("Couldn't create BOQ — the server's response was unreadable, so nothing is confirmed saved.");
+
+  const savedId = typeof data.id === "string" ? data.id.trim() : "";
+  if (!savedId) throw new Error("Couldn't create BOQ — the server did not confirm a saved BOQ. Nothing was saved.");
+  const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
+  if (savedLineItems < submittedCount) {
+    throw new Error(`Couldn't create BOQ — ${submittedCount} line item(s) were submitted but only ${savedLineItems} came back saved.`);
+  }
+  return savedId;
+}
+
 export default function ScopeClient({ projectId, compareColumns, listColumns }: { projectId: string; compareColumns?: RegistryColumn[] | null; listColumns?: RegistryColumn[] | null }) {
   const columns = compareColumns && compareColumns.length > 0 ? compareColumns : DEFAULT_COMPARE_COLUMNS;
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
@@ -370,17 +414,8 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         body: JSON.stringify({ projectId, title, lineItems: payloadLineItems }),
       });
 
-      // R46M13_TC10_01 (reproduced 3x live, 2026-08-25, parent + 3 weighted
-      // children): this dialog reported "BOQ created" for a create that
-      // persisted NOTHING -- server-verified, no row at all in
-      // compliance.construction_boqs for any of the three attempts.
-      //
-      // Two things here made a non-write indistinguishable from a write.
-      // First, `res.json().catch(() => ({}))` swallowed an unparseable body
-      // outright and fell through on an empty object, so a 2xx that carried
-      // no JSON at all still reached the success toast. Keep the two failure
-      // modes apart: a response that will not parse is itself a failed
-      // create, never something to continue past.
+      // See confirmBoqCreated() above (R46M13_TC10_01) for why a 2xx alone
+      // is never enough to declare success.
       let data: { id?: unknown; lineItems?: unknown; error?: unknown } | null = null;
       let parseFailed = false;
       try {
@@ -389,23 +424,7 @@ export default function ScopeClient({ projectId, compareColumns, listColumns }: 
         parseFailed = true;
       }
 
-      if (!res.ok) throw new Error((typeof data?.error === "string" && data.error) || "Couldn't create BOQ");
-      if (parseFailed || !data) throw new Error("Couldn't create BOQ — the server's response was unreadable, so nothing is confirmed saved.");
-
-      // Second, success was declared from `res.ok` ALONE: nothing ever
-      // checked that a BOQ actually came back. Never report a write we have
-      // not seen return. /api/scope now only sends 201 once the scope
-      // service has echoed a real row id and the line items read back after
-      // insert -- re-check both here too, so a drift on either side of that
-      // contract fails loudly instead of quietly reverting to "trust the
-      // status code". The weighted-children shape is exactly the one that
-      // regressed, so the count check is what protects it.
-      const savedId = typeof data.id === "string" ? data.id.trim() : "";
-      if (!savedId) throw new Error("Couldn't create BOQ — the server did not confirm a saved BOQ. Nothing was saved.");
-      const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
-      if (savedLineItems < payloadLineItems.length) {
-        throw new Error(`Couldn't create BOQ — ${payloadLineItems.length} line item(s) were submitted but only ${savedLineItems} came back saved.`);
-      }
+      confirmBoqCreated(res.ok, data, parseFailed, payloadLineItems.length);
 
       toast.success("BOQ created");
       setTitle(""); setLines([emptyLine()]); setOpen(false);
