@@ -49,8 +49,17 @@ jobs:
     # planted fake secret on a throwaway branch (never merged; run
     # 33138756098/job 98744618501, conclusion failure, caught github-pat +
     # stripe-access-token) before landing this as the permanent gate.
+    # permissions block required: gitleaks-action's PR-scan mode calls the
+    # GitHub API to diff the PR and failed with "Resource not accessible
+    # by integration" using this repo's default (more restrictive) token
+    # scope, even though the identical action config worked unmodified on
+    # compliance-tracker -- the two repos evidently have different
+    # Settings > Actions > default workflow permissions.
     name: Secret Scanning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
