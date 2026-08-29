@@ -1,0 +1,77 @@
+name: Claude Nightly Maintenance
+
+# Autonomous, scheduled Claude Code run. Unlike claude.yml (which only reacts
+# to a human typing @claude on an issue/PR), this fires on its own every night
+# so work keeps moving even when nobody is around to trigger it.
+#
+# Safety model: this workflow never merges or pushes to `main` itself — it can
+# only create a new branch and open a Pull Request. A human reviews and merges.
+# See the prompt below for the exact rules Claude is told to follow.
+
+on:
+  schedule:
+    - cron: '30 20 * * *' # 20:30 UTC daily (~2:00 AM IST) -- low-traffic window
+  workflow_dispatch: {} # allows manually triggering a run from the Actions tab
+
+concurrency:
+  group: claude-nightly-maintenance
+  cancel-in-progress: false
+
+jobs:
+  claude-maintenance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to push the new branch it opens a PR from
+      pull-requests: write # needed to open the PR
+      issues: read
+      id-token: write
+      actions: read # so Claude can read CI results
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code (autonomous maintenance)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          additional_permissions: |
+            actions: read
+
+          prompt: |
+            You are running unattended as a scheduled nightly maintenance job
+            for the PROJEXA repo (FChecklist/projexa). Nobody is reviewing
+            your steps in real time, so be conservative and scope your work
+            tightly.
+
+            Do the following, in order, and stop as soon as one step produces
+            a change:
+
+            1. Check the most recent run of the "CI" workflow on `main`. If
+               it failed, investigate the failure and fix it with the
+               smallest safe change.
+            2. If CI on `main` is passing, look for open GitHub issues
+               labeled `claude-autopilot` with no linked open PR. Pick the
+               single oldest one and fix it.
+            3. If neither applies, do nothing and end the run cleanly.
+
+            Hard rules:
+            - NEVER push commits directly to `main`. Always create a new
+              branch named `claude/auto-<short-topic>` and open a Pull
+              Request describing what you found and changed. A human will
+              review and merge it -- you do not merge, close, or
+              self-approve the PR.
+            - Keep the change scoped to the one CI failure or one labeled
+              issue you picked. Do not refactor unrelated code, touch
+              secrets/env vars/workflow permissions/repo settings, or start
+              unrelated feature work.
+            - If you are not fully confident the fix is correct, open the PR
+              as a draft and say exactly what you're unsure about instead of
+              guessing.
+            - If you find nothing to do, do not open an empty PR or post any
+              comment -- just end the run.
+
+          claude_args: '--max-turns 40'
