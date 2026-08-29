@@ -1,12 +1,45 @@
 name: Claude Nightly Maintenance
 
-# Autonomous, scheduled Claude Code run. Unlike claude.yml (which only reacts
-# to a human typing @claude on an issue/PR), this fires on its own every night
-# so work keeps moving even when nobody is around to trigger it.
+# Autonomous, scheduled operational-AI run. Unlike claude.yml (which only
+# reacts to a human typing @claude on an issue/PR), this fires on its own
+# every night so work keeps moving even when nobody is around to trigger it
+# and the laptop is closed.
 #
-# Safety model: this workflow never merges or pushes to `main` itself — it can
-# only create a new branch and open a Pull Request. A human reviews and merges.
-# See the prompt below for the exact rules Claude is told to follow.
+# R63 (owner directive, 2026-08-29): "we are AI agnostic... in future we can
+# use different AI for level 1, different for level 2, different for level
+# 3, changed from my side at any point in time." Today every level resolves
+# to the same agent (Claude Code CLI) -- that is a real, current fact, not a
+# placeholder -- but the level is now resolved from a repo VARIABLE
+# (vars.AI_L1_AGENT / AI_L2_AGENT / AI_L3_AGENT), not hardcoded in the
+# `uses:` step. Changing which agent runs a level is `gh variable set
+# AI_L1_AGENT <value> --repo FChecklist/projexa` (or the repo Settings ->
+# Variables UI) -- no code change, no PR, takes effect on the NEXT scheduled
+# run. Adding a genuinely new agent type is one new conditional step below
+# (see the commented placeholder) -- never a rewrite of this file's
+# structure. Mirrors the same "transport/CLI choice is a deploy-time
+# decision, not a live DB toggle" posture PR #1447 already established in
+# compliance-tracker's src/lib/ai/adapter.ts for the pipeline layer -- a
+# GitHub repo variable IS that deploy-time decision point for a GitHub
+# Actions workflow specifically (no new credential, no new DB dependency,
+# owner-editable without a code change).
+#
+# Level mapping for THIS job (matches model-tier-eligibility.ts's
+# mechanical/integrative/judgment ladder used elsewhere in this platform):
+#   L1 (mechanical)  -- fix a known, narrow CI failure on main.
+#   L2 (integrative)  -- pick up one open, human-labeled backlog issue
+#                        (claude-autopilot), potentially multi-file.
+#   L3 (judgment)     -- anything the run decides needs human governance
+#                        review before ANY code is touched; today this
+#                        never produces an autonomous PR by design (same
+#                        "no unsupervised judgment-tier merges" rule the
+#                        rest of this platform already enforces) -- L3 is
+#                        resolved and reported here so a future policy
+#                        change has a real level to attach to, not so it
+#                        can act alone yet.
+#
+# Safety model unchanged: this workflow never merges or pushes to `main`
+# itself -- it can only create a new branch and open a Pull Request. A
+# human reviews and merges.
 
 on:
   schedule:
@@ -18,7 +51,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve-agents:
+    runs-on: ubuntu-latest
+    outputs:
+      l1_agent: ${{ steps.resolve.outputs.l1_agent }}
+      l2_agent: ${{ steps.resolve.outputs.l2_agent }}
+      l3_agent: ${{ steps.resolve.outputs.l3_agent }}
+    steps:
+      - name: Resolve per-level agent from repo variables
+        id: resolve
+        run: |
+          # Repo variables, not secrets: agent CHOICE is not sensitive, and
+          # vars (unlike secrets) can be read back to confirm what a run
+          # actually used. Defaults to claude_code_cli if a variable is
+          # ever unset, so a missing/deleted variable degrades to today's
+          # known-good behavior rather than failing the whole run closed.
+          echo "l1_agent=${{ vars.AI_L1_AGENT || 'claude_code_cli' }}" >> "$GITHUB_OUTPUT"
+          echo "l2_agent=${{ vars.AI_L2_AGENT || 'claude_code_cli' }}" >> "$GITHUB_OUTPUT"
+          echo "l3_agent=${{ vars.AI_L3_AGENT || 'claude_code_cli' }}" >> "$GITHUB_OUTPUT"
+          echo "Resolved: L1=${{ vars.AI_L1_AGENT || 'claude_code_cli' }} L2=${{ vars.AI_L2_AGENT || 'claude_code_cli' }} L3=${{ vars.AI_L3_AGENT || 'claude_code_cli' }}"
+
   claude-maintenance:
+    needs: resolve-agents
     runs-on: ubuntu-latest
     permissions:
       contents: write # needed to push the new branch it opens a PR from
@@ -33,7 +87,16 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code (autonomous maintenance)
+      # Today's only real branch: every level resolves to claude_code_cli,
+      # so ONE claude-code-action call still does all 3 levels' work in one
+      # pass (L1 CI-fix, then L2 backlog-issue, per its own prompt's
+      # ordering) -- restructuring into 3 separate agent calls with no
+      # second agent to call would be complexity with no present benefit.
+      # This condition is what makes adding a real second agent additive: a
+      # future `else if needs.resolve-agents.outputs.l1_agent == 'x'` step
+      # runs INSTEAD of this one for L1, without touching L2/L3's steps.
+      - name: "L1+L2 maintenance pass (agent: claude_code_cli)"
+        if: needs.resolve-agents.outputs.l1_agent == 'claude_code_cli'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -47,15 +110,19 @@ jobs:
             your steps in real time, so be conservative and scope your work
             tightly.
 
+            You are resolved as the L1 (mechanical) and L2 (integrative)
+            agent for this run -- both levels currently map to you, Claude
+            Code CLI, per this repo's AI_L1_AGENT/AI_L2_AGENT variables.
+
             Do the following, in order, and stop as soon as one step produces
             a change:
 
-            1. Check the most recent run of the "CI" workflow on `main`. If
-               it failed, investigate the failure and fix it with the
-               smallest safe change.
-            2. If CI on `main` is passing, look for open GitHub issues
-               labeled `claude-autopilot` with no linked open PR. Pick the
-               single oldest one and fix it.
+            1. [L1 -- mechanical] Check the most recent run of the "CI"
+               workflow on `main`. If it failed, investigate the failure and
+               fix it with the smallest safe change.
+            2. [L2 -- integrative] If CI on `main` is passing, look for open
+               GitHub issues labeled `claude-autopilot` with no linked open
+               PR. Pick the single oldest one and fix it.
             3. If neither applies, do nothing and end the run cleanly.
 
             Hard rules:
@@ -73,5 +140,34 @@ jobs:
               guessing.
             - If you find nothing to do, do not open an empty PR or post any
               comment -- just end the run.
+            - If, while doing L1/L2 work, you encounter something that reads
+              like an L3 (judgment) decision -- a business-rule change, a
+              security/compliance tradeoff, anything you would normally
+              escalate rather than decide -- STOP, do not act on it, and
+              instead open a GitHub issue titled "[L3 escalation] <summary>"
+              describing what needs a human judgment call. Never treat an L3
+              situation as if it were L1/L2 work just because you are the
+              agent running today.
 
           claude_args: '--max-turns 40'
+
+      # Placeholder for a genuinely different future agent. Not implemented
+      # -- there is no second agent integrated into this workflow yet, and
+      # this step intentionally never runs today (the condition can never be
+      # true while AI_L1_AGENT stays 'claude_code_cli'). Its purpose is
+      # structural: proves adding a real alternative is one new step here,
+      # not a rewrite of resolve-agents or the job's permissions/trigger
+      # shape above.
+      # - name: "L1 maintenance pass (agent: <future-agent-name>)"
+      #   if: needs.resolve-agents.outputs.l1_agent == '<future-agent-name>'
+      #   run: echo "Not implemented -- add the real invocation here when a second agent exists."
+
+  report-l3-escalations:
+    needs: [resolve-agents, claude-maintenance]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note L3 resolution for this run (no autonomous action taken)
+        run: |
+          echo "L3 (judgment) resolved to: ${{ needs.resolve-agents.outputs.l3_agent }}."
+          echo "By design, this workflow never lets L3 act autonomously -- any L3-shaped situation found above was opened as a GitHub issue for human review, not merged or auto-decided."
