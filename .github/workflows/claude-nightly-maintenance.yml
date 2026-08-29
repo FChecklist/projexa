@@ -99,7 +99,10 @@ jobs:
         if: needs.resolve-agents.outputs.l1_agent == 'claude_code_cli'
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # R63 (owner directive, 2026-08-29): subscription-based auth, not
+          # the pay-per-token ANTHROPIC_API_KEY -- owner does not want
+          # nightly runs billed via the API.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           additional_permissions: |
             actions: read
