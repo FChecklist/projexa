@@ -73,17 +73,25 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/companies": "ORG_ADMIN",
   "/compliance-register": "ORG_ADMIN",
   "/construction-budget/lines": "PM_OR_ABOVE",
-  "/construction-materials": "FIELD",
-  "/construction-materials/inbound": "FIELD",
+  // Real-screen conversion (2026-08-30): /construction-materials and
+  // /construction-materials/inbound retired -- both routes are deleted
+  // (module #31 Site Materials folded into the real Materials module,
+  // #17; see MaterialsClient.tsx's own header comment). Their writes now
+  // go through /api/materials, already covered by its own policy entry
+  // below.
   // Public by design: the unauthenticated marketing contact form.
   "/contact": "PUBLIC",
   "/conversations": "ANY_ROLE",
   "/conversations/[id]/messages": "ANY_ROLE",
   "/credit-notes": "PM_OR_ABOVE",
+  "/credit-notes/[id]/submit": "PM_OR_ABOVE",
   "/customers": "PM_OR_ABOVE",
+  "/customers/[id]": "PM_OR_ABOVE",
   "/design-materials": "PM_OR_ABOVE",
   "/discuss": "ANY_MEMBER",
   "/documents": "FIELD",
+  "/documents/[id]": "FIELD",
+  "/documents/[id]/dispose": "FIELD",
   "/drawings": "FIELD",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
@@ -103,11 +111,14 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/inventory/stock-entries": "FIELD",
   "/inventory/warehouses": "PM_OR_ABOVE",
   "/journal-entries": "ORG_ADMIN",
+  "/journal-entries/[id]/submit": "ORG_ADMIN",
   "/knowledge-base": "FIELD",
   "/knowledge-base/[id]": "FIELD",
   "/kpi-entries": "FIELD",
+  "/kpi-entries/[id]/approve": "FIELD",
   "/kpis": "PM_OR_ABOVE",
   "/labour-roster": "FIELD",
+  "/labour-roster/[id]": "FIELD",
   "/leads": "PM_OR_ABOVE",
   "/leads/[id]": "PM_OR_ABOVE",
   "/leads/bulk-reassign": "PM_OR_ABOVE",
@@ -117,17 +128,23 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/leave/requests/[id]/decision": "PM_OR_ABOVE",
   "/materials": "FIELD",
   "/materials/master": "FIELD",
+  "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",
+  "/meetings/[id]": "FIELD",
   "/meetings/[id]/outcomes": "FIELD",
   "/moms": "FIELD",
   "/moms/[id]": "FIELD",
   "/moms/[id]/action-items": "FIELD",
   "/moms/[id]/generate-intelligence": "FIELD",
   // Minting a share link publishes minutes outside the tenant -- PM authority,
-  // not field authority.
+  // not field authority. Revoking one (the [linkId] twin, keyed by link id
+  // rather than meeting id since revoke doesn't need the meeting in the URL)
+  // carries the same authority requirement.
   "/moms/[id]/share-links": "PM_OR_ABOVE",
+  "/moms/share-links/[linkId]": "PM_OR_ABOVE",
   "/mood-boards": "PM_OR_ABOVE",
   "/mood-boards/[id]": "PM_OR_ABOVE",
+  "/mood-boards/[id]/items/[itemId]": "PM_OR_ABOVE",
   "/notifications/[id]/read": "ANY_ROLE",
   "/opportunities": "PM_OR_ABOVE",
   "/opportunities/[id]": "PM_OR_ABOVE",
@@ -171,6 +188,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/procurement/rfqs": "PM_OR_ABOVE",
   "/procurement/rfqs/[id]/send": "PM_OR_ABOVE",
   "/project-budgets": "PM_OR_ABOVE",
+  "/project-budgets/[id]": "PM_OR_ABOVE",
+  "/project-budgets/[id]/cancel": "PM_OR_ABOVE",
+  "/project-budgets/[id]/submit": "PM_OR_ABOVE",
   "/projects": "PM_OR_ABOVE",
   "/projects/[id]": "PM_OR_ABOVE",
   "/punch-list": "FIELD",
@@ -198,6 +218,7 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/sales-invoices": "PM_OR_ABOVE",
   "/sales-invoices/[id]/cancel": "PM_OR_ABOVE",
   "/sales-invoices/[id]/payments": "PM_OR_ABOVE",
+  "/sales-invoices/[id]/submit": "PM_OR_ABOVE",
   "/sales-orders": "PM_OR_ABOVE",
   "/sales-orders/[id]": "PM_OR_ABOVE",
   "/sales-orders/bulk-status": "PM_OR_ABOVE",
@@ -207,10 +228,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/schedule/sprints/[id]": "PM_OR_ABOVE",
   "/schedule/sprints/[id]/issues": "PM_OR_ABOVE",
   "/schedule/tasks": "FIELD",
+  "/schedule/tasks/[id]": "FIELD",
   "/schedule/workload": "PM_OR_ABOVE",
   "/scope": "PM_OR_ABOVE",
   "/scope/[id]": "PM_OR_ABOVE",
+  "/scope/[id]/approve": "PM_OR_ABOVE",
   "/scope/[id]/revisions": "PM_OR_ABOVE",
+  "/scope/[id]/submit": "PM_OR_ABOVE",
   // NOTE (recorded, not fixed here): this route has zero callers anywhere in
   // src -- BOQ import exists only as a direct API surface with no
   // click-reachable UI. Gating it does not make it reachable; that is a
@@ -241,6 +265,16 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/todos/[id]": "ANY_MEMBER",
   "/vendor-risk": "ORG_ADMIN",
   "/vendors": "PM_OR_ABOVE",
+  // Real-screen conversion (2026-08-30): the Vendor Master facets
+  // (banking/qualification/sanction-screening/self-service portal links) --
+  // all commercially/compliance sensitive vendor data, same authority level
+  // as the vendor record itself.
+  "/vendors/[id]": "PM_OR_ABOVE",
+  "/vendors/[id]/bank-accounts": "PM_OR_ABOVE",
+  "/vendors/[id]/portal-links": "PM_OR_ABOVE",
+  "/vendors/[id]/portal-links/[linkId]": "PM_OR_ABOVE",
+  "/vendors/[id]/qualification": "PM_OR_ABOVE",
+  "/vendors/[id]/sanction-checks": "PM_OR_ABOVE",
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",

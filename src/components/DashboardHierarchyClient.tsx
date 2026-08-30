@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -42,6 +43,7 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 export function DashboardHierarchyClient() {
+  const router = useRouter();
   const currencies = useCurrencies();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
@@ -186,8 +188,13 @@ export function DashboardHierarchyClient() {
 
       {projectId && (
         <Card className="shadow-card">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-heading text-base">{details?.projectName ?? "Project details"}</CardTitle>
+            {/* Real screen navigation (2026-08-30) -- cross-linking fix
+                (module #36): this hierarchy drill-down never linked into the
+                real per-project dashboard (/dashboard/project), which has its
+                own richer KPI-tile view of the same project. */}
+            <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/project?projectId=${projectId}`)}>Open Project Dashboard</Button>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-wrap items-end gap-4">

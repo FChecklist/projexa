@@ -453,7 +453,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // PillSelection. PillSelection is deliberately inert -- readonly
     // authorizes:false, no callable member -- and bolting a field onto it
     // for this would blur exactly what that type exists to guarantee.
-    setPendingFunctionId(pillFnRef.current[sel.pillKey] ?? null);
+    const knownFunctionId = pillFnRef.current[sel.pillKey] ?? null;
+    setPendingFunctionId(knownFunctionId);
+    // Sumeet audit fix (2026-08-30): the 14 universal pills (Customers,
+    // Analysis, Reports, ...) are CATEGORY entry points, not single
+    // zero-param functions -- pillFnRef is only ever populated from
+    // /api/pill-usage's response, which returns a user's PAST usage
+    // history (compliance.pill_usage rows), never a static catalog. The
+    // FIRST time anyone clicks a given pill, knownFunctionId is genuinely
+    // null. Before this fix, onSubmit's own guard
+    // (`if (!typed && !pendingFunctionId) return`) made Send a SILENT
+    // no-op in exactly that case -- reproduced by tracing pillConfig.ts ->
+    // the real pill-usage route -> this handler, not guessed. M24's own
+    // rule ("THE SAME NAME MUST REACH THE SAME DESTINATION... WHICHEVER
+    // PATH YOU TOOK") means clicking "Customers" should behave the same as
+    // TYPING "customers" and sending -- so a first-time pill click now
+    // seeds the draft with the pill's own label (only when the draft is
+    // still empty, so it never clobbers something the user already typed),
+    // making the existing typed-path classifier the real destination
+    // instead of a dead end. The "add detail first" placeholder text below
+    // was already promising this was possible; it just never happened.
+    if (!knownFunctionId) {
+      setDraft((prev) => (prev.trim() ? prev : sel.label));
+    }
   }, []);
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there

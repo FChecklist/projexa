@@ -14,7 +14,7 @@ import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalCli
 // columns when this is null. R46 P8 seq121 factored the body out to a
 // shared helper so the new boq.custom lookup (main BOQ table's column
 // labels -- CUSTOM archetype, see below) didn't duplicate this try/catch.
-async function resolveRegistryColumns(functionId: string, organizationId: string | null): Promise<RegistryColumn[] | null> {
+export async function resolveRegistryColumns(functionId: string, organizationId: string | null): Promise<RegistryColumn[] | null> {
   try {
     const definition = await callVeridian<{ columns: RegistryColumn[] }>(`/screen-definitions/${functionId}`, {
       organizationId: organizationId ?? undefined,
@@ -31,7 +31,6 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
   const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-  const compareColumns = await resolveRegistryColumns("boq.compare", organizationId);
   // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays
   // a fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks
   // are too bespoke for a generic LIST renderer), but the main BOQ table's
@@ -63,7 +62,7 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
               <TabsTrigger value="boq">BOQ</TabsTrigger>
               <TabsTrigger value="variance">Cost Variance</TabsTrigger>
             </TabsList>
-            <TabsContent value="boq"><ScopeClient projectId={project.id} compareColumns={compareColumns} listColumns={boqListColumns} /></TabsContent>
+            <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
             <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}

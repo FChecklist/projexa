@@ -6,15 +6,12 @@
 // (category='drawing'|'drawing_3d').
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -82,13 +79,10 @@ export default function DrawingsClient({
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
 }) {
+  const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [kind, setKind] = useState<"dwg" | "3d_walkthrough">("dwg");
-  const [linkMode, setLinkMode] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -104,26 +98,6 @@ export default function DrawingsClient({
 
   useEffect(() => { load(); }, [projectId]);
 
-  async function handleCreate(formData: FormData) {
-    formData.set("projectId", projectId);
-    formData.set("kind", kind);
-    setSaving(true);
-    try {
-      const res = await fetch("/api/drawings", { method: "POST", body: formData });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to add drawing");
-      }
-      toast.success("Drawing added");
-      setDialogOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add drawing");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -132,55 +106,9 @@ export default function DrawingsClient({
           <Button variant="outline" size="sm" asChild>
             <Link href={`/floor-plans?projectId=${projectId}`}><Box className="size-4" /> Floor Plans / 3D Walkthrough</Link>
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm"><Plus className="size-4" /> Add Drawing</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Drawing / 3D Walkthrough</DialogTitle></DialogHeader>
-              <form action={handleCreate} className="space-y-3">
-                <div className="space-y-1">
-                  <Label>Kind</Label>
-                  <Select value={kind} onValueChange={(v) => setKind(v as "dwg" | "3d_walkthrough")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dwg">DWG Drawing</SelectItem>
-                      <SelectItem value="3d_walkthrough">3D Walkthrough</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" name="name" required />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="discipline">Discipline (optional)</Label>
-                  <Input id="discipline" name="discipline" placeholder="Architectural, Structural, MEP..." />
-                </div>
-                {kind === "3d_walkthrough" && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <button type="button" className="underline" onClick={() => setLinkMode((v) => !v)}>
-                      {linkMode ? "Upload a file instead" : "Use an external link instead"}
-                    </button>
-                  </div>
-                )}
-                {kind === "3d_walkthrough" && linkMode ? (
-                  <div className="space-y-1">
-                    <Label htmlFor="externalUrl">Walkthrough URL</Label>
-                    <Input id="externalUrl" name="externalUrl" type="url" placeholder="https://..." required />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <Label htmlFor="file">File{kind === "dwg" ? " (DWG)" : ""}</Label>
-                    <Input id="file" name="file" type="file" required />
-                  </div>
-                )}
-                <DialogFooter>
-                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Add"}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
+              Drawing" Dialog popup with a real create route. */}
+          <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Drawing</Button>
         </div>
       </div>
 
@@ -200,9 +128,12 @@ export default function DrawingsClient({
               </TableHeader>
               <TableBody>
                 {drawings.map((d) => (
-                  <TableRow key={d.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page instead of only a bare "Open" link (no
+                  // detail view existed before this).
+                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/drawings/${d.id}?projectId=${projectId}`)}>
                     {columns.map((c) => renderDrawingCell(c, d))}
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {d.documentUrl ? (
                         <Button variant="ghost" size="sm" asChild>
                           <a href={d.documentUrl} target="_blank" rel="noopener noreferrer">Open <ExternalLink className="size-3.5" /></a>

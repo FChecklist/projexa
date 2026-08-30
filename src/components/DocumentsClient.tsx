@@ -13,15 +13,13 @@
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -91,32 +89,11 @@ function renderDocumentCell(field: string, d: Doc) {
 }
 
 export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+  const router = useRouter();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
-
-  async function handleUpload(formData: FormData) {
-    formData.set("linkedEntityType", "project");
-    formData.set("linkedEntityId", projectId);
-    setSaving(true);
-    try {
-      const res = await fetch("/api/documents", { method: "POST", body: formData });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to upload document");
-      }
-      toast.success("Document uploaded");
-      setDialogOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to upload document");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function load() {
     setLoading(true);
@@ -146,36 +123,9 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : c.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
           </Select>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm"><Plus className="size-4" /> Upload</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Upload Document</DialogTitle></DialogHeader>
-              <form action={handleUpload} className="space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="doc-name">Name (optional)</Label>
-                  <Input id="doc-name" name="name" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="doc-category">Category</Label>
-                  <Select name="category" defaultValue="other">
-                    <SelectTrigger id="doc-category"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.filter((c) => c !== "all").map((c) => <SelectItem key={c} value={c}>{c.replace(/_/g, " ")}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="doc-file">File (PDF, email, etc.)</Label>
-                  <Input id="doc-file" name="file" type="file" required />
-                </div>
-                <DialogFooter>
-                  <Button type="submit" disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : "Upload"}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old
+              "Upload Document" Dialog popup with a real create route. */}
+          <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}><Plus className="size-4" /> Upload</Button>
         </div>
       </div>
 
@@ -194,7 +144,10 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
               </TableHeader>
               <TableBody>
                 {docs.map((d) => (
-                  <TableRow key={d.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page instead of nothing (no way to view/
+                  // download an uploaded file again existed before this).
+                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/documents/${d.id}`)}>
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderDocumentCell(col.field, d)}</TableCell>
                     ))}

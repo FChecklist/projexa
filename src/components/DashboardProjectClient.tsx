@@ -161,6 +161,27 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
+          {/* Sumeet audit fix (2026-08-30, requirement #10: "Project value
+              matches BOQ total"). Real, confirmed gap: this screen already
+              fetches dashboard.projectValue (see the ProjectDashboard type
+              above) but never rendered it anywhere -- the "FIELD ABSENT"
+              defect from the earlier audit round was fixed only in the
+              OTHER dashboard screen (DashboardHierarchyClient.tsx), not
+              here. Distinguished explicitly from Contract Value, since they
+              are two genuinely different figures by design (project value =
+              COALESCE(user-entered, linked-PO-sum); contract value = latest
+              BOQ's parent-lines-only total) -- rendering this does not
+              claim they're equal, it surfaces the real, separate value
+              Point 121's own override mechanism controls. Null (not 0) is
+              the honest "neither a manual value nor any linked PO exists
+              yet" state, matching every other null-safe KPI on this screen. */}
+          <KpiCard
+            label={labelFor(dashboardLabels, "projectValue", "Project Value")}
+            value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
+            trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
+            baseline="overridable per project"
+            onClick={() => router.push(`/scope?projectId=${projectId}`)}
+          />
           <KpiCard
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
             value={money(dashboard.expenses, currency)}

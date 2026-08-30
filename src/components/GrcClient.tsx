@@ -10,19 +10,16 @@
 // existing compliance/statutory register. All data is real, fetched from
 // VERIDIAN via PROJEXA's own thin proxy routes -- no mock/local state.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import PrimarySubmit from "@/components/PrimarySubmit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, ShieldAlert, ChevronRight } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -154,15 +151,10 @@ function DashboardPanel() {
 // Risk Register tab
 // ---------------------------------------------------------------------------
 function RiskRegisterPanel() {
+  const router = useRouter();
   const [risks, setRisks] = useState<Risk[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("operational");
-  const [likelihood, setLikelihood] = useState("3");
-  const [impact, setImpact] = useState("3");
 
   async function load() {
     setLoading(true);
@@ -183,26 +175,6 @@ function RiskRegisterPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const riskMissing = title.trim() ? [] : ["Title"];
-
-  async function createRisk() {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/risks", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, category, likelihood: Number(likelihood), impact: Number(impact) }),
-      });
-      toast.success("Risk logged");
-      setTitle(""); setCategory("operational"); setLikelihood("3"); setImpact("3"); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't create risk"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function advanceStatus(risk: Risk) {
     const nextStatus = RISK_STATUS_FLOW[risk.status];
     if (nextStatus === risk.status) return;
@@ -220,33 +192,9 @@ function RiskRegisterPanel() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Log Risk</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Log a Risk</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Key subcontractor delay on Site 4" /></div>
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["regulatory", "operational", "financial", "strategic", "reputational", "cyber"].map((c) => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Likelihood (1-5)</Label><Input type="number" min={1} max={5} value={likelihood} onChange={(e) => setLikelihood(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Impact (1-5)</Label><Input type="number" min={1} max={5} value={impact} onChange={(e) => setImpact(e.target.value)} /></div>
-              </div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={riskMissing} submitting={submitting} submittingLabel="Logging…" onClick={createRisk}>
-                Log Risk
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Log
+            Risk" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/grc/risks/new")}><Plus className="size-4" /> Log Risk</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -260,14 +208,16 @@ function RiskRegisterPanel() {
             <Table>
               <TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Category</TableHead><TableHead>Likelihood x Impact</TableHead><TableHead>Severity</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows now open the
+                    real Object Page (no detail view existed before this). */}
                 {risks.map((r) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/grc/risks/${r.id}`)}>
                     <TableCell className="font-medium">{r.title}</TableCell>
                     <TableCell className="capitalize text-px-muted">{r.category}</TableCell>
                     <TableCell className="text-px-muted">{r.likelihood} x {r.impact} = {r.likelihood * r.impact}</TableCell>
                     <TableCell><Badge variant={SEVERITY_VARIANT[r.severity] ?? "outline"} className="capitalize">{r.severity}</Badge></TableCell>
                     <TableCell><Badge variant="outline" className="capitalize">{r.status}</Badge></TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {r.status !== "closed" && (
                         <Button variant="ghost" size="sm" onClick={() => advanceStatus(r)}>
                           Move to {RISK_STATUS_FLOW[r.status]} <ChevronRight className="size-3.5" />
@@ -289,17 +239,10 @@ function RiskRegisterPanel() {
 // Audits & Findings tab
 // ---------------------------------------------------------------------------
 function AuditsPanel() {
+  const router = useRouter();
   const [engagements, setEngagements] = useState<AuditEngagement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [engagementOpen, setEngagementOpen] = useState(false);
-  const [findingOpen, setFindingOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState("");
-  const [auditType, setAuditType] = useState("internal");
-  const [findingEngagementId, setFindingEngagementId] = useState("");
-  const [findingTitle, setFindingTitle] = useState("");
-  const [findingSeverity, setFindingSeverity] = useState("medium");
 
   async function load() {
     setLoading(true);
@@ -320,48 +263,6 @@ function AuditsPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const engagementMissing = name.trim() ? [] : ["Name"];
-
-  async function createEngagement() {
-    if (!name.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/audit-engagements", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, auditType }),
-      });
-      toast.success("Audit engagement planned");
-      setName(""); setAuditType("internal"); setEngagementOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't create audit engagement"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const findingMissing = [
-    ...(findingEngagementId ? [] : ["Engagement"]),
-    ...(findingTitle.trim() ? [] : ["Title"]),
-  ];
-
-  async function createFinding() {
-    if (!findingEngagementId || !findingTitle.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/audit-findings", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auditEngagementId: findingEngagementId, title: findingTitle, severity: findingSeverity }),
-      });
-      toast.success("Finding recorded");
-      setFindingEngagementId(""); setFindingTitle(""); setFindingSeverity("medium"); setFindingOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record finding"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function advanceCapa(findingId: string) {
     try {
       await fetchJson(`/api/audit-findings/${findingId}`, { method: "PATCH" });
@@ -375,55 +276,10 @@ function AuditsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end gap-2">
-        <Dialog open={findingOpen} onOpenChange={setFindingOpen}>
-          <DialogTrigger asChild><Button variant="outline" size="sm">Record Finding</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Record a Finding</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Audit Engagement</Label>
-                <Select value={findingEngagementId} onValueChange={setFindingEngagementId}>
-                  <SelectTrigger><SelectValue placeholder={engagements.length ? "Select an engagement" : "Plan an engagement first"} /></SelectTrigger>
-                  <SelectContent>{engagements.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5"><Label>Finding Title</Label><Input value={findingTitle} onChange={(e) => setFindingTitle(e.target.value)} placeholder="e.g. Missing fire-exit signage on Floor 3" /></div>
-              <div className="space-y-1.5">
-                <Label>Severity</Label>
-                <Select value={findingSeverity} onValueChange={setFindingSeverity}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["low", "medium", "high", "critical"].map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={findingMissing} submitting={submitting} submittingLabel="Recording…" onClick={createFinding}>
-                Record Finding
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        <Dialog open={engagementOpen} onOpenChange={setEngagementOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Plan Audit</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Plan an Audit Engagement</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q3 Site Safety Audit" /></div>
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select value={auditType} onValueChange={setAuditType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["internal", "certification", "statutory"].map((t) => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={engagementMissing} submitting={submitting} submittingLabel="Planning…" onClick={createEngagement}>
-                Plan Audit
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Record
+            Finding"/"Plan Audit" Dialog popups with real create routes. */}
+        <Button variant="outline" size="sm" onClick={() => router.push("/grc/findings/new")}>Record Finding</Button>
+        <Button size="sm" onClick={() => router.push("/grc/audits/new")}><Plus className="size-4" /> Plan Audit</Button>
       </div>
 
       {loading ? (
@@ -475,13 +331,10 @@ function AuditsPanel() {
 // Policies tab
 // ---------------------------------------------------------------------------
 function PoliciesPanel() {
+  const router = useRouter();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("governance");
 
   async function load() {
     setLoading(true);
@@ -502,25 +355,6 @@ function PoliciesPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const policyMissing = title.trim() ? [] : ["Title"];
-
-  async function createPolicy() {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/policies", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, category }),
-      });
-      toast.success("Policy drafted");
-      setTitle(""); setCategory("governance"); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't draft policy"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function requestPublish(id: string) {
     try {
       await fetchJson(`/api/policies/${id}`, {
@@ -536,27 +370,9 @@ function PoliciesPanel() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Draft Policy</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Draft a Policy</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Site Safety & PPE Policy" /></div>
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["governance", "hr", "environment", "data_privacy", "third_party", "sop"].map((c) => <SelectItem key={c} value={c} className="capitalize">{c.replace("_", " ")}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={policyMissing} submitting={submitting} submittingLabel="Drafting…" onClick={createPolicy}>
-                Draft Policy
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Draft
+            Policy" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/grc/policies/new")}><Plus className="size-4" /> Draft Policy</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -570,14 +386,17 @@ function PoliciesPanel() {
             <Table>
               <TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Category</TableHead><TableHead>Version</TableHead><TableHead>Status</TableHead><TableHead>Attestation</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows now open the
+                    real Object Page, which also exposes the real "edit"
+                    (version bump) action that had zero UI before this. */}
                 {policies.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow key={p.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/grc/policies/${p.id}`)}>
                     <TableCell className="font-medium">{p.title}</TableCell>
                     <TableCell className="capitalize text-px-muted">{p.category.replace("_", " ")}</TableCell>
                     <TableCell className="text-px-muted">{p.version}</TableCell>
                     <TableCell><Badge variant={p.status === "published" ? "default" : "outline"} className="capitalize">{p.status.replace("_", " ")}</Badge></TableCell>
                     <TableCell className="text-px-muted">{p.attestationRate}%</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {p.status === "draft" && <Button variant="ghost" size="sm" onClick={() => requestPublish(p.id)}>Request Publish</Button>}
                     </TableCell>
                   </TableRow>
@@ -595,13 +414,10 @@ function PoliciesPanel() {
 // Vendor Risk tab
 // ---------------------------------------------------------------------------
 function VendorRiskPanel() {
+  const router = useRouter();
   const [vendors, setVendors] = useState<VendorRiskProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState("");
-  const [riskTier, setRiskTier] = useState("medium");
 
   async function load() {
     setLoading(true);
@@ -622,49 +438,12 @@ function VendorRiskPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const vendorMissing = name.trim() ? [] : ["Name"];
-
-  async function createVendor() {
-    if (!name.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/vendor-risk", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, riskTier }),
-      });
-      toast.success("Vendor added for risk tracking");
-      setName(""); setRiskTier("medium"); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't add vendor"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Add Vendor</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Add Vendor for Risk Tracking</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Vendor Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="space-y-1.5">
-                <Label>Risk Tier</Label>
-                <Select value={riskTier} onValueChange={setRiskTier}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["low", "medium", "high"].map((t) => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={vendorMissing} submitting={submitting} submittingLabel="Adding…" onClick={createVendor}>
-                Add Vendor
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Add
+            Vendor" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/grc/vendors/new")}><Plus className="size-4" /> Add Vendor</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -702,16 +481,11 @@ const FRAUD_TRANSITIONS: Record<string, string[]> = {
 };
 
 function FraudCasesPanel() {
+  const router = useRouter();
   const currencies = useCurrencies();
   const [cases, setCases] = useState<FraudCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [title, setTitle] = useState("");
-  const [fraudType, setFraudType] = useState("other");
-  const [reportedDate, setReportedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState("");
 
   async function load() {
     setLoading(true);
@@ -732,29 +506,6 @@ function FraudCasesPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const caseMissing = [
-    ...(title.trim() ? [] : ["Title"]),
-    ...(reportedDate ? [] : ["Reported Date"]),
-  ];
-
-  async function createCase() {
-    if (!title.trim() || !reportedDate) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/fraud-cases", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, fraudType, reportedDate, description: description || undefined }),
-      });
-      toast.success("Case logged");
-      setTitle(""); setFraudType("other"); setDescription(""); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't log case"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function transition(caseId: string, status: string) {
     try {
       await fetchJson(`/api/fraud-cases/${caseId}`, {
@@ -770,31 +521,9 @@ function FraudCasesPanel() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Log Case</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Log a Fraud / Incident Case</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Duplicate vendor invoice, Site 7" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label>Type</Label>
-                  <Select value={fraudType} onValueChange={setFraudType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{["procurement", "payroll", "expense", "vendor_collusion", "asset_misappropriation", "other"].map((t) => <SelectItem key={t} value={t} className="capitalize">{t.replace("_", " ")}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Reported Date</Label><Input type="date" value={reportedDate} onChange={(e) => setReportedDate(e.target.value)} /></div>
-              </div>
-              <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} /></div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={caseMissing} submitting={submitting} submittingLabel="Logging…" onClick={createCase}>
-                Log Case
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Log
+            Case" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/grc/cases/new")}><Plus className="size-4" /> Log Case</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -808,14 +537,17 @@ function FraudCasesPanel() {
             <Table>
               <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Exposure</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows now open the
+                    real Object Page (description/exposure/investigator were
+                    write-only before this). */}
                 {cases.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/grc/cases/${c.id}`)}>
                     <TableCell className="text-px-muted">{c.caseNumber}</TableCell>
                     <TableCell className="font-medium">{c.title}</TableCell>
                     <TableCell className="capitalize text-px-muted">{c.fraudType.replace("_", " ")}</TableCell>
                     <TableCell className="text-px-muted">{c.financialExposure ? `${currencyLabel(undefined, currencies)}${Number(c.financialExposure).toLocaleString("en-US")}` : "—"}</TableCell>
                     <TableCell><Badge variant={c.status === "resolved" ? "default" : c.status === "confirmed" ? "destructive" : "outline"} className="capitalize">{c.status.replace("_", " ")}</Badge></TableCell>
-                    <TableCell className="text-right space-x-1">
+                    <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}>
                       {(FRAUD_TRANSITIONS[c.status] ?? []).map((next) => (
                         <Button key={next} variant="ghost" size="sm" onClick={() => transition(c.id, next)} className="capitalize">{next.replace("_", " ")}</Button>
                       ))}
@@ -835,15 +567,10 @@ function FraudCasesPanel() {
 // Access Review tab
 // ---------------------------------------------------------------------------
 function AccessReviewPanel() {
+  const router = useRouter();
   const [cycles, setCycles] = useState<AccessReviewCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState("");
-  const [selectedCycleId, setSelectedCycleId] = useState<string | null>(null);
-  const [certifications, setCertifications] = useState<AccessReviewCertification[]>([]);
-  const [certLoading, setCertLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -864,70 +591,12 @@ function AccessReviewPanel() {
   }
   useEffect(() => { load(); }, []);
 
-  const cycleMissing = name.trim() ? [] : ["Name"];
-
-  async function openCycle() {
-    if (!name.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/access-review", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
-      });
-      toast.success("Access review cycle opened");
-      setName(""); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't open access review cycle"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function viewCycle(cycleId: string) {
-    setSelectedCycleId(cycleId);
-    setCertLoading(true);
-    try {
-      const data = await fetchJson<{ cycle?: { certifications?: AccessReviewCertification[] } }>(
-        `/api/access-review?cycleId=${cycleId}`
-      );
-      setCertifications(data.cycle?.certifications ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load cycle certifications"));
-    } finally {
-      setCertLoading(false);
-    }
-  }
-
-  async function decide(certId: string, decision: "confirmed" | "revoked") {
-    try {
-      await fetchJson(`/api/access-review/certifications/${certId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }),
-      });
-      toast.success(`Certification ${decision}`);
-      if (selectedCycleId) viewCycle(selectedCycleId);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record decision"));
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Open Cycle</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Open an Access Review Cycle</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <p className="text-sm text-px-muted">Snapshots every active team member&apos;s current role for confirm/revoke review.</p>
-              <div className="space-y-1.5"><Label>Cycle Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Q3 2026 Access Certification" /></div>
-            </div>
-            <DialogFooter>
-              <PrimarySubmit missing={cycleMissing} submitting={submitting} submittingLabel="Opening…" onClick={openCycle}>
-                Open Cycle
-              </PrimarySubmit>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "Open
+            Cycle" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/grc/access-review/new")}><Plus className="size-4" /> Open Cycle</Button>
       </div>
 
       {loading ? (
@@ -937,52 +606,23 @@ function AccessReviewPanel() {
       ) : cycles.length === 0 ? (
         <p className="py-10 text-center text-sm text-px-muted">No access review cycles opened yet.</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-[280px_1fr]">
-          <Card className="shadow-card">
-            <CardContent className="p-2">
-              {cycles.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => viewCycle(c.id)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${selectedCycleId === c.id ? "bg-px-orange/10 text-px-ink" : "hover:bg-muted"}`}
-                >
-                  <div className="font-medium">{c.name}</div>
-                  <div className="text-xs capitalize text-px-muted">{c.status}</div>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              {!selectedCycleId ? (
-                <p className="py-10 text-center text-sm text-px-muted">Select a cycle to review certifications.</p>
-              ) : certLoading ? (
-                <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>User</TableHead><TableHead>Role</TableHead><TableHead>Decision</TableHead><TableHead /></TableRow></TableHeader>
-                  <TableBody>
-                    {certifications.map((cert) => (
-                      <TableRow key={cert.id}>
-                        <TableCell>{cert.userName}</TableCell>
-                        <TableCell className="capitalize text-px-muted">{cert.reviewedRole}</TableCell>
-                        <TableCell><Badge variant={cert.decision === "confirmed" ? "default" : cert.decision === "revoked" ? "destructive" : "outline"} className="capitalize">{cert.decision}</Badge></TableCell>
-                        <TableCell className="text-right space-x-1">
-                          {cert.decision === "pending" && (
-                            <>
-                              <Button variant="ghost" size="sm" onClick={() => decide(cert.id, "confirmed")}>Confirm</Button>
-                              <Button variant="ghost" size="sm" className="text-red-600" onClick={() => decide(cert.id, "revoked")}>Revoke</Button>
-                            </>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        // Real screen navigation (2026-08-30) -- replaces the old in-tab
+        // master-detail state (click a cycle in a list, no URL) with a real
+        // routed Object Page.
+        <Card className="shadow-card">
+          <CardContent className="p-2">
+            {cycles.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => router.push(`/grc/access-review/${c.id}`)}
+                className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+              >
+                <div className="font-medium">{c.name}</div>
+                <div className="text-xs capitalize text-px-muted">{c.status}</div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
       )}
     </div>
   );
@@ -1067,14 +707,29 @@ function ComplianceRegisterPanel() {
 // ---------------------------------------------------------------------------
 // Root client
 // ---------------------------------------------------------------------------
-export default function GrcClient() {
+const GRC_VALID_TABS = new Set(["dashboard", "risks", "audits", "policies", "vendor-risk", "fraud", "access-review", "compliance"]);
+
+export default function GrcClient({ initialTab }: { initialTab?: string }) {
+  // Real-screen conversion (2026-08-30): the tab used to be internal-only
+  // state (Tabs' own uncontrolled `defaultValue`) -- the new Risk/Policy/
+  // Case/Vendor/Audit/AccessReview create screens redirect back here with
+  // `?tab=`, so the URL needs to actually drive which tab renders. Mirrors
+  // AccountingClient.tsx's/EmployeesClient.tsx's own fix for the identical gap.
+  const [activeTab, setActiveTabState] = useState(initialTab && GRC_VALID_TABS.has(initialTab) ? initialTab : "dashboard");
+  function setActiveTab(next: string) {
+    setActiveTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", next);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-px-muted">
         <ShieldAlert className="size-4" />
         <span>Real GRC data from VERIDIAN AI OS — risk register, audits, policies, vendor risk, fraud cases, access review, and statutory obligations.</span>
       </div>
-      <Tabs defaultValue="dashboard">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="risks">Risk Register</TabsTrigger>

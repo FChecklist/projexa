@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/supabase/auth-guard";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+
+type RouteContext = { params: Promise<{ id: string; itemId: string }> };
+
+// Real-screen conversion (2026-08-30): removeMoodBoardItem() had a working
+// v1 route (DELETE) but no PROJEXA-facing proxy at all -- an item could be
+// added but never removed from PROJEXA.
+export async function DELETE(_request: NextRequest, { params }: RouteContext) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  const { id, itemId } = await params;
+  try {
+    const data = await callVeridian(`/mood-boards/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove item" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}

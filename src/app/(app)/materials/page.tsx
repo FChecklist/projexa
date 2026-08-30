@@ -32,8 +32,8 @@ async function resolveMaterialsListColumns(organizationId: string | null): Promi
 // Point 33: repointed to a real project-scoped material master + receipts
 // (was org-wide ERP ledger listing only, no create path) -- same
 // resolveSelectedProject pattern as moms/page.tsx.
-export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
+  const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMaterialsListColumns(organizationId);
@@ -50,7 +50,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
       </div>
     </>
   );

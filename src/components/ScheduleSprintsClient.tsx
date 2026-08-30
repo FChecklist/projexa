@@ -7,15 +7,12 @@
 // shared API key with no known identity-bridge gap -- pms_sprints carries
 // no per-user attribution column, unlike wiki/timesheets.
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Sprint = {
@@ -29,18 +26,12 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function ScheduleSprintsClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sprintIssues, setSprintIssues] = useState<Record<string, SprintIssue[]>>({});
-
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [goal, setGoal] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,51 +78,10 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     }
   }
 
-  async function createSprint() {
-    if (!name.trim()) return;
-    setCreating(true);
-    try {
-      const res = await fetch("/api/schedule/sprints", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, name: name.trim(), goal: goal.trim() || undefined,
-          startDate: startDate || undefined, endDate: endDate || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create sprint");
-      toast.success("Sprint created");
-      setName(""); setGoal(""); setStartDate(""); setEndDate(""); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create sprint");
-    } finally {
-      setCreating(false);
-    }
-  }
-
+  // Real screen navigation (2026-08-30) -- replaces the old "New Sprint"
+  // Dialog popup with a real create route.
   const newSprintButton = (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button><Plus className="size-4" /> New Sprint</Button></DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>New Sprint</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sprint 4" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Goal (optional)</Label>
-            <Textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5"><Label>Start Date</Label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>End Date</Label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-          </div>
-        </div>
-        <DialogFooter><Button onClick={createSprint} disabled={creating || !name.trim()}>{creating ? "Creating…" : "Create Sprint"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Button onClick={() => router.push(`/schedule/sprints/new?projectId=${projectId}`)}><Plus className="size-4" /> New Sprint</Button>
   );
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
@@ -186,8 +136,14 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
                     <ul className="space-y-1">
                       {sprintIssues[sprint.id].map((issue) => (
                         <li key={issue.id} className="flex items-center gap-2 text-sm">
-                          <span className="font-mono text-xs text-px-muted">#{issue.number}</span>
-                          {issue.title}
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 text-left underline-offset-2 hover:underline"
+                            onClick={() => router.push(`/schedule/tasks/${issue.id}`)}
+                          >
+                            <span className="font-mono text-xs text-px-muted">#{issue.number}</span>
+                            {issue.title}
+                          </button>
                         </li>
                       ))}
                     </ul>

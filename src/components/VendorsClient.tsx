@@ -1,14 +1,17 @@
 "use client";
 
+// Real-screen conversion (2026-08-30): the "New Vendor" Dialog popup is
+// gone -- routes to a real create screen (VendorCreateClient.tsx). Rows
+// now route to a real Object Page (VendorObjectClient.tsx) -- this module
+// had no detail view at all before, "not even clickable rows" per its own
+// tracker note.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -25,23 +28,17 @@ type Vendor = {
 // isIndiaOrg (hide, don't error, for non-IN orgs), same pattern as
 // CustomersClient.tsx's GSTIN field.
 export default function VendorsClient() {
+  const router = useRouter();
   const { isIndiaOrg } = useOrgRole();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [vendorName, setVendorName] = useState("");
-  const [vendorType, setVendorType] = useState("");
-  const [gst, setGst] = useState("");
-  const [trade, setTrade] = useState("");
-  const [creditLimit, setCreditLimit] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await fetchJson("/api/vendors");
+      const data = await fetchJson<{ vendors?: Vendor[] }>("/api/vendors");
       setVendors(data.vendors ?? []);
     } catch (err) {
       const msg = errorMessage(err, "Couldn't load vendors");
@@ -54,51 +51,12 @@ export default function VendorsClient() {
 
   useEffect(() => { load(); }, []);
 
-  async function createVendor() {
-    if (!vendorName.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/vendors", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vendorName, vendorType: vendorType || undefined, gst: gst || undefined,
-          trade: trade || undefined, creditLimit: creditLimit ? Number(creditLimit) : undefined,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Vendor added");
-      setVendorName(""); setVendorType(""); setGst(""); setTrade(""); setCreditLimit(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't add vendor");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Vendor</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Vendor</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Vendor Name</Label><Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Type (optional)</Label><Input value={vendorType} onChange={(e) => setVendorType(e.target.value)} placeholder="e.g. Subcontractor" /></div>
-                <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Electrical" /></div>
-              </div>
-              <div className={isIndiaOrg ? "grid grid-cols-2 gap-2" : ""}>
-                {isIndiaOrg && (
-                  <div className="space-y-1.5"><Label>GST (optional)</Label><Input value={gst} onChange={(e) => setGst(e.target.value)} /></div>
-                )}
-                <div className="space-y-1.5"><Label>Credit Limit (optional)</Label><Input type="number" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} /></div>
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createVendor} disabled={submitting}>{submitting ? "Adding…" : "Add Vendor"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Vendor" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push("/vendors/new")}><Plus className="size-4" /> New Vendor</Button>
       </div>
 
       <Card className="shadow-card">
@@ -119,8 +77,12 @@ export default function VendorsClient() {
                 <TableRow><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Trade</TableHead>{isIndiaOrg && <TableHead>GST</TableHead>}<TableHead>Status</TableHead></TableRow>
               </TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows open the
+                    real Object Page, where the Vendor Master workflows
+                    (qualification/sanction screening/banking/portal links)
+                    now live. */}
                 {vendors.map((v) => (
-                  <TableRow key={v.id}>
+                  <TableRow key={v.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/vendors/${v.id}`)}>
                     <TableCell className="font-medium">{v.vendorName}</TableCell>
                     <TableCell className="text-px-muted">{v.vendorType ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{v.trade ?? "—"}</TableCell>

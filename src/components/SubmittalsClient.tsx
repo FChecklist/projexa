@@ -1,15 +1,17 @@
 "use client";
 
+// Real-screen conversion (2026-08-30): "New Submittal" routes to a real
+// create screen (SubmittalCreateClient.tsx, which now also asks for
+// type/due date); rows route to a real Object Page (SubmittalObjectClient.tsx,
+// which gained a real detail view this conversion -- getSubmittal() didn't
+// exist before) instead of the inline Review button and its Dialog.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -22,19 +24,14 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function SubmittalsClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [items, setItems] = useState<Submittal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [specSection, setSpecSection] = useState("");
-  const [reviewing, setReviewing] = useState<Submittal | null>(null);
-  const [comments, setComments] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await fetchJson(`/api/submittals?projectId=${encodeURIComponent(projectId)}`);
+      const data = await fetchJson<{ submittals?: Submittal[] }>(`/api/submittals?projectId=${encodeURIComponent(projectId)}`);
       setItems(data.submittals ?? []);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't load submittals"));
@@ -45,58 +42,12 @@ export default function SubmittalsClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
-  async function createSubmittal() {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/submittals", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title, specSection: specSection || undefined }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Submittal created");
-      setTitle(""); setSpecSection(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create submittal");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function review(status: string) {
-    if (!reviewing) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/submittals/${reviewing.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "review", status, comments, projectId }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Submittal reviewed");
-      setReviewing(null); setComments("");
-      load();
-    } catch {
-      toast.error("Couldn't review submittal");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Submittal</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Submittal</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label>Spec Section (optional)</Label><Input value={specSection} onChange={(e) => setSpecSection(e.target.value)} placeholder="e.g. 05 12 00" /></div>
-            </div>
-            <DialogFooter><Button onClick={createSubmittal} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Submittal" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push(`/submittals/new?projectId=${projectId}`)}><Plus className="size-4" /> New Submittal</Button>
       </div>
 
       <Card className="shadow-card">
@@ -110,21 +61,18 @@ export default function SubmittalsClient({ projectId }: { projectId: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>#</TableHead><TableHead>Title</TableHead><TableHead>Spec Section</TableHead>
-                  <TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows open the
+                    real Object Page, where Review now lives. */}
                 {items.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow key={s.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/submittals/${s.id}`)}>
                     <TableCell className="font-mono text-xs">SUB-{s.number}</TableCell>
                     <TableCell className="font-medium">{s.title}</TableCell>
                     <TableCell className="text-px-muted">{s.specSection ?? "—"}</TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[s.status]}>{s.status.replace(/_/g, " ")}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      {s.status === "pending" && (
-                        <Button size="sm" variant="outline" onClick={() => { setReviewing(s); setComments(""); }}>Review</Button>
-                      )}
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -132,19 +80,6 @@ export default function SubmittalsClient({ projectId }: { projectId: string }) {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!reviewing} onOpenChange={(v) => !v && setReviewing(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Review: {reviewing?.title}</DialogTitle></DialogHeader>
-          <Textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={3} placeholder="Review comments (optional)…" />
-          <DialogFooter className="flex-wrap gap-2">
-            <Button size="sm" onClick={() => review("approved")} disabled={submitting}>Approve</Button>
-            <Button size="sm" variant="outline" onClick={() => review("approved_as_noted")} disabled={submitting}>Approve as Noted</Button>
-            <Button size="sm" variant="outline" onClick={() => review("revise_resubmit")} disabled={submitting}>Revise & Resubmit</Button>
-            <Button size="sm" variant="destructive" onClick={() => review("rejected")} disabled={submitting}>Reject</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -1,18 +1,16 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, History } from "lucide-react";
-import { formatDate } from "@/lib/format-date";
+import { Loader2, Plus } from "lucide-react";
 // Priority 17 remaining gap (2026-07-15): crm_leads gained a companyId
 // column (was orgId-only before this wave) -- reuses the exact selector
 // AccountingClient.tsx already built, not a second copy. consolidate has no
@@ -21,13 +19,18 @@ import { formatDate } from "@/lib/format-date";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+// Real-screen conversion (2026-08-30): "New Lead" routes to a real create
+// screen (LeadCreateClient.tsx). Rows route to a real Object Page
+// (LeadObjectClient.tsx, which gained a real detail view this conversion --
+// getLead() existed in crm-service.ts but had no route) instead of the old
+// "History" Dialog popup (the History icon/button is gone -- the Object
+// Page's own facets + history log replace it). The inline status Select
+// and bulk-reassign bar were already real (no Dialog) and stay unchanged.
 type Lead = {
   id: string; name: string; contactEmail: string | null; contactPhone: string | null;
   source: string | null; status: string; ownerId: string | null; companyId: string | null;
   nextActionDate: string | null; nextActionNote: string | null; createdAt: string;
 };
-
-type HistoryEntry = { id: string; fromStage: string | null; toStage: string; note: string | null; changedAt: string };
 
 const STATUS_OPTIONS = ["new", "contacted", "qualified", "converted", "lost"];
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -35,6 +38,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function LeadsClient() {
+  const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -51,18 +55,6 @@ export default function LeadsClient() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
 
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [source, setSource] = useState("");
-  const [nextActionDate, setNextActionDate] = useState("");
-  const [leadCompanyId, setLeadCompanyId] = useState<string>("__none__");
-  const [submitting, setSubmitting] = useState(false);
-
-  const [historyFor, setHistoryFor] = useState<Lead | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,7 +62,7 @@ export default function LeadsClient() {
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (scope.companyId) params.set("companyId", scope.companyId);
-      const data = await fetchJson(`/api/leads?${params.toString()}`);
+      const data = await fetchJson<{ leads?: Lead[]; total?: number }>(`/api/leads?${params.toString()}`);
       setLeads(data.leads ?? []);
       setTotal(data.total ?? 0);
       setSelected(new Set());
@@ -86,37 +78,14 @@ export default function LeadsClient() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await fetchJson("/api/companies");
+        const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch (err) {
+      } catch {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }
     })();
   }, []);
-
-  async function createLead() {
-    if (!name.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/leads", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name, contactEmail: contactEmail || undefined, contactPhone: contactPhone || undefined,
-          source: source || undefined, nextActionDate: nextActionDate || undefined,
-          companyId: leadCompanyId === "__none__" ? undefined : leadCompanyId,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Lead created");
-      setName(""); setContactEmail(""); setContactPhone(""); setSource(""); setNextActionDate(""); setLeadCompanyId("__none__"); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create lead");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function updateStatus(lead: Lead, status: string) {
     try {
@@ -147,16 +116,6 @@ export default function LeadsClient() {
     }
   }
 
-  async function openHistory(lead: Lead) {
-    setHistoryFor(lead);
-    try {
-      const data = await fetchJson(`/api/leads/${lead.id}/history`);
-      setHistory(data.history ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load history"));
-    }
-  }
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -173,36 +132,9 @@ export default function LeadsClient() {
             </SelectContent>
           </Select>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Lead</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Lead</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Email (optional)</Label><Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Phone (optional)</Label><Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Source (optional)</Label><Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="e.g. referral, website" /></div>
-                <div className="space-y-1.5"><Label>Next Follow-up (optional)</Label><Input type="date" value={nextActionDate} onChange={(e) => setNextActionDate(e.target.value)} /></div>
-              </div>
-              {companies.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label>Company / Office (optional)</Label>
-                  <Select value={leadCompanyId} onValueChange={setLeadCompanyId}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Unattributed</SelectItem>
-                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-            <DialogFooter><Button onClick={createLead} disabled={submitting}>{submitting ? "Creating…" : "Create Lead"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Lead" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push("/sales/leads/new")}><Plus className="size-4" /> New Lead</Button>
       </div>
 
       {selected.size > 0 && (
@@ -230,13 +162,16 @@ export default function LeadsClient() {
                     />
                   </TableHead>
                   <TableHead>Name</TableHead><TableHead>Contact</TableHead><TableHead>Source</TableHead>
-                  <TableHead>Status</TableHead><TableHead>Next Follow-up</TableHead><TableHead>Owner</TableHead><TableHead></TableHead>
+                  <TableHead>Status</TableHead><TableHead>Next Follow-up</TableHead><TableHead>Owner</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows open the
+                    real Object Page, where the old "History" Dialog's
+                    content now lives for real. */}
                 {leads.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell>
+                  <TableRow key={l.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/sales/leads/${l.id}`)}>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selected.has(l.id)}
                         onCheckedChange={(c) => setSelected((prev) => { const next = new Set(prev); if (c) next.add(l.id); else next.delete(l.id); return next; })}
@@ -245,7 +180,7 @@ export default function LeadsClient() {
                     <TableCell className="font-medium">{l.name}</TableCell>
                     <TableCell className="text-px-muted">{l.contactEmail ?? l.contactPhone ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{l.source ?? "—"}</TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Select value={l.status} onValueChange={(v) => updateStatus(l, v)}>
                         <SelectTrigger className="h-7 w-32 border-none p-0 shadow-none">
                           <Badge variant={STATUS_VARIANT[l.status] ?? "outline"}>{l.status}</Badge>
@@ -255,9 +190,6 @@ export default function LeadsClient() {
                     </TableCell>
                     <TableCell className="text-px-muted">{l.nextActionDate ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{l.ownerId ?? "—"}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openHistory(l)}><History className="size-4" /></Button>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -275,22 +207,6 @@ export default function LeadsClient() {
           </div>
         </div>
       )}
-
-      <Dialog open={!!historyFor} onOpenChange={(o) => !o && setHistoryFor(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{historyFor?.name} — Stage History</DialogTitle></DialogHeader>
-          <div className="max-h-80 space-y-2 overflow-y-auto">
-            {history.length === 0 ? (
-              <p className="py-6 text-center text-sm text-px-muted">No stage changes recorded yet.</p>
-            ) : history.map((h) => (
-              <div key={h.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                <span>{h.fromStage ? `${h.fromStage} → ${h.toStage}` : `Created as ${h.toStage}`}</span>
-                <span className="text-px-muted">{formatDate(h.changedAt)}</span>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -1,39 +1,40 @@
 "use client";
 
-// Priority 17 Wave 1: org-wide Knowledge Base, over the previously-unexposed
-// VERIDIAN knowledge-base-service.ts (distinct from the per-project Wiki --
-// this is org-wide reference material, not project working notes). Honest
-// limitation: create/edit require a real VERIDIAN user session
-// (knowledge_base_pages.updated_by_id is FK'd to compliance.users), same
-// pre-existing identity-bridge gap as Wiki/Timesheets.
+// Priority 17 Wave 1: org-wide Knowledge Base, over VERIDIAN's
+// knowledge-base-service.ts (distinct from the per-project Wiki -- this is
+// org-wide reference material, not project working notes).
+//
+// Real-screen conversion (2026-08-30): this used to be a two-pane
+// sidebar-plus-inline-editor with a "New Page" Dialog popup, page selection
+// held only in local React state (never a real URL) and edit/save baked
+// directly into this component. Now a real List Report: rows route to a
+// real `/knowledge-base/[id]` Object Page (KnowledgeBaseObjectClient.tsx),
+// "New Page" routes to a real `/knowledge-base/new` create screen. The
+// stale "creating AND editing require a real VERIDIAN user session" notice
+// is corrected below -- see updateKbPage()'s own comment in
+// knowledge-base-service.ts: create already worked via a real isRealUser
+// gate; only edit was ever actually blocked, and that gap is now closed too
+// (this conversion widened updateKbPage to accept PROJEXA's API-key actor
+// the same way submitSalesInvoice/submitSalesCreditNote were widened for
+// module #13/Invoices).
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, FileText, Search } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { errorMessage } from "@/lib/fetch-json";
 
 type KbPage = { id: string; slug: string; title: string; content: string | null; version: number };
 
 export default function KnowledgeBaseClient() {
+  const router = useRouter();
   const [pages, setPages] = useState<KbPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<KbPage | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [draftContent, setDraftContent] = useState("");
-  const [saving, setSaving] = useState(false);
-
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-
-  const [open, setOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,9 +43,7 @@ export default function KnowledgeBaseClient() {
       const res = await fetch("/api/knowledge-base");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load knowledge base");
-      const loaded: KbPage[] = data.pages ?? [];
-      setPages(loaded);
-      setSelected((prev) => prev ?? loaded[0] ?? null);
+      setPages(data.pages ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load knowledge base");
     } finally {
@@ -59,58 +58,14 @@ export default function KnowledgeBaseClient() {
     if (!q.trim()) { load(); return; }
     setSearching(true);
     try {
-      const data = await fetchJson(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Search failed");
       setPages(data.pages ?? []);
     } catch (err) {
       toast.error(errorMessage(err, "Search failed"));
     } finally {
       setSearching(false);
-    }
-  }
-
-  async function createPage() {
-    if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      const res = await fetch("/api/knowledge-base", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newTitle.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create page");
-      toast.success("Page created");
-      setNewTitle(""); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create page");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  function startEdit() {
-    setDraftContent(selected?.content ?? "");
-    setEditing(true);
-  }
-
-  async function saveEdit() {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/knowledge-base/${encodeURIComponent(selected.id)}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: draftContent }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save page");
-      toast.success("Page saved");
-      setEditing(false);
-      setSelected(data);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save page");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -125,81 +80,39 @@ export default function KnowledgeBaseClient() {
 
   return (
     <div className="space-y-3">
-      {/* Same honest-disclosure treatment as MaterialsClient.tsx/BudgetsClient.tsx's
-          own VERIDIAN-dependency notices: state the real reason up front instead of
-          only surfacing it in the error toast after a failed click (that toast is
-          still wired below via createPage()/saveEdit() and shows VERIDIAN's real
-          message verbatim, unchanged). */}
-      <p className="text-sm text-px-muted">
-        Creating and editing pages requires a per-user VERIDIAN session. PROJEXA&apos;s connection to VERIDIAN
-        currently authenticates with a shared organization API key, not individual logins, so New Page and Save
-        will be rejected until that per-user identity bridge exists. Viewing and searching existing pages is
-        unaffected.
-      </p>
-      <div className="grid grid-cols-[280px_1fr] gap-4">
-        <Card className="shadow-card h-fit">
-          <CardContent className="space-y-2 p-3">
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild><Button size="sm" className="w-full"><Plus className="size-4" /> New Page</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>New Knowledge Base Page</DialogTitle></DialogHeader>
-                <div className="space-y-1.5"><Label>Title</Label><Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} /></div>
-                <DialogFooter><Button onClick={createPage} disabled={creating || !newTitle.trim()}>{creating ? "Creating…" : "Create"}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-px-muted" />
-              <Input value={query} onChange={(e) => runSearch(e.target.value)} placeholder="Search…" className="pl-7" />
-            </div>
-            <div className="space-y-1">
-              {searching ? (
-                <Loader2 className="mx-auto size-4 animate-spin text-px-muted" />
-              ) : pages.length === 0 ? (
-                <p className="p-2 text-xs text-px-muted">No pages yet.</p>
-              ) : (
-                pages.map((page) => (
-                  <button
-                    key={page.id}
-                    onClick={() => { setSelected(page); setEditing(false); }}
-                    className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${selected?.id === page.id ? "bg-px-orange/10 text-px-ink font-medium" : "text-px-muted hover:bg-px-cloud/60"}`}
-                  >
-                    <FileText className="size-3.5 shrink-0" />
-                    <span className="truncate">{page.title}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card min-h-[24rem]">
-          <CardContent className="p-6">
-            {!selected ? (
-              <p className="text-sm text-px-muted">Select or create a page.</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-heading text-lg text-px-ink">{selected.title}</h3>
-                  {!editing && <Button size="sm" variant="outline" onClick={startEdit}>Edit</Button>}
-                </div>
-                {editing ? (
-                  <div className="space-y-3">
-                    <Textarea value={draftContent} onChange={(e) => setDraftContent(e.target.value)} rows={16} className="font-mono text-sm" />
-                    <div className="flex gap-2">
-                      <Button onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
-                      <Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="whitespace-pre-wrap text-sm text-px-ink">
-                    {selected.content || <span className="text-px-muted">This page is empty. Click Edit to add content.</span>}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-between gap-2">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-px-muted" />
+          <Input value={query} onChange={(e) => runSearch(e.target.value)} placeholder="Search…" className="pl-7" />
+        </div>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New Page"
+            Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/knowledge-base/new")}><Plus className="size-4" /> New Page</Button>
       </div>
+
+      <Card className="shadow-card">
+        <CardContent className="p-0">
+          {searching ? (
+            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : pages.length === 0 ? (
+            <p className="py-10 text-center text-sm text-px-muted">No pages yet.</p>
+          ) : (
+            <div className="divide-y divide-px-border">
+              {pages.map((page) => (
+                <button
+                  key={page.id}
+                  onClick={() => router.push(`/knowledge-base/${page.id}`)}
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm hover:bg-px-cloud/40"
+                >
+                  <FileText className="size-4 shrink-0 text-px-muted" />
+                  <span className="flex-1 font-medium text-px-ink">{page.title}</span>
+                  <span className="text-xs text-px-muted">v{page.version}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

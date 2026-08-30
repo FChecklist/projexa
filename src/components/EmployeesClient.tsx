@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -78,8 +76,23 @@ const LEAVE_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructiv
   approved: "default", pending: "secondary", rejected: "destructive",
 };
 
-export default function EmployeesClient() {
+const VALID_TABS = new Set(["directory", "departments", "orgchart", "leave"]);
+
+export default function EmployeesClient({ initialTab }: { initialTab?: string }) {
+  const router = useRouter();
   const { isHrAdmin } = useOrgRole();
+  // Real-screen conversion (2026-08-30): the tab used to be internal-only
+  // state (Tabs' own uncontrolled `defaultValue`) -- the new Department/
+  // Leave-Request/Leave-Balance create screens redirect back here with
+  // `?tab=`, so the URL needs to actually drive which tab renders. Mirrors
+  // AccountingClient.tsx's own fix for the identical gap.
+  const [activeTab, setActiveTabState] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "directory");
+  function setActiveTab(next: string) {
+    setActiveTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", next);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [orgChart, setOrgChart] = useState<OrgChart | null>(null);
@@ -100,43 +113,13 @@ export default function EmployeesClient() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
 
-  // -- Employee profile dialog
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [userId, setUserId] = useState("");
-  const [employeeCode, setEmployeeCode] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
-  const [employmentType, setEmploymentType] = useState("full_time");
-  const [dateOfJoining, setDateOfJoining] = useState("");
-  const [employmentStatus, setEmploymentStatus] = useState("active");
-  const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
-  const [profileCompanyId, setProfileCompanyId] = useState<string>("__none__");
-  const [profileSubmitting, setProfileSubmitting] = useState(false);
-  const [viewEmployee, setViewEmployee] = useState<Employee | null>(null);
-
-  // -- Department dialog
-  const [deptOpen, setDeptOpen] = useState(false);
-  const [deptName, setDeptName] = useState("");
-  const [deptDescription, setDeptDescription] = useState("");
-  const [deptSubmitting, setDeptSubmitting] = useState(false);
-
-  // -- Leave request dialog
-  const [leaveOpen, setLeaveOpen] = useState(false);
-  const [leaveType, setLeaveType] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [reason, setReason] = useState("");
-  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  // Real-screen conversion (2026-08-30): the Employee profile/Department/
+  // Leave-Request/Leave-Balance Dialogs and their form state are gone --
+  // real create/edit screens now (EmployeeCreateClient+EmployeeObjectClient,
+  // DepartmentCreateClient, LeaveRequestCreateClient, LeaveBalanceCreateClient).
+  // Approve/reject/bulk-approve stay here: real inline actions, not popups.
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [bulkApproving, setBulkApproving] = useState(false);
-
-  // -- Leave balance dialog
-  const [balanceOpen, setBalanceOpen] = useState(false);
-  const [balUserId, setBalUserId] = useState("");
-  const [balLeaveType, setBalLeaveType] = useState("");
-  const [balYear, setBalYear] = useState(String(new Date().getFullYear()));
-  const [balTotalDays, setBalTotalDays] = useState("");
-  const [balanceSubmitting, setBalanceSubmitting] = useState(false);
 
   // R52 / R48_EMPLOYEES_PAGE_CLIENT_CRASH_01. This whole route rendered
   // nothing at all -- 0 <main> elements, body text "This page couldn't load",
@@ -193,92 +176,6 @@ export default function EmployeesClient() {
 
   useEffect(() => { load(); }, []);
 
-  function selectProfileUser(id: string) {
-    setUserId(id);
-    const existing = employees.find((e) => e.id === id)?.profile;
-    setEmployeeCode(existing?.employeeCode ?? "");
-    setJobTitle(existing?.jobTitle ?? "");
-    setEmploymentType(existing?.employmentType ?? "full_time");
-    setDateOfJoining(existing?.dateOfJoining ? existing.dateOfJoining.slice(0, 10) : "");
-    setEmploymentStatus(existing?.employmentStatus ?? "active");
-    setEmergencyContactName(existing?.emergencyContactName ?? "");
-    setEmergencyContactPhone(existing?.emergencyContactPhone ?? "");
-    setProfileCompanyId(existing?.companyId ?? "__none__");
-  }
-
-  async function saveProfile() {
-    if (!userId.trim()) return;
-    setProfileSubmitting(true);
-    try {
-      const res = await fetch("/api/employees", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId, employeeCode: employeeCode || undefined, jobTitle: jobTitle || undefined,
-          employmentType, dateOfJoining: dateOfJoining || undefined,
-          employmentStatus, emergencyContactName: emergencyContactName || undefined, emergencyContactPhone: emergencyContactPhone || undefined,
-          companyId: profileCompanyId === "__none__" ? undefined : profileCompanyId,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
-      toast.success("Employee profile saved");
-      setUserId(""); setEmployeeCode(""); setJobTitle(""); setDateOfJoining("");
-      setEmploymentStatus("active"); setEmergencyContactName(""); setEmergencyContactPhone(""); setProfileCompanyId("__none__");
-      setProfileOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't save employee profile");
-    } finally {
-      setProfileSubmitting(false);
-    }
-  }
-
-  async function createDepartment() {
-    if (!deptName.trim()) return;
-    setDeptSubmitting(true);
-    try {
-      const res = await fetch("/api/hr/departments", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: deptName, description: deptDescription || undefined }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
-      toast.success("Department created");
-      setDeptName(""); setDeptDescription(""); setDeptOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't create department");
-    } finally {
-      setDeptSubmitting(false);
-    }
-  }
-
-  async function createLeaveRequest() {
-    if (!leaveType.trim() || !startDate || !endDate) return;
-    setLeaveSubmitting(true);
-    try {
-      const res = await fetch("/api/leave/requests", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leaveType, startDate, endDate, reason: reason || undefined }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
-      toast.success("Leave request submitted");
-      setLeaveType(""); setStartDate(""); setEndDate(""); setReason(""); setLeaveOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't submit leave request");
-    } finally {
-      setLeaveSubmitting(false);
-    }
-  }
-
   async function decide(id: string, decision: "approved" | "rejected") {
     setDecidingId(id);
     try {
@@ -320,28 +217,6 @@ export default function EmployeesClient() {
     load();
   }
 
-  async function saveBalance() {
-    if (!balUserId || !balLeaveType.trim() || !balTotalDays) return;
-    setBalanceSubmitting(true);
-    try {
-      const res = await fetch("/api/leave/balances", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: balUserId, leaveType: balLeaveType, year: Number(balYear), totalDays: Number(balTotalDays) }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error);
-      }
-      toast.success("Leave balance saved");
-      setBalUserId(""); setBalLeaveType(""); setBalTotalDays(""); setBalanceOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't save leave balance");
-    } finally {
-      setBalanceSubmitting(false);
-    }
-  }
-
   const employeeName = (id: string | null) => employees.find((e) => e.id === id)?.name ?? "—";
   const departmentName = (id: string | null) => departments.find((d) => d.id === id)?.name ?? "—";
 
@@ -381,7 +256,7 @@ export default function EmployeesClient() {
     },
     {
       id: "actions", header: "",
-      cell: ({ row }) => <Button size="sm" variant="ghost" onClick={() => setViewEmployee(row.original)}>View</Button>,
+      cell: ({ row }) => <Button size="sm" variant="ghost" onClick={() => router.push(`/employees/${row.original.id}`)}>View</Button>,
     },
   ];
 
@@ -411,7 +286,7 @@ export default function EmployeesClient() {
   }
 
   return (
-    <Tabs defaultValue="directory" className="space-y-4">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
       {loadErrors.length > 0 && (
         <Card role="alert" className="border-px-error-border bg-px-error-light">
           <CardContent className="space-y-2 p-4 text-sm text-px-error">
@@ -443,70 +318,10 @@ export default function EmployeesClient() {
             </Select>
           </div>
           {isHrAdmin && (
-            <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
-              <DialogTrigger asChild><Button><Plus className="size-4" /> Employee Profile</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create / Update Employee Profile</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label>User</Label>
-                    <Select value={userId} onValueChange={selectProfileUser}>
-                      <SelectTrigger><SelectValue placeholder="Select existing user account" /></SelectTrigger>
-                      <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name} ({e.email})</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5"><Label>Employee Code (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} /></div>
-                    <div className="space-y-1.5"><Label>Designation (optional)</Label><Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Site Architect" /></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <Label>Employment Type</Label>
-                      <Select value={employmentType} onValueChange={setEmploymentType}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="full_time">Full Time</SelectItem>
-                          <SelectItem value="part_time">Part Time</SelectItem>
-                          <SelectItem value="contract">Contract</SelectItem>
-                          <SelectItem value="intern">Intern</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5"><Label>Date of Joining (optional)</Label><Input type="date" value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} /></div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Employment Status</Label>
-                    <Select value={employmentStatus} onValueChange={setEmploymentStatus}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="on_leave">On Leave</SelectItem>
-                        <SelectItem value="terminated">Terminated</SelectItem>
-                        <SelectItem value="resigned">Resigned</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5"><Label>Emergency Contact Name (optional)</Label><Input value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} /></div>
-                    <div className="space-y-1.5"><Label>Emergency Contact Phone (optional)</Label><Input value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} /></div>
-                  </div>
-                  {companies.length > 0 && (
-                    <div className="space-y-1.5">
-                      <Label>Company / Office (optional)</Label>
-                      <Select value={profileCompanyId} onValueChange={setProfileCompanyId}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Unattributed</SelectItem>
-                          {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  <p className="text-xs text-px-muted">Department and reporting manager are managed from user administration, not here.</p>
-                </div>
-                <DialogFooter><Button onClick={saveProfile} disabled={profileSubmitting}>{profileSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
+            // Real screen navigation (2026-08-30) -- replaces the old
+            // combined "Create / Update Employee Profile" Dialog popup with
+            // a real create route (edit lives on EmployeeObjectClient now).
+            <Button onClick={() => router.push("/employees/new")}><Plus className="size-4" /> Employee Profile</Button>
           )}
         </div>
 
@@ -524,17 +339,9 @@ export default function EmployeesClient() {
       <TabsContent value="departments" className="space-y-4">
         <div className="flex justify-end">
           {isHrAdmin && (
-          <Dialog open={deptOpen} onOpenChange={setDeptOpen}>
-            <DialogTrigger asChild><Button><Plus className="size-4" /> New Department</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>New Department</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5"><Label>Name</Label><Input value={deptName} onChange={(e) => setDeptName(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Description (optional)</Label><Input value={deptDescription} onChange={(e) => setDeptDescription(e.target.value)} /></div>
-              </div>
-              <DialogFooter><Button onClick={createDepartment} disabled={deptSubmitting}>{deptSubmitting ? "Creating…" : "Create"}</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
+            // Real screen navigation (2026-08-30) -- replaces the old "New
+            // Department" Dialog popup with a real create route.
+            <Button onClick={() => router.push("/employees/departments/new")}><Plus className="size-4" /> New Department</Button>
           )}
         </div>
         <Card className="shadow-card">
@@ -588,21 +395,9 @@ export default function EmployeesClient() {
                   {bulkApproving ? "Approving…" : "Approve All Pending"}
                 </Button>
               )}
-              <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
-                <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> Request Leave</Button></DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>Request Leave</DialogTitle></DialogHeader>
-                  <div className="space-y-3">
-                    <div className="space-y-1.5"><Label>Leave Type</Label><Input value={leaveType} onChange={(e) => setLeaveType(e.target.value)} placeholder="e.g. Casual, Sick, Earned" /></div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1.5"><Label>Start Date</Label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-                      <div className="space-y-1.5"><Label>End Date</Label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-                    </div>
-                    <div className="space-y-1.5"><Label>Reason (optional)</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} /></div>
-                  </div>
-                  <DialogFooter><Button onClick={createLeaveRequest} disabled={leaveSubmitting}>{leaveSubmitting ? "Submitting…" : "Submit"}</Button></DialogFooter>
-                </DialogContent>
-              </Dialog>
+              {/* Real screen navigation (2026-08-30) -- replaces the old
+                  "Request Leave" Dialog popup with a real create route. */}
+              <Button size="sm" onClick={() => router.push("/employees/leave/new")}><Plus className="size-4" /> Request Leave</Button>
             </div>
           </div>
 
@@ -644,27 +439,9 @@ export default function EmployeesClient() {
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold">Leave Balances</h3>
             {isHrAdmin && (
-            <Dialog open={balanceOpen} onOpenChange={setBalanceOpen}>
-              <DialogTrigger asChild><Button size="sm" variant="outline"><Plus className="size-4" /> Set Balance</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Set Leave Balance</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label>Employee</Label>
-                    <Select value={balUserId} onValueChange={setBalUserId}>
-                      <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                      <SelectContent>{employees.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5"><Label>Leave Type</Label><Input value={balLeaveType} onChange={(e) => setBalLeaveType(e.target.value)} placeholder="e.g. Casual" /></div>
-                    <div className="space-y-1.5"><Label>Year</Label><Input type="number" value={balYear} onChange={(e) => setBalYear(e.target.value)} /></div>
-                  </div>
-                  <div className="space-y-1.5"><Label>Total Days</Label><Input type="number" value={balTotalDays} onChange={(e) => setBalTotalDays(e.target.value)} /></div>
-                </div>
-                <DialogFooter><Button onClick={saveBalance} disabled={balanceSubmitting}>{balanceSubmitting ? "Saving…" : "Save"}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
+            /* Real screen navigation (2026-08-30) -- replaces the old "Set
+               Leave Balance" Dialog popup with a real create route. */
+            <Button size="sm" variant="outline" onClick={() => router.push("/employees/leave/balance/new")}><Plus className="size-4" /> Set Balance</Button>
             )}
           </div>
           <Card className="shadow-card">
@@ -695,43 +472,6 @@ export default function EmployeesClient() {
         </div>
       </TabsContent>
 
-      {/* Employee detail view (Priority 15 Wave 2) */}
-      <Dialog open={!!viewEmployee} onOpenChange={(open) => { if (!open) setViewEmployee(null); }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{viewEmployee?.name}</DialogTitle></DialogHeader>
-          {viewEmployee && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div><p className="text-xs text-px-muted">Email</p><p>{viewEmployee.email}</p></div>
-                <div><p className="text-xs text-px-muted">Department</p><p>{departmentName(viewEmployee.departmentId)}</p></div>
-                <div><p className="text-xs text-px-muted">Designation</p><p>{viewEmployee.profile?.jobTitle ?? "—"}</p></div>
-                <div><p className="text-xs text-px-muted">Reports To</p><p>{employeeName(viewEmployee.reportingToId)}</p></div>
-                <div><p className="text-xs text-px-muted">Employee Code</p><p>{viewEmployee.profile?.employeeCode ?? "—"}</p></div>
-                <div><p className="text-xs text-px-muted">Employment Type</p><p>{viewEmployee.profile?.employmentType?.replace(/_/g, " ") ?? "—"}</p></div>
-                <div><p className="text-xs text-px-muted">Joined</p><p>{viewEmployee.profile?.dateOfJoining ? formatDate(viewEmployee.profile.dateOfJoining) : "—"}</p></div>
-                <div>
-                  <p className="text-xs text-px-muted">Employment Status</p>
-                  {viewEmployee.profile?.employmentStatus ? (
-                    <Badge variant={EMPLOYMENT_STATUS_VARIANT[viewEmployee.profile.employmentStatus] ?? "outline"}>{viewEmployee.profile.employmentStatus.replace(/_/g, " ")}</Badge>
-                  ) : "—"}
-                </div>
-              </div>
-              <div className="border-t border-px-border pt-3">
-                <p className="mb-1 text-xs font-semibold text-px-muted">Emergency Contact</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-xs text-px-muted">Name</p><p>{viewEmployee.profile?.emergencyContactName ?? "—"}</p></div>
-                  <div><p className="text-xs text-px-muted">Phone</p><p>{viewEmployee.profile?.emergencyContactPhone ?? "—"}</p></div>
-                </div>
-              </div>
-            </div>
-          )}
-          {isHrAdmin && viewEmployee && (
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { selectProfileUser(viewEmployee.id); setViewEmployee(null); setProfileOpen(true); }}>Edit Profile</Button>
-            </DialogFooter>
-          )}
-        </DialogContent>
-      </Dialog>
     </Tabs>
   );
 }

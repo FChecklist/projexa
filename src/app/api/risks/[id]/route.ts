@@ -4,6 +4,21 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/risks/[id] -- risk status
 // transitions (open -> mitigating -> closed).
+//
+// Real-screen conversion (2026-08-30): GET added -- the Risk Register
+// never had a detail route before this.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  const { id } = await params;
+  try {
+    const data = await callVeridian(`/risks/${id}`, { organizationId: ctx.organizationId! });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load risk" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;

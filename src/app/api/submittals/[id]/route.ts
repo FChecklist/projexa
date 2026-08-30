@@ -5,6 +5,20 @@ import { notifyOrgMembers, buildSubmittalStatusChangedNotification } from "@/lib
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+// Real-screen conversion (2026-08-30): single-submittal GET for the
+// Submittal Object Page.
+export async function GET(_request: NextRequest, { params }: RouteContext) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  try {
+    const { id } = await params;
+    const data = await callVeridian(`/submittals/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load submittal" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;

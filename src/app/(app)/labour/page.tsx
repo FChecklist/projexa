@@ -27,8 +27,8 @@ async function resolveLabourListColumns(organizationId: string | null): Promise<
   }
 }
 
-export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
+  const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveLabourListColumns(organizationId);
@@ -45,7 +45,7 @@ export default async function LabourPage({ searchParams }: { searchParams: Promi
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
       </div>
     </>
   );

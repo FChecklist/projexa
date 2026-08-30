@@ -4,6 +4,19 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+// Real-screen conversion (2026-08-30): GET added for the Wiki Object Page.
+export async function GET(_request: NextRequest, { params }: RouteContext) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  const { id } = await params;
+  try {
+    const data = await callVeridian(`/wiki/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load wiki page" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
