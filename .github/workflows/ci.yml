@@ -22,9 +22,29 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
+  test:
+    # Added during the R1-R64 recheck (2026-08-30): this repo had 220+ real
+    # bun:test tests (route role-gates, offline sync, report math, static
+    # regression guards like no-swallowed-http-errors.test.ts) that were
+    # NEVER run in CI -- lint/typecheck/build were the only gates. That
+    # means every one of those tests could silently regress on main with
+    # nothing to catch it. `--isolate` (see bunfig.toml + CLAUDE.md's
+    # Commands section) is required, not optional -- without it, 27+
+    # test files that mock @/lib/supabase/auth-guard via mock.module()
+    # without restoring it leak a stale mock across files in a single bun
+    # test process, producing spurious role-gate failures that look exactly
+    # like a live RBAC bug but are pure test order-dependence (confirmed via
+    # direct reproduction; see CLAUDE.md).
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun test --isolate
   build:
     name: Build
-    needs: [lint, typecheck]
+    needs: [lint, typecheck, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

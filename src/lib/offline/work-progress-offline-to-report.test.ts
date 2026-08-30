@@ -88,10 +88,16 @@ describe("offline-captured entry: syncs for real, then appears correctly in the 
         from: "2026-07-10", to: "2026-07-20",
       });
 
+      // Point 11 (Rajat, 21 Aug 2026): buildWorkProgressReport() now also
+      // returns a "balance" bucket alongside prev/current/total -- balance =
+      // this line's own BoQ total minus total (200 qty planned - 40 done =
+      // 160 remaining; same formula for amt/percentage). This test predates
+      // that addition; updated to match the real, documented behavior
+      // instead of the pre-Point-11 shape.
       expect(report.rows).toHaveLength(1);
-      expect(report.rows[0].qty).toEqual({ prev: 0, current: 40, total: 40 });
-      expect(report.rows[0].amt).toEqual({ prev: 0, current: 200, total: 200 });
-      expect(report.rows[0].percentage).toEqual({ prev: 0, current: 20, total: 20 });
+      expect(report.rows[0].qty).toEqual({ prev: 0, current: 40, total: 40, balance: 160 });
+      expect(report.rows[0].amt).toEqual({ prev: 0, current: 200, total: 200, balance: 800 });
+      expect(report.rows[0].percentage).toEqual({ prev: 0, current: 20, total: 20, balance: 80 });
     } finally {
       globalThis.fetch = originalFetch;
     }
