@@ -1,24 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
-import PrimarySubmit from "@/components/PrimarySubmit";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Plus } from "lucide-react";
-import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
-import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
-
 // Point 33: was a 73-line empty-state-only stock ledger listing (no master,
 // no create form). His words: "material database. material inbound, spec,
 // cost, qty." -- a master (spec/unit/cost) and inbound receipts against it.
@@ -35,8 +16,45 @@ import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 // server-side resolve of the material.list screen_definitions row returns
 // null (404/error), same "keep the hardcoded version behind a flag until
 // verified" contract as permits/documents/change-orders.
+//
+// Real-screen conversion (2026-08-30): the "Add Material"/"Record Receipt"
+// Dialog popups are gone -- Add Material routes to a real create screen
+// (MaterialCreateClient.tsx), master rows route to a real Object Page
+// (MaterialObjectClient.tsx, which gained real Edit/Deactivate this
+// conversion -- updateMaterial() didn't exist before). Record Receipt
+// routes to a real create screen (MaterialReceiptCreateClient.tsx) -- no
+// Object Page for receipt rows, a write-once transaction log. Also fixes
+// the same uncontrolled-Tabs-no-URL-sync bug found and fixed repeatedly
+// this session.
+//
+// Same conversion also folds in module #31 (Site Materials, the duplicate
+// module found at /site-materials): its Catalog tab was this same
+// constructionMaterials table under a different label, and its Inbound tab
+// called a VERIDIAN path (/construction/materials/inbound) that never
+// existed -- always a dead request. Rather than duplicate the real Materials
+// screen, /site-materials now redirects here (see site-materials/page.tsx)
+// and this file gains its one genuinely new capability, Cost Report, backed
+// by a real getMaterialCostReport() aggregation added this same conversion
+// (construction-materials-service.ts) -- the proxy it calls
+// (api/construction-materials/cost-report/route.ts) had been calling a
+// VERIDIAN path that 502'd for the same reason as Inbound: nothing
+// implemented it on the other side either, until now.
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Loader2, Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { formatDate } from "@/lib/format-date";
+import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
+type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
@@ -49,6 +67,8 @@ const MASTER_COLUMNS: ScreenColumn[] = [
   { label: "Unit", field: "unit", type: "text", importance: "High" },
   { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
 ];
+
+const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
 
 // Per-field cell renderer for the Material Master table -- same reasoning
 // as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
@@ -77,43 +97,34 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
   }
 }
 
-export default function MaterialsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+  const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const currencies = useCurrencies();
+  const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [report, setReport] = useState<CostReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string }>({});
-
-  const [masterOpen, setMasterOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [spec, setSpec] = useState("");
-  const [unit, setUnit] = useState("");
-  const [unitCost, setUnitCost] = useState("");
-  const [masterSubmitting, setMasterSubmitting] = useState(false);
-  // R52 F_002: replaces the bare `return` below -- see createMaterial().
-  const [masterErrors, setMasterErrors] = useState<FieldErrors<"name" | "unit" | "unitCost">>({});
-
-  const [receiptOpen, setReceiptOpen] = useState(false);
-  const [materialId, setMaterialId] = useState("");
-  const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [quantity, setQuantity] = useState("");
-  const [receiptUnitCost, setReceiptUnitCost] = useState("");
-  const [receiptSubmitting, setReceiptSubmitting] = useState(false);
+  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
 
   async function load() {
     setLoading(true);
-    const [matR, recR] = await Promise.allSettled([
+    const [matR, recR, repR] = await Promise.allSettled([
       fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
       fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
     ]);
 
-    const errors: { materials?: string; receipts?: string } = {};
+    const errors: { materials?: string; receipts?: string; report?: string } = {};
     if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
     else { setMaterials([]); errors.materials = errorMessage(matR.reason, "Material master"); }
 
     if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
     else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
+
+    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
+    else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
 
     setLoadErrors(errors);
     setLoading(false);
@@ -123,106 +134,26 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
-  const materialMissing = [
-    ...(name.trim() ? [] : ["Name"]),
-    ...(unit.trim() ? [] : ["Unit"]),
-  ];
-  const receiptMissing = [
-    ...(materialId ? [] : ["Material"]),
-    ...(receivedDate ? [] : ["Received Date"]),
-    ...(quantity ? [] : ["Quantity"]),
-  ];
-
-  async function createMaterial() {
-    // R52 fix for F_002. The recorded symptom: clicking "Add Material" with the
-    // fields blank produced no error text, no aria-invalid, no HTML `required`
-    // attribute and no network request -- the user got nothing at all. The
-    // cause was this one line, verbatim as it stood:
-    //     if (!name.trim() || !unit.trim()) return;
-    // CORRECTION TO THE RECORDED DESCRIPTION: the fault row lists "Name/Unit/
-    // Unit Cost" as the required trio, but Unit Cost was never in that guard --
-    // POST /api/materials/master takes unitCost as optional and the field is
-    // genuinely optional. Only Name and Unit are required, and only those two
-    // are marked required here; inventing a third requirement to match the
-    // description would have been a fabricated fix.
-    const errors: FieldErrors<"name" | "unit" | "unitCost"> = {};
-    if (!name.trim()) errors.name = "Name is required.";
-    if (!unit.trim()) errors.unit = "Unit is required (e.g. bag, cum, kg).";
-    if (unitCost.trim() && Number.isNaN(Number(unitCost))) errors.unitCost = "Unit cost must be a number.";
-    setMasterErrors(errors);
-    if (hasErrors(errors)) return;
-
-    setMasterSubmitting(true);
-    try {
-      await fetchJson("/api/materials/master", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, name, spec: spec || undefined, unit, unitCost: unitCost ? Number(unitCost) : undefined }),
-      });
-      toast.success("Material added");
-      setName(""); setSpec(""); setUnit(""); setUnitCost(""); setMasterErrors({}); setMasterOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't add material"));
-    } finally {
-      setMasterSubmitting(false);
-    }
-  }
-
-  async function createReceipt() {
-    if (!materialId || !receivedDate || !quantity) return;
-    setReceiptSubmitting(true);
-    try {
-      await fetchJson("/api/materials", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, materialId, receivedDate, quantity: Number(quantity),
-          unitCost: receiptUnitCost ? Number(receiptUnitCost) : undefined,
-        }),
-      });
-      toast.success("Receipt recorded");
-      setQuantity(""); setReceiptUnitCost(""); setReceiptOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record receipt"));
-    } finally {
-      setReceiptSubmitting(false);
-    }
+  function goToTab(tab: string) {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
   return (
-    <Tabs defaultValue="master" className="space-y-4">
+    <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="master">Material Master</TabsTrigger>
         <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
+        <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
       </TabsList>
 
       <TabsContent value="master" className="space-y-4">
         <div className="flex justify-end">
-          <Dialog open={masterOpen} onOpenChange={setMasterOpen}>
-            <DialogTrigger asChild><Button><Plus className="size-4" /> Add Material</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Material</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <FormField label="Name" required error={masterErrors.name}>
-                  {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
-                </FormField>
-                <FormField label="Spec (optional)">
-                  {(f) => <Input {...f} value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="e.g. 43-grade OPC" />}
-                </FormField>
-                <FormField label="Unit" required error={masterErrors.unit}>
-                  {(f) => <Input {...f} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. bag, cum, kg" />}
-                </FormField>
-                <FormField label="Unit Cost (optional)" error={masterErrors.unitCost}>
-                  {(f) => <Input {...f} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />}
-                </FormField>
-              </div>
-              <DialogFooter>
-                <PrimarySubmit missing={materialMissing} submitting={masterSubmitting} submittingLabel="Adding…" onClick={createMaterial}>
-                  Add Material
-                </PrimarySubmit>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
+              Material" Dialog popup with a real create route. */}
+          <Button onClick={() => router.push(`/materials/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Material</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
@@ -236,8 +167,10 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
               <Table>
                 <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
                 <TableBody>
+                  {/* Real screen navigation (2026-08-30) -- rows open the
+                      real Object Page, where Edit/Deactivate now live. */}
                   {materials.map((m) => (
-                    <TableRow key={m.id}>
+                    <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
                       {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
                     </TableRow>
                   ))}
@@ -250,29 +183,9 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
 
       <TabsContent value="receipts" className="space-y-4">
         <div className="flex justify-end">
-          <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
-            <DialogTrigger asChild><Button disabled={materials.length === 0}><Plus className="size-4" /> Record Receipt</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Record Inbound Receipt</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Material</Label>
-                  <Select value={materialId} onValueChange={setMaterialId}>
-                    <SelectTrigger><SelectValue placeholder="Select material" /></SelectTrigger>
-                    <SelectContent>{materials.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Received Date</Label><Input type="date" value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Unit Cost (optional — defaults to the master cost)</Label><Input type="number" value={receiptUnitCost} onChange={(e) => setReceiptUnitCost(e.target.value)} /></div>
-              </div>
-              <DialogFooter>
-                <PrimarySubmit missing={receiptMissing} submitting={receiptSubmitting} submittingLabel="Saving…" onClick={createReceipt}>
-                  Record
-                </PrimarySubmit>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old
+              "Record Receipt" Dialog popup with a real create route. */}
+          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
@@ -292,6 +205,35 @@ export default function MaterialsClient({ projectId, registryColumns }: { projec
                       <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
                       <TableCell>{r.quantity}</TableCell>
                       <TableCell>{r.unitCost ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="cost-report" className="space-y-4">
+        <Card className="shadow-card">
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            ) : loadErrors.report ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={load} /></div>
+            ) : report.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
+            ) : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {report.map((r) => (
+                    <TableRow key={r.materialId}>
+                      <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
+                      <TableCell>{r.unit}</TableCell>
+                      <TableCell>{r.totalQuantityReceived}</TableCell>
+                      <TableCell>{currencyLabel(undefined, currencies)}{r.totalCost.toFixed(2)}</TableCell>
+                      <TableCell>{currencyLabel(undefined, currencies)}{r.averageUnitCost.toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -1,20 +1,20 @@
-import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import SiteMaterialsClient from "@/components/SiteMaterialsClient";
+import { redirect } from "next/navigation";
 
+// Real-screen conversion (2026-08-30): /site-materials's "Catalog" tab was
+// this same constructionMaterials table under a different label than
+// /materials, and its "Inbound"/"Cost Report" tabs called VERIDIAN paths
+// that never existed on the other side (confirmed against ct's own route
+// tree -- no /construction/materials/inbound, no .../cost-report existed
+// before this conversion), so both tabs always failed. Rather than maintain
+// two screen sets for one real entity -- the same "same entity, reuse the
+// Object Page" call this session already made for Purchase Orders (module
+// #24, which reuses Procurement's PO Object Page) -- this route now
+// redirects to the one real Materials screen (which gained a real,
+// backend-verified Cost Report tab as part of this same conversion). The
+// nav entry itself stays put (nav-routes.test.ts asserts /site-materials
+// specifically stays in the sidebar), it just lands on real, working data
+// instead of two dead tabs.
 export default async function SiteMaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-
-  return (
-    <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Site Materials" />
-      {errorMessage && <Card className="border-px-error-border bg-px-error-light"><CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent></Card>}
-      {!errorMessage && !project && <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>}
-      {project && <SiteMaterialsClient projectId={project.id} />}
-    </div>
-  );
+  redirect(projectId ? `/materials?projectId=${encodeURIComponent(projectId)}` : "/materials");
 }

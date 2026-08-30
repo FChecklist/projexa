@@ -9,17 +9,17 @@
 // picker, a P&L-by-project rollup (the view a 500-project firm actually
 // needs, not just company-wide), and a read-only Bank Reconciliation view.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Landmark, ChevronLeft, ChevronRight, Building2 } from "lucide-react";
+import { Loader2, Plus, Landmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, companyScopeQuery, CompanySelector } from "@/components/company-scope";
 import { formatDate } from "@/lib/format-date";
@@ -28,7 +28,6 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 // ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
-type Account = { id: string; accountName: string; accountNumber: string | null; rootType: string; accountType: string | null };
 type JournalEntry = { id: string; entryNumber: number; postingDate: string; referenceType: string | null; userRemark: string | null; status: string; totalDebit: string; totalCredit: string };
 type FinanceDashboard = {
   asOfDate: string; cashPosition: number;
@@ -152,32 +151,14 @@ function DashboardPanel() {
 // ---------------------------------------------------------------------------
 // General Ledger tab
 // ---------------------------------------------------------------------------
-type JeLine = { accountId: string; debit: string; credit: string };
-
 function GeneralLedgerPanel() {
+  const router = useRouter();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
-
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  // Priority 19 Part 2, Workstream B: this used to be indistinguishable from
-  // "still loading" (both rendered the same "Loading…" placeholder) --
-  // root cause was zero accounts existing for any real org (erp_accounts had
-  // no rows), now fixed at the source via compliance-tracker's
-  // erp-enablement-service.ts seeding a default chart of accounts on ERP
-  // enablement. This flag is a small defensive hardening on top of that fix
-  // so a genuinely-empty chart of accounts (e.g. after backfilling data,
-  // before this fix shipped) still reads as an honest empty state, not a
-  // stuck spinner.
-  const [accountsLoaded, setAccountsLoaded] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [userRemark, setUserRemark] = useState("");
-  const [lines, setLines] = useState<JeLine[]>([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]);
   const currencies = useCurrencies();
 
   async function load() {
@@ -197,49 +178,6 @@ function GeneralLedgerPanel() {
   }
   useEffect(() => { load(); }, [page, statusFilter]);
 
-  async function onOpenChange(next: boolean) {
-    setOpen(next);
-    if (!next || accountsLoaded) return;
-    try {
-      const data = await fetchJson("/api/accounts");
-      setAccounts(data.accounts ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load chart of accounts"));
-    } finally {
-      setAccountsLoaded(true);
-    }
-  }
-
-  function updateLine(idx: number, patch: Partial<JeLine>) {
-    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  }
-
-  const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
-  const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
-  const balanced = lines.length >= 2 && Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
-
-  async function createEntry() {
-    if (!balanced) { toast.error("Debit and credit totals must match"); return; }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/journal-entries", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postingDate, userRemark: userRemark || undefined,
-          lines: lines.filter((l) => l.accountId).map((l) => ({ accountId: l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
-        }),
-      });
-      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
-      toast.success("Journal entry drafted");
-      setUserRemark(""); setLines([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create journal entry");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -254,37 +192,9 @@ function GeneralLedgerPanel() {
           </Select>
           <Button variant="outline" size="sm" onClick={load}>Search</Button>
         </div>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> New Journal Entry</Button></DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>New Journal Entry</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Posting Date</Label><Input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Remark</Label><Input value={userRemark} onChange={(e) => setUserRemark(e.target.value)} placeholder="e.g. Site 4 material accrual" /></div>
-              </div>
-              <div className="space-y-2">
-                <Label>Lines (double-entry — debit must equal credit)</Label>
-                {lines.map((line, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_90px_90px_28px] items-center gap-1.5">
-                    <Select value={line.accountId} onValueChange={(v) => updateLine(idx, { accountId: v })}>
-                      <SelectTrigger><SelectValue placeholder={!accountsLoaded ? "Loading…" : accounts.length ? "Account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
-                      <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Input type="number" placeholder="Debit" value={line.debit} onChange={(e) => updateLine(idx, { debit: e.target.value, credit: e.target.value ? "" : line.credit })} />
-                    <Input type="number" placeholder="Credit" value={line.credit} onChange={(e) => updateLine(idx, { credit: e.target.value, debit: e.target.value ? "" : line.debit })} />
-                    <Button variant="ghost" size="icon" disabled={lines.length <= 2} onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}><Trash2 className="size-4" /></Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, { accountId: "", debit: "", credit: "" }])}><Plus className="size-3.5" /> Add Line</Button>
-              </div>
-              <div className={`rounded-md border p-2 text-sm ${balanced ? "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300" : "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"}`}>
-                Debit {money(totalDebit, currencies)} &middot; Credit {money(totalCredit, currencies)} {balanced ? "— balanced" : "— must balance before posting"}
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createEntry} disabled={submitting || !balanced}>{submitting ? "Creating…" : "Create Draft Entry"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Journal Entry" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/accounting/journal-entries/new")}><Plus className="size-4" /> New Journal Entry</Button>
       </div>
 
       <Card className="shadow-card">
@@ -298,7 +208,10 @@ function GeneralLedgerPanel() {
               <TableHeader><TableRow><TableHead>#</TableHead><TableHead>Posting Date</TableHead><TableHead>Remark</TableHead><TableHead>Debit</TableHead><TableHead>Credit</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
               <TableBody>
                 {entries.map((e) => (
-                  <TableRow key={e.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page instead of nothing (no detail view
+                  // existed for a single entry before this).
+                  <TableRow key={e.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/accounting/journal-entries/${e.id}`)}>
                     <TableCell className="text-px-muted">{e.entryNumber}</TableCell>
                     <TableCell>{formatDate(e.postingDate)}</TableCell>
                     <TableCell className="text-px-muted">{e.userRemark ?? e.referenceType ?? "—"}</TableCell>
@@ -526,70 +439,16 @@ function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
 // a real parent-child tree (an office/branch under a parent company), which
 // is what makes the "Consolidated" scope above meaningful.
 // ---------------------------------------------------------------------------
-function CompaniesPanel({ companies, loading, onCreated }: { companies: Company[]; loading: boolean; onCreated: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [companyName, setCompanyName] = useState("");
-  const [abbr, setAbbr] = useState("");
-  const [country, setCountry] = useState("");
-  const [parentCompanyId, setParentCompanyId] = useState<string>("__none__");
-  const [isGroup, setIsGroup] = useState(false);
-
-  async function createCompany() {
-    if (!companyName.trim()) { toast.error("Company name is required"); return; }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/companies", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyName, abbr: abbr || undefined, country: country || undefined,
-          parentCompanyId: parentCompanyId === "__none__" ? undefined : parentCompanyId,
-          isGroup,
-        }),
-      });
-      if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error ?? "Failed"); }
-      toast.success("Company created");
-      setCompanyName(""); setAbbr(""); setCountry(""); setParentCompanyId("__none__"); setIsGroup(false); setOpen(false);
-      onCreated();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create company");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+function CompaniesPanel({ companies, loading }: { companies: Company[]; loading: boolean }) {
+  const router = useRouter();
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-px-muted">Legal entities / offices within this org&apos;s ERP. Chart of accounts is shared across companies; reports can be scoped to one company or consolidated across its sub-companies from the selector above the financial-report tabs.</p>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="size-4" /> New Company / Office</Button></DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>New Company / Office</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Company Name</Label><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Interiors — Mumbai Office" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Abbreviation</Label><Input value={abbr} onChange={(e) => setAbbr(e.target.value)} placeholder="e.g. AIM" /></div>
-                <div className="space-y-1.5"><Label>Country</Label><Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. India" /></div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Parent Company (optional)</Label>
-                <Select value={parentCompanyId} onValueChange={setParentCompanyId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None (top-level company)</SelectItem>
-                    {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={isGroup} onChange={(e) => setIsGroup(e.target.checked)} className="size-4" />
-                This is a group/holding entity (organizational grouping, not its own set of postings)
-              </label>
-            </div>
-            <DialogFooter><Button onClick={createCompany} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Company / Office" Dialog popup with a real create route. */}
+        <Button size="sm" onClick={() => router.push("/accounting/companies/new")}><Plus className="size-4" /> New Company / Office</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -708,9 +567,26 @@ function BankReconciliationPanel() {
 // Root client
 // ---------------------------------------------------------------------------
 const REPORT_TABS = new Set(["trial-balance", "pnl", "balance-sheet", "project-pnl"]);
+const VALID_TABS = new Set(["dashboard", "ledger", ...REPORT_TABS, "bank-rec", "companies"]);
 
-export default function AccountingClient() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+export default function AccountingClient({ initialTab }: { initialTab?: string }) {
+  // Real-screen conversion (2026-08-30): the tab used to be internal-only
+  // state, defaulting to "dashboard" on every load regardless of the URL --
+  // the new Journal-Entry/Company create screens redirect back to
+  // /accounting?tab=ledger / ?tab=companies after a real save, and that
+  // redirect needs somewhere real to land. `initialTab` is resolved
+  // server-side (accounting/page.tsx) rather than via client-side
+  // useSearchParams(), matching ScheduleTabsClient.tsx's own pattern exactly
+  // (avoids the Suspense-boundary requirement useSearchParams() imposes).
+  // history.replaceState (not router.push) so switching tabs doesn't reload
+  // the Server Component.
+  const [activeTab, setActiveTabState] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "dashboard");
+  function setActiveTab(next: string) {
+    setActiveTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", next);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
   // Defaults to "All companies / consolidated" (companyId: null), matching
@@ -760,7 +636,7 @@ export default function AccountingClient() {
         <TabsContent value="balance-sheet"><BalanceSheetPanel scope={scope} /></TabsContent>
         <TabsContent value="project-pnl"><ProjectPnlPanel scope={scope} /></TabsContent>
         <TabsContent value="bank-rec"><BankReconciliationPanel /></TabsContent>
-        <TabsContent value="companies"><CompaniesPanel companies={companies} loading={companiesLoading} onCreated={loadCompanies} /></TabsContent>
+        <TabsContent value="companies"><CompaniesPanel companies={companies} loading={companiesLoading} /></TabsContent>
       </Tabs>
     </div>
   );

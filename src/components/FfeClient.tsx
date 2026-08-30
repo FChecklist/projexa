@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import DataLoadError from "@/components/DataLoadError";
@@ -24,10 +21,10 @@ type MarginSummary = { totalCost: number; totalPrice: number; totalMargin: numbe
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   specified: "outline", ordered: "secondary", received: "secondary", installed: "default",
 };
-const CATEGORIES = ["furniture", "fixture", "equipment", "finish", "textile", "lighting", "other"];
 const STATUSES = ["specified", "ordered", "received", "installed"];
 
 export default function FfeClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const currencies = useCurrencies();
   // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
   // -- forced both symbol and grouping to India regardless of the org's real
@@ -38,17 +35,6 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   const [margin, setMargin] = useState<MarginSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ items?: string; margin?: string }>({});
-  const [open, setOpen] = useState(false);
-  const [itemName, setItemName] = useState("");
-  const [roomOrArea, setRoomOrArea] = useState("");
-  const [category, setCategory] = useState("furniture");
-  const [quantity, setQuantity] = useState("1");
-  const [unitCost, setUnitCost] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
-  const [widthCm, setWidthCm] = useState("");
-  const [depthCm, setDepthCm] = useState("");
-  const [heightCm, setHeightCm] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -74,30 +60,6 @@ export default function FfeClient({ projectId }: { projectId: string }) {
   }
 
   useEffect(() => { load(); }, [projectId]);
-
-  async function createItem() {
-    if (!itemName.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/ffe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, itemName, roomOrArea: roomOrArea || undefined, category,
-          quantity: Number(quantity) || 1, unitCost: Number(unitCost) || 0, unitPrice: Number(unitPrice) || 0,
-          widthCm: widthCm ? Number(widthCm) : undefined, depthCm: depthCm ? Number(depthCm) : undefined, heightCm: heightCm ? Number(heightCm) : undefined,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("FF&E item added");
-      setItemName(""); setRoomOrArea(""); setCategory("furniture"); setQuantity("1"); setUnitCost(""); setUnitPrice("");
-      setWidthCm(""); setDepthCm(""); setHeightCm(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't add item");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function advanceStatus(item: FfeItem) {
     const next = STATUSES[STATUSES.indexOf(item.status) + 1];
@@ -125,36 +87,9 @@ export default function FfeClient({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Item</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New FF&E Item</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Item Name</Label><Input value={itemName} onChange={(e) => setItemName(e.target.value)} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Room / Area</Label><Input value={roomOrArea} onChange={(e) => setRoomOrArea(e.target.value)} /></div>
-                <div className="space-y-1.5">
-                  <Label>Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5"><Label>Qty</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Cost ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Client Price ({currencyLabel(undefined, currencies).trim()})</Label><Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} /></div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5"><Label>Width (cm)</Label><Input type="number" value={widthCm} onChange={(e) => setWidthCm(e.target.value)} placeholder="for 3D" /></div>
-                <div className="space-y-1.5"><Label>Depth (cm)</Label><Input type="number" value={depthCm} onChange={(e) => setDepthCm(e.target.value)} placeholder="for 3D" /></div>
-                <div className="space-y-1.5"><Label>Height (cm)</Label><Input type="number" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="for 3D" /></div>
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createItem} disabled={submitting}>{submitting ? "Adding…" : "Add Item"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Item" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push(`/ffe/new?projectId=${projectId}`)}><Plus className="size-4" /> New Item</Button>
       </div>
 
       {/* Rendered BELOW the New Item button on purpose: an alert above it
@@ -179,7 +114,12 @@ export default function FfeClient({ projectId }: { projectId: string }) {
               </TableHeader>
               <TableBody>
                 {items.map((i) => (
-                  <TableRow key={i.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page (description/SKU/lead-time/dimensions
+                  // were never shown anywhere before this); the inline
+                  // "Advance" button stays -- already a real action, not a
+                  // popup -- with stopPropagation so it doesn't also navigate.
+                  <TableRow key={i.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/ffe/${i.id}`)}>
                     <TableCell className="font-medium">{i.itemName}</TableCell>
                     <TableCell className="text-px-muted">{i.roomOrArea ?? "—"}</TableCell>
                     <TableCell className="capitalize text-px-muted">{i.category}</TableCell>
@@ -187,7 +127,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
                     <TableCell>{formatCurrency(Number(i.unitCost))}</TableCell>
                     <TableCell>{formatCurrency(Number(i.unitPrice))}</TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[i.status]}>{i.status}</Badge></TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {i.status !== "installed" && <Button size="sm" variant="outline" onClick={() => advanceStatus(i)}>Advance</Button>}
                     </TableCell>
                   </TableRow>

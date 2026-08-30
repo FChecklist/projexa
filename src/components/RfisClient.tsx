@@ -1,15 +1,17 @@
 "use client";
 
+// Real-screen conversion (2026-08-30): "New RFI" routes to a real create
+// screen (RfiCreateClient.tsx, which now also asks for due date); rows
+// route to a real Object Page (RfiObjectClient.tsx, which gained a real
+// detail view this conversion -- getRfi() didn't exist before) instead of
+// the inline Answer/Close buttons and the "Answer" Dialog popup.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -23,19 +25,14 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function RfisClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [rfis, setRfis] = useState<Rfi[]>([]);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [question, setQuestion] = useState("");
-  const [answering, setAnswering] = useState<Rfi | null>(null);
-  const [answerText, setAnswerText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await fetchJson(`/api/rfis?projectId=${encodeURIComponent(projectId)}`);
+      const data = await fetchJson<{ rfis?: Rfi[] }>(`/api/rfis?projectId=${encodeURIComponent(projectId)}`);
       setRfis(data.rfis ?? []);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't load RFIs"));
@@ -46,72 +43,12 @@ export default function RfisClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
-  async function createRfi() {
-    if (!subject.trim() || !question.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/rfis", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, subject, question }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("RFI created");
-      setSubject(""); setQuestion(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create RFI");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function submitAnswer() {
-    if (!answering || !answerText.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/rfis/${answering.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "answer", answer: answerText }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("RFI answered");
-      setAnswering(null); setAnswerText("");
-      load();
-    } catch {
-      toast.error("Couldn't answer RFI");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function closeRfi(id: string) {
-    try {
-      const res = await fetch(`/api/rfis/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "close" }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("RFI closed");
-      load();
-    } catch {
-      toast.error("Couldn't close RFI");
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New RFI</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New RFI</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Subject</Label><Input value={subject} onChange={(e) => setSubject(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label>Question</Label><Textarea value={question} onChange={(e) => setQuestion(e.target.value)} rows={4} /></div>
-            </div>
-            <DialogFooter><Button onClick={createRfi} disabled={submitting}>{submitting ? "Creating…" : "Create RFI"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            RFI" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push(`/rfis/new?projectId=${projectId}`)}><Plus className="size-4" /> New RFI</Button>
       </div>
 
       <Card className="shadow-card">
@@ -125,24 +62,18 @@ export default function RfisClient({ projectId }: { projectId: string }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>#</TableHead><TableHead>Subject</TableHead><TableHead>Ball in Court</TableHead>
-                  <TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows open the
+                    real Object Page, where Answer/Close now live. */}
                 {rfis.map((r) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/rfis/${r.id}`)}>
                     <TableCell className="font-mono text-xs">RFI-{r.number}</TableCell>
                     <TableCell className="font-medium">{r.subject}</TableCell>
                     <TableCell className="capitalize text-px-muted">{r.ballInCourt}</TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge></TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {r.status === "open" && (
-                        <Button size="sm" variant="outline" onClick={() => { setAnswering(r); setAnswerText(""); }}>Answer</Button>
-                      )}
-                      {r.status === "answered" && (
-                        <Button size="sm" variant="outline" onClick={() => closeRfi(r.id)}>Close</Button>
-                      )}
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -150,15 +81,6 @@ export default function RfisClient({ projectId }: { projectId: string }) {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!answering} onOpenChange={(v) => !v && setAnswering(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Answer: {answering?.subject}</DialogTitle></DialogHeader>
-          <p className="text-sm text-px-muted">{answering?.question}</p>
-          <Textarea value={answerText} onChange={(e) => setAnswerText(e.target.value)} rows={4} placeholder="Your answer…" />
-          <DialogFooter><Button onClick={submitAnswer} disabled={submitting}>{submitting ? "Submitting…" : "Submit Answer"}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

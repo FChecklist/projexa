@@ -4,6 +4,20 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+// Real-screen conversion (2026-08-30): single-item GET for the Punch List
+// Object Page.
+export async function GET(_request: NextRequest, { params }: RouteContext) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  try {
+    const { id } = await params;
+    const data = await callVeridian(`/punch-list/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load punch list item" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;

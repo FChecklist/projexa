@@ -1,14 +1,17 @@
 "use client";
 
+// Real-screen conversion (2026-08-30): "New Mood Board" routes to a real
+// create screen (MoodBoardCreateClient.tsx); cards route to a real Object
+// Page (MoodBoardObjectClient.tsx, which gained real Edit/item-remove this
+// conversion -- getMoodBoard()/updateMoodBoard() and a PROJEXA proxy for
+// removeMoodBoardItem() didn't exist before) instead of the old "Add Item"
+// Dialog popup and inline status buttons.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Image as ImageIcon } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -20,20 +23,14 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 export default function MoodBoardsClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [boards, setBoards] = useState<MoodBoard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [roomOrArea, setRoomOrArea] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [addingTo, setAddingTo] = useState<MoodBoard | null>(null);
-  const [itemLabel, setItemLabel] = useState("");
-  const [itemNotes, setItemNotes] = useState("");
 
   async function load() {
     setLoading(true);
     try {
-      const data = await fetchJson(`/api/mood-boards?projectId=${encodeURIComponent(projectId)}`);
+      const data = await fetchJson<{ boards?: MoodBoard[] }>(`/api/mood-boards?projectId=${encodeURIComponent(projectId)}`);
       setBoards(data.boards ?? []);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't load mood boards"));
@@ -44,80 +41,24 @@ export default function MoodBoardsClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
-  async function createBoard() {
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/mood-boards", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title, roomOrArea: roomOrArea || undefined }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Mood board created");
-      setTitle(""); setRoomOrArea(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create mood board");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function addItem() {
-    if (!addingTo || !itemLabel.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/mood-boards/${addingTo.id}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: itemLabel, notes: itemNotes || undefined }),
-      });
-      if (!res.ok) throw new Error();
-      setItemLabel(""); setItemNotes(""); setAddingTo(null);
-      load();
-    } catch {
-      toast.error("Couldn't add item");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function setStatus(board: MoodBoard, status: string) {
-    try {
-      const res = await fetch(`/api/mood-boards/${board.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error();
-      load();
-    } catch {
-      toast.error("Couldn't update status");
-    }
-  }
-
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Mood Board</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Mood Board</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label>Room / Area (optional)</Label><Input value={roomOrArea} onChange={(e) => setRoomOrArea(e.target.value)} placeholder="e.g. Living Room" /></div>
-            </div>
-            <DialogFooter><Button onClick={createBoard} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Mood Board" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push(`/mood-boards/new?projectId=${projectId}`)}><Plus className="size-4" /> New Mood Board</Button>
       </div>
 
       {boards.length === 0 ? (
         <Card><CardContent className="p-10 text-center text-sm text-px-muted">No mood boards yet.</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Real screen navigation (2026-08-30) -- cards open the real
+              Object Page, where Edit/Add Item/Remove Item/status now live. */}
           {boards.map((b) => (
-            <Card key={b.id} className="shadow-card">
+            <Card key={b.id} className="shadow-card cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/mood-boards/${b.id}`)}>
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <div>
                   <CardTitle className="font-heading text-base">{b.title}</CardTitle>
@@ -125,12 +66,12 @@ export default function MoodBoardsClient({ projectId }: { projectId: string }) {
                 </div>
                 <Badge variant={STATUS_VARIANT[b.status]}>{b.status}</Badge>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent>
                 {b.items.length === 0 ? (
                   <p className="text-xs text-px-muted">No items yet.</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {b.items.map((i) => (
+                    {b.items.slice(0, 6).map((i) => (
                       <div key={i.id} className="rounded-lg border border-px-border bg-px-concrete/40 p-2">
                         <ImageIcon className="size-4 text-px-muted mb-1" />
                         <p className="text-xs font-medium text-px-ink truncate">{i.label}</p>
@@ -139,27 +80,11 @@ export default function MoodBoardsClient({ projectId }: { projectId: string }) {
                     ))}
                   </div>
                 )}
-                <div className="flex items-center justify-between pt-1">
-                  <Button size="sm" variant="outline" onClick={() => setAddingTo(b)}><Plus className="size-3.5" /> Add Item</Button>
-                  {b.status === "draft" && <Button size="sm" variant="ghost" onClick={() => setStatus(b, "shared")}>Share with Client</Button>}
-                  {b.status === "shared" && <Button size="sm" variant="ghost" onClick={() => setStatus(b, "approved")}>Mark Approved</Button>}
-                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-
-      <Dialog open={!!addingTo} onOpenChange={(v) => !v && setAddingTo(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Item: {addingTo?.title}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5"><Label>Label</Label><Input value={itemLabel} onChange={(e) => setItemLabel(e.target.value)} placeholder="e.g. Accent Wallpaper" /></div>
-            <div className="space-y-1.5"><Label>Notes (optional)</Label><Textarea value={itemNotes} onChange={(e) => setItemNotes(e.target.value)} rows={2} /></div>
-          </div>
-          <DialogFooter><Button onClick={addItem} disabled={submitting}>{submitting ? "Adding…" : "Add"}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

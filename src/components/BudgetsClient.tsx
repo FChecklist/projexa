@@ -10,21 +10,18 @@
 // the hardcoded version behind a flag until verified" contract as the
 // other three conversions. The CompanySelector, New Budget dialog, and its
 // VERIDIAN lookups (fiscal years/cost centers/accounts) are unrelated to
-// the list's own columns and are kept exactly as-is.
+// the list's own columns and are kept exactly as-is. Real-screen conversion
+// (2026-08-30): the "New Budget" Dialog is gone, replaced by a real
+// /budgets/new route + a real /budgets/[id] Object Page (BudgetObjectClient.tsx)
+// that never existed before.
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import PrimarySubmit from "@/components/PrimarySubmit";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // Priority 17 remaining gap (2026-07-15): erp_budgets.companyId has existed
@@ -33,16 +30,6 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
 type Budget = { id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null; status: string; actionIfExceeded: string | null };
-type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
-type CostCenter = { id: string; name: string; projectId: string | null };
-// Priority 19 Part 2, Workstream B: erp_accounts now gets a real default
-// chart of accounts seeded on ERP enablement (see compliance-tracker's
-// erp-enablement-service.ts), and /api/v1/projexa/accounts already existed
-// (AccountingClient.tsx's account picker) -- this was just never wired into
-// the Budgets dialog, which is why the line item's account ID was a
-// paste-an-opaque-ID free-text field. Reusing the same lookup here closes
-// that.
-type Account = { id: string; accountName: string; accountNumber: string | null };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", submitted: "secondary", approved: "default",
@@ -79,31 +66,16 @@ function renderBudgetCell(field: string, b: Budget) {
 }
 
 export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
+  const router = useRouter();
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
-
-  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [lookupsLoading, setLookupsLoading] = useState(false);
 
   // Priority 17 remaining gap: companies list + list-level filter scope,
   // same pattern as AccountingClient.tsx/LeadsClient.tsx.
   const [companies, setCompanies] = useState<Company[]>([]);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
-
-  const [name, setName] = useState("");
-  const [fiscalYearId, setFiscalYearId] = useState("");
-  const [costCenterId, setCostCenterId] = useState("");
-  const [accountId, setAccountId] = useState("");
-  // R52 F_004: per-field messages, replacing the bare `return` in createBudget().
-  const [budgetErrors, setBudgetErrors] = useState<FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount">>({});
-  const [annualAmount, setAnnualAmount] = useState("");
-  const [budgetCompanyId, setBudgetCompanyId] = useState<string>("__none__");
 
   async function load(companyId: string | null = null) {
     setLoading(true);
@@ -135,166 +107,17 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
     })();
   }, []);
 
-  async function loadLookups() {
-    setLookupsLoading(true);
-    try {
-      const [fyData, ccData, acData] = await Promise.all([
-        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
-        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
-        fetchJson<{ accounts?: Account[] }>("/api/accounts"),
-      ]);
-      setFiscalYears(fyData.fiscalYears ?? []);
-      setCostCenters(ccData.costCenters ?? []);
-      setAccounts(acData.accounts ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
-    } finally {
-      setLookupsLoading(false);
-    }
-  }
-
-  function onOpenChange(next: boolean) {
-    setOpen(next);
-    if (next) loadLookups();
-  }
-
-  // R52 fix for F_004. THE RECORDED SYMPTOM HAS TWO HALVES and only one of
-  // them is fixable on this side:
-  //
-  //  (a) FIXABLE HERE -- submitting with only Budget Name + Annual Amount
-  //      filled produced "no POST and no error message", the same silent-no-op
-  //      shape as F_002. That was this function's first line. It now reports
-  //      which required field is missing.
-  //
-  //  (b) NOT FIXABLE HERE, RECORDED AND REPORTED INSTEAD -- Fiscal Year and
-  //      Account are looked up live from VERIDIAN's ERP module, and for this
-  //      org all three lookups return zero rows (GET /api/fiscal-years ->
-  //      {"fiscalYears":[]}, /api/accounts -> {"accounts":[]},
-  //      /api/cost-centers -> {"costCenters":[]}, all HTTP 200). No fiscal
-  //      year or chart of accounts has ever been provisioned for this org's
-  //      VERIDIAN ERP link, so the two required selectors CANNOT be populated
-  //      from PROJEXA. That is a compliance-tracker/provisioning gap and this
-  //      session must not touch that repo. What this side can stop doing is
-  //      presenting a form that looks fillable and then does nothing:
-  //      blockedReason below names exactly what is missing and where it has to
-  //      be created, the Create button is disabled carrying that reason, and
-  //      the user finds out BEFORE clicking rather than by watching a button
-  //      do nothing.
-  const missingLookups = [
-    fiscalYears.length === 0 ? "fiscal years" : null,
-    accounts.length === 0 ? "a chart of accounts" : null,
-  ].filter(Boolean) as string[];
-  const blockedReason = missingLookups.length
-    ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
-    : null;
-
-  async function createBudget() {
-    const errors: FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount"> = {};
-    if (!name.trim()) errors.name = "Budget name is required.";
-    if (!fiscalYearId) errors.fiscalYearId = fiscalYears.length ? "Select a fiscal year." : "No fiscal years exist in VERIDIAN for this organisation.";
-    if (!accountId.trim()) errors.accountId = accounts.length ? "Select an account." : "No chart of accounts exists in VERIDIAN for this organisation.";
-    if (!annualAmount) errors.annualAmount = "Annual amount is required.";
-    else if (Number.isNaN(Number(annualAmount))) errors.annualAmount = "Annual amount must be a number.";
-    setBudgetErrors(errors);
-    if (hasErrors(errors)) return;
-    setSubmitting(true);
-    try {
-      await fetchJson("/api/project-budgets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name, fiscalYearId, costCenterId: costCenterId || undefined,
-          companyId: budgetCompanyId === "__none__" ? undefined : budgetCompanyId,
-          lineItems: [{ accountId, annualAmount: Number(annualAmount) }],
-        }),
-      });
-      toast.success("Budget created");
-      setName(""); setFiscalYearId(""); setCostCenterId(""); setAccountId(""); setAnnualAmount(""); setBudgetCompanyId("__none__"); setOpen(false);
-      load(scope.companyId);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't create budget"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-px-muted">
           Fiscal year, cost center, and the line item&apos;s account are all looked up live from VERIDIAN&apos;s ERP
-          module below — no more guessing an opaque ID.
+          module — no more guessing an opaque ID.
         </p>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogTrigger asChild><Button className="shrink-0"><Plus className="size-4" /> New Budget</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Budget</DialogTitle></DialogHeader>
-            {lookupsLoading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : (
-              <div className="space-y-3">
-                {blockedReason && (
-                  <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
-                    {blockedReason}
-                  </p>
-                )}
-                <FormField label="Budget Name" required error={budgetErrors.name}>
-                  {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
-                </FormField>
-                <FormField label="Fiscal Year" required error={budgetErrors.fiscalYearId}>
-                  {(f) => (
-                    <Select value={fiscalYearId} onValueChange={setFiscalYearId}>
-                      <SelectTrigger {...f} disabled={fiscalYears.length === 0}><SelectValue placeholder={fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN"} /></SelectTrigger>
-                      <SelectContent>
-                        {fiscalYears.map((fy) => <SelectItem key={fy.id} value={fy.id}>{fy.yearName}{fy.isClosed ? " (closed)" : ""}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </FormField>
-                <FormField label="Cost Center (optional)">
-                  {(f) => (
-                    <Select value={costCenterId} onValueChange={setCostCenterId}>
-                      <SelectTrigger {...f} disabled={costCenters.length === 0}><SelectValue placeholder={costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN"} /></SelectTrigger>
-                      <SelectContent>
-                        {costCenters.map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </FormField>
-                <FormField label="Account" required error={budgetErrors.accountId}>
-                  {(f) => (
-                    <Select value={accountId} onValueChange={setAccountId}>
-                      <SelectTrigger {...f} disabled={accounts.length === 0}><SelectValue placeholder={accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </FormField>
-                <FormField label="Annual Amount" required error={budgetErrors.annualAmount}>
-                  {(f) => <Input {...f} type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} />}
-                </FormField>
-                {companies.length > 0 && (
-                  <div className="space-y-1.5">
-                    <Label>Company / Office (optional)</Label>
-                    <Select value={budgetCompanyId} onValueChange={setBudgetCompanyId}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Org-wide (no specific company)</SelectItem>
-                        {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            )}
-            <DialogFooter>
-              <Button onClick={createBudget} disabled={submitting || lookupsLoading || blockedReason !== null} title={blockedReason ?? undefined}>
-                {submitting ? "Creating…" : "Create Budget"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Budget" Dialog popup with a real create route. */}
+        <Button className="shrink-0" onClick={() => router.push("/budgets/new")}><Plus className="size-4" /> New Budget</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -313,7 +136,10 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
               </TableHeader>
               <TableBody>
                 {budgets.map((b) => (
-                  <TableRow key={b.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page instead of nothing (no detail view
+                  // existed for a single budget before this).
+                  <TableRow key={b.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/budgets/${b.id}`)}>
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderBudgetCell(col.field, b)}</TableCell>
                     ))}

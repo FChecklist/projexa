@@ -88,14 +88,23 @@ export default function ProjectsOverviewClient({
               <div className="flex justify-center"><CreateProjectDialog /></div>
             </div>
           ) : (
+            // Real screen navigation (2026-08-30): cross-linking fix (module
+            // #36) -- these rows never linked anywhere before. Each one now
+            // opens the real per-project dashboard (/dashboard/project),
+            // matching the SAP pattern of drilling from a portfolio report
+            // into the object it summarizes.
             bars.map((p) => (
-              <div key={p.id} className="space-y-1.5">
+              <button
+                key={p.id}
+                onClick={() => router.push(`/dashboard/project?projectId=${p.id}`)}
+                className="block w-full space-y-1.5 rounded-md p-1.5 text-left hover:bg-px-cloud/40"
+              >
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium">{p.name}</span>
                   <span className="text-px-muted">{p.progressPercent}%</span>
                 </div>
                 <Progress value={p.progressPercent} />
-              </div>
+              </button>
             ))
           )}
         </CardContent>

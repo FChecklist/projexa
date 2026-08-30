@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Trash2, Copy, ArrowRightCircle, FileDown } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 // Priority 17 final gap (2026-07-16): erp_quotations gained a companyId
 // column this wave -- reuses the exact selector AccountingClient.tsx/
@@ -20,66 +19,40 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
-type QuotationItem = { id: string; description: string; quantity: string; rate: string; amount: string };
+// Real-screen conversion (2026-08-30): "New Quotation" routes to a real
+// create screen (SalesQuotationCreateClient.tsx). Rows route to a real
+// Object Page (SalesQuotationObjectClient.tsx, which gained a real detail
+// view this conversion -- getQuotation() didn't exist before, only
+// getQuotationForPdf) instead of the inline status/convert/revision/PDF
+// action buttons, all of which moved there.
 type Quotation = {
   id: string; quotationNumber: number; customerId: string | null; customerName: string | null;
   quotationDate: string; validTill: string | null; status: string; version: number; revisionOf: string | null;
   companyId: string | null;
-  currencyId: string | null; exchangeRate: string; grandTotal: string; items: QuotationItem[];
+  currencyId: string | null; exchangeRate: string; grandTotal: string;
 };
-type Customer = { id: string; customerName: string };
-type Project = { id: string; name: string };
-// currencyLabel()/useCurrencies() now live in @/lib/currency (Priority 17
-// re-sweep consolidation -- this was previously a per-file copy).
 
-// Mirrors erp-selling-service.ts's QUOTATION_TRANSITIONS -- UX-only duplicate,
-// the backend enforces the real gate; this just decides which action
-// button(s) to show for a given current status.
-const NEXT_ACTIONS: Record<string, { label: string; status: string }[]> = {
-  draft: [{ label: "Submit for Approval", status: "pending_approval" }],
-  pending_approval: [{ label: "Approve", status: "approved" }, { label: "Reject to Draft", status: "draft" }],
-  approved: [{ label: "Mark Sent", status: "sent" }],
-  sent: [{ label: "Mark Lost", status: "lost" }, { label: "Mark Expired", status: "expired" }],
-  ordered: [], lost: [], expired: [],
-};
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", pending_approval: "secondary", approved: "secondary", sent: "default", ordered: "default", lost: "destructive", expired: "destructive",
 };
-
-type Line = { description: string; quantity: string; rate: string };
+const STATUS_OPTIONS = ["draft", "pending_approval", "approved", "sent", "ordered", "lost", "expired"];
 
 export default function QuotationsClient() {
+  const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const currencies = useCurrencies();
 
   // Priority 17 final gap: companies list + the list-level filter scope.
   // Defaults to "All companies" -- an org that hasn't set up companies/
   // offices yet (or a quotation never attributed to one) sees no change.
   const [companies, setCompanies] = useState<Company[]>([]);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
-
-  const [open, setOpen] = useState(false);
-  const [customerId, setCustomerId] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [quotationCompanyId, setQuotationCompanyId] = useState<string>("__none__");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [quotationDate, setQuotationDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [validTill, setValidTill] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
-  const [submitting, setSubmitting] = useState(false);
-  const currencies = useCurrencies();
-  const [currencyId, setCurrencyId] = useState("");
-  const [exchangeRate, setExchangeRate] = useState("1");
-
-  const [convertFor, setConvertFor] = useState<Quotation | null>(null);
-  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,7 +61,7 @@ export default function QuotationsClient() {
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (scope.companyId) params.set("companyId", scope.companyId);
-      const data = await fetchJson(`/api/quotations?${params.toString()}`);
+      const data = await fetchJson<{ quotations?: Quotation[]; total?: number }>(`/api/quotations?${params.toString()}`);
       setQuotations(data.quotations ?? []);
       setTotal(data.total ?? 0);
     } catch (err) {
@@ -99,122 +72,19 @@ export default function QuotationsClient() {
   }, [page, search, statusFilter, scope.companyId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
-  useEffect(() => { fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {}); }, []);
   useEffect(() => {
     (async () => {
       try {
-        const data = await fetchJson("/api/companies");
+        const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
         setCompanies(data.companies ?? []);
-      } catch (err) {
+      } catch {
         // Non-fatal -- CompanySelector renders nothing when companies is
         // empty, so a failed fetch just means no selector, not a broken page.
       }
     })();
   }, []);
 
-  // Only non-base currencies need a manual exchange rate -- picking the
-  // org's own base currency (or leaving it unset) always means rate 1,
-  // matching erp-selling-service.ts's resolveDocumentCurrency() (omitting
-  // currencyId entirely also means "org base currency, rate 1").
-  const selectedCurrency = currencies.find((c) => c.id === currencyId);
-  const needsExchangeRate = !!currencyId && !selectedCurrency?.isBaseCurrency;
-
-  function updateLine(i: number, patch: Partial<Line>) {
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-
-  async function createQuotation() {
-    if (!customerId || lines.some((l) => !l.description.trim() || !l.rate)) return;
-    if (needsExchangeRate && (!exchangeRate || Number(exchangeRate) <= 0)) {
-      toast.error("An exchange rate is required for a non-base currency");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/quotations", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId, projectId: projectId || undefined, quotationDate, validTill: validTill || undefined,
-          companyId: quotationCompanyId === "__none__" ? undefined : quotationCompanyId,
-          currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
-          items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Quotation created");
-      setCustomerId(""); setProjectId(""); setLines([{ description: "", quantity: "1", rate: "" }]);
-      setCurrencyId(""); setExchangeRate("1"); setQuotationCompanyId("__none__"); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create quotation");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function transition(q: Quotation, status: string) {
-    try {
-      const res = await fetch(`/api/quotations/${q.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }
-      toast.success(`Quotation #${q.quotationNumber} → ${status}`);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't update quotation status");
-    }
-  }
-
-  async function createRevision(q: Quotation) {
-    try {
-      const res = await fetch(`/api/quotations/${q.id}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (!res.ok) throw new Error();
-      toast.success(`Revision v${q.version + 1} created for quotation #${q.quotationNumber}`);
-      load();
-    } catch {
-      toast.error("Couldn't create revision");
-    }
-  }
-
-  async function downloadPdf(q: Quotation) {
-    setDownloadingId(q.id);
-    try {
-      const res = await fetch(`/api/quotations/${q.id}/pdf`);
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `quotation-${q.quotationNumber}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't download quotation PDF");
-    } finally {
-      setDownloadingId(null);
-    }
-  }
-
-  async function convertToOrder() {
-    if (!convertFor) return;
-    try {
-      const res = await fetch(`/api/quotations/${convertFor.id}/convert`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderDate }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }
-      toast.success(`Converted to a sales order`);
-      setConvertFor(null);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't convert quotation");
-    }
-  }
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const STATUS_OPTIONS = ["draft", "pending_approval", "approved", "sent", "ordered", "lost", "expired"];
 
   return (
     <div className="space-y-4">
@@ -230,81 +100,9 @@ export default function QuotationsClient() {
             </SelectContent>
           </Select>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Quotation</Button></DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>New Quotation</DialogTitle></DialogHeader>
-            <div className="max-h-[70vh] space-y-3 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label>Customer</Label>
-                  <Select value={customerId} onValueChange={setCustomerId}>
-                    <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-                    <SelectContent>{customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.customerName}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Project (optional)</Label>
-                  <Select value={projectId} onValueChange={setProjectId}>
-                    <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
-                    <SelectContent>{projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Quotation Date</Label><Input type="date" value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Valid Till (optional)</Label><Input type="date" value={validTill} onChange={(e) => setValidTill(e.target.value)} /></div>
-              </div>
-              {companies.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label>Company / Office (optional)</Label>
-                  <Select value={quotationCompanyId} onValueChange={setQuotationCompanyId}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Unattributed</SelectItem>
-                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {currencies.length > 0 && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label>Currency (optional)</Label>
-                    <Select value={currencyId || "base"} onValueChange={(v) => setCurrencyId(v === "base" ? "" : v)}>
-                      <SelectTrigger><SelectValue placeholder="Org base currency" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="base">Org base currency</SelectItem>
-                        {currencies.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}{c.isBaseCurrency ? " (base)" : ""}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {needsExchangeRate && (
-                    <div className="space-y-1.5">
-                      <Label>Exchange Rate (to base)</Label>
-                      <Input type="number" step="0.0001" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} placeholder="e.g. 83.25" />
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label>Line Items</Label>
-                {lines.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input placeholder="Description" value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} className="flex-1" />
-                    <Input placeholder="Qty" type="number" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} className="w-16" />
-                    <Input placeholder="Rate" type="number" value={l.rate} onChange={(e) => updateLine(i, { rate: e.target.value })} className="w-24" />
-                    <Button variant="ghost" size="icon" disabled={lines.length === 1} onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}><Trash2 className="size-4" /></Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, { description: "", quantity: "1", rate: "" }])}>
-                  <Plus className="size-3.5" /> Add Line
-                </Button>
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createQuotation} disabled={submitting || !customerId}>{submitting ? "Creating…" : "Create Quotation"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Quotation" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push("/quotations/new")}><Plus className="size-4" /> New Quotation</Button>
       </div>
 
       <Card className="shadow-card">
@@ -318,12 +116,15 @@ export default function QuotationsClient() {
               <TableHeader>
                 <TableRow>
                   <TableHead>#</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead>
-                  <TableHead>Version</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Version</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Real screen navigation (2026-08-30) -- rows open the
+                    real Object Page, where status transitions/Convert/
+                    Revision/PDF now all live. */}
                 {quotations.map((q) => (
-                  <TableRow key={q.id}>
+                  <TableRow key={q.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/quotations/${q.id}`)}>
                     <TableCell className="font-medium">{q.quotationNumber}</TableCell>
                     <TableCell className="text-px-muted">{q.customerName ?? "—"}</TableCell>
                     <TableCell className="text-px-muted">{q.quotationDate}</TableCell>
@@ -332,28 +133,6 @@ export default function QuotationsClient() {
                       {currencyLabel(q.currencyId, currencies)}{Number(q.grandTotal).toLocaleString("en-US")}
                     </TableCell>
                     <TableCell><Badge variant={STATUS_VARIANT[q.status] ?? "outline"}>{q.status.replace("_", " ")}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {(NEXT_ACTIONS[q.status] ?? []).map((action) => (
-                          <Button key={action.status} size="sm" variant="outline" onClick={() => transition(q, action.status)}>{action.label}</Button>
-                        ))}
-                        {q.status === "sent" && (
-                          <Button size="sm" onClick={() => setConvertFor(q)}><ArrowRightCircle className="size-3.5" /> Convert</Button>
-                        )}
-                        {!["ordered", "lost", "expired"].includes(q.status) && (
-                          <Button size="sm" variant="ghost" onClick={() => createRevision(q)} title="New revision"><Copy className="size-3.5" /></Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={downloadingId === q.id}
-                          onClick={() => downloadPdf(q)}
-                          title="Download PDF"
-                        >
-                          {downloadingId === q.id ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
-                        </Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -371,14 +150,6 @@ export default function QuotationsClient() {
           </div>
         </div>
       )}
-
-      <Dialog open={!!convertFor} onOpenChange={(o) => !o && setConvertFor(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Convert Quotation #{convertFor?.quotationNumber} to a Sales Order</DialogTitle></DialogHeader>
-          <div className="space-y-1.5"><Label>Order Date</Label><Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} /></div>
-          <DialogFooter><Button onClick={convertToOrder}>Convert</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

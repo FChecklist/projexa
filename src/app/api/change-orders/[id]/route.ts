@@ -4,6 +4,21 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+// Real-screen conversion (2026-08-30): the list never had a detail route --
+// proxies to VERIDIAN's already-existing getChangeOrder() (GET was never
+// exposed here before, only PATCH for submit-for-approval).
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+  const { id } = await params;
+  try {
+    const data = await callVeridian(`/change-orders/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load change order" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+  }
+}
+
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;

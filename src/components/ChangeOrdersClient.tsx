@@ -12,15 +12,12 @@
 // "keep the hardcoded version behind a flag until verified" contract as
 // permits. Actions stays hardcoded outside the columns map, always.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
-import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -119,6 +116,7 @@ function SignatureStatusCell({ data, loading }: { data: SignatureStatus | undefi
 }
 
 export default function ChangeOrdersClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+  const router = useRouter();
   const currencies = useCurrencies();
   // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
   // -- forced both symbol and grouping to India regardless of the org's real
@@ -130,18 +128,6 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
   const [loading, setLoading] = useState(true);
   const [signatureStatuses, setSignatureStatuses] = useState<Record<string, SignatureStatus>>({});
   const [signatureStatusLoading, setSignatureStatusLoading] = useState<Record<string, boolean>>({});
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [reason, setReason] = useState("");
-  const [costImpact, setCostImpact] = useState("");
-  const [scheduleImpactDays, setScheduleImpactDays] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  // R52 F_008: per-field validation messages, replacing two bare `return`s.
-  const [createErrors, setCreateErrors] = useState<FieldErrors<"title" | "costImpact" | "scheduleImpactDays">>({});
-  const [signerErrors, setSignerErrors] = useState<FieldErrors<"signerName" | "signerEmail">>({});
-  const [submittingId, setSubmittingId] = useState<ChangeOrder | null>(null);
-  const [signerName, setSignerName] = useState("");
-  const [signerEmail, setSignerEmail] = useState("");
 
   async function load() {
     setLoading(true);
@@ -175,93 +161,12 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
 
   useEffect(() => { load(); }, [projectId]);
 
-  async function createChangeOrder() {
-    // R52 fix for F_008's other half. The recorded fault is the missing
-    // htmlFor/id pairing (fixed in the markup below), but the same dialog also
-    // failed silently: `if (!title.trim()) return;` -- the same silent-no-op
-    // shape recorded separately as F_002 on /materials. Fixed together because
-    // they are one defect seen from two sides.
-    const errors: FieldErrors<"title" | "costImpact" | "scheduleImpactDays"> = {};
-    if (!title.trim()) errors.title = "Title is required.";
-    if (costImpact.trim() && Number.isNaN(Number(costImpact))) errors.costImpact = "Cost impact must be a number.";
-    if (scheduleImpactDays.trim() && Number.isNaN(Number(scheduleImpactDays))) errors.scheduleImpactDays = "Schedule impact must be a number of days.";
-    setCreateErrors(errors);
-    if (hasErrors(errors)) return;
-
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/change-orders", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, title, reason: reason || undefined,
-          costImpact: costImpact ? Number(costImpact) : 0,
-          scheduleImpactDays: scheduleImpactDays ? Number(scheduleImpactDays) : 0,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Change order created");
-      setTitle(""); setReason(""); setCostImpact(""); setScheduleImpactDays(""); setCreateErrors({}); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't create change order");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function submitForApproval() {
-    if (!submittingId) return;
-    const errors: FieldErrors<"signerName" | "signerEmail"> = {};
-    if (!signerName.trim()) errors.signerName = "Signer name is required.";
-    if (!signerEmail.trim()) errors.signerEmail = "Signer email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail.trim())) errors.signerEmail = `"${signerEmail.trim()}" is not a valid email address.`;
-    setSignerErrors(errors);
-    if (hasErrors(errors)) return;
-
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/change-orders/${submittingId.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "submit", signers: [{ name: signerName, email: signerEmail }] }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success("Sent for e-signature approval");
-      setSubmittingId(null); setSignerName(""); setSignerEmail("");
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't submit for approval");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Change Order</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Change Order</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <FormField label="Title" required error={createErrors.title}>
-                {(f) => <Input {...f} value={title} onChange={(e) => setTitle(e.target.value)} />}
-              </FormField>
-              <FormField label="Reason (optional)">
-                {(f) => <Textarea {...f} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />}
-              </FormField>
-              <div className="grid grid-cols-2 gap-3">
-                <FormField label={`Cost Impact (${currencyLabel(undefined, currencies).trim()})`} error={createErrors.costImpact}>
-                  {(f) => <Input {...f} type="number" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} placeholder="+/- amount" />}
-                </FormField>
-                <FormField label="Schedule Impact (days)" error={createErrors.scheduleImpactDays}>
-                  {(f) => <Input {...f} type="number" value={scheduleImpactDays} onChange={(e) => setScheduleImpactDays(e.target.value)} placeholder="+/- days" />}
-                </FormField>
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createChangeOrder} disabled={submitting}>{submitting ? "Creating…" : "Create"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Change Order" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push(`/change-orders/new?projectId=${projectId}`)}><Plus className="size-4" /> New Change Order</Button>
       </div>
 
       <Card className="shadow-card">
@@ -280,12 +185,15 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
               </TableHeader>
               <TableBody>
                 {items.map((c) => (
-                  <TableRow key={c.id}>
+                  // Real screen navigation (2026-08-30) -- rows now open the
+                  // real Object Page instead of nothing (no detail view
+                  // existed before this -- "reason" wasn't shown anywhere).
+                  <TableRow key={c.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/change-orders/${c.id}`)}>
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderChangeOrderCell(col.field, c, formatCurrency)}</TableCell>
                     ))}
-                    <TableCell className="text-right">
-                      {c.status === "draft" && <Button size="sm" variant="outline" onClick={() => setSubmittingId(c)}>Send for Approval</Button>}
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      {c.status === "draft" && <Button size="sm" variant="outline" onClick={() => router.push(`/change-orders/${c.id}`)}>Send for Approval</Button>}
                       {c.status === "pending_approval" && (
                         <SignatureStatusCell data={signatureStatuses[c.id]} loading={!!signatureStatusLoading[c.id]} />
                       )}
@@ -297,22 +205,6 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!submittingId} onOpenChange={(v) => !v && setSubmittingId(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Send for E-Signature Approval</DialogTitle></DialogHeader>
-          <p className="text-sm text-px-muted">Real signing request, tamper-evident audit trail (same workflow used for contracts).</p>
-          <div className="space-y-3">
-            <FormField label="Signer name" required error={signerErrors.signerName}>
-              {(f) => <Input {...f} value={signerName} onChange={(e) => setSignerName(e.target.value)} />}
-            </FormField>
-            <FormField label="Signer email" required error={signerErrors.signerEmail}>
-              {(f) => <Input {...f} type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} />}
-            </FormField>
-          </div>
-          <DialogFooter><Button onClick={submitForApproval} disabled={submitting}>{submitting ? "Sending…" : "Send"}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

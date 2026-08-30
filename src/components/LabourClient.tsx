@@ -16,20 +16,26 @@
 // column staying outside their registry-driven columns. The row-index
 // (S.No) column is likewise not real data and stays hardcoded, always
 // rendered first.
+//
+// Real-screen conversion (2026-08-30): the "Add Worker"/"Mark Attendance"
+// Dialog popups are gone -- Add Worker routes to a real create screen
+// (RosterCreateClient.tsx), roster rows route to a real Object Page
+// (RosterObjectClient.tsx, which gained real Edit/Deactivate this
+// conversion -- updateRosterEntry() didn't exist before). Mark Attendance
+// routes to a real create screen (AttendanceCreateClient.tsx) -- no Object
+// Page for attendance rows, a write-once daily transaction log same as
+// Expenses/Stock Entries. Also fixes the same uncontrolled-Tabs-no-URL-sync
+// bug found and fixed repeatedly this session.
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import PrimarySubmit from "@/components/PrimarySubmit";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -57,6 +63,8 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   present: "default", half_day: "secondary", absent: "destructive",
 };
 
+const VALID_TABS = new Set(["roster", "attendance"]);
+
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike a generic column-type-driven renderer, the actual
 // cell value for each known field is still this project's own formatting
@@ -82,8 +90,10 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
-export default function LabourClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function LabourClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+  const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -94,21 +104,6 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
   const rosterCurrencyLabel = currencyLabel(undefined, currencies);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
-
-  const [rosterOpen, setRosterOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [employeeCode, setEmployeeCode] = useState("");
-  const [trade, setTrade] = useState("");
-  const [vendorId, setVendorId] = useState("");
-  const [dailyRate, setDailyRate] = useState("");
-  const [rosterSubmitting, setRosterSubmitting] = useState(false);
-
-  const [attOpen, setAttOpen] = useState(false);
-  const [rosterId, setRosterId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("present");
-  const [hoursWorked, setHoursWorked] = useState("");
-  const [attSubmitting, setAttSubmitting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -138,59 +133,17 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
   useEffect(() => { load(); }, [projectId]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
-
-  const rosterMissing = [
-    ...(name.trim() ? [] : ["Name"]),
-    ...(dailyRate ? [] : ["Daily Rate"]),
-  ];
-  const attMissing = [
-    ...(rosterId ? [] : ["Worker"]),
-    ...(attendanceDate ? [] : ["Date"]),
-  ];
-
-  async function createRoster() {
-    if (!name.trim() || !dailyRate) return;
-    setRosterSubmitting(true);
-    try {
-      await fetchJson("/api/labour-roster", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId, name, employeeCode: employeeCode || undefined, trade: trade || undefined,
-          vendorId: vendorId || undefined, dailyRate: Number(dailyRate),
-        }),
-      });
-      toast.success("Worker added to roster");
-      setName(""); setEmployeeCode(""); setTrade(""); setVendorId(""); setDailyRate(""); setRosterOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't add worker"));
-    } finally {
-      setRosterSubmitting(false);
-    }
-  }
-
-  async function createAttendance() {
-    if (!rosterId || !attendanceDate) return;
-    setAttSubmitting(true);
-    try {
-      await fetchJson("/api/attendance", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
-      });
-      toast.success("Attendance recorded");
-      setHoursWorked(""); setAttOpen(false);
-      load();
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record attendance"));
-    } finally {
-      setAttSubmitting(false);
-    }
-  }
-
   const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
 
+  function goToTab(tab: string) {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
   return (
-    <Tabs defaultValue="roster" className="space-y-4">
+    <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="roster">Roster</TabsTrigger>
         <TabsTrigger value="attendance">Attendance</TabsTrigger>
@@ -198,30 +151,9 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
 
       <TabsContent value="roster" className="space-y-4">
         <div className="flex justify-end">
-          <Dialog open={rosterOpen} onOpenChange={setRosterOpen}>
-            <DialogTrigger asChild><Button><Plus className="size-4" /> Add Worker</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Worker to Roster</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. EMP-001" /></div>
-                <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Mason, Electrician" /></div>
-                <div className="space-y-1.5">
-                  <Label>Company (optional)</Label>
-                  <Select value={vendorId} onValueChange={setVendorId}>
-                    <SelectTrigger><SelectValue placeholder="Select subcontractor" /></SelectTrigger>
-                    <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} /></div>
-              </div>
-              <DialogFooter>
-                <PrimarySubmit missing={rosterMissing} submitting={rosterSubmitting} submittingLabel="Adding…" onClick={createRoster}>
-                  Add Worker
-                </PrimarySubmit>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
+              Worker" Dialog popup with a real create route. */}
+          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
@@ -240,8 +172,10 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {/* Real screen navigation (2026-08-30) -- rows open the
+                      real Object Page, where Edit/Deactivate now live. */}
                   {roster.map((r, i) => (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
                         <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
@@ -257,39 +191,9 @@ export default function LabourClient({ projectId, registryColumns }: { projectId
 
       <TabsContent value="attendance" className="space-y-4">
         <div className="flex justify-end">
-          <Dialog open={attOpen} onOpenChange={setAttOpen}>
-            <DialogTrigger asChild><Button disabled={roster.length === 0}><Plus className="size-4" /> Mark Attendance</Button></DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Mark Attendance</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Worker</Label>
-                  <Select value={rosterId} onValueChange={setRosterId}>
-                    <SelectTrigger><SelectValue placeholder="Select worker" /></SelectTrigger>
-                    <SelectContent>{roster.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} /></div>
-                <div className="space-y-1.5">
-                  <Label>Status</Label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="present">Present</SelectItem>
-                      <SelectItem value="half_day">Half Day</SelectItem>
-                      <SelectItem value="absent">Absent</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5"><Label>Hours Worked (optional)</Label><Input type="number" value={hoursWorked} onChange={(e) => setHoursWorked(e.target.value)} /></div>
-              </div>
-              <DialogFooter>
-                <PrimarySubmit missing={attMissing} submitting={attSubmitting} submittingLabel="Saving…" onClick={createAttendance}>
-                  Record
-                </PrimarySubmit>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
+              Attendance" Dialog popup with a real create route. */}
+          <Button disabled={roster.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">

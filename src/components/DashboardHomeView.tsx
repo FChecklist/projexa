@@ -3,7 +3,7 @@ import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
-import { CreateInvoiceDialog } from "@/components/CreateInvoiceDialog";
+import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -167,7 +167,15 @@ export default function DashboardHomeView({
                   ? `Total Revenue shows ${formatCurrency(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org — create one below.`
                   : "Revenue reflects VERIDIAN ERP sales invoices for this org. Create another one below."}
               </p>
-              <CreateInvoiceDialog />
+              {/* Real-screen conversion (2026-08-30) -- was a separate,
+                  duplicate "Create / Link Invoice" Dialog popup
+                  (CreateInvoiceDialog.tsx) with its own copy of the same
+                  create-invoice logic InvoicesClient.tsx had; now routes to
+                  the one real Invoice create screen instead of maintaining
+                  two forms that could drift apart. */}
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/invoices/new"><Receipt className="size-4" /> Create / Link Invoice</Link>
+              </Button>
             </div>
 
             <Card className="shadow-card">

@@ -11,36 +11,23 @@
 // the leave-approval and quotation-approval buttons. The dialog is real and
 // wired; the POST will surface that 400 until the identity bridge exists.
 import { useState, useEffect, useCallback } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
   issue?: { id: string; number: number; title: string } | null;
 };
-type Task = { id: string; number: number; title: string };
 
 export default function ScheduleTimesheetClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [open, setOpen] = useState(false);
-  const [issueId, setIssueId] = useState("");
-  const [hours, setHours] = useState("");
-  const [spentOn, setSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
-  const [activityType, setActivityType] = useState("");
-  const [comments, setComments] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,60 +46,12 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => res.json())
-      .then((data) => setTasks(data.tasks ?? []))
-      .catch(() => { /* task dropdown is a convenience */ });
-  }, [projectId]);
-
-  async function logTime() {
-    if (!issueId || !hours || !spentOn) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/timesheets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId, hours, spentOn, activityType: activityType || undefined, comments: comments || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to log time");
-      toast.success("Time logged");
-      setIssueId(""); setHours(""); setActivityType(""); setComments(""); setOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't log time");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   const totalHours = entries.reduce((sum, e) => sum + Number(e.hours), 0);
 
+  // Real screen navigation (2026-08-30) -- replaces the old "Log Time"
+  // Dialog popup with a real create route.
   const logTimeButton = (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button><Plus className="size-4" /> Log Time</Button></DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Log Time</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Task</Label>
-            <Select value={issueId} onValueChange={setIssueId}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
-              <SelectContent>
-                {tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={spentOn} onChange={(e) => setSpentOn(e.target.value)} /></div>
-          </div>
-          <div className="space-y-1.5"><Label>Activity Type (optional)</Label><Input value={activityType} onChange={(e) => setActivityType(e.target.value)} placeholder="e.g. Development, Site Visit" /></div>
-          <div className="space-y-1.5"><Label>Comments (optional)</Label><Input value={comments} onChange={(e) => setComments(e.target.value)} /></div>
-        </div>
-        <DialogFooter><Button onClick={logTime} disabled={submitting || !issueId || !hours || !spentOn}>{submitting ? "Logging…" : "Log Time"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
   );
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
@@ -150,7 +89,15 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
               <TableBody>
                 {entries.map((entry) => (
                   <TableRow key={entry.id}>
-                    <TableCell>{entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="text-left underline-offset-2 hover:underline"
+                        onClick={() => router.push(`/schedule/tasks/${entry.issueId}`)}
+                      >
+                        {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}
+                      </button>
+                    </TableCell>
                     <TableCell>{entry.spentOn}</TableCell>
                     <TableCell>{entry.hours}</TableCell>
                     <TableCell>{entry.activityType ?? "—"}</TableCell>

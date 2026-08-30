@@ -1,15 +1,18 @@
 "use client";
 
+// Real-screen conversion (2026-08-30): the "New Customer" Dialog popup is
+// gone -- routes to a real create screen (CustomerCreateClient.tsx). Rows
+// already routed to a real detail page; that page (CustomerOverviewClient.tsx)
+// gained real Back/Edit/Deactivate this conversion.
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -24,6 +27,7 @@ type Customer = { id: string; customerName: string; gstin: string | null; defaul
 // principle compliance-tracker's getComplianceEngine() registry already
 // applies to computation.
 export default function CustomersClient() {
+  const router = useRouter();
   const { isIndiaOrg } = useOrgRole();
   const currencies = useCurrencies();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -32,12 +36,6 @@ export default function CustomersClient() {
   const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-
-  const [open, setOpen] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [gstin, setGstin] = useState("");
-  const [creditLimit, setCreditLimit] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,47 +54,15 @@ export default function CustomersClient() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function createCustomer() {
-    if (!customerName.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/customers", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerName, gstin: gstin || undefined, creditLimit: creditLimit ? Number(creditLimit) : undefined }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Customer added");
-      setCustomerName(""); setGstin(""); setCreditLimit(""); setOpen(false);
-      load();
-    } catch {
-      toast.error("Couldn't add customer");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Input placeholder="Search customers…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} className="w-56" />
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="size-4" /> New Customer</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>New Customer</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Customer Name</Label><Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} /></div>
-              <div className={isIndiaOrg ? "grid grid-cols-2 gap-2" : ""}>
-                {isIndiaOrg && (
-                  <div className="space-y-1.5"><Label>GSTIN (optional)</Label><Input value={gstin} onChange={(e) => setGstin(e.target.value)} /></div>
-                )}
-                <div className="space-y-1.5"><Label>Credit Limit (optional)</Label><Input type="number" value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} /></div>
-              </div>
-            </div>
-            <DialogFooter><Button onClick={createCustomer} disabled={submitting}>{submitting ? "Adding…" : "Add Customer"}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New
+            Customer" Dialog popup with a real create route. */}
+        <Button onClick={() => router.push("/customers/new")}><Plus className="size-4" /> New Customer</Button>
       </div>
 
       <Card className="shadow-card">
