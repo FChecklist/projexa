@@ -15,8 +15,19 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // standalone AND alongside every other happy-dom-based suite.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+
+// PayrollClient.tsx calls useRouter() (added for the row/create-button
+// navigation seen below) -- outside a real Next.js app tree, that throws
+// "invariant expected app router to be mounted" the moment the component
+// renders, since there's no real router context to read from. This test
+// predates that useRouter() call and never provided one. Mocked here (must
+// run before PayrollClient is imported below) rather than wrapped in a real
+// AppRouterContext.Provider -- only .push is ever called by this component,
+// so a bare mock is enough and keeps this file's existing render() calls
+// (no wrapper) unchanged.
+mock.module("next/navigation", () => ({ useRouter: () => ({ push: mock(() => {}) }) }));
 
 // Dynamically imported (not a static top-level import) so this module -- and
 // therefore its transitive @radix-ui/react-tabs -> @radix-ui/react-presence

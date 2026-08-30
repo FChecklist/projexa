@@ -66,12 +66,49 @@ function unguardedSites(source: string): string[] {
   return found;
 }
 
-/** The `Promise.all([fetch(a), fetch(b)])` variant of the same defect. */
+/**
+ * The `Promise.all([fetch(a), fetch(b)])` variant of the same defect.
+ *
+ * Window = the `Promise.all([ ... ])` array literal itself (tracked by `[`/`]`
+ * depth from the opening line, to find where the batch actually ends) PLUS a
+ * further 8 lines past it, long enough to cover the immediate
+ * `.json()`-parse-and-assign that follows a real batch fetch, but short
+ * enough not to reach into a later, unrelated handler.
+ *
+ * An earlier version used a flat 20-line window from the opening line, which
+ * produced a real false positive on JournalEntryObjectClient.tsx: its
+ * Promise.all block correctly uses fetchJson() (safe -- throws on a non-2xx
+ * internally), but an unrelated fetch()+res.ok POST call ~15 lines further
+ * down in the SAME function fell inside the 20-line window, and that call's
+ * own `.ok` check landed just outside it by one line -- so the flat window
+ * saw a stray `fetch(` and `.json()` with no `.ok` in range and flagged a
+ * component that was already written correctly.
+ *
+ * A first fix (closing the window at the array literal's own end, no extra
+ * lines) removed the false positive but also broke real detection: the
+ * actual defect shape this test exists to catch is
+ * `const [a,b] = await Promise.all([fetch(x), fetch(y)]); const da =
+ * await a.json();` -- the vulnerable `.json()` calls come AFTER the array
+ * literal closes, not inside it, so a window that stops exactly at `]);`
+ * never sees them. Verified with a synthetic bad case (both defect shapes)
+ * before landing on the "array literal + 8 lines" window: it catches the
+ * synthetic defect and does not re-flag JournalEntryObjectClient.tsx.
+ */
 function unguardedBatchFiles(source: string): boolean {
   const lines = source.split("\n");
   for (let i = 0; i < lines.length; i++) {
     if (!(lines[i].includes("Promise.all([") && lines[i].includes("await"))) continue;
-    const block = lines.slice(i, i + 20).join("\n");
+    let depth = 0;
+    let arrayEnd = i;
+    for (; arrayEnd < lines.length; arrayEnd++) {
+      for (const ch of lines[arrayEnd]) {
+        if (ch === "[") depth++;
+        else if (ch === "]") { depth--; if (depth === 0) break; }
+      }
+      if (depth === 0) break;
+    }
+    const end = Math.min(lines.length, arrayEnd + 8);
+    const block = lines.slice(i, end).join("\n");
     if (/\bfetch\(/.test(block) && /await\s+\w+\.json\(\)/.test(block) && !/\.ok\b/.test(block)) {
       return true;
     }
