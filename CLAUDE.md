@@ -1,5 +1,20 @@
 # PROJEXA — Agent Context
 
+## What this is (R66 code-quality fix, 2026-09-01: summarized from AGENTS.md,
+## which has the fuller version -- read that for the complete picture)
+
+Construction/architecture/interior-design PM product: Next.js 16 (App
+Router) + TypeScript strict + Tailwind 4 + Drizzle ORM (`postgres.js`)
+against Supabase Postgres, `bun` as package manager. Carries **no
+construction domain data of its own** — schedule, BOQ, RFIs, punch lists,
+mood boards, FF&E, floor plans, etc. are all read/written through
+`src/lib/veridian-client.ts`, a single proxy client calling VERIDIAN AI
+OS's (`FChecklist/compliance-tracker`) `/api/v1/projexa/*` API surface
+with a Bearer API key. This repo's own Drizzle schema
+(`src/lib/db/schema.ts`) holds only tenant/auth plumbing
+(`organizations`, `memberships`) and PROJEXA's own
+chat/todo/assistant-history tables.
+
 ## Commands
 - `bun install` — install dependencies
 - `bun run dev` — start dev server
