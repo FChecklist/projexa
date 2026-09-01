@@ -66,12 +66,17 @@ function RoomMesh({ room }: { room: SceneRoom }) {
 }
 
 export default function FloorPlanScene3D({ scene }: { scene: SceneData }) {
-  const allPoints = scene.rooms.flatMap((r) => r.polygon);
-  const centerX = (allPoints.reduce((s, p) => s + p.x, 0) / allPoints.length) * CM_TO_M;
-  const centerZ = (allPoints.reduce((s, p) => s + p.y, 0) / allPoints.length) * CM_TO_M;
-  const spanX = (Math.max(...allPoints.map((p) => p.x)) - Math.min(...allPoints.map((p) => p.x))) * CM_TO_M;
-  const spanZ = (Math.max(...allPoints.map((p) => p.y)) - Math.min(...allPoints.map((p) => p.y))) * CM_TO_M;
-  const span = Math.max(spanX, spanZ, 4);
+  // R66 code-quality fix: this bounding-box/camera-centering math was
+  // recomputed every render with no memoization, unlike RoomMesh's own
+  // geometry above (useMemo on room.polygon). Mirrors that pattern.
+  const { centerX, centerZ, span } = useMemo(() => {
+    const allPoints = scene.rooms.flatMap((r) => r.polygon);
+    const cX = (allPoints.reduce((s, p) => s + p.x, 0) / allPoints.length) * CM_TO_M;
+    const cZ = (allPoints.reduce((s, p) => s + p.y, 0) / allPoints.length) * CM_TO_M;
+    const spanX = (Math.max(...allPoints.map((p) => p.x)) - Math.min(...allPoints.map((p) => p.x))) * CM_TO_M;
+    const spanZ = (Math.max(...allPoints.map((p) => p.y)) - Math.min(...allPoints.map((p) => p.y))) * CM_TO_M;
+    return { centerX: cX, centerZ: cZ, span: Math.max(spanX, spanZ, 4) };
+  }, [scene.rooms]);
 
   return (
     <div className="h-[600px] w-full overflow-hidden rounded-lg border border-px-border">

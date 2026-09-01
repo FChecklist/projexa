@@ -2,9 +2,16 @@
 // inverted from allow-list to deny-by-default.
 //
 // WHAT WAS WRONG: middleware.ts gated pages against PROTECTED_PREFIXES, a
-// hand-written array of 24 strings matched by startsWith. 53 page routes live
-// under src/app/(app)/; 26 of them matched nothing, so roughly half the
-// navigable product sat outside the gate. Two entries prove it was genuine
+// hand-written array of 24 strings matched by startsWith. At the time this
+// was measured, 53 page routes lived under src/app/(app)/ and 26 of them
+// matched nothing (roughly half the navigable product sat outside the
+// gate) -- these counts drift as pages are added, so re-run
+// `find src/app/\(app\) -name page.tsx | wc -l` (or page-access.test.ts,
+// which recomputes filesystem parity on every run and is the live source
+// of truth) rather than trusting this comment's numbers going forward.
+// [R66 code-quality fix, 2026-09-01: re-measured at 157 page.tsx files as
+// of this note -- confirms the drift this comment now warns about.]
+// Two entries prove it was genuine
 // drift rather than a counting artefact: the array carried "/ai-copilot" while
 // both the route and the nav item ship "/copilot" (so the one module the list
 // explicitly meant to protect was open), and "/manpower" matched no page route

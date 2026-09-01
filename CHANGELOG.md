@@ -8,6 +8,13 @@ CHANGELOG at all. It is not a reconstruction of every PR in this repo's
 history — that would be a large, separate retrofit job, out of scope for
 this pass. Newest entry first, grouped by queue seq.
 
+> **Not kept current past 2026-08-25** (noted 2026-09-01, R66 code-quality
+> inspection): real merged work continued through at least PR #224
+> (2026-08-30), including "Real-screen conversion (modules 17-33)" (#223)
+> and "R1-R64 recheck" (#224), with nothing logged below for any of it. For
+> anything after 2026-08-25, see `git log` / the GitHub PR history directly
+> rather than assuming this file is current.
+
 ## R46 F_015 -- /sw.js is now a per-deploy Route Handler, cache key auto-invalidates every deploy (2026-08-25)
 `platform.r43_faults` F_015: a stale Service Worker (registered at scope
 `https://projexa-ai.com/`) could hijack client-side navigation app-wide --
