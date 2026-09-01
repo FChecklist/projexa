@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { PanelShell } from "@fchecklist/veridian-ui-kit/panel";
 import { useVeriChat, type RightPanelView } from "./veri-chat-context";
 import { formatDateTime } from "@/lib/format-date";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type QuerySummary = {
   id: string;
@@ -47,21 +48,46 @@ export default function VeriChatPanel() {
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [convoMessages, setConvoMessages] = useState<{ id: string; sender_id: string; content: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [newTodoText, setNewTodoText] = useState("");
 
+  // R66 code-quality fix: these four fetches used to read the body without
+  // ever checking res.ok (`fetch(url).then(r => r.json()).then(d => setX(d.field
+  // ?? [])).catch(() => {})`), so a real error response silently became an
+  // empty list with nothing telling the user their queries/chats/todos failed
+  // to load. Matches the fetchJson()/errorMessage() pattern already
+  // established in CopilotClient.tsx's loadHistory().
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      fetch("/api/assistant").then((r) => r.json()).then((d) => setQueries(d.queries ?? [])).catch(() => {}),
-      fetch("/api/conversations").then((r) => r.json()).then((d) => setConversations(d.conversations ?? [])).catch(() => {}),
-      fetch("/api/org-members").then((r) => r.json()).then((d) => setOrgMembers(d.members ?? [])).catch(() => {}),
-      fetch("/api/todos").then((r) => r.json()).then((d) => setTodos(d.todos ?? [])).catch(() => {}),
-    ]).finally(() => setLoading(false));
+    async function loadPanelData() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [queriesData, conversationsData, orgMembersData, todosData] = await Promise.all([
+          fetchJson<{ queries?: QuerySummary[] }>("/api/assistant"),
+          fetchJson<{ conversations?: ConvoSummary[] }>("/api/conversations"),
+          fetchJson<{ members?: OrgMember[] }>("/api/org-members"),
+          fetchJson<{ todos?: TodoItem[] }>("/api/todos"),
+        ]);
+        setQueries(queriesData.queries ?? []);
+        setConversations(conversationsData.conversations ?? []);
+        setOrgMembers(orgMembersData.members ?? []);
+        setTodos(todosData.todos ?? []);
+      } catch (err) {
+        const message = errorMessage(err, "Couldn't load the assistant panel");
+        setLoadError(message);
+        toast.error(message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadPanelData();
   }, [refreshCounter]);
 
   useEffect(() => {
     if (!activeConversationId) { setConvoMessages([]); return; }
-    fetch(`/api/conversations/${activeConversationId}/messages`).then((r) => r.json()).then((d) => setConvoMessages(d.messages ?? [])).catch(() => {});
+    fetchJson<{ messages?: typeof convoMessages }>(`/api/conversations/${activeConversationId}/messages`)
+      .then((d) => setConvoMessages(d.messages ?? []))
+      .catch((err) => toast.error(errorMessage(err, "Couldn't load messages")));
   }, [activeConversationId, refreshCounter]);
 
   async function startConversation(userId: string) {
@@ -152,6 +178,11 @@ export default function VeriChatPanel() {
     >
       {loading ? (
         <div className="grid place-items-center h-32"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+      ) : loadError ? (
+        <div className="grid place-items-center gap-2 h-32 px-4 text-center">
+          <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
+          <button type="button" onClick={bumpRefresh} className="text-[11.5px] font-semibold text-px-orange">Retry</button>
+        </div>
       ) : activeQuery ? (
         <QueryThread query={activeQuery} onBack={closeThread} />
       ) : activeConvo ? (

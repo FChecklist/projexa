@@ -32,16 +32,21 @@ export function NotificationBell() {
   const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  // R66 code-quality fix: a failed load used to no-op silently, leaving the
+  // bell showing 0 unread forever with nothing telling the user it didn't
+  // actually load. This is a minimal, non-blocking indicator -- a title/
+  // tooltip plus a distinct dot color -- not a full error-state redesign.
+  const [failedToLoad, setFailedToLoad] = useState(false);
 
   useEffect(() => {
     fetch("/api/notifications")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d) return;
+        if (!d) { setFailedToLoad(true); return; }
         setUnreadCount(d.unreadCount ?? 0);
         setNotifications(d.notifications ?? []);
       })
-      .catch(() => {});
+      .catch(() => setFailedToLoad(true));
   }, []);
 
   async function handleClick(n: NotificationItem) {
@@ -63,11 +68,14 @@ export function NotificationBell() {
           size="icon"
           className="relative text-ct-muted hover:bg-ct-cloud hover:text-ct-navy"
           aria-label="Notifications"
+          title={failedToLoad ? "Notifications failed to load" : undefined}
         >
           <Bell className="size-[18px]" />
-          {unreadCount > 0 && (
+          {failedToLoad ? (
+            <span className="absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ring-white" />
+          ) : unreadCount > 0 ? (
             <span className="absolute top-1 right-1 size-2 rounded-full bg-red-500 ring-2 ring-white" />
-          )}
+          ) : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">

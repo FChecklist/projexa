@@ -5,6 +5,13 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // R66 code-quality fix: no recorded reason found for this. Set to false at
+  // the very first scaffold commit (318a036) with no comment, and never
+  // touched again in any of the 15 subsequent commits that edited this
+  // file. Left as-is rather than silently re-enabling it (that changes real
+  // runtime behavior -- double-invoked renders/effects in dev -- with no
+  // way to verify nothing depends on the current behavior without a local
+  // build, which this pass didn't have). Re-enable if no blocker turns up.
   reactStrictMode: false,
   // veridian-ui-kit ships raw .ts/.tsx source (no build step -- see that
   // repo's own package.json "exports"), so Next must transpile it like any

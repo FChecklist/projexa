@@ -1,8 +1,14 @@
 // R48_API_WRITES_WITHOUT_ROLE_CHECK_01 -- the server-side role gate for every
 // mutating /api route.
 //
-// THE DEFECT THIS CLOSES, measured on this tree (see api-write-policy.test.ts,
-// which recomputes all of these from the filesystem on every run):
+// THE DEFECT THIS CLOSES, measured on this tree at the time this file was
+// written (see api-write-policy.test.ts, which recomputes all of these from
+// the filesystem on every run and is the live source of truth -- these
+// counts drift as routes are added, don't trust the numbers below without
+// re-running it):
+//   [R66 code-quality fix, 2026-09-01: re-measured at 254 route.ts files as
+//   of this note, up from the 216 below -- confirms the drift this comment
+//   now warns about.]
 //   216 route.ts files under src/app/api
 //   209 call requireAuth(); 4 more use requireCompanyScope() (which calls
 //       requireAuth() AND verifies a real membership row); 3 are public by
