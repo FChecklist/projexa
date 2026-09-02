@@ -3,7 +3,7 @@
 // shell both apply, so every branch of it is asserted here -- a disagreement
 // between those two halves is exactly the defect it exists to remove.
 import { describe, test, expect } from "bun:test";
-import { pickProject } from "./project-preference";
+import { pickProject, pickRouteProject } from "./project-preference";
 
 const projects = [
   { id: "p1", name: "Cedar Heights Villa - Phase 1" },
@@ -46,5 +46,56 @@ describe("pickProject", () => {
       project: null,
       source: null,
     });
+  });
+});
+
+// R67 WS-A (A-13). The strict rule for a project's own screen: the URL wins,
+// and there is no last resort. Every branch matters because each one produces a
+// different sentence on the page, and the defect being removed is a screen that
+// silently rendered another project's data under the same heading.
+describe("pickRouteProject", () => {
+  test("the URL's project is used, and the source says where it came from", () => {
+    expect(pickRouteProject({ requested: "p2", projects })).toEqual({
+      project: projects[1],
+      source: "route",
+      missing: false,
+      unreachable: false,
+    });
+  });
+
+  test("an object page's own project counts as the route naming it", () => {
+    expect(pickRouteProject({ objectProjectId: "p1", projects }).project).toEqual(projects[0]);
+  });
+
+  test("the URL outranks the object when both say something", () => {
+    expect(pickRouteProject({ requested: "p2", objectProjectId: "p1", projects }).project).toEqual(projects[1]);
+  });
+
+  test("NOTHING named means the screen asks -- it never picks the first project", () => {
+    expect(pickRouteProject({ projects })).toEqual({
+      project: null,
+      source: null,
+      missing: true,
+      unreachable: false,
+    });
+  });
+
+  test("an empty or blank projectId is the same as none", () => {
+    expect(pickRouteProject({ requested: "   ", projects }).missing).toBe(true);
+  });
+
+  test("a project the user cannot reach is NOT missing -- it is a different sentence", () => {
+    expect(pickRouteProject({ requested: "gone", projects })).toEqual({
+      project: null,
+      source: null,
+      missing: false,
+      unreachable: true,
+    });
+  });
+
+  test("the same URL resolves to the same project every time (ten reloads, A-13)", () => {
+    for (let i = 0; i < 10; i += 1) {
+      expect(pickRouteProject({ requested: "p1", projects }).project).toEqual(projects[0]);
+    }
   });
 });

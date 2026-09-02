@@ -21,8 +21,8 @@
 // /api/assistant and /api/discuss paths keep a live home and VeriChatProvider
 // is still required by this layout.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
@@ -55,7 +55,7 @@ import {
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
 import { PillStrip, type CardView, type ModuleEntryView, type RecentCardView } from "./PillStrip";
-import { useShellScreen } from "./shell-screen-context";
+import { useShellScreen, type ScreenProjectSource } from "./shell-screen-context";
 import {
   CARD_CATALOGUE,
   KIND_GLYPH,
@@ -243,6 +243,34 @@ type TaskGroups = {
 };
 
 const NO_TASKS: TaskGroups = { needsYou: [], running: [], done: [], blocked: [], all: [] };
+
+/**
+ * R67 A-13 -- THE URL'S OWN ?projectId=, reported up to the shell.
+ *
+ * WHY IT IS A SEPARATE COMPONENT BEHIND A SUSPENSE BOUNDARY. useSearchParams()
+ * opts its whole page out of static rendering unless it sits inside one, and
+ * this shell wraps all 161 app routes -- so calling it in M24Shell directly
+ * would put that constraint on every page in the product at build time. The
+ * repo already has this exact convention (search-command.tsx's
+ * SearchDialogWithProject, AppSidebar's SidebarInnerWithProject); this is the
+ * same shape. It renders nothing.
+ *
+ * WHY THE SHELL NEEDS IT AT ALL. Before this, the shell learned a screen's
+ * project only if that screen PUBLISHED it (ScreenContext), which three pages
+ * do. Everywhere else a URL could say ?projectId=X while the rail said "All
+ * projects" and the composer refused to send for want of a project -- on a
+ * screen already showing project X's data. The URL is the source of truth, and
+ * the shell can read it directly.
+ */
+function RouteProjectIdReader({ onChange }: { onChange: (id: string | null) => void }) {
+  const params = useSearchParams();
+  const raw = params.get("projectId");
+  const id = raw && raw.trim() ? raw : null;
+  useEffect(() => {
+    onChange(id);
+  }, [id, onChange]);
+  return null;
+}
 
 /** R67 A-09 -- a chain restored from history rather than built on this screen. */
 type LoadedChain = {
@@ -654,6 +682,12 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // shell-screen-context.tsx for why that is what makes it order-independent.
   const publishedScreen = useShellScreen();
   const routeScreen = publishedScreen.pathname === pathname ? publishedScreen : null;
+  // R67 A-13 -- AND THE URL OUTRANKS BOTH OF THEM. A screen's ?projectId= is a
+  // fact the shell can read for itself on all 161 routes, not only on the three
+  // that publish. The name comes from the projects list where it has loaded,
+  // and from the screen's own publication before it has -- the two agree by
+  // construction, because both are answers about the same id.
+  const [routeProjectId, setRouteProjectId] = useState<string | null>(null);
   // The rail's own answer, applying the SAME rule the server page applies
   // (pickProject): the remembered choice if the user can still reach it, their
   // only project if they have exactly one, otherwise nothing -- the rail's null
@@ -664,8 +698,30 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [projects, railProjectId]
   );
   const railProject = railPick.source === "auto" ? null : railPick.project;
-  const project = routeScreen?.project ?? railProject;
+  const routeProject = useMemo(() => {
+    if (!routeProjectId) return null;
+    const named = projects.find((p) => p.id === routeProjectId);
+    if (named) return named;
+    // The list has not loaded yet (or this id is not on it). The screen's own
+    // publication is the only other place the NAME can come from, and it is
+    // only trusted when it is about the same id.
+    if (routeScreen?.project?.id === routeProjectId) return routeScreen.project;
+    return null;
+  }, [routeProjectId, projects, routeScreen]);
+
+  // A-13 -- ONE ROOT, AND THE URL WINS. Route, then whatever the screen
+  // published, then the rail's own remembered choice.
+  const project = routeProject ?? routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
+  // HOW it was chosen, for the rail's label. A project named by the URL was
+  // never automatic, whatever the page had to do to render it.
+  const projectSource: ScreenProjectSource | null = routeProject
+    ? "route"
+    : routeScreen?.project
+      ? routeScreen.source
+      : railProject
+        ? "preference"
+        : null;
 
   // R67 A-04 -- THE RAIL ADMITS AN AUTOMATIC CHOICE.
   //
@@ -679,8 +735,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // decided.
   const railLabelProject = useMemo(() => {
     if (!project) return null;
-    return routeScreen?.source === "auto" ? { id: project.id, name: `${project.name} (auto-selected)` } : project;
-  }, [project, routeScreen?.source]);
+    return projectSource === "auto" ? { id: project.id, name: `${project.name} (auto-selected)` } : project;
+  }, [project, projectSource]);
 
   // R67 A-01/A-02/A-06 -- THE SCREEN THE COMPOSER IS SERVING, derived from the
   // URL in ONE place (see use-screen-module.ts for the four questions it
@@ -1454,6 +1510,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // the rail is where that decision is made, so that is where the user
         // is sent, rather than being told "no" and left where they were.
         <div ref={railRef}>
+          {/* A-13: the URL's own ?projectId=, read behind the Suspense boundary
+              this repo already uses for useSearchParams(). Renders nothing. */}
+          <Suspense fallback={null}>
+            <RouteProjectIdReader onChange={setRouteProjectId} />
+          </Suspense>
           <TopRail
             brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
             organisationName={info?.organization?.name ?? "—"}
@@ -1477,6 +1538,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               // rail and the pane would disagree for as long as the user stayed
               // on the page, which is the defect this item exists to close.
               writeStoredProjectId(nextId);
+              // R67 A-13 -- ON A SCREEN WHOSE URL NAMES THE PROJECT, THE RAIL
+              // CHANGES THE URL. The URL is the single source of truth, so a
+              // rail that only wrote local state would appear to do nothing at
+              // all here: the next render would read the unchanged ?projectId=
+              // and put the old name straight back. Changing the URL is the
+              // rail doing exactly what it says.
+              if (routeProjectId) {
+                const params = new URLSearchParams(window.location.search);
+                if (nextId) params.set("projectId", nextId);
+                else params.delete("projectId");
+                const qs = params.toString();
+                router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
+                return;
+              }
               router.refresh();
             }}
             search={<SearchTrigger />}

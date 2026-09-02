@@ -67,6 +67,56 @@ export function pickProject<T extends { id: string }>({
   return { project: projects[0], source: "auto" };
 }
 
+// R67 WS-A (A-13) -- THE STRICT RULE, FOR SCREENS THAT BELONG TO ONE PROJECT.
+//
+// pickProject() above still ends by choosing for the user, because ~50 pages
+// call it and removing that last resort would land every multi-project org on
+// "No active projects yet" across all of them (A-05 kept it deliberately, and
+// made it admit to itself via source: "auto").
+//
+// A-13 rules that on a project's OWN screen that last resort is wrong: "The
+// URL wins", and "/schedule renders strictly from the URL's projectId and
+// shows the sentence 'Pick a project' when absent instead of defaulting to the
+// first project". Ten reloads of /schedule?projectId=X must render X, and a
+// /schedule with no project must ask rather than silently pick one and show
+// another project's board under the same heading.
+//
+// So this is the same question answered without the fallback, and it
+// distinguishes the two ways of having no project, because they need different
+// sentences: nothing was asked for (ask), and something was asked for that this
+// user cannot reach (say so).
+
+export type PickRouteProjectInput<T extends { id: string }> = {
+  /** The URL's own ?projectId=. */
+  requested?: string | null;
+  /** An object page's own project, e.g. the BOQ's or the meeting's. */
+  objectProjectId?: string | null;
+  /** Everything the user can actually reach. The only authority. */
+  projects: readonly T[];
+};
+
+export type PickRouteProjectResult<T> = {
+  project: T | null;
+  /** "route" whenever the URL or the object named a reachable project. */
+  source: Extract<ProjectSource, "route"> | null;
+  /** Nothing named a project at all -- the screen asks for one. */
+  missing: boolean;
+  /** A project WAS named and this user cannot reach it. */
+  unreachable: boolean;
+};
+
+export function pickRouteProject<T extends { id: string }>({
+  requested,
+  objectProjectId,
+  projects,
+}: PickRouteProjectInput<T>): PickRouteProjectResult<T> {
+  const named = (requested ?? objectProjectId ?? "").trim();
+  if (!named) return { project: null, source: null, missing: true, unreachable: false };
+  const found = projects.find((p) => p.id === named);
+  if (found) return { project: found, source: "route", missing: false, unreachable: false };
+  return { project: null, source: null, missing: false, unreachable: true };
+}
+
 /** The stored preference, or null. Never throws: a browser with storage
  *  blocked must still render a shell. */
 export function readStoredProjectId(): string | null {

@@ -3,6 +3,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import {
   PROJECT_PREFERENCE_KEY,
   pickProject,
+  pickRouteProject,
   type ProjectSource,
 } from "@/lib/project-preference";
 
@@ -67,6 +68,65 @@ export async function resolveSelectedProject(
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+    };
+  }
+}
+
+export type RouteProjectSelection = ProjectSelection & {
+  /** Nothing in the URL (or the object) named a project. The screen asks. */
+  missing: boolean;
+  /** A project WAS named and this user cannot reach it. */
+  unreachable: boolean;
+};
+
+/**
+ * R67 A-13 -- THE PROJECT A SCREEN THAT BELONGS TO ONE PROJECT MUST USE.
+ *
+ * resolveSelectedProject() above ends by choosing for the user, and keeps doing
+ * so for the ~50 pages that call it. On a project's own screen that is wrong:
+ * /schedule with no ?projectId= silently rendered the org's FIRST project's
+ * board under a heading naming that project, while the top rail could be saying
+ * something else entirely -- and nothing on screen admitted that the choice had
+ * been made for the user. The URL is the source of truth, so this resolves
+ * STRICTLY from it (or from the object the page is about) and returns nothing
+ * when it says nothing, letting the page ask instead of guess.
+ *
+ * `missing` and `unreachable` are separate because they are different
+ * sentences: one asks for a decision, the other reports a fact.
+ */
+export async function resolveRouteProject(
+  searchParams: { projectId?: string | null } | undefined,
+  objectProjectId?: string | null,
+  organizationId?: string | null
+): Promise<RouteProjectSelection> {
+  try {
+    const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard", {
+      organizationId: organizationId ?? undefined,
+    });
+    const projects = data.projects ?? [];
+    const picked = pickRouteProject({
+      requested: searchParams?.projectId ?? null,
+      objectProjectId: objectProjectId ?? null,
+      projects,
+    });
+    return {
+      project: picked.project,
+      projects,
+      errorMessage: null,
+      source: picked.source,
+      missing: picked.missing,
+      unreachable: picked.unreachable,
+    };
+  } catch (err) {
+    return {
+      project: null,
+      projects: [],
+      errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
+      source: null,
+      // A failed read says nothing about the URL, and must not be reported as
+      // "you did not pick a project" -- the error is the sentence to show.
+      missing: false,
+      unreachable: false,
     };
   }
 }
