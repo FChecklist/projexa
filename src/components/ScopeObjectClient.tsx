@@ -94,10 +94,32 @@ export default function ScopeObjectClient({
 
   useEffect(() => { load(); }, [boqId]);
 
-  // R67 lane I (I-03/I-05): the same PATCH now also carries category and the
-  // material/manpower split -- one write path for every per-line budget field,
+  /**
+   * R67 D-26: the inline budget cells confirm IN PLACE -- a "Saved" tick beside
+   * the cell for 2 s -- rather than firing a toast in the corner of the screen
+   * for every one of what can be four edits on a single row. A FAILURE is still
+   * loud, because a silently unsaved cost figure is the worst outcome here.
+   */
+  const [savedCells, setSavedCells] = useState<Record<string, true>>({});
+  function markSaved(cellKey: string) {
+    setSavedCells((prev) => ({ ...prev, [cellKey]: true }));
+    setTimeout(() => {
+      setSavedCells((prev) => {
+        const next = { ...prev };
+        delete next[cellKey];
+        return next;
+      });
+    }, 2000);
+  }
+
+  // R67 lane I (I-03/I-05) + D-26: ONE write path for every per-line budget
+  // field -- percentage, vendor, category and the material/manpower split --
   // not a second endpoint per column.
-  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null; category?: string | null; materialAmount?: number | null; manpowerAmount?: number | null }) {
+  async function saveLineItemBudget(
+    rowId: string,
+    patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null; category?: string | null; materialAmount?: number | null; manpowerAmount?: number | null },
+    cellKey: string
+  ) {
     setSavingRowId(rowId);
     try {
       const res = await fetch(`/api/scope/line-items/${rowId}`, {
@@ -106,7 +128,7 @@ export default function ScopeObjectClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't save");
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...data } : r)));
-      toast.success("Saved");
+      markSaved(cellKey);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
     } finally {
@@ -131,6 +153,20 @@ export default function ScopeObjectClient({
     } catch {
       toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
     }
+  }
+
+  /**
+   * One place that turns a money input's blur into a patch value: "" clears the
+   * cell back to NOT COSTED (null), a real number is a real number, and
+   * anything else is ignored rather than written as 0. The distinction matters
+   * everywhere downstream -- an en dash means "nobody has costed this", and
+   * "AED 0" means somebody costed it at zero.
+   */
+  function readMoneyInput(raw: string): number | null | undefined {
+    const trimmed = raw.trim();
+    if (trimmed === "") return null;
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : undefined;
   }
 
   async function runAction(action: "submit" | "approve" | "delete") {
@@ -255,9 +291,13 @@ export default function ScopeObjectClient({
               <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead className="text-right">Budget %</TableHead><TableHead className="text-right">Budget</TableHead>
-              {/* R67 I-03: the material/manpower split of this line's budget. */}
+              <TableHead>Vendor</TableHead>
+              {/* R67 I-03 / D-26: the three committed-cost columns, in the
+                  order Sumeet's own budget model names them -- vendor, then
+                  the material/manpower split. All three are MoneyCostCells, so
+                  a blank one reads as NOT COSTED rather than as zero. */}
+              <TableHead className="text-right">Vendor Amt</TableHead>
               <TableHead className="text-right">Material</TableHead><TableHead className="text-right">Manpower</TableHead>
-              <TableHead>Vendor</TableHead><TableHead className="text-right">Vendor Amt</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -297,62 +337,53 @@ export default function ScopeObjectClient({
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input
-                      type="number" disabled={saving} className="w-20 text-right" defaultValue={r.budgetPercentage ?? "25"}
+                      aria-label={`Budget % for ${r.description}`}
+                      type="number" disabled={saving} className="w-20 text-right tabular-nums" defaultValue={r.budgetPercentage ?? "25"}
                       onBlur={(e) => {
                         const pct = Number(e.target.value);
                         if (!Number.isFinite(pct)) return;
-                        saveLineItemBudget(r.id, { budgetPercentage: pct });
+                        saveLineItemBudget(r.id, { budgetPercentage: pct }, `${r.id}:budgetPercentage`);
                       }}
                     />
+                    <SavedTick shown={!!savedCells[`${r.id}:budgetPercentage`]} />
                   </TableCell>
-                  <TableCell className="text-right text-ct-muted">{withCurrency(currencyCode, budget)}</TableCell>
-                  {/* R67 I-03: material/manpower split. Blank means NOT SPLIT
-                      (the placeholder is a dash, never a 0) -- "unsplit" and
-                      "split as zero" are different facts and the report keeps
-                      them apart, so this editor must too. */}
-                  <TableCell className="text-right">
-                    <Input
-                      aria-label="Material amount"
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.materialAmount ?? ""} placeholder="—"
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        const amt = raw === "" ? null : Number(raw);
-                        if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { materialAmount: amt });
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Input
-                      aria-label="Manpower amount"
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.manpowerAmount ?? ""} placeholder="—"
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        const amt = raw === "" ? null : Number(raw);
-                        if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { manpowerAmount: amt });
-                      }}
-                    />
-                  </TableCell>
+                  <TableCell className="text-right text-ct-muted tabular-nums">{withCurrency(currencyCode, budget)}</TableCell>
                   <TableCell>
-                    <Select disabled={saving} value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId })}>
+                    <Select disabled={saving} value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId }, `${r.id}:vendorId`)}>
                       <SelectTrigger className="w-[150px]"><SelectValue placeholder="No vendor" /></SelectTrigger>
                       <SelectContent>
                         {vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    <SavedTick shown={!!savedCells[`${r.id}:vendorId`]} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Input
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.vendorAmount ?? ""} placeholder="—"
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        const amt = raw === "" ? null : Number(raw);
-                        if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { vendorAmount: amt });
-                      }}
-                    />
-                  </TableCell>
+                  <MoneyCostCell
+                    label={`Vendor amount for ${r.description}`}
+                    value={r.vendorAmount}
+                    currencyCode={currencyCode}
+                    disabled={saving}
+                    saved={!!savedCells[`${r.id}:vendorAmount`]}
+                    onCommit={(amount) => saveLineItemBudget(r.id, { vendorAmount: amount }, `${r.id}:vendorAmount`)}
+                    readMoneyInput={readMoneyInput}
+                  />
+                  <MoneyCostCell
+                    label={`Material amount for ${r.description}`}
+                    value={r.materialAmount}
+                    currencyCode={currencyCode}
+                    disabled={saving}
+                    saved={!!savedCells[`${r.id}:materialAmount`]}
+                    onCommit={(amount) => saveLineItemBudget(r.id, { materialAmount: amount }, `${r.id}:materialAmount`)}
+                    readMoneyInput={readMoneyInput}
+                  />
+                  <MoneyCostCell
+                    label={`Manpower amount for ${r.description}`}
+                    value={r.manpowerAmount}
+                    currencyCode={currencyCode}
+                    disabled={saving}
+                    saved={!!savedCells[`${r.id}:manpowerAmount`]}
+                    onCommit={(amount) => saveLineItemBudget(r.id, { manpowerAmount: amount }, `${r.id}:manpowerAmount`)}
+                    readMoneyInput={readMoneyInput}
+                  />
                 </TableRow>
               );
             })}
@@ -361,5 +392,56 @@ export default function ScopeObjectClient({
       )}
     </ObjectScreen>
     </>
+  );
+}
+
+/** R67 D-26: the in-place confirmation that replaced a toast per edited cell. */
+function SavedTick({ shown }: { shown: boolean }) {
+  if (!shown) return null;
+  return (
+    <span role="status" className="ml-1 text-[11px] text-px-success">✓ Saved</span>
+  );
+}
+
+/**
+ * R67 D-26: one committed-cost cell -- vendor, material or manpower. Prefixed
+ * with the org currency, right-aligned with tabular numerals so a column of
+ * them lines up, and EMPTY MEANS NOT COSTED: the placeholder is an en dash, and
+ * clearing the box writes null rather than 0. "AED 0" and "–" are different
+ * answers and this control keeps them different.
+ */
+function MoneyCostCell({
+  label, value, currencyCode, disabled, saved, onCommit, readMoneyInput,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+  currencyCode: string;
+  disabled: boolean;
+  saved: boolean;
+  onCommit: (amount: number | null) => void;
+  readMoneyInput: (raw: string) => number | null | undefined;
+}) {
+  return (
+    <TableCell className="text-right">
+      <span className="inline-flex items-center justify-end gap-1">
+        {currencyCode && <span className="text-[11px] text-px-muted">{currencyCode}</span>}
+        <Input
+          aria-label={label}
+          type="number"
+          inputMode="decimal"
+          min={0}
+          disabled={disabled}
+          className="w-24 text-right tabular-nums"
+          defaultValue={value ?? ""}
+          placeholder="–"
+          onBlur={(e) => {
+            const amount = readMoneyInput(e.target.value);
+            if (amount === undefined) return; // not a number -- leave the cell alone rather than writing 0
+            onCommit(amount);
+          }}
+        />
+      </span>
+      <SavedTick shown={saved} />
+    </TableCell>
   );
 }
