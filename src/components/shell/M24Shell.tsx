@@ -1428,6 +1428,30 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // authority. So this makes the hint real and recorded; making the
       // classifier PREFER a module's functions is a change to the pipeline and
       // belongs to WS-B's item, not to the shell.
+      //
+      // R67 A-22 -- WHY `mode` IS STILL IN THIS BODY.
+      //
+      // The item says to delete it, on the stated grounds that "the server
+      // ignores it". IT DOES NOT. Checked, not assumed, in compliance-tracker
+      // at src/app/api/v1/projexa/tasks/route.ts:49 -- `body.mode`, defaulting
+      // to "Projects" -- and followed through:
+      //
+      //   run-submission.ts:196/446  writes it to compliance.submissions.mode,
+      //                              which the same route's GET selects back
+      //                              (:140) and this shell reads on every row.
+      //   run-submission.ts:291      passes it into deriveChain(), where
+      //   derive-chain.ts:170        a chain with NO project takes its root
+      //                              from it: `All ${mode.toLowerCase()}`.
+      //   run-submission.ts:631      writes it to compliance.chain_history,
+      //                              the table A-08's "Do again" cards read.
+      //
+      // So deleting the field would not be a no-op: a chain the user started
+      // from Customers with no project selected would be recorded, and shown
+      // back to them in Task Master, rooted "All projects" -- a task filed
+      // under the wrong noun. What the item is really objecting to is a mode
+      // the USER sets and the app remembers, and that is gone: A-05 deleted the
+      // tabs, the state and the sessionStorage key, and deriveMode() reads the
+      // value off the chain itself. The value travels; the control does not.
       const hint = chainModule
         ? { module: chainModule.id, label: chainModule.label, route: chainModule.route }
         : undefined;
@@ -2072,7 +2096,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // module names, and keeps every demoted pill reachable under "All
           // modules" so nothing becomes a dead end.
           pills={
-            <div className="flex flex-col gap-1">
+            <>
               {/* R67 A-02 -- THE SCREEN'S OWN VERBS COME FIRST. On a module
                   route the composer already knows the module, so band 3 leads
                   with that module's real leaf actions -- each one navigating
@@ -2116,7 +2140,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                       : undefined
                 }
               />
-            </div>
+              {/* R67 A-22 -- AND NOTHING ELSE. This slot used to be a flex
+                  column with a gap around TWO rows: the module's leaves above
+                  the strip, and the strip. A-20 moved the leaves inside the
+                  strip as screenCards, which left a container with a gap and a
+                  single child -- a column of one, reserving space between rows
+                  that no longer exist. */}
+            </>
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
