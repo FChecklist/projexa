@@ -1,4 +1,4 @@
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 
 export type SelectableProject = { id: string; name: string };
 
@@ -29,8 +29,13 @@ export async function resolveSelectedProject(
   organizationId?: string | null
 ): Promise<ProjectSelection> {
   try {
+    // R67 D-04: this one call gates ~50 module pages -- nothing renders until
+    // it answers -- so it takes the screen budget (8 s) rather than the
+    // client's 20 s write ceiling. A hung upstream now costs a module page
+    // 8 s and an honest error, not 20 s of blank frame.
     const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard", {
       organizationId: organizationId ?? undefined,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
     });
     const projects = data.projects ?? [];
     const project = (requestedProjectId && projects.find((p) => p.id === requestedProjectId)) || projects[0] || null;
