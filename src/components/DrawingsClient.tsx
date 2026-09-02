@@ -24,6 +24,7 @@ import {
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import { readListFilters, writeListFilters } from "@/lib/list-view-state";
+import { takeScreenMessage } from "@/lib/screen-message";
 import DataLoadError from "@/components/DataLoadError";
 
 type Drawing = {
@@ -119,6 +120,14 @@ export default function DrawingsClient({
   const [knownDisciplines, setKnownDisciplines] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
 
+  // R67 D-11: the receipt handed over by a Remove or a Dispose on the object
+  // page ("AR-101 Rev B removed"). A persistent message in this screen's own
+  // band, read once, never a toast.
+  useEffect(() => {
+    const handed = takeScreenMessage("drawings.list");
+    if (handed) setMessages([handed]);
+  }, []);
+
   // Back restores the filters. Read AFTER mount, never during render: the
   // server has no sessionStorage, so reading it in the render body is a real
   // hydration mismatch on every back-navigation (the kit's ListScreen carries
@@ -139,7 +148,10 @@ export default function DrawingsClient({
         const rows = data.drawings ?? [];
         setDrawings(rows);
         setLoadError(null);
-        setMessages([]);
+        // Clear an error this load has just disproved -- but NOT a receipt the
+        // object page handed over a moment ago, which this load would otherwise
+        // wipe before it was ever read.
+        setMessages((prev) => prev.filter((m) => m.level !== "error"));
         // "Showing n of m" needs an m that no filter has touched, and the
         // Discipline options need every discipline the project has -- both
         // come from the unfiltered load, which always happens first.
