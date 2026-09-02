@@ -6,36 +6,59 @@
 // No draft lifecycle here (unlike Permits) -- a BOQ is created in one shot
 // with its full line-item set, matching the real backend's own
 // createBoq() contract; there is nothing meaningful to autosave mid-typing.
-import { useState } from "react";
+//
+// R67 D-24: the form no longer offers an enabled Save on an empty screen that
+// fails only after the click. missing[] is recomputed on every change and the
+// primary renders "Save (Title, Line 1)" disabled with those exact names --
+// the convention /labour/new already ships as "Save (Name, Daily Rate)".
+// Server errors go to the ObjectScreen messages band (a persistent, readable
+// place) instead of a toast that disappears before it can be acted on.
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { emptyLine, childPercentSum, collectLines, toPayloadLineItems, type LineItemDraft } from "@/lib/boq-helpers";
+import BoqLineGrid from "@/components/BoqLineGrid";
+import { fetchJson } from "@/lib/fetch-json";
+import {
+  TITLE_REQUIRED_MESSAGE, collectLines, emptyLine, missingBoqFields, toPayloadLineItems,
+  type LineItemDraft,
+} from "@/lib/boq-helpers";
 
 export default function ScopeCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
+  const [titleBlurred, setTitleBlurred] = useState(false);
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
+
+  useEffect(() => {
+    // The org-configurable trade list. A failure here is NOT fatal to creating
+    // a BOQ -- Category is optional -- so it degrades to an empty picklist
+    // rather than blocking the screen.
+    fetchJson<{ categories?: string[] }>(`/api/scope/categories?projectId=${encodeURIComponent(projectId)}`)
+      .then((data) => setCategories(data.categories ?? []))
+      .catch(() => setCategories([]));
+  }, [projectId]);
 
   function updateLine(index: number, field: keyof LineItemDraft, value: string) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
 
+  const missing = useMemo(() => missingBoqFields(title, lines), [title, lines]);
+  const titleError = titleBlurred && !title.trim() ? TITLE_REQUIRED_MESSAGE : null;
+
   async function createBoq() {
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
     const { valid: validLines, error: lineError } = collectLines(lines);
     if (lineError) {
-      toast.error(lineError);
+      setMessages([{ level: "error", text: lineError }]);
       return;
     }
     setSubmitting(true);
+    setMessages([]);
     try {
       const res = await fetch("/api/scope", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -53,10 +76,9 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       if (savedLineItems < validLines.length) {
         throw new Error(`Couldn't create BOQ — ${validLines.length} line item(s) were submitted but only ${savedLineItems} came back saved.`);
       }
-      toast.success("BOQ created");
       router.push(`/scope/${savedId}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create BOQ");
+      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't create BOQ" }]);
     } finally {
       setSubmitting(false);
     }
@@ -71,48 +93,38 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       onSave={createBoq}
       onCancel={() => router.push(`/scope?projectId=${projectId}`)}
       onBack={() => router.push(`/scope?projectId=${projectId}`)}
-      saveDisabled={submitting}
-      saveDisabledReason={submitting ? "Creating…" : undefined}
-      messages={[]}
+      saveDisabled={missing.length > 0 || submitting}
+      saveDisabledReason={submitting ? "Creating…" : missing.length > 0 ? missing.join(", ") : undefined}
+      messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
-          <Label>Title</Label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Civil Works - Phase 1" />
+          <Label htmlFor="boq-title">Title (required)</Label>
+          <Input
+            id="boq-title"
+            aria-required="true"
+            aria-invalid={!!titleError}
+            aria-describedby={titleError ? "boq-title-error" : undefined}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => setTitleBlurred(true)}
+            placeholder="e.g. Civil Works - Phase 1"
+          />
+          {titleError && (
+            <p id="boq-title-error" role="alert" className="flex items-start gap-1 text-[11px] text-px-error">
+              <span aria-hidden="true">⚠</span><span>{titleError}</span>
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Line Items</Label>
-          {lines.map((line, i) => {
-            const childSum = childPercentSum(lines, line.itemCode);
-            return (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
-                <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
-                <Input
-                  className="w-[90px] shrink-0" placeholder="Qty" type="number" value={line.quantity}
-                  onChange={(e) => updateLine(i, "quantity", e.target.value)}
-                  disabled={!!line.parentItemCode?.trim()}
-                  title={line.parentItemCode?.trim() ? "A sub-task's quantity comes from its root line -- this field is not used" : undefined}
-                />
-                <Input
-                  className="w-[90px] shrink-0" placeholder="Rate" type="number" value={line.rate}
-                  onChange={(e) => updateLine(i, "rate", e.target.value)}
-                  disabled={!!line.parentItemCode?.trim()}
-                  title={line.parentItemCode?.trim() ? "A sub-task's rate is derived from its root line's rate x breakdown % -- this field is not used" : undefined}
-                />
-                <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateLine(i, "itemCode", e.target.value)} />
-                <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateLine(i, "parentItemCode", e.target.value)} />
-                <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)} />
-                {childSum != null && <span className="text-xs text-ct-muted">{childSum}% total</span>}
-                <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))} disabled={lines.length === 1}>
-                  ✕
-                </Button>
-              </div>
-            );
-          })}
-          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
-            + Add Line
-          </Button>
+          <BoqLineGrid
+            lines={lines}
+            categories={categories}
+            onUpdate={updateLine}
+            onRemove={(index) => setLines((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)))}
+            onAdd={() => setLines((prev) => [...prev, emptyLine()])}
+          />
         </div>
       </div>
     </ObjectScreen>

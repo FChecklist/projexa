@@ -4,18 +4,21 @@
 // "New Revision" Dialog popup with a real screen. Loads the CURRENT BOQ's
 // own line items to seed the form (a revision starts from the existing
 // scope, not blank), same as the old dialog's openRevisionDialog() did.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 D-24/D-27: the PROJEXA-local ObjectScreen fork (programme decision
+// D-09), so this screen gets the same disabled-with-reason primary the create
+// screen uses and its server errors land in the persistent messages band.
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import BoqLineGrid from "@/components/BoqLineGrid";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type LineItemDraft,
-  emptyLine, toDrafts, childPercentSum, collectLines, toPayloadLineItems,
+  TITLE_REQUIRED_MESSAGE, emptyLine, toDrafts, collectLines, missingBoqFields, toPayloadLineItems,
 } from "@/lib/boq-helpers";
 
 export default function ScopeReviseClient({ boqId }: { boqId: string }) {
@@ -23,9 +26,12 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   const [boq, setBoq] = useState<Boq | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [titleBlurred, setTitleBlurred] = useState(false);
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [scopeBlock, setScopeBlock] = useState<string | null>(null);
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
 
   async function load() {
     try {
@@ -35,6 +41,11 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       const rows = data.lineItems ?? [];
       setLines(rows.length > 0 ? toDrafts(rows) : [emptyLine()]);
       setLoadError(null);
+      // Optional picklist -- a failure degrades to an empty list, never blocks
+      // the revision.
+      fetchJson<{ categories?: string[] }>(`/api/scope/categories?projectId=${encodeURIComponent(data.projectId)}`)
+        .then((c) => setCategories(c.categories ?? []))
+        .catch(() => setCategories([]));
     } catch (err) {
       setBoq(null);
       setLoadError(errorMessage(err, "Couldn't load the current scope to revise"));
@@ -47,14 +58,18 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
 
+  const missing = useMemo(() => missingBoqFields(title, lines), [title, lines]);
+  const titleError = titleBlurred && !title.trim() ? TITLE_REQUIRED_MESSAGE : null;
+
   async function submitRevision(allowScopeReductionOverride = false) {
     const { valid: validLines, error: lineError } = collectLines(lines);
     if (lineError) {
-      toast.error(lineError);
+      setMessages([{ level: "error", text: lineError }]);
       return;
     }
     setSubmitting(true);
     setScopeBlock(null);
+    setMessages([]);
     try {
       const res = await fetch(`/api/scope/${boqId}/revisions`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -69,10 +84,9 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
         return;
       }
       if (!res.ok) throw new Error(data.error ?? "Failed to create revision");
-      toast.success(allowScopeReductionOverride ? "Revision created (override applied)" : "Revision created");
       router.push(`/scope/${data.id ?? boqId}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create revision");
+      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't create revision" }]);
     } finally {
       setSubmitting(false);
     }
@@ -97,52 +111,50 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       onSave={() => submitRevision(false)}
       onCancel={() => router.push(`/scope/${boqId}`)}
       onBack={() => router.push(`/scope/${boqId}`)}
-      saveDisabled={submitting}
-      saveDisabledReason={submitting ? "Creating…" : undefined}
-      messages={[]}
+      saveDisabled={missing.length > 0 || submitting}
+      saveDisabledReason={submitting ? "Creating…" : missing.length > 0 ? missing.join(", ") : undefined}
+      messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5"><Label>Revision Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
+        <div className="space-y-1.5">
+          <Label htmlFor="revision-title">Revision Title (required)</Label>
+          <Input
+            id="revision-title"
+            aria-required="true"
+            aria-invalid={!!titleError}
+            aria-describedby={titleError ? "revision-title-error" : undefined}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => setTitleBlurred(true)}
+            placeholder="e.g. Civil Works - Phase 1"
+          />
+          {titleError && (
+            <p id="revision-title-error" role="alert" className="flex items-start gap-1 text-[11px] text-px-error">
+              <span aria-hidden="true">⚠</span><span>{titleError}</span>
+            </p>
+          )}
+        </div>
         <div className="space-y-2">
           <Label>Line Items</Label>
-          {lines.map((line, i) => {
-            const childSum = childPercentSum(lines, line.itemCode);
-            return (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <Input className="min-w-[180px] flex-1" placeholder="Description" value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} />
-                <Input className="w-[80px] shrink-0" placeholder="Unit" value={line.unit} onChange={(e) => updateLine(i, "unit", e.target.value)} />
-                <Input
-                  className="w-[90px] shrink-0" placeholder="Qty" type="number" value={line.quantity}
-                  onChange={(e) => updateLine(i, "quantity", e.target.value)}
-                  disabled={!!line.parentItemCode?.trim()}
-                  title={line.parentItemCode?.trim() ? "A sub-task's quantity comes from its root line -- this field is not used" : undefined}
-                />
-                <Input
-                  className="w-[90px] shrink-0" placeholder="Rate" type="number" value={line.rate}
-                  onChange={(e) => updateLine(i, "rate", e.target.value)}
-                  disabled={!!line.parentItemCode?.trim()}
-                  title={line.parentItemCode?.trim() ? "A sub-task's rate is derived from its root line's rate x breakdown % -- this field is not used" : undefined}
-                />
-                <Input className="w-[110px] shrink-0" placeholder="Item Code" value={line.itemCode ?? ""} onChange={(e) => updateLine(i, "itemCode", e.target.value)} />
-                <Input className="w-[130px] shrink-0" placeholder="Parent Item Code" value={line.parentItemCode ?? ""} onChange={(e) => updateLine(i, "parentItemCode", e.target.value)} />
-                <Input className="w-[110px] shrink-0" placeholder="Breakdown %" type="number" value={line.breakdownPercentage ?? ""} onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)} />
-                {childSum != null && <span className="text-xs text-ct-muted">{childSum}% total</span>}
-                <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}>✕</Button>
-              </div>
-            );
-          })}
-          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, emptyLine()])}>+ Add Line</Button>
+          <BoqLineGrid
+            lines={lines}
+            categories={categories}
+            onUpdate={updateLine}
+            onRemove={(index) => setLines((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)))}
+            onAdd={() => setLines((prev) => [...prev, emptyLine()])}
+          />
           <p className="text-xs text-ct-muted">Removing a line, or reducing its quantity/rate, is blocked if that item is already recorded as complete on site.</p>
         </div>
         {scopeBlock && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="space-y-2 p-3 text-sm text-px-error">
-              <p>{scopeBlock}</p>
+          <div className="rounded-md border border-px-error-border bg-px-error-light p-3">
+            <p className="text-sm text-px-error">{scopeBlock}</p>
+            <div className="mt-2 flex items-center">
+              <div className="flex-1" />
               <Button size="sm" variant="destructive" onClick={() => submitRevision(true)} disabled={submitting}>
                 Apply anyway (override)
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
       </div>
     </ObjectScreen>
