@@ -39,7 +39,7 @@
 // (api/construction-materials/cost-report/route.ts) had been calling a
 // VERIDIAN path that 502'd for the same reason as Inbound: nothing
 // implemented it on the other side either, until now.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,9 +48,10 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import SkeletonTable from "@/components/SkeletonTable";
 import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateNumeric } from "@/lib/format-date";
 import { formatMoney, formatQty, resolveCurrencyCode } from "@/lib/format-money";
@@ -114,6 +115,21 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
 // still goes through the object page's own Edit.
 const INLINE_EDITABLE_FIELDS = new Set(["unit", "unitCost"]);
 
+// R67 D-37: how long an "Opening…" state is allowed to stand before the screen
+// admits the navigation is not arriving. A prefetched route lands in tens of
+// milliseconds; a cold one on a slow site connection can take seconds. Eight is
+// long enough not to fire on a genuinely slow-but-working push, short enough
+// that a user is not left staring at a word that will never change.
+const NAVIGATION_TIMEOUT_MS = 8000;
+const NAVIGATION_FAILED_MESSAGE = "Could not open — try again";
+
+// R67 D-37 (audit R-099): the Cost Report showed "Avg Unit Cost 435" beside a
+// master that says 420 and never explained the disagreement, so it read as one
+// of the two numbers being wrong. They are different facts, and the report now
+// says so in one line and shows the difference as its own column.
+const COST_REPORT_NOTE =
+  "Avg Unit Cost is the average price actually received; the master's Unit Cost is the planned price";
+
 export default function MaterialsClient({
   projectId,
   projectName,
@@ -136,9 +152,10 @@ export default function MaterialsClient({
   const [materialFilter, setMaterialFilter] = useState(initialMaterialId ?? "");
   const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  // R67 D-35: no click may be silent. The row that was clicked shows
-  // "Opening…" until the route actually changes.
+  // R67 D-35/D-37: no click may be silent. The row that was clicked shows
+  // "Opening…" until the route actually changes; so does the header button.
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [openingNew, setOpeningNew] = useState(false);
   const [editing, setEditing] = useState<{ id: string; field: "unit" | "unitCost" } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [footerMessage, setFooterMessage] = useState<string | null>(null);
@@ -146,42 +163,106 @@ export default function MaterialsClient({
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [report, setReport] = useState<CostReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // R67 D-37: ONE loading flag used to gate all three tabs, so the Material
+  // Master -- the tab the user is looking at -- waited for the receipts ledger
+  // and the cost-report aggregate, two tabs they had not opened. Three flags,
+  // each cleared by its own promise, so the master paints as soon as the master
+  // arrives.
+  const [loadingMaterials, setLoadingMaterials] = useState(true);
+  const [loadingReceipts, setLoadingReceipts] = useState(true);
+  const [loadingReport, setLoadingReport] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
 
-  async function load() {
-    setLoading(true);
-    const [matR, recR, repR, venR] = await Promise.allSettled([
-      fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`),
-    ]);
+  const loadMaterials = useCallback(async () => {
+    setLoadingMaterials(true);
+    try {
+      const data = await fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`);
+      setMaterials(data.materials ?? []);
+      setLoadErrors((prev) => ({ ...prev, materials: undefined }));
+    } catch (err) {
+      setMaterials([]);
+      setLoadErrors((prev) => ({ ...prev, materials: errorMessage(err, "Material master") }));
+    } finally {
+      setLoadingMaterials(false);
+    }
+  }, [projectId]);
 
-    const errors: { materials?: string; receipts?: string; report?: string } = {};
-    if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
-    else { setMaterials([]); errors.materials = errorMessage(matR.reason, "Material master"); }
+  const loadReceipts = useCallback(async () => {
+    setLoadingReceipts(true);
+    try {
+      const data = await fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`);
+      setReceipts(data.receipts ?? []);
+      setLoadErrors((prev) => ({ ...prev, receipts: undefined }));
+    } catch (err) {
+      setReceipts([]);
+      setLoadErrors((prev) => ({ ...prev, receipts: errorMessage(err, "Inbound receipts") }));
+    } finally {
+      setLoadingReceipts(false);
+    }
+  }, [projectId]);
 
-    if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
-    else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
+  const loadReport = useCallback(async () => {
+    setLoadingReport(true);
+    try {
+      const data = await fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`);
+      setReport(data.report ?? []);
+      setLoadErrors((prev) => ({ ...prev, report: undefined }));
+    } catch (err) {
+      setReport([]);
+      setLoadErrors((prev) => ({ ...prev, report: errorMessage(err, "Cost report") }));
+    } finally {
+      setLoadingReport(false);
+    }
+  }, [projectId]);
 
-    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
-    else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
+  // R67 D-36: the vendor list is a display-only lookup for the Inbound
+  // tab's new Vendor column -- its failure degrades to an en-dash, never to
+  // an alert, the same posture LabourClient takes.
+  const loadVendors = useCallback(async () => {
+    try {
+      const data = await fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`);
+      setVendors(data.vendors ?? []);
+    } catch {
+      setVendors([]);
+    }
+  }, []);
 
-    // R67 D-36: the vendor list is a display-only lookup for the Inbound
-    // tab's new Vendor column -- its failure degrades to an en-dash, never to
-    // an alert, the same posture LabourClient takes.
-    setVendors(venR.status === "fulfilled" ? venR.value.vendors ?? [] : []);
+  useEffect(() => {
+    void loadMaterials();
+    void loadReceipts();
+    void loadReport();
+    void loadVendors();
+  }, [loadMaterials, loadReceipts, loadReport, loadVendors]);
 
-    setLoadErrors(errors);
-    setLoading(false);
-  }
+  // R67 D-37: an "Opening…" that never resolves is worse than no feedback at
+  // all -- it tells the user the click landed when it did not. The timer is
+  // cleared by the route change below; if the route never changes, it says so.
+  const navigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { load(); }, [projectId]);
+  const clearNavigationState = useCallback(() => {
+    if (navigationTimer.current) {
+      clearTimeout(navigationTimer.current);
+      navigationTimer.current = null;
+    }
+    setOpeningId(null);
+    setOpeningNew(false);
+  }, []);
 
   // Cleared when the route actually changes, so an "Opening…" row can never
   // outlive the navigation it was announcing.
-  useEffect(() => { setOpeningId(null); }, [pathname]);
+  useEffect(() => { clearNavigationState(); }, [pathname, clearNavigationState]);
+  useEffect(() => () => { if (navigationTimer.current) clearTimeout(navigationTimer.current); }, []);
+
+  const navigate = useCallback((href: string) => {
+    if (navigationTimer.current) clearTimeout(navigationTimer.current);
+    navigationTimer.current = setTimeout(() => {
+      navigationTimer.current = null;
+      setOpeningId(null);
+      setOpeningNew(false);
+      setFooterMessage(NAVIGATION_FAILED_MESSAGE);
+    }, NAVIGATION_TIMEOUT_MS);
+    router.push(href);
+  }, [router]);
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
@@ -228,8 +309,15 @@ export default function MaterialsClient({
   }
 
   function openMaterial(materialId: string) {
+    setFooterMessage(null);
     setOpeningId(materialId);
-    router.push(`/materials/${materialId}`);
+    navigate(`/materials/${materialId}`);
+  }
+
+  function openNewMaterial() {
+    setFooterMessage(null);
+    setOpeningNew(true);
+    navigate(`/materials/new?projectId=${projectId}`);
   }
 
   function startInlineEdit(material: Material, field: "unit" | "unitCost") {
@@ -276,19 +364,22 @@ export default function MaterialsClient({
   const headerActions: PageHeadingAction[] = [
     {
       label: filterOpen ? "Hide filter" : "Filter",
-      disabledReason: loading ? "Loading…" : materials.length === 0 ? "No materials to filter" : undefined,
+      disabledReason: loadingMaterials ? "Loading…" : materials.length === 0 ? "No materials to filter" : undefined,
       onClick: () => setFilterOpen((open) => !open),
     },
     {
       label: "Export",
-      disabledReason: loading ? "Loading…" : visibleMaterials.length === 0 ? "No rows" : undefined,
+      disabledReason: loadingMaterials ? "Loading…" : visibleMaterials.length === 0 ? "No rows" : undefined,
       onClick: exportMaster,
     },
     {
-      label: "+ New Material",
+      // R67 D-37: the label itself carries the in-flight state, so the click is
+      // never silent while the route resolves.
+      label: openingNew ? "Opening…" : "+ New Material",
       variant: "default",
-      disabledReason: loading ? "Loading…" : undefined,
-      onClick: () => router.push(`/materials/new?projectId=${projectId}`),
+      disabledReason: loadingMaterials ? "Loading…" : undefined,
+      disabled: openingNew,
+      onClick: openNewMaterial,
       testId: "materials-new",
     },
   ];
@@ -324,12 +415,24 @@ export default function MaterialsClient({
       <TabsContent value="master" className="space-y-4">
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            {loadingMaterials ? (
+              <SkeletonTable
+                headers={[...columns.map((col) => col.label), "Open"]}
+                rows={3}
+                caption={`Loading materials for ${projectName}…`}
+              />
             ) : loadErrors.materials ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={loadMaterials} /></div>
             ) : materials.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
+              // R67 D-37: an empty state that only says "nothing here" leaves
+              // the user to find the way in themselves. Every empty tab now
+              // carries its own next step.
+              <p className="flex flex-wrap items-center justify-center gap-1 py-10 text-center text-sm text-px-muted">
+                <span>No materials in the master yet —</span>
+                <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>
+                  {openingNew ? "Opening…" : "+ New Material"}
+                </Button>
+              </p>
             ) : visibleMaterials.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No materials match this filter.</p>
             ) : (
@@ -430,9 +533,6 @@ export default function MaterialsClient({
             )}
           </CardContent>
         </Card>
-        {footerMessage && (
-          <p role="alert" className="text-[13px] text-px-error">{footerMessage}</p>
-        )}
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
@@ -455,21 +555,55 @@ export default function MaterialsClient({
             </p>
           ) : <span />}
           {/* Real screen navigation (2026-08-30) -- replaces the old
-              "Record Receipt" Dialog popup with a real create route. */}
-          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
+              "Record Receipt" Dialog popup with a real create route.
+              R67 D-37: the button stays VISIBLE when the master is empty --
+              hiding it makes the module look like it has no receipts feature at
+              all -- and says what has to happen first, as a link to the place
+              it happens. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              data-testid="materials-record-receipt"
+              disabled={loadingMaterials || materials.length === 0}
+              onClick={() => { setFooterMessage(null); navigate(`/materials/receipts/new?projectId=${projectId}`); }}
+            >
+              <Plus className="size-4" /> Record Receipt
+            </Button>
+            {!loadingMaterials && materials.length === 0 && (
+              <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>
+                Add a material first
+              </Button>
+            )}
+          </div>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            {loadingReceipts ? (
+              <SkeletonTable
+                headers={["Date", "Material", "Vendor", "Reference", "Quantity", "Unit Cost"]}
+                rows={3}
+                caption={`Loading receipts for ${projectName}…`}
+              />
             ) : loadErrors.receipts ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={loadReceipts} /></div>
             ) : visibleReceipts.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">
-                {materialFilter
-                  ? `No receipts recorded for ${materialName(materialFilter)} yet.`
-                  : "No material movements recorded yet."}
-              </p>
+              materialFilter ? (
+                <p className="py-10 text-center text-sm text-px-muted">
+                  {`No receipts recorded for ${materialName(materialFilter)} yet.`}
+                </p>
+              ) : (
+                <p className="flex flex-wrap items-center justify-center gap-1 py-10 text-center text-sm text-px-muted">
+                  <span>No receipts recorded yet —</span>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0"
+                    disabled={materials.length === 0}
+                    onClick={() => { setFooterMessage(null); navigate(`/materials/receipts/new?projectId=${projectId}`); }}
+                  >
+                    Record Receipt
+                  </Button>
+                </p>
+              )
             ) : (
               <Table>
                 <TableHeader>
@@ -493,7 +627,7 @@ export default function MaterialsClient({
                         // from the totals, not from the record.
                         className={`cursor-pointer hover:bg-px-cloud/40 ${voided ? "line-through opacity-70" : ""}`}
                         title={voided ? `Voided — ${r.voidReason ?? "no reason recorded"}` : undefined}
-                        onClick={() => router.push(`/materials/receipts/${r.id}`)}
+                        onClick={() => { setFooterMessage(null); navigate(`/materials/receipts/${r.id}`); }}
                       >
                         <TableCell className="text-px-muted">{formatDateNumeric(r.receivedDate)}</TableCell>
                         <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
@@ -512,14 +646,21 @@ export default function MaterialsClient({
       </TabsContent>
 
       <TabsContent value="cost-report" className="space-y-4">
+        <p className="text-[13px] text-px-muted">{COST_REPORT_NOTE}</p>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            {loadingReport ? (
+              <SkeletonTable
+                headers={["Material", "Unit", "Total Qty Received", "Total Cost", "Avg Unit Cost", "Master Unit Cost", "Variance vs master"]}
+                rows={3}
+                caption={`Loading the cost report for ${projectName}…`}
+              />
             ) : loadErrors.report ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={loadReport} /></div>
             ) : report.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
+              <p className="py-10 text-center text-sm text-px-muted">
+                No receipts to report yet — the Cost Report fills in as receipts are recorded
+              </p>
             ) : (
               <Table>
                 <TableHeader>
@@ -529,29 +670,53 @@ export default function MaterialsClient({
                     <TableHead className="text-right">Total Qty Received</TableHead>
                     <TableHead className="text-right">Total Cost</TableHead>
                     <TableHead className="text-right">Avg Unit Cost</TableHead>
+                    <TableHead className="text-right">Master Unit Cost</TableHead>
+                    <TableHead className="text-right">Variance vs master</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.map((r) => (
-                    <TableRow key={r.materialId}>
-                      <TableCell className="font-medium">
-                        {/* R67 D-35: every reported number can be opened down
-                            to the transactions behind it. */}
-                        <button
-                          type="button"
-                          className="text-[color:var(--color-veri-status-context)] underline underline-offset-2"
-                          onClick={() => openMaterialReceipts(r.materialId)}
-                        >
-                          {r.name}
-                        </button>
-                        {r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}
-                      </TableCell>
-                      <TableCell>{r.unit}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(r.totalCost, currencies)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(r.averageUnitCost, currencies)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {report.map((r) => {
+                    const master = materials.find((m) => m.id === r.materialId);
+                    const masterCost = master ? Number(master.unitCost) : NaN;
+                    const variance = Number.isFinite(masterCost) ? r.averageUnitCost - masterCost : null;
+                    return (
+                      <TableRow key={r.materialId}>
+                        <TableCell className="font-medium">
+                          {/* R67 D-35: every reported number can be opened down
+                              to the transactions behind it. */}
+                          <button
+                            type="button"
+                            className="text-[color:var(--color-veri-status-context)] underline underline-offset-2"
+                            onClick={() => openMaterialReceipts(r.materialId)}
+                          >
+                            {r.name}
+                          </button>
+                          {r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}
+                        </TableCell>
+                        <TableCell>{r.unit}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMoney(r.totalCost, currencies)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMoney(r.averageUnitCost, currencies)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {master ? formatMoney(master.unitCost, currencies) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {variance === null ? (
+                            "—"
+                          ) : variance > 0 ? (
+                            // Never colour alone: the clay glyph AND the word.
+                            <span className="text-[color:var(--color-veri-status-needs-you)]">
+                              ▲ over {formatMoney(variance, currencies)}
+                            </span>
+                          ) : variance < 0 ? (
+                            <span className="text-px-muted">▼ under {formatMoney(Math.abs(variance), currencies)}</span>
+                          ) : (
+                            <span className="text-px-muted">on plan</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -559,6 +724,15 @@ export default function MaterialsClient({
         </Card>
       </TabsContent>
       </Tabs>
+
+      {/* R67 D-35/D-37: the persistent footer message area. An inline-edit
+          failure or a navigation that never arrived is reported HERE, where it
+          stays until the next action, rather than in a toast that has gone by
+          the time the user looks up. It sits outside the Tabs so a message
+          raised on one tab is not hidden by switching to another. */}
+      {footerMessage && (
+        <p role="alert" className="text-[13px] text-px-error">{footerMessage}</p>
+      )}
     </div>
   );
 }

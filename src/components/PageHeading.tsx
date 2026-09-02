@@ -38,6 +38,13 @@ export type PageHeadingAction = {
   onClick?: () => void;
   /** When set, the action is disabled and the reason is shown beside the label. */
   disabledReason?: string;
+  /**
+   * R67 D-37: disabled WITHOUT a parenthesised reason, for the one case where
+   * the label itself already says what is happening -- an in-flight
+   * "Opening…". A reason in brackets there would read as an explanation for a
+   * refusal ("Opening… (Opening…)") rather than as progress.
+   */
+  disabled?: boolean;
   variant?: "default" | "outline";
   /** Optional stable hook for acceptance tests. */
   testId?: string;
@@ -77,7 +84,7 @@ export function PageHeading({
               size="sm"
               variant={action.variant ?? "outline"}
               data-testid={action.testId}
-              disabled={!!action.disabledReason}
+              disabled={!!action.disabledReason || !!action.disabled}
               title={action.disabledReason}
               onClick={action.onClick}
             >

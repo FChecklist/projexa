@@ -12,9 +12,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { FormField, type FieldErrors } from "@/components/ui/form-field";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { NAME_REQUIRED_MESSAGE, UNIT_REQUIRED_MESSAGE } from "@/components/MaterialCreateClient";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Material = { id: string; projectId: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
@@ -27,6 +28,10 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "" });
+  // R67 D-37: the same two required fields as the create screen, validated the
+  // same way, in the same words -- edit mode used to fail with a toast that
+  // named neither field.
+  const [errors, setErrors] = useState<FieldErrors<"name" | "unit">>({});
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
@@ -45,11 +50,24 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   function startEdit() {
     if (!material) return;
     setDraft({ name: material.name, spec: material.spec ?? "", unit: material.unit, unitCost: material.unitCost });
+    setErrors({});
     setMode("edit");
   }
 
+  function validateOnBlur(field: "name" | "unit") {
+    const value = field === "name" ? draft.name : draft.unit;
+    const message = field === "name" ? NAME_REQUIRED_MESSAGE : UNIT_REQUIRED_MESSAGE;
+    setErrors((prev) => ({ ...prev, [field]: value.trim() ? undefined : message }));
+  }
+
   async function saveEdit() {
-    if (!draft.name.trim() || !draft.unit.trim()) { toast.error("Name and unit are required"); return; }
+    if (!draft.name.trim() || !draft.unit.trim()) {
+      setErrors({
+        name: draft.name.trim() ? undefined : NAME_REQUIRED_MESSAGE,
+        unit: draft.unit.trim() ? undefined : UNIT_REQUIRED_MESSAGE,
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/materials/master/${materialId}`, {
@@ -120,10 +138,18 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     >
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Spec (optional)</Label><Input value={draft.spec} onChange={(e) => setDraft((d) => ({ ...d, spec: e.target.value }))} placeholder="e.g. 43-grade OPC" /></div>
-          <div className="space-y-1.5"><Label>Unit</Label><Input value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} placeholder="e.g. bag, cum, kg" /></div>
-          <div className="space-y-1.5"><Label>Unit Cost (optional)</Label><Input type="number" value={draft.unitCost} onChange={(e) => setDraft((d) => ({ ...d, unitCost: e.target.value }))} /></div>
+          <FormField label="Name" required error={errors.name}>
+            {(f) => <Input {...f} value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} onBlur={() => validateOnBlur("name")} />}
+          </FormField>
+          <FormField label="Spec (optional)">
+            {(f) => <Input {...f} value={draft.spec} onChange={(e) => setDraft((d) => ({ ...d, spec: e.target.value }))} placeholder="e.g. 43-grade OPC" />}
+          </FormField>
+          <FormField label="Unit" required error={errors.unit}>
+            {(f) => <Input {...f} value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} onBlur={() => validateOnBlur("unit")} placeholder="e.g. bag, cum, kg" />}
+          </FormField>
+          <FormField label="Unit Cost (optional)">
+            {(f) => <Input {...f} type="number" value={draft.unitCost} onChange={(e) => setDraft((d) => ({ ...d, unitCost: e.target.value }))} />}
+          </FormField>
         </div>
       )}
     </ObjectScreen>
