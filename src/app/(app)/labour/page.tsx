@@ -27,8 +27,10 @@ async function resolveLabourListColumns(organizationId: string | null): Promise<
   }
 }
 
-export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; imported?: string }> }) {
+  // R67 D-34: `imported` is the confirmation the bulk-import screen hands over;
+  // that screen unmounts with the navigation, so it cannot carry its own.
+  const { projectId, tab, imported } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveLabourListColumns(organizationId);
@@ -45,7 +47,7 @@ export default async function LabourPage({ searchParams }: { searchParams: Promi
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
+        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} importedNotice={imported ?? null} />}
       </div>
     </>
   );
