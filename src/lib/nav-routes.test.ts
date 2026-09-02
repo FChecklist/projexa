@@ -143,6 +143,12 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // href with no id in it into the sidebar.
   "/customers/[id]",
   "/customers/new",
+  // R67 D-07: the Design Studio timesheet is the same hours the Schedule
+  // module's Timesheet tab lists, laid out in Sumeet's own columns -- reached
+  // from the "Open in Design Studio" control on that tab (see
+  // ScheduleTimesheetClient.tsx), not as a second top-level nav entry for one
+  // module's data.
+  "/design-studio",
   "/permits/[id]",
   "/permits/new",
   "/floor-plans/[id]",

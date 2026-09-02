@@ -50,8 +50,19 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
 
   // Real screen navigation (2026-08-30) -- replaces the old "Log Time"
   // Dialog popup with a real create route.
+  //
+  // R67 D-07: the same hours also have a designer-facing layout -- the Design
+  // Studio timesheet's day grid, in Sumeet's own columns with the approval
+  // state on each row. It is the same read, so this is a view switch and not a
+  // second module; that link is also what makes /design-studio reachable by
+  // clicking (nav-routes.test.ts's C01 REACHABLE guard).
   const logTimeButton = (
-    <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
+    <div className="flex items-center gap-2">
+      <Button variant="outline" onClick={() => router.push(`/design-studio?projectId=${projectId}`)}>
+        Open in Design Studio
+      </Button>
+      <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
+    </div>
   );
 
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
