@@ -26,6 +26,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
+  OptionChain,
   TaskMaster,
   TopRail,
   cutChainFrom,
@@ -34,6 +35,7 @@ import {
   type Chain,
   type ChainLoad,
   type ChainMode,
+  type ChainOption,
   type TaskRow,
   type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
@@ -67,7 +69,13 @@ import {
   type CardPreconditionId,
   type RankedEntry,
 } from "@/lib/card-catalogue";
-import { PILL_CATALOGUE, pillEntryById, shortcutLabel, type PillEntry } from "@/lib/pill-catalogue";
+import {
+  PILL_CATALOGUE,
+  matchPillShortcut,
+  pillEntryById,
+  shortcutLabel,
+  type PillEntry,
+} from "@/lib/pill-catalogue";
 import {
   canSend as canSendFrom,
   chainPrompt,
@@ -1369,6 +1377,61 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // on the strength of "not loaded yet" would greet returning users too.
   const firstRunHint = tasksLoaded && counts.done === 0 && !tasksError;
 
+  // R67 A-12 -- THE KEY HINTS ARE REAL, AND THEY WORK WHILE THE BOX IS FOCUSED.
+  //
+  // The chord is Alt+<letter>, never the bare letter: the control directly
+  // below this row is a textarea people type sentences into, and a bare "P"
+  // that jumped to Permits would make every word beginning with P unwritable.
+  // The pill therefore renders "Alt+P" rather than "P" -- a hint that omits the
+  // modifier is a shortcut that appears not to work. The listener is on the
+  // window precisely so that focus in the composer does not disable it, which
+  // is the case the item names.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const entry = matchPillShortcut(event);
+      if (!entry) return;
+      event.preventDefault();
+      onModuleEntrySelect(entry.id);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onModuleEntrySelect]);
+
+  // R67 A-12 -- BAND 2: THE SECOND LEVEL, UNDER THE STRIP.
+  //
+  // After a module pill narrows the sentence to one noun, this is where its
+  // VERBS appear -- Permits › New · Expiring soon · Open -- so the user walks
+  // ENTITY > ACTION > STEP one level at a time and watches the strip fill in.
+  // The kit's OptionChain is used unchanged (D-09: fork only what you change),
+  // and its own contract is the one that matters here: *** SELECTING AN OPTION
+  // NEVER EXECUTES *** -- onAdvance hands back a segment, and it is the leaf's
+  // own route that opens.
+  //
+  // IT RENDERS ONLY FOR A PICKED MODULE. Standing inside a module, that
+  // module's verbs are the SCREEN's own cards and lead band 3 (A-02/A-04);
+  // rendering them in both places would be the duplicate vocabulary this
+  // programme is removing. Band 2 also stays empty on a create route, where
+  // the page's own form is the card (A-06).
+  const optionLevel = useMemo(() => {
+    if (!selectedModule || screen.createSegment) return null;
+    const leaves = chainOptionsFor(selectedModule);
+    if (leaves.length === 0) return null;
+    const options: ChainOption[] = leaves.map((leaf) => ({ id: leaf.id, label: leaf.label, isLeaf: true }));
+    const chosen = segments.find((s) => s.kind === "step")?.id ?? null;
+    return (
+      <OptionChain
+        legend="Which step?"
+        options={options}
+        kind="step"
+        selectedId={chosen}
+        onAdvance={(segment) => {
+          const leaf = leaves.find((l) => l.id === segment.id);
+          if (leaf) onLeafSelect(selectedModule, leaf);
+        }}
+      />
+    );
+  }, [selectedModule, screen.createSegment, segments, onLeafSelect]);
+
   return (
     <AppShell
       // F_019 fix (2026-08-27): this shell always renders the composer's
@@ -1499,6 +1562,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           onReset={onReset}
           value={draft}
           onChange={setDraft}
+          // BAND 2 -- the picked module's own verbs (A-12).
+          conversation={optionLevel}
           // BAND 3 -- the screen's own verbs first, then six role-ranked cards
           // and "All modules". M24 shows "their top five or six ... That IS the
           // load reduction"; D-10 makes those six verb+object CARDS rather than
@@ -1512,8 +1577,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   to exactly the URL the screen's own header control produces
                   -- and the ranked cards that follow are the ways OUT of this
                   screen. The module's own cards are not among them (A-01/A-07):
-                  they would only point back here. */}
-              {chainModule && (
+                  they would only point back here.
+
+                  A-12: once the user PICKS a different module, its verbs take
+                  over band 2 and this row stands down -- two modules' verbs on
+                  one screen is exactly the duplicate vocabulary being removed,
+                  and the sentence in the strip names only one of them. */}
+              {chainModule && !selectedModule && (
                 <div className="flex flex-wrap items-center gap-1">
                   {chainOptionsFor(chainModule).map((leaf) => (
                     <button

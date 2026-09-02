@@ -159,13 +159,20 @@ export function shortcutLabel(entry: Pick<PillEntry, "keyHint">): string | null 
 /**
  * The pill a keystroke means, or null. Pure so the chord rule -- Alt, and
  * neither Ctrl nor Meta -- is asserted rather than only observed.
+ *
+ * `code` IS PREFERRED OVER `key` WHEN IT NAMES A LETTER. Holding Alt changes
+ * what a keyboard reports as `key` on several layouts (macOS Alt+P is "π"), so
+ * a shortcut read only from `key` would work on one machine and be inert on
+ * another. `code` is the physical key and is the same everywhere; `key` is
+ * kept as the fallback for environments that do not report a code.
  */
 export function matchPillShortcut(
-  event: { key: string; altKey: boolean; ctrlKey?: boolean; metaKey?: boolean },
+  event: { key: string; code?: string; altKey: boolean; ctrlKey?: boolean; metaKey?: boolean },
   entries: readonly PillEntry[] = PILL_CATALOGUE
 ): PillEntry | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;
-  const key = (event.key ?? "").toUpperCase();
+  const fromCode = /^Key[A-Z]$/.test(event.code ?? "") ? (event.code as string).slice(3) : null;
+  const key = fromCode ?? (event.key ?? "").toUpperCase();
   if (key.length !== 1 || !ALPHABET.includes(key)) return null;
   return entries.find((e) => e.keyHint === key) ?? null;
 }

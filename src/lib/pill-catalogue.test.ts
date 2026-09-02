@@ -145,6 +145,14 @@ describe("key hints (A-12)", () => {
     expect(matchPillShortcut({ key: "Enter", altKey: true })).toBeNull();
     expect(matchPillShortcut({ key: "1", altKey: true })).toBeNull();
   });
+
+  test("the PHYSICAL key wins: macOS reports Alt+P as 'π' and must still work", () => {
+    expect(matchPillShortcut({ key: "π", code: "KeyP", altKey: true })?.id).toBe("permits");
+  });
+
+  test("a code that is not a letter key falls back to the reported key", () => {
+    expect(matchPillShortcut({ key: "p", code: "Digit1", altKey: true })?.id).toBe("permits");
+  });
 });
 
 /** Only so the frozen-array test can attempt a mutation without `any`. */
