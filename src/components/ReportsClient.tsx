@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -128,6 +130,7 @@ function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencie
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
 function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
+  const router = useRouter();
   const [reportName, setReportName] = useState("project-status");
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
@@ -168,6 +171,14 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
     }
   }
 
+  // R67 D-02: ONE Work Progress Report. Selecting "Work Progress" here no
+  // longer runs the slow /api/reports/work-progress path (24.3 s measured,
+  // six fan-out calls) beside the module's own faster, richer report -- it
+  // navigates to /work-progress?tab=report, which runs on arrival with its
+  // parameters in the URL, a BOQ selector, the tie check and an export. Two
+  // screens for one report is the duplication the decision retires.
+  const destination = projexaReportDestination({ id: reportName }, projectId);
+
   return (
     <div className="space-y-4">
       <Card className="shadow-card">
@@ -182,15 +193,26 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           {reportName === "weekly-project" && (
             <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
           )}
-          <Button onClick={runReport} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
-          </Button>
+          {destination ? (
+            <Button onClick={() => router.push(destination)} data-testid="reports-open-work-progress">
+              <Play className="size-4" /> Open Report
+            </Button>
+          ) : (
+            <Button onClick={runReport} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+            </Button>
+          )}
         </CardContent>
       </Card>
 
       <Card className="shadow-card">
         <CardContent className="p-4">
-          {!ranOnce ? (
+          {destination ? (
+            <p className="py-10 text-center text-sm text-px-muted">
+              The Work Progress Report opens in the Work Progress module, where the date range, the view and the
+              BOQ version live in the URL and the report runs as soon as it opens.
+            </p>
+          ) : !ranOnce ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
           ) : loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
@@ -238,7 +260,9 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection />
+        {/* R67 D-02: the catalog needs the project so its Work Progress row can
+            link to the module's real report for THIS project, not a bare route. */}
+        <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>
   );

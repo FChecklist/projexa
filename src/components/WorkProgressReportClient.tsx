@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatProgressCell } from "@/lib/work-progress-report";
+import { wprSearchParams, type WprParams, type WprView } from "@/lib/work-progress-report-params";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -249,17 +251,30 @@ function VendorTable({ rows }: { rows: VendorRow[] }) {
   );
 }
 
-function defaultFrom() {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().slice(0, 10);
-}
-
-export default function WorkProgressReportClient({ projectId }: { projectId: string }) {
-  const [from, setFrom] = useState(defaultFrom());
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [loading, setLoading] = useState(false);
+// R67 D-02: the report opens with its parameters ALREADY in the URL (the page
+// resolves them through parseWprParams) and runs on arrival. Correction C-04:
+// before this, the range was pre-filled and the screen still said "Pick a date
+// range and click Run Report" -- three clicks to see the current month it could
+// have shown immediately. defaultFrom()/defaultTo() moved into
+// src/lib/work-progress-report-params.ts, where they are shared with the
+// Reports module's link and are actually tested.
+export default function WorkProgressReportClient({
+  projectId,
+  initialParams,
+}: {
+  projectId: string;
+  initialParams: WprParams;
+}) {
+  const router = useRouter();
+  const [from, setFrom] = useState(initialParams.from);
+  const [to, setTo] = useState(initialParams.to);
+  const [view, setView] = useState<WprView>(initialParams.view);
+  const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  // The backend's own words when the run failed -- so an empty report pane can
+  // never be mistaken for "this project has no progress", the standing rule in
+  // src/lib/read-outcome.ts.
+  const [reportError, setReportError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
@@ -268,28 +283,83 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // D-02 carries the BOQ in the URL as a VERSION (stable and readable), while
+  // the API takes an id. The first response is what maps one to the other, so
+  // a link that names a version is honoured exactly once, on arrival.
+  const wantedBoqVersion = useRef<number | null>(initialParams.boqVersion);
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  async function runReport(boqId = selectedBoqId) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ projectId, from, to });
-      if (boqId) params.set("boqId", boqId);
-      const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
-      setReport(data);
-      if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // The URL is the report's state (D-02): Back, a reload and a shared link all
+  // restore the same report. replace(), not push(), so re-running does not fill
+  // the history stack with one entry per date tweak.
+  const syncUrl = useCallback(
+    (next: Partial<WprParams>) => {
+      const params: WprParams = {
+        from,
+        to,
+        view,
+        boqVersion: null,
+        ...next,
+      };
+      router.replace(`/work-progress?${wprSearchParams(params, projectId).toString()}`, { scroll: false });
+    },
+    [from, to, view, projectId, router]
+  );
+
+  const runReport = useCallback(
+    async (options: { boqId?: string; from?: string; to?: string } = {}) => {
+      const rangeFrom = options.from ?? from;
+      const rangeTo = options.to ?? to;
+      const boqId = options.boqId ?? selectedBoqId;
+      setLoading(true);
+      setReportError(null);
+      try {
+        const params = new URLSearchParams({ projectId, from: rangeFrom, to: rangeTo });
+        if (boqId) params.set("boqId", boqId);
+        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error);
+        setReport(data);
+        if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+        // Honour a ?boqVersion= from the URL once, now that the version->id
+        // mapping is known. Cleared first, so this can never loop.
+        const wanted = wantedBoqVersion.current;
+        wantedBoqVersion.current = null;
+        if (wanted !== null) {
+          const match = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.version === wanted);
+          if (match && match.id !== data.boqId) {
+            setSelectedBoqId(match.id);
+            await runReport({ boqId: match.id, from: rangeFrom, to: rangeTo });
+            return;
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error && err.message ? err.message : "Couldn't generate the report";
+        toast.error(message);
+        setReportError(message);
+        setReport(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- self-recursive by
+    // design for the one-shot boqVersion resolution above; the recursive call
+    // passes every value it needs explicitly.
+    [projectId, from, to, selectedBoqId]
+  );
+
+  // D-02 / C-04: RUN ON ARRIVAL. Mount only -- every later run is an explicit
+  // user action (Run Report, a BOQ switch), so this must not re-fire when the
+  // date inputs change under the user's fingers.
+  const ranOnArrival = useRef(false);
+  useEffect(() => {
+    if (ranOnArrival.current) return;
+    ranOnArrival.current = true;
+    void runReport({ from: initialParams.from, to: initialParams.to });
+  }, [runReport, initialParams.from, initialParams.to]);
 
   // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
   // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a
@@ -345,7 +415,11 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <Button onClick={() => runReport()} disabled={loading} data-testid="work-progress-report-run">
+          <Button
+            onClick={() => { syncUrl({ from, to }); void runReport(); }}
+            disabled={loading}
+            data-testid="work-progress-report-run"
+          >
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
           {report && (
@@ -363,7 +437,12 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               <Label>BOQ</Label>
               <Select
                 value={selectedBoqId || report.boqId || ""}
-                onValueChange={(v) => { setSelectedBoqId(v); runReport(v); }}
+                onValueChange={(v) => {
+                  setSelectedBoqId(v);
+                  const chosen = report.availableBoqs.find((b) => b.id === v);
+                  syncUrl({ boqVersion: chosen?.version ?? null });
+                  void runReport({ boqId: v });
+                }}
               >
                 <SelectTrigger className="w-56" data-testid="boq-selector"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -405,10 +484,22 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="p-4">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : reportError ? (
+            // D-02 / the standing empty-state rule: a failed run says so and
+            // offers the retry. It never falls through to a calm sentence that
+            // reads like an answer.
+            <div role="alert" className="space-y-3 py-10 text-center text-sm text-px-error">
+              <p>Couldn&apos;t load the Work Progress Report: {reportError}</p>
+              <Button variant="outline" size="sm" onClick={() => void runReport()}>Retry</Button>
+            </div>
           ) : !report ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
           ) : (
-            <Tabs defaultValue="scope" className="space-y-4">
+            <Tabs
+              value={view}
+              onValueChange={(v) => { setView(v as WprView); syncUrl({ view: v as WprView }); }}
+              className="space-y-4"
+            >
               <TabsList>
                 <TabsTrigger value="scope">Scope-wise</TabsTrigger>
                 <TabsTrigger value="category">Category-wise</TabsTrigger>
