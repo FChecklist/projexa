@@ -72,10 +72,20 @@ export function useListRead<T>({ url, select }: UseListReadOptions<T>): ListRead
   const [error, setError] = useState<ListReadError | null>(null);
 
   // `select` is nearly always an inline arrow, so it is a new function on
-  // every render. Holding it in a ref keeps it out of the effect's dependency
-  // list -- otherwise every render would re-issue the read.
+  // every render. Holding it in a ref keeps it out of the read effect's
+  // dependency list -- otherwise every render would re-issue the read.
+  //
+  // The ref is synced in an EFFECT, not during render: writing a ref while
+  // rendering is a real hazard (React may throw the render away), and the
+  // repo's lint rule react-hooks/refs rejects it. Declaration order carries
+  // the correctness -- this effect is declared before the read effect, so
+  // within one commit the ref is fresh before a read is issued, and on the
+  // very first render useRef's initial value is already the caller's own
+  // `select`.
   const selectRef = useRef(select);
-  selectRef.current = select;
+  useEffect(() => {
+    selectRef.current = select;
+  });
 
   const seqRef = useRef(0);
 

@@ -188,9 +188,10 @@ export default function WorkProgressEntryObjectClient({
                 {photos.map((p) => (
                   <li key={p.id} className="w-48">
                     {p.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- a
-                      // short-lived Supabase signed URL is not a configurable
-                      // next/image remote pattern; the host rotates per project.
+                      // A plain <img>, not next/image: the src is a
+                      // short-lived Supabase signed URL, which is not a
+                      // configurable remote pattern and would be re-signed
+                      // long before any optimisation cache was useful.
                       <img src={p.url} alt={p.fileName} className="w-full rounded-md border border-px-border" />
                     ) : (
                       <p className="text-sm text-px-muted">{p.fileName} (link expired)</p>
