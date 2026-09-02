@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDayMonthYearNumeric } from "@/lib/format-date";
-import { boqLineLabel } from "@/components/WorkProgressObjectClient";
+import { boqLineLabel } from "@/lib/work-progress-report";
 
 export type Entry = {
   id: string;
