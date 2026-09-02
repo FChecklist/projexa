@@ -193,7 +193,14 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
           ) : loadError ? (
             <DataLoadError messages={[loadError]} onRetry={load} />
           ) : boqs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
+            /* R67 lane D22 (item D-68): the empty state is exactly where
+               somebody holding a priced BOQ spreadsheet arrives. */
+            <div className="space-y-3 py-10 text-center">
+              <p className="text-sm text-px-muted">No BOQs yet for this project.</p>
+              <Button variant="outline" size="sm" disabled={!projectId} title={projectId ? undefined : "Select a project first"} onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
+                <Upload className="size-4" /> Import a BOQ from Excel
+              </Button>
+            </div>
           ) : (
             <Table>
               <TableHeader>

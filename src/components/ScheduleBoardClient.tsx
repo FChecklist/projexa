@@ -114,7 +114,17 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
     return (
       <div className="space-y-4">
         <div className="flex justify-end">{newTaskButton}</div>
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
+        {/* R67 lane D22 (item D-68): the empty state is exactly where somebody
+            holding a contractor's programme spreadsheet arrives, so the import
+            is offered here as well as in the header. */}
+        <Card>
+          <CardContent className="space-y-3 py-16 text-center">
+            <p className="text-sm text-px-muted">No issues yet.</p>
+            <Button variant="outline" size="sm" onClick={() => router.push(`/schedule/import?projectId=${projectId}`)}>
+              Import a programme from Excel
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

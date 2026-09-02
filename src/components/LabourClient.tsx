@@ -36,7 +36,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, Upload } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -150,7 +150,14 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       </TabsList>
 
       <TabsContent value="roster" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {/* R67 lane D22 (item D-68): Import sits beside + New, on this list
+              and in its empty state, because a roster arrives as a spreadsheet
+              with a hundred names on it -- typing them one at a time through
+              Add Worker was the only way in. */}
+          <Button variant="outline" onClick={() => router.push(`/labour/import?projectId=${projectId}`)}>
+            <Upload className="size-4" /> Import
+          </Button>
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
               Worker" Dialog popup with a real create route. */}
           <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
@@ -162,7 +169,12 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             ) : loadErrors.roster ? (
               <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={load} /></div>
             ) : roster.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
+              <div className="space-y-3 py-10 text-center">
+                <p className="text-sm text-px-muted">No workers on the roster yet.</p>
+                <Button variant="outline" size="sm" onClick={() => router.push(`/labour/import?projectId=${projectId}`)}>
+                  <Upload className="size-4" /> Import a roster from Excel
+                </Button>
+              </div>
             ) : (
               <Table>
                 <TableHeader>

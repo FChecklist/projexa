@@ -210,6 +210,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/new",
   "/labour/[id]",
   "/labour/attendance/new",
+  // R67 lane D22 (item D-68): reached from the "Import" action beside "Add
+  // Worker" on /labour and from that list's empty state -- never a standalone
+  // sidebar item, same class as /labour/new beside it.
+  "/labour/import",
   "/labour/new",
   "/materials/[id]",
   "/materials/new",
