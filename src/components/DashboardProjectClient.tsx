@@ -61,11 +61,17 @@ type ProjectDashboard = {
   earnedValue: number | null;
   percentByValue: number | null;
   contractValue: number | null;
+  // R67 F-14 (R-215): both arrive with the dashboard now, computed inside the
+  // transaction it already opens. They used to be two more HTTP calls, each
+  // opening its own transaction to re-read this same project's data.
+  categories?: CategoryRow[];
+  recentEntries?: RecentEntry[];
 };
 type Currency = { code: string; isBaseCurrency: boolean };
 type CategoryRow = { categoryId: string; name: string; percentComplete: number };
-type RecentEntry = { id: string; activityId: string; entryDate: string; quantityDone: string; percentComplete: string };
-type Activity = { id: string; name: string };
+// activityName is resolved server-side; null (never the raw id) when the
+// referenced activity is genuinely gone.
+type RecentEntry = { id: string; activityId: string; activityName: string | null; entryDate: string; quantityDone: string; percentComplete: string };
 type Permit = { id: string; daysToExpiry: number | null };
 
 // TC-90: AED with NO rupee sign and NO lakh/crore grouping -- "en-US" gives
@@ -114,49 +120,50 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
   const [dashboardPanel, setDashboardPanel] = useState<PanelState<ProjectDashboard | null>>({ status: "loading", data: null });
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
-  const [categoriesPanel, setCategoriesPanel] = useState<PanelState<CategoryRow[]>>({ status: "loading", data: [] });
-  const [recentPanel, setRecentPanel] = useState<PanelState<RecentEntry[]>>({ status: "loading", data: [] });
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [permitsPanel, setPermitsPanel] = useState<PanelState<Permit[]>>({ status: "loading", data: [] });
   const [slow, setSlow] = useState(false);
 
   const load = useCallback(async () => {
     setDashboardPanel({ status: "loading", data: null });
-    setCategoriesPanel({ status: "loading", data: [] });
-    setRecentPanel({ status: "loading", data: [] });
     setPermitsPanel({ status: "loading", data: [] });
     setSlow(false);
     const slowTimer = setTimeout(() => setSlow(true), PANEL_SLOW_MS);
 
-    // All six in ONE parallel wave -- the category-progress report included.
-    // It used to be awaited after the other five had ALL resolved, which made
-    // the slowest of them and the chart's own call additive, not concurrent.
-    const [dash, cur, permits, acts, entries, cats] = await Promise.all([
+    // R67 F-14 (R-215): THREE calls, where there were six.
+    //
+    // The category breakdown (GET /api/reports/category-progress), the recent
+    // entries (GET /api/work-progress) and the activity names that labelled
+    // them (GET /api/work-progress/activities) are now part of the project
+    // dashboard payload, computed inside the transaction it already opens.
+    // Each of those three used to open its OWN transaction on VERIDIAN's
+    // five-connection app_runtime pool to re-read data this screen's first call
+    // had just read -- the exact fan-out that exhausted the pool. The category
+    // arithmetic is unchanged and still server-side (D-4: never summed in the
+    // browser); it is the same pure computeCategoryProgress() the
+    // "category-progress" named report calls, so the chart here and that report
+    // cannot disagree.
+    const [dash, cur, permits] = await Promise.all([
       loadPanel<ProjectDashboard | null>(`/api/dashboard/project/${encodeURIComponent(projectId)}`, (b) => b as unknown as ProjectDashboard, null),
       loadPanel<Currency[]>("/api/currencies", (b) => (b.currencies as Currency[]) ?? [], []),
       loadPanel<Permit[]>(`/api/permits?projectId=${encodeURIComponent(projectId)}&withinDays=30`, (b) => (b.permits as Permit[]) ?? [], []),
-      loadPanel<Activity[]>(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`, (b) => (b.activities as Activity[]) ?? [], []),
-      loadPanel<RecentEntry[]>(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`, (b) => ((b.entries as RecentEntry[]) ?? []).slice(0, 5), []),
-      // Category breakdown (RIGHT COLUMN, sorted horizontal bar) reuses the
-      // ALREADY-REGISTERED "category-progress" report (REPORT_REGISTRY,
-      // construction-reports-service.ts) computed server-side (D-4: never
-      // summed in the browser).
-      loadPanel<CategoryRow[]>(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`, (b) => (b.categories as CategoryRow[]) ?? [], []),
     ]);
 
     clearTimeout(slowTimer);
     setDashboardPanel(dash);
     setCurrency(cur.data.find((c) => c.isBaseCurrency));
     setPermitsPanel(permits);
-    setActivities(acts.data);
-    setRecentPanel(entries);
-    setCategoriesPanel(cats);
   }, [projectId]);
 
   useEffect(() => { void load(); }, [load]);
 
   const dashboard = dashboardPanel.data;
   const permitsExpiring = permitsPanel.data;
+  // Both panels now share the dashboard call's own state: they succeed with it,
+  // fail with it, and retry with it. A payload that resolved but carries no
+  // categories is a real "none yet", not a failure -- the two are still told
+  // apart, because status is read separately from the data.
+  const categoriesPanel: PanelState<CategoryRow[]> = { status: dashboardPanel.status, data: dashboard?.categories ?? [] };
+  const recentPanel: PanelState<RecentEntry[]> = { status: dashboardPanel.status, data: dashboard?.recentEntries ?? [] };
   const categories = categoriesPanel.data;
   const recent = recentPanel.data;
 
@@ -184,7 +191,6 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     return panel.status === "ready" ? onClick : undefined;
   }
 
-  const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
   const hasEv = !!dashboard && dashboard.earnedValue !== null && dashboard.contractValue !== null;
   const expiringCount = permitsExpiring.length;
   const expiredCount = permitsExpiring.filter((p) => (p.daysToExpiry ?? 0) < 0).length;
@@ -341,7 +347,10 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               {recent.map((e) => (
                 <li key={e.id}>
                   <button type="button" onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)} className="text-[12.5px] text-ct-teal hover:underline">
-                    {e.entryDate} — {activityNameById.get(e.activityId) ?? e.activityId} ({e.percentComplete}%)
+                    {/* An activity whose row is gone reports a null name from
+                        the server; "Unknown activity" is the honest thing to
+                        show for it, not its raw id. */}
+                    {e.entryDate} — {e.activityName ?? "Unknown activity"} ({e.percentComplete}%)
                   </button>
                 </li>
               ))}
