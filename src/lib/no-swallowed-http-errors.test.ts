@@ -187,6 +187,48 @@ function unguardedChainSites(source: string): string[] {
 }
 
 /**
+ * R67 D-03 -- THE FOURTH SHAPE: reads the status, then throws the failure away.
+ *
+ *     async function getJson<T>(url: string): Promise<T | null> {
+ *       const res = await fetch(url);
+ *       if (!res.ok) return null;
+ *       return res.json();
+ *     }
+ *
+ * DashboardHierarchyClient.tsx carried exactly this, and it slipped past all
+ * three checks above for the same reason each of them exists: the first two
+ * clear a site the moment they see `res.ok` anywhere in the window, and this
+ * one DOES read it -- it just answers a 500 with `null`, which every caller
+ * then discarded with `if (!data) return;`. The result on screen was "No
+ * company memberships found for this account." over a refused request.
+ *
+ * "Reading the status" is not the property that matters; ACTING on it is. A
+ * non-ok branch that resolves to null, undefined or an empty literal has
+ * erased the failure just as completely as never having looked. Throwing,
+ * recording a message, or returning a discriminated `{ ok: false }` all clear
+ * the site -- what is flagged is only the branch that resolves to nothing.
+ *
+ * Writes are skipped for the same reason as unguardedSites().
+ */
+function discardedStatusSites(source: string): string[] {
+  const lines = source.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+fetch\((.+)\);\s*$/.exec(lines[i]);
+    if (!m) continue;
+    const [, varName, args] = m;
+    if (args.trimEnd().endsWith("}") || args.includes(", {")) continue; // a write call
+    const window = lines.slice(i, i + 12).join("\n");
+    // Single-line and braced forms of the same discard.
+    const discard = new RegExp(
+      `if\\s*\\(\\s*!\\s*${varName}\\.ok\\s*\\)\\s*(?:\\{\\s*)?return\\s*(?:null|undefined|\\[\\s*\\]|\\{\\s*\\})?\\s*;`
+    );
+    if (discard.test(window)) found.push(`line ${i + 1}: ${lines[i].trim()}`);
+  }
+  return found;
+}
+
+/**
  * Files that still carry the chain shape, each named with the module it
  * belongs to. THIS LIST MAY ONLY SHRINK. It is not a suppression: the guard
  * above is what stops a NEW one being written, and every entry here is a
@@ -248,6 +290,73 @@ describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
       if (sites.length > 0) offenders.push(`${f.replace(process.cwd(), "")}\n    ${sites.join("\n    ")}`);
     }
     expect(offenders).toEqual([]);
+  });
+
+  test("no client component reads the status and then answers a failure with nothing", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const sites = discardedStatusSites(readFileSync(f, "utf8"));
+      if (sites.length > 0) offenders.push(`${f.replace(process.cwd(), "")}\n    ${sites.join("\n    ")}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("the discarded-status detector actually detects -- proven on a synthetic bad case", () => {
+    // Exactly what DashboardHierarchyClient.tsx carried before R67 D-03.
+    const bad = `"use client";
+      async function getJson<T>(url: string): Promise<T | null> {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return res.json();
+      }`;
+    expect(discardedStatusSites(bad)).toHaveLength(1);
+
+    const badBraced = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          return [];
+        }
+        return res.json();
+      }`;
+    expect(discardedStatusSites(badBraced)).toHaveLength(1);
+
+    // ACTING on the status clears the site, in each of the three ways this
+    // codebase actually does it.
+    const throws = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("failed");
+        return res.json();
+      }`;
+    expect(discardedStatusSites(throws)).toEqual([]);
+
+    const records = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          setLoadError(await res.text());
+          return;
+        }
+        return res.json();
+      }`;
+    expect(discardedStatusSites(records)).toEqual([]);
+
+    const discriminated = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) return { ok: false, message: String(res.status) };
+        return { ok: true, data: await res.json() };
+      }`;
+    expect(discardedStatusSites(discriminated)).toEqual([]);
+
+    // ...and the file the fix landed in is clean, read from disk rather than
+    // asserted from memory.
+    const fixed = readFileSync(join(COMPONENTS, "DashboardHierarchyClient.tsx"), "utf8");
+    expect(discardedStatusSites(fixed)).toEqual([]);
+    // The whole point of the fix, in one line: the empty sentence is now
+    // gated on an outcome rather than on an array's length.
+    expect(fixed).toContain("mayShowEmptyState(companiesStatus, companies.length)");
   });
 
   test("the known-offender list may only shrink -- an entry that is clean must be removed", () => {
