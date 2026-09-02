@@ -47,9 +47,20 @@ export const VERIDIAN_ORIGIN = VERIDIAN_API_ROOT.replace(/\/api\/v1$/, "");
 // the exact budget -- and is only ever logged server-side, never returned.
 export class VeridianApiError extends Error {
   readonly detail?: string;
-  constructor(message: string, public status: number, detail?: string) {
+  /**
+   * R67 D-27: the whole error body VERIDIAN answered with, when there was one.
+   * Some errors carry structured data a screen needs beyond the sentence -- the
+   * scope-reduction 409's `conflicts[]` is the first: the revise screen renders
+   * the violating lines as a table above the override, which it cannot do from
+   * a prose message. This is DATA FOR A PROXY TO FORWARD DELIBERATELY, not
+   * something to spill into a user-facing string: `message` stays the only
+   * thing safe to render, and `detail` stays server-side-only.
+   */
+  readonly body?: unknown;
+  constructor(message: string, public status: number, detail?: string, body?: unknown) {
     super(message);
     this.detail = detail;
+    this.body = body;
   }
 }
 
@@ -236,7 +247,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return res;
 }
@@ -266,7 +277,7 @@ export async function callVeridianBinary(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
 }
@@ -293,7 +304,7 @@ export async function callVeridianUpload<T = unknown>(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return res.json() as Promise<T>;
 }
