@@ -21,9 +21,24 @@ import { CURRENCY_NOT_SET_NOTICE } from "@/lib/format-money";
  * Renders nothing when the org HAS a currency -- so a screen can mount this
  * unconditionally and let the one component own the decision, rather than
  * every screen re-deriving it.
+ *
+ * ...and nothing while `loaded` is false either. On a client screen the
+ * currency arrives from /api/currencies a beat after first paint, and
+ * `currencySet` is false for that whole window; without this flag the notice
+ * asserted "Currency not set" on every page load, for every org, including the
+ * ones that have a currency. `loaded` defaults to true so a Server Component
+ * that already holds the resolved currency (DashboardHomeView) needs no flag.
  */
-export function CurrencyNotSetNotice({ currencySet, className }: { currencySet: boolean; className?: string }) {
-  if (currencySet) return null;
+export function CurrencyNotSetNotice({
+  currencySet,
+  loaded = true,
+  className,
+}: {
+  currencySet: boolean;
+  loaded?: boolean;
+  className?: string;
+}) {
+  if (!loaded || currencySet) return null;
   const [text, destination] = CURRENCY_NOT_SET_NOTICE.split(" → ");
   return (
     <p className={`flex items-center gap-1.5 pt-1 text-[12px] ${className ?? ""}`} style={{ color: "var(--status-needs-you-text)" }}>

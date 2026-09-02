@@ -21,10 +21,17 @@ import { cn } from "@/lib/utils";
 export type MoneyInputProps = Omit<React.ComponentProps<"input">, "type" | "prefix"> & {
   /** The org's currency code, or null when it has not set one. */
   currency: string | null;
+  /**
+   * True while /api/currencies is still in flight. The box then shows NEITHER
+   * a code nor the warning glyph: a glyph that says "this org has no currency"
+   * is a claim, and during the first paint it is a claim we have not earned.
+   */
+  pending?: boolean;
 };
 
-export function MoneyInput({ currency, className, ...props }: MoneyInputProps) {
-  const prefix = currency && currency.trim() ? currency.trim() : UNKNOWN_CURRENCY_GLYPH;
+export function MoneyInput({ currency, pending = false, className, ...props }: MoneyInputProps) {
+  const code = currency && currency.trim() ? currency.trim() : null;
+  const prefix = code ?? (pending ? null : UNKNOWN_CURRENCY_GLYPH);
   return (
     <div
       className={cn(
@@ -36,9 +43,15 @@ export function MoneyInput({ currency, className, ...props }: MoneyInputProps) {
       {/* aria-hidden plus the field's own aria-label/labelled-by: a screen
           reader should hear "Unit Cost, AED", not "AED" as a stray word
           before an unlabelled box. Callers pass the currency into the label. */}
-      <span aria-hidden className="shrink-0 select-none text-[12px] font-medium text-ct-muted tabular-nums">
-        {prefix}
-      </span>
+      {prefix !== null && (
+        <span
+          data-testid="money-input-prefix"
+          aria-hidden
+          className="shrink-0 select-none text-[12px] font-medium text-ct-muted tabular-nums"
+        >
+          {prefix}
+        </span>
+      )}
       <input
         type="number"
         inputMode="decimal"

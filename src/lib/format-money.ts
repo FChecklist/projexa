@@ -66,6 +66,15 @@ export type MoneyFormat = {
   locale?: string;
   /** Override only where a screen genuinely shows whole units (a headline KPI). */
   fractionDigits?: number;
+  /**
+   * "We have not been told yet." Distinct from `currency: null`, which means
+   * "we asked and there is none". While a client screen's /api/currencies
+   * request is still in flight, an amount renders bare -- no code, and no
+   * warning glyph either, because there is nothing to warn about yet. Claiming
+   * "this org has no currency" during the first 200 ms of every page load is a
+   * statement that is false for every org that does have one.
+   */
+  pending?: boolean;
 };
 
 /** True when `format` carries a real currency code. */
@@ -85,12 +94,23 @@ function toFiniteNumber(value: number | string | null | undefined): number | nul
 }
 
 /**
+ * The token that goes in front of an amount: the code, the warning glyph, or
+ * nothing at all while the answer is still in flight.
+ */
+function currencyToken(format: MoneyFormat): string {
+  if (hasCurrency(format)) return `${format.currency!.trim()} `;
+  if (format.pending) return "";
+  return `${UNKNOWN_CURRENCY_GLYPH} `;
+}
+
+/**
  * The one money formatter.
  *
  *   formatMoney(435, { currency: "AED", locale: "en-AE" })  -> "AED 435.00"
  *   formatMoney(0, org)                                     -> "AED 0.00"
  *   formatMoney(null, org)                                  -> "–"
  *   formatMoney(1200, { currency: null })                   -> "⚠ 1,200.00"
+ *   formatMoney(1200, { pending: true })                    -> "1,200.00"
  */
 export function formatMoney(value: number | string | null | undefined, format: MoneyFormat = {}): string {
   const n = toFiniteNumber(value);
@@ -101,7 +121,7 @@ export function formatMoney(value: number | string | null | undefined, format: M
     fractionDigits: format.fractionDigits ?? MONEY_FRACTION_DIGITS,
   });
 
-  return hasCurrency(format) ? `${format.currency!.trim()} ${amount}` : `${UNKNOWN_CURRENCY_GLYPH} ${amount}`;
+  return `${currencyToken(format)}${amount}`;
 }
 
 /**
@@ -118,7 +138,7 @@ export function formatSignedMoney(value: number | string | null | undefined, for
     locale: format.locale ?? DEFAULT_MONEY_LOCALE,
     fractionDigits: format.fractionDigits ?? MONEY_FRACTION_DIGITS,
   });
-  const token = hasCurrency(format) ? `${format.currency!.trim()} ` : `${UNKNOWN_CURRENCY_GLYPH} `;
+  const token = currencyToken(format);
 
   if (n > 0) return `▲ ${token}+${magnitude}`;
   if (n < 0) return `▼ ${token}-${magnitude}`;

@@ -109,6 +109,38 @@ describe("never guess a currency (R-62 / R-63)", () => {
   });
 });
 
+describe("'not answered yet' is not the same fact as 'there is no currency'", () => {
+  // Review fix. The warning glyph is a CLAIM -- "this org has no currency" --
+  // and on a client screen it was being made during the whole window between
+  // first paint and the /api/currencies response, i.e. on every page load, for
+  // every org, including the ones that do have a currency.
+  test("pending renders the number bare: no code, and no glyph either", () => {
+    expect(formatMoney(1200, { pending: true })).toBe("1,200.00");
+    expect(formatMoney(0, { currency: null, pending: true })).toBe("0.00");
+    expect(formatSignedMoney(2025, { pending: true })).toBe("▲ +2,025.00");
+  });
+
+  test("pending and unset are different strings -- that is the whole point", () => {
+    expect(formatMoney(1200, { pending: true })).not.toBe(formatMoney(1200, orgWithNoCurrency));
+    expect(formatMoney(1200, { pending: true })).not.toContain(UNKNOWN_CURRENCY_GLYPH);
+  });
+
+  test("a real currency beats pending -- the answer arrived mid-render", () => {
+    expect(formatMoney(1200, { currency: "AED", pending: true })).toBe("AED 1,200.00");
+  });
+
+  test("pending does not change what 'no figure' means", () => {
+    // An absent VALUE and an absent CURRENCY are unrelated questions.
+    expect(formatMoney(null, { pending: true })).toBe(EMPTY_VALUE);
+    expect(formatSignedMoney(undefined, { pending: true })).toBe(EMPTY_VALUE);
+  });
+
+  test("a column header stays unlabelled while pending, so it cannot reflow twice", () => {
+    expect(currencyUnitSuffix({ pending: true })).toBeNull();
+    expect(currencyUnitSuffix({ currency: "AED", pending: true })).toBe(" (AED)");
+  });
+});
+
 describe("signed money reads without colour (R-260)", () => {
   test("renders R-260's own example", () => {
     expect(formatSignedMoney(2025, { ...org, fractionDigits: 0 })).toBe("▲ AED +2,025");

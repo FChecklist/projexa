@@ -9,7 +9,7 @@
 // server). This module is the only place the two meet.
 
 import { useMemo } from "react";
-import { useCurrencies } from "./currency";
+import { useCurrenciesState } from "./currency";
 import {
   CURRENCY_NOT_SET_NOTICE,
   currencyUnitSuffix,
@@ -20,10 +20,24 @@ import {
 } from "./format-money";
 
 export type OrgMoney = {
-  /** The org's base-currency code, or null when it has not set one. */
+  /** The org's base-currency code, or null when it has not set one -- or not known yet. */
   currency: string | null;
+  /**
+   * True once /api/currencies has answered (or failed). THREE states, not two:
+   * `!loaded` is "we have not been told", `loaded && !currencySet` is "we asked
+   * and there is none", `loaded && currencySet` is "AED". Collapsing the first
+   * two is what made five screens flash "Currency not set → Settings" on every
+   * page load for orgs that do have a currency.
+   */
+  loaded: boolean;
   /** False when the org has no currency row -- the screen owes the reader CURRENCY_NOT_SET_NOTICE. */
   currencySet: boolean;
+  /**
+   * `loaded && !currencySet`. The one flag a screen should gate the footer
+   * notice on, so the three-state rule is decided here and not re-derived at
+   * five call sites.
+   */
+  showNotice: boolean;
   format: MoneyFormat;
   /** Bound formatters, so a call site is `money(row.total)` and cannot pass the wrong currency. */
   money: (value: number | string | null | undefined, override?: Partial<MoneyFormat>) => string;
@@ -44,19 +58,26 @@ export type OrgMoney = {
  * rather than labelling an amount with a code nobody confirmed.
  */
 export function useOrgMoney(): OrgMoney {
-  const currencies = useCurrencies();
+  const { currencies, loaded } = useCurrenciesState();
   const currency = currencies.find((c) => c.isBaseCurrency)?.code ?? null;
 
   return useMemo(() => {
-    const format: MoneyFormat = { currency };
+    // `pending` is what keeps the first paint honest: no code, and no warning
+    // glyph either. The unitSuffix falls out of the same fact -- a column
+    // header must not gain " (AED)" mid-read, so it stays empty until the
+    // answer arrives and then appears once.
+    const format: MoneyFormat = { currency, pending: !loaded };
+    const currencySet = hasCurrency(format);
     return {
       currency,
-      currencySet: hasCurrency(format),
+      loaded,
+      currencySet,
+      showNotice: loaded && !currencySet,
       format,
       money: (value, override) => formatMoney(value, { ...format, ...override }),
       signedMoney: (value, override) => formatSignedMoney(value, { ...format, ...override }),
       unitSuffix: currencyUnitSuffix(format) ?? "",
       notice: CURRENCY_NOT_SET_NOTICE,
     };
-  }, [currency]);
+  }, [currency, loaded]);
 }

@@ -259,7 +259,7 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
       {/* R67 G-05: said once, at the foot of the screen -- it explains the
           warning glyph beside every unlabelled figure above, and renders
           nothing at all when the org has a currency. */}
-      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} />
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

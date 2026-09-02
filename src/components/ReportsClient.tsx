@@ -216,7 +216,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
       </Card>
       {/* R67 G-05: once, at the foot -- explains the warning glyph on every
           unlabelled figure above, and renders nothing when a currency is set. */}
-      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} />
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

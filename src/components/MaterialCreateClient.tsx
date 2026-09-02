@@ -83,10 +83,11 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
           <MoneyInput
             id="material-unit-cost"
             currency={orgMoney.currency}
+            pending={!orgMoney.loaded}
             value={unitCost}
             onChange={(e) => setUnitCost(e.target.value)}
           />
-          <CurrencyNotSetNotice currencySet={orgMoney.currencySet} />
+          <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
         </div>
       </div>
     </ObjectScreen>

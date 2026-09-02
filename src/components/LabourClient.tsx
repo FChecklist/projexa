@@ -273,7 +273,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
     {/* R67 G-05: once, at the foot of the screen, explaining the warning
         glyph on every unlabelled figure -- and nothing at all when the org
         has a currency. */}
-    <CurrencyNotSetNotice currencySet={orgMoney.currencySet} />
+    <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </>
   );
 }
