@@ -52,7 +52,7 @@
 //
 // Each panel also has its own state now, so a failing receipts ledger cannot
 // blank a working master table, and a wait crossing 3 s says so.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -154,8 +154,13 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
   // The FIRST load shows its skeleton immediately: this component mounts
   // directly after the page's own <Suspense> fallback (which already had the
   // headers on screen), so a 150 ms anti-flash delay here would produce
-  // 150 ms of nothing between the two. A later Retry does use the delay.
-  const materialsLoadedOnce = useRef(false);
+  // 150 ms of nothing between the two. A later Retry does use the delay,
+  // because that one can genuinely come back instantly.
+  //
+  // State, not a ref: this value is READ DURING RENDER, and a ref read in
+  // render is exactly the "your component will not update as expected" case
+  // React's own lint rule names.
+  const [skeletonDelayMs, setSkeletonDelayMs] = useState(0);
 
   const loadMaterials = useCallback(async () => {
     setMaterials(null);
@@ -167,7 +172,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
       setMaterials([]);
       setMaterialsError(errorMessage(err, "Material master"));
     } finally {
-      materialsLoadedOnce.current = true;
+      setSkeletonDelayMs(150);
     }
   }, [projectId]);
 
@@ -239,7 +244,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
             headers={columns.map((c) => c.label)}
             rows={3}
             caption={materialsSlow ? "Still loading…" : "Loading materials…"}
-            delayMs={materialsLoadedOnce.current ? 150 : 0}
+            delayMs={skeletonDelayMs}
           />
         ) : (
           <Card className="shadow-card">

@@ -42,6 +42,12 @@ afterEach(() => {
   delete globalThis.fetch;
 });
 
+// bun test runs every file in ONE process, so under a full-suite run these
+// renders share a machine with every other suite. @testing-library's default
+// 1 s waitFor budget then measures the machine, not the component. The
+// assertions themselves are unchanged.
+const WAIT = { timeout: 8_000 } as const;
+
 // Radix's TabsTrigger switches on mousedown, not on the click event that
 // follows it, so a bare fireEvent.click() leaves the tab exactly where it was.
 // This is the real first half of a user's click.
@@ -82,7 +88,7 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
 
     const { getByText } = render(<LabourClient projectId="p1" />);
 
-    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined());
+    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
 
     expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(0);
     // The roster call itself is the one the screen exists for.
@@ -93,11 +99,11 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
     const calls = stubFetch();
 
     const { getByText, getByRole } = render(<LabourClient projectId="p1" />);
-    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined());
+    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
 
     activateTab(getByRole("tab", { name: /Attendance/ }));
 
-    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1));
+    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1), WAIT);
 
     const attendanceUrl = calls.find((u) => u.includes("/api/attendance"))!;
     const params = new URLSearchParams(attendanceUrl.split("?")[1]);
@@ -113,13 +119,13 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
     const calls = stubFetch();
 
     const { getByText, getByRole } = render(<LabourClient projectId="p1" />);
-    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined());
+    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
 
     activateTab(getByRole("tab", { name: /Attendance/ }));
-    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1));
+    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1), WAIT);
 
     fireEvent.click(getByText("Load older"));
-    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(2));
+    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(2), WAIT);
 
     const second = new URLSearchParams(calls.filter((u) => u.includes("/api/attendance"))[1].split("?")[1]);
     const spanDays = (Date.parse(second.get("to")!) - Date.parse(second.get("from")!)) / 86_400_000;
@@ -131,7 +137,7 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
 
     const { getByText, getAllByText } = render(<LabourClient projectId="p1" />);
 
-    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined());
+    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
     // The Company cell for a worker whose vendor could not be resolved.
     expect(getAllByText("—").length).toBeGreaterThan(0);
   });

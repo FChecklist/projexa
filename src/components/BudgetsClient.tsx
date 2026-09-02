@@ -31,7 +31,7 @@
 //
 // '+ New Budget' is a real prefetching <Link> rather than a router.push
 // button, so Next fetches the create route's chunk on hover and in viewport.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -130,7 +130,11 @@ export default function BudgetsClient({
   // headers on screen), so a 150 ms anti-flash delay here would produce
   // 150 ms of nothing between the two. A later reload -- changing the company
   // filter -- does use the delay, because that one can genuinely be instant.
-  const hasLoadedOnce = useRef(false);
+  //
+  // State, not a ref: this value is READ DURING RENDER, and a ref read in
+  // render is exactly the "your component will not update as expected" case
+  // React's own lint rule names.
+  const [skeletonDelayMs, setSkeletonDelayMs] = useState(0);
 
   async function load(companyId: string | null = null) {
     setBudgets(null);
@@ -145,7 +149,7 @@ export default function BudgetsClient({
       setLoadError(errorMessage(err, "Couldn't load budgets"));
       setBudgets([]);
     } finally {
-      hasLoadedOnce.current = true;
+      setSkeletonDelayMs(150);
     }
   }
 
@@ -181,7 +185,7 @@ export default function BudgetsClient({
           headers={columns.map((c) => c.label)}
           rows={3}
           caption={slow ? "Still loading…" : "Loading budgets…"}
-          delayMs={hasLoadedOnce.current ? 150 : 0}
+          delayMs={skeletonDelayMs}
         />
       ) : (
         <Card className="shadow-card">

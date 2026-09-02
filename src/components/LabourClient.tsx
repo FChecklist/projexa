@@ -181,8 +181,13 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   // The FIRST load shows its skeleton immediately: this component mounts
   // directly after the page's own <Suspense> fallback (which already had the
   // headers on screen), so a 150 ms anti-flash delay here would produce
-  // 150 ms of nothing between the two. A later Retry does use the delay.
-  const rosterLoadedOnce = useRef(false);
+  // 150 ms of nothing between the two. A later Retry does use the delay,
+  // because that one can genuinely come back instantly.
+  //
+  // State, not a ref: this value is READ DURING RENDER, and a ref read in
+  // render is exactly the "your component will not update as expected" case
+  // React's own lint rule names.
+  const [skeletonDelayMs, setSkeletonDelayMs] = useState(0);
 
   const loadRoster = useCallback(async () => {
     setRoster(null);
@@ -194,7 +199,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       setRoster([]);
       setRosterError(errorMessage(err, "Roster"));
     } finally {
-      rosterLoadedOnce.current = true;
+      setSkeletonDelayMs(150);
     }
   }, [projectId]);
 
@@ -281,7 +286,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             headers={LABOUR_FALLBACK_COLUMN_LABELS}
             rows={4}
             caption={rosterSlow ? "Still loading…" : "Loading the roster…"}
-            delayMs={rosterLoadedOnce.current ? 150 : 0}
+            delayMs={skeletonDelayMs}
           />
         ) : (
           <Card className="shadow-card">
