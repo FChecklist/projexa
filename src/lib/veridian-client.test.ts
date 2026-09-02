@@ -15,7 +15,15 @@
 // would hang this file instead of failing it, which is why it listens.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { VERIDIAN_FETCH_TIMEOUT_MS, callVeridian, callVeridianResult, VeridianApiError } from "./veridian-client";
+import {
+  VERIDIAN_FETCH_TIMEOUT_MS,
+  VERIDIAN_UPLOAD_TIMEOUT_MS,
+  callVeridian,
+  callVeridianBinary,
+  callVeridianResult,
+  callVeridianUpload,
+  VeridianApiError,
+} from "./veridian-client";
 
 const realFetch = globalThis.fetch;
 
@@ -61,6 +69,26 @@ function stubJson(status: number, body: unknown) {
     return Promise.resolve(
       new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
     );
+  }) as typeof fetch;
+}
+
+/** Answers, but only after `delayMs` -- and still honours an abort meanwhile. */
+function stubSlowJson(delayMs: number, body: unknown) {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    record(input, init);
+    return new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }, delayMs);
+      const fail = () => {
+        clearTimeout(timer);
+        const err = new Error("The operation timed out.");
+        err.name = "TimeoutError";
+        reject(err);
+      };
+      if (init?.signal?.aborted) return fail();
+      init?.signal?.addEventListener("abort", fail, { once: true });
+    });
   }) as typeof fetch;
 }
 
@@ -208,4 +236,52 @@ describe("caller cancellation", () => {
     expect(result.code).toBeNull();
     expect(calls.length).toBe(1);
   });
+});
+
+// ---------------------------------------------------------------------------
+// R67 F-20 FIX -- the read budget is not the transfer budget.
+// ---------------------------------------------------------------------------
+//
+// fetchWithTimeout() is shared by every transport in this file, so cutting it
+// from 20 s to 8 s also cut the two that carry FILE BYTES: callVeridianUpload
+// (POST /api/permits, /api/drawings, /api/documents, and /api/scope/import,
+// which relays a BOQ workbook VERIDIAN parses server-side) and
+// callVeridianBinary. Those have no "This is taking longer than usual" screen
+// contract -- the 8 s figure exists only because that is when the UI gives up
+// on a READ -- and because F-20 also removed the retry for non-GET, an abort
+// there is final with nothing saved. A site engineer's multi-megabyte drawing
+// over 4G is exactly the upload that lands between 8 s and 20 s.
+describe("the upload budget is its own number", () => {
+  test("the two budgets are separate constants, and the read one is untouched", () => {
+    expect(VERIDIAN_FETCH_TIMEOUT_MS).toBe(8_000);
+    expect(VERIDIAN_UPLOAD_TIMEOUT_MS).toBe(30_000);
+    // Asserted as a relationship too: whichever one a later change moves, a
+    // transfer must never be given less room than a screen read.
+    expect(VERIDIAN_UPLOAD_TIMEOUT_MS).toBeGreaterThan(VERIDIAN_FETCH_TIMEOUT_MS);
+  });
+
+  test(
+    "an upload that takes longer than the READ budget still completes",
+    async () => {
+      // 9.5 s: comfortably past the 8 s at which this call used to be aborted,
+      // and nowhere near the 30 s it now has. Under the pre-fix code both calls
+      // below threw UPSTREAM_TIMEOUT and the file was lost.
+      stubSlowJson(9_500, { id: "drawing-1" });
+
+      const form = new FormData();
+      form.append("file", new Blob(["bytes"], { type: "application/pdf" }), "plan.pdf");
+
+      const [uploaded, binary] = await Promise.all([
+        callVeridianUpload<{ id: string }>("/drawings", form, KEY),
+        callVeridianBinary("/reports/wpr.pdf", KEY),
+      ]);
+
+      expect(uploaded.id).toBe("drawing-1");
+      expect(binary.contentType).toContain("application/json");
+      // One attempt each -- a POST is still never retried.
+      expect(calls.length).toBe(2);
+      expect(calls.some((c) => c.method === "POST")).toBe(true);
+    },
+    40_000
+  );
 });

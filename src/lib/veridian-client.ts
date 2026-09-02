@@ -122,6 +122,24 @@ export class VeridianApiError extends Error {
 // this constant is.
 export const VERIDIAN_FETCH_TIMEOUT_MS = 8_000;
 
+// *** THE 8 s ABOVE IS A READ BUDGET, AND IT DOES NOT APPLY TO FILE TRANSFER.
+//
+// The whole justification for 8 s is the SCREEN's contract: it is the moment
+// D-04 has the UI say "This is taking longer than usual", so the request is
+// abandoned at exactly the moment the user stops believing in it. A file
+// upload has no such contract. The bytes are still going up, the user can see
+// that they are, and the honest thing is to let them finish.
+//
+// callVeridianUpload() and callVeridianBinary() carry PROJEXA's real file
+// transfer: POST /api/permits, /api/drawings, /api/documents and
+// /api/scope/import, the last of which relays a BOQ workbook that VERIDIAN
+// then parses server-side. Applying the read budget to those took a site
+// engineer's multi-megabyte drawing over 4G from 20 s to 8 s -- and because
+// F-20 also (correctly) removed the retry for non-GET, the failure is final
+// with nothing saved. So they keep a budget of their own, close to the 20 s
+// they had, and every other call in this file is unaffected.
+export const VERIDIAN_UPLOAD_TIMEOUT_MS = 30_000;
+
 // The ceiling on ONE callVeridian, retry included. A connection failure fails
 // fast (no TCP peer, DNS miss), so a retry normally costs milliseconds -- but
 // it must never be able to push a call past the 9 s an /api/* handler promises
@@ -228,13 +246,18 @@ function isConnectionFailure(err: unknown): boolean {
 // request as an upstream timeout would be a lie about VERIDIAN.
 type AttemptOutcome = { res: Response } | { err: unknown; timedOut: boolean };
 
-async function attemptFetch(url: string, init: RequestInit, callerSignal?: AbortSignal): Promise<AttemptOutcome> {
+async function attemptFetch(
+  url: string,
+  init: RequestInit,
+  callerSignal?: AbortSignal,
+  timeoutMs: number = VERIDIAN_FETCH_TIMEOUT_MS
+): Promise<AttemptOutcome> {
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, VERIDIAN_FETCH_TIMEOUT_MS);
+  }, timeoutMs);
   const onCallerAbort = () => controller.abort();
   if (callerSignal?.aborted) controller.abort();
   else callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
@@ -255,15 +278,22 @@ async function attemptFetch(url: string, init: RequestInit, callerSignal?: Abort
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  callerSignal?: AbortSignal
+  callerSignal?: AbortSignal,
+  timeoutMs: number = VERIDIAN_FETCH_TIMEOUT_MS
 ): Promise<{ res: Response; durationMs: number }> {
   const startedAt = Date.now();
   const canRetry = isIdempotent(init);
+  // The whole-call ceiling tracks the per-attempt budget: the 9 s figure exists
+  // only to stop a retry pushing a READ past what an /api/* handler promises,
+  // so a 30 s upload gets a 31 s ceiling rather than being cut off at 9 s by a
+  // constant that was never about it.
+  const totalBudgetMs =
+    timeoutMs === VERIDIAN_FETCH_TIMEOUT_MS ? VERIDIAN_TOTAL_BUDGET_MS : timeoutMs + 1_000;
   let lastErr: unknown;
   let budgetExpired = false;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const outcome = await attemptFetch(url, init, callerSignal);
+    const outcome = await attemptFetch(url, init, callerSignal, timeoutMs);
     if ("res" in outcome) {
       const durationMs = Date.now() - startedAt;
       recordUpstream(durationMs);
@@ -277,7 +307,7 @@ async function fetchWithTimeout(
     // And the retry may not push this call past the 9 s an /api/* handler
     // promises. A connection failure that somehow took most of the budget
     // has already spent the room a second attempt would need.
-    if (attempt === 2 || Date.now() - startedAt > VERIDIAN_TOTAL_BUDGET_MS - VERIDIAN_FETCH_TIMEOUT_MS) break;
+    if (attempt === 2 || Date.now() - startedAt > totalBudgetMs - timeoutMs) break;
     // Logged so a retry is visible in the runtime logs rather than hiding
     // the upstream's real failure rate behind a success.
     console.warn(`[veridian] connection failed, retrying once:`, url);
@@ -309,7 +339,7 @@ async function fetchWithTimeout(
     // service, and that it was retried -- which is what C19 ERROR_TRUTHFUL
     // asks for. The internal address and the millisecond budget move to
     // `detail`, which is logged here and never returned to a client.
-    const detail = `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms: ${url}`;
+    const detail = `VERIDIAN request timed out after ${timeoutMs}ms: ${url}`;
     console.error(`[veridian] ${detail}`);
     throw new VeridianApiError(
       "The construction data service did not respond in time. Please retry.",
@@ -530,11 +560,17 @@ export async function callVeridianBinary(
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const { res, durationMs } = await fetchWithTimeout(`${base}${path}`, {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${apiKey}` },
-    cache: "no-store",
-  });
+  // File transfer, not a screen read -- see VERIDIAN_UPLOAD_TIMEOUT_MS.
+  const { res, durationMs } = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${apiKey}` },
+      cache: "no-store",
+    },
+    undefined,
+    VERIDIAN_UPLOAD_TIMEOUT_MS
+  );
 
   if (!res.ok) await throwForResponse(res, durationMs);
   return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
@@ -553,12 +589,20 @@ export async function callVeridianUpload<T = unknown>(
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const { res, durationMs } = await fetchWithTimeout(`${base}${path}`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}` },
-    body: formData,
-    cache: "no-store",
-  });
+  // File transfer, not a screen read -- see VERIDIAN_UPLOAD_TIMEOUT_MS. This is
+  // the one that matters most: a POST is never retried, so an abort here loses
+  // the upload outright.
+  const { res, durationMs } = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}` },
+      body: formData,
+      cache: "no-store",
+    },
+    undefined,
+    VERIDIAN_UPLOAD_TIMEOUT_MS
+  );
 
   if (!res.ok) await throwForResponse(res, durationMs);
   return res.json() as Promise<T>;
