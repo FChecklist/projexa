@@ -93,8 +93,10 @@ import {
 } from "@/lib/pill-catalogue";
 import { NOT_IN_PROJEXA, VERIDIAN_LINK, isPillRouteOpen, pillHref } from "@/lib/pill-routes";
 import {
+  MISSING_PROJECT,
   canSend as canSendFrom,
   chainPrompt,
+  missingThings,
   sendLabel as sendLabelFor,
   type ComposerState,
 } from "@/lib/chain-status";
@@ -1017,6 +1019,42 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [project]
   );
 
+  // R67 A-19 -- CHOOSING A PROJECT, FROM WHEREVER THE USER CHOSE IT.
+  //
+  // The rail cycles and band 2's chips name one directly, and both must do the
+  // SAME thing -- otherwise a project picked from the chips would be forgotten
+  // on the next reload, or would leave the URL naming a different one. Extracted
+  // from the rail's own handler rather than copied, because two copies of this
+  // are two chances for the rail and the pane to disagree, which is the defect
+  // A-05 and A-13 both exist to close.
+  const chooseProject = useCallback(
+    (nextId: string | null) => {
+      setProjectPrompt(null);
+      setRailProjectId(nextId);
+      // R67 A-05: remembered for this browser, in localStorage for the shell
+      // and in a cookie so the SERVER resolves the same project -- then
+      // re-render the pane, so the screen under the rail is about the project
+      // the rail now names. Without the refresh the rail and the pane would
+      // disagree for as long as the user stayed on the page.
+      writeStoredProjectId(nextId);
+      // R67 A-13 -- ON A SCREEN WHOSE URL NAMES THE PROJECT, THE CHOICE CHANGES
+      // THE URL. The URL is the single source of truth, so a control that only
+      // wrote local state would appear to do nothing at all here: the next
+      // render would read the unchanged ?projectId= and put the old name
+      // straight back.
+      if (routeProjectId) {
+        const params = new URLSearchParams(window.location.search);
+        if (nextId) params.set("projectId", nextId);
+        else params.delete("projectId");
+        const qs = params.toString();
+        router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
+        return;
+      }
+      router.refresh();
+    },
+    [routeProjectId, router]
+  );
+
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
   // cannot proceed without a project says so in the module's own words AND
   // moves keyboard focus to the rail's project control, so the next keystroke
@@ -1595,6 +1633,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       shipped: screen.shipped,
       hasProjects: !projectsLoaded || projects.length > 0,
       hasProject: Boolean(project),
+      // A-19: on an org-wide screen -- the Reports catalogue, Customers,
+      // Vendors -- a project is not part of the sentence, so it is not a
+      // missing thing and Send is not held hostage to choosing one.
+      projectRequired: activeModule ? activeModule.needsProject !== false : true,
       projectName: project?.name ?? null,
       // A-11/A-12: the module in play -- the one just picked, else the one the
       // screen IS. One answer, so the next question names one module.
@@ -1608,6 +1650,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // client would be a guess dressed up as a validation.
       missing: [],
       hasText: draft.trim().length > 0,
+      // A-19: the user's OWN segments. The screen's module is not one of them
+      // -- standing on Permits is not the same as having said anything.
+      hasSegment: segments.length > 0,
       // A-15: it changes the Send button's name and nothing else.
       awaitingText,
       busy: submitting,
@@ -1621,6 +1666,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       activeModule,
       armedCard,
       draft,
+      segments,
       awaitingText,
       submitting,
       submitError,
@@ -1630,6 +1676,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const instruction = chainPrompt(composerState);
   const sendEnabled = canSendFrom(composerState);
   const sendButtonLabel = sendLabelFor(composerState);
+  // A-19: what the button's own name is naming, so band 2 can offer the thing
+  // it asks for rather than only reporting its absence.
+  const missingSendItems = useMemo(() => missingThings(composerState), [composerState]);
 
   // A-10 -- THE FIRST-RUN HINT. One line, under the cards, for an account that
   // has never completed anything: the three-step shape of the whole product,
@@ -1690,6 +1739,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         </p>
       );
     }
+    // R67 A-19 -- "When the missing item is a project, band 2 shows the project
+    // chips." The button says what is missing; this is where it can be supplied
+    // without leaving the composer. It outranks the option chain because a
+    // module's verbs all need the project anyway -- offering them first would
+    // be offering a click that can only end in "choose a project".
+    if (missingSendItems.includes(MISSING_PROJECT) && projects.length > 0) {
+      return (
+        <OptionChain
+          legend="Which project?"
+          options={projects.map((p) => ({ id: p.id, label: p.name }))}
+          kind="root"
+          selectedId={projectId}
+          onAdvance={(segment) => chooseProject(segment.id)}
+        />
+      );
+    }
     if (!selectedModule || screen.createSegment) return null;
     const leaves = chainOptionsFor(selectedModule);
     if (leaves.length === 0) return null;
@@ -1707,7 +1772,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         }}
       />
     );
-  }, [platformNotice, selectedModule, screen.createSegment, segments, onLeafSelect]);
+  }, [
+    platformNotice,
+    missingSendItems,
+    projects,
+    projectId,
+    chooseProject,
+    selectedModule,
+    screen.createSegment,
+    segments,
+    onLeafSelect,
+  ]);
 
   return (
     <AppShell
@@ -1764,33 +1839,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               // starts from the project actually on show, which after A-03 may
               // be the one the SCREEN resolved rather than the last one clicked.
               if (projects.length === 0) return;
-              setProjectPrompt(null);
               const i = projects.findIndex((p) => p.id === projectId);
               const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-              const nextId = next ? next.id : null;
-              setRailProjectId(nextId);
-              // R67 A-05: remembered for this browser, in localStorage for the
-              // shell and in a cookie so the SERVER resolves the same project
-              // -- then re-render the pane, so the screen under the rail is
-              // about the project the rail now names. Without the refresh the
-              // rail and the pane would disagree for as long as the user stayed
-              // on the page, which is the defect this item exists to close.
-              writeStoredProjectId(nextId);
-              // R67 A-13 -- ON A SCREEN WHOSE URL NAMES THE PROJECT, THE RAIL
-              // CHANGES THE URL. The URL is the single source of truth, so a
-              // rail that only wrote local state would appear to do nothing at
-              // all here: the next render would read the unchanged ?projectId=
-              // and put the old name straight back. Changing the URL is the
-              // rail doing exactly what it says.
-              if (routeProjectId) {
-                const params = new URLSearchParams(window.location.search);
-                if (nextId) params.set("projectId", nextId);
-                else params.delete("projectId");
-                const qs = params.toString();
-                router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
-                return;
-              }
-              router.refresh();
+              chooseProject(next ? next.id : null);
             }}
             search={<SearchTrigger />}
             alerts={<NotificationBell />}

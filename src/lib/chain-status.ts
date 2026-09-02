@@ -59,6 +59,15 @@ export type ComposerState = {
   hasProjects: boolean;
   /** A project is resolved -- from the route's projectId or the top rail. */
   hasProject: boolean;
+  /**
+   * A-19. FALSE on a screen whose work is org-wide -- the Reports catalogue,
+   * Customers, Vendors. Defaults to true, because almost everything in this
+   * product is written against one project. Without it, "pick a project" would
+   * be listed as a missing thing on screens where a project is not part of the
+   * sentence at all, and Send would sit disabled waiting for something the user
+   * has no reason to choose.
+   */
+  projectRequired?: boolean;
   projectName?: string | null;
   /** The module the current screen IS, when standing in one. */
   moduleLabel?: string | null;
@@ -68,6 +77,12 @@ export type ComposerState = {
   missing?: readonly MissingParam[];
   /** The input box has real content. */
   hasText: boolean;
+  /**
+   * A-19. The user has put at least one segment of their OWN in the strip --
+   * a module, a card, a step. The screen's own module does not count: standing
+   * on Permits is not the same as having said anything.
+   */
+  hasSegment?: boolean;
   /**
    * A-15. The user has said, in as many words, that they will type it: they
    * chose "Other - type it". It changes nothing about the STATE -- no segment
@@ -101,7 +116,8 @@ export function chainStatus(state: ComposerState): ChainStatus {
   if (state.busy) return "sending";
   if (state.error) return "error";
   if (!state.hasProjects) return "no-projects";
-  if (!state.hasProject) return "no-project";
+  // A-19: on an org-wide screen there is no project to be missing.
+  if (!state.hasProject && state.projectRequired !== false) return "no-project";
   if (state.action) {
     const missing = state.missing ?? [];
     if (missing.length > 0) return `missing-step:${missing[0].key}`;
@@ -153,6 +169,34 @@ export function chainPrompt(state: ComposerState): string {
 }
 
 /**
+ * R67 A-19 -- THE ONE MISSING THING, IN THE USER'S OWN WORDS.
+ *
+ * A-19 replaces the grey reason text beside the Send button with the LABEL
+ * form: "Send" when it can be pressed, otherwise "Send (pick a project, say
+ * what you need)". The reason is then unmissable -- it is written on the thing
+ * the user is reaching for -- and there is exactly one place on screen where
+ * "why can't I send" is answered.
+ *
+ * ORDER IS FIXED AND IS NOT A PREFERENCE: a project first, because it is the
+ * decision every other one hangs off, and because getting it wrong is the most
+ * expensive mistake this product offers.
+ *
+ * NOTE WHAT "say what you need" IS MISSING FROM. A SEGMENT counts as having
+ * said something -- A-19's own acceptance is that clicking a module pill drops
+ * that clause and changes nothing else -- so it is asked for only when the user
+ * has neither picked anything nor typed anything.
+ */
+export const MISSING_PROJECT = "pick a project";
+export const MISSING_TEXT = "say what you need";
+
+export function missingThings(state: ComposerState): string[] {
+  const missing: string[] = [];
+  if (state.projectRequired !== false && !state.hasProject && state.hasProjects) missing.push(MISSING_PROJECT);
+  if (!state.action && !state.hasSegment && !state.hasText) missing.push(MISSING_TEXT);
+  return missing;
+}
+
+/**
  * THE SEND BUTTON'S OWN NAME. A button labelled by what it will do is the
  * cheapest possible way to answer "what happens if I press this", and it is
  * the reason the strip no longer has to.
@@ -160,6 +204,13 @@ export function chainPrompt(state: ComposerState): string {
  * IT NEVER BECOMES "Sending...". Replacing the label mid-flight destroys the
  * one word the user was reading to decide whether to press it, and it makes
  * the button's width jump; a spinner sits beside it instead (see Composer).
+ *
+ * A-10 AND A-19 BOTH NAME THIS BUTTON, and the precedence between them is
+ * deliberate: an ARMED action is named for what it will do ("Save progress",
+ * "Ask", "Run"), because at that point nothing is missing and "Send" would be
+ * strictly less informative. Everything else -- which is every state A-19's own
+ * acceptance sweeps, since it walks the tab routes at rest with nothing armed
+ * -- takes the "Send (...)" form.
  */
 export function sendLabel(state: ComposerState): string {
   // Computed from the state UNDERNEATH any error, for the same reason
@@ -182,12 +233,16 @@ export function sendLabel(state: ComposerState): string {
         return "Run";
     }
   }
-  // A-15 (and the shape A-19 generalises): once the user has chosen "Other -
-  // type it", the ONE thing standing between them and a submission is the
-  // sentence itself, and the button names it rather than sitting there disabled
-  // with nothing to say. Nothing else on screen changes -- no segment is added
-  // and the strip keeps asking its own question.
-  if (!state.action && !state.hasText && state.awaitingText) return "Send (say what you need)";
+  // A-19 GENERALISES A-15'S SHAPE. A-15 shipped "Send (say what you need)" for
+  // the one case it owned -- the user had chosen "Other - type it" and the only
+  // thing left was the sentence. A-19 makes that the rule for every missing
+  // thing, in one fixed order, so the button answers "why can't I press this"
+  // wherever the answer happens to be. "Other - type it" still forces the text
+  // clause even when a segment is present, because the user has just said in as
+  // many words that they are going to type.
+  const missing = missingThings(state);
+  if (state.awaitingText && !state.hasText && !missing.includes(MISSING_TEXT)) missing.push(MISSING_TEXT);
+  if (missing.length > 0) return `Send (${missing.join(", ")})`;
   // Free text, and every state where nothing is armed: the generic verb is
   // correct because the server decides what the sentence means.
   return "Send";
@@ -201,7 +256,10 @@ export function sendLabel(state: ComposerState): string {
 export function canSend(state: ComposerState): boolean {
   const status = chainStatus(state);
   if (status === "sending" || status === "not-found") return false;
-  if (!state.hasProjects || !state.hasProject) return false;
+  if (!state.hasProjects) return false;
+  // A-19: a project is required almost everywhere, and on the screens where it
+  // is not, demanding one would block work that is genuinely org-wide.
+  if (state.projectRequired !== false && !state.hasProject) return false;
   if (status.startsWith("missing-step:")) return false;
   return Boolean(state.action) || state.hasText;
 }

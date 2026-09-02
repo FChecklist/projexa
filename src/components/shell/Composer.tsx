@@ -52,6 +52,14 @@
 //  7. NAVY ON SAFFRON (A-10, WS-G tokens, no new colour). White on saffron was
 //     the contrast failure; the navy already in the palette fixes it without
 //     inventing a shade.
+//
+//  8. THE REASON IS IN THE BUTTON'S NAME (A-19). "Send (pick a project, say
+//     what you need)" -- so the answer to "why can't I press this" is written
+//     on the thing being pressed, and the accessible name is exactly the label
+//     rather than the label plus a second sentence appended to it.
+//
+//  9. INK AND GREY ARE CLASSES, NOT CONTENT (A-19), and a value the user did
+//     NOT type is selected on focus so it reads as a draft they may replace.
 
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
@@ -136,6 +144,9 @@ export function Composer({
 }: ComposerProps) {
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const taRef = textareaRef ?? ownRef;
+  // R67 A-19 -- WHAT THE USER LAST TYPED, so a value that arrived some other
+  // way can be told apart from one they wrote. See the focus handler below.
+  const lastTypedRef = useRef("");
 
   // The box sizes ITSELF. This is the whole of the sizing logic, and it is
   // deliberately not user-controllable.
@@ -188,10 +199,33 @@ export function Composer({
 
         {/* 4. INPUT -- real height, generous padding. Not a single line. */}
         <div className="shrink-0 px-3 pb-2.5 pt-1">
+          {/* R67 A-19 -- INK VERSUS GREY, BY CLASS.
+              The colour of the text in this box is what tells a person whether
+              there is anything in it: a placeholder is a suggestion, a value is
+              something that will be SENT. That distinction used to rest on the
+              content alone -- one inline `color`, applied to both -- so a
+              prefilled sentence and an example of a sentence looked identical,
+              in a box whose button writes to a project. The ink and the grey
+              are separate classes now, and neither depends on what the words
+              happen to say. */}
           <textarea
             ref={taRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              lastTypedRef.current = e.target.value;
+              onChange(e.target.value);
+            }}
+            onFocus={(e) => {
+              // A-19 -- A VALUE THAT ARRIVED ON ITS OWN IS SELECTED ON FOCUS,
+              // "so it reads as typed text". A chain replay or a prefill puts a
+              // whole sentence in the box that the user did not write; selecting
+              // it says, in the one convention every text field already uses,
+              // "this is a draft you may replace" -- the next keystroke
+              // replaces it instead of appending to the middle of someone
+              // else's sentence. A value the user typed themselves is never
+              // touched: their cursor is theirs.
+              if (value && value !== lastTypedRef.current) e.currentTarget.select();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !sendDisabled && onSubmit) {
                 e.preventDefault();
@@ -201,8 +235,8 @@ export function Composer({
             rows={2}
             placeholder={placeholder}
             aria-label="Describe the task"
-            className="w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none"
-            style={{ color: "var(--color-ct-navy)", minHeight: 46 }}
+            className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--color-ct-navy)] outline-none placeholder:text-[var(--color-ct-muted)]"
+            style={{ minHeight: 46 }}
           />
           {examples && (
             <div className="pt-0.5 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
@@ -235,12 +269,21 @@ export function Composer({
                 is disabled and the reason is the strip's own sentence, carried
                 here as the tooltip and the accessible name rather than printed
                 a second time in grey. */}
+            {/* R67 A-19 -- THE LABEL IS THE WHOLE OF THE ACCESSIBLE NAME.
+                It used to be "<label> — <the strip's question>" whenever Send
+                was disabled, so the button announced one sentence and read
+                another, and the reason was said twice on one screen: once in
+                the strip and once here. A-19 puts the reason INSIDE the label
+                ("Send (pick a project, say what you need)") and leaves nothing
+                beside the button to disagree with it. The strip's question
+                stays as the hover title, which A-18 already settled is
+                supplementary text and never the only label. */}
             <button
               type="button"
               onClick={onSubmit}
               disabled={sendDisabled}
               aria-busy={busy}
-              aria-label={canSend ? sendLabel : instruction ? `${sendLabel} — ${instruction}` : sendLabel}
+              aria-label={sendLabel}
               title={instruction || sendLabel}
               className={`${busy ? "" : "ml-auto "}rounded-lg px-3 text-[12px] font-medium disabled:opacity-40`}
               style={{

@@ -8,10 +8,13 @@
 // combination of inputs can bring back one of the retired sentences.
 import { describe, test, expect } from "bun:test";
 import {
+  MISSING_PROJECT,
+  MISSING_TEXT,
   RETIRED_STRINGS,
   canSend,
   chainPrompt,
   chainStatus,
+  missingThings,
   sendLabel,
   type ComposerState,
 } from "./chain-status";
@@ -126,7 +129,11 @@ describe("sendLabel -- the button is named for what it will do", () => {
 
   test("free text keeps the generic verb -- the server decides what it means", () => {
     expect(sendLabel({ ...base, hasText: true })).toBe("Send");
-    expect(sendLabel(base)).toBe("Send");
+    // A-19 SUPERSEDES the second half of this assertion. With nothing typed,
+    // nothing picked and nothing armed there IS something missing, and A-19
+    // rules the button must name it rather than sit there saying "Send".
+    expect(sendLabel(base)).toBe("Send (say what you need)");
+    expect(sendLabel({ ...base, hasSegment: true })).toBe("Send");
   });
 
   test("a blocked action shows the count of what is missing, and stays named", () => {
@@ -175,6 +182,75 @@ describe("sendLabel -- the button is named for what it will do", () => {
       }
     }
     expect([...everyLabel].some((l) => l.toLowerCase().includes("sending"))).toBe(false);
+  });
+});
+
+describe("A-19: the Send label names the one missing thing", () => {
+  // Every state below is one A-19's acceptance actually walks: the tab routes
+  // at rest, with nothing armed.
+  const resting = { ...base, hasProjects: true };
+
+  test("the acceptance's own example: no project and an empty box", () => {
+    expect(sendLabel({ ...resting, hasProject: false })).toBe("Send (pick a project, say what you need)");
+  });
+
+  test("clicking a module pill changes ONLY the label, dropping 'say what you need'", () => {
+    const before = { ...resting, hasProject: false };
+    const after = { ...before, hasSegment: true };
+    expect(sendLabel(before)).toBe("Send (pick a project, say what you need)");
+    expect(sendLabel(after)).toBe("Send (pick a project)");
+    // "only the label": the strip's own question and the send gate are the same
+    // before and after, because picking a module answered neither of them.
+    expect(chainPrompt(after)).toBe(chainPrompt(before));
+    expect(canSend(after)).toBe(canSend(before));
+  });
+
+  test("typing answers the same clause a pill does", () => {
+    expect(sendLabel({ ...resting, hasProject: false, hasText: true })).toBe("Send (pick a project)");
+  });
+
+  test("a project resolved and something said leaves the bare word", () => {
+    expect(sendLabel({ ...resting, hasText: true })).toBe("Send");
+    expect(sendLabel({ ...resting, hasSegment: true })).toBe("Send");
+  });
+
+  test("order is fixed: the project is always named first", () => {
+    expect(missingThings({ ...resting, hasProject: false })).toEqual([MISSING_PROJECT, MISSING_TEXT]);
+  });
+
+  test("an org-wide screen never asks for a project it does not use", () => {
+    const reports = { ...resting, hasProject: false, projectRequired: false };
+    expect(missingThings(reports)).toEqual([MISSING_TEXT]);
+    expect(sendLabel(reports)).toBe("Send (say what you need)");
+    expect(chainStatus(reports)).toBe("no-action");
+    // ...and Send is not held hostage to a decision the screen does not need.
+    expect(canSend({ ...reports, hasText: true })).toBe(true);
+  });
+
+  test("an org with NO projects is not asked to pick one -- there is none to pick", () => {
+    expect(missingThings({ ...base, hasProjects: false, hasProject: false })).toEqual([MISSING_TEXT]);
+  });
+
+  test("every reachable label is exactly 'Send', a 'Send (...)' form, or an armed action's own name", () => {
+    const armedNames = new Set(["Save progress", "Ask", "Run"]);
+    for (const hasProject of [true, false]) {
+      for (const hasSegment of [true, false]) {
+        for (const hasText of [true, false]) {
+          for (const awaitingText of [true, false]) {
+            for (const action of [null, RECORD, EXPIRING, WPR]) {
+              const label = sendLabel({ ...base, hasProject, hasSegment, hasText, awaitingText, action });
+              const ok =
+                label === "Send" ||
+                /^Send \((pick a project|say what you need)(, (pick a project|say what you need))?\)$/.test(label) ||
+                armedNames.has(label) ||
+                /^.+ \(\d+ required fields?\)$/.test(label);
+              if (!ok) throw new Error(`unexpected Send label: ${label}`);
+              expect(ok).toBe(true);
+            }
+          }
+        }
+      }
+    }
   });
 });
 
