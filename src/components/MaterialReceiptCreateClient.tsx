@@ -3,76 +3,119 @@
 // Real-screen conversion (2026-08-30): replaces MaterialsClient.tsx's old
 // "Record Receipt" Dialog popup with a real create screen. No Object Page
 // -- a write-once inbound-receipt transaction, same class as Attendance.
-import { useEffect, useState } from "react";
+//
+// R67 D-67: onto the shared archetype, and with the material-master read
+// fixed. That read's failure was a toast, so the Material select simply had
+// no options and the primary sat disabled naming "Material" as missing --
+// the form blaming a storekeeper for a backend failure. It now says what
+// happened, offers Retry, and the disabled reason names the real cause.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { PaneErrorCard } from "@/components/PaneState";
+import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import type { CreateField } from "@/lib/create-screen";
 
 type Material = { id: string; name: string; isActive: boolean };
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function MaterialReceiptCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [materialId, setMaterialId] = useState("");
-  const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [quantity, setQuantity] = useState("");
-  const [unitCost, setUnitCost] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [materialsError, setMaterialsError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({ receivedDate: todayIso() });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`)
-      .then((d) => setMaterials((d.materials ?? []).filter((m) => m.isActive)))
-      .catch((err) => toast.error(errorMessage(err, "Couldn't load material master")));
+  const loadMaterials = useCallback(async () => {
+    setMaterialsError(null);
+    try {
+      const d = await fetchJson<{ materials?: Material[] }>(
+        `/api/materials/master?projectId=${encodeURIComponent(projectId)}`
+      );
+      setMaterials((d.materials ?? []).filter((m) => m.isActive));
+    } catch (err) {
+      setMaterials([]);
+      setMaterialsError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
+    }
   }, [projectId]);
 
-  const missing = [...(materialId ? [] : ["Material"]), ...(receivedDate ? [] : ["Received Date"]), ...(quantity ? [] : ["Quantity"])];
+  useEffect(() => {
+    void loadMaterials();
+  }, [loadMaterials]);
+
+  const moduleHref = `/materials?projectId=${projectId}&tab=receipts`;
+
+  const fields: CreateField[] = [
+    {
+      name: "materialId",
+      label: "Material",
+      kind: "select",
+      required: true,
+      placeholder: materialsError ? "Could not be loaded" : "Select material",
+      options: materials.map((m) => ({ value: m.id, label: m.name })),
+    },
+    { name: "receivedDate", label: "Received Date", kind: "date", required: true },
+    { name: "quantity", label: "Quantity", kind: "number", required: true, placeholder: "e.g. 120" },
+    {
+      name: "unitCost",
+      label: "Unit Cost",
+      kind: "number",
+      placeholder: "e.g. 28.50",
+      help: "Leave blank to use the master's own unit cost.",
+    },
+  ];
 
   async function createReceipt() {
-    if (missing.length) return;
-    setSubmitting(true);
+    setSaving(true);
+    setError(null);
     try {
       await fetchJson("/api/materials", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, materialId, receivedDate, quantity: Number(quantity), unitCost: unitCost ? Number(unitCost) : undefined }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          materialId: values.materialId,
+          receivedDate: values.receivedDate,
+          quantity: Number(values.quantity),
+          unitCost: values.unitCost ? Number(values.unitCost) : undefined,
+        }),
       });
-      toast.success("Receipt recorded");
-      router.push(`/materials?projectId=${projectId}&tab=receipts`);
+      // A receipt has no object page -- it is a write-once movement -- so the
+      // destination is the ledger it was just added to, on its own tab.
+      router.replace(moduleHref);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record receipt"));
-    } finally {
-      setSubmitting(false);
+      setError(errorMessage(err, "The receipt could not be recorded."));
+      setSaving(false);
     }
   }
 
   return (
-    <ObjectScreen
-      breadcrumb="Materials / Record Receipt"
+    <CreateScreen
+      module="Materials"
+      moduleHref={moduleHref}
+      objectLabel="Receipt"
       title="Record Inbound Receipt"
-      mode="create"
-      hasDraft={false}
-      onSave={createReceipt}
-      onCancel={() => router.push(`/materials?projectId=${projectId}&tab=receipts`)}
-      onBack={() => router.push(`/materials?projectId=${projectId}&tab=receipts`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Saving…" : missing.length ? missing.join(", ") : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Material</Label>
-          <Select value={materialId} onValueChange={setMaterialId}>
-            <SelectTrigger><SelectValue placeholder="Select material" /></SelectTrigger>
-            <SelectContent>{materials.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Received Date</Label><Input type="date" value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Unit Cost (optional — defaults to the master cost)</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      // A material that cannot be chosen is not the user's omission. Naming
+      // it as "missing" would be the form blaming them for a failed read.
+      extraMissing={materialsError ? ["the material list could not be loaded"] : []}
+      banner={
+        materialsError ? (
+          <PaneErrorCard entity="the material master" error={materialsError} onRetry={() => void loadMaterials()} />
+        ) : undefined
+      }
+      error={error}
+      saving={saving}
+      onSubmit={createReceipt}
+    />
   );
 }

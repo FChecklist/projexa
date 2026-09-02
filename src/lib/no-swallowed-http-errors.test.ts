@@ -196,6 +196,8 @@ function unguardedChainSites(source: string): string[] {
  *
  * Removed by R67 D-55: WorkProgressPageClient, WorkProgressAnalyticalClient,
  * WorkProgressFormClient, DocumentsClient.
+ * Removed by R67 D-67: ScheduleTaskCreateClient (migrated to CreateScreen,
+ * which reads through fetchJson).
  */
 const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
   "CompanyCreateClient.tsx",
@@ -208,7 +210,6 @@ const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
   "SalesDashboardClient.tsx",
   "SalesOrderCreateClient.tsx",
   "SalesQuotationCreateClient.tsx",
-  "ScheduleTaskCreateClient.tsx",
   "SettingsClient.tsx",
 ]);
 

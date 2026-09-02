@@ -3,99 +3,137 @@
 // Real-screen conversion (2026-08-30) -- replaces DrawingsClient.tsx's old
 // "Add Drawing" Dialog popup with a real create screen, same fields
 // (kind, discipline, file-or-external-link for 3D walkthroughs).
-import { useRef, useState } from "react";
+//
+// R67 D-67: onto the shared archetype. This form had the worst version of
+// the fail-after-click problem in the module. Its Save was enabled with
+// only a name typed, and the file check ran INSIDE the submit handler --
+// so a user picked "3D Walkthrough", typed a name, pressed Save, and only
+// then was told "A file is required" by a toast that faded. The required
+// set now depends on the mode the user actually chose, it is named in the
+// button before the click, and a chosen file survives a refused save with
+// its name still echoed on screen (a file input cannot be repopulated
+// programmatically, so saying nothing would look like the file was lost).
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import type { CreateField } from "@/lib/create-screen";
 
 export default function DrawingCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [kind, setKind] = useState<"dwg" | "3d_walkthrough">("dwg");
-  const [name, setName] = useState("");
-  const [discipline, setDiscipline] = useState("");
-  const [linkMode, setLinkMode] = useState(false);
-  const [externalUrl, setExternalUrl] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({ kind: "dwg" });
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const usingLink = kind === "3d_walkthrough" && linkMode;
+  const kind = values.kind || "dwg";
+  // A walkthrough may be a hosted link instead of an upload; a DWG never is.
+  const usingLink = kind === "3d_walkthrough" && values.source === "link";
+
+  const moduleHref = `/drawings?projectId=${projectId}`;
+
+  const fields: CreateField[] = [
+    {
+      name: "kind",
+      label: "Kind",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "dwg", label: "DWG Drawing" },
+        { value: "3d_walkthrough", label: "3D Walkthrough" },
+      ],
+    },
+    { name: "name", label: "Name", kind: "text", required: true, placeholder: "e.g. GF-101 Ground floor plan" },
+    { name: "discipline", label: "Discipline", kind: "text", placeholder: "Architectural, Structural, MEP..." },
+    ...(kind === "3d_walkthrough"
+      ? ([
+          {
+            name: "source",
+            label: "Source",
+            kind: "select",
+            required: true,
+            options: [
+              { value: "file", label: "Upload a file" },
+              { value: "link", label: "Use an external link" },
+            ],
+            help: "A walkthrough can be hosted elsewhere; a DWG must be uploaded.",
+          },
+        ] as CreateField[])
+      : []),
+    ...(usingLink
+      ? ([
+          {
+            name: "externalUrl",
+            label: "Walkthrough URL",
+            kind: "text",
+            required: true,
+            placeholder: "https://...",
+            wide: true,
+            validate: (value) =>
+              !value.trim() || /^https?:\/\//i.test(value.trim()) ? null : "Start the address with http:// or https://",
+          },
+        ] as CreateField[])
+      : ([
+          {
+            name: "file",
+            label: kind === "dwg" ? "File (DWG)" : "File",
+            kind: "file",
+            required: true,
+            accept: kind === "dwg" ? ".dwg,.dxf,.pdf" : undefined,
+            wide: true,
+          },
+        ] as CreateField[])),
+  ];
 
   async function createDrawing() {
-    if (!name.trim()) {
-      toast.error("Name is required");
-      return;
-    }
-    if (usingLink ? !externalUrl.trim() : !fileInputRef.current?.files?.[0]) {
-      toast.error(usingLink ? "A walkthrough URL is required" : "A file is required");
-      return;
-    }
+    setSaving(true);
+    setError(null);
     const formData = new FormData();
     formData.set("projectId", projectId);
     formData.set("kind", kind);
-    formData.set("name", name.trim());
-    if (discipline.trim()) formData.set("discipline", discipline.trim());
-    if (usingLink) {
-      formData.set("externalUrl", externalUrl.trim());
-    } else {
-      formData.set("file", fileInputRef.current!.files![0]);
-    }
-    setSubmitting(true);
+    formData.set("name", (values.name ?? "").trim());
+    if ((values.discipline ?? "").trim()) formData.set("discipline", values.discipline.trim());
+    if (usingLink) formData.set("externalUrl", (values.externalUrl ?? "").trim());
+    else if (file) formData.set("file", file);
+
     try {
       const res = await fetch("/api/drawings", { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to add drawing");
-      toast.success("Drawing added");
-      router.push(`/drawings/${data.id}?projectId=${projectId}`);
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
+      router.replace(`${createdHref("/drawings", data.id, values.name)}&projectId=${encodeURIComponent(projectId)}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't add drawing");
-    } finally {
-      setSubmitting(false);
+      // The File object is held in state, not in the input, so it survives
+      // this -- CreateScreen echoes its name so the user can see that.
+      setError(err instanceof Error && err.message ? err.message : "The drawing could not be added.");
+      setSaving(false);
     }
   }
 
   return (
-    <ObjectScreen
-      breadcrumb="Drawings & 3D / New Drawing"
+    <CreateScreen
+      module="Drawings & 3D"
+      moduleHref={moduleHref}
+      objectLabel="Drawing"
       title="Add Drawing / 3D Walkthrough"
-      mode="create"
-      hasDraft={false}
-      onSave={createDrawing}
-      onCancel={() => router.push(`/drawings?projectId=${projectId}`)}
-      onBack={() => router.push(`/drawings?projectId=${projectId}`)}
-      saveDisabled={submitting || !name.trim()}
-      saveDisabledReason={submitting ? "Adding…" : !name.trim() ? "Name is required" : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Kind</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as "dwg" | "3d_walkthrough")}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="dwg">DWG Drawing</SelectItem>
-              <SelectItem value="3d_walkthrough">3D Walkthrough</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Discipline (optional)</Label><Input value={discipline} onChange={(e) => setDiscipline(e.target.value)} placeholder="Architectural, Structural, MEP..." /></div>
-        {kind === "3d_walkthrough" && (
-          <button type="button" className="text-sm underline" onClick={() => setLinkMode((v) => !v)}>
-            {linkMode ? "Upload a file instead" : "Use an external link instead"}
-          </button>
-        )}
-        {usingLink ? (
-          <div className="space-y-1.5"><Label>Walkthrough URL</Label><Input type="url" value={externalUrl} onChange={(e) => setExternalUrl(e.target.value)} placeholder="https://..." /></div>
-        ) : (
-          <div className="space-y-1.5">
-            <Label>File{kind === "dwg" ? " (DWG)" : ""}</Label>
-            <Input ref={fileInputRef} type="file" />
-          </div>
-        )}
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={(name, value) =>
+        setValues((v) => {
+          const next = { ...v, [name]: value };
+          // Switching away from a walkthrough retires the link choice, so a
+          // DWG can never be saved with a leftover external URL.
+          if (name === "kind" && value !== "3d_walkthrough") {
+            delete next.source;
+            delete next.externalUrl;
+          }
+          return next;
+        })
+      }
+      files={{ file }}
+      onFileChange={(_, chosen) => setFile(chosen)}
+      error={error}
+      saving={saving}
+      onSubmit={createDrawing}
+    />
   );
 }

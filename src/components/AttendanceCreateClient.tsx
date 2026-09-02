@@ -5,86 +5,120 @@
 // -- a daily attendance row is a write-once transaction (dailyCost computed
 // server-side at write time from the roster entry's own dailyRate), same
 // class as Expenses/Stock Entries.
-import { useEffect, useState } from "react";
+//
+// R67 D-67: onto the shared archetype. The roster read's failure was a
+// toast, so the Worker select had no options and the primary sat disabled
+// naming "Worker" as missing -- the form blaming a site supervisor for a
+// backend failure. It now says what happened, offers Retry, and the reason
+// names the real cause.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { PaneErrorCard } from "@/components/PaneState";
+import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import type { CreateField } from "@/lib/create-screen";
 
 type RosterEntry = { id: string; name: string; isActive: boolean };
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function AttendanceCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [rosterId, setRosterId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("present");
-  const [hoursWorked, setHoursWorked] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({ attendanceDate: todayIso(), status: "present" });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`)
-      .then((d) => setRoster((d.roster ?? []).filter((r) => r.isActive)))
-      .catch((err) => toast.error(errorMessage(err, "Couldn't load roster")));
+  const loadRoster = useCallback(async () => {
+    setRosterError(null);
+    try {
+      const d = await fetchJson<{ roster?: RosterEntry[] }>(
+        `/api/labour-roster?projectId=${encodeURIComponent(projectId)}`
+      );
+      setRoster((d.roster ?? []).filter((r) => r.isActive));
+    } catch (err) {
+      setRoster([]);
+      setRosterError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
+    }
   }, [projectId]);
 
-  const missing = [...(rosterId ? [] : ["Worker"]), ...(attendanceDate ? [] : ["Date"])];
+  useEffect(() => {
+    void loadRoster();
+  }, [loadRoster]);
+
+  const moduleHref = `/labour?projectId=${projectId}&tab=attendance`;
+
+  const fields: CreateField[] = [
+    {
+      name: "rosterId",
+      label: "Worker",
+      kind: "select",
+      required: true,
+      placeholder: rosterError ? "Could not be loaded" : "Select worker",
+      options: roster.map((r) => ({ value: r.id, label: r.name })),
+    },
+    { name: "attendanceDate", label: "Date", kind: "date", required: true },
+    {
+      name: "status",
+      label: "Status",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "present", label: "Present" },
+        { value: "half_day", label: "Half Day" },
+        { value: "absent", label: "Absent" },
+      ],
+    },
+    { name: "hoursWorked", label: "Hours Worked", kind: "number", placeholder: "e.g. 8" },
+  ];
 
   async function createAttendance() {
-    if (missing.length) return;
-    setSubmitting(true);
+    setSaving(true);
+    setError(null);
     try {
       await fetchJson("/api/attendance", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          rosterId: values.rosterId,
+          attendanceDate: values.attendanceDate,
+          status: values.status,
+          hoursWorked: values.hoursWorked ? Number(values.hoursWorked) : undefined,
+        }),
       });
-      toast.success("Attendance recorded");
-      router.push(`/labour?projectId=${projectId}&tab=attendance`);
+      // No object page for an attendance row -- back to the tab it joined.
+      router.replace(moduleHref);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record attendance"));
-    } finally {
-      setSubmitting(false);
+      setError(errorMessage(err, "The attendance could not be recorded."));
+      setSaving(false);
     }
   }
 
   return (
-    <ObjectScreen
-      breadcrumb="Labour / Mark Attendance"
+    <CreateScreen
+      module="Labour"
+      moduleHref={moduleHref}
+      objectLabel="Attendance"
       title="Mark Attendance"
-      mode="create"
-      hasDraft={false}
-      onSave={createAttendance}
-      onCancel={() => router.push(`/labour?projectId=${projectId}&tab=attendance`)}
-      onBack={() => router.push(`/labour?projectId=${projectId}&tab=attendance`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Saving…" : missing.length ? missing.join(", ") : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Worker</Label>
-          <Select value={rosterId} onValueChange={setRosterId}>
-            <SelectTrigger><SelectValue placeholder="Select worker" /></SelectTrigger>
-            <SelectContent>{roster.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} /></div>
-        <div className="space-y-1.5">
-          <Label>Status</Label>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="present">Present</SelectItem>
-              <SelectItem value="half_day">Half Day</SelectItem>
-              <SelectItem value="absent">Absent</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Hours Worked (optional)</Label><Input type="number" value={hoursWorked} onChange={(e) => setHoursWorked(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      extraMissing={rosterError ? ["the roster could not be loaded"] : []}
+      banner={
+        rosterError ? (
+          <PaneErrorCard entity="this project's roster" error={rosterError} onRetry={() => void loadRoster()} />
+        ) : undefined
+      }
+      error={error}
+      saving={saving}
+      onSubmit={createAttendance}
+    />
   );
 }
