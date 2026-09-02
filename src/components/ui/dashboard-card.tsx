@@ -33,28 +33,34 @@ type DashboardCardProps = {
 // The border and the icon still tint, because a tint on a 4px rule and a
 // 44px icon plate is decoration -- the tile's TITLE carries the meaning, and
 // the icon is a second, non-colour cue on top of it.
+//
+// Deliberately inline styles rather than Tailwind arbitrary-value utilities:
+// these are CSS custom properties resolved at paint time, so there is nothing
+// for the content scanner to find and nothing that can silently fail to
+// generate a rule -- the exact failure mode globals.css's own @source comment
+// documents for this repo.
 const variantStyles: Record<
   DashboardCardVariant,
-  { border: string; iconBg: string; iconColor: string }
+  { borderColor: string; iconBg: string; iconColor: string }
 > = {
   total: {
-    border: "border-l-ct-navy",
-    iconBg: "bg-ct-navy/10",
+    borderColor: "var(--foreground)",
+    iconBg: "color-mix(in srgb, var(--foreground) 10%, transparent)",
     iconColor: "var(--foreground)",
   },
   overdue: {
-    border: "border-l-[color:var(--chart-4)]",
-    iconBg: "bg-[color:color-mix(in_srgb,var(--chart-4)_14%,transparent)]",
+    borderColor: "var(--chart-4)",
+    iconBg: "color-mix(in srgb, var(--chart-4) 14%, transparent)",
     iconColor: "var(--status-late-text)",
   },
   pending: {
-    border: "border-l-[color:var(--chart-3)]",
-    iconBg: "bg-[color:color-mix(in_srgb,var(--chart-3)_16%,transparent)]",
+    borderColor: "var(--chart-3)",
+    iconBg: "color-mix(in srgb, var(--chart-3) 16%, transparent)",
     iconColor: "var(--status-needs-you-text)",
   },
   completed: {
-    border: "border-l-[color:var(--chart-2)]",
-    iconBg: "bg-[color:color-mix(in_srgb,var(--chart-2)_16%,transparent)]",
+    borderColor: "var(--chart-2)",
+    iconBg: "color-mix(in srgb, var(--chart-2) 16%, transparent)",
     iconColor: "var(--status-done-text)",
   },
 };
@@ -71,18 +77,13 @@ export function DashboardCard({
 
   return (
     <Card
-      className={cn(
-        "border-l-4 shadow-card transition-shadow hover:shadow-md",
-        styles.border,
-        className
-      )}
+      className={cn("border-l-4 shadow-card transition-shadow hover:shadow-md", className)}
+      style={{ borderLeftColor: styles.borderColor }}
     >
       <CardContent className="flex items-center gap-4 p-4">
         <div
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-lg",
-            styles.iconBg
-          )}
+          className="flex size-11 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: styles.iconBg }}
         >
           <Icon className="size-5" style={{ color: styles.iconColor }} />
         </div>
