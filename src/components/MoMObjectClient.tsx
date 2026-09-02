@@ -20,10 +20,11 @@
 // Once published, meeting-level fields AND minutes lock server-side
 // (assertEditable) -- the UI mirrors that by hiding Edit/Save-Minutes
 // rather than letting a click 409.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { AUTOSAVE_IDLE_MS, autosaveIsSendable, autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +57,15 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const [draft, setDraft] = useState({ title: "", meetingType: "team", scheduledAt: "", attendees: "", agenda: "" });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
+  const [autosaveSavedAt, setAutosaveSavedAt] = useState<Date | null>(null);
+  // Set by every real edit, cleared by a landed write. Without it, merely
+  // ENTERING edit mode would schedule a PATCH of unchanged values.
+  const dirtyRef = useRef(false);
+  // The autosave reads the draft from here rather than closing over it, so
+  // the debounce callback does not have to be rebuilt on every keystroke
+  // (which would clear its own pending timer and never fire).
+  const draftRef = useRef(draft);
 
   const [minutesDraft, setMinutesDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -80,6 +90,14 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   }
   useEffect(() => { load(); }, [meetingId]);
 
+  // Synced in an effect, never during render: writing a ref while rendering
+  // is a real hazard (React may discard the render) and the repo's
+  // react-hooks/refs rule rejects it. Declared before the autosave effect,
+  // so within one commit the ref is fresh before a write can be scheduled.
+  useEffect(() => {
+    draftRef.current = draft;
+  });
+
   function toLocalInputValue(iso: string) {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -92,7 +110,32 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       title: meeting.title, meetingType: meeting.meetingType, scheduledAt: toLocalInputValue(meeting.scheduledAt),
       attendees: meeting.attendees.join(", "), agenda: meeting.agenda.join("\n"),
     });
+    dirtyRef.current = false;
+    setAutosaveStatus("idle");
+    setAutosaveSavedAt(null);
     setMode("edit");
+  }
+
+  // R67 D-67: the ONE way this screen changes the draft. Every field goes
+  // through it, so no control can be added later that edits the meeting
+  // without arming the autosave -- which would silently reintroduce the
+  // "typed for ten minutes, pressed Back, lost it all" case.
+  function editDraft(update: (d: typeof draft) => typeof draft) {
+    dirtyRef.current = true;
+    setDraft(update);
+  }
+
+  // R67 D-67: ONE body for both writes. An autosave that sent a different
+  // shape from the Save button would be a second, invisible way to change a
+  // record, and the two would drift the first time either was edited.
+  function meetingPatchBody(d: typeof draft) {
+    return {
+      title: d.title.trim(),
+      meetingType: d.meetingType,
+      scheduledAt: new Date(d.scheduledAt).toISOString(),
+      attendees: d.attendees.split(",").map((s) => s.trim()).filter(Boolean),
+      agenda: d.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
+    };
   }
 
   async function saveEdit() {
@@ -101,15 +144,14 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     try {
       const res = await fetch(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: draft.title.trim(), meetingType: draft.meetingType, scheduledAt: new Date(draft.scheduledAt).toISOString(),
-          attendees: draft.attendees.split(",").map((s) => s.trim()).filter(Boolean),
-          agenda: draft.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
-        }),
+        body: JSON.stringify(meetingPatchBody(draft)),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save meeting");
       toast.success("Meeting saved");
+      dirtyRef.current = false;
+      setAutosaveSavedAt(new Date());
+      setAutosaveStatus("saved");
       setMode("display");
       await load();
     } catch (err) {
@@ -118,6 +160,63 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       setSaving(false);
     }
   }
+
+  // R67 D-67 -- "MoMs autosave after ~2 s of inactivity with 'Saving… /
+  // Saved 12:04'." Before this, an edit lived only in local state until the
+  // user found and pressed Save; Cancel, Back, a reload or a closed tab
+  // threw the whole thing away with no warning at all. The rules -- when a
+  // save is due, what the line says, and when a draft is too incomplete to
+  // send -- are in src/lib/autosave.ts, where they are unit tests.
+  const autosaveMissing = [
+    ...(draft.title.trim() ? [] : ["Title"]),
+    ...(draft.scheduledAt ? [] : ["Date and time"]),
+  ];
+  const autosaveSendable = autosaveIsSendable(autosaveMissing);
+
+  const runAutosave = useCallback(async () => {
+    setAutosaveStatus("saving");
+    try {
+      const res = await fetch(`/api/moms/${meetingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meetingPatchBody(draftRef.current)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
+      dirtyRef.current = false;
+      setAutosaveSavedAt(new Date());
+      setAutosaveStatus("saved");
+    } catch {
+      // Nothing is discarded and the user is not interrupted: the line reads
+      // "Not saved", the values stay on the form, and the explicit Save
+      // button is still there to try again.
+      setAutosaveStatus("error");
+    }
+    // meetingPatchBody is a stable module-shaped helper over its argument,
+    // and the draft is read from a ref, so this callback does not need to be
+    // rebuilt on every keystroke.
+  }, [meetingId]);
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+    // The render right after startEdit() has changed nothing, so it must not
+    // schedule a write; only an edit the user actually made does.
+    if (!dirtyRef.current) return;
+    if (!autosaveSendable) {
+      // A required field emptied mid-edit is HELD, never written: an
+      // autosave must not put the record into a state the Save button
+      // itself refuses to produce.
+      setAutosaveStatus("pending");
+      return;
+    }
+    setAutosaveStatus("pending");
+    const id = setTimeout(() => {
+      void runAutosave();
+    }, AUTOSAVE_IDLE_MS);
+    return () => clearTimeout(id);
+    // Keyed on the draft itself, so every keystroke restarts the pause and
+    // the write happens once the user stops -- not once per character.
+  }, [draft, mode, autosaveSendable, runAutosave]);
 
   async function publish() {
     setPublishing(true);
@@ -266,11 +365,19 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
 
       {mode === "edit" ? (
         <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} /></div>
+          {/* R67 D-67's autosave line. role="status" so a screen reader is
+              told, and it renders nothing at all until there is something
+              true to say -- a screen that has saved nothing makes no claim. */}
+          {autosaveLabel(autosaveStatus, autosaveSavedAt) && (
+            <p role="status" className="text-[12px] text-px-muted">
+              {autosaveLabel(autosaveStatus, autosaveSavedAt)}
+            </p>
+          )}
+          <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => editDraft((d) => ({ ...d, title: e.target.value }))} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <Select value={draft.meetingType} onValueChange={(v) => setDraft((d) => ({ ...d, meetingType: v }))}>
+              <Select value={draft.meetingType} onValueChange={(v) => editDraft((d) => ({ ...d, meetingType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="team">Team</SelectItem>
@@ -281,10 +388,10 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => setDraft((d) => ({ ...d, scheduledAt: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => editDraft((d) => ({ ...d, scheduledAt: e.target.value }))} /></div>
           </div>
-          <div className="space-y-1.5"><Label>Attendees (comma-separated)</Label><Input value={draft.attendees} onChange={(e) => setDraft((d) => ({ ...d, attendees: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Agenda (one per line)</Label><Textarea value={draft.agenda} onChange={(e) => setDraft((d) => ({ ...d, agenda: e.target.value }))} rows={3} /></div>
+          <div className="space-y-1.5"><Label>Attendees (comma-separated)</Label><Input value={draft.attendees} onChange={(e) => editDraft((d) => ({ ...d, attendees: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label>Agenda (one per line)</Label><Textarea value={draft.agenda} onChange={(e) => editDraft((d) => ({ ...d, agenda: e.target.value }))} rows={3} /></div>
         </div>
       ) : (
         <div className="space-y-5 px-4 py-3">
