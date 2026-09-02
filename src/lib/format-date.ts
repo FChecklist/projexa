@@ -54,3 +54,69 @@ export function formatDateTime(value: Date | string | number): string {
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
+
+// ─── R67 D-16: the ORG's date, not the server's ──────────────────────────
+//
+// The three helpers above are pinned to en-US/UTC for one reason only: they
+// must produce the same bytes on the server's SSR pass and in the visitor's
+// browser. That fixed the hydration mismatch and is not being changed --
+// their constants and their tests stay exactly as they are.
+//
+// What it did NOT fix is the SECOND defect the same call sites carry: a UAE
+// construction org reading "8/25/2026, 2:30:00 PM" -- an American date order,
+// a 12-hour clock and a seconds field nobody scheduled a meeting to. The fix
+// is not "unpin the locale" (that reintroduces the mismatch); it is to pin it
+// to the ORGANISATION's locale and time zone instead of the runtime's, which
+// is just as deterministic because both are explicit arguments.
+//
+// The defaults are the demo org's own settings. They are parameters rather
+// than constants because the org-level locale/timeZone/dateFormat columns do
+// not exist yet -- they ship with the org date-format work in another lane --
+// and a caller that has them (from /api/organization) can pass them today
+// without this file changing again.
+export const DEFAULT_ORG_LOCALE = "en-GB";
+export const DEFAULT_ORG_TIME_ZONE = "Asia/Dubai";
+
+/**
+ * e.g. "28 Aug 2026, 10:00" -- the org's date order and a 24-hour clock,
+ * with NO seconds. Deterministic for a given (locale, timeZone) pair, so it
+ * is hydration-safe exactly the way formatDateTime is.
+ *
+ * An unparseable or empty value renders an en-dash rather than "Invalid
+ * Date": a cell that cannot say when something is scheduled must not claim
+ * a date, and "Invalid Date" is a developer's string, not a user's.
+ */
+export function formatDateTimeOrg(
+  value: Date | string | number | null | undefined,
+  locale: string = DEFAULT_ORG_LOCALE,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat(locale, {
+    timeZone,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+/** e.g. "28 Aug 2026" -- the date half of {@link formatDateTimeOrg}. */
+export function formatDateOrg(
+  value: Date | string | number | null | undefined,
+  locale: string = DEFAULT_ORG_LOCALE,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return "—";
+  return new Intl.DateTimeFormat(locale, { timeZone, day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+function toValidDate(value: Date | string | number | null | undefined): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
