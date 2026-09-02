@@ -42,7 +42,12 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Scope of Work (BOQ)" />
+        {/* R67 D-23: the resolved project's own name in the heading. The BOQ
+            list is entirely project-scoped, and resolveSelectedProject() will
+            fall back to the org's first project when no ?projectId= was
+            passed -- a heading that never named the project left the user
+            reading someone else's scope with no way to notice. */}
+        <PageHeading title={project ? `Scope of Work (BOQ) - ${project.name}` : "Scope of Work (BOQ)"} />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>

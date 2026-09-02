@@ -9,7 +9,7 @@
 // runtime-dependent flake.
 import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateTime, formatTime } from "./format-date";
+import { formatDate, formatDateTime, formatDayMonthYear, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -31,6 +31,20 @@ describe("formatDate", () => {
     const iso = "2026-01-01T12:00:00.000Z";
     expect(formatDate(new Date(iso))).toBe(formatDate(iso));
     expect(formatDate(new Date(iso).getTime())).toBe(formatDate(iso));
+  });
+});
+
+describe("formatDayMonthYear (R67 D-23)", () => {
+  test("renders the BOQ list's unambiguous day-month-year form", () => {
+    expect(formatDayMonthYear("2026-08-28T00:00:00.000Z")).toBe("28 Aug 2026");
+  });
+
+  test("is zero-padded, so a column of dates stays aligned", () => {
+    expect(formatDayMonthYear("2026-01-05T00:00:00.000Z")).toBe("05 Jan 2026");
+  });
+
+  test("does not shift across a UTC day boundary", () => {
+    expect(formatDayMonthYear(new Date("2026-08-28T00:00:00.000Z"))).toBe("28 Aug 2026");
   });
 });
 
