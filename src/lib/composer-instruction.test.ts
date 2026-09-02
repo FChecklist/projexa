@@ -31,10 +31,17 @@ describe("composerInstruction", () => {
     expect(composerInstruction(base)).toBe("What do you want to do?");
   });
 
-  test("inside a module it names the project instead of asking for a module", () => {
-    expect(composerInstruction({ ...base, moduleLabel: "Minutes of Meeting" })).toBe(
-      "Type what you need for Cedar Heights Villa - Phase 1"
+  test("inside a module it names the two ways forward, in that module's words (A-06)", () => {
+    expect(composerInstruction({ ...base, moduleLabel: "Permits" })).toBe(
+      "Pick an action above or type what you need on Permits"
     );
+  });
+
+  test("an unshipped URL says so and outranks the chain's own questions (A-06)", () => {
+    // Asking "which project?" on a page that does not exist answers the wrong
+    // question, so the 404 sentence sits above every other state but "sending".
+    expect(composerInstruction({ ...base, shipped: false })).toBe("Page not found — HOME");
+    expect(composerInstruction({ ...base, hasProject: false, shipped: false })).toBe("Page not found — HOME");
   });
 
   test("a pill with a real function is ready to send", () => {
@@ -63,7 +70,9 @@ describe("composerInstruction", () => {
           for (const hasAction of [true, false]) {
             for (const hasText of [true, false]) {
               for (const busy of [true, false]) {
-                states.push({ ...base, hasProjects, hasProject, moduleLabel, hasAction, hasText, busy });
+                for (const shipped of [true, false]) {
+                  states.push({ ...base, hasProjects, hasProject, moduleLabel, hasAction, hasText, busy, shipped });
+                }
               }
             }
           }
@@ -82,8 +91,9 @@ describe("composerInstruction", () => {
       { ...base, moduleLabel: "Permits" },
       { ...base, hasText: true },
       { ...base, busy: true },
+      { ...base, shipped: false },
     ];
-    expect(new Set(states.map(composerInstruction)).size).toBe(6);
+    expect(new Set(states.map(composerInstruction)).size).toBe(7);
   });
 });
 

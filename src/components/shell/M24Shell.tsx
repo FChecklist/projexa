@@ -61,10 +61,9 @@ import { useShellScreen } from "./shell-screen-context";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
 import { deriveMode } from "@/lib/chain-mode";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
+import { useScreenModule } from "./use-screen-module";
 import {
-  chainModuleForPathname,
   chainOptionsFor,
-  moduleForPathname,
   moduleForPill,
   moduleHref,
   moduleRoute,
@@ -524,15 +523,12 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     return routeScreen?.source === "auto" ? { id: project.id, name: `${project.name} (auto-selected)` } : project;
   }, [project, routeScreen?.source]);
 
-  // R67 A-01/A-02 -- THE SCREEN THE COMPOSER IS SERVING.
-  //   screenModule    answers "which module do these pills belong to", and so
-  //                   also "which pill would only point back at this screen".
-  //   chainModule     answers "what does the strip already say" -- the same
-  //                   module, except on the Dashboard, which IS the module
-  //                   directory rather than a module ("Dashboard >" is not the
-  //                   start of a sentence anyone finishes).
-  const screenModule = useMemo(() => moduleForPathname(pathname ?? ""), [pathname]);
-  const chainModule = useMemo(() => chainModuleForPathname(pathname ?? ""), [pathname]);
+  // R67 A-01/A-02/A-06 -- THE SCREEN THE COMPOSER IS SERVING, derived from the
+  // URL in ONE place (see use-screen-module.ts for the four questions it
+  // answers and why they must not be answered separately).
+  const screen = useScreenModule();
+  const screenModule = screen.module;
+  const chainModule = screen.chainModule;
 
   // R67 A-05: the mode is a fact about the chain, not a tab anyone clicks.
   const mode: ChainMode = useMemo(() => deriveMode(segments), [segments]);
@@ -547,13 +543,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // behaviours it needs for free: canCutAt() refuses to offer it an ×, and
   // cutChainFrom()'s floor moves past it, so removing a later step can never
   // strip the screen's own context out of the strip.
+  //
+  // R67 A-06: a CREATE page is the third word of the same sentence, not a
+  // different module -- "<project> › Permits › New permit". It is a fixed
+  // segment for the same reason the module is: the user is standing on it, so
+  // there is nothing to remove. Band 2 stays empty on these routes because the
+  // page's own form IS the card.
   const chain: Chain = useMemo(() => {
     const root = project ? [{ id: project.id, label: project.name, kind: "root" as const }] : [];
     const mod = chainModule
       ? [{ id: `screen:${chainModule.id}`, label: chainModule.label, kind: "root" as const }]
       : [];
-    return { mode, segments: [...root, ...mod, ...segments] };
-  }, [mode, project, chainModule, segments]);
+    const created = screen.createSegment
+      ? [{ id: screen.createSegment.id, label: screen.createSegment.label, kind: "root" as const }]
+      : [];
+    return { mode, segments: [...root, ...mod, ...created, ...segments] };
+  }, [mode, project, chainModule, screen.createSegment, segments]);
 
   // Every (x) goes through the kit's clamp. This component never slices the
   // segment array itself -- the whole point of the rule living in chain.ts.
@@ -842,26 +847,34 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, [activeTab, taskGroups, projectId]);
 
-  // R67 A-02 -- NO STALE CHAIN ACROSS A MODULE CHANGE.
+  // R67 A-02/A-06 -- NO STALE CHAIN ACROSS A NAVIGATION.
   //
   // The strip used to carry whatever the user had built on the LAST screen: a
   // chain reading "Work Progress x > New entry x" sat under the Permits
   // heading, describing a task that belonged to another module, with the (x)
-  // controls still offering to edit it. When the module the user is standing
-  // in changes, the segments and the draft belonged to the old sentence and
-  // are cleared; the new screen's own module is then already in the strip,
-  // because it is derived from the pathname rather than clicked into place.
-  const lastModuleRef = useRef<string | null | undefined>(undefined);
+  // controls still offering to edit it.
+  //
+  // A-06 widens A-02's rule from "the module changed" to "the PATHNAME
+  // changed", because /permits and /permits/new are the same module and are
+  // still two different sentences -- the segments built on the list page do not
+  // describe the create page. usePathname() excludes the query string, so a tab
+  // or filter change (?tab=report, ?withinDays=30) is correctly NOT a new
+  // sentence and leaves the chain alone.
+  //
+  // AND IT KEEPS THE DRAFT. A-02 cleared the textarea here as well; A-06
+  // rules that words the user typed are the user's, and deleting them because
+  // they navigated is the composer writing (or unwriting) their input. The one
+  // exception is a chain LOADED from history, whose text belongs to the old
+  // sentence -- A-09 owns that branch below.
+  const lastPathRef = useRef<string | null>(null);
   useEffect(() => {
-    const id = screenModule?.id ?? null;
-    if (lastModuleRef.current === id) return;
-    lastModuleRef.current = id;
+    if (lastPathRef.current === screen.pathname) return;
+    lastPathRef.current = screen.pathname;
     setSegments([]);
     setPendingFunctionId(null);
-    setDraft("");
     setProjectPrompt(null);
     setSubmitError(null);
-  }, [screenModule]);
+  }, [screen.pathname]);
 
   // R67 A-01: a pill whose destination is the screen already on show is a dead
   // end, so it is not offered at all.
@@ -876,12 +889,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       hasProjects: !projectsLoaded || projects.length > 0,
       hasProject: Boolean(project),
       projectName: project?.name ?? null,
-      moduleLabel: screenModule?.label ?? null,
+      moduleLabel: chainModule?.label ?? null,
       hasAction: Boolean(pendingFunctionId),
       hasText: draft.trim().length > 0,
       busy: submitting,
+      // A-06: an unshipped URL is a fact about the screen, and the strip says
+      // so instead of asking a question about a page that is not there.
+      shipped: screen.shipped,
     }),
-    [projectsLoaded, projects.length, project, screenModule, pendingFunctionId, draft, submitting]
+    [projectsLoaded, projects.length, project, chainModule, pendingFunctionId, draft, submitting, screen.shipped]
   );
   const instruction = composerInstruction(composerState);
   const sendEnabled = canSendFrom(composerState);

@@ -32,6 +32,16 @@ export type ModuleLeaf = {
   query?: Readonly<Record<string, string>>;
   /** False for leaves that are meaningful org-wide (a catalogue, a list). */
   needsProject?: boolean;
+  /**
+   * A-06. The words the STRIP uses when the user is standing on this leaf's
+   * own page, which is not always the words the BUTTON uses. The button sits
+   * under a Permits heading and can afford to say "New"; the strip has to read
+   * as a whole sentence -- "Cedar Heights Villa - Phase 1 › Permits › New
+   * permit" -- so it needs the noun back. Absent means the leaf has no page of
+   * its own (it is a filter or a tab on the module's list route) and can never
+   * become the third segment.
+   */
+  chainLabel?: string;
 };
 
 export type ModuleDef = {
@@ -106,7 +116,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. add the building permit for Villa 21, expiring 30 Nov",
     examples: ["add the building permit for Villa 21, expiring 30 Nov", "which permits expire in the next 30 days"],
     leaves: [
-      { id: "permits.new", label: "New", path: "/permits/new" },
+      { id: "permits.new", label: "New", path: "/permits/new", chainLabel: "New permit" },
       { id: "permits.expiring", label: "Expiring soon", path: "/permits", query: { withinDays: "30" } },
       { id: "permits.open", label: "Open", path: "/permits" },
     ],
@@ -120,7 +130,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. upload revision C of the ground floor plan",
     examples: ["upload revision C of the ground floor plan", "which drawings changed this week"],
     leaves: [
-      { id: "drawings.new", label: "New", path: "/drawings/new" },
+      { id: "drawings.new", label: "New", path: "/drawings/new", chainLabel: "New drawing" },
       { id: "drawings.open", label: "Open", path: "/drawings" },
     ],
   },
@@ -133,7 +143,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. file the signed contract under this project",
     examples: ["file the signed contract under this project", "which documents were added this month"],
     leaves: [
-      { id: "documents.upload", label: "Upload", path: "/documents/upload" },
+      { id: "documents.upload", label: "Upload", path: "/documents/upload", chainLabel: "Upload document" },
       { id: "documents.open", label: "Open", path: "/documents" },
     ],
   },
@@ -147,7 +157,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "Ask about this project's meetings, or type minutes to file…",
     examples: ["file the minutes of today's site meeting", "what was decided about the lift shaft"],
     leaves: [
-      { id: "moms.new", label: "New Meeting", path: "/moms/new" },
+      { id: "moms.new", label: "New Meeting", path: "/moms/new", chainLabel: "New meeting" },
       { id: "moms.open", label: "Open", path: "/moms" },
     ],
   },
@@ -160,7 +170,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. create a revision of the current BOQ",
     examples: ["create a revision of the current BOQ", "what is the contract value of this project"],
     leaves: [
-      { id: "scope.new", label: "New BOQ", path: "/scope/new" },
+      { id: "scope.new", label: "New BOQ", path: "/scope/new", chainLabel: "New BOQ" },
       { id: "scope.open", label: "Open", path: "/scope" },
     ],
   },
@@ -195,8 +205,8 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. mark all masons present today",
     examples: ["mark all masons present today", "who was absent yesterday"],
     leaves: [
-      { id: "labour.attendance", label: "Mark attendance", path: "/labour/attendance/new" },
-      { id: "labour.new", label: "New worker", path: "/labour/new" },
+      { id: "labour.attendance", label: "Mark attendance", path: "/labour/attendance/new", chainLabel: "Mark attendance" },
+      { id: "labour.new", label: "New worker", path: "/labour/new", chainLabel: "New worker" },
       { id: "labour.open", label: "Open", path: "/labour" },
     ],
   },
@@ -209,8 +219,8 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. record 20 bags of cement received today",
     examples: ["record 20 bags of cement received today", "what is the current stock of TMT bars"],
     leaves: [
-      { id: "materials.receipt", label: "Record receipt", path: "/materials/receipts/new" },
-      { id: "materials.new", label: "New material", path: "/materials/new" },
+      { id: "materials.receipt", label: "Record receipt", path: "/materials/receipts/new", chainLabel: "Record receipt" },
+      { id: "materials.new", label: "New material", path: "/materials/new", chainLabel: "New material" },
       { id: "materials.open", label: "Open", path: "/materials" },
     ],
   },
@@ -223,7 +233,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. what is budget versus actual on this project",
     examples: ["what is budget versus actual on this project", "add a budget line for site overheads"],
     leaves: [
-      { id: "budgets.new", label: "New budget", path: "/budgets/new" },
+      { id: "budgets.new", label: "New budget", path: "/budgets/new", chainLabel: "New budget" },
       { id: "budgets.open", label: "Open", path: "/budgets" },
     ],
   },
@@ -236,8 +246,8 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. log 2 hours on the shuttering task today",
     examples: ["log 2 hours on the shuttering task today", "which tasks are late this week"],
     leaves: [
-      { id: "schedule.task", label: "New task", path: "/schedule/tasks/new" },
-      { id: "schedule.time", label: "Log time", path: "/schedule/log-time" },
+      { id: "schedule.task", label: "New task", path: "/schedule/tasks/new", chainLabel: "New task" },
+      { id: "schedule.time", label: "Log time", path: "/schedule/log-time", chainLabel: "Log time" },
       { id: "schedule.open", label: "Open", path: "/schedule" },
     ],
   },
@@ -267,7 +277,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. add a customer, or ask which customers have open quotations",
     examples: ["add a new customer", "which customers have open quotations"],
     leaves: [
-      { id: "customers.new", label: "New customer", path: "/customers/new", needsProject: false },
+      { id: "customers.new", label: "New customer", path: "/customers/new", needsProject: false, chainLabel: "New customer" },
       { id: "customers.open", label: "Open", path: "/customers", needsProject: false },
     ],
   },
@@ -281,7 +291,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. add a vendor, or ask what we owe this month",
     examples: ["add a new vendor", "which vendors worked on this project"],
     leaves: [
-      { id: "vendors.new", label: "New vendor", path: "/vendors/new", needsProject: false },
+      { id: "vendors.new", label: "New vendor", path: "/vendors/new", needsProject: false, chainLabel: "New vendor" },
       { id: "vendors.open", label: "Open", path: "/vendors", needsProject: false },
     ],
   },
@@ -302,8 +312,12 @@ export function normalisePillKey(raw: string): string {
  * is never mistaken for a prefix of another module and "/permits/new" resolves
  * to Permits rather than to nothing.
  */
+export function normalisePathname(pathname: string): string {
+  return pathname.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+}
+
 export function moduleForPathname(pathname: string): ModuleDef | null {
-  const path = pathname.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+  const path = normalisePathname(pathname);
   let best: ModuleDef | null = null;
   let bestLength = -1;
   for (const mod of MODULE_CATALOGUE) {
@@ -377,6 +391,61 @@ export function chainModuleForPathname(pathname: string): ModuleDef | null {
 /** The words shown when a leaf needs a project and none is resolved. */
 export function noProjectPromptFor(mod: ModuleDef): string {
   return mod.noProjectPrompt ?? `Choose a project for ${mod.label}`;
+}
+
+/**
+ * A-06 -- THE CREATE SENTENCE. A create page is not a different module; it is
+ * the third word of the same sentence. Standing on /permits/new the strip must
+ * read "Cedar Heights Villa - Phase 1 › Permits › New permit", and band 2 stays
+ * empty because the page's own form IS the card -- there is nothing for the
+ * composer to ask that the form is not already asking.
+ *
+ * It is derived from the pathname rather than pushed by a click, so it is
+ * identical however the user arrived: the strip leaf, the header button, a
+ * bookmark, or a hard reload.
+ *
+ * Only a leaf with its OWN page qualifies. A leaf that is a filter or a tab on
+ * the module's list route ("Expiring soon" -> /permits?withinDays=30) shares
+ * the module's pathname and would otherwise turn every visit to /permits into
+ * "Permits › Open".
+ */
+export function createSegmentForPathname(pathname: string): { id: string; label: string } | null {
+  const path = normalisePathname(pathname);
+  const mod = chainModuleForPathname(path);
+  if (!mod) return null;
+  for (const leaf of mod.leaves) {
+    if (leaf.path === path && leaf.path !== mod.route && leaf.chainLabel) {
+      return { id: `screen:${leaf.id}`, label: leaf.chainLabel };
+    }
+  }
+  return null;
+}
+
+/**
+ * A-06 -- ELLIPSIS AT A WORD, NOT MID-WORD. CSS `truncate` cuts wherever the
+ * pixel runs out, so "Cedar Heights Villa - Phase 1" became "Cedar Heights Vil…"
+ * -- a project name the user cannot check at a glance, in the one place the
+ * product is least able to afford ambiguity about which project is being
+ * written to. This cuts at the last whole word that fits and the caller shows
+ * the full name as a title tooltip, so nothing is lost, only folded.
+ *
+ * A single word longer than the budget is still cut hard: there is no word
+ * boundary to fall back to, and a name that overflows its line is worse than
+ * one that is visibly abbreviated.
+ */
+export function truncateSegmentLabel(label: string, max = 28): string {
+  const text = label.trim();
+  if (max <= 1 || text.length <= max) return text;
+  const budget = max - 1; // one character is spent on the ellipsis itself
+  const head = text.slice(0, budget);
+  // If the very next character is a space, the head already ENDS on a word
+  // boundary and folding back further would throw away a whole word that fit.
+  const endsCleanly = text.charAt(budget) === " ";
+  const lastSpace = head.lastIndexOf(" ");
+  const cut = endsCleanly || lastSpace <= Math.floor(budget / 2) ? head : head.slice(0, lastSpace);
+  // A fold that lands on a dangling separator ("Cedar Heights Villa -…") reads
+  // as a broken name rather than a shortened one.
+  return `${cut.replace(/[\s\-–—:,;]+$/, "")}…`;
 }
 
 /**

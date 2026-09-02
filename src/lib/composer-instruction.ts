@@ -35,20 +35,36 @@ export type ComposerState = {
   hasText: boolean;
   /** A submission is in flight. */
   busy?: boolean;
+  /**
+   * A-06. FALSE when no page.tsx serves this URL. The shell still renders --
+   * a bare error card with no rail, no strip and no way back is the dead end
+   * this whole programme exists to remove -- and the strip says what happened.
+   */
+  shipped?: boolean;
 };
 
 /** THE ONE SENTENCE. Rendered in the strip; reused as the Send tooltip. */
 export function composerInstruction(state: ComposerState): string {
   if (state.busy) return "Sending…";
+  // A-06: a 404 is a state of the SCREEN, not of the chain, so it outranks
+  // every question about projects and modules -- asking "which project?" on a
+  // page that does not exist would be answering the wrong question.
+  if (state.shipped === false) return "Page not found — HOME";
   // A-05: the org has nothing to work on yet. The sentence names the one
   // action available rather than describing the emptiness.
   if (!state.hasProjects) return "No projects yet — Create Project";
   if (!state.hasProject) return "Pick a project in the top rail to start";
   if (!state.hasText && !state.hasAction) {
-    // Inside a module the missing step is never "pick a module" -- the user is
-    // standing in one. Name the project instead, so the sentence still tells
-    // them what this box will act on.
-    if (state.moduleLabel && state.projectName) return `Type what you need for ${state.projectName}`;
+    // A-06. Inside a module the missing step is never "pick a project or a
+    // module" -- the user is standing in the module and the project is already
+    // named to the left. The sentence names the two things that WOULD move the
+    // chain on, in this module's own words.
+    //
+    // This supersedes A-03's "Type what you need for <project>" for the same
+    // state: that named the project a second time (the strip's own root is
+    // already showing it) and never mentioned the cards directly above the
+    // input, which are the faster of the two routes forward.
+    if (state.moduleLabel) return `Pick an action above or type what you need on ${state.moduleLabel}`;
     // A-05: rendered after the project root, the strip reads as one sentence
     // -- "Cedar Heights Villa - Phase 1 > What do you want to do?" -- which is
     // the question the composer actually wants answered.

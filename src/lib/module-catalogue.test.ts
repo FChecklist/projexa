@@ -10,6 +10,7 @@ import {
   catalogueRoutes,
   chainModuleForPathname,
   chainOptionsFor,
+  createSegmentForPathname,
   moduleForPathname,
   moduleForPill,
   moduleHref,
@@ -17,6 +18,7 @@ import {
   noProjectPromptFor,
   normalisePillKey,
   pillPointsAtCurrentScreen,
+  truncateSegmentLabel,
 } from "./module-catalogue";
 import { isShippedRoute } from "./nav-routes";
 
@@ -204,5 +206,80 @@ describe("normalisePillKey", () => {
     expect(normalisePillKey("Minutes of Meeting")).toBe("minutes_of_meeting");
     expect(normalisePillKey("Drawings & 3D")).toBe("drawings_and_3d");
     expect(normalisePillKey("  work-progress  ")).toBe("work_progress");
+  });
+});
+
+// ── R67 A-06 ────────────────────────────────────────────────────────────────
+describe("createSegmentForPathname (A-06: the create sentence)", () => {
+  test("a create page becomes the third word of the same sentence", () => {
+    expect(createSegmentForPathname("/permits/new")).toEqual({ id: "screen:permits.new", label: "New permit" });
+    expect(createSegmentForPathname("/moms/new")).toEqual({ id: "screen:moms.new", label: "New meeting" });
+    expect(createSegmentForPathname("/labour/attendance/new")).toEqual({
+      id: "screen:labour.attendance",
+      label: "Mark attendance",
+    });
+  });
+
+  test("the module's own list route adds no third segment", () => {
+    // "Permits › Open" on /permits would be the strip narrating the obvious.
+    expect(createSegmentForPathname("/permits")).toBeNull();
+    expect(createSegmentForPathname("/permits?withinDays=30")).toBeNull();
+  });
+
+  test("a filter leaf that shares the list route never becomes a segment", () => {
+    // "Expiring soon" points at /permits, so it must not match the way
+    // /permits/new does -- otherwise every visit to /permits would read
+    // "Permits › Expiring soon" whatever the query said.
+    const expiring = MODULE_CATALOGUE.find((m) => m.id === "permits")!.leaves.find(
+      (l) => l.id === "permits.expiring"
+    )!;
+    expect(expiring.path).toBe("/permits");
+    expect(expiring.chainLabel).toBeUndefined();
+  });
+
+  test("a route no module owns has no create sentence", () => {
+    expect(createSegmentForPathname("/settings")).toBeNull();
+  });
+
+  test("every leaf with its own page carries the strip's words for it", () => {
+    // A create page with no chainLabel would silently fall back to no third
+    // segment at all, which is the half-sentence A-06 exists to close.
+    const missing = MODULE_CATALOGUE.flatMap((mod) =>
+      mod.leaves
+        .filter((leaf) => leaf.path !== mod.route && !leaf.chainLabel)
+        .map((leaf) => leaf.id)
+    );
+    // The Dashboard's two leaves are other SCREENS, not create pages -- they
+    // publish their own module and are excused by name rather than by silence.
+    expect(missing).toEqual(["dashboard.project", "dashboard.hierarchy"]);
+  });
+});
+
+describe("truncateSegmentLabel (A-06: fold at a word, never mid-word)", () => {
+  test("a short name is untouched", () => {
+    expect(truncateSegmentLabel("Permits")).toBe("Permits");
+  });
+
+  test("a long project name folds at the last whole word", () => {
+    expect(truncateSegmentLabel("Cedar Heights Villa - Phase 1", 20)).toBe("Cedar Heights Villa…");
+  });
+
+  test("it never cuts a word in half when a boundary is available", () => {
+    const folded = truncateSegmentLabel("Cedar Heights Villa - Phase 1", 16);
+    expect(folded.endsWith("…")).toBe(true);
+    expect(folded.replace("…", "").trimEnd().split(" ").pop()).toBe("Heights");
+  });
+
+  test("it never leaves a dangling separator hanging off the fold", () => {
+    // "Cedar Heights Villa -…" reads as a broken name, not a shortened one.
+    expect(truncateSegmentLabel("Cedar Heights Villa - Phase 1", 23)).toBe("Cedar Heights Villa…");
+  });
+
+  test("a single unbroken word still folds rather than overflowing", () => {
+    expect(truncateSegmentLabel("Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 10)).toBe("Aaaaaaaaa…");
+  });
+
+  test("the default budget keeps a real project name readable", () => {
+    expect(truncateSegmentLabel("Cedar Heights Villa - Phase 1")).toBe("Cedar Heights Villa - Phase…");
   });
 });

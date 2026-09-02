@@ -37,7 +37,15 @@
 // via the caller, canCutAt() still refuses to offer one on the root, and the
 // grammar is still ENTITY > ACTION > STEP read as one sentence.
 
+//  4. THE PROJECT NAME FOLDS AT A WORD (A-06). CSS `truncate` cuts wherever
+//     the pixel budget runs out, so "Cedar Heights Villa - Phase 1" rendered
+//     as "Cedar Heights Vil…" -- an unreadable half-name in the one place this
+//     product cannot afford ambiguity about which project is being written to.
+//     Fixed segments now fold at the last whole word and carry the full name
+//     as a title, so nothing is lost, only folded.
+
 import { canCutAt, type Chain } from "@fchecklist/veridian-ui-kit/shell";
+import { truncateSegmentLabel } from "@/lib/module-catalogue";
 
 export type ControlStripProps = {
   chain: Chain;
@@ -84,7 +92,7 @@ export function ControlStrip({ chain, onCutFrom, onSegmentClick, onHome, onReset
                   <button
                     type="button"
                     onClick={() => onSegmentClick?.(i)}
-                    className="max-w-[22ch] truncate rounded px-1 py-0.5"
+                    className="shrink-0 rounded px-1 py-0.5 whitespace-nowrap"
                     style={{
                       // ONE SIZE, THREE WEIGHTS (M24): root bold, current step
                       // heaviest, earlier steps lighter. You read your POSITION
@@ -95,7 +103,7 @@ export function ControlStrip({ chain, onCutFrom, onSegmentClick, onHome, onReset
                     }}
                     title={seg.label}
                   >
-                    {seg.label}
+                    {truncateSegmentLabel(seg.label)}
                   </button>
                   {cuttable && (
                     // Shown on the thing being removed, per M24. Rendered only
