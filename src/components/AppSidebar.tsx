@@ -34,6 +34,11 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
       { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
       { labelKey: "items.projectsOverview", href: "/dashboard/overview", icon: BarChart3 },
+      // R67 D-69 (audit R-261/R-300): the Projects LIST. Projects were the one
+      // entity every other entity nests under that had no landing of its own --
+      // only a card at the bottom of the home dashboard and a cycling switcher
+      // in the top rail, neither of which is a list you can filter or export.
+      { labelKey: "items.projects", href: "/projects", icon: FolderOpen },
     ],
   },
   {

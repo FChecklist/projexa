@@ -3,14 +3,21 @@ import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 // Feeds the ProjectSwitcher dropdown in AppSidebar with the org's real
-// project list (id/name only -- the VERIDIAN API key itself never leaves
-// veridian-client.ts / the server).
+// project list (the VERIDIAN API key itself never leaves veridian-client.ts /
+// the server).
+//
+// R67 D-69: the rows are passed through whole rather than reduced to id/name.
+// VERIDIAN's /dashboard has always returned the per-project money and task
+// counts -- this route was throwing them away, which is why /projects could not
+// exist as a list without a second round trip for figures the first one already
+// had. Every existing caller (the switcher, the create screens' background
+// project resolve) reads id and name and is unaffected by the extra fields.
 export async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
   try {
-    const data = await callVeridian<{ projects: { id: string; name: string }[] }>("/dashboard", { organizationId: ctx.organizationId! });
+    const data = await callVeridian<{ projects: Record<string, unknown>[] }>("/dashboard", { organizationId: ctx.organizationId! });
     return NextResponse.json({ projects: data.projects ?? [] });
   } catch (err) {
     return NextResponse.json(

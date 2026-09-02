@@ -11,6 +11,8 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 // NOT `screen`: @testing-library/dom binds screen's queries to document.body
 // at ITS import time, and ESM evaluates every static import before this
 // file's own GlobalRegistrator.register() line runs -- so screen is bound
@@ -94,5 +96,31 @@ describe("ProjectCreateClient", () => {
     await waitFor(() => {
       expect(view.getByRole("alert").textContent).toContain("products upstream is down");
     });
+  });
+});
+
+// ─── R67 D-69: no [role=dialog] anywhere on the project flow ────────────────
+//
+// D-01 replaced CreateProjectDialog with this route and deleted the dialog;
+// D-69's acceptance is that nothing on /dashboard, /projects or /projects/new
+// puts one back. The rendered assertions for the other two screens live in
+// DashboardHomeView.test.tsx and ProjectsListClient.test.tsx; this is the third,
+// plus a source guard so a future edit cannot reintroduce the component the
+// programme's one dialog exception (correction C-01) was closed by removing.
+describe("R67 D-69: the project flow has no dialogs", () => {
+  test("the create screen renders no dialog", async () => {
+    const view = render(<ProjectCreateClient />);
+    await waitFor(() => expect(view.getByRole("heading", { name: "New Project" })).toBeTruthy());
+    expect(view.queryByRole("dialog")).toBeNull();
+  });
+
+  test("CreateProjectDialog.tsx is gone, and none of the three screens imports a Dialog", () => {
+    const dir = path.join(import.meta.dir);
+    expect(existsSync(path.join(dir, "CreateProjectDialog.tsx"))).toBe(false);
+    for (const file of ["ProjectCreateClient.tsx", "ProjectsListClient.tsx", "DashboardHomeView.tsx"]) {
+      const source = readFileSync(path.join(dir, file), "utf8");
+      expect(source).not.toMatch(/from ["']@\/components\/ui\/dialog["']/);
+      expect(source).not.toMatch(/role=["']dialog["']/);
+    }
   });
 });

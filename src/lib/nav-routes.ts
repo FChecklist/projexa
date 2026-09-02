@@ -142,6 +142,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
   // R67 D-01: the real create route that replaced CreateProjectDialog.
+  // R67 D-69: the Projects list landing, and R67 D-01's create route.
+  "/projects",
   "/projects/new",
   "/punch-list",
   "/punch-list/[id]",
