@@ -17,7 +17,14 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const mod = await import("./DrawingCreateClient");
 const DrawingCreateClient = mod.default;
-const { describeProjectLoadFailure } = mod;
+const {
+  describeProjectLoadFailure,
+  missingDrawingFields,
+  drawingSaveReason,
+  walkthroughUrlError,
+  acceptFor,
+  MAX_DRAWING_MB,
+} = mod;
 
 // The background project-name resolution must never resolve during these
 // assertions -- a state update after the test body has run is noise, not
@@ -80,7 +87,7 @@ describe("DrawingCreateClient with a failed project resolution", () => {
     // The failure is still reported...
     expect(view.getByRole("alert").textContent).toContain("did not respond in time");
     // ...but the screen is usable, and Save's reason is about the form again.
-    expect(view.getByRole("button", { name: "Save (Name is required)" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Save (Name, File)" })).toBeTruthy();
   });
 });
 
@@ -92,5 +99,108 @@ describe("DrawingCreateClient with a resolved project", () => {
     expect(view.getByText("For project: Cedar Heights Villa - Phase 1")).toBeTruthy();
     expect(view.queryByRole("alert")).toBeNull();
     expect(view.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+});
+
+// ─── R67 D-09 (audit R-027) ──────────────────────────────────────────────
+// The item's acceptance types into the form and watches the button's name
+// shrink. In this repo's test environment (React 19 + happy-dom under bun
+// test) fireEvent.change updates the DOM node but never reaches React's
+// onChange, so a controlled input's state cannot be driven from a test at
+// all -- measured, not assumed, and the reason PermitCreateClient.test.tsx
+// says the same thing. The three states the acceptance walks through are
+// therefore asserted against the exact function the button's name is built
+// from, plus the rendered empty form for the first of them.
+
+describe("missingDrawingFields", () => {
+  const EMPTY = { name: "", usingLink: false, externalUrl: "", hasFile: false };
+
+  test("an empty upload form is missing Name and File -- the old counter saw only Name", () => {
+    expect(missingDrawingFields(EMPTY)).toEqual(["Name", "File"]);
+  });
+
+  test("a named upload form is missing only the File", () => {
+    expect(missingDrawingFields({ ...EMPTY, name: "AR-101" })).toEqual(["File"]);
+  });
+
+  test("on the External link source it is the URL that is mandatory, never a file", () => {
+    expect(missingDrawingFields({ ...EMPTY, name: "Villa walkthrough", usingLink: true })).toEqual([
+      "Walkthrough URL",
+    ]);
+    expect(
+      missingDrawingFields({ name: "Villa walkthrough", usingLink: true, externalUrl: "https://example.com/x", hasFile: false })
+    ).toEqual([]);
+  });
+
+  test("whitespace is not a name and is not a URL", () => {
+    expect(missingDrawingFields({ ...EMPTY, name: "   ", hasFile: true })).toEqual(["Name"]);
+    expect(missingDrawingFields({ name: "x", usingLink: true, externalUrl: "  ", hasFile: false })).toEqual([
+      "Walkthrough URL",
+    ]);
+  });
+});
+
+describe("drawingSaveReason", () => {
+  const BASE = { projectLoaded: true, submitting: false, missing: [] as string[], attention: 0 };
+
+  test("builds exactly the three names the acceptance walks through", () => {
+    expect(drawingSaveReason({ ...BASE, missing: ["Name", "File"] })).toBe("Name, File");
+    expect(drawingSaveReason({ ...BASE, missing: ["File"] })).toBe("File");
+    expect(drawingSaveReason({ ...BASE, missing: ["Walkthrough URL"] })).toBe("Walkthrough URL");
+  });
+
+  test("a complete form has no reason at all, so the button reads just 'Save'", () => {
+    expect(drawingSaveReason(BASE)).toBeUndefined();
+  });
+
+  test("a field that is filled but wrong outranks the counter", () => {
+    expect(drawingSaveReason({ ...BASE, missing: ["Name"], attention: 1 })).toBe("1 field needs attention");
+    expect(drawingSaveReason({ ...BASE, attention: 2 })).toBe("2 fields need attention");
+  });
+
+  test("submitting, and a project that never loaded, outrank the fields in that order", () => {
+    expect(drawingSaveReason({ ...BASE, submitting: true, missing: ["Name", "File"] })).toBe("Adding…");
+    expect(
+      drawingSaveReason({ projectLoaded: false, submitting: true, missing: ["Name"], attention: 1 })
+    ).toBe("Project not loaded");
+  });
+});
+
+describe("walkthroughUrlError", () => {
+  test("refuses a link that is not one, on blur", () => {
+    expect(walkthroughUrlError("matterport.com/show")).toBe("Enter a link starting with http:// or https://");
+  });
+
+  test("accepts a real link and says nothing about an empty field", () => {
+    expect(walkthroughUrlError("https://my.matterport.com/show/?m=abc")).toBeUndefined();
+    expect(walkthroughUrlError("")).toBeUndefined();
+  });
+});
+
+describe("acceptFor", () => {
+  test("each Kind filters the picker to the files it can actually store", () => {
+    expect(acceptFor("dwg")).toBe(".dwg,.dxf,.pdf");
+    expect(acceptFor("3d_walkthrough")).toBe(".glb,.gltf,.fbx,.mp4");
+  });
+});
+
+describe("DrawingCreateClient's create form", () => {
+  test("an empty form disables Save and names EVERY mandatory field, not just Name", () => {
+    const view = render(<DrawingCreateClient projectId="proj-1" projectName="Cedar Heights" projectError={null} />);
+    const save = view.getByRole("button", { name: "Save (Name, File)" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
+
+  test("the file field states its limit and filters the picker by Kind", () => {
+    const view = render(<DrawingCreateClient projectId="proj-1" projectName="Cedar Heights" projectError={null} />);
+    expect(view.getByText(`Max ${MAX_DRAWING_MB} MB`)).toBeTruthy();
+    expect((view.getByLabelText("File (DWG)") as HTMLInputElement).accept).toBe(".dwg,.dxf,.pdf");
+  });
+
+  test("the Source choice is two labelled options, and is offered only for a 3D walkthrough", () => {
+    const view = render(<DrawingCreateClient projectId="proj-1" projectName="Cedar Heights" projectError={null} />);
+    // Kind defaults to DWG, which has exactly one source: a file.
+    expect(view.queryByLabelText("External link")).toBeNull();
+    expect(view.queryByLabelText("Upload a file")).toBeNull();
   });
 });

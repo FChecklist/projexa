@@ -16,6 +16,7 @@ import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/scr
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
+import { describeFileSize as describeSize, fileSizeError as sizeError } from "@/lib/file-limits";
 
 /** The permit PDF limit, stated to the user and enforced before the upload. */
 export const MAX_PDF_MB = 10;
@@ -54,19 +55,19 @@ export function endDateError(issueDate: string, endDate: string): string | undef
   return endDate < issueDate ? "End date must be on or after the issue date" : undefined;
 }
 
+// R67 D-09: these two rules now live in src/lib/file-limits.ts, because the
+// drawings form needs exactly the same wording with a different limit and a
+// second copy with a new number in it is how two screens start disagreeing
+// about what "too big" sounds like. The exported names and signatures here are
+// unchanged -- this file's own call sites and tests never had to know.
 /** "10.4 MB" rather than "10 MB" when rounding would make the message read
  *  "This file is 10 MB; the limit is 10 MB". */
 export function describeFileSize(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  const rounded = Math.round(mb);
-  return `${rounded === MAX_PDF_MB ? mb.toFixed(1) : String(rounded)} MB`;
+  return describeSize(bytes, MAX_PDF_MB);
 }
 
 export function fileSizeError(bytes: number | null): string | undefined {
-  if (bytes === null) return undefined;
-  return bytes > MAX_PDF_MB * 1024 * 1024
-    ? `This file is ${describeFileSize(bytes)}; the limit is ${MAX_PDF_MB} MB`
-    : undefined;
+  return sizeError(bytes, MAX_PDF_MB);
 }
 
 function attentionReason(count: number): string | undefined {
