@@ -65,13 +65,19 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
+// Walked and read ONCE. Doing it per assertion re-read the whole tree three
+// times and pushed a single test past bun's 5 s default when the full suite
+// ran; the scan is inherently I/O-bound, so the fix is to do it once.
+const FILES = sourceFilesUnder(SRC).map((file) => ({
+  rel: relative(process.cwd(), file),
+  lines: withoutComments(readFileSync(file, "utf8")).split("\n"),
+}));
+
 function offenders(pattern: RegExp, skipDir?: string): string[] {
   const found: string[] = [];
-  for (const file of sourceFilesUnder(SRC)) {
-    const rel = relative(process.cwd(), file);
+  for (const { rel, lines } of FILES) {
     if (skipDir && rel.startsWith(skipDir + sep)) continue;
-    const body = withoutComments(readFileSync(file, "utf8"));
-    for (const [i, line] of body.split("\n").entries()) {
+    for (const [i, line] of lines.entries()) {
       if (pattern.test(line)) found.push(`${rel}:${i + 1}`);
     }
   }
@@ -82,7 +88,7 @@ describe("saffron discipline (R-197 / R-260)", () => {
   test("the source tree is actually being walked", () => {
     // Guards against the walk finding nothing and every assertion below
     // passing vacuously.
-    expect(sourceFilesUnder(SRC).length).toBeGreaterThan(200);
+    expect(FILES.length).toBeGreaterThan(200);
   });
 
   test("no app surface paints a WORD in saffron", () => {
