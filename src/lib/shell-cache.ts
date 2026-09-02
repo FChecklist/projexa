@@ -35,6 +35,24 @@
 // store, not of the schedule.
 export const SHELL_CACHE_TTL_MS = 60_000;
 
+// R67 F-13 (R-193/R-217). Two different kinds of shell read, two windows:
+//
+//  - SESSION-STABLE (the organisation, the project list): these change when a
+//    human does something -- renames the org, creates a project -- and both of
+//    those paths invalidate this store explicitly. Nothing else can change them
+//    under the user, so re-asking every minute is pure cost. Ten minutes.
+//  - EVERYTHING ELSE (the Task Master list, the pill ranking): these CAN change
+//    without the user acting -- a pipeline task finishes server-side -- so they
+//    keep the one-minute ceiling on staleness, and are force-refreshed on the
+//    event that changes them (a Send). A ten-minute window on the task list
+//    would show "needs you" for work that is already done.
+export const SHELL_SESSION_TTL_MS = 600_000;
+
+/** The shell's project-list key. Exported so the create-project path can drop
+ *  it the moment a project is created, instead of the switcher being ten
+ *  minutes behind the thing the user just made. */
+export const SHELL_PROJECTS_KEY = "shell:projects";
+
 type Entry = { at: number; value: unknown };
 
 const values = new Map<string, Entry>();

@@ -5,23 +5,39 @@ import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
   buildWorkProgressReport,
+  vendorsFromRoster,
   type Activity,
   type Attendance,
   type BoqLineItem,
   type Category,
   type LabourRoster,
   type ProgressEntry,
-  type Vendor,
 } from "@/lib/work-progress-report";
 
 type BoqResponse = { id: string; status: string; version: number; title: string; lineItems: BoqLineItem[] };
-type VeridianVendor = { id: string; vendorName: string };
 
 // Real Work Progress Report, assembled from VERIDIAN's real construction
 // data (BoQ line items + progress entries + attendance/labour-roster/
-// vendors) -- see PROGRESS.md for why this needs 5 separate VERIDIAN calls
+// vendors) -- see PROGRESS.md for why this needs separate VERIDIAN calls
 // instead of one: PROJEXA stores no construction domain data itself, and
 // each of these was already its own real, separately-scoped endpoint.
+//
+// R67 F-13 (R-193/R-217) -- SIX CALLS, PULLING WHOLE HISTORIES, DOWN TO FIVE
+// SCOPED ONES. Three separate wastes, all fixed here and none of which changes
+// a single number this report produces:
+//
+//   1. GET /vendors fetched the org's ENTIRE vendor master to turn a handful of
+//      vendorIds into names. VERIDIAN's listRoster now returns vendorName on
+//      each roster row (resolved in the transaction it already holds), so the
+//      names arrive with the roster and the call is gone.
+//   2. GET /attendance pulled every attendance row this project has ever
+//      recorded -- workers x days, unbounded -- and both breakdowns then
+//      discarded everything outside [from, to]. It is now asked for that window.
+//   3. GET /work-progress pulled every progress entry ever logged. The report
+//      never looks past `to` (see computeLineItemProgress: `d < from`,
+//      `d >= from && d <= to`, `d <= to`), so it is now capped at `to`. The
+//      LOWER bound is deliberately NOT sent: the "previous" column IS the
+//      entries before `from`, and windowing them away would silently zero it.
 export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -47,13 +63,13 @@ export async function GET(request: NextRequest) {
   const qp = `projectId=${encodeURIComponent(projectId)}`;
 
   try {
-    const [scopeData, workProgressData, progressData, attendanceData, rosterData, vendorsData] = await Promise.all([
+    const window = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    const [scopeData, workProgressData, progressData, attendanceData, rosterData] = await Promise.all([
       callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId }),
       callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId }),
-      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}`, { organizationId: orgId }),
-      callVeridian<{ attendance: Attendance[] }>(`/attendance?${qp}`, { organizationId: orgId }),
+      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}&dateTo=${encodeURIComponent(to)}`, { organizationId: orgId }),
+      callVeridian<{ attendance: Attendance[] }>(`/attendance?${qp}&${window}`, { organizationId: orgId }),
       callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true }),
-      callVeridian<{ vendors: VeridianVendor[] }>("/vendors", { organizationId: orgId }),
     ]);
 
     // Scope-wise / category-wise are computed from the latest, non-superseded
@@ -68,7 +84,11 @@ export async function GET(request: NextRequest) {
     const latestBoq = requestedBoq ?? boqs.find((b) => b.status !== "superseded") ?? boqs[0];
     const lineItems = latestBoq?.lineItems ?? [];
 
-    const vendors: Vendor[] = (vendorsData.vendors ?? []).map((v) => ({ id: v.id, name: v.vendorName }));
+    const roster = rosterData.roster ?? [];
+    // The vendors this report can attribute cost to are exactly the ones its
+    // own roster names -- see vendorsFromRoster's comment for why that is the
+    // whole set, not a subset.
+    const vendors = vendorsFromRoster(roster);
 
     const report = buildWorkProgressReport({
       lineItems,
@@ -78,8 +98,8 @@ export async function GET(request: NextRequest) {
       from,
       to,
     });
-    const byManpower = buildManpowerBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], from, to });
-    const byVendor = buildVendorBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], vendors, from, to });
+    const byManpower = buildManpowerBreakdown({ roster, attendance: attendanceData.attendance ?? [], from, to });
+    const byVendor = buildVendorBreakdown({ roster, attendance: attendanceData.attendance ?? [], vendors, from, to });
 
     return NextResponse.json({
       projectId, from, to,

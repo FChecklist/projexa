@@ -453,8 +453,32 @@ export function buildWorkProgressReport(params: {
 // here rather than inventing a fake per-line link.
 
 export type Attendance = { id: string; rosterId: string; attendanceDate: string; dailyCost: string | number };
-export type LabourRoster = { id: string; trade: string | null; vendorId: string | null; name: string };
+// R67 F-13 (R-193/R-217): vendorName now comes WITH the roster row (VERIDIAN's
+// listRoster resolves it in the transaction it already holds), which is what
+// let the report stop fetching the whole vendor master as a sixth call purely
+// to turn a vendorId into a name. Optional, so a caller that has an older
+// roster payload still type-checks and still works -- it just falls back to the
+// id, exactly as it did when a vendor row had been deleted.
+export type LabourRoster = { id: string; trade: string | null; vendorId: string | null; name: string; vendorName?: string | null };
 export type Vendor = { id: string; name: string };
+
+/**
+ * The vendors referenced by a roster, from the roster itself.
+ *
+ * This is the whole set byVendor can ever produce -- a vendor nobody on the
+ * roster belongs to cannot have labour cost -- so it replaces the full vendor
+ * master the report used to fetch. A roster row whose vendor row is gone
+ * carries a null name and is left out here, which lands it on
+ * buildVendorBreakdown's existing "fall back to the id" path: the same output
+ * as before, for the same reason.
+ */
+export function vendorsFromRoster(roster: LabourRoster[]): Vendor[] {
+  const byId = new Map<string, string>();
+  for (const r of roster) {
+    if (r.vendorId && r.vendorName) byId.set(r.vendorId, r.vendorName);
+  }
+  return Array.from(byId, ([id, name]) => ({ id, name }));
+}
 
 function inRange(date: string, from: string, to: string) {
   return date >= from && date <= to;

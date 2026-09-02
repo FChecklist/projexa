@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+import { invalidateShellCache, SHELL_PROJECTS_KEY } from "@/lib/shell-cache";
 
 type Product = { id: string; name: string };
 
@@ -95,6 +96,11 @@ export function CreateProjectDialog() {
       }
       toast.success("Project created");
       setProductId(""); setName(""); setDescription(""); setStartDate(""); setTargetDate(""); setOpen(false);
+      // R67 F-13: the shell holds the project list for ten minutes, because
+      // nothing changes it under the user -- except this. Dropping the key here
+      // is what keeps that window honest: the project just created is in the
+      // switcher on the next read, not ten minutes later.
+      invalidateShellCache(SHELL_PROJECTS_KEY);
       router.refresh();
     } catch (err) {
       toast.error(

@@ -49,7 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
-import { cachedShellJson, invalidateShellCache } from "@/lib/shell-cache";
+import { cachedShellJson, invalidateShellCache, ShellFetchError, SHELL_PROJECTS_KEY, SHELL_SESSION_TTL_MS } from "@/lib/shell-cache";
 import { afterFirstPaint } from "@/lib/after-paint";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
@@ -239,7 +239,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // item set out to stop repeating.
   const loadOrgInfo = useCallback(async (options: { force?: boolean } = {}) => {
     try {
-      const d = await cachedShellJson<OrgInfo>("shell:organization", "/api/organization", { force: options.force });
+      // R67 F-13: ten minutes, not one. An organisation's name changes when a
+      // human renames it, and a sign-in/sign-out invalidates this store
+      // outright -- nothing else can move it under the user.
+      const d = await cachedShellJson<OrgInfo>("shell:organization", "/api/organization", { force: options.force, ttlMs: SHELL_SESSION_TTL_MS });
       if (d?.organization?.name) setInfo(d);
     } catch (err) {
       noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
@@ -251,7 +254,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     void loadOrgInfo();
     (async () => {
       try {
-        const d = await cachedShellJson<Project[] | { projects?: Project[] }>("shell:projects", "/api/projects");
+        // R67 F-13: same ten-minute window, same reasoning -- and creating a
+        // project invalidates SHELL_PROJECTS_KEY (see CreateProjectDialog), so
+        // a new project still appears in the switcher immediately.
+        const d = await cachedShellJson<Project[] | { projects?: Project[] }>(SHELL_PROJECTS_KEY, "/api/projects", { ttlMs: SHELL_SESSION_TTL_MS });
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
         if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
       } catch (err) {
@@ -325,20 +331,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
-  const loadTasks = useCallback(async () => {
+  //
+  // R67 F-13 (R-193/R-217): read through the shell store. Two navigations
+  // inside a minute now cost ONE request instead of two, and two components
+  // asking at once share one. It keeps the SHORT window deliberately -- a
+  // pipeline task can finish server-side without the user doing anything, so a
+  // ten-minute cache here would show "needs you" for work already done -- and
+  // `force` is what a Send uses to see its own new task immediately.
+  const loadTasks = useCallback(async (options: { force?: boolean } = {}) => {
     {
       try {
-        const res = await fetch("/api/tasks?limit=50");
-        // Status before body: an error body parses perfectly well as JSON, and
-        // treating it as data is how a failed request becomes a confident
+        // cachedShellJson reads the status before the body, and throws with the
+        // backend's own message -- an error body parses perfectly well as JSON,
+        // and treating it as data is how a failed request becomes a confident
         // empty list.
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          setTasksError(
-            d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
-          );
-          return;
-        }
+        const d = await cachedShellJson<ApiTasks>("shell:tasks", "/api/tasks?limit=50", { force: options.force });
         const data = (d ?? {}) as ApiTasks;
         setTasksError(null);
         setCounts({
@@ -358,11 +365,51 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
           ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
         ]);
-      } catch {
-        setTasksError("Couldn't reach the task service.");
+      } catch (err) {
+        // The backend's own words when it gave them (ShellFetchError carries
+        // the response's `error` string), and a plain reachability message when
+        // the request never completed at all.
+        setTasksError(
+          err instanceof ShellFetchError ? err.message : "Couldn't reach the task service."
+        );
       }
     }
   }, []);
+
+  // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
+  // order, never re-sorted here. isNewUser true means "nothing earned yet",
+  // which must not look like a failed call.
+  //
+  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
+  // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
+  // org/projects effect above was fixed for in the first PR, just never
+  // applied here. Same noteFailure() pattern, same shape: status read before
+  // the body is treated as data, the backend's own message kept.
+  //
+  // R67 F-13 (R-193/R-217): through the shell store as well, and for the same
+  // reason the task list is -- one request per minute across navigations,
+  // shared between concurrent callers. It is NOT force-refreshed on a pill
+  // CLICK: a click only records LOCAL usage (see onPillSelect); the server's
+  // pill_usage row is written when the task is submitted, so a Send is the
+  // event that can actually change this ranking, and that is where `force` is
+  // passed from.
+  const loadPillUsage = useCallback(async (options: { force?: boolean } = {}) => {
+    try {
+      const d = await cachedShellJson<{ pills?: RankedPill[] }>("shell:pill-usage", "/api/pill-usage?limit=6", { force: options.force });
+      if (Array.isArray(d?.pills)) {
+        setRankedPills(d.pills as RankedPill[]);
+        // R53's payload carries functionId per pill. Held in a ref so the
+        // submit handler can read it without re-rendering the strip.
+        pillFnRef.current = Object.fromEntries(
+          (d.pills as { pillKey: string; functionId?: string }[])
+            .filter((x) => x.functionId)
+            .map((x) => [x.pillKey, x.functionId as string])
+        );
+      }
+    } catch (err) {
+      noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
+    }
+  }, [noteFailure]);
 
   // R67 F-09 (R-122). These two reads used to run from a mount effect, i.e.
   // BEFORE the browser had painted, competing for connections with the page's
@@ -377,45 +424,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     const cancelAfterPaint = afterFirstPaint(() => {
       if (!live) return;
       void loadTasks();
-
-      // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-      // order, never re-sorted here. isNewUser true means "nothing earned yet",
-      // which must not look like a failed call.
-      //
-      // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-      // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-      // org/projects effect above was fixed for in the first PR, just never
-      // applied here. Same noteFailure() pattern, same shape: status read
-      // before the body is treated as data, the backend's own message kept.
-      void (async () => {
-        try {
-          const res = await fetch("/api/pill-usage?limit=6");
-          const d = await res.json().catch(() => null);
-          if (!res.ok) {
-            if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
-            return;
-          }
-          if (live && Array.isArray(d?.pills)) {
-            setRankedPills(d.pills as RankedPill[]);
-            // R53's payload carries functionId per pill. Held in a ref so the
-            // submit handler can read it without re-rendering the strip.
-            pillFnRef.current = Object.fromEntries(
-              (d.pills as { pillKey: string; functionId?: string }[])
-                .filter((x) => x.functionId)
-                .map((x) => [x.pillKey, x.functionId as string])
-            );
-          }
-        } catch (err) {
-          if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
-        }
-      })();
+      void loadPillUsage();
     });
 
     return () => {
       live = false;
       cancelAfterPaint();
     };
-  }, [noteFailure, loadTasks]);
+  }, [loadTasks, loadPillUsage]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
@@ -538,13 +554,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(null);
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
-      await loadTasks();
+      //
+      // R67 F-13: `force` -- this read exists BECAUSE the answer just changed,
+      // so it must go past the window the shell store otherwise honours. The
+      // same is true of the pill ranking: a submission is what writes the
+      // server's pill_usage row, so this is the one moment it can differ.
+      await loadTasks({ force: true });
+      void loadPillUsage({ force: true });
     } catch {
       setSubmitError("Couldn't reach the task service.");
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, submitting, loadTasks]);
+  }, [draft, pendingFunctionId, mode, projectId, submitting, loadTasks, loadPillUsage]);
 
   const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
     setPillUsage((prev) => {
