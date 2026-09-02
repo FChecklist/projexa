@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ScreenLoading from "@/components/ScreenLoading";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { ProjectRequiredCard } from "@/components/ProjectRequiredCard";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
@@ -39,8 +40,13 @@ export async function resolveRegistryColumns(functionId: string, organizationId:
 // rather than a blank frame. The VERIDIAN key never leaves the server.
 async function ScopeBody({ projectId, tab }: { projectId?: string; tab?: string }) {
   const organizationId = await getServerOrganizationId();
-  const [{ project, errorMessage }, boqListColumns] = await Promise.all([
-    resolveSelectedProject(projectId, organizationId),
+  const [{ project, errorMessage, mode }, boqListColumns] = await Promise.all([
+    // R67 D-20 + D-66: a BOQ belongs to exactly one project, so this module
+    // OPTS IN to the honest mode. Without the flag, arriving with no
+    // ?projectId= silently resolved the org's FIRST project and rendered its
+    // BOQs under a rail reading "All projects" -- and a revision created
+    // there was created against a project nobody chose.
+    resolveSelectedProject(projectId, organizationId, { allProjectsWhenUnset: true }),
     // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays
     // a fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks
     // are too bespoke for a generic LIST renderer), but the main BOQ table's
@@ -57,7 +63,11 @@ async function ScopeBody({ projectId, tab }: { projectId?: string; tab?: string 
           <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
         </Card>
       )}
-      {!errorMessage && !project && (
+      {/* Two different answers, told apart at last: "you are looking at the
+          whole org and a BOQ needs one project" is not the same as "this org
+          has no projects". */}
+      {!errorMessage && !project && mode === "all" && <ProjectRequiredCard module="BOQs" />}
+      {!errorMessage && !project && mode !== "all" && (
         <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
       )}
       {project && (
