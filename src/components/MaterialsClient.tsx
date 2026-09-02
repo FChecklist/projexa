@@ -155,6 +155,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
   }
 
   return (
+    <>
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="master">Material Master</TabsTrigger>
@@ -256,5 +257,12 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
         </Card>
       </TabsContent>
     </Tabs>
+    {/* R67 G-05: all three tabs prefix their figures with the warning glyph
+        when the org has no currency. The glyph is the symptom; this is the one
+        sentence that says what it means and where to fix it. Rendered once for
+        the whole screen, outside the tabs, so switching tab does not make the
+        explanation come and go. */}
+    <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

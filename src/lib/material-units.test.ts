@@ -45,6 +45,21 @@ describe("normaliseMaterialUnit folds the spellings that already exist", () => {
     expect(normaliseMaterialUnit(null)).toBeNull();
     expect(normaliseMaterialUnit(undefined)).toBeNull();
   });
+
+  test("the edit form's seeding rule keeps an unknown unit visible and selectable", () => {
+    // MaterialObjectClient seeds its draft with
+    // `normaliseMaterialUnit(stored) ?? stored` and then offers any value the
+    // vocabulary does not know as its own "(as recorded)" option. Both halves
+    // of that rule are asserted here, because a <Select> whose value is not in
+    // its option list renders the PLACEHOLDER -- i.e. a legacy unit would look
+    // blank and be silently dropped on the next save.
+    const seed = (stored: string) => normaliseMaterialUnit(stored) ?? stored;
+    expect(seed("Bags")).toBe("bag");
+    expect(isMaterialUnit(seed("Bags"))).toBe(true);
+    expect(seed("drum")).toBe("drum");
+    expect(isMaterialUnit(seed("drum"))).toBe(false);
+    expect(materialUnitLabel(seed("drum"))).toBe("drum");
+  });
 });
 
 describe("materialUnitLabel", () => {
