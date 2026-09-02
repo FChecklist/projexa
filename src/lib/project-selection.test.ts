@@ -13,7 +13,7 @@
 // on it and old links must keep working); it is made visible (`fellBack`)
 // and refusable (`allProjectsWhenUnset`).
 import { describe, expect, mock, test } from "bun:test";
-import { chooseProject, type SelectableProject } from "./project-selection";
+import { dashboardScope, chooseProject, type SelectableProject } from "./project-selection";
 
 const PROJECTS: SelectableProject[] = [
   { id: "p-cedar", name: "Cedar Heights Villa - Phase 1" },
@@ -122,5 +122,52 @@ describe("resolveSelectedProject (VERIDIAN stubbed)", () => {
     expect(result.projects).toEqual([]);
     expect(result.errorMessage).toBe("Failed to load projects from VERIDIAN");
     expect(result.fellBack).toBe(false);
+  });
+});
+
+// ─── R67 D-66: what /dashboard shows ──────────────────────────────────────
+//
+// Until this, /dashboard ALWAYS rendered the org portfolio, whatever the rail
+// said -- so a user who picked Cedar Heights in the top bar and clicked HOME
+// landed on a screen about every project, with the rail still naming one.
+// Same split-brain as R-253's breadcrumb, in the place a user returns to most.
+describe("dashboardScope -- R67 D-66", () => {
+  const PROJECTS = [
+    { id: "p-cedar", name: "Cedar Heights Villa - Phase 1" },
+    { id: "p-villa", name: "Villa 21" },
+  ];
+
+  test("nothing asked for and nothing remembered is the portfolio, explicitly", () => {
+    expect(dashboardScope(PROJECTS, undefined, null)).toEqual({ project: null, mode: "all" });
+  });
+
+  test("the URL wins over the remembered choice", () => {
+    const scope = dashboardScope(PROJECTS, "p-villa", "p-cedar");
+    expect(scope.mode).toBe("project");
+    expect(scope.project?.id).toBe("p-villa");
+  });
+
+  test("the remembered choice is used when the URL says nothing", () => {
+    expect(dashboardScope(PROJECTS, undefined, "p-cedar").project?.id).toBe("p-cedar");
+  });
+
+  test("a stale id -- deleted, or from another org -- is discarded, not followed", () => {
+    // Following it would pin the user to a blank screen with no way out.
+    expect(dashboardScope(PROJECTS, "p-gone", null)).toEqual({ project: null, mode: "all" });
+    expect(dashboardScope(PROJECTS, undefined, "p-gone")).toEqual({ project: null, mode: "all" });
+  });
+
+  test("a stale URL id still falls through to a VALID remembered choice", () => {
+    expect(dashboardScope(PROJECTS, "p-gone", "p-villa").project?.id).toBe("p-villa");
+  });
+
+  test("it NEVER falls back to projects[0] -- the fault D-20 removed", () => {
+    // The home screen is the loudest possible place to re-introduce a silent
+    // wrong-project selection.
+    expect(dashboardScope(PROJECTS, undefined, undefined).project).toBeNull();
+  });
+
+  test("an org with no projects is the portfolio, not a crash", () => {
+    expect(dashboardScope([], "p-cedar", "p-villa")).toEqual({ project: null, mode: "all" });
   });
 });

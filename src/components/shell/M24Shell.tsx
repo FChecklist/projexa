@@ -53,6 +53,7 @@ import AccountMenu from "@/components/shell/AccountMenu";
 // than released in the kit; everything else here still comes from the kit.
 import { TopRail } from "@/components/shell/TopRail";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
+import { PROJECT_COOKIE } from "@/lib/project-selection";
 import { createClient } from "@/lib/supabase/client";
 import { describeReadError, taskRowDetail } from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
@@ -86,7 +87,9 @@ const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "hist
 // page re-query with the new id. The cookie is only a memory of the last
 // choice, consulted when the URL says nothing at all.
 const PROJECT_PARAM = "projectId";
-const PROJECT_COOKIE = "px_project";
+// R67 D-66: the name lives in src/lib/project-selection.ts, which the SERVER
+// components that read this cookie also import -- the writer and the readers
+// cannot drift apart on a string literal.
 const PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 function readProjectCookie(): string | null {

@@ -2,6 +2,42 @@ import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib
 
 export type SelectableProject = { id: string; name: string };
 
+/**
+ * R67 D-20/D-66 -- the cookie holding the user's last project choice.
+ *
+ * Named here, in the one server-safe module both halves already import, so
+ * the client that WRITES it (M24Shell) and the server components that READ
+ * it cannot drift apart on a string literal. It is never a source of truth:
+ * the URL wins, and this is only consulted when the URL says nothing at all.
+ */
+export const PROJECT_COOKIE = "px_project";
+
+/**
+ * R67 D-66 -- what /dashboard shows.
+ *
+ * "/dashboard renders the portfolio when the context is All and the project
+ * dashboard when a project is set." The order is the WS-A root rule's: the
+ * URL first, then the remembered choice, and a remembered id that is no
+ * longer in the org's list is discarded rather than followed -- a deleted or
+ * reassigned project must not pin a user to a blank screen forever.
+ *
+ * Note what this does NOT do: it never falls back to projects[0]. That is
+ * the exact fault D-20 removed, and re-introducing it on the home screen
+ * would be the loudest possible place to make it.
+ */
+export function dashboardScope(
+  projects: SelectableProject[],
+  fromUrl?: string | null,
+  fromCookie?: string | null
+): { project: SelectableProject | null; mode: ProjectSelectionMode } {
+  for (const candidate of [fromUrl, fromCookie]) {
+    if (!candidate) continue;
+    const found = projects.find((p) => p.id === candidate);
+    if (found) return { project: found, mode: "project" };
+  }
+  return { project: null, mode: "all" };
+}
+
 // R67 D-20. "all" is a REAL, explicit state -- the user is looking at the
 // whole org, and the screen is allowed to say so -- not the absence of a
 // choice. Every screen that opts in must handle both.
