@@ -27,7 +27,6 @@ import {
   AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
   PillStrip,
-  TaskMaster,
   TopRail,
   cutChainFrom,
   resetChain,
@@ -40,8 +39,6 @@ import {
   type PillSelection,
   type PillUsage,
   type RankedPill,
-  type TaskRow,
-  type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
 // R67 G-04, programme decision D-09: Composer (and, through it, ControlStrip)
 // is PROJEXA'S FORK of the kit file, because the kit is an unpublished git
@@ -53,6 +50,22 @@ import {
 // -- AppShell, TopRail, TaskMaster, PillStrip, HistoryDrop, the chain API --
 // is still the kit's, imported above.
 import { Composer } from "@/components/shell/Composer";
+// R67 C-01, programme decision D-09: TaskMaster is PROJEXA'S FORK of the kit
+// file. The kit renders two fixed groups whatever tab is selected (so the
+// tabs never filtered), offers no per-row action (so a blocked row was a dead
+// end), and borrows one empty-state sentence for every tab. The chain API it
+// uses -- loadChain / ChainLoad, and therefore the load-never-execute
+// contract -- is still imported from the kit inside that fork.
+import { TaskMaster, type TaskTab } from "@/components/shell/TaskMaster";
+import {
+  tabView,
+  toTaskRow,
+  type ApiTask,
+  type GroupedRows,
+  type ProjexaTaskRow,
+  type RowAction,
+  type TaskTabId,
+} from "@/components/shell/task-row";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -73,70 +86,32 @@ const PILL_USAGE_KEY = "veri.pill.usage";
 const TASK_TAB_PARAM = "taskTab";
 const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
 
+// R67 C-01: a blocked row the user dismissed. Per user-agent, not per server:
+// dismissing is a reading decision ("I have seen this and it is not my next
+// move"), not a state change on compliance.pipeline_tasks, and inventing a
+// server-side dismissal would be another lane's schema change.
+const DISMISSED_KEY = "veri.tasks.dismissed";
+
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
-// R53's task shape, from GET /api/v1/projexa/tasks (contract: claude_log id=35).
-type ApiTask = {
-  id: string;
-  projectId?: string | null;
-  derivedChain?: { full?: string; mode?: string; root?: string; steps?: string[] } | null;
-  functionId?: string | null;
-  status?: string | null;
-  error?: string | null;
-  rawInput?: string | null;
-  mode?: string | null;
-};
 type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
   tasks?: ApiTask[];
 };
 
-// M24: "Line 1 must START WITH A VERB from a CLOSED SET ... Six words the user
-// learns once." Task names are system-generated, which is exactly why the
-// convention is enforceable. The verb is derived from the functionId rather
-// than from free text, so it can never drift outside the set.
-function verbFor(functionId?: string | null): TaskRow["verb"] {
-  const f = (functionId ?? "").toLowerCase();
-  if (f.startsWith("record_") || f.includes("progress")) return "Record";
-  if (f.startsWith("import_") || f.includes("import")) return "Import";
-  if (f.includes("approve")) return "Approve";
-  if (f.includes("confirm")) return "Confirm";
-  if (f.includes("sign")) return "Sign off";
-  return "Review";
-}
+const EMPTY_GROUPS: GroupedRows = { needsYou: [], running: [], done: [], blocked: [] };
 
-function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked"): TaskRow {
-  const steps = t.derivedChain?.steps ?? [];
-  const root = t.derivedChain?.root ?? null;
-  // M24's four glyphs are needs-you / running / waiting / done. A BLOCKED task
-  // is one that needs you -- it is stuck on a decision or a correction only
-  // the user can make -- so it takes the needs-you glyph and the loud pill.
-  const state: TaskRow["state"] =
-    group === "done" ? "done" : group === "running" ? "running" : "needs-you";
-  return {
-    id: t.id,
-    state,
-    verb: verbFor(t.functionId),
-    // The chain's steps read as the object of the sentence: "Record Work
-    // Progress > New entry". Falling back to the functionId is deliberate --
-    // a row with no label at all would be worse than a technical one.
-    object: steps.length ? steps.join(" > ") : (t.functionId ?? "task"),
-    // M24: "line 2 is the DECIDING information - without it the user clicks in
-    // to find out, which is the load being removed." R53 says render the
-    // backend's OWN words on a blocked row; never a generic failure.
-    detail: t.error ?? t.rawInput ?? undefined,
-    urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
-    urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
-    chain: {
-      mode: (t.mode?.toLowerCase() as ChainMode) ?? DEFAULT_CHAIN_MODE,
-      segments: [
-        ...(root ? [{ id: t.projectId ?? root, label: root, kind: "root" as const }] : []),
-        ...steps.map((label, i) => ({ id: `${t.id}-s${i}`, label, kind: "step" as const })),
-      ],
-    },
-  };
-}
+// R67 C-01: what the composer says after a blocked row's Fix button has
+// loaded its chain. The question is asked in the input, in words, from the
+// SAME missing-step vocabulary D-03 uses for the row's own sentence -- so
+// "Pick a BOQ line" on the row and the prompt in the box cannot drift.
+const FIX_PROMPT: Readonly<Record<string, string>> = {
+  boqLine: "Which BOQ line? Type its code, or open the line on the screen.",
+  project: "Which project? Choose it in the top rail, then press Send.",
+  value: "How much? Type a quantity or a percentage.",
+};
+
 type Project = { id: string; name: string };
 
 export default function M24Shell({ children }: { children: React.ReactNode }) {
@@ -150,8 +125,26 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
-  const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
-  const [waiting, setWaiting] = useState<TaskRow[]>([]);
+  // R67 C-01: ONE source for the rows AND the counts. The kit read counts from
+  // the API's own `counts` object and rows from `groups`, which is how a badge
+  // can disagree with the list beneath it -- and it did, because a dismissed
+  // or filtered row still counted. `loadedAt` travels with the rows so
+  // "older than 24 h" and "before today" are measured against the read that
+  // produced them, not against whenever a re-render happened.
+  const [taskData, setTaskData] = useState<{ groups: GroupedRows; loadedAt: number }>({
+    groups: EMPTY_GROUPS,
+    loadedAt: Date.now(),
+  });
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  // R67 C-01: which blocked row's "Fix" was pressed, and which picker the
+  // loaded chain should open. Set by a Fix click, cleared by a reset. It
+  // deliberately carries NO way to execute -- the missing step is a question
+  // to the user, not an instruction to the server.
+  const [fixTarget, setFixTarget] = useState<{
+    taskId: string;
+    functionId: string | null;
+    missingStep: RowAction["missingStep"];
+  } | null>(null);
   const [tasksError, setTasksError] = useState<string | null>(null);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
@@ -163,13 +156,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
+  // R67 C-01: the selected project's NAME, for D-03's BOQ_LINE_NOT_FOUND
+  // sentence ("There is no line 1.02 on Cedar Heights Villa - Phase 1 v3").
+  // Held in a ref, not read from state inside loadTasks, so switching project
+  // does not re-enter the task read.
+  const projectNameRef = useRef<string | null>(null);
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
-  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
-    home: 0,
-    approval: 0,
-    queue: 0,
-  });
 
   useEffect(() => {
     try {
@@ -179,6 +172,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       if (h) setHistory(JSON.parse(h) as HistoryEntry[]);
       const p = localStorage.getItem(PILL_USAGE_KEY);
       if (p) setPillUsage(JSON.parse(p) as PillUsage[]);
+      const d = localStorage.getItem(DISMISSED_KEY);
+      if (d) setDismissedIds(JSON.parse(d) as string[]);
     } catch {
       // A blocked or unavailable storage must not take the shell down.
     }
@@ -337,23 +332,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         }
         const data = (d ?? {}) as ApiTasks;
         setTasksError(null);
-        setCounts({
-          home: Number(data.counts?.total) || 0,
-          approval: Number(data.counts?.needsYou) || 0,
-          queue: Number(data.counts?.running) || 0,
-        });
         const g = data.groups ?? {};
-        // "Needs you" carries what is stuck on the user: blocked first, because
-        // a blocked row is the only loud one and the one that costs time.
-        setNeedsYou([
-          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
-          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
-        ]);
-        // "Waiting on others" is everything not on the user's desk.
-        setWaiting([
-          ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
-          ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
-        ]);
+        // R67 C-01: the rows are built ONCE, here, and every tab's list and
+        // every tab's count are then derived from these same four arrays --
+        // which is why a badge can no longer disagree with the list under it.
+        // The API's own `counts` object is deliberately not read: it counts
+        // rows this pane may have filtered or dismissed.
+        const loadedAt = Date.now();
+        const ctx = { now: loadedAt, projectName: projectNameRef.current };
+        setTaskData({
+          loadedAt,
+          groups: {
+            blocked: (g.blocked ?? []).map((t) => toTaskRow(t, "blocked", ctx)),
+            needsYou: (g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou", ctx)),
+            running: (g.running ?? []).map((t) => toTaskRow(t, "running", ctx)),
+            done: (g.done ?? []).map((t) => toTaskRow(t, "done", ctx)),
+          },
+        });
       } catch {
         setTasksError("Couldn't reach the task service.");
       }
@@ -403,6 +398,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
+  useEffect(() => {
+    projectNameRef.current = project?.name ?? null;
+  }, [project]);
+
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
   // cutChainFrom() protection meaningful: it refuses to cut into a "root"
   // segment, so (x) can never leave the user without a project.
@@ -422,6 +421,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   const onReset = useCallback(() => {
     setSegments(resetChain(chain).segments.filter((s) => s.kind !== "root"));
+    // The reset glyph clears the whole sentence, so the question a "Fix"
+    // click was asking goes with it -- leaving it armed would ask about a
+    // chain that is no longer on the strip.
+    setFixTarget(null);
   }, [chain]);
 
   // LOADS AND STOPS. Sets the mode, restores the chain, navigates. Navigation
@@ -543,15 +546,110 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const [activeTab, setActiveTab] = useState<TaskTabId>("home");
+
+  // A dismissed row leaves BOTH the list and the count, because they are now
+  // computed from the same array.
+  const visibleGroups = useMemo<GroupedRows>(() => {
+    if (dismissedIds.length === 0) return taskData.groups;
+    const hidden = new Set(dismissedIds);
+    const keep = (rows: ProjexaTaskRow[]) => rows.filter((r) => !hidden.has(r.id));
+    return {
+      needsYou: keep(taskData.groups.needsYou),
+      running: keep(taskData.groups.running),
+      done: keep(taskData.groups.done),
+      blocked: keep(taskData.groups.blocked),
+    };
+  }, [taskData.groups, dismissedIds]);
+
+  // R67 C-01: every tab's rows AND its badge, from one pure function
+  // (task-row.ts's tabView) over one set of rows. Computed for ALL FIVE tabs,
+  // not just the active one, because the badges are visible while another tab
+  // is open and a badge that is only correct once clicked is not a badge.
+  const views = useMemo(() => {
+    const out = {} as Record<TaskTabId, ReturnType<typeof tabView>>;
+    for (const id of TASK_TAB_IDS) out[id] = tabView(visibleGroups, id, taskData.loadedAt);
+    return out;
+  }, [visibleGroups, taskData.loadedAt]);
+
+  const activeView = views[activeTab];
+
   const tabs: TaskTab[] = [
-    { id: "home", label: "Home", count: counts.home },
-    { id: "approval-pending", label: "Approval Pending", count: counts.approval },
-    { id: "in-queue", label: "In Queue", count: counts.queue },
-    // M24: Completed and History carry no count -- nothing there needs action.
-    { id: "completed", label: "Completed" },
-    { id: "history", label: "History" },
+    { id: "home", label: "Home", count: views.home.count },
+    { id: "approval-pending", label: "Approval Pending", count: views["approval-pending"].count },
+    { id: "in-queue", label: "In Queue", count: views["in-queue"].count },
+    { id: "completed", label: "Completed", count: views.completed.count },
+    { id: "history", label: "History", count: views.history.count },
   ];
-  const [activeTab, setActiveTab] = useState<TaskTab["id"]>("home");
+
+  // *** RETRY IS THE ONLY ROW ACTION THAT TOUCHES THE SERVER. *** It re-posts
+  // the IDENTICAL body, and only for a transport failure -- BACKEND_UNAVAILABLE
+  // means nothing was written, so repeating it cannot double-write. Every
+  // other action loads the chain and stops.
+  const retryTask = useCallback(
+    async (row: ProjexaTaskRow) => {
+      if (submitting) return;
+      const body = row.functionId
+        ? { functionId: row.functionId, params: row.params, mode: row.chain.mode, projectId: row.projectId }
+        : row.rawInput
+          ? { rawInput: row.rawInput, mode: row.chain.mode, projectId: row.projectId }
+          : null;
+      if (!body) {
+        setSubmitError("This row carries nothing to retry.");
+        return;
+      }
+      setSubmitting(true);
+      setSubmitError(null);
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await res.json().catch(() => null);
+        if (!res.ok) {
+          setSubmitError(
+            d && typeof d.error === "string" && d.error.trim() ? d.error : `Retry failed (HTTP ${res.status})`
+          );
+          return;
+        }
+        await loadTasks();
+      } catch {
+        setSubmitError("Couldn't reach the task service.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [submitting, loadTasks]
+  );
+
+  const onRowAction = useCallback(
+    (row: ProjexaTaskRow, action: RowAction) => {
+      if (action.kind === "dismiss") {
+        setDismissedIds((prev) => {
+          const next = prev.includes(row.id) ? prev : [...prev, row.id];
+          try {
+            localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+        return;
+      }
+      if (action.kind === "retry") {
+        void retryTask(row);
+        return;
+      }
+      // "fix": LOADS THE CHAIN AND STOPS. It arms no functionId, so the next
+      // Send is a deliberate second act by the user and this button can never
+      // re-run the write that failed.
+      setMode(row.chain.mode);
+      setSegments(row.chain.segments.filter((s) => s.kind !== "root"));
+      if (row.projectId) setProjectId(row.projectId);
+      setSubmitError(null);
+      setFixTarget({ taskId: row.id, functionId: row.functionId, missingStep: action.missingStep });
+    },
+    [retryTask]
+  );
 
   // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
   // written to the URL -- a hard reload always fell back to "home", the
@@ -671,9 +769,24 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={onTabChange}
-          needsYou={needsYou}
-          waitingOnOthers={waiting}
+          // The active tab's OWN rows, with its OWN heading and its OWN empty
+          // sentence -- all three from task-row.ts's tabView, so the tab that
+          // is highlighted is the tab that is rendered.
+          primary={{ label: activeView.primaryLabel, empty: activeView.primaryEmpty, rows: activeView.primary }}
+          secondary={
+            activeView.secondary
+              ? {
+                  label: activeView.secondaryLabel ?? "Waiting on others",
+                  empty: activeView.secondaryEmpty ?? "Nothing outstanding with anyone else.",
+                  rows: activeView.secondary,
+                  // ONE-LINE for waiting. The density difference is itself a
+                  // signal about which group matters (M24).
+                  twoLine: false,
+                }
+              : undefined
+          }
           onLoad={onLoadChain}
+          onRowAction={onRowAction}
         />
         )}
           </div>
@@ -738,9 +851,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           allowEmptySubmit={Boolean(pendingFunctionId)}
           emptyInputReason="Type what you need, then press Send."
           placeholder={
-            pendingFunctionId
+            // A Fix click loaded a chain and stopped; the box then asks the
+            // ONE question that row was blocked on, rather than repeating the
+            // generic prompt and leaving the user to work it out.
+            (fixTarget?.missingStep ? FIX_PROMPT[fixTarget.missingStep] : undefined) ??
+            (pendingFunctionId
               ? "Press send to run this, or add detail first…"
-              : "Describe what you need, or pick a module above."
+              : "Describe what you need, or pick a module above.")
           }
         />
       }
