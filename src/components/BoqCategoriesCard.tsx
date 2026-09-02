@@ -29,6 +29,8 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
   const [newName, setNewName] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Bumped for ONE row when its rename is refused; see that row's key below.
+  const [revertEpoch, setRevertEpoch] = useState<Record<string, number>>({});
 
   async function load() {
     setLoading(true);
@@ -82,7 +84,17 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
       toast.success(moved === 0 ? `Renamed to "${name}"` : `Renamed to "${name}" — ${moved} BOQ line${moved === 1 ? "" : "s"} updated`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't rename this category");
-      await load(); // put the input back to the stored name rather than leaving a rejected edit on screen
+      // Put the field back to the name the server still holds, so the screen
+      // and the database cannot silently disagree. `load()` ALONE CANNOT DO
+      // THIS: a refusal leaves the stored name unchanged, so the reloaded row
+      // is identical, React reuses the same element, and an uncontrolled
+      // <Input> keeps whatever DOM value it already had -- the rejected text.
+      // (defaultValue is only read at mount.) Bumping this row's revert counter
+      // changes its key, which forces a remount and re-applies defaultValue.
+      // Per-row on purpose: a refusal here must not discard text someone is
+      // part-way through typing in another row.
+      setRevertEpoch((m) => ({ ...m, [category.id]: (m[category.id] ?? 0) + 1 }));
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -121,16 +133,19 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
         ) : (
           <ul className="space-y-2">
             {categories.map((c) => (
-              // Keyed on id AND stored name on purpose. The name field below is
-              // an UNCONTROLLED <Input>: React does not reset a mounted input's
-              // DOM value when defaultValue changes, so after a rejected rename
-              // (the 409 '"Civil" is already a category') the reload in
-              // rename()'s catch would leave the rejected text on screen while
-              // the server still holds the old name -- screen and database
-              // silently disagreeing. Including the name in the key remounts
-              // the row whenever the stored name changes or reverts, so the
-              // field always shows what the server actually has.
-              <li key={`${c.id}:${c.name}`} className="flex items-center gap-2">
+              // Keyed on id + stored name + revert counter, because the name
+              // field below is an UNCONTROLLED <Input> and React only applies
+              // defaultValue at mount. The key therefore has to change on BOTH
+              // ways the field can fall out of step with the server:
+              //   * the stored name CHANGED (a successful rename here, or
+              //     someone else's edit picked up by a reload) -- covered by
+              //     c.name;
+              //   * the stored name did NOT change but the field diverged --
+              //     a refused rename, where the reload returns an identical row
+              //     and c.name alone would leave the rejected text on screen.
+              //     Covered by revertEpoch, bumped in rename()'s catch.
+              // Both cases are pinned by tests in BoqCategoriesCard.test.tsx.
+              <li key={`${c.id}:${c.name}:${revertEpoch[c.id] ?? 0}`} className="flex items-center gap-2">
                 <Input
                   aria-label={`Category name: ${c.name}`}
                   className="max-w-[240px]"
