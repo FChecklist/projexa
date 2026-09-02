@@ -22,11 +22,10 @@
 // is still required by this layout.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
-  PillStrip,
   TaskMaster,
   TopRail,
   cutChainFrom,
@@ -36,23 +35,30 @@ import {
   type Chain,
   type ChainLoad,
   type ChainMode,
-  type HistoryEntry,
   type PillSelection,
   type PillUsage,
   type RankedPill,
   type TaskRow,
   type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
-// R67 G-04, programme decision D-09: Composer (and, through it, ControlStrip)
-// is PROJEXA'S FORK of the kit file, because the kit is an unpublished git
-// dependency whose source is not on this machine. The fork fixes two things
-// the kit cannot be asked to fix in this programme: the Send button's
-// white-on-saffron 2.60:1 text, and a disabled reason that rendered at 11px
-// in the bottom-left corner (behind Next's development badge) and was absent
-// entirely when the button was disabled for an empty input. EVERYTHING ELSE
-// -- AppShell, TopRail, TaskMaster, PillStrip, HistoryDrop, the chain API --
-// is still the kit's, imported above.
-import { Composer } from "@/components/shell/Composer";
+// R67 A-01 / decision D-09: the composer, its control strip and its pill strip
+// are PROJEXA's own forks now (src/components/shell/), because the programme
+// changes their behaviour and the kit is a pinned dependency whose source is
+// not in this repo. Everything the programme does NOT change -- AppShell,
+// TaskMaster, the chain functions, the tokens -- still comes from the kit
+// above, so the fork stays as small as the change requires.
+//
+// LANE G FORKED THE SAME TWO FILES (r67(G) #229, colour-signage-tokens) and
+// this branch rebases on top of it, so both lanes' reasons for forking now
+// live in one file. G's two are kept: the Send button's white-on-saffron text
+// (2.60:1, a WCAG AA failure on the most-clicked control in the product) is
+// navy on saffron here too, and G's rule that there is NO state in which Send
+// is dead and unexplained is kept and strengthened -- see the Composer props
+// below, where A-19 moves that sentence into the button's own label.
+import { Composer } from "./Composer";
+import { PillStrip } from "./PillStrip";
+import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
+import { moduleForPathname, moduleForPill, moduleHref, pillPointsAtCurrentScreen } from "@/lib/module-catalogue";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -63,8 +69,18 @@ import { createClient } from "@/lib/supabase/client";
 // session, so nobody returns to a view they forgot they set." sessionStorage is
 // exactly that lifetime; localStorage would survive the session and break it.
 const MODE_KEY = "veri.chain.mode";
-const HISTORY_KEY = "veri.chain.history";
 const PILL_USAGE_KEY = "veri.pill.usage";
+
+// R67 A-01. HISTORY_KEY ("veri.chain.history") is GONE, and with it the
+// composer's HISTORY drop. Two facts made it indefensible: (a) two controls on
+// one screen were called History -- the drop and the Task Master tab -- which
+// is the duplicate-control finding correction C-03 left standing after
+// withdrawing the separate "it covers the tabs" claim; and (b) nothing in this
+// repo ever WROTE that key. `setHistory` was called in exactly one place, the
+// hydration effect, so the drop rendered an empty list on every screen for its
+// whole life. Loading a previous chain now lives where a user already looks
+// for it -- the Task Master's own History tab, fed by real pipeline_tasks rows
+// -- and keeps the same load-and-stop contract.
 
 // R55_BUDGETS_TAB_NOT_IN_URL_01 / R55_SCHEDULE_TAB_NOT_IN_URL_01: the Task
 // Master status tabs (Home/Approval Pending/In Queue/Completed/History)
@@ -85,6 +101,9 @@ type ApiTask = {
   error?: string | null;
   rawInput?: string | null;
   mode?: string | null;
+  /** Real column on compliance.pipeline_tasks, selected by the route's own
+   *  query and already ordered desc -- used by the History tab's dedup. */
+  createdAt?: string | null;
 };
 type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
@@ -106,9 +125,22 @@ function verbFor(functionId?: string | null): TaskRow["verb"] {
   return "Review";
 }
 
-function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked"): TaskRow {
+function toTaskRow(
+  t: ApiTask,
+  group: "needsYou" | "running" | "done" | "blocked",
+  railProjectId: string | null
+): TaskRow {
   const steps = t.derivedChain?.steps ?? [];
   const root = t.derivedChain?.root ?? null;
+  // R67 A-01. A Task Master row now carries a real destination, so loading a
+  // chain from the History tab opens the screen it belongs to instead of
+  // restoring segments over whatever screen happens to be on show. The module
+  // is resolved from PROJEXA's own catalogue (the pipeline's NAV_PATH_BY_
+  // FUNCTION lives server-side and is not in this payload); a task whose module
+  // this build does not know simply gets no route, which loadChain() already
+  // treats as "restore the chain and stop".
+  const mod = moduleForPill(t.functionId ?? steps[0] ?? "", steps[0]);
+  const route = mod ? moduleHref({ path: mod.route }, t.projectId ?? railProjectId) : undefined;
   // M24's four glyphs are needs-you / running / waiting / done. A BLOCKED task
   // is one that needs you -- it is stuck on a decision or a correction only
   // the user can make -- so it takes the needs-you glyph and the loud pill.
@@ -128,6 +160,7 @@ function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked
     detail: t.error ?? t.rawInput ?? undefined,
     urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
     urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
+    route,
     chain: {
       mode: (t.mode?.toLowerCase() as ChainMode) ?? DEFAULT_CHAIN_MODE,
       segments: [
@@ -139,19 +172,34 @@ function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked
 }
 type Project = { id: string; name: string };
 
+/** Every task the shell has read, kept raw so each Task Master tab can render
+ *  the rows that actually belong to it rather than all of them five times. */
+type TaskGroups = {
+  needsYou: ApiTask[];
+  running: ApiTask[];
+  done: ApiTask[];
+  blocked: ApiTask[];
+  /** The full list, newest first, exactly as the route ordered it. */
+  all: ApiTask[];
+};
+
+const NO_TASKS: TaskGroups = { needsYou: [], running: [], done: [], blocked: [], all: [] };
+
 export default function M24Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  // R67 A-01: the composer must know which screen it is serving, so it can
+  // stop offering the screen the user is already standing on.
+  const pathname = usePathname();
 
   const [mode, setMode] = useState<ChainMode>(DEFAULT_CHAIN_MODE);
   const [segments, setSegments] = useState<Chain["segments"]>([]);
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
-  const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
-  const [waiting, setWaiting] = useState<TaskRow[]>([]);
+  const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
   const [tasksError, setTasksError] = useState<string | null>(null);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
@@ -175,8 +223,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     try {
       const m = sessionStorage.getItem(MODE_KEY) as ChainMode | null;
       if (m) setMode(m);
-      const h = sessionStorage.getItem(HISTORY_KEY);
-      if (h) setHistory(JSON.parse(h) as HistoryEntry[]);
       const p = localStorage.getItem(PILL_USAGE_KEY);
       if (p) setPillUsage(JSON.parse(p) as PillUsage[]);
     } catch {
@@ -256,7 +302,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           return;
         }
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+        if (live && Array.isArray(list)) {
+          setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+          // Only a REAL, successful read can say the org has no projects. An
+          // empty list before the call answers must never produce the "Create
+          // a project first" sentence -- that would be a confident empty state
+          // standing in for "not loaded yet", the exact defect this shell has
+          // been corrected for twice already.
+          setProjectsLoaded(true);
+        }
       } catch (err) {
         if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
       }
@@ -343,17 +397,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           queue: Number(data.counts?.running) || 0,
         });
         const g = data.groups ?? {};
-        // "Needs you" carries what is stuck on the user: blocked first, because
-        // a blocked row is the only loud one and the one that costs time.
-        setNeedsYou([
-          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
-          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
-        ]);
-        // "Waiting on others" is everything not on the user's desk.
-        setWaiting([
-          ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
-          ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
-        ]);
+        // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
+        // (below), because the five header tabs used to be pure decoration --
+        // every one of them rendered the same two lists, so clicking
+        // "Completed" changed nothing on screen.
+        setTaskGroups({
+          needsYou: g.needsYou ?? [],
+          running: g.running ?? [],
+          done: g.done ?? [],
+          blocked: g.blocked ?? [],
+          all: data.tasks ?? [],
+        });
       } catch {
         setTasksError("Couldn't reach the task service.");
       }
@@ -586,6 +640,85 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [router]
   );
 
+  // R67 A-01 -- THE TABS NOW FILTER, and the History tab is the ONE History.
+  //
+  // Before this, all five tabs rendered the identical two lists: the shell
+  // computed "needs you" and "waiting on others" once and passed them whatever
+  // was selected, so clicking Completed or History changed the underline and
+  // nothing else. That is what made a second History control in the composer
+  // look necessary. It is not: History is a real view of real rows.
+  //
+  // HISTORY = "things I do", deduplicated by the chain sentence with the most
+  // recent occurrence winning -- M24's own rule for the drop this replaces
+  // ("Running Daily entry six times leaves ONE row"), including FAILED chains,
+  // because the commonest reason to re-run something is that it went wrong.
+  // The rows are already newest-first: the route orders by created_at desc.
+  const { needsYouRows, waitingRows } = useMemo(() => {
+    const rows = (list: ApiTask[], group: "needsYou" | "running" | "done" | "blocked") =>
+      list.map((t) => toTaskRow(t, group, projectId));
+    switch (activeTab) {
+      case "approval-pending":
+        return { needsYouRows: rows(taskGroups.needsYou, "needsYou"), waitingRows: [] };
+      case "in-queue":
+        return { needsYouRows: [], waitingRows: rows(taskGroups.running, "running") };
+      case "completed":
+        return { needsYouRows: [], waitingRows: rows(taskGroups.done, "done") };
+      case "history": {
+        const seen = new Set<string>();
+        const unique: TaskRow[] = [];
+        for (const t of taskGroups.all) {
+          const group: "needsYou" | "running" | "done" | "blocked" =
+            t.status === "done"
+              ? "done"
+              : t.status === "in_progress"
+                ? "running"
+                : t.status === "blocked"
+                  ? "blocked"
+                  : "needsYou";
+          const row = toTaskRow(t, group, projectId);
+          const key = `${row.verb} ${row.object}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          unique.push(row);
+        }
+        return { needsYouRows: [], waitingRows: unique };
+      }
+      default:
+        return {
+          // "Needs you" carries what is stuck on the user: blocked first,
+          // because a blocked row is the only loud one and the one that costs
+          // time.
+          needsYouRows: [...rows(taskGroups.blocked, "blocked"), ...rows(taskGroups.needsYou, "needsYou")],
+          // "Waiting on others" is everything not on the user's desk.
+          waitingRows: [...rows(taskGroups.running, "running"), ...rows(taskGroups.done, "done")],
+        };
+    }
+  }, [activeTab, taskGroups, projectId]);
+
+  // R67 A-01 -- THE SCREEN THE COMPOSER IS SERVING. A pill whose destination is
+  // the screen already on show is a dead end, so it is not offered at all.
+  const screenModule = useMemo(() => moduleForPathname(pathname ?? ""), [pathname]);
+  const hidePill = useCallback(
+    (pill: { key: string; label: string }) => pillPointsAtCurrentScreen(pill.key, pill.label, pathname ?? ""),
+    [pathname]
+  );
+
+  // R67 A-01 -- ONE INSTRUCTION, ONE SEND RULE, both derived from one state.
+  const composerState = useMemo(
+    () => ({
+      hasProjects: !projectsLoaded || projects.length > 0,
+      hasProject: Boolean(project),
+      projectName: project?.name ?? null,
+      moduleLabel: screenModule?.label ?? null,
+      hasAction: Boolean(pendingFunctionId),
+      hasText: draft.trim().length > 0,
+      busy: submitting,
+    }),
+    [projectsLoaded, projects.length, project, screenModule, pendingFunctionId, draft, submitting]
+  );
+  const instruction = composerInstruction(composerState);
+  const sendEnabled = canSendFrom(composerState);
+
   return (
     <AppShell
       // F_019 fix (2026-08-27): this shell always renders the composer's
@@ -671,8 +804,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={onTabChange}
-          needsYou={needsYou}
-          waitingOnOthers={waiting}
+          needsYou={needsYouRows}
+          waitingOnOthers={waitingRows}
           onLoad={onLoadChain}
         />
         )}
@@ -682,12 +815,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       composer={
         <Composer
           chain={chain}
-          onModeChange={setMode}
           onCutFrom={onCutFrom}
           onHome={() => router.push(HOME_ROUTE)}
           onReset={onReset}
-          history={history}
-          onLoadChain={onLoadChain}
           value={draft}
           onChange={setDraft}
           // BAND 3 -- the ranked pill set. M24 keeps all 14 universal pills but
@@ -706,6 +836,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 onSelect={onPillSelect}
                 onTogglePin={onTogglePin}
                 limit={showAllPills ? UNIVERSAL_PILLS.length : 6}
+                // R67 A-01: never offer the screen the user is standing on.
+                hide={hidePill}
               />
               <button
                 type="button"
@@ -718,29 +850,33 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             </div>
           }
           onSubmit={onSubmit}
-          // R67 G-04: EXACTLY ONE INSTRUCTION PER STATE. The order is
-          // most-specific-first, so a real server refusal is never hidden
-          // behind a generic prompt:
-          //   1. the server said no        -> its own words
-          //   2. the request is in flight  -> "Sending…"
-          //   3. nothing to run it against -> "Pick a project or a module first"
-          // The fourth state -- nothing typed yet -- is the one the kit left
-          // silent, and the fork's emptyInputReason below now covers it, so
-          // there is no state in which Send is dead and unexplained.
-          disabledReason={
-            submitError ??
-            (submitting ? "Sending…" : projectId || pendingFunctionId ? undefined : "Pick a project or a module first")
-          }
-          // With a module armed there is something to run, so an empty
-          // input is a real submission and Send stays live -- which is what
-          // the placeholder has always claimed. Without one, the empty input
-          // is genuinely blocking and gets the sentence that says so.
-          allowEmptySubmit={Boolean(pendingFunctionId)}
-          emptyInputReason="Type what you need, then press Send."
+          // R67 A-01: ONE state-derived sentence. It renders in the strip and
+          // is reused verbatim as this button's tooltip and accessible name --
+          // it is never printed twice, and the four strings it replaces
+          // ("Select a module to begin", "Pick a project or a module first",
+          // and the two placeholders below) are gone.
+          //
+          // THIS REPLACES LANE G'S disabledReason/emptyInputReason/
+          // allowEmptySubmit TRIO (r67(G) #229) RATHER THAN SITTING BESIDE IT,
+          // and the replacement is deliberate. G's rule was "there is no state
+          // in which Send is dead and unexplained", and it bought that with a
+          // separate sentence rendered next to the button. Those props do not
+          // exist on this fork any more: A-19 moved the explanation INTO the
+          // button's own label ("Send (pick a project, say what you need)"),
+          // which keeps G's rule and makes it stronger -- the words are now the
+          // control's accessible name, so a screen reader announces the same
+          // sentence the eye reads, and the empty-input state G had to add
+          // emptyInputReason for is one of the things missingThings() lists.
+          // Keeping both mechanisms would print the reason twice, which is the
+          // duplicate-instruction defect BOTH lanes were sent to remove.
+          instruction={instruction}
+          canSend={sendEnabled}
+          busy={submitting}
+          errorMessage={submitError}
           placeholder={
-            pendingFunctionId
-              ? "Press send to run this, or add detail first…"
-              : "Describe what you need, or pick a module above."
+            screenModule
+              ? screenModule.placeholder
+              : "Type a task, a question or a record — e.g. 'excavation 50%'"
           }
         />
       }

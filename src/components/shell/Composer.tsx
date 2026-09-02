@@ -1,125 +1,110 @@
 "use client";
 
-// PROJEXA'S FORK of @fchecklist/veridian-ui-kit/shell/Composer.tsx (kit
-// 0.7.0, commit 8134e07), taken under programme decision D-09. The kit source
-// is not on this machine and is not published, so a behaviour change is made
-// by forking this one file; HistoryDrop and the whole chain API are still
-// imported from the kit, and only ControlStrip resolves to PROJEXA's fork
-// beside this file.
+// R67 WS-A (A-01) -- PROJEXA'S FORK of the kit's shell/Composer.
 //
-// TWO CHANGES, both R67 WS-G:
+// WHY A FORK AND NOT A KIT CHANGE: decision D-09. The kit is a pinned git
+// dependency whose source is not on this machine and is not published, and a
+// node_modules edit is erased by CI's `bun install --frozen-lockfile`. Only
+// the components whose behaviour this programme changes are copied here; the
+// frame (AppShell), the rail (TopRail), the Task Master and the screens are
+// still the kit's.
 //
-// 1. THE SEND BUTTON WAS WHITE ON SAFFRON -- 2.60:1, a WCAG AA failure on the
-//    single most-clicked control in the product (R-197 / R-260). It keeps the
-//    saffron fill and takes navy text: 5.55:1, no new colour. It cannot
-//    inherit the app's --primary-foreground fix, because it sets its own
-//    colour inline rather than going through the shadcn Button variant.
+// M24-A's design rules are carried over verbatim and must not drift:
+// the box is where work happens, it sizes ITSELF (no drag, no resize handle,
+// no pin), and it spans both panes rather than being confined to one.
 //
-// 2. THE DISABLED REASON WAS EASY TO MISS AND SOMETIMES ABSENT (G-04 /
-//    R-231). The kit renders it at 11px, on the LEFT of the row after
-//    attachSlot -- which is the bottom-left corner of the viewport, exactly
-//    where Next.js parks its development badge, so during local work the one
-//    sentence explaining why Send will not fire sat behind an overlay. Worse,
-//    there was a state with NO instruction at all: the button is also
-//    disabled when the textarea is empty, and in that state disabledReason
-//    was undefined, so the user got a dead control and no words. Now the
-//    reason renders at 12px immediately to the LEFT OF SEND, inside the same
-//    right-aligned group, and `emptyInputReason` supplies the missing state's
-//    sentence -- so there is exactly one instruction for every state in which
-//    the button cannot fire, and never two.
+// WHAT CHANGED FROM THE KIT COPY:
 //
-// ------------------------- the kit's own notes ---------------------------
-// M24-A -- THE CHAT BOX IS THE PRODUCT, NOT A TOOLBAR.
+//  1. NO HISTORY DROP. The kit rendered a HistoryDrop under the strip, giving
+//     the screen two controls named History (the other is the Task Master's
+//     own tab). The drop is gone -- not hidden, not restyled -- and with it
+//     the `history` / `suggestedHistory` / `onLoadChain` props. Loading a
+//     previous chain is the Task Master History tab's job, and it keeps the
+//     same load-and-stop contract. HistoryDrop.tsx is deliberately NOT copied
+//     into this repo.
 //
-// EVERYTHING LIVES INSIDE THE BOX, top to bottom:
-//   1. CONTROL STRIP  - Mode | chain with the (x) | HISTORY  HOME  (reset)
-//   2. CONVERSATION   - grows upward as the chain is worked
-//   3. PILLS          - the ranked set
-//   4. INPUT          - text + attach, with real height, not a single line
+//  2. NO MODE ROW, so no `onModeChange` prop -- see ControlStrip.tsx.
 //
-// NO DRAGGING, NO RESIZE HANDLE, NO PIN. M24: "window management is load
-// MOVED, not load removed. The box must size itself."
+//  3. ONE INSTRUCTION. The kit printed a grey `disabledReason` beside the Send
+//     button while the strip printed its own fixed "Select a module to begin",
+//     so a blocked user read two different sentences about one state. There is
+//     now a single `instruction`, rendered ONCE in the strip and reused
+//     verbatim as the Send button's tooltip and accessible name. A real
+//     failure (`errorMessage`) is a different thing and still gets its own
+//     line, in red, with role="alert".
+//
+//  4. SEND IS DRIVEN BY `canSend`, not by the textarea being non-empty. The
+//     kit disabled Send whenever the box was empty, which made the pill path
+//     -- pick a module, press Send, no typing required -- silently impossible.
+//     The caller decides what is submittable and says why in one string.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   COMPOSER_MAX_HEIGHT_VH,
   COMPOSER_RESTING_HEIGHT,
-  HistoryDrop,
   type Chain,
-  type ChainLoad,
-  type ChainMode,
-  type HistoryEntry,
 } from "@fchecklist/veridian-ui-kit/shell";
 import { ControlStrip } from "./ControlStrip";
-import { composerSendState } from "@/lib/composer-send-state";
 
 export type ComposerProps = {
   chain: Chain;
-  onModeChange: (mode: ChainMode) => void;
   onCutFrom: (index: number) => void;
   onSegmentClick?: (index: number) => void;
   onHome: () => void;
   onReset: () => void;
 
-  history: HistoryEntry[];
-  suggestedHistory?: HistoryEntry[];
-  onLoadChain: (load: ChainLoad) => void;
-  onTogglePin?: (key: string) => void;
+  /**
+   * THE ONE STATE-DERIVED INSTRUCTION (A-01). Rendered in the strip, and
+   * reused verbatim as the Send button's tooltip -- never printed twice.
+   */
+  instruction: string;
+  /** When false, Send is disabled and `instruction` says what is missing. */
+  canSend: boolean;
+  /** A real failure, e.g. a rejected submission. Shown in words, in red. */
+  errorMessage?: string | null;
+  /** A submission is in flight: Send is inert and the box says so to AT. */
+  busy?: boolean;
 
   /** 2. CONVERSATION -- rendered only once there is something to show. */
   conversation?: ReactNode;
-  /** 3. PILLS -- the ranked set. */
+  /** 3. PILLS -- the ranked card strip. */
   pills?: ReactNode;
+  /** Two worked examples under the input (A-02). */
+  examples?: ReactNode;
 
   value: string;
   onChange: (v: string) => void;
   onSubmit?: () => void;
-  /** Disabled reason, shown in words. Empty/undefined means "not blocked by the caller". */
-  disabledReason?: string;
-  /**
-   * R67 G-04: the sentence for the one state the kit left silent -- the
-   * button is disabled because nothing has been typed. A default is supplied
-   * so a caller cannot accidentally reintroduce the wordless dead control.
-   */
-  emptyInputReason?: string;
-  /**
-   * R67 G-04: the kit disabled Send whenever the textarea was empty, FULL
-   * STOP -- while the placeholder in that same state read "Press send to run
-   * this, or add detail first…". So once a module pill had been picked, the
-   * composer told the user to press a button it had disabled. That is worse
-   * than a missing instruction: it is a wrong one. When the caller already
-   * has something runnable armed (PROJEXA: a pending functionId), it says so
-   * here and an empty input is a legitimate submission.
-   */
-  allowEmptySubmit?: boolean;
   placeholder?: string;
   attachSlot?: ReactNode;
+  /** Lets the shell put the cursor in the box (reset, "Other…", prefill). */
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
 };
 
 export function Composer({
   chain,
-  onModeChange,
   onCutFrom,
   onSegmentClick,
   onHome,
   onReset,
-  history,
-  suggestedHistory,
-  onLoadChain,
-  onTogglePin,
+  instruction,
+  canSend,
+  errorMessage,
+  busy = false,
   conversation,
   pills,
+  examples,
   value,
   onChange,
   onSubmit,
-  disabledReason,
-  emptyInputReason = "Type what you need, then press Send.",
-  allowEmptySubmit = false,
-  placeholder = "Describe what you need, or pick a module above.",
+  // The kit's default was "Describe what you need, or pick a module above.",
+  // which contradicted the strip's own instruction; retired with the rest.
+  placeholder = "Type a task, a question or a record",
   attachSlot,
+  textareaRef,
 }: ComposerProps) {
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const taRef = useRef<HTMLTextAreaElement>(null);
+  const ownRef = useRef<HTMLTextAreaElement>(null);
+  const taRef = textareaRef ?? ownRef;
 
   // The box sizes ITSELF. This is the whole of the sizing logic, and it is
   // deliberately not user-controllable.
@@ -128,21 +113,9 @@ export function Composer({
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
-  }, [value]);
+  }, [value, taRef]);
 
-  // ONE INSTRUCTION PER STATE, derived from the SAME evaluation that disables
-  // the button -- so the two cannot drift apart and leave a dead control with
-  // no words beside it. The rule lives in src/lib/composer-send-state.ts,
-  // where it is unit-tested; the caller's own reason wins there, because it
-  // is the more specific fact ("Sending…", or the server's own refusal).
-  const blockedByCaller = Boolean(disabledReason);
-  const { canSubmit, reason } = composerSendState({
-    disabledReason,
-    value,
-    allowEmptySubmit,
-    emptyInputReason,
-    hasSubmitHandler: Boolean(onSubmit),
-  });
+  const sendDisabled = !canSend || busy || !onSubmit;
 
   return (
     <div
@@ -159,38 +132,22 @@ export function Composer({
           borderColor: "var(--color-ct-border2)",
         }}
       >
-        {/* 1. CONTROL STRIP */}
+        {/* 1. CONTROL STRIP -- and the one instruction, rendered here only. */}
         <div className="relative shrink-0 border-b" style={{ borderColor: "var(--color-ct-border)" }}>
           <ControlStrip
             chain={chain}
-            onModeChange={onModeChange}
             onCutFrom={onCutFrom}
             onSegmentClick={onSegmentClick}
-            onToggleHistory={() => setHistoryOpen((o) => !o)}
             onHome={onHome}
             onReset={onReset}
-            historyOpen={historyOpen}
-          />
-          {/* Drops DOWN over the conversation. Absolute, so NOTHING REFLOWS. */}
-          <HistoryDrop
-            open={historyOpen}
-            entries={history}
-            suggested={suggestedHistory}
-            onLoad={(load) => {
-              setHistoryOpen(false);
-              // LOADS AND STOPS. onLoadChain receives a ChainLoad, which has no
-              // way to express execution. See the kit's chain.ts.
-              onLoadChain(load);
-            }}
-            onTogglePin={onTogglePin}
-            onClose={() => setHistoryOpen(false)}
+            prompt={instruction}
           />
         </div>
 
         {/* 2. CONVERSATION -- grows upward as the chain is worked. */}
         {conversation && <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">{conversation}</div>}
 
-        {/* 3. PILLS -- arrive and leave with the composer. */}
+        {/* 3. PILLS */}
         {pills && (
           <div className="shrink-0 px-3 pb-1.5 pt-1" style={{ borderColor: "var(--color-ct-border)" }}>
             {pills}
@@ -198,13 +155,18 @@ export function Composer({
         )}
 
         {/* 4. INPUT -- real height, generous padding. Not a single line. */}
-        <div className={`shrink-0 px-3 pb-2.5 pt-1${blockedByCaller ? " veri-composer-disabled" : ""}`}>
+        <div className="shrink-0 px-3 pb-2.5 pt-1">
+          {errorMessage && (
+            <p role="alert" className="pb-1 text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
+              {errorMessage}
+            </p>
+          )}
           <textarea
             ref={taRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && canSubmit && onSubmit) {
+              if (e.key === "Enter" && !e.shiftKey && !sendDisabled && onSubmit) {
                 e.preventDefault();
                 onSubmit();
               }
@@ -212,39 +174,32 @@ export function Composer({
             rows={2}
             placeholder={placeholder}
             aria-label="Describe the task"
-            aria-describedby={reason ? "veri-composer-send-reason" : undefined}
             className="w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none"
             style={{ color: "var(--color-ct-navy)", minHeight: 46 }}
           />
+          {examples && (
+            <div className="pt-0.5 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+              {examples}
+            </div>
+          )}
           <div className="mt-1 flex items-center gap-2">
             {attachSlot}
             {/* NO FAIL-AFTER-CLICK: when the action cannot succeed the button
-                is disabled and the reason is IMMEDIATELY BESIDE IT, in words,
-                at 12px, inside this right-aligned group -- not in the
-                bottom-left corner where the dev badge sits. role="status" so
-                a screen reader hears it change without the focus moving. */}
-            <div className="ml-auto flex min-w-0 items-center gap-2">
-              {reason && (
-                <span
-                  id="veri-composer-send-reason"
-                  role="status"
-                  className="truncate text-[12px]"
-                  style={{ color: "var(--status-needs-you-text)" }}
-                >
-                  {reason}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={onSubmit}
-                disabled={!canSubmit}
-                // R67 WS-G: navy on saffron, 5.55:1. Was white, 2.60:1.
-                className="shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
-                style={{ background: "var(--color-ct-saffron)", color: "var(--color-ct-navy)" }}
-              >
-                Send
-              </button>
-            </div>
+                is disabled and the reason is the strip's own sentence, carried
+                here as the tooltip and the accessible name rather than printed
+                a second time in grey. */}
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={sendDisabled}
+              aria-busy={busy}
+              aria-label={canSend ? "Send" : `Send — ${instruction}`}
+              title={instruction}
+              className="ml-auto rounded-lg px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-40"
+              style={{ background: "var(--color-ct-saffron)" }}
+            >
+              Send
+            </button>
           </div>
         </div>
       </div>
