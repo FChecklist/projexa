@@ -60,6 +60,11 @@ import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
 import { cachedShellJson, invalidateShellCache, ShellFetchError, SHELL_PROJECTS_KEY, SHELL_SESSION_TTL_MS } from "@/lib/shell-cache";
 import { afterFirstPaint } from "@/lib/after-paint";
+// The two sessionStorage-backed caches this lane added. They are cleared on
+// sign-out below -- sessionStorage outlives a sign-out inside one tab, and
+// both hold org-scoped data.
+import { clearCachedReports } from "@/lib/report-result-cache";
+import { clearCurrenciesCache } from "@/lib/currency";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -292,7 +297,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         void loadOrgInfo({ force: true });
       } else if (event === "SIGNED_OUT") {
         // Nothing cached may outlive the session it belongs to.
+        //
+        // R67 F-04/F-10 review fix: invalidateShellCache() clears the
+        // IN-MEMORY store only, and two of this lane's caches live in
+        // sessionStorage, which survives a sign-out inside the same tab. Both
+        // hold org-scoped data -- remembered report results, and the org's
+        // currency codes -- and both files' own headers promise that a
+        // different sign-in cannot see the previous one's. This is where that
+        // promise is kept; without these two lines it was only a comment.
         invalidateShellCache();
+        clearCachedReports();
+        clearCurrenciesCache();
         setInfo(null);
       }
     });

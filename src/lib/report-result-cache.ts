@@ -14,8 +14,14 @@
 // sessionStorage, not localStorage, and not a module variable:
 //   * it must survive a navigation away and back -- that is most of the win;
 //   * it must NOT survive the tab, because a report is org-scoped data and a
-//     different sign-in in a new session must never see the previous one's
-//     figures.
+//     different sign-in must never see the previous one's figures.
+//
+// sessionStorage alone only delivers half of that second rule: it dies with the
+// tab, but it survives a SIGN-OUT inside one tab. So M24Shell's SIGNED_OUT
+// handler calls clearCachedReports() -- see that call site. (Keys include the
+// projectId, so a cross-org collision was never possible; what the sign-out
+// clear removes is the previous user's results lingering in a tab the next
+// one is looking at.)
 //
 // Every operation is wrapped: private mode, disabled storage and a full quota
 // all mean "no cache", never a thrown error on a render path.

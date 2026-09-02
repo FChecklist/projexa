@@ -76,6 +76,21 @@ export function buildMaterialCostReport(
     running.quantity += quantity;
     // NULL unit cost contributes no cost -- exactly what SQL's
     // sum(quantity * unitCost) does with a NULL factor.
+    //
+    // A DELIBERATE DEVIATION FROM THE R67 F-07 ITEM, recorded here rather than
+    // only in a PR body. F-07 specifies the derived cost as
+    // `quantity x (unitCost ?? master.unitCost)`. That fallback is NOT applied,
+    // because compliance-tracker's getMaterialCostReport() -- the aggregation
+    // behind the EXPORTABLE report, construction-materials-service.ts:107 --
+    // does a plain `sum(quantity * unit_cost)` with no fallback. Adopting the
+    // fallback on the screen alone would make the Cost Report tab and its own
+    // export show different totals under the same heading for any receipt
+    // booked without a price, which is a worse fault than the one it fixes.
+    //
+    // If the fallback is the wanted behaviour it belongs in the SERVICE first,
+    // so the screen and the export move together -- and that is a change to a
+    // shipped money report's figures, which needs its own decision, its own
+    // test and its own API_CHANGELOG entry. Owner call, not a lane call.
     if (unitCost !== null) running.cost += quantity * unitCost;
     totals.set(receipt.materialId, running);
   }

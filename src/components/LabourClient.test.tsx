@@ -116,6 +116,50 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
     expect(spanDays).toBe(30);
   });
 
+  test("hovering the Attendance tab and THEN clicking it costs exactly ONE request", async () => {
+    // R67 F-06 review fix. The hover warms the panel and the click activates
+    // it, milliseconds apart. Guarding only on the range already LOADED could
+    // not see the in-flight one -- loadedRangeRef is set when the request
+    // RESOLVES -- so the two fired the same request twice, which is precisely
+    // the duplicate the warm-on-hover mechanism exists to avoid.
+    //
+    // The attendance response is deliberately HELD OPEN across the click. With
+    // an instantly-resolving stub the hover's request settles before the click's
+    // effect runs, loadedRangeRef is already set, and the bug cannot reproduce
+    // -- the test would pass against the broken code and guard nothing. A real
+    // network is never that fast; this models it.
+    let releaseAttendance: () => void = () => {};
+    const held = new Promise<void>((resolve) => { releaseAttendance = resolve; });
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push(url);
+      if (url.includes("/api/labour-roster")) return jsonRes({ roster: ROSTER });
+      if (url.includes("/api/attendance")) {
+        await held;
+        return jsonRes({ attendance: [] });
+      }
+      if (url.includes("/api/vendors")) return jsonRes({ vendors: [{ id: "v1", vendorName: "Al Noor Contracting" }] });
+      if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
+      return jsonRes({});
+    }) as typeof fetch;
+
+    const { getByText, getByRole } = render(<LabourClient projectId="p1" />);
+    await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
+
+    const tab = getByRole("tab", { name: /Attendance/ });
+    fireEvent.mouseEnter(tab);
+    await waitFor(() => expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1), WAIT);
+
+    // The click lands while that first request is still open.
+    activateTab(tab);
+    expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1);
+
+    releaseAttendance();
+    await waitFor(() => expect(getByText(/No attendance recorded/)).toBeDefined(), WAIT);
+    expect(calls.filter((u) => u.includes("/api/attendance"))).toHaveLength(1);
+  });
+
   test("'Load older' widens the window by another 30 days and re-requests", async () => {
     const calls = stubFetch();
 

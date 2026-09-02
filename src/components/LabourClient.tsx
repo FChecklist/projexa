@@ -253,6 +253,11 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   }, [windowDays]);
 
   const loadAttendance = useCallback(async (from: string, to: string) => {
+    // Claim the range BEFORE the await. loadedRangeRef is only set when the
+    // request resolves, so on its own it cannot answer "is this already in
+    // flight?" -- and hover-then-click asks exactly that question twice within
+    // a few hundred milliseconds.
+    requestedRangeRef.current = `${from}..${to}`;
     setAttendanceLoading(true);
     setAttendanceError(null);
     try {
@@ -264,6 +269,8 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       setAttendance([]);
       setAttendanceError(errorMessage(err, "Attendance"));
       loadedRangeRef.current = null;
+      // Released on failure, so Retry is a real retry rather than a no-op.
+      requestedRangeRef.current = null;
     } finally {
       setAttendanceLoading(false);
     }
@@ -274,9 +281,20 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   useEffect(() => {
     if (activeTab !== "attendance" || !range) return;
     const key = `${range.from}..${range.to}`;
-    if (loadedRangeRef.current === key) return;
+    // Either already loaded, or already asked for -- the second is what the
+    // hover below arms, and skipping only the first would make hover-then-click
+    // fire the same request twice.
+    if (loadedRangeRef.current === key || requestedRangeRef.current === key) return;
     void loadAttendance(range.from, range.to);
   }, [activeTab, range, loadAttendance]);
+
+  // Shared by the tab's hover and focus handlers so the two cannot drift apart.
+  const warmAttendance = useCallback(() => {
+    if (!range) return;
+    const key = `${range.from}..${range.to}`;
+    if (loadedRangeRef.current === key || requestedRangeRef.current === key) return;
+    void loadAttendance(range.from, range.to);
+  }, [range, loadAttendance]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || EMPTY_VALUE;
   const workerName = (id: string) => (roster ?? []).find((r) => r.id === id)?.name ?? id;
@@ -299,8 +317,8 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             filled by the time the click lands. */}
         <TabsTrigger
           value="attendance"
-          onMouseEnter={() => { if (range && loadedRangeRef.current !== `${range.from}..${range.to}` && !attendanceLoading) void loadAttendance(range.from, range.to); }}
-          onFocus={() => { if (range && loadedRangeRef.current !== `${range.from}..${range.to}` && !attendanceLoading) void loadAttendance(range.from, range.to); }}
+          onMouseEnter={warmAttendance}
+          onFocus={warmAttendance}
         >
           Attendance{rangeLabel ? <span className="ml-1.5 text-[11px] font-normal text-px-muted">{rangeLabel}</span> : null}
         </TabsTrigger>
