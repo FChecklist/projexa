@@ -64,6 +64,13 @@ export type ComposerProps = {
   errorMessage?: string | null;
   /** A submission is in flight: Send is inert and the box says so to AT. */
   busy?: boolean;
+  /** A-09: set when the chain was loaded from history. Passed straight through
+   *  to the strip, which is where the sentence it describes is rendered. */
+  loaded?: {
+    from: string | null;
+    pinned: boolean;
+    onTogglePin: () => void;
+  } | null;
 
   /** 2. CONVERSATION -- rendered only once there is something to show. */
   conversation?: ReactNode;
@@ -91,6 +98,7 @@ export function Composer({
   canSend,
   errorMessage,
   busy = false,
+  loaded,
   conversation,
   pills,
   examples,
@@ -141,6 +149,7 @@ export function Composer({
             onHome={onHome}
             onReset={onReset}
             prompt={instruction}
+            loaded={loaded}
           />
         </div>
 

@@ -70,6 +70,7 @@ import {
 } from "@/lib/card-catalogue";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
 import { deriveMode } from "@/lib/chain-mode";
+import { navigationOutcome } from "@/lib/chain-navigation";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
 import { useScreenModule } from "./use-screen-module";
 import {
@@ -79,6 +80,7 @@ import {
   moduleHref,
   moduleRoute,
   noProjectPromptFor,
+  normalisePathname,
   pillPointsAtCurrentScreen,
   type ModuleDef,
   type ModuleLeaf,
@@ -229,6 +231,16 @@ type TaskGroups = {
 
 const NO_TASKS: TaskGroups = { needsYou: [], running: [], done: [], blocked: [], all: [] };
 
+/** R67 A-09 -- a chain restored from history rather than built on this screen. */
+type LoadedChain = {
+  /** The route it belongs to, normalised. Null when the row named none. */
+  route: string | null;
+  /** The screen it came from, for the "from <screen>" label when pinned. */
+  from: string | null;
+  /** The user has said they mean to carry it across screens. */
+  pinned: boolean;
+};
+
 export default function M24Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   // R67 A-01: the composer must know which screen it is serving, so it can
@@ -278,6 +290,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // R67 A-08: the three "Do again" chains, computed by the server from the
   // SAME compliance.chain_history rows the History tab reads.
   const [recentChains, setRecentChains] = useState<RecentCardView[]>([]);
+  // R67 A-09 -- IS THE CHAIN ON SCREEN ONE THE USER BUILT, OR ONE THEY LOADED?
+  //
+  // It matters on the next navigation. A chain built here describes work on
+  // THIS screen and must not follow the user to another one; a chain LOADED
+  // from history describes a task somewhere else entirely, and following the
+  // user is exactly how "Work Progress x > New entry x" ended up under a
+  // Permits heading. So a loaded chain is cleared when the user leaves its own
+  // route -- unless they have pinned it, which is the one way to say "I mean to
+  // carry this". The ref is written synchronously in the handlers so the
+  // navigation effect below cannot read a stale value.
+  const [loadedChain, setLoadedChain] = useState<LoadedChain | null>(null);
+  const loadedChainRef = useRef<LoadedChain | null>(null);
+  const setLoaded = useCallback((next: LoadedChain | null) => {
+    loadedChainRef.current = next;
+    setLoadedChain(next);
+  }, []);
   const [draft, setDraft] = useState("");
   const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
     home: 0,
@@ -669,16 +697,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   // Every (x) goes through the kit's clamp. This component never slices the
   // segment array itself -- the whole point of the rule living in chain.ts.
+  //
+  // R67 A-09 -- AND IT TAKES THE TEXT THAT SEGMENT PUT THERE WITH IT. A pill
+  // click used to type its own label into the box; removing the segment left
+  // the word behind, so a user who cut "Permits" out of the chain still
+  // submitted the word "Permits" to the classifier. The seeding branch is gone
+  // (A-02), so this is a transitional guard for a draft that is still exactly
+  // the removed segment's label and nothing else -- it can never delete words
+  // a person actually wrote, because those would not match.
   const onCutFrom = useCallback(
     (index: number) => {
+      const removed = chain.segments[index];
+      if (removed && draft.trim() === removed.label) setDraft("");
       setSegments(cutChainFrom(chain, index).segments.filter((s) => s.kind !== "root"));
     },
-    [chain]
+    [chain, draft]
   );
 
+  // R67 A-09 -- RESET CLEARS EVERYTHING THE USER CAN SEE.
+  //
+  // It used to clear the segments and nothing else: the typed draft stayed in
+  // the box and an armed function stayed armed, so pressing reset and then Send
+  // submitted the thing the user had just tried to abandon. "Reset" has one
+  // meaning, and a control that half-does what it says is worse than one that
+  // does nothing. The cursor then lands in the box, because after clearing the
+  // sentence the next thing a person does is start a new one.
   const onReset = useCallback(() => {
     setSegments(resetChain(chain).segments.filter((s) => s.kind !== "root"));
-  }, [chain]);
+    setPendingFunctionId(null);
+    setDraft("");
+    setSubmitError(null);
+    setProjectPrompt(null);
+    setLoaded(null);
+    composerRef.current?.focus();
+  }, [chain, setLoaded]);
 
   // LOADS AND STOPS. Restores the chain and navigates. Navigation is a read.
   // It calls no action endpoint, and the ChainLoad it receives has no way to
@@ -691,10 +743,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // could be forgotten.
   const onLoadChain = useCallback(
     (load: ChainLoad) => {
-      setSegments(load.chain.segments.filter((s) => s.kind !== "root"));
+      const steps = load.chain.segments.filter((s) => s.kind !== "root");
+      setSegments(steps);
+      // A-09: remember that this sentence was loaded, and where it belongs, so
+      // the navigation effect can tell it apart from one built on this screen.
+      setLoaded({
+        route: load.route ? normalisePathname(load.route) : null,
+        from: steps[0]?.label ?? null,
+        pinned: false,
+      });
       if (load.route) router.push(load.route);
     },
-    [router]
+    [router, setLoaded]
   );
 
   // R67 A-07 -- USAGE IS RECORDED ON THE SERVER NOW, not only in this browser.
@@ -813,11 +873,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         }))
       );
       const mod = moduleForPill(chain.steps[0] ?? "", chain.steps[0]);
+      // A-09: a repeated chain is a loaded chain -- same rule, same clean-up.
+      setLoaded({
+        route: mod ? normalisePathname(mod.route) : null,
+        from: chain.steps[0] ?? null,
+        pinned: false,
+      });
       if (!mod) return;
       setProjectPrompt(null);
       router.push(moduleRoute(mod, chain.projectId ?? projectId));
     },
-    [bumpUsage, project, projectId, router]
+    [bumpUsage, project, projectId, router, setLoaded]
   );
 
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
@@ -1046,8 +1112,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (lastPathRef.current === screen.pathname) return;
     lastPathRef.current = screen.pathname;
-    setSegments([]);
-    setPendingFunctionId(null);
     setProjectPrompt(null);
     setSubmitError(null);
     setShowAllPills(false);
@@ -1058,7 +1122,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setRankedPills(deferredRankingRef.current);
       deferredRankingRef.current = null;
     }
-  }, [screen.pathname]);
+
+    // R67 A-06/A-09 -- WHAT SURVIVES A NAVIGATION. The rule itself is a pure
+    // function (src/lib/chain-navigation.ts) so all three outcomes can be
+    // asserted without a browser; this effect only carries them out.
+    //
+    //   keep            a PINNED loaded chain, or arriving at the loaded
+    //                   chain's own route -- which is the navigation the load
+    //                   itself asked for, so clearing would delete what a click
+    //                   just restored.
+    //   clear-all       a loaded chain, gone elsewhere: the whole sentence
+    //                   belonged to another screen, and so did any text typed
+    //                   against it.
+    //   clear-segments  an ordinary navigation. The DRAFT stays -- words a
+    //                   person typed are theirs (A-06).
+    const outcome = navigationOutcome({ loaded: loadedChainRef.current, nextPathname: screen.pathname });
+    if (outcome === "keep") return;
+    setSegments([]);
+    setPendingFunctionId(null);
+    if (outcome === "clear-all") {
+      setDraft("");
+      setLoaded(null);
+    }
+  }, [screen.pathname, setLoaded]);
 
   // R67 A-07 -- BAND 3, AS CARDS.
   //
@@ -1355,6 +1441,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           instruction={instruction}
           canSend={sendEnabled}
           busy={submitting}
+          // A-09: the strip admits when the sentence was loaded rather than
+          // built here, and offers the pin that keeps it across a navigation.
+          loaded={
+            loadedChain
+              ? {
+                  from: loadedChain.from,
+                  pinned: loadedChain.pinned,
+                  onTogglePin: () => setLoaded({ ...loadedChain, pinned: !loadedChain.pinned }),
+                }
+              : null
+          }
           errorMessage={submitError ?? projectPrompt}
           placeholder={
             screenModule

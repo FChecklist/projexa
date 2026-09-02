@@ -33,16 +33,21 @@
 //     state-derived `prompt`, and the composer reuses that same string as the
 //     Send button's tooltip rather than printing it a second time.
 //
-// UNCHANGED AND DELIBERATELY SO: the (x) still routes through cutChainFrom()
-// via the caller, canCutAt() still refuses to offer one on the root, and the
-// grammar is still ENTITY > ACTION > STEP read as one sentence.
-
 //  4. THE PROJECT NAME FOLDS AT A WORD (A-06). CSS `truncate` cuts wherever
 //     the pixel budget runs out, so "Cedar Heights Villa - Phase 1" rendered
 //     as "Cedar Heights Vil…" -- an unreadable half-name in the one place this
 //     product cannot afford ambiguity about which project is being written to.
 //     Fixed segments now fold at the last whole word and carry the full name
 //     as a title, so nothing is lost, only folded.
+//
+//  5. A LOADED CHAIN SAYS SO (A-09). A sentence restored from the Task
+//     Master's History tab is not one the user built here, and it is cleared
+//     on the next navigation unless they pin it. The strip is where that fact
+//     belongs, because the strip is what would otherwise be lying.
+//
+// UNCHANGED AND DELIBERATELY SO: the (x) still routes through cutChainFrom()
+// via the caller, canCutAt() still refuses to offer one on the root, and the
+// grammar is still ENTITY > ACTION > STEP read as one sentence.
 
 import { canCutAt, type Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { truncateSegmentLabel } from "@/lib/module-catalogue";
@@ -61,9 +66,29 @@ export type ControlStripProps = {
    * says what the next step is, and never contradicts the Send button.
    */
   prompt?: string;
+  /**
+   * A-09. Set only when the chain on screen was LOADED from history rather
+   * than built here. It says so, in words, and offers the one control that
+   * changes what happens next: a pin, which keeps the chain across a
+   * navigation instead of letting it be cleared as another screen's task.
+   */
+  loaded?: {
+    /** Where it came from, e.g. "Work Progress". */
+    from: string | null;
+    pinned: boolean;
+    onTogglePin: () => void;
+  } | null;
 };
 
-export function ControlStrip({ chain, onCutFrom, onSegmentClick, onHome, onReset, prompt }: ControlStripProps) {
+export function ControlStrip({
+  chain,
+  onCutFrom,
+  onSegmentClick,
+  onHome,
+  onReset,
+  prompt,
+  loaded,
+}: ControlStripProps) {
   const empty = chain.segments.length === 0;
 
   return (
@@ -136,6 +161,32 @@ export function ControlStrip({ chain, onCutFrom, onSegmentClick, onHome, onReset
           </>
         )}
       </div>
+
+      {/* A-09 -- A LOADED CHAIN SAYS SO. A sentence restored from history is
+          not one the user just built, and on the next navigation it would
+          otherwise be silently cleared as another screen's task. The label
+          admits where it came from, and the pin is the one control that
+          changes that outcome. */}
+      {loaded && (
+        <span className="flex shrink-0 items-center gap-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+          <span>{loaded.pinned && loaded.from ? `from ${loaded.from}` : "Loaded from history"}</span>
+          <button
+            type="button"
+            onClick={loaded.onTogglePin}
+            aria-label={
+              loaded.pinned
+                ? "Unpin this loaded chain so it clears when you navigate"
+                : "Pin this loaded chain so it survives navigation"
+            }
+            aria-pressed={loaded.pinned}
+            title={loaded.pinned ? "Pinned — kept across screens" : "Pin — keep across screens"}
+            className="veri-icon-btn"
+            style={{ width: 20, height: 20, fontSize: 11 }}
+          >
+            {loaded.pinned ? "★" : "☆"}
+          </button>
+        </span>
+      )}
 
       {/* WORDS, not icons. HISTORY is deliberately absent -- see the header. */}
       <button type="button" onClick={onHome} className="veri-view-tab shrink-0" style={{ letterSpacing: "0.02em" }}>
