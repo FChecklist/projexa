@@ -16,7 +16,11 @@ import { useCallback, useState } from "react";
 import { Check } from "lucide-react";
 import { errorMessage } from "@/lib/fetch-json";
 
-export type BudgetFieldKey = "budgetPercentage" | "vendorId" | "vendorAmount" | "materialAmount" | "manpowerAmount";
+// "category" joins the set for R67 item D-76: the BOQ object page edits it in
+// the same row, through the same PATCH, and it must report itself the same way
+// -- one field left saving silently while its neighbours say "Saved" is
+// exactly the inconsistency this shared hook exists to prevent.
+export type BudgetFieldKey = "budgetPercentage" | "vendorId" | "vendorAmount" | "materialAmount" | "manpowerAmount" | "category";
 export type CellState = { status: "saving" | "saved" | "error"; message?: string };
 
 // The three real outcomes of an inline save, spelled out beside the cell that
@@ -44,9 +48,19 @@ export function CellFeedback({ state }: { state: CellState | undefined }) {
  * `onPatched` receives the SERVER's response body, never the typed string, so
  * the recomputed budget and actual the row then shows are the ones the backend
  * agreed to -- the row and the totals beneath it move together or not at all.
- * On failure nothing is applied, so the previous value is still on screen.
+ * On failure nothing is applied, so the row's stored value is unchanged.
+ *
+ * `onFailed` (R67 item D-76) is how a caller restores what the cell SHOWED.
+ * The stored row is already intact -- but an uncontrolled <input> still holds
+ * whatever was typed, so a screen that leaves it there is showing a number the
+ * server rejected as if it had been accepted. Callers that render controlled
+ * inputs need nothing; the BOQ object page, whose cells are uncontrolled,
+ * passes this and remounts the failed cell back to its stored value.
  */
-export function useLineItemSaver(onPatched: (lineItemId: string, patched: Record<string, unknown>) => void) {
+export function useLineItemSaver(
+  onPatched: (lineItemId: string, patched: Record<string, unknown>) => void,
+  onFailed?: (lineItemId: string, field: BudgetFieldKey) => void
+) {
   const [cells, setCells] = useState<Record<string, CellState>>({});
 
   const saveField = useCallback(
@@ -73,9 +87,10 @@ export function useLineItemSaver(onPatched: (lineItemId: string, patched: Record
         // The BACKEND's own sentence, at the field that caused it -- not a
         // generic "Couldn't save".
         setCells((prev) => ({ ...prev, [key]: { status: "error", message: errorMessage(err, "Couldn't save") } }));
+        onFailed?.(lineItemId, field);
       }
     },
-    [onPatched]
+    [onPatched, onFailed]
   );
 
   return { cells, saveField };

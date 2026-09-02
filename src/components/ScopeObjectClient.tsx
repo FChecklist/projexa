@@ -11,7 +11,18 @@
 // Approval / Approve / Create Revision / Compare) render as a real toolbar
 // in the body instead, immediately below the header, matching a real SAP
 // Object Page's own object-specific action bar.
-import { useEffect, useState } from "react";
+//
+// ─── R67 lane D22 (item D-76, rec R-288): THE CELLS SAY WHAT HAPPENED ──────
+// Every inline editor on this page used to report through a corner toast --
+// "Saved" and "Couldn't save budget/vendor" both, three columns away from the
+// cell they were about. Worse, on failure the typed value stayed in the box:
+// the screen showed a number the server had refused, as though it had been
+// accepted, and the next person to read the BOQ had no way to tell. The cells
+// now say "Saving…", then "Saved" for three seconds, or the backend's own
+// message in rose beside the cell WITH THE PREVIOUS VALUE PUT BACK -- through
+// the same useLineItemSaver both budget screens already use, so the three
+// screens that edit these fields cannot drift apart.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -27,6 +38,7 @@ import {
   boqTotal, withCurrency, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
+import { CellFeedback, useLineItemSaver, type BudgetFieldKey } from "@/components/BudgetLineCells";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
 // "late" | "neutral" -- veridian-ui-kit/screens/types.ts). "submitted"
@@ -43,8 +55,12 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R67 D-76: one counter per cell, bumped when a save fails. It is the React
+  // `key` of that cell's uncontrolled <input>, so a failure remounts the input
+  // and it reads the STORED value again -- the rejected keystrokes are gone
+  // from the screen, which is the only honest thing for the cell to show.
+  const [revertToken, setRevertToken] = useState<Record<string, number>>({});
   // R67 lane D22 (item D-52): the import receipt, written on /scope/import
   // just before it navigated here. Taken ONCE on mount and then held in state,
   // so it persists on screen (the kit's MessageArea, never a toast -- see that
@@ -83,24 +99,21 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   useEffect(() => { load(); }, [boqId]);
   useEffect(() => { setReceipt(takeFooterMessage(`/scope/${boqId}`)); }, [boqId]);
 
-  // R67 lane I (I-03/I-05): the same PATCH now also carries category and the
-  // material/manpower split -- one write path for every per-line budget field,
-  // not a second endpoint per column.
-  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null; category?: string | null; materialAmount?: number | null; manpowerAmount?: number | null }) {
-    setSavingRowId(rowId);
-    try {
-      const res = await fetch(`/api/scope/line-items/${rowId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Couldn't save");
-      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...data } : r)));
-      toast.success("Saved");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
-    } finally {
-      setSavingRowId(null);
-    }
+  // R67 lane I (I-03/I-05) + D-76: one write path for every per-line budget
+  // field, shared with /budgets and Scope > Budget through useLineItemSaver --
+  // the server's own response body is what the row then shows, so the cell and
+  // the totals beneath it move together or not at all.
+  const applyPatched = useCallback((lineItemId: string, patched: Record<string, unknown>) => {
+    setRows((prev) => prev.map((r) => (r.id === lineItemId ? { ...r, ...(patched as Partial<BoqLineItemRow>) } : r)));
+  }, []);
+  const revertCell = useCallback((lineItemId: string, field: BudgetFieldKey) => {
+    setRevertToken((prev) => ({ ...prev, [`${lineItemId}:${field}`]: (prev[`${lineItemId}:${field}`] ?? 0) + 1 }));
+  }, []);
+  const { cells, saveField } = useLineItemSaver(applyPatched, revertCell);
+
+  /** The cell's own state and its remount key, so every column below reads the same two lines. */
+  function cellKey(rowId: string, field: BudgetFieldKey) {
+    return `${rowId}:${field}`;
   }
 
   // R67 lane I (I-05): "Add new" from the Category column registers the
@@ -235,10 +248,12 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                 itemCode: row.itemCode ?? undefined, parentItemCode: rows.find((p) => p.id === row.parentLineItemId)?.itemCode ?? undefined,
                 breakdownPercentage: row.breakdownPercentage ?? undefined,
               })), r.itemCode ?? undefined) : null;
-              const saving = savingRowId === r.id;
               const budget = r.computedBudget ?? (Number(r.amount) * (Number(r.budgetPercentage ?? 0) / 100));
               return (
-                <TableRow key={r.id}>
+                // The anchor D-41's budget rows and D-64's work-progress cells
+                // both link to (/scope/{boqId}#line-{id}). It never existed, so
+                // those links landed at the top of the page; it does now.
+                <TableRow key={r.id} id={`line-${r.id}`}>
                   <TableCell className={isSub ? "pl-8 text-ct-muted" : "font-medium text-ct-navy"}>
                     {r.description}
                     {r.itemCode && <span className="ml-2 font-mono text-[10px] text-ct-muted">{r.itemCode}</span>}
@@ -250,12 +265,13 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                       value={r.category ?? ""}
                       categories={categories}
                       failed={categoriesFailed}
-                      onChange={(next) => saveLineItemBudget(r.id, { category: next.trim() === "" ? null : next })}
+                      onChange={(next) => saveField(r.id, "category", next.trim() === "" ? null : next)}
                       onAddNew={registerCategory}
                     />
                     {!r.category && (
                       <span className="ml-1 text-[10px] text-ct-muted">{NO_CATEGORY_CHIP_LABEL}</span>
                     )}
+                    <CellFeedback state={cells[cellKey(r.id, "category")]} />
                   </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
@@ -263,61 +279,66 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input
-                      type="number" disabled={saving} className="w-20 text-right" defaultValue={r.budgetPercentage ?? "25"}
+                      aria-label="Budget percentage"
+                      key={`${cellKey(r.id, "budgetPercentage")}:${revertToken[cellKey(r.id, "budgetPercentage")] ?? 0}`}
+                      type="number" className="w-20 text-right" defaultValue={r.budgetPercentage ?? "25"}
                       onBlur={(e) => {
                         const pct = Number(e.target.value);
                         if (!Number.isFinite(pct)) return;
-                        saveLineItemBudget(r.id, { budgetPercentage: pct });
+                        if (String(pct) === String(r.budgetPercentage ?? "25")) return;
+                        saveField(r.id, "budgetPercentage", pct);
                       }}
                     />
+                    <CellFeedback state={cells[cellKey(r.id, "budgetPercentage")]} />
                   </TableCell>
                   <TableCell className="text-right text-ct-muted">{withCurrency(currencyCode, budget)}</TableCell>
                   {/* R67 I-03: material/manpower split. Blank means NOT SPLIT
                       (the placeholder is a dash, never a 0) -- "unsplit" and
                       "split as zero" are different facts and the report keeps
                       them apart, so this editor must too. */}
-                  <TableCell className="text-right">
-                    <Input
-                      aria-label="Material amount"
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.materialAmount ?? ""} placeholder="—"
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        const amt = raw === "" ? null : Number(raw);
-                        if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { materialAmount: amt });
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Input
-                      aria-label="Manpower amount"
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.manpowerAmount ?? ""} placeholder="—"
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        const amt = raw === "" ? null : Number(raw);
-                        if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { manpowerAmount: amt });
-                      }}
-                    />
-                  </TableCell>
+                  {(["materialAmount", "manpowerAmount"] as const).map((field) => (
+                    <TableCell key={field} className="text-right">
+                      <Input
+                        aria-label={field === "materialAmount" ? "Material amount" : "Manpower amount"}
+                        key={`${cellKey(r.id, field)}:${revertToken[cellKey(r.id, field)] ?? 0}`}
+                        type="number" className="w-24 text-right" defaultValue={r[field] ?? ""} placeholder="—"
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim();
+                          const amt = raw === "" ? null : Number(raw);
+                          if (raw !== "" && !Number.isFinite(amt)) return;
+                          if (raw === String(r[field] ?? "")) return;
+                          saveField(r.id, field, amt);
+                        }}
+                      />
+                      <CellFeedback state={cells[cellKey(r.id, field)]} />
+                    </TableCell>
+                  ))}
                   <TableCell>
-                    <Select disabled={saving} value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId })}>
+                    {/* A controlled Select, so a rejected change never needs a
+                        remount: the row is only updated from the server's own
+                        response, and on failure it still shows the stored vendor. */}
+                    <Select value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveField(r.id, "vendorId", vendorId)}>
                       <SelectTrigger className="w-[150px]"><SelectValue placeholder="No vendor" /></SelectTrigger>
                       <SelectContent>
                         {vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    <CellFeedback state={cells[cellKey(r.id, "vendorId")]} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Input
-                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.vendorAmount ?? ""} placeholder="—"
+                      aria-label="Vendor amount"
+                      key={`${cellKey(r.id, "vendorAmount")}:${revertToken[cellKey(r.id, "vendorAmount")] ?? 0}`}
+                      type="number" className="w-24 text-right" defaultValue={r.vendorAmount ?? ""} placeholder="—"
                       onBlur={(e) => {
                         const raw = e.target.value.trim();
                         const amt = raw === "" ? null : Number(raw);
                         if (raw !== "" && !Number.isFinite(amt)) return;
-                        saveLineItemBudget(r.id, { vendorAmount: amt });
+                        if (raw === String(r.vendorAmount ?? "")) return;
+                        saveField(r.id, "vendorAmount", amt);
                       }}
                     />
+                    <CellFeedback state={cells[cellKey(r.id, "vendorAmount")]} />
                   </TableCell>
                 </TableRow>
               );

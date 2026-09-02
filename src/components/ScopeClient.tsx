@@ -4,15 +4,20 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, GitCompare, GitBranchPlus, Upload } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Loader2, Plus, GitCompare, GitBranchPlus, Upload, ArrowDown, ArrowUp, Check, Archive, Clock, AlertTriangle, MoreHorizontal } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+// R67 lane D22 (item D-76, rec R-288): order and colour, both pure and tested.
+import {
+  DEFAULT_BOQ_SORT, boqStatusPill, boqVariation, nextBoqSort, sortBoqs,
+  type BoqSort, type BoqSortField,
+} from "@/lib/boq-list";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -46,6 +51,12 @@ type Boq = {
   status: string;
   parentBoqId: string | null;
   createdAt: string;
+  // R67 D-76: DE-15 widens GET /api/scope to carry each revision's own
+  // variation. Optional here because that payload is not on this branch yet --
+  // boqVariation() reads it when it appears and falls back to the per-row
+  // /compare call until then. See its comment in src/lib/boq-list.ts.
+  totalVariation?: number | null;
+  variation?: number | null;
 };
 
 type BoqLineItemRow = {
@@ -76,9 +87,45 @@ type BoqComparison = {
   warnings: string[]; totalVariation: number;
 };
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
-};
+// R67 lane D22 (item D-76, rec R-288). The old map lived here:
+//   { draft: "secondary", submitted: "default", approved: "outline",
+//     superseded: "destructive" }
+// -- which painted a superseded revision in the DESTRUCTIVE (rose) variant.
+// Rose in this system means rejected or late. A superseded revision is the
+// ordinary consequence of raising the next one, and colouring it as a failure
+// teaches a reader to stop trusting the colour on the rows where it matters.
+// The tones now come from boq-list.ts, where the WS-G rule is unit-asserted.
+const PILL_GLYPH = { tick: Check, archive: Archive, clock: Clock, alert: AlertTriangle } as const;
+
+function StatusPill({ status }: { status: string }) {
+  const pill = boqStatusPill(status);
+  const Glyph = pill.glyph === "none" ? null : PILL_GLYPH[pill.glyph];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium ${pill.className}`}>
+      {Glyph && <Glyph className="size-3" aria-hidden="true" />}
+      {pill.label}
+    </span>
+  );
+}
+
+/** A sortable column header -- the arrow says which way, the word says what. */
+function SortableHead({ label, field, sort, onSort, className }: { label: string; field: BoqSortField; sort: BoqSort; onSort: (field: BoqSortField) => void; className?: string }) {
+  const active = sort.field === field;
+  const Arrow = sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        aria-label={`Sort by ${label}`}
+        className="inline-flex items-center gap-1 hover:text-px-ink"
+      >
+        {label}
+        {active && <Arrow className="size-3" aria-hidden="true" />}
+      </button>
+    </TableHead>
+  );
+}
 
 // R66 visual QA (2026-09-02): reproduced live on a real project's BOQ list --
 // the loading spinner never resolved to either real rows or the empty state
@@ -123,6 +170,8 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
   // denormalizes them).
   const [variationByBoqId, setVariationByBoqId] = useState<Record<string, number>>({});
 
+  // R67 D-76: newest first on arrival, with an explicit Version toggle.
+  const [sort, setSort] = useState<BoqSort>(DEFAULT_BOQ_SORT);
 
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
@@ -137,7 +186,10 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
       const loaded: Boq[] = data.boqs ?? [];
       setBoqs(loaded);
 
-      const revisions = loaded.filter((b) => b.parentBoqId);
+      // Only the revisions whose variation the list payload did NOT already
+      // carry need the per-row /compare call. The day DE-15 lands, this loop
+      // has nothing left to fetch and the N+1 disappears without a code change.
+      const revisions = loaded.filter((b) => b.parentBoqId && boqVariation(b, {}) === undefined);
       const entries = await Promise.all(
         revisions.map(async (b) => {
           const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
@@ -206,21 +258,21 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
               <TableHeader>
                 <TableRow>
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
-                  <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
+                  <SortableHead label={columnLabel(boqListColumns, "version", "Version")} field="version" sort={sort} onSort={(f) => setSort((s) => nextBoqSort(s, f))} />
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
-                  <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
+                  <SortableHead label={columnLabel(boqListColumns, "createdAt", "Created")} field="createdAt" sort={sort} onSort={(f) => setSort((s) => nextBoqSort(s, f))} />
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boqs.map((b) => {
-                  const variation = variationByBoqId[b.id];
+                {sortBoqs(boqs, sort).map((b) => {
+                  const variation = boqVariation(b, variationByBoqId);
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
-                      <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
+                      <TableCell><StatusPill status={b.status} /></TableCell>
                       <TableCell>
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
@@ -230,14 +282,31 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                           <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-px-muted">{formatDate(b.createdAt)}</TableCell>
-                      <TableCell className="text-right space-x-1">
-                        {/* Real screen navigation (2026-08-30) -- replaces the old
-                            "View" Dialog popup with a real Object Page route,
-                            same as PermitObjectClient's proven pattern. */}
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}`)}>View</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/compare`)}><GitCompare className="size-3.5" /> Compare</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/revise`)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
+                      <TableCell className="text-px-muted whitespace-nowrap">{formatDate(b.createdAt)}</TableCell>
+                      {/* R67 D-76: three side-by-side actions clipped out of the
+                          table at 1440 px -- "New Revision" is the widest and
+                          the least frequent, so it moves into a More menu and
+                          the two everyday ones stay as words that fit. */}
+                      <TableCell className="text-right">
+                        <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap">
+                          {/* Real screen navigation (2026-08-30) -- replaces the old
+                              "View" Dialog popup with a real Object Page route,
+                              same as PermitObjectClient's proven pattern. */}
+                          <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}`)}>View</Button>
+                          <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/compare`)}><GitCompare className="size-3.5" /> Compare</Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" aria-label={`More actions for ${b.title}`}>
+                                <MoreHorizontal className="size-3.5" aria-hidden="true" /> More
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => router.push(`/scope/${b.id}/revise`)}>
+                                <GitBranchPlus className="size-3.5" aria-hidden="true" /> New Revision
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </span>
                       </TableCell>
                     </TableRow>
                   );
