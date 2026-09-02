@@ -10,7 +10,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
-  KpiCard,
   BulletChart,
   BarChart,
   LineChart,
@@ -18,6 +17,14 @@ import {
   type BarChartDatum,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+// R67 D-61: the FORKED KpiCard (src/components/screens/KpiCard.tsx, decision
+// D-09), the same one the home band already uses. Two reasons to move this
+// screen onto it: a KPI value must not be set in DM Serif Display (the fork
+// sets numbers in Inter 600 / tabular figures), and the home and the project
+// dashboard must not be two different cards -- they sit one click apart.
+import { KpiCard } from "@/components/screens/KpiCard";
+// R67 D-61: one money format for the whole product.
+import { formatMoney } from "@/lib/format-money";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -74,11 +81,16 @@ type RecentEntry = { id: string; activityId: string; entryDate: string; quantity
 type Activity = { id: string; name: string };
 type Permit = { id: string; daysToExpiry: number | null };
 
-// TC-90: AED with NO rupee sign and NO lakh/crore grouping -- "en-US" gives
-// plain thousands-comma grouping regardless of locale; deliberately not
+// TC-90: AED with NO rupee sign and NO lakh/crore grouping -- deliberately not
 // "en-IN" (lakh grouping) and never a hardcoded "₹" fallback.
-function money(n: number, currency: Currency | undefined) {
-  return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+//
+// R67 D-61: that rule is now formatMoney()'s, shared with every other money
+// surface. What changes here is the decimals: this screen rendered whole units
+// (maximumFractionDigits: 0) while /scope and the reports rendered two, so the
+// same project's contract value read "AED 21,750" on the project dashboard and
+// "AED 21,750.00" on the screen the tile links to.
+function money(n: number | null | undefined, currency: Currency | undefined) {
+  return formatMoney(n, { currency: currency?.code ?? null });
 }
 
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {

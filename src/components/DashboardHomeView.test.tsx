@@ -71,7 +71,11 @@ describe("DashboardHomeView KPI band", () => {
   test("says 'over budget' only once a real budget is exceeded", () => {
     const view = renderHome({ data: { ...DATA, totalBudget: 900000 } });
     expect(view.getByText("over budget")).toBeTruthy();
-    expect(view.getByText("budget AED 900,000")).toBeTruthy();
+    // R67 D-61 changed this from "budget AED 900,000" to two decimals. The
+    // home used to be the ONLY screen rendering whole units
+    // (maximumFractionDigits: 0, in a private copy of the formatter), so the
+    // same budget read "AED 900,000" here and "AED 900,000.00" on /scope.
+    expect(view.getByText("budget AED 900,000.00")).toBeTruthy();
   });
 
   test("the Revenue card is a real door to /invoices", () => {
@@ -83,10 +87,11 @@ describe("DashboardHomeView KPI band", () => {
   test("the primary card reports portfolio earned value against contract, skipping the project with no BOQ", () => {
     const view = renderHome();
     const card = view.getByText("Portfolio earned value").closest("button")!;
-    // AED 1,000,000 also appears in the project table below, which is the
+    // AED 1,000,000.00 also appears in the project table below, which is the
     // point: the band is summed from the same rows, so the two agree.
-    expect(card.textContent).toContain("AED 1,000,000");
-    expect(card.textContent).toContain("of AED 4,000,000 contract (25 %)");
+    // R67 D-61: two decimals, the same as every other money surface.
+    expect(card.textContent).toContain("AED 1,000,000.00");
+    expect(card.textContent).toContain("of AED 4,000,000.00 contract (25 %)");
   });
 
   test("with no BOQ anywhere the primary card says so and offers the next step", () => {

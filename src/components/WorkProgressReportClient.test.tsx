@@ -130,13 +130,67 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "qty-current")[0]).toBe("");
     expect(textsByTestId(html, "amt-current")[0]).toBe("");
     // prev WAS touched, so it still renders as a real formatted number.
+    // R67 D-61 changed the money half of this expectation from "5,400" to
+    // "5,400.00": money is two decimals in every column of this product now,
+    // so a rate of 108.00 and an amount of 5,400.00 line up down the column.
+    // The QUANTITY half is deliberately unchanged -- 50 Sqm is not 50.00
+    // dirhams, and the two bands no longer share a formatter.
     expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
-    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400");
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400.00");
   });
 
   test("a real touched value still uses money()'s thousands formatting, not a raw number", () => {
     const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
-    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
+    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490.00");
+  });
+});
+
+// ─── R67 D-61 (audit R-198/R-226) ────────────────────────────────────────
+// One money format across every screen. On this table specifically: the local
+// money() was `toLocaleString(undefined, ...)` -- the RUNTIME's locale, so a
+// visitor on this app's "hi" locale saw Indian digit grouping on the hydration
+// pass and Western grouping on the SSR pass -- and it was applied to the
+// Quantity band as well as the Amount band.
+describe("ScopeTable money format (R67 D-61)", () => {
+  test("money is two decimals and thousands-separated; the currency is named once, in the heading", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
+    const headerText = textsOfTag(html, "th");
+    expect(headerText).toContain("Rate (AED)");
+    expect(headerText).toContain("Amt (AED)");
+    expect(headerText).toContain("Amount (AED)");
+    // ...and NOT repeated in all fifteen money cells of every row.
+    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490.00");
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("16,200.00");
+  });
+
+  test("no currency to source means the bare heading, never a guessed code", () => {
+    const headerText = textsOfTag(renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency={null} />), "th");
+    expect(headerText).toContain("Rate");
+    expect(headerText).toContain("Amount");
+    expect(headerText.some((t) => t.includes("AED") || t.includes("INR") || t.includes("₹"))).toBe(false);
+  });
+
+  test("the Quantity band never picks up a currency token or forced money decimals", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
+    expect(textsByTestId(html, "qty-prev")[0]).toBe("150");
+    expect(textsByTestId(html, "qty-current")[0]).toBe("67.5");
+    // The Quantity band's own heading stays a plain word.
+    expect(textsOfTag(html, "th")).toContain("Quantity");
+  });
+
+  test("the grouping is pinned, so the SSR pass and the hydration pass cannot disagree", () => {
+    // 1,200,000 -- Western grouping. The bug this replaces rendered
+    // "12,00,000" for the same row on a Hindi-locale browser.
+    const big: LineItemRow = { ...PARENT, amt: { prev: 1200000, current: 0, total: 1200000, balance: 0 } };
+    const html = renderToStaticMarkup(<ScopeTable rows={[big]} mode="total" currency="AED" />);
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("1,200,000.00");
+  });
+
+  test("every money cell is right-aligned with tabular figures, so the decimal points form a column", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
+    const amtPrevCell = /<td[^>]*data-testid="amt-prev"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(amtPrevCell).toContain("text-right");
+    expect(amtPrevCell).toContain("tabular-nums");
   });
 });
 

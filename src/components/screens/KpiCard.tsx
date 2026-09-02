@@ -16,9 +16,19 @@
 // fabricated trend is worse than none -- so a card with no real delta now
 // renders no arrow and no tone, and the caller cannot accidentally invent one.
 //
-// Everything else (layout, sizes, the primary/secondary split, the four
-// tones that have a real --color-veri-status-* variable, "every KPI value is
-// clickable") is carried over verbatim from the kit source.
+// R67 D-61 adds the second difference, and it is typographic. The kit set every
+// KPI value in `font-heading` -- DM Serif Display. A display serif is drawn for
+// words: its figures are proportional and old-style, so "1" is narrower than
+// "8" and a column of numbers does not line up, and at 36 px a 7-digit dirham
+// figure reads as decoration rather than as a measurement. The rule this item
+// establishes is that the serif is for the page H1 and card TITLES; numbers are
+// Inter 600 with tabular figures, 32 px for the one hero value and 20 px
+// elsewhere. `tabular-nums` is what actually makes two stacked cards' digits
+// align, which is the point of the size split in the first place.
+//
+// Everything else (layout, the primary/secondary split, the four tones that
+// have a real --color-veri-status-* variable, "every KPI value is clickable")
+// is carried over verbatim from the kit source.
 import type { ReactNode } from "react";
 
 // Deliberately NOT the full StatusTone union -- only these four have a real
@@ -42,6 +52,17 @@ export type KpiCardProps = {
 
 const ARROW: Record<KpiTrend["direction"], string> = { up: "↑", down: "↓", flat: "→" };
 
+/**
+ * R67 D-61. Inter (the app's --font-sans) at 600, with tabular figures, at the
+ * two sizes the item fixes: 32 px for the one hero value on a screen, 20 px for
+ * the supporting cards. Exported so a test can assert the serif is gone rather
+ * than reading it back out of a class string by hand.
+ */
+export const KPI_VALUE_CLASS: Record<"primary" | "secondary", string> = {
+  primary: "font-sans font-semibold tabular-nums text-[32px] leading-tight text-ct-navy mt-1",
+  secondary: "font-sans font-semibold tabular-nums text-[20px] leading-tight text-ct-navy mt-1",
+};
+
 export function KpiCard({ label, value, trend, baseline, visual, size = "secondary", onClick }: KpiCardProps) {
   const Wrapper = onClick ? "button" : "div";
   return (
@@ -51,7 +72,7 @@ export function KpiCard({ label, value, trend, baseline, visual, size = "seconda
       className={`block w-full text-left rounded-md border border-ct-border p-3 ${onClick ? "cursor-pointer hover:border-ct-teal" : ""}`}
     >
       <div className="text-[12.5px] text-ct-muted">{label}</div>
-      <div className={size === "primary" ? "font-heading text-4xl text-ct-navy mt-1" : "font-heading text-xl text-ct-navy mt-1"}>
+      <div className={KPI_VALUE_CLASS[size]}>
         {value}
       </div>
       {trend && (

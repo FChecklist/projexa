@@ -57,3 +57,41 @@ describe("KpiCard (projexa fork)", () => {
     expect(view.queryByRole("button")).toBeNull();
   });
 });
+
+// R67 D-61 (audit R-226). The kit set every KPI value in `font-heading` --
+// DM Serif Display. A display serif has proportional, old-style figures, so a
+// column of numbers set in it does not line up and a seven-digit dirham figure
+// at 36 px reads as decoration. The serif stays for the page H1 and card
+// titles; the numbers are Inter 600 with tabular figures, at the two sizes the
+// item fixes.
+describe("KpiCard typography (R67 D-61)", () => {
+  function valueClass(html: string, value: string): string {
+    const re = new RegExp(`<div class="([^"]*)">${value}</div>`);
+    return re.exec(html)?.[1] ?? "";
+  }
+
+  test("the hero value is Inter 600 at 32 px, with tabular figures", () => {
+    const view = render(<KpiCard label="Portfolio earned value" value="AED 1,000,000.00" baseline="of AED 4,000,000.00 contract" size="primary" />);
+    const cls = valueClass(view.container.innerHTML, "AED 1,000,000.00");
+    expect(cls).toContain("font-sans");
+    expect(cls).toContain("font-semibold");
+    expect(cls).toContain("tabular-nums");
+    expect(cls).toContain("text-[32px]");
+  });
+
+  test("a supporting value is the same treatment at 20 px", () => {
+    const view = render(<KpiCard label="Revenue" value="AED 847,300.00" baseline="invoiced to date" />);
+    const cls = valueClass(view.container.innerHTML, "AED 847,300.00");
+    expect(cls).toContain("font-sans");
+    expect(cls).toContain("tabular-nums");
+    expect(cls).toContain("text-[20px]");
+  });
+
+  test("no KPI value is set in the display serif any more, at either size", () => {
+    for (const size of ["primary", "secondary"] as const) {
+      const view = render(<KpiCard label="Spend" value="AED 12.00" baseline="budget not set" size={size} />);
+      expect(valueClass(view.container.innerHTML, "AED 12.00")).not.toContain("font-heading");
+      cleanup();
+    }
+  });
+});

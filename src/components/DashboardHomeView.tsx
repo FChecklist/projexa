@@ -18,8 +18,14 @@ import { BulletChart, type ScreenColumn } from "@fchecklist/veridian-ui-kit/scre
 // instead of an invented one. Everything else here still comes from the kit.
 import { KpiCard } from "@/components/screens/KpiCard";
 import { budgetBaseline, portfolioTotals, spendTone } from "@/lib/dashboard-kpi";
-import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+// R67 G-05 / D-61: one money format for the whole product. Imported from the
+// server-safe module, not from @/lib/currency ("use client"), so the same
+// helper serves this view and the Server Components around it. D-61 shipped a
+// second copy of this module before lane G merged; G-05's is the one that
+// survived (it is a superset -- pending state, unknown-currency glyph, signed
+// money) and D-61's copy is gone.
 import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
+import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
 
 /** Money column headers align with their cells. */
 const MONEY_HEAD_CLASS = "text-right";
@@ -47,12 +53,9 @@ export type OrgDashboard = {
   // null (not 0) when construction isn't enabled or there's no BOQ yet.
   projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number; value: number | null; earnedValue: number | null; percentByValue: number | null }[];
 };
-// Local, server-safe copy (not imported from @/lib/currency, which is a
-// "use client" module -- this page is a Server Component and fetches its
-// own currencies list directly via callVeridian, same as /api/currencies'
-// own backing call). Priority 17 re-sweep fix: was
-// Intl.NumberFormat(..., { currency: "INR" }), forcing both symbol and
-// grouping to India regardless of the org's real base currency.
+// The currencies list this screen is handed. Still resolved server-side in
+// dashboard/page.tsx via callVeridian (same backing call as /api/currencies),
+// still passed down as a plain prop -- only the formatting moved.
 export type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 // R51 (R-62): the fallback was the literal "₹". This component IS the
 // landing screen, so that constant was the single most visible instance of
@@ -365,6 +368,9 @@ export default function DashboardHomeView({
                               {p.name}
                             </Link>
                           </TableCell>
+                          {/* R67 G-05 / D-61: every money column is right-aligned
+                              and tabular (MONEY_CELL_CLASS), so the decimal
+                              points form a column the eye can scan down. */}
                           <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>
                             {p.earnedValue === null ? (
