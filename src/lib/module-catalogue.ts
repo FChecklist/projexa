@@ -167,7 +167,15 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. 12 nos of R60SK-A done today, 40%",
     examples: ["12 nos of R60SK-A done today, 40%", "run the WPR for this month"],
     leaves: [
-      { id: "work-progress.entry", label: "Record progress", path: "/work-progress", query: { tab: "entry" } },
+      // A-04: the two verbs are verbs. "Record progress" puts the cursor in
+      // the form's first field; "Run WPR" runs the report on arrival rather
+      // than landing on a filled-in form with a button still to press.
+      {
+        id: "work-progress.entry",
+        label: "Record progress",
+        path: "/work-progress",
+        query: { tab: "entry", focus: "activity" },
+      },
       { id: "work-progress.report", label: "Run WPR", path: "/work-progress", query: { tab: "report", run: "1" } },
       { id: "work-progress.analytics", label: "Analytics", path: "/work-progress", query: { tab: "analytics" } },
     ],

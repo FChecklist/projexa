@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -360,31 +361,59 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  async function runReport(boqId = selectedBoqId, categories = selectedCategories) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ projectId, from, to });
-      if (boqId) params.set("boqId", boqId);
-      // Repeatable, not comma-joined: a real category name may contain a comma.
-      for (const c of categories) params.append("category", c);
-      const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
-      setReport(data);
-      if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
-      // R67 I-05: only ever GROWS the option list. A filtered run legitimately
-      // reports fewer categories present, and shrinking the control to match
-      // would make it impossible to widen the filter again.
-      if (Array.isArray(data.availableCategories)) {
-        setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+  // REBASE NOTE (r67 lane A onto lane I): both lanes changed this function.
+  // Lane I (I-05) gave it the category filter and the grow-only option list;
+  // lane A (A-04) made it a useCallback so the auto-run effect below can
+  // depend on it honestly rather than reaching past the dependency array.
+  // Both are kept -- I's body, A's wrapper -- and selectedCategories joins the
+  // dependency list, because the default parameter reads it.
+  const runReport = useCallback(
+    async (boqId = selectedBoqId, categories = selectedCategories) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ projectId, from, to });
+        if (boqId) params.set("boqId", boqId);
+        // Repeatable, not comma-joined: a real category name may contain a comma.
+        for (const c of categories) params.append("category", c);
+        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error);
+        setReport(data);
+        if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+        // R67 I-05: only ever GROWS the option list. A filtered run legitimately
+        // reports fewer categories present, and shrinking the control to match
+        // would make it impossible to widen the filter again.
+        if (Array.isArray(data.availableCategories)) {
+          setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+        }
+      } catch (err) {
+        toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
+        setReport(null);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+    },
+    [projectId, from, to, selectedBoqId, selectedCategories]
+  );
+
+  // R67 A-04. The composer's "Run WPR" card is a verb: it must run the report,
+  // not land the user on a form with the dates already filled in and a Run
+  // Report button still to press. It navigates here with ?run=1 and the report
+  // runs on arrival, over the default range this component already computes
+  // (1st of the month to today).
+  //
+  // ONCE. The ref, not the report state, is the guard: a run that FAILS must
+  // not retry itself on every re-render, and the user must be able to press
+  // Run Report again afterwards without the effect fighting them. The ref also
+  // makes the effect safe now that runReport's identity changes with
+  // selectedCategories: picking a category cannot silently re-fire the run.
+  const autoRunRequested = useSearchParams().get("run") === "1";
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (!autoRunRequested || autoRanRef.current) return;
+    autoRanRef.current = true;
+    void runReport();
+  }, [autoRunRequested, runReport]);
 
   // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
   // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a

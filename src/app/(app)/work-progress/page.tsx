@@ -6,6 +6,7 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
@@ -14,6 +15,15 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
 
   return (
     <>
+      {/* R67 A-04: this pane shows ONE project's entries, so the rail and the
+          composer must name that project rather than "All projects". When the
+          URL did not name it, the page picked it -- and says so, which is why
+          the source is published and not just the id. */}
+      <ScreenContext
+        moduleId="work-progress"
+        project={project}
+        source={projectId && project?.id === projectId ? "route" : "auto"}
+      />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Work Progress" />
         {errorMessage && (

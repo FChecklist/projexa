@@ -9,6 +9,7 @@ import {
   MODULE_CATALOGUE,
   catalogueRoutes,
   chainModuleForPathname,
+  chainOptionsFor,
   moduleForPathname,
   moduleForPill,
   moduleHref,
@@ -160,6 +161,41 @@ describe("moduleHref", () => {
   test("moduleRoute is the module's own list route with the project", () => {
     const permits = MODULE_CATALOGUE.find((m) => m.id === "permits")!;
     expect(moduleRoute(permits, "p1")).toBe("/permits?projectId=p1");
+  });
+});
+
+describe("Work Progress screen cards (A-04)", () => {
+  const wp = MODULE_CATALOGUE.find((m) => m.id === "work-progress")!;
+
+  test("the first two cards are the two verbs, in that order", () => {
+    expect(chainOptionsFor(wp).slice(0, 2).map((l) => l.label)).toEqual(["Record progress", "Run WPR"]);
+  });
+
+  test("'Record progress' asks the screen to put the cursor in the form", () => {
+    const card = chainOptionsFor(wp)[0];
+    expect(moduleHref(card, "p1")).toBe("/work-progress?tab=entry&focus=activity&projectId=p1");
+  });
+
+  test("'Run WPR' asks the report to run on arrival, not to sit there filled in", () => {
+    const card = chainOptionsFor(wp)[1];
+    expect(moduleHref(card, "p1")).toBe("/work-progress?tab=report&run=1&projectId=p1");
+  });
+
+  test("the screen's own module is never offered as a way out of itself", () => {
+    expect(pillPointsAtCurrentScreen("work_progress", "Work Progress", "/work-progress")).toBe(true);
+  });
+});
+
+describe("Minutes of Meeting screen cards (A-03)", () => {
+  const moms = MODULE_CATALOGUE.find((m) => m.id === "moms")!;
+
+  test("'New Meeting' is the same URL the screen's own header button produces", () => {
+    const card = chainOptionsFor(moms).find((l) => l.label === "New Meeting")!;
+    expect(moduleHref(card, "p1")).toBe("/moms/new?projectId=p1");
+  });
+
+  test("the module's own route carries the project too", () => {
+    expect(moduleRoute(moms, "p1")).toBe("/moms?projectId=p1");
   });
 });
 

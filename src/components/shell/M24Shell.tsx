@@ -496,6 +496,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const project = routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
 
+  // R67 A-04 -- THE RAIL ADMITS AN AUTOMATIC CHOICE.
+  //
+  // When no URL and no rail selection said which project, the page picked one
+  // (resolveSelectedProject's fallback) and rendered its data. Showing that
+  // name plain would present a guess as the user's own decision -- and logging
+  // progress against the wrong project is, in M24's own words, the most
+  // expensive mistake available in this product. So the rail says
+  // "<name> (auto-selected)" until someone actually chooses. The STRIP keeps
+  // the plain name: it is a sentence about the work, not a claim about who
+  // decided.
+  const railLabelProject = useMemo(() => {
+    if (!project) return null;
+    return routeScreen?.source === "auto" ? { id: project.id, name: `${project.name} (auto-selected)` } : project;
+  }, [project, routeScreen?.source]);
+
   // R67 A-01/A-02 -- THE SCREEN THE COMPOSER IS SERVING.
   //   screenModule    answers "which module do these pills belong to", and so
   //                   also "which pill would only point back at this screen".
@@ -875,7 +890,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           <TopRail
             brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
             organisationName={info?.organization?.name ?? "—"}
-            project={project}
+            project={railLabelProject}
             onSwitchProject={() => {
               // Cycles through real projects and back through the null state.
               // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects')
