@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { PageHeading } from "@/components/PageHeading";
+import FooterMessageBanner from "@/components/FooterMessageBanner";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
@@ -47,6 +50,10 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     <>
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Schedule" />
+        {/* R67 lane D22 (item D-48): the receipt an import left for this page
+            ("Imported 38 activities from Programme-Rev2.xlsx"), shown here
+            rather than as a toast that would race the navigation announcing it. */}
+        <FooterMessageBanner route="/schedule" />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
@@ -57,7 +64,13 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
         )}
         {project && (
           <>
-            <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
+              {/* R67 lane D22 (item D-48): the programme importer's way in. */}
+              <Button asChild variant="outline">
+                <Link href={`/schedule/import?projectId=${project.id}`}>Import</Link>
+              </Button>
+            </div>
             <ScheduleTabsClient projectId={project.id} initialTab={initialTab} timelineColumns={timelineColumns} />
           </>
         )}

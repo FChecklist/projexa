@@ -259,6 +259,9 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/schedule/tasks/new",
   "/scope/[id]",
   "/scope/[id]/compare",
+  // R67 lane D22 (item D-48): reached from the "Import" action on /schedule,
+  // never a standalone sidebar item -- same class as /schedule/tasks/new.
+  "/schedule/import",
   "/scope/[id]/revise",
   // R67 lane D22 (item D-52): reached from the "Import" action beside "+ New
   // BOQ" on /scope, and from the composer's own Scope leaf -- never a

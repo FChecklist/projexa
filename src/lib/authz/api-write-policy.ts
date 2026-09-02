@@ -228,8 +228,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/sales-orders": "PM_OR_ABOVE",
   "/sales-orders/[id]": "PM_OR_ABOVE",
   "/sales-orders/bulk-status": "PM_OR_ABOVE",
-  "/schedule-tracker/import": "PM_OR_ABOVE",
+  // R67 lane D22 (item D-48): "/schedule-tracker/import" is gone -- it proxied
+  // to a VERIDIAN path that never existed. Its real replacement is
+  // "/schedule/import" below, at the same tier: importing a programme rewrites
+  // the whole schedule, which is a PM decision, not a field one.
   "/schedule/baselines": "PM_OR_ABOVE",
+  "/schedule/import": "PM_OR_ABOVE",
   "/schedule/sprints": "PM_OR_ABOVE",
   "/schedule/sprints/[id]": "PM_OR_ABOVE",
   "/schedule/sprints/[id]/issues": "PM_OR_ABOVE",
