@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   EXPIRING_WITHIN_DAYS,
+  parseWithinDays,
   permitHeaderParts,
   permitHeaderSentence,
   permitStatus,
@@ -147,5 +148,52 @@ describe("default order: most urgent first", () => {
       { daysToExpiry: 5, endDate: "2026-09-07", name: "Alpha" },
     ];
     expect(sortByExpiryAscending(tied).map((r) => r.name)).toEqual(["Alpha", "Beta"]);
+  });
+});
+
+// The list route accepts ?withinDays=N and its page signature passes whatever
+// arrives straight through, so N is not always 30. Before this, the banner
+// sentence, the header clause and the row thresholds all hard-coded the
+// constant: /permits?withinDays=60 stated "within 30 days" over a 60-day list
+// and drew a permit 45 days out as "valid" beside it.
+describe("the expiring window is the one from the URL, not always 30", () => {
+  test("parseWithinDays reads a real parameter", () => {
+    expect(parseWithinDays("60")).toBe(60);
+    expect(parseWithinDays("7")).toBe(7);
+    expect(parseWithinDays(90)).toBe(90);
+  });
+
+  test("parseWithinDays falls back to 30 for anything that is not a window", () => {
+    expect(parseWithinDays(undefined)).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays(null)).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays("")).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays("soon")).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays("0")).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays("-5")).toBe(EXPIRING_WITHIN_DAYS);
+    expect(parseWithinDays("45.7")).toBe(45);
+  });
+
+  test("a 60-day window moves the row threshold with it", () => {
+    // 45 days out is "valid" in the default window and "expiring" in a 60-day
+    // one. Both are correct; showing one while the header names the other is
+    // what the fix removes.
+    expect(permitStatus(45).kind).toBe("valid");
+    expect(permitStatus(45, 60).kind).toBe("expiring");
+    expect(permitStatusLabel(45, 60)).toBe("expires in 45 days");
+    expect(permitStatus(61, 60).kind).toBe("valid");
+  });
+
+  test("the header clause names the SAME N the rows were counted against", () => {
+    const sixty = [{ daysToExpiry: 45 }, { daysToExpiry: 200 }];
+    expect(permitStatusCounts(sixty, 60)).toEqual({ expired: 0, expiring: 1, valid: 1, unknown: 0 });
+    expect(permitHeaderSentence(permitStatusCounts(sixty, 60), 60)).toBe("1 expiring within 60 days - 1 valid");
+    // ...and with the default window the same rows read differently, which is
+    // the whole point: one N, used everywhere.
+    expect(permitHeaderSentence(permitStatusCounts(sixty))).toBe("2 valid");
+  });
+
+  test("permitHeaderParts carries the window through too", () => {
+    const parts = permitHeaderParts({ expired: 0, expiring: 2, valid: 0, unknown: 0 }, 7);
+    expect(parts.map((p) => p.text)).toEqual(["2 expiring within 7 days"]);
   });
 });

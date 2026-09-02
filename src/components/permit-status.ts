@@ -38,6 +38,23 @@ export type PermitStatus = {
 /** The window R-017 and the dashboard KPI both treat as "expiring soon". */
 export const EXPIRING_WITHIN_DAYS = 30;
 
+/**
+ * The list route accepts ?withinDays=N, so N is not always 30. Every function
+ * below takes the window as an argument rather than closing over the constant:
+ * a page opened with withinDays=60 must not say "expiring within 30 days" over
+ * a 60-day list, and the row chips must use the same N as the header sentence
+ * or the two disagree on the same screen.
+ *
+ * A missing, non-numeric, zero or negative parameter falls back to the
+ * constant -- "within -5 days" is not a window, and refusing to guess here
+ * would mean refusing to render the list at all.
+ */
+export function parseWithinDays(value: string | number | null | undefined): number {
+  if (value === null || value === undefined || value === "") return EXPIRING_WITHIN_DAYS;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : EXPIRING_WITHIN_DAYS;
+}
+
 function days(n: number): string {
   // "expired 1 day ago", not "expired 1 days ago". The plural is the only
   // thing that varies; the sentence shape does not.
@@ -49,8 +66,10 @@ function days(n: number): string {
  *
  * @param daysToExpiry days from today to the permit's end date; negative when
  *   the date has passed, null when the permit has no end date at all.
+ * @param withinDays the "expiring soon" window, so a list opened at
+ *   ?withinDays=60 draws its rows against the same 60 its header names.
  */
-export function permitStatus(daysToExpiry: number | null): PermitStatus {
+export function permitStatus(daysToExpiry: number | null, withinDays: number = EXPIRING_WITHIN_DAYS): PermitStatus {
   if (daysToExpiry === null) {
     // No end date on the record. Not "fine" and not "expired" -- unknown, and
     // said so. The neutral tone is the one tone that claims nothing.
@@ -67,7 +86,7 @@ export function permitStatus(daysToExpiry: number | null): PermitStatus {
   if (daysToExpiry === 0) {
     return { kind: "today", label: "expires today", glyphKey: "needs-you", tone: "needs-you" };
   }
-  if (daysToExpiry <= EXPIRING_WITHIN_DAYS) {
+  if (daysToExpiry <= withinDays) {
     return {
       kind: "expiring",
       label: `expires in ${days(daysToExpiry)}`,
@@ -79,8 +98,8 @@ export function permitStatus(daysToExpiry: number | null): PermitStatus {
 }
 
 /** Just the words, for callers that do not draw a chip. */
-export function permitStatusLabel(daysToExpiry: number | null): string {
-  return permitStatus(daysToExpiry).label;
+export function permitStatusLabel(daysToExpiry: number | null, withinDays: number = EXPIRING_WITHIN_DAYS): string {
+  return permitStatus(daysToExpiry, withinDays).label;
 }
 
 export type PermitStatusCounts = { expired: number; expiring: number; valid: number; unknown: number };
@@ -90,10 +109,13 @@ export type PermitStatusCounts = { expired: number; expiring: number; valid: num
  * never fetched separately, so the header and the list can never disagree.
  * "expires today" counts as expiring: it is the last day you can act.
  */
-export function permitStatusCounts(rows: { daysToExpiry: number | null }[]): PermitStatusCounts {
+export function permitStatusCounts(
+  rows: { daysToExpiry: number | null }[],
+  withinDays: number = EXPIRING_WITHIN_DAYS
+): PermitStatusCounts {
   const counts: PermitStatusCounts = { expired: 0, expiring: 0, valid: 0, unknown: 0 };
   for (const row of rows) {
-    const kind = permitStatus(row.daysToExpiry).kind;
+    const kind = permitStatus(row.daysToExpiry, withinDays).kind;
     if (kind === "expired") counts.expired += 1;
     else if (kind === "expiring" || kind === "today") counts.expiring += 1;
     else if (kind === "valid") counts.valid += 1;
@@ -113,13 +135,16 @@ export type PermitHeaderPart = { key: PermitStatusKind; text: string; glyphKey: 
  * "0 expired" is noise on a list where nothing is expired, and the absence of
  * the rose clause is itself the signal.
  */
-export function permitHeaderParts(counts: PermitStatusCounts): PermitHeaderPart[] {
+export function permitHeaderParts(
+  counts: PermitStatusCounts,
+  withinDays: number = EXPIRING_WITHIN_DAYS
+): PermitHeaderPart[] {
   const parts: PermitHeaderPart[] = [];
   if (counts.expired > 0) parts.push({ key: "expired", text: `${counts.expired} expired`, glyphKey: "late", tone: "late" });
   if (counts.expiring > 0)
     parts.push({
       key: "expiring",
-      text: `${counts.expiring} expiring within ${EXPIRING_WITHIN_DAYS} days`,
+      text: `${counts.expiring} expiring within ${withinDays} days`,
       glyphKey: "needs-you",
       tone: "needs-you",
     });
@@ -130,8 +155,11 @@ export function permitHeaderParts(counts: PermitStatusCounts): PermitHeaderPart[
 }
 
 /** The same header band flattened to one string, for tests and for aria. */
-export function permitHeaderSentence(counts: PermitStatusCounts): string {
-  return permitHeaderParts(counts)
+export function permitHeaderSentence(
+  counts: PermitStatusCounts,
+  withinDays: number = EXPIRING_WITHIN_DAYS
+): string {
+  return permitHeaderParts(counts, withinDays)
     .map((p) => p.text)
     .join(" - ");
 }

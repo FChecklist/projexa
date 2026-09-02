@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { StatusPillTone } from "@/components/ui/status-pill";
 import {
-  EXPIRING_WITHIN_DAYS,
+  parseWithinDays,
   permitHeaderParts,
   permitStatus,
   permitStatusCounts,
@@ -84,13 +84,19 @@ export default function PermitsListClient({
   // because the header counts below are computed from these same rows -- one
   // array, so the summary and the list can never disagree.
   const rows = useMemo(() => sortByExpiryAscending(permits), [permits]);
-  const counts = useMemo(() => permitStatusCounts(rows), [rows]);
-  const headerParts = permitHeaderParts(counts);
 
   // The dashboard's "Permits Expiring" KPI lands here with ?withinDays=30.
   // Arriving on a filtered list with no way to tell it IS filtered is how a
   // user concludes the project has three permits when it has eleven.
+  //
+  // The route accepts any N, so the WINDOW is read from the parameter and then
+  // used everywhere -- the banner sentence, the header clause and the row
+  // chips all take the same N. Hard-coding 30 in the sentence while the API
+  // filtered on 60 would print "within 30 days" over a 60-day list.
   const filtered = Boolean(withinDays);
+  const windowDays = parseWithinDays(withinDays);
+  const counts = useMemo(() => permitStatusCounts(rows, windowDays), [rows, windowDays]);
+  const headerParts = permitHeaderParts(counts, windowDays);
 
   return (
     <ScreenFrame
@@ -112,7 +118,7 @@ export default function PermitsListClient({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {filtered && (
               <span className="flex flex-wrap items-center gap-2">
-                <span>Showing permits expiring within {EXPIRING_WITHIN_DAYS} days</span>
+                <span>Showing permits expiring within {windowDays} days</span>
                 {/* A word-link, not an icon and not a chip: it drops the
                     parameter and shows the whole list. */}
                 <button
@@ -150,7 +156,7 @@ export default function PermitsListClient({
           emptyStateLabel="No permits yet for this project."
           renderCell={{
             daysToExpiry: (row) => {
-              const status = permitStatus((row as unknown as Permit).daysToExpiry);
+              const status = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
               return <StatusPillTone tone={status.tone} label={status.label} />;
             },
           }}
