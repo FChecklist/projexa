@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Download, Sparkles, Send, Link2, Ban } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDate, formatDateTime, toLocalInputValue, toOrgInstant } from "@/lib/format";
 
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
@@ -98,12 +98,6 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     draftRef.current = draft;
   });
 
-  function toLocalInputValue(iso: string) {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
   function startEdit() {
     if (!meeting) return;
     setDraft({
@@ -132,7 +126,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     return {
       title: d.title.trim(),
       meetingType: d.meetingType,
-      scheduledAt: new Date(d.scheduledAt).toISOString(),
+      // R67 D-74: `d.scheduledAt` is a datetime-local value with no zone.
+      // `new Date(...)` read it in the BROWSER's zone, so the same meeting
+      // saved from Dubai and from London stored two different instants, and
+      // neither was necessarily the one the user typed. The org's offset is
+      // attached instead -- by the same function the create form uses, so
+      // the two write paths cannot disagree.
+      scheduledAt: toOrgInstant(d.scheduledAt),
       attendees: d.attendees.split(",").map((s) => s.trim()).filter(Boolean),
       agenda: d.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
     };
@@ -461,7 +461,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 {meeting.actionItems.map((a) => (
                   <li key={a.id} className="flex items-center justify-between rounded-md border border-ct-border px-2 py-1.5">
                     <span>{a.task.title}</span>
-                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${new Date(a.task.dueDate).toLocaleDateString()}` : ""}</span>
+                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${formatDate(a.task.dueDate)}` : ""}</span>
                   </li>
                 ))}
               </ul>

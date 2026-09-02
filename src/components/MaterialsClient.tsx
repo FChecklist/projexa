@@ -50,7 +50,7 @@ import type { PaneStatus } from "@/lib/pane-state";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatMoney } from "@/lib/format";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
@@ -70,6 +70,10 @@ const MASTER_COLUMNS: ScreenColumn[] = [
 ];
 
 const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
+
+// R67 D-74: the money column, named by FIELD -- the master's columns come
+// from the registry and can be reordered live.
+const MONEY_FIELDS = new Set(["unitCost"]);
 
 // Per-field cell renderer for the Material Master table -- same reasoning
 // as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
@@ -92,7 +96,7 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
       // carry no per-item currencyId (unlike quotations/orders), so this is
       // always the org base currency -- currencyLabel(undefined, ...) is
       // exactly the "org base currency" lookup per its own doc comment.
-      return `${currencyLabel(undefined, currencies)}${m.unitCost}`;
+      return formatMoney(m.unitCost, currencyLabel(undefined, currencies));
     default:
       return String((m as unknown as Record<string, unknown>)[field] ?? "—");
   }
@@ -205,13 +209,28 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
               onRetry={load}
             >
               <Table>
-                <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    {columns.map((col) => (
+                      <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                        {col.label}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {/* Real screen navigation (2026-08-30) -- rows open the
                       real Object Page, where Edit/Deactivate now live. */}
                   {materials.map((m) => (
                     <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
-                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
+                      {columns.map((col) => (
+                        <TableCell
+                          key={col.field}
+                          className={MONEY_FIELDS.has(col.field) ? "text-right tabular-nums" : undefined}
+                        >
+                          {renderMaterialCell(col.field, m, currencies)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -252,14 +271,23 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
               onRetry={load}
             >
               <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Quantity</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Material</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Unit Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {receipts.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
                       <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
-                      <TableCell>{r.quantity}</TableCell>
-                      <TableCell>{r.unitCost ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.quantity}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(r.unitCost, currencyLabel(undefined, currencies))}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -285,15 +313,30 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
               onRetry={load}
             >
               <Table>
-                <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Total Qty Received</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead className="text-right">Avg Unit Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {report.map((r) => (
                     <TableRow key={r.materialId}>
                       <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
                       <TableCell>{r.unit}</TableCell>
-                      <TableCell>{r.totalQuantityReceived}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.totalCost.toFixed(2)}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.averageUnitCost.toFixed(2)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.totalQuantityReceived}</TableCell>
+                      {/* R67 D-74: was `${label}${n.toFixed(2)}` -- ungrouped,
+                          so "AED 21750.00" sat two columns from "AED 420" on
+                          the same module. */}
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(r.totalCost, currencyLabel(undefined, currencies), { decimals: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(r.averageUnitCost, currencyLabel(undefined, currencies), { decimals: 2 })}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

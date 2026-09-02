@@ -36,9 +36,18 @@
 //
 // The header is Filter | Export | + New Meeting in that fixed order, the
 // filter lives in the URL so Back restores it, dates render in the org's own
-// form (formatDateTimeOrg), status is a glyph AND a word, and every row
+// form, status is a glyph AND a word, and every row
 // carries a real "Open" link as well as the row click, which by itself did
 // not navigate at all in the audit pass.
+//
+// R67 D-74 SUPERSEDES D-16 ON THE DATE CELL, deliberately and narrowly. D-16
+// specified formatDateTimeOrg's "28 Aug 2026, 10:00" for this column; D-74 is
+// the item that consolidates the product onto ONE form and its acceptance
+// names this screen: "a grep of the rendered DOM on MoMs, Scope, Work
+// Progress, Labour attendance, Materials receipts, Timesheet and Schedule
+// finds the same date string form dd-mm-yyyy". Two forms on seven screens is
+// the finding; keeping a nicer one here would leave the finding standing.
+// formatDateTimeOrg and its tests are untouched for any caller that wants it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -58,7 +67,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertTriangle, Download, Filter as FilterIcon, NotebookText, Plus, RefreshCw } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { StatusChip } from "@/components/StatusChip";
-import { formatDateTimeOrg } from "@/lib/format-date";
+import { formatDateTime } from "@/lib/format";
 import { ApiError, fetchJson } from "@/lib/fetch-json";
 import {
   MOMS_DEFAULT_RANGE_DAYS,
@@ -399,7 +408,7 @@ export default function MoMsClient({
                               case "scheduledAt":
                                 return (
                                   <TableCell key={key} className="text-px-muted">
-                                    {formatDateTimeOrg(row.scheduledAt)}
+                                    {formatDateTime(row.scheduledAt)}
                                   </TableCell>
                                 );
                               case "attendeesCount":

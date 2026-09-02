@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useCurrencies } from "@/lib/currency";
+import { formatMoney } from "@/lib/format";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
@@ -219,7 +220,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                   </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
-                  <TableCell className="text-right">{isSub ? (derived ? derived.rate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") : r.rate}</TableCell>
+                  <TableCell className="text-right">{isSub ? (derived ? formatMoney(derived.rate) : "—") : formatMoney(r.rate)}</TableCell>
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input

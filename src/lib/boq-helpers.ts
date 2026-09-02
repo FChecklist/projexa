@@ -5,6 +5,8 @@
 // matches this codebase's own established convention of keeping business
 // logic independently testable from the DB/network layer.
 
+import { formatMoney } from "@/lib/format";
+
 export type Boq = {
   id: string;
   projectId: string;
@@ -78,12 +80,15 @@ export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
 
 export function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${sign}${formatMoney(amount)}`;
 }
 
+// R67 D-74: this used `toLocaleString(undefined, ...)`, which resolves to
+// the RUNTIME's locale -- the deployment's on the server pass and the
+// visitor's in the browser. Two different strings for one BOQ amount is a
+// hydration mismatch, and neither of them is the organisation's form.
 export function formatAmount(value: string | number | null | undefined): string {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
+  return formatMoney(value ?? 0);
 }
 
 // Deliberately NOT currencyLabel() from the shared helper: that returns a
@@ -91,8 +96,7 @@ export function formatAmount(value: string | number | null | undefined): string 
 // on a UAE contractor's BOQ. Here an unresolved currency degrades to the bare
 // number instead - no label is survivable, the wrong label is not.
 export function withCurrency(code: string, value: string | number | null | undefined): string {
-  const n = formatAmount(value);
-  return code ? `${code} ${n}` : n;
+  return formatMoney(value ?? 0, code);
 }
 
 export function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {

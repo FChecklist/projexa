@@ -119,7 +119,11 @@ describe("MoMsClient -- the list archetype", () => {
     });
     const headers = Array.from(container.querySelectorAll("th")).map((th) => th.textContent);
     expect(headers).toEqual(["Meeting", "Date & time", "Attendees", "Open actions", "Status", "Action"]);
-    expect(container.textContent).toContain("28 Aug 2026, 10:00");
+    // R67 D-74: this read "28 Aug 2026, 10:00" under D-16. D-74 is the item
+    // that puts the whole product on ONE date form, and its acceptance names
+    // this screen among the seven that must all read dd-mm-yyyy. The instant
+    // and the org zone are unchanged -- 06:00Z is 10:00 in Asia/Dubai.
+    expect(container.textContent).toContain("28-08-2026 10:00");
     // The word, not only a colour.
     expect(container.textContent).toContain("published");
     // Both aggregates render their real numbers.

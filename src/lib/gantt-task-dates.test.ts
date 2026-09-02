@@ -39,7 +39,11 @@ describe("F_018 -- the Timeline never invents a date", () => {
   });
 
   test("the Due cell renders the REAL due date, ~7 weeks out -- not tomorrow", () => {
-    expect(displayScheduleDate(REAL_DUE)).toBe("10/15/2026");
+    // R67 D-74: this read "10/15/2026" while it went through format-date.ts's
+    // en-US formatter. The DAY is what F_018 is about and it is unchanged;
+    // the FORM is now the org's, the same one /moms, /scope, /materials,
+    // /labour and the timesheet render.
+    expect(displayScheduleDate(REAL_DUE)).toBe("15-10-2026");
   });
 
   test("both dates real: both are handed over verbatim, with no duration to override them", () => {

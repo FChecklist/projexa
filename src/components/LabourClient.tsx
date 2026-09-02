@@ -63,7 +63,7 @@ import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 import { useProjectScope } from "@/components/shell/project-context";
 import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatMoney } from "@/lib/format";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
@@ -92,6 +92,11 @@ const VALID_TABS = new Set(["roster", "attendance"]);
 
 const ATTENDANCE_COLUMNS = ["Date", "Worker", "Status", "Hours", "Cost"];
 
+// R67 D-74: "money columns are right-aligned with tabular figures". Named by
+// FIELD rather than by position, because the roster's columns come from the
+// registry and can be reordered live.
+const MONEY_FIELDS = new Set(["dailyRate"]);
+
 type PaneError = { status: number | null; message: string | null } | null;
 
 /** What the transport actually said, kept whole for the dictionary to classify. */
@@ -119,7 +124,9 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
     case "dailyRate":
-      return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
+      // R67 D-74: was `{label}{raw string}` -- "AED 180" beside "AED 21750.00"
+      // two tabs away, and unformatted for a five-figure rate.
+      return <span className="tabular-nums">{formatMoney(r.dailyRate, rateCurrencyLabel)}</span>;
     case "isActive":
       return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
     default:
@@ -238,7 +245,11 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                 <TableHeader>
                   <TableRow>
                     <TableHead>S.No</TableHead>
-                    {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                    {columns.map((col) => (
+                      <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                        {col.label}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -248,7 +259,9 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                     <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
-                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
+                        <TableCell key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                          {renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}
+                        </TableCell>
                       ))}
                     </TableRow>
                   ))}
@@ -299,7 +312,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                       <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[a.status] ?? "outline"}>{a.status.replace(/_/g, " ")}</Badge></TableCell>
                       <TableCell>{a.hoursWorked ?? "—"}</TableCell>
-                      <TableCell className="tabular-nums">{a.dailyCost}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(a.dailyCost, rosterCurrencyLabel)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

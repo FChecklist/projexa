@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+import { formatDate } from "@/lib/format";
 
 type Entry = {
   id: string;
@@ -132,6 +133,14 @@ export default function WorkProgressListClient({
             // could be shown over a failure.
             emptyStateLabel="No progress entries logged yet."
             renderCell={{
+              // R67 D-74: the kit's ListScreen formats a `type: "date"` column
+              // with `d.toLocaleDateString()` and NO arguments -- the runtime's
+              // own locale, which is the deployment's on the server pass and
+              // the visitor's in the browser. Per D-09 the kit is not changed;
+              // renderCell is its own supported way for the app to say what a
+              // cell shows, and the column's raw ISO value is left in the row
+              // so the kit's sort still orders by date rather than by "02-".
+              entryDate: (row) => <>{formatDate((row as unknown as Entry).entryDate)}</>,
               percentComplete: (row) => {
                 const pct = Number((row as unknown as Entry).percentComplete);
                 return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;

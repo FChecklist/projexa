@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatMoney } from "@/lib/format";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
@@ -97,9 +97,12 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
+// R67 D-74: a THIRD copy of the same figure, and the only one still on
+// `toLocaleString(undefined, ...)` -- the runtime's locale, which differs
+// between the server pass and the visitor's browser. It is the shared one now.
 function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${sign}${formatMoney(amount)}`;
 }
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level

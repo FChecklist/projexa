@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -114,7 +115,7 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
                 <TableRow>
                   <TableHead>Task</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Hours</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
                   <TableHead>Activity</TableHead>
                   <TableHead>Comments</TableHead>
                 </TableRow>
@@ -131,8 +132,11 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
                         {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}
                       </button>
                     </TableCell>
-                    <TableCell>{entry.spentOn}</TableCell>
-                    <TableCell>{entry.hours}</TableCell>
+                    {/* R67 D-74: this printed the RAW API string
+                        ("2026-09-02") -- a third date form on a module that
+                        already had two. */}
+                    <TableCell>{formatDate(entry.spentOn)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{entry.hours}</TableCell>
                     <TableCell>{entry.activityType ?? "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{entry.comments ?? "—"}</TableCell>
                   </TableRow>

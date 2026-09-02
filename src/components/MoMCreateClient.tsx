@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { useSubmit } from "@/lib/use-submit";
+import { toOrgInstant } from "@/lib/format";
 import type { CreateField } from "@/lib/create-screen";
 
 const FIELDS: CreateField[] = [
@@ -32,18 +33,24 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
 
   const submit = useSubmit<{ id?: unknown }>({
     objectLabel: "Meeting",
-    buildRequest: () => ({
-      input: "/api/moms",
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: (values.title ?? "").trim(),
-          scheduledAt: values.scheduledAt,
-          projectId,
-        }),
-      },
-    }),
+    buildRequest: () => {
+      // R67 D-74 -- THE 10:30 BUG. `values.scheduledAt` is a datetime-local
+      // value ("2026-09-02T10:30") and carries NO zone. Posted as it was, a
+      // server running in UTC read it as 10:30 UTC and every render in the
+      // org's own zone then showed 14:30 for a meeting scheduled at half
+      // past ten. toOrgInstant attaches the org's offset at that moment,
+      // which is the last point at which the user's intent is still known.
+      const scheduledAt = toOrgInstant(values.scheduledAt);
+      if (!scheduledAt) return null;
+      return {
+        input: "/api/moms",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: (values.title ?? "").trim(), scheduledAt, projectId }),
+        },
+      };
+    },
     onSuccess: (meeting) => {
       const id = typeof meeting?.id === "string" ? meeting.id : "";
       if (!id) throw new Error("The server did not confirm a saved meeting");
