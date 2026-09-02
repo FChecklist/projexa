@@ -72,6 +72,13 @@ export type ControlStripProps = {
    * The ONE state-derived instruction (A-01). Rendered alone when the chain is
    * empty, and after the last segment when there is one -- so the strip always
    * says what the next step is, and never contradicts the Send button.
+   *
+   * Optional, but it FALLS BACK rather than rendering nothing (lane G, G-04):
+   * M24's rule is "empty states must prompt, never look broken", and a strip
+   * asked to render an empty chain with no prompt was rendering an empty box.
+   * In the running app M24Shell always passes its own state-derived sentence,
+   * so the fallback is the component keeping its own promise, not a string the
+   * user is expected to meet.
    */
   prompt?: string;
   /**
@@ -109,8 +116,14 @@ export function ControlStrip({
           // M24: "EMPTY STATES MUST PROMPT, NEVER LOOK BROKEN." The prompt is
           // the caller's state-derived sentence, not a fixed string, so it can
           // name the actual missing step.
+          //
+          // The fallback is deliberately applied HERE and not as a default on
+          // the prop: `prompt` is also rendered after the last segment below,
+          // and a default there would print "Select a module to begin" at the
+          // end of a chain the user has already built -- the contradictory
+          // second instruction A-10 exists to remove. Empty chain only.
           <span className="truncate" style={{ color: "var(--color-ct-muted)" }} data-testid="composer-prompt">
-            {prompt}
+            {prompt ?? "Select a module to begin"}
           </span>
         ) : (
           <>
@@ -127,7 +140,29 @@ export function ControlStrip({
                   <button
                     type="button"
                     onClick={() => onSegmentClick?.(i)}
-                    className="shrink-0 rounded px-1 py-0.5 whitespace-nowrap"
+                    // REBASE RECONCILIATION, lane A (A-06) x lane G (G-04).
+                    // Both lanes forked this file to stop the ROOT reading
+                    // "Cedar Heights Vil...". A-06 folded the label at the last
+                    // whole word; G-04 stopped cutting the root at all and let
+                    // it wrap to two lines. G's is kept for the root because it
+                    // serves A-06's OWN stated goal more completely: nothing is
+                    // cut, so the full project name is in the DOM for a screen
+                    // reader and for copy, and two projects sharing a 22-char
+                    // prefix can no longer render as the same string. Two lines
+                    // is a hard cap so the strip cannot push the bands down.
+                    //
+                    // LATER SEGMENTS KEEP BOTH MECHANISMS. G's reasoning holds
+                    // -- there the sentence's shape carries position and one
+                    // line matters more than the whole word -- but the fold and
+                    // the CSS cap measure different things: the fold counts
+                    // CHARACTERS and cuts at a word, `truncate` counts PIXELS
+                    // and is the backstop for a label whose 22 characters are
+                    // still too wide. Either alone leaves a case uncovered.
+                    className={
+                      seg.kind === "root"
+                        ? "shrink-0 rounded px-1 py-0.5 text-left max-w-[34ch] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden"
+                        : "shrink-0 rounded px-1 py-0.5 whitespace-nowrap truncate max-w-[22ch]"
+                    }
                     style={{
                       // ONE SIZE, THREE WEIGHTS (M24): root bold, current step
                       // heaviest, earlier steps lighter. You read your POSITION
@@ -138,7 +173,7 @@ export function ControlStrip({
                     }}
                     title={seg.label}
                   >
-                    {truncateSegmentLabel(seg.label)}
+                    {seg.kind === "root" ? seg.label : truncateSegmentLabel(seg.label, 22)}
                   </button>
                   {cuttable && (
                     // Shown on the thing being removed, per M24. Rendered only

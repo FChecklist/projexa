@@ -108,14 +108,21 @@ describe("what the strip must never say on an object page", () => {
     expect(container.textContent).not.toContain("Select a module to begin");
   });
 
-  test("a long project name folds at a word and keeps the full name in its title", () => {
-    // A-06's rule, re-asserted here because the acceptance reads the strip TEXT
-    // for a project whose real name is longer than the fold: the visible text
-    // is folded, and the unfolded name is still available to a person hovering
-    // and to a screen reader.
+  test("a long project name is never cut at all, and keeps the full name in its title", () => {
+    // A-06's rule, TIGHTENED during the rebase onto lane G. A-06 folded the
+    // root at the last whole word so it could not read "Cedar Heights Vil…";
+    // G-04, which forked the same file for the same defect, stopped cutting
+    // the root altogether and let it wrap to two lines. G's is what ships,
+    // because it serves A-06's own goal more completely: for the one segment
+    // that answers "which project am I working in", the WHOLE name is in the
+    // DOM -- so a screen reader reads it, a copy takes it, and two projects
+    // sharing a 22-character prefix cannot render as the same string.
     const { container } = renderStrip(objectChain("scope", "1009b", "Cedar Heights Villa - Phase 1"));
     const first = container.querySelector("button")!;
     expect(first.getAttribute("title")).toBe("Cedar Heights Villa - Phase 1");
-    expect(first.textContent!.endsWith("…")).toBe(true);
+    expect(first.textContent).toBe("Cedar Heights Villa - Phase 1");
+    expect(first.textContent!.endsWith("…")).toBe(false);
+    // Two lines is a hard cap, so an unbounded name cannot push the bands down.
+    expect(first.className).toContain("[-webkit-line-clamp:2]");
   });
 });

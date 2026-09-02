@@ -129,11 +129,28 @@ describe("the tab constant and its storage key cannot come back by accident", ()
   });
 
   test(
-    "nothing imports or mentions CHAIN_MODES",
+    "no CODE imports or uses the kit's mode constant",
     () => {
       // The kit still EXPORTS it -- other products keep the row -- so this is
       // one import away from being untrue at any time.
-      const offenders = sources.filter(([, text]) => text.includes("CHAIN_MODES")).map(([f]) => f);
+      //
+      // Matched in CODE ONLY, for the same reason the storage-key sweep below
+      // matches a call rather than a string: once a control is deleted, the
+      // files that used it acquire comments NAMING it to explain why it is
+      // gone, and a sweep over the raw word would forbid the explanation. (It
+      // did: lane G's ControlStrip suite documents the deleted mode row in a
+      // comment.) Comment lines are dropped before matching; a use in real
+      // code never begins a line with // or *.
+      const isComment = (line: string) => {
+        const t = line.trim();
+        return t.startsWith("//") || t.startsWith("*") || t.startsWith("/*");
+      };
+      const codeOnly = (text: string) =>
+        text
+          .split("\n")
+          .filter((l) => !isComment(l))
+          .join("\n");
+      const offenders = sources.filter(([, text]) => codeOnly(text).includes("CHAIN_MODES")).map(([f]) => f);
       expect(offenders).toEqual([]);
     },
     SWEEP_TIMEOUT_MS
