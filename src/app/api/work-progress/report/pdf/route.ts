@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Point 117: byte-for-byte PDF relay for the Work Progress Report. Same
 // pattern as src/app/api/moms/[id]/pdf/route.ts -- PROJEXA has no PDF library
@@ -9,7 +10,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // 138, src/lib/pdf/work-progress-report-pdf.ts, shipped in #1314). Query
 // params mirror src/app/api/work-progress/report/route.ts exactly, plus point
 // 11's ?mode=total|balance toggle, which the upstream route already accepts.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -38,4 +39,4 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to generate work progress report PDF");
   }
-}
+});

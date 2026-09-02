@@ -1,6 +1,11 @@
 import { db, veridianCredentials } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
+// R67 F-28: every settled upstream call adds its wall time to the current
+// request's ledger, which is how withTiming() can report `upstream` and `app`
+// separately without any route handler threading a timer through its calls.
+// A no-op outside a timed scope (server components, scripts).
+import { recordUpstream } from "@/lib/request-timing";
 
 // PROJEXA's only connection to construction data: every call goes through
 // VERIDIAN's /api/v1/projexa/* surface with a Bearer API key. This file
@@ -259,7 +264,11 @@ async function fetchWithTimeout(
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     const outcome = await attemptFetch(url, init, callerSignal);
-    if ("res" in outcome) return { res: outcome.res, durationMs: Date.now() - startedAt };
+    if ("res" in outcome) {
+      const durationMs = Date.now() - startedAt;
+      recordUpstream(durationMs);
+      return { res: outcome.res, durationMs };
+    }
     lastErr = outcome.err;
     budgetExpired = outcome.timedOut;
     // A timeout is never retried (see the block comment above), and neither
@@ -275,6 +284,11 @@ async function fetchWithTimeout(
   }
 
   const durationMs = Date.now() - startedAt;
+  // R67 F-28: a failed call cost the user exactly as much time as a slow
+  // successful one, so it counts toward `upstream` too. A Server-Timing header
+  // that only measured successes would understate precisely the requests worth
+  // investigating.
+  recordUpstream(durationMs);
 
   if (budgetExpired || isTimeout(lastErr)) {
     // A caller-initiated abort is not an upstream timeout -- nobody is waiting

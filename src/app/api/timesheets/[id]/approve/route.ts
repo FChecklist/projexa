@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -14,7 +15,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 // Self-approval-block is still enforced VERIDIAN-side (a real resolved
 // actorEmail user, not the shared API key) so this is not weaker than the
 // session-only path it mirrors.
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -28,4 +29,4 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to approve time entry");
   }
-}
+});

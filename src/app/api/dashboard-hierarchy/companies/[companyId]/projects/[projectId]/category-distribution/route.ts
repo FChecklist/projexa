@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type CategoryBoqAmounts = { categories: { categoryId: string; name: string; totalAmount: number }[]; uncategorizedAmount: number; totalAmount: number };
 type CategoryProgress = { categories: { categoryId: string; name: string; percentComplete: number }[] };
@@ -25,7 +26,7 @@ export type CategoryDistributionEntry = {
 // (or an activity whose category no longer exists) are real BOQ amounts
 // too; they're surfaced as an "Uncategorized" slice instead of being
 // dropped, so shares still sum to 100%.
-export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
   const { companyId, projectId } = await params;
   const scope = await requireCompanyScope(companyId);
   if (scope.response) return scope.response;
@@ -68,4 +69,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load category distribution");
   }
-}
+});

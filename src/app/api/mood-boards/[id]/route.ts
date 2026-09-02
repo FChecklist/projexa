@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // Real-screen conversion (2026-08-30): single-board GET for the Mood Board
 // Object Page.
-export async function GET(_request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -17,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load mood board");
   }
-}
+});
 
 // Real-screen conversion (2026-08-30) bug fix: this used to unconditionally
 // inject `action: "status"` into every PATCH body, which silently broke any
@@ -25,7 +26,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 // take the status branch and fail on a missing `status` field instead. The
 // body is now passed through unmodified; callers include `action: "status"`
 // themselves when that's what they mean (see MoodBoardObjectClient.tsx).
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -36,9 +37,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update mood board");
   }
-}
+});
 
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -49,4 +50,4 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to add mood board item");
   }
-}
+});

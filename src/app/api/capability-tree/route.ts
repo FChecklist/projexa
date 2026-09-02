@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianResult } from "@/lib/veridian-client";
 import { serverTimingHeader, veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Thin proxy: the browser-side Chain Selector needs this tree, but the
 // VERIDIAN Bearer key must never reach the client -- this route holds it
@@ -33,7 +34,7 @@ function etagFor(body: string): string {
   return `W/"ct-${body.length.toString(36)}-${hash.toString(36)}"`;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -61,4 +62,4 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: { ...headers, "Content-Type": "application/json" },
   });
-}
+});

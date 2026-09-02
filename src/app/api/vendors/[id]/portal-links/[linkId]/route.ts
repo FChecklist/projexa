@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Real-screen conversion (2026-08-30): revoke half of the portal-links
 // pair, see ../route.ts's own comment.
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; linkId: string }> }) {
+export const DELETE = withTiming("DELETE", async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; linkId: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -15,4 +16,4 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   } catch (err) {
     return veridianErrorResponse(err, "Failed to revoke portal link");
   }
-}
+});

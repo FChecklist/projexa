@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // Real-screen conversion (2026-08-30): single-item GET for the Punch List
 // Object Page.
-export async function GET(_request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -17,9 +18,9 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load punch list item");
   }
-}
+});
 
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.FIELD);
@@ -32,4 +33,4 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update punch list item");
   }
-}
+});

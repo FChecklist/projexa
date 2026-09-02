@@ -4,13 +4,14 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag } from "next/cache";
+import { withTiming } from "@/lib/with-timing";
 
 // Roster (workers) lives at VERIDIAN's /api/v1/construction/labour-roster --
 // it was never re-exported under /api/v1/projexa/*, unlike attendance
 // itself. See veridian-client.ts's `root` option for why this passes
 // root: true instead of hitting the usual /projexa base.
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -21,9 +22,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load labour roster");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -37,4 +38,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to add worker");
   }
-}
+});

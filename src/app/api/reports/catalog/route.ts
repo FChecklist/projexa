@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // PROJEXA Reports & Analysis catalog UI (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16): thin proxy over VERIDIAN's
@@ -9,7 +10,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // getFullReportCatalog() compliance-tracker's own #375 UI already uses --
 // no new business logic here, matching every other proxy route in this
 // directory (e.g. api/companies/route.ts, api/quotations/route.ts).
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -18,4 +19,4 @@ export async function GET() {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load report catalog");
   }
-}
+});

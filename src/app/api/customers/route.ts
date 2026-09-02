@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 13: VERIDIAN's /api/v1/projexa/customers discovery lookup -- the
 // customerId a sales invoice needs, same shape of gap fiscal-years/
@@ -10,7 +11,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // params through to VERIDIAN's listCustomersPaged variant, and adds POST
 // so PROJEXA's own Customers page can create a customer directly (CRM/
 // quotation/sales-order flows all need a real customerId to pick from).
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const qs = request.nextUrl.search;
@@ -20,9 +21,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load customers");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -32,4 +33,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create customer");
   }
-}
+});

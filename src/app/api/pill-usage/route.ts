@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R52: PROJEXA's proxy to VERIDIAN's pill ranking + M24 history.
 // Contract from R53's handshake, claude_log id=35.
@@ -29,7 +30,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = withTiming("GET", async function GET(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -47,4 +48,4 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load pill usage");
   }
-}
+});

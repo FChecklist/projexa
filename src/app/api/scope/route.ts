@@ -4,8 +4,9 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag } from "next/cache";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load scope of work");
   }
-}
+});
 
 // R46M13_TC10_01 (fault reproduced live 3x on projexa-ai.com, 2026-08-25):
 // creating a parent + 3-weighted-children BOQ through the real "New BOQ"
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
 // as "BOQ created".
 type CreatedBoqResponse = { id?: unknown; lineItems?: unknown; error?: unknown };
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -87,4 +88,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create BOQ");
   }
-}
+});

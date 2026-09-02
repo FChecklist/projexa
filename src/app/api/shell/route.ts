@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { callVeridianResult } from "@/lib/veridian-client";
 import { serverTimingHeader } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 F-21 (audit recommendation R-236) -- ONE bootstrap for the shell.
 //
@@ -48,7 +49,7 @@ export type ShellBootstrapPayload = {
   errors: Record<string, string>;
 };
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -143,4 +144,4 @@ export async function GET() {
   return NextResponse.json(payload, {
     headers: { "Server-Timing": serverTimingHeader(upstreamMs, Date.now() - startedAt) },
   });
-}
+});

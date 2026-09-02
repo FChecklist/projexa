@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -14,9 +15,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load board");
   }
-}
+});
 
-export async function PATCH(request: NextRequest) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -26,4 +27,4 @@ export async function PATCH(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update issue status");
   }
-}
+});

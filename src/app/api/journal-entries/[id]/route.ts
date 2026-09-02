@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/journal-entries/[id] -- single
 // entry line-item detail.
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -15,4 +16,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load journal entry");
   }
-}
+});

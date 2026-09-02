@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -21,4 +22,4 @@ export async function GET() {
   // membership list for the org; every member, including the caller, is a
   // real teammate and belongs in it.
   return NextResponse.json({ members: data ?? [] });
-}
+});

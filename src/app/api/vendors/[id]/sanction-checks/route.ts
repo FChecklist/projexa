@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Real-screen conversion (2026-08-30): the Vendor Object Page's Sanction
 // Screening facet -- same "built with zero consumers" gap as
 // bank-accounts/route.ts.
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -16,9 +17,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load sanction checks");
   }
-}
+});
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -29,4 +30,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (err) {
     return veridianErrorResponse(err, "Failed to record sanction check");
   }
-}
+});

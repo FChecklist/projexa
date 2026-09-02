@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Passes the multipart upload straight through to VERIDIAN (Excel parsing
 // happens there, reusing this codebase's dynamic-xlsx-import pattern) --
 // this route never buffers/re-encodes the file itself.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -19,4 +20,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to import schedule");
   }
-}
+});

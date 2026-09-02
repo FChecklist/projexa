@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 F-26 (audit recommendation R-242) -- ONE task, by id.
 //
@@ -13,7 +14,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // One row, only while something is running, instead of fifty on a timer.
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -28,4 +29,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     // reports "something went wrong" leaves the row spinning with no reason.
     return veridianErrorResponse(err, "Failed to load the task");
   }
-}
+});

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -15,4 +16,4 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load opportunity history");
   }
-}
+});

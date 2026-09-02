@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Thin proxy, same shape/reasoning as /api/capability-tree: the browser-side
 // Chain Selector needs this tree, but the VERIDIAN Bearer key must never
@@ -13,7 +14,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // /api/v1/projexa/module-chain route, the org's full VERI GRC AI / VERI ERP
 // / etc module chain, merged client-side alongside the construction tree
 // (see veri-chat-context.tsx's fetchCapabilityTree()).
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -23,4 +24,4 @@ export async function GET() {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load the VERIDIAN module chain");
   }
-}
+});

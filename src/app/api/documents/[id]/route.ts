@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Real-screen conversion (2026-08-30): the Documents list never had a
 // detail route -- a file could be uploaded but never viewed/downloaded
 // again. Proxies to VERIDIAN's new /v1/projexa/documents/[id] (root: true,
 // same as the list route -- lives at /api/v1/documents, not
 // /api/v1/projexa/documents).
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -18,9 +19,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load document");
   }
-}
+});
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -31,4 +32,4 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update document");
   }
-}
+});

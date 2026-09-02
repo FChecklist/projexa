@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R52: PROJEXA's proxy to VERIDIAN's task surface. This is the route
 // error_log E-120 said did not exist -- "projexa has NO /api/tasks route", so
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
 // `counts` and `groups` are the SAME rows, which is why the header tabs can
 // never disagree with the list beneath them. M24 requires live counts on the
 // tabs so the user knows before clicking; this is where they come from.
-export async function GET(req: NextRequest) {
+export const GET = withTiming("GET", async function GET(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
     // in place of an error is the specific defect this app has shipped before.
     return veridianErrorResponse(err, "Failed to load tasks");
   }
-}
+});
 
 // POST -- the composer's submit target. Takes EITHER shape:
 //   typed path: { rawInput, mode, projectId, selectedChain? }
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
 // return one "task" and one "chat". Callers must not collapse that into a
 // single verdict for the message -- R53 records that as the exact defect it
 // removed, where a submission silently dropped half of what the user asked for.
-export async function POST(req: NextRequest) {
+export const POST = withTiming("POST", async function POST(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -79,4 +80,4 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to submit");
   }
-}
+});

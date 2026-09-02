@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/sales-invoices/[id]/payments --
 // records a real GL receipt against this invoice and reduces its
 // outstandingAmount (partially_paid/paid).
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -17,4 +18,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (err) {
     return veridianErrorResponse(err, "Failed to record payment");
   }
-}
+});

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R39/R-C14: Architect/Site Instruction (SI) -- SCHEMA-ASSUMED-INDUSTRY-
 // STANDARD, see the VERIDIAN-side schema.ts comment for the full explanation.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -16,9 +17,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load site instructions");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE);
@@ -30,4 +31,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create site instruction");
   }
-}
+});

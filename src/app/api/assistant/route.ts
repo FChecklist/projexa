@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Dispatches through VERIDIAN's /api/v1/projexa/assistant (Wave 129) and
 // keeps a local history row -- dispatchTool() is synchronous, so this table
@@ -13,7 +14,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // veridian_credentials instead of the shared demo VERIDIAN_API_KEY. Orgs
 // with no credentials row yet (pre-existing/demo orgs) still fall back to
 // the shared key automatically -- see resolveApiKey() in veridian-client.ts.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -27,7 +28,7 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ queries: data });
-}
+});
 
 // R42 seq14 (M25 pipeline): the real submission -> segmentation -> task
 // pipeline, additive alongside the existing codeReference dispatch below
@@ -50,7 +51,7 @@ async function postPipeline(ctx: Awaited<ReturnType<typeof requireAuth>>, body: 
   }
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -99,4 +100,4 @@ export async function POST(request: NextRequest) {
     await supabase.from("assistant_queries").update({ status: "error", error_message: message }).eq("id", row.id);
     return veridianErrorResponse(err, "Failed to dispatch to VERIDIAN");
   }
-}
+});

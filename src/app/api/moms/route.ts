@@ -4,12 +4,13 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag } from "next/cache";
+import { withTiming } from "@/lib/with-timing";
 
 // Wave 143 (Minutes of Meeting module): proxies VERIDIAN's
 // /api/v1/projexa/veri-meetings -- the real VERI Meeting Intelligence
 // engine (live minutes, AI summary/action items, publish/lock), not
 // PROJEXA's existing basic /api/meetings scheduling CRUD.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -20,9 +21,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load meetings");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -36,4 +37,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create meeting");
   }
-}
+});

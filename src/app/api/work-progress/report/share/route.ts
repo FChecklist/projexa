@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Point 118: creates a tokenised, expiring, read-only share link for the
 // Work Progress Report -- NOT the WhatsApp Business API (explicitly ruled
@@ -10,7 +11,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // The public VIEW of that link is a separate, unauthenticated page --
 // src/app/share/report/[token]/page.tsx -- which this route builds the URL
 // for, since it lives on PROJEXA's own domain, not VERIDIAN's.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -29,4 +30,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create share link");
   }
-}
+});

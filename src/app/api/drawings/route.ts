@@ -4,11 +4,12 @@ import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag } from "next/cache";
+import { withTiming } from "@/lib/with-timing";
 
 // Wave 143 (Drawings & 3D module): proxy to VERIDIAN's
 // /api/v1/projexa/drawings -- DWG file uploads and 3D walkthrough
 // files/links, per project.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { searchParams } = request.nextUrl;
@@ -23,9 +24,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load drawings");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -39,4 +40,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create drawing");
   }
-}
+});

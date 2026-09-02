@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createCachedVeridianGet } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 13: VERIDIAN's /api/v1/projexa/fiscal-years discovery lookup --
 // closes the gap PROJEXA_GAP_ANALYSIS.md flagged (Budgets page could not
@@ -14,7 +15,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 // createCachedVeridianGet() in veridian-client.ts for why that's safe.
 const getCachedFiscalYears = createCachedVeridianGet("veridian-fiscal-years", "/fiscal-years", 60);
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -23,4 +24,4 @@ export async function GET() {
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load fiscal years");
   }
-}
+});
