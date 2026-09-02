@@ -32,8 +32,13 @@ async function resolveMaterialsListColumns(organizationId: string | null): Promi
 // Point 33: repointed to a real project-scoped material master + receipts
 // (was org-wide ERP ledger listing only, no create path) -- same
 // resolveSelectedProject pattern as moms/page.tsx.
-export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+// R67 D-35: the bare `<PageHeading title="Materials" />` is gone when a
+// project resolves -- MaterialsClient owns the header band, because its
+// Filter and Export actions operate on the rows the client is holding and
+// cannot be driven from a server component. The page keeps a plain heading
+// only for the two states where there are no rows at all.
+export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; materialId?: string }> }) {
+  const { projectId, tab, materialId } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMaterialsListColumns(organizationId);
@@ -41,7 +46,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Materials" />
+        {!project && <PageHeading title="Materials" />}
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
@@ -50,7 +55,15 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
+        {project && (
+          <MaterialsClient
+            projectId={project.id}
+            projectName={project.name}
+            registryColumns={registryColumns}
+            initialTab={tab}
+            initialMaterialId={materialId}
+          />
+        )}
       </div>
     </>
   );

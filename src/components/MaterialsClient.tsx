@@ -39,19 +39,23 @@
 // (api/construction-materials/cost-report/route.ts) had been calling a
 // VERIDIAN path that 502'd for the same reason as Inbound: nothing
 // implemented it on the other side either, until now.
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateNumeric } from "@/lib/format-date";
-import { formatMoney, formatQty } from "@/lib/format-money";
-import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+import { formatMoney, formatQty, resolveCurrencyCode } from "@/lib/format-money";
+import { useCurrencies, type Currency } from "@/lib/currency";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = {
@@ -94,23 +98,50 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
     case "unit":
       return m.unit;
     case "unitCost":
-      // R55_MATERIALS_UNITCOST_NO_AED_01: was a bare `m.unitCost`, same
-      // defect class as R55_LABOUR_RATE_NO_AED_01 -- the column rendered
-      // unlabelled numbers with no currency anywhere on the page. Materials
-      // carry no per-item currencyId (unlike quotations/orders), so this is
-      // always the org base currency -- currencyLabel(undefined, ...) is
-      // exactly the "org base currency" lookup per its own doc comment.
-      return `${currencyLabel(undefined, currencies)}${m.unitCost}`;
+      // R55_MATERIALS_UNITCOST_NO_AED_01: was a bare `m.unitCost`, so the
+      // column rendered unlabelled numbers with no currency anywhere on the
+      // page. Materials carry no per-item currencyId (unlike quotations/
+      // orders), so this is always the org base currency. R67: through the
+      // shared formatter, so "AED 420.00" reads identically here, on the
+      // receipts tab and on the Cost Report.
+      return formatMoney(m.unitCost, currencies);
     default:
       return String((m as unknown as Record<string, unknown>)[field] ?? "—");
   }
 }
 
-export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+// R67 D-35: the two fields a QS changes weekly. Everything else on the master
+// still goes through the object page's own Edit.
+const INLINE_EDITABLE_FIELDS = new Set(["unit", "unitCost"]);
+
+export default function MaterialsClient({
+  projectId,
+  projectName,
+  registryColumns,
+  initialTab,
+  initialMaterialId,
+}: {
+  projectId: string;
+  projectName: string;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  /** From ?materialId= -- set when the Cost Report drills into one material's receipts. */
+  initialMaterialId?: string;
+}) {
   const router = useRouter();
+  const pathname = usePathname();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const currencies = useCurrencies();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
+  const [materialFilter, setMaterialFilter] = useState(initialMaterialId ?? "");
+  const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  // R67 D-35: no click may be silent. The row that was clicked shows
+  // "Opening…" until the route actually changes.
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; field: "unit" | "unitCost" } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [footerMessage, setFooterMessage] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -148,18 +179,142 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
 
   useEffect(() => { load(); }, [projectId]);
 
+  // Cleared when the route actually changes, so an "Opening…" row can never
+  // outlive the navigation it was announcing.
+  useEffect(() => { setOpeningId(null); }, [pathname]);
+
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
 
+  const visibleMaterials = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return materials;
+    return materials.filter((m) => `${m.name} ${m.spec ?? ""} ${m.unit}`.toLowerCase().includes(needle));
+  }, [materials, query]);
+
+  // R67 D-36/D-35: the Cost Report drills into one material's transactions,
+  // so the Inbound tab has to be able to show just that material's rows.
+  const visibleReceipts = useMemo(
+    () => (materialFilter ? receipts.filter((r) => r.materialId === materialFilter) : receipts),
+    [receipts, materialFilter]
+  );
+
+  // The Unit select's options are the units this project's own master already
+  // uses, plus whatever the row currently holds. There is no org-level unit
+  // master in this product to read from, and inventing one here would be a
+  // second source of truth for something the data already answers.
+  const knownUnits = useMemo(
+    () => [...new Set(materials.map((m) => m.unit).filter((u) => !!u && u.trim().length > 0))].sort(),
+    [materials]
+  );
+
+  const writeParams = useCallback((next: { tab?: string; materialId?: string | null }) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next.tab) params.set("tab", next.tab);
+    if (next.materialId === null) params.delete("materialId");
+    else if (next.materialId) params.set("materialId", next.materialId);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, []);
+
   function goToTab(tab: string) {
     setActiveTab(tab);
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", tab);
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    writeParams({ tab });
   }
 
+  function openMaterialReceipts(materialId: string) {
+    setActiveTab("receipts");
+    setMaterialFilter(materialId);
+    writeParams({ tab: "receipts", materialId });
+  }
+
+  function openMaterial(materialId: string) {
+    setOpeningId(materialId);
+    router.push(`/materials/${materialId}`);
+  }
+
+  function startInlineEdit(material: Material, field: "unit" | "unitCost") {
+    setEditing({ id: material.id, field });
+    setEditValue(field === "unit" ? material.unit : material.unitCost);
+    setFooterMessage(null);
+  }
+
+  // Enter commits ONE field. The cell updates optimistically and reverts on
+  // failure, with the backend's own sentence in the footer message area --
+  // never a toast that has gone by the time the QS looks up.
+  async function commitInlineEdit(material: Material, field: "unit" | "unitCost", raw: string) {
+    const previous = field === "unit" ? material.unit : material.unitCost;
+    const value = raw.trim();
+    setEditing(null);
+    if (!value || value === previous) return;
+    if (field === "unitCost" && !Number.isFinite(Number(value))) {
+      setFooterMessage("Unit Cost must be a number.");
+      return;
+    }
+
+    const optimistic = field === "unit" ? { unit: value } : { unitCost: value };
+    setMaterials((prev) => prev.map((m) => (m.id === material.id ? { ...m, ...optimistic } : m)));
+    try {
+      await fetchJson(`/api/materials/master/${material.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(field === "unit" ? { unit: value } : { unitCost: Number(value) }),
+      });
+      setFooterMessage(null);
+    } catch (err) {
+      setMaterials((prev) => prev.map((m) => (m.id === material.id ? { ...m, [field]: previous } as Material : m)));
+      setFooterMessage(errorMessage(err, `Couldn't save ${field === "unit" ? "Unit" : "Unit Cost"}`));
+    }
+  }
+
+  function exportMaster() {
+    const code = resolveCurrencyCode(currencies);
+    const rows = visibleMaterials.map((m, i) => [i + 1, m.name, m.spec ?? "", m.unit, m.unitCost, m.isActive ? "active" : "inactive"]);
+    const csv = toCsv(["S.No", "Name", "Spec", "Unit", code ? `Unit Cost (${code})` : "Unit Cost", "Status"], rows);
+    downloadCsv(csvFilename("materials", projectName, new Date().toISOString().slice(0, 10)), csv);
+  }
+
+  const headerActions: PageHeadingAction[] = [
+    {
+      label: filterOpen ? "Hide filter" : "Filter",
+      disabledReason: loading ? "Loading…" : materials.length === 0 ? "No materials to filter" : undefined,
+      onClick: () => setFilterOpen((open) => !open),
+    },
+    {
+      label: "Export",
+      disabledReason: loading ? "Loading…" : visibleMaterials.length === 0 ? "No rows" : undefined,
+      onClick: exportMaster,
+    },
+    {
+      label: "+ New Material",
+      variant: "default",
+      disabledReason: loading ? "Loading…" : undefined,
+      onClick: () => router.push(`/materials/new?projectId=${projectId}`),
+      testId: "materials-new",
+    },
+  ];
+
   return (
-    <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
+    <div className="space-y-4">
+      <PageHeading
+        title="Materials"
+        breadcrumb={`${projectName} / Materials`}
+        project={projectName}
+        actions={headerActions}
+      />
+
+      {filterOpen && (
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="materials-filter-q" className="text-[12px] text-px-muted">Name, spec or unit contains</Label>
+              <Input id="materials-filter-q" className="h-9 w-64" value={query} onChange={(event) => setQuery(event.target.value)} />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setQuery("")}>Clear filter</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="master">Material Master</TabsTrigger>
         <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
@@ -167,11 +322,6 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
       </TabsList>
 
       <TabsContent value="master" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Material" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/materials/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Material</Button>
-        </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
             {loading ? (
@@ -180,15 +330,99 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
               <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={load} /></div>
             ) : materials.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
+            ) : visibleMaterials.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">No materials match this filter.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    {columns.map((col) => (
+                      <TableHead key={col.field} className={col.field === "unitCost" ? "text-right" : undefined}>{col.label}</TableHead>
+                    ))}
+                    {/* R67 D-35: a row click produced NO visible change, even
+                        though the object page existed. The affordance is a
+                        word, not an icon, and it is reachable by keyboard. */}
+                    <TableHead className="text-right">Open</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
-                  {/* Real screen navigation (2026-08-30) -- rows open the
-                      real Object Page, where Edit/Deactivate now live. */}
-                  {materials.map((m) => (
-                    <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
-                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
+                  {visibleMaterials.map((m) => (
+                    <TableRow
+                      key={m.id}
+                      className="group cursor-pointer hover:bg-px-cloud/40"
+                      // Prefetching on hover is what turns "Opening…" into a
+                      // flicker rather than a wait.
+                      onMouseEnter={() => router.prefetch(`/materials/${m.id}`)}
+                      onClick={() => openMaterial(m.id)}
+                    >
+                      {columns.map((col) => {
+                        const isEditing = editing?.id === m.id && editing.field === col.field;
+                        const editable = INLINE_EDITABLE_FIELDS.has(col.field);
+                        return (
+                          <TableCell
+                            key={col.field}
+                            className={col.field === "unitCost" ? "text-right tabular-nums" : undefined}
+                            onClick={editable ? (event) => { event.stopPropagation(); if (!isEditing) startInlineEdit(m, col.field as "unit" | "unitCost"); } : undefined}
+                          >
+                            {isEditing && col.field === "unit" ? (
+                              <select
+                                autoFocus
+                                aria-label={`Unit for ${m.name}`}
+                                className="h-8 rounded-md border border-ct-border2 bg-background px-2 text-sm"
+                                value={editValue}
+                                onChange={(event) => { setEditValue(event.target.value); void commitInlineEdit(m, "unit", event.target.value); }}
+                                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setEditing(null); } }}
+                                onBlur={() => setEditing(null)}
+                              >
+                                {[...new Set([m.unit, ...knownUnits])].filter(Boolean).map((unit) => (
+                                  <option key={unit} value={unit}>{unit}</option>
+                                ))}
+                              </select>
+                            ) : isEditing && col.field === "unitCost" ? (
+                              <span className="inline-flex items-center justify-end gap-1">
+                                <span className="text-px-muted">{resolveCurrencyCode(currencies)}</span>
+                                <Input
+                                  autoFocus
+                                  type="number"
+                                  step="0.01"
+                                  aria-label={`Unit Cost for ${m.name}`}
+                                  className="h-8 w-28 text-right"
+                                  value={editValue}
+                                  onChange={(event) => setEditValue(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") { event.preventDefault(); void commitInlineEdit(m, "unitCost", (event.target as HTMLInputElement).value); }
+                                    if (event.key === "Escape") { event.preventDefault(); setEditing(null); }
+                                  }}
+                                  onBlur={() => setEditing(null)}
+                                />
+                              </span>
+                            ) : (
+                              <span className={editable ? "inline-flex items-center gap-1" : undefined}>
+                                {renderMaterialCell(col.field, m, currencies)}
+                                {editable && (
+                                  <Pencil
+                                    className="size-3 opacity-0 transition-opacity group-hover:opacity-60"
+                                    aria-label={`Edit ${col.label}`}
+                                  />
+                                )}
+                              </span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-right">
+                        {openingId === m.id ? (
+                          <span className="text-[13px] text-px-muted">Opening…</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-[13px] text-[color:var(--color-veri-status-context)] underline underline-offset-2 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100"
+                            onClick={(event) => { event.stopPropagation(); openMaterial(m.id); }}
+                          >
+                            Open
+                          </button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -196,10 +430,30 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
             )}
           </CardContent>
         </Card>
+        {footerMessage && (
+          <p role="alert" className="text-[13px] text-px-error">{footerMessage}</p>
+        )}
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* R67 D-35: when the Cost Report drills into one material, the
+              Inbound tab says WHICH material it is showing and offers the way
+              back out -- a silently filtered list that looks like the whole
+              ledger is worse than no drill-down at all. */}
+          {materialFilter ? (
+            <p className="text-[13px] text-px-muted">
+              Showing receipts for{" "}
+              <span className="font-medium text-[color:var(--color-veri-status-context)]">{materialName(materialFilter)}</span>{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={() => { setMaterialFilter(""); writeParams({ tab: "receipts", materialId: null }); }}
+              >
+                Show all materials
+              </button>
+            </p>
+          ) : <span />}
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Record Receipt" Dialog popup with a real create route. */}
           <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
@@ -210,8 +464,12 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.receipts ? (
               <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={load} /></div>
-            ) : receipts.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
+            ) : visibleReceipts.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">
+                {materialFilter
+                  ? `No receipts recorded for ${materialName(materialFilter)} yet.`
+                  : "No material movements recorded yet."}
+              </p>
             ) : (
               <Table>
                 <TableHeader>
@@ -225,7 +483,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {receipts.map((r) => {
+                  {visibleReceipts.map((r) => {
                     const voided = !!r.voidedAt;
                     return (
                       <TableRow
@@ -264,15 +522,34 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
               <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Total Qty Received</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead className="text-right">Avg Unit Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {report.map((r) => (
                     <TableRow key={r.materialId}>
-                      <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
+                      <TableCell className="font-medium">
+                        {/* R67 D-35: every reported number can be opened down
+                            to the transactions behind it. */}
+                        <button
+                          type="button"
+                          className="text-[color:var(--color-veri-status-context)] underline underline-offset-2"
+                          onClick={() => openMaterialReceipts(r.materialId)}
+                        >
+                          {r.name}
+                        </button>
+                        {r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}
+                      </TableCell>
                       <TableCell>{r.unit}</TableCell>
-                      <TableCell>{r.totalQuantityReceived}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.totalCost.toFixed(2)}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.averageUnitCost.toFixed(2)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(r.totalCost, currencies)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(r.averageUnitCost, currencies)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -281,6 +558,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
           </CardContent>
         </Card>
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   );
 }
