@@ -31,7 +31,7 @@ async function resolveMoMsListColumns(organizationId: string | null): Promise<Re
 export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMoMsListColumns(organizationId);
 
   return (
@@ -39,11 +39,7 @@ export default async function MoMsPage({ searchParams }: { searchParams: Promise
       {/* R67 A-03: tell the shell what this screen resolved, so the top rail
           and the composer's strip name the same project the pane is showing
           instead of reading "All projects" beside one project's meetings. */}
-      <ScreenContext
-        moduleId="moms"
-        project={project}
-        source={projectId && project?.id === projectId ? "route" : "auto"}
-      />
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Minutes of Meeting" />
         {errorMessage && (

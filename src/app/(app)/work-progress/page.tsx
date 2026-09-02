@@ -11,7 +11,7 @@ import { ScreenContext } from "@/components/shell/shell-screen-context";
 export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
 
   return (
     <>
@@ -19,11 +19,7 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
           composer must name that project rather than "All projects". When the
           URL did not name it, the page picked it -- and says so, which is why
           the source is published and not just the id. */}
-      <ScreenContext
-        moduleId="work-progress"
-        project={project}
-        source={projectId && project?.id === projectId ? "route" : "auto"}
-      />
+      <ScreenContext moduleId="work-progress" project={project} source={source ?? "auto"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Work Progress" />
         {errorMessage && (

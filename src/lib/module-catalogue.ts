@@ -74,6 +74,12 @@ export type ModuleDef = {
    * A-03). Defaults to "Choose a project for <label>" when absent.
    */
   noProjectPrompt?: string;
+  /**
+   * FALSE for a module that is org-wide rather than project-scoped -- its
+   * route must not carry a ?projectId= that means nothing there (A-05:
+   * Customers and Vendors, and the Reports catalogue).
+   */
+  needsProject?: boolean;
 };
 
 export const MODULE_CATALOGUE: readonly ModuleDef[] = [
@@ -240,10 +246,44 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     label: "Reports",
     route: "/reports",
     prefixes: ["/reports"],
+    needsProject: false,
     pillKeys: ["reports", "report"],
     placeholder: "e.g. run the work progress report for January",
     examples: ["run the work progress report for January", "show me the vendor cost report"],
     leaves: [{ id: "reports.open", label: "Open", path: "/reports", needsProject: false }],
+  },
+  // A-05: Customers and Vendors were MODE TABS at the head of every control
+  // strip -- three words that changed nothing but their own colour, while the
+  // same three words also existed as pills. The tabs are gone and these are
+  // now ordinary catalogue entries, so each word appears exactly once on
+  // screen and still reaches the same destination.
+  {
+    id: "customers",
+    label: "Customers",
+    route: "/customers",
+    prefixes: ["/customers"],
+    needsProject: false,
+    pillKeys: ["customers", "customer"],
+    placeholder: "e.g. add a customer, or ask which customers have open quotations",
+    examples: ["add a new customer", "which customers have open quotations"],
+    leaves: [
+      { id: "customers.new", label: "New customer", path: "/customers/new", needsProject: false },
+      { id: "customers.open", label: "Open", path: "/customers", needsProject: false },
+    ],
+  },
+  {
+    id: "vendors",
+    label: "Vendors",
+    route: "/vendors",
+    prefixes: ["/vendors"],
+    needsProject: false,
+    pillKeys: ["vendors", "vendor"],
+    placeholder: "e.g. add a vendor, or ask what we owe this month",
+    examples: ["add a new vendor", "which vendors worked on this project"],
+    leaves: [
+      { id: "vendors.new", label: "New vendor", path: "/vendors/new", needsProject: false },
+      { id: "vendors.open", label: "Open", path: "/vendors", needsProject: false },
+    ],
   },
 ] as const;
 
@@ -317,9 +357,10 @@ export function moduleHref(
   return qs ? `${target.path}?${qs}` : target.path;
 }
 
-/** The module's own list route, with the project carried. */
+/** The module's own list route, with the project carried where it means
+ *  something (never on an org-wide module such as Customers). */
 export function moduleRoute(mod: ModuleDef, projectId: string | null): string {
-  return moduleHref({ path: mod.route }, projectId);
+  return moduleHref({ path: mod.route, needsProject: mod.needsProject }, projectId);
 }
 
 /**

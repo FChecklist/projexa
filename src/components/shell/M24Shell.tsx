@@ -59,12 +59,15 @@ import { Composer } from "./Composer";
 import { PillStrip } from "./PillStrip";
 import { useShellScreen } from "./shell-screen-context";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
+import { deriveMode } from "@/lib/chain-mode";
+import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
 import {
   chainModuleForPathname,
   chainOptionsFor,
   moduleForPathname,
   moduleForPill,
   moduleHref,
+  moduleRoute,
   noProjectPromptFor,
   pillPointsAtCurrentScreen,
   type ModuleDef,
@@ -76,11 +79,19 @@ import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
 
-// M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
-// session, so nobody returns to a view they forgot they set." sessionStorage is
-// exactly that lifetime; localStorage would survive the session and break it.
-const MODE_KEY = "veri.chain.mode";
+// Ranking input, per user, per browser. localStorage rather than
+// sessionStorage on purpose: this is the OFFLINE fallback ordering for when
+// the server's own ranking does not answer, and a fallback that forgot itself
+// every session would be no fallback at all.
 const PILL_USAGE_KEY = "veri.pill.usage";
+
+// R67 A-05. MODE_KEY ("veri.chain.mode") is GONE. It backed a row of three
+// tabs -- Projects | Customers | Vendors -- that changed nothing on PROJEXA
+// but their own colour, and a piece of sticky state remembering which one was
+// lit. The VALUE still travels: POST /api/v1/projexa/tasks stores it on the
+// submission row. It is now DERIVED from the chain by deriveMode(), because a
+// chain whose first chosen step is Customers is a customers chain whether or
+// not anyone clicked a tab. The request body is byte-for-byte unchanged.
 
 // R67 A-01. HISTORY_KEY ("veri.chain.history") is GONE, and with it the
 // composer's HISTORY drop. Two facts made it indefensible: (a) two controls on
@@ -151,7 +162,7 @@ function toTaskRow(
   // this build does not know simply gets no route, which loadChain() already
   // treats as "restore the chain and stop".
   const mod = moduleForPill(t.functionId ?? steps[0] ?? "", steps[0]);
-  const route = mod ? moduleHref({ path: mod.route }, t.projectId ?? railProjectId) : undefined;
+  const route = mod ? moduleRoute(mod, t.projectId ?? railProjectId) : undefined;
   // M24's four glyphs are needs-you / running / waiting / done. A BLOCKED task
   // is one that needs you -- it is stuck on a decision or a correction only
   // the user can make -- so it takes the needs-you glyph and the loud pill.
@@ -202,7 +213,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // stop offering the screen the user is already standing on.
   const pathname = usePathname();
 
-  const [mode, setMode] = useState<ChainMode>(DEFAULT_CHAIN_MODE);
   const [segments, setSegments] = useState<Chain["segments"]>([]);
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -241,20 +251,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const m = sessionStorage.getItem(MODE_KEY) as ChainMode | null;
-      if (m) setMode(m);
       const p = localStorage.getItem(PILL_USAGE_KEY);
       if (p) setPillUsage(JSON.parse(p) as PillUsage[]);
     } catch {
       // A blocked or unavailable storage must not take the shell down.
     }
+    // R67 A-05: the rail's last choice is restored before any request, so the
+    // rail does not flash "All projects" on every reload and then correct
+    // itself. It is only a hint -- the project list below is the authority, and
+    // an id for a project the user can no longer reach resolves to nothing.
+    setRailProjectId(readStoredProjectId());
   }, []);
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(MODE_KEY, mode);
-    } catch {}
-  }, [mode]);
 
   // Org + projects for the top rail. Read the STATUS before the body: an error
   // body parses perfectly well as JSON, and treating it as data is how a failed
@@ -489,10 +496,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // shell-screen-context.tsx for why that is what makes it order-independent.
   const publishedScreen = useShellScreen();
   const routeScreen = publishedScreen.pathname === pathname ? publishedScreen : null;
-  const railProject = useMemo(
-    () => projects.find((p) => p.id === railProjectId) ?? null,
+  // The rail's own answer, applying the SAME rule the server page applies
+  // (pickProject): the remembered choice if the user can still reach it, their
+  // only project if they have exactly one, otherwise nothing -- the rail's null
+  // state is "All projects", which M24 requires so org-level work stays
+  // reachable. The shell never invents a project the way a page must.
+  const railPick = useMemo(
+    () => pickProject({ preferred: railProjectId, projects }),
     [projects, railProjectId]
   );
+  const railProject = railPick.source === "auto" ? null : railPick.project;
   const project = routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
 
@@ -520,6 +533,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   //                   start of a sentence anyone finishes).
   const screenModule = useMemo(() => moduleForPathname(pathname ?? ""), [pathname]);
   const chainModule = useMemo(() => chainModuleForPathname(pathname ?? ""), [pathname]);
+
+  // R67 A-05: the mode is a fact about the chain, not a tab anyone clicks.
+  const mode: ChainMode = useMemo(() => deriveMode(segments), [segments]);
 
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
   // cutChainFrom() protection meaningful: it refuses to cut into a "root"
@@ -552,12 +568,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSegments(resetChain(chain).segments.filter((s) => s.kind !== "root"));
   }, [chain]);
 
-  // LOADS AND STOPS. Sets the mode, restores the chain, navigates. Navigation
-  // is a read. It calls no action endpoint, and the ChainLoad it receives has
-  // no way to express one.
+  // LOADS AND STOPS. Restores the chain and navigates. Navigation is a read.
+  // It calls no action endpoint, and the ChainLoad it receives has no way to
+  // express one.
+  //
+  // R67 A-05: load.mode is no longer applied as state -- restoring the chain
+  // restores the mode with it, because deriveMode() reads it off the segments.
+  // M24's rule that "a history click ALSO SETS MODE, so the strip never
+  // contradicts itself" is now structural rather than a second assignment that
+  // could be forgotten.
   const onLoadChain = useCallback(
     (load: ChainLoad) => {
-      setMode(load.mode);
       setSegments(load.chain.segments.filter((s) => s.kind !== "root"));
       if (load.route) router.push(load.route);
     },
@@ -614,7 +635,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       const mod = moduleForPill(sel.pillKey, sel.label);
       if (!mod) return; // a pill with no PROJEXA screen: nothing to open, nothing typed.
       setProjectPrompt(null);
-      router.push(moduleHref({ path: mod.route }, projectId));
+      router.push(moduleRoute(mod, projectId));
     },
     [bumpUsage, projectId, router]
   );
@@ -901,7 +922,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               setProjectPrompt(null);
               const i = projects.findIndex((p) => p.id === projectId);
               const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-              setRailProjectId(next ? next.id : null);
+              const nextId = next ? next.id : null;
+              setRailProjectId(nextId);
+              // R67 A-05: remembered for this browser, in localStorage for the
+              // shell and in a cookie so the SERVER resolves the same project
+              // -- then re-render the pane, so the screen under the rail is
+              // about the project the rail now names. Without the refresh the
+              // rail and the pane would disagree for as long as the user stayed
+              // on the page, which is the defect this item exists to close.
+              writeStoredProjectId(nextId);
+              router.refresh();
             }}
             search={<SearchTrigger />}
             alerts={<NotificationBell />}

@@ -40,14 +40,19 @@ export type ComposerState = {
 /** THE ONE SENTENCE. Rendered in the strip; reused as the Send tooltip. */
 export function composerInstruction(state: ComposerState): string {
   if (state.busy) return "Sending…";
-  if (!state.hasProjects) return "Create a project first";
+  // A-05: the org has nothing to work on yet. The sentence names the one
+  // action available rather than describing the emptiness.
+  if (!state.hasProjects) return "No projects yet — Create Project";
   if (!state.hasProject) return "Pick a project in the top rail to start";
   if (!state.hasText && !state.hasAction) {
     // Inside a module the missing step is never "pick a module" -- the user is
     // standing in one. Name the project instead, so the sentence still tells
     // them what this box will act on.
     if (state.moduleLabel && state.projectName) return `Type what you need for ${state.projectName}`;
-    return "Pick a module or describe what you need";
+    // A-05: rendered after the project root, the strip reads as one sentence
+    // -- "Cedar Heights Villa - Phase 1 > What do you want to do?" -- which is
+    // the question the composer actually wants answered.
+    return "What do you want to do?";
   }
   return "Press Send to run this, or add detail";
 }

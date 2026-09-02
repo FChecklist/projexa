@@ -17,15 +17,18 @@ const base: ComposerState = {
 
 describe("composerInstruction", () => {
   test("no projects at all names the only thing that can be done", () => {
-    expect(composerInstruction({ ...base, hasProjects: false, hasProject: false })).toBe("Create a project first");
+    expect(composerInstruction({ ...base, hasProjects: false, hasProject: false })).toBe(
+      "No projects yet — Create Project"
+    );
   });
 
   test("no project selected points at the top rail, which is where the control is", () => {
     expect(composerInstruction({ ...base, hasProject: false })).toBe("Pick a project in the top rail to start");
   });
 
-  test("a project but nothing chosen asks for the next step", () => {
-    expect(composerInstruction(base)).toBe("Pick a module or describe what you need");
+  test("a project but nothing chosen asks the question, and the strip reads as one sentence", () => {
+    // Rendered after the project root: "<project> > What do you want to do?"
+    expect(composerInstruction(base)).toBe("What do you want to do?");
   });
 
   test("inside a module it names the project instead of asking for a module", () => {
