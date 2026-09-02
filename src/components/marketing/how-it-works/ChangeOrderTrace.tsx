@@ -30,7 +30,8 @@ export async function ChangeOrderTrace() {
             <Reveal key={stepKey} delay={i * 80}>
               <div className="flex gap-5">
                 <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill-deep font-heading text-sm font-semibold text-white">
+                  {/* R67 WS-G / C-13: navy on saffron (5.55:1), preferred fix. */}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-px-orange font-heading text-sm font-semibold text-ct-navy">
                     {i + 1}
                   </div>
                   {i < STEP_KEYS.length - 1 && <div className="mt-1 w-px flex-1 bg-border" aria-hidden />}

@@ -85,7 +85,11 @@ export async function Hero() {
             </div>
 
             <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-              <Button asChild size="lg" className="h-12 w-full bg-brand-fill-deep px-8 text-base text-white shadow-orange hover:brightness-95 sm:w-auto">
+              {/* R67 WS-G / C-13: the PREFERRED fix is navy text on the
+                  unchanged saffron fill (5.55:1), not a new fill colour. Only
+                  a control that genuinely cannot give up white text takes
+                  --brand-fill-deep. The brand orange stays the brand orange. */}
+              <Button asChild size="lg" className="h-12 w-full bg-px-orange px-8 text-base text-ct-navy shadow-orange hover:bg-px-orange-hover sm:w-auto">
                 <Link href="#contact">
                   {t("ctaTalk")} <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -124,7 +128,7 @@ export async function Hero() {
                     {["PM", "SE", "DS", "PR"].map((initials) => (
                       <span
                         key={initials}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-px-ink2 bg-brand-fill-deep text-[10px] font-semibold text-white"
+                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-px-ink2 bg-px-orange/80 text-[10px] font-semibold text-ct-navy"
                       >
                         {initials}
                       </span>

@@ -36,9 +36,11 @@ const SRC = join(process.cwd(), "src");
  * DIFFERENT GROUND: its hero and header sit on the navy #1C2B3A / #10181F
  * surfaces, where saffron text measures 5.55:1 and 6.89:1 -- it passes AA
  * there, and the app's 2.56:1 figure simply does not apply. The white-on-
- * saffron half of the rule is NOT exempt anywhere, including here (those call
- * sites were moved to --brand-fill-deep), and the assertion below proves the
- * exemption is narrow: it covers `text-*` only.
+ * saffron half of the rule is NOT exempt anywhere, including here: those eight
+ * call sites took correction C-13's PREFERRED fix -- navy text on the
+ * unchanged saffron fill, 5.55:1 -- rather than the --brand-fill-deep
+ * fallback, so the landing page's brand colour is still the brand colour. The
+ * assertion below proves the exemption is narrow: it covers `text-*` only.
  */
 const TEXT_RULE_EXEMPT_DIR = join("src", "components", "marketing");
 

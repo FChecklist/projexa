@@ -54,13 +54,15 @@ export async function CopilotSpotlight() {
                 aria-hidden
               />
               <div className="relative space-y-3">
-                <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-brand-fill-deep px-4 py-3 text-sm text-white shadow-orange">
+                {/* R67 WS-G / C-13: navy on saffron (5.55:1), the preferred
+                    fix -- the brand fill is unchanged. */}
+                <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm bg-px-orange px-4 py-3 text-sm text-ct-navy shadow-orange">
                   {t("chat.q1")}
                 </div>
                 <div className="mr-auto max-w-[90%] rounded-2xl rounded-tl-sm border border-white/10 bg-white/5 px-4 py-3 text-sm leading-relaxed text-px-cloud2">
                   {t("chat.a1")}
                 </div>
-                <div className="ml-auto max-w-[70%] rounded-2xl rounded-tr-sm bg-brand-fill-deep px-4 py-3 text-sm text-white shadow-orange">
+                <div className="ml-auto max-w-[70%] rounded-2xl rounded-tr-sm bg-px-orange px-4 py-3 text-sm text-ct-navy shadow-orange">
                   {t("chat.q2")}
                 </div>
                 <div className="mr-auto flex max-w-[75%] items-center gap-2 rounded-2xl rounded-tl-sm border border-white/10 bg-white/5 px-4 py-3 text-sm text-px-cloud2">

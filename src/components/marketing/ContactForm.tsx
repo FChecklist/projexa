@@ -113,7 +113,8 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
         type="submit"
         disabled={status === "loading"}
         size="lg"
-        className="mt-5 h-12 w-full bg-brand-fill-deep px-8 text-base text-white shadow-orange hover:brightness-95 sm:w-auto"
+        // R67 WS-G / C-13: navy on the unchanged saffron fill (5.55:1).
+        className="mt-5 h-12 w-full bg-px-orange px-8 text-base text-ct-navy shadow-orange hover:bg-px-orange-hover sm:w-auto"
       >
         {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         {t("submit")}
