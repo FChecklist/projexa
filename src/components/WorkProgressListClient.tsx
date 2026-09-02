@@ -92,8 +92,8 @@ export default function WorkProgressListClient({
     // separate "+ New" would just duplicate what's already on screen.
     <ScreenFrame
       breadcrumb="Work Progress"
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting progress entries is not built yet" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering progress entries is not built yet" }}
       messages={[]}
     >
       <div className="px-4 py-3">

@@ -204,8 +204,8 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       // DASHBOARD.PROJECT: "+ New suppressed" -- documented override, this
       // screen answers a question, it doesn't create records.
       newAction={undefined}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering this dashboard is not built yet" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting this dashboard is not built yet" }}
       oneNumber={
         <KpiCard
           size="primary"

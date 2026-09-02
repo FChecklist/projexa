@@ -110,4 +110,45 @@ describe("PermitsListClient", () => {
     expect(container.textContent).toContain("1 record");
     expect(container.textContent).not.toContain("No permits yet");
   });
+
+  // R67 D-59: "'(Not yet available)' replaced by a real reason such as
+  // 'Export - no rows to export'." Both header controls carried the literal
+  // placeholder while the shared ListHeaderActions on Labour, Materials and
+  // Schedule said something real -- two conventions for the same disabled
+  // control on one product. Asserted so it cannot drift back.
+  test("a disabled header control gives a real reason, never the placeholder", async () => {
+    stubFetch(200, { permits: [] });
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("No permits yet for this project.");
+    });
+    expect(container.innerHTML).not.toContain("Not yet available");
+    expect(container.innerHTML).toContain("Filtering permits is not built yet");
+    // With no rows on screen, Export names the reason it has TODAY.
+    expect(container.innerHTML).toContain("Export — no rows to export");
+  });
+
+  test("with rows on screen, Export's reason is that it is not built -- not that there is nothing to export", async () => {
+    stubFetch(200, {
+      permits: [
+        {
+          id: "pm1",
+          name: "Building permit",
+          permitNumber: "BP-2026-0142",
+          permitAuthority: "Dubai Municipality",
+          issueDate: "2026-01-01",
+          endDate: "2026-12-31",
+          daysToExpiry: 120,
+        },
+      ],
+    });
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("BP-2026-0142");
+    });
+    expect(container.innerHTML).not.toContain("Not yet available");
+    expect(container.innerHTML).toContain("Exporting permits is not built yet");
+  });
 });

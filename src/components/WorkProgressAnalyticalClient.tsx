@@ -125,8 +125,8 @@ export default function WorkProgressAnalyticalClient({
   return (
     <AnalyticalScreen
       breadcrumb="Work Progress / Analytics"
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering the progress analytics is not built yet" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting the progress analytics is not built yet" }}
       newAction={undefined}
       kpiTags={
         <>
