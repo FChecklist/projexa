@@ -338,6 +338,29 @@ function defaultFrom() {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * R67 D-29 (audit R-080). "Every band untouched" -- the report ran, and nothing
+ * happened on this project between those two dates. Four empty tables under
+ * four tabs is a puzzle; one sentence is an answer.
+ *
+ * `touched.current` is the flag the report already computes for exactly this
+ * distinction (see LineItemRow's own comment): money() cannot tell a real
+ * computed zero from a bucket no progress entry has ever reached, because both
+ * are the number 0.
+ */
+export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower" | "byVendor">): boolean {
+  return (
+    report.rows.every((r) => !r.touched.current) &&
+    report.byManpower.length === 0 &&
+    report.byVendor.length === 0
+  );
+}
+
+/** The sentence itself, so its wording is asserted rather than trusted. */
+export function noProgressText(from: string, to: string): string {
+  return `No progress recorded between ${from} and ${to}`;
+}
+
 export default function WorkProgressReportClient({ projectId }: { projectId: string }) {
   const [from, setFrom] = useState(defaultFrom());
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
@@ -347,6 +370,8 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // maths, so the number the note quotes and the number the tables exclude
   // can never come from two different definitions of "linked".
   const unlinkedNote = unlinkedEntriesNote(report?.unlinkedEntryCount ?? 0);
+  /** R67 D-29: the run's own state, kept on screen instead of shown in a toast. */
+  const [runError, setRunError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
@@ -367,15 +392,18 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  // REBASE NOTE (r67 lane A onto lane I): both lanes changed this function.
+  // REBASE NOTE (r67 lanes A, I and D1 all changed this function).
   // Lane I (I-05) gave it the category filter and the grow-only option list;
   // lane A (A-04) made it a useCallback so the auto-run effect below can
-  // depend on it honestly rather than reaching past the dependency array.
-  // Both are kept -- I's body, A's wrapper -- and selectedCategories joins the
-  // dependency list, because the default parameter reads it.
+  // depend on it honestly rather than reaching past the dependency array;
+  // lane D1 (D-29) replaced its four-second failure toast with a state the
+  // report card renders alongside a Retry -- a report that failed to run is
+  // not a transient notice, it is the state of the screen until somebody does
+  // something about it. All three are kept.
   const runReport = useCallback(
     async (boqId = selectedBoqId, categories = selectedCategories) => {
       setLoading(true);
+      setRunError(null);
       try {
         const params = new URLSearchParams({ projectId, from, to });
         if (boqId) params.set("boqId", boqId);
@@ -393,7 +421,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
           setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
         }
       } catch (err) {
-        toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
+        setRunError(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
         setReport(null);
       } finally {
         setLoading(false);
@@ -565,8 +593,17 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="p-4">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : runError ? (
+            <div role="alert" className="space-y-2 rounded-md border border-px-error-border bg-px-error-light p-4 text-sm text-px-error">
+              <p className="font-medium">Could not load live data</p>
+              <p>{runError}</p>
+              <button type="button" onClick={() => void runReport()} className="underline underline-offset-2">Retry</button>
+            </div>
           ) : !report ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
+          ) : reportIsEmpty(report) ? (
+            // R67 D-29: one answer instead of four empty tables under four tabs.
+            <p className="py-10 text-center text-sm text-px-muted">{noProgressText(from, to)}</p>
           ) : (
             <Tabs defaultValue="scope" className="space-y-4">
               {/* R67 B-09: this report has always silently DROPPED an entry

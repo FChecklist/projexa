@@ -16,7 +16,7 @@
 // the output as an HTML string instead of through a jsdom-backed query API.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CategoryFilterGroup, ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
+import { CategoryFilterGroup, ScopeTable, noProgressText, reportIsEmpty, type LineItemRow } from "./WorkProgressReportClient";
 
 function textsOfTag(html: string, tag: string): string[] {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>(.*?)</${tag}>`, "gs");
@@ -212,5 +212,44 @@ describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
       <CategoryFilterGroup available={["Civil"]} selected={["Civil"]} disabled onToggle={noop} onApply={noop} />
     );
     expect(html).toMatch(/data-testid="wpr-category-apply"[^>]*disabled=""|disabled=""[^>]*data-testid="wpr-category-apply"/);
+// ─── R67 D-29 (audit R-080) ──────────────────────────────────────────────
+// A report that ran over a window in which nothing happened used to render four
+// empty tables under four tabs, leaving the reader to work out for themselves
+// whether that meant "no progress" or "the report is broken". One sentence
+// answers it. `touched.current` is the flag the report already computes for
+// exactly this distinction -- money() cannot tell a real computed zero from a
+// bucket nothing has ever reached, because both are the number 0.
+describe("R67 D-29: an untouched window says so", () => {
+  const UNTOUCHED: LineItemRow = {
+    lineItemId: "p-2.01", code: "2.01", description: "Screed", categoryName: "Finishes",
+    unit: "Sqm", rate: 60, qtyTotal: 100, amtTotal: 6000, parentLineItemId: null,
+    qty: { prev: 20, current: 0, total: 20, balance: 80 },
+    amt: { prev: 1200, current: 0, total: 1200, balance: 4800 },
+    percentage: { prev: 20, current: 0, total: 20, balance: 80 },
+    touched: { prev: true, current: false, total: true },
+  };
+
+  test("every band untouched and no manpower or vendor rows means no progress in the window", () => {
+    expect(reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [] })).toBe(true);
+  });
+
+  test("one touched line, one manpower row or one vendor row is enough to be a real report", () => {
+    expect(
+      reportIsEmpty({ rows: [{ ...UNTOUCHED, touched: { prev: true, current: true, total: true } }], byManpower: [], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [{ trade: "Mason", workerDays: 4, totalCost: 800 }], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [{ vendorId: "v1", vendorName: "Al Noor", totalCost: 900 }] })
+    ).toBe(false);
+  });
+
+  test("a BOQ with no lines at all still reads as no progress, not as a broken report", () => {
+    expect(reportIsEmpty({ rows: [], byManpower: [], byVendor: [] })).toBe(true);
+  });
+
+  test("the sentence names the window the user asked for", () => {
+    expect(noProgressText("2026-08-01", "2026-08-31")).toBe("No progress recorded between 2026-08-01 and 2026-08-31");
   });
 });
