@@ -17,15 +17,13 @@
 // null (404/error), same "keep the hardcoded version behind a flag until
 // verified" contract as permits/documents/change-orders.
 //
-// Real-screen conversion (2026-08-30): the "Add Material"/"Record Receipt"
+// Real screen navigation (2026-08-30): the "Add Material"/"Record Receipt"
 // Dialog popups are gone -- Add Material routes to a real create screen
 // (MaterialCreateClient.tsx), master rows route to a real Object Page
 // (MaterialObjectClient.tsx, which gained real Edit/Deactivate this
 // conversion -- updateMaterial() didn't exist before). Record Receipt
 // routes to a real create screen (MaterialReceiptCreateClient.tsx) -- no
-// Object Page for receipt rows, a write-once transaction log. Also fixes
-// the same uncontrolled-Tabs-no-URL-sync bug found and fixed repeatedly
-// this session.
+// Object Page for receipt rows, a write-once transaction log.
 //
 // Same conversion also folds in module #31 (Site Materials, the duplicate
 // module found at /site-materials): its Catalog tab was this same
@@ -35,26 +33,42 @@
 // screen, /site-materials now redirects here (see site-materials/page.tsx)
 // and this file gains its one genuinely new capability, Cost Report, backed
 // by a real getMaterialCostReport() aggregation added this same conversion
-// (construction-materials-service.ts) -- the proxy it calls
-// (api/construction-materials/cost-report/route.ts) had been calling a
-// VERIDIAN path that 502'd for the same reason as Inbound: nothing
-// implemented it on the other side either, until now.
-import { useEffect, useState } from "react";
+// (construction-materials-service.ts).
+//
+// R67 F-07 (R-100/R-106) -- THREE CALLS ON LANDING BECAME ONE. Warm /materials
+// measured TTFB 2006 ms and LCP 3244 ms for a TWO-ROW table, and the client's
+// share of that was three requests fired together behind a single `loading`
+// flag: the master, the receipts ledger, and the server cost report. Only the
+// first is on screen when the page opens.
+//
+//   * the master is the only thing fetched on mount;
+//   * the receipts ledger is fetched on first activation of the Inbound tab,
+//     and warmed on hover of that tab or the Cost Report tab;
+//   * the Cost Report is DERIVED from those same receipts
+//     (src/lib/material-cost-report.ts, arithmetic identical to the server's
+//     so the on-screen figure and the exportable one cannot disagree) -- the
+//     server endpoint stays for the export, which has no loaded page to
+//     derive from.
+//
+// Each panel also has its own state now, so a failing receipts ledger cannot
+// blank a working master table, and a wait crossing 3 s says so.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+import { buildMaterialCostReport } from "@/lib/material-cost-report";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
-type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
@@ -67,6 +81,12 @@ const MASTER_COLUMNS: ScreenColumn[] = [
   { label: "Unit", field: "unit", type: "text", importance: "High" },
   { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
 ];
+
+// Exported so materials/page.tsx's <Suspense> fallback shows the SAME headers
+// the real table will show -- nothing on screen moves when the data lands.
+export const MATERIALS_FALLBACK_COLUMN_LABELS = MASTER_COLUMNS.map((c) => c.label);
+const RECEIPT_COLUMN_LABELS = ["Date", "Material", "Quantity", "Unit Cost"];
+const COST_REPORT_COLUMN_LABELS = ["Material", "Unit", "Total Qty Received", "Total Cost", "Avg Unit Cost"];
 
 const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
 
@@ -97,42 +117,82 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
   }
 }
 
+// D-04's visible budget, client side: a wait that crosses 3 s stops being
+// "fast", and the reader is told the request is still running rather than
+// left to guess.
+function useSlowRequestFlag(pending: boolean, afterMs = 3_000): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!pending) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), afterMs);
+    return () => clearTimeout(timer);
+  }, [pending, afterMs]);
+  return slow;
+}
+
 export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const currencies = useCurrencies();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [report, setReport] = useState<CostReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
 
-  async function load() {
-    setLoading(true);
-    const [matR, recR, repR] = await Promise.allSettled([
-      fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
-    ]);
+  // null means "not resolved yet"; [] is a real, confirmed empty list. The
+  // single `loading` boolean this replaces could not tell those apart, per
+  // panel or at all.
+  const [materials, setMaterials] = useState<Material[] | null>(null);
+  const [materialsError, setMaterialsError] = useState<string | null>(null);
+  const [receipts, setReceipts] = useState<Receipt[] | null>(null);
+  const [receiptsError, setReceiptsError] = useState<string | null>(null);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
 
-    const errors: { materials?: string; receipts?: string; report?: string } = {};
-    if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
-    else { setMaterials([]); errors.materials = errorMessage(matR.reason, "Material master"); }
+  const materialsSlow = useSlowRequestFlag(materials === null && materialsError === null);
+  const receiptsSlow = useSlowRequestFlag(receiptsLoading);
 
-    if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
-    else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
+  const loadMaterials = useCallback(async () => {
+    setMaterials(null);
+    setMaterialsError(null);
+    try {
+      const data = await fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`);
+      setMaterials(data.materials ?? []);
+    } catch (err) {
+      setMaterials([]);
+      setMaterialsError(errorMessage(err, "Material master"));
+    }
+  }, [projectId]);
 
-    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
-    else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
+  const loadReceipts = useCallback(async () => {
+    setReceiptsLoading(true);
+    setReceiptsError(null);
+    try {
+      const data = await fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`);
+      setReceipts(data.receipts ?? []);
+    } catch (err) {
+      setReceipts([]);
+      setReceiptsError(errorMessage(err, "Inbound receipts"));
+    } finally {
+      setReceiptsLoading(false);
+    }
+  }, [projectId]);
 
-    setLoadErrors(errors);
-    setLoading(false);
-  }
+  useEffect(() => { void loadMaterials(); }, [loadMaterials]);
 
-  useEffect(() => { load(); }, [projectId]);
+  // The receipts ledger backs BOTH the Inbound tab and the derived Cost
+  // Report, and is fetched the first time either is opened -- never on
+  // landing, which is the third call this item removes.
+  const warmReceipts = useCallback(() => {
+    if (receipts !== null || receiptsLoading) return;
+    void loadReceipts();
+  }, [receipts, receiptsLoading, loadReceipts]);
 
-  const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
+  useEffect(() => {
+    if (activeTab === "receipts" || activeTab === "cost-report") warmReceipts();
+  }, [activeTab, warmReceipts]);
+
+  const materialName = (id: string) => (materials ?? []).find((m) => m.id === id)?.name ?? id;
+  const report = buildMaterialCostReport(materials ?? [], receipts ?? []);
 
   function goToTab(tab: string) {
     setActiveTab(tab);
@@ -141,106 +201,147 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
+  const receiptsPending = receipts === null && !receiptsError;
+
   return (
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="master">Material Master</TabsTrigger>
-        <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
-        <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
+        {/* Hovering a tab warms the one request both of these panels share, so
+            the click usually lands on a filled table. */}
+        <TabsTrigger value="receipts" onMouseEnter={warmReceipts} onFocus={warmReceipts}>Inbound Receipts</TabsTrigger>
+        <TabsTrigger value="cost-report" onMouseEnter={warmReceipts} onFocus={warmReceipts}>Cost Report</TabsTrigger>
       </TabsList>
 
       <TabsContent value="master" className="space-y-4">
         <div className="flex justify-end">
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Material" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/materials/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Material</Button>
+              Material" Dialog popup with a real create route; hover prefetches
+              its chunk so the click is instant. */}
+          <Button
+            onMouseEnter={() => router.prefetch(`/materials/new?projectId=${projectId}`)}
+            onFocus={() => router.prefetch(`/materials/new?projectId=${projectId}`)}
+            onClick={() => router.push(`/materials/new?projectId=${projectId}`)}
+          >
+            <Plus className="size-4" /> Add Material
+          </Button>
         </div>
-        <Card className="shadow-card">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.materials ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={load} /></div>
-            ) : materials.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
-            ) : (
-              <Table>
-                <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
-                <TableBody>
-                  {/* Real screen navigation (2026-08-30) -- rows open the
-                      real Object Page, where Edit/Deactivate now live. */}
-                  {materials.map((m) => (
-                    <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
-                      {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {materials === null && !materialsError ? (
+          <TableLoadingRows
+            headers={columns.map((c) => c.label)}
+            rows={3}
+            caption={materialsSlow ? "Still loading…" : "Loading materials…"}
+          />
+        ) : (
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {materialsError ? (
+                <div className="p-4"><DataLoadError messages={[materialsError]} onRetry={loadMaterials} /></div>
+              ) : (materials ?? []).length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
+                  <TableBody>
+                    {/* Real screen navigation (2026-08-30) -- rows open the
+                        real Object Page, where Edit/Deactivate now live. */}
+                    {(materials ?? []).map((m) => (
+                      <TableRow
+                        key={m.id}
+                        className="cursor-pointer hover:bg-px-cloud/40"
+                        onMouseEnter={() => router.prefetch(`/materials/${m.id}`)}
+                        onClick={() => router.push(`/materials/${m.id}`)}
+                      >
+                        {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
         <div className="flex justify-end">
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Record Receipt" Dialog popup with a real create route. */}
-          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
+          <Button
+            disabled={(materials ?? []).length === 0}
+            onMouseEnter={() => router.prefetch(`/materials/receipts/new?projectId=${projectId}`)}
+            onFocus={() => router.prefetch(`/materials/receipts/new?projectId=${projectId}`)}
+            onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}
+          >
+            <Plus className="size-4" /> Record Receipt
+          </Button>
         </div>
-        <Card className="shadow-card">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.receipts ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={load} /></div>
-            ) : receipts.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
-            ) : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Quantity</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {receipts.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
-                      <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
-                      <TableCell>{r.quantity}</TableCell>
-                      <TableCell>{r.unitCost ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {receiptsPending ? (
+          <TableLoadingRows
+            headers={RECEIPT_COLUMN_LABELS}
+            rows={3}
+            caption={receiptsSlow ? "Still loading…" : "Loading receipts…"}
+          />
+        ) : (
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {receiptsError ? (
+                <div className="p-4"><DataLoadError messages={[receiptsError]} onRetry={loadReceipts} /></div>
+              ) : (receipts ?? []).length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow>{RECEIPT_COLUMN_LABELS.map((label) => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+                  <TableBody>
+                    {(receipts ?? []).map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
+                        <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
+                        <TableCell>{r.quantity}</TableCell>
+                        <TableCell>{r.unitCost ?? "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </TabsContent>
 
       <TabsContent value="cost-report" className="space-y-4">
-        <Card className="shadow-card">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.report ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={load} /></div>
-            ) : report.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
-            ) : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {report.map((r) => (
-                    <TableRow key={r.materialId}>
-                      <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
-                      <TableCell>{r.unit}</TableCell>
-                      <TableCell>{r.totalQuantityReceived}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.totalCost.toFixed(2)}</TableCell>
-                      <TableCell>{currencyLabel(undefined, currencies)}{r.averageUnitCost.toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {receiptsPending ? (
+          <TableLoadingRows
+            headers={COST_REPORT_COLUMN_LABELS}
+            rows={3}
+            caption={receiptsSlow ? "Still loading…" : "Loading receipts…"}
+          />
+        ) : (
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {receiptsError ? (
+                <div className="p-4"><DataLoadError messages={[receiptsError]} onRetry={loadReceipts} /></div>
+              ) : report.length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow>{COST_REPORT_COLUMN_LABELS.map((label) => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+                  <TableBody>
+                    {report.map((r) => (
+                      <TableRow key={r.materialId}>
+                        <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
+                        <TableCell>{r.unit}</TableCell>
+                        <TableCell>{r.totalQuantityReceived}</TableCell>
+                        <TableCell>{currencyLabel(undefined, currencies)}{r.totalCost.toFixed(2)}</TableCell>
+                        <TableCell>{currencyLabel(undefined, currencies)}{r.averageUnitCost.toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </TabsContent>
     </Tabs>
   );
