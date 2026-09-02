@@ -50,7 +50,14 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 // R36/P5 (B5 decision): additive fields so an existing consumer that
 // doesn't know about them still works exactly as before.
 type BoqOption = { id: string; title: string; status: string; version: number };
-type ReportResponse = { boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[]; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
+// R67 I-05: availableCategories/categoryFilter are additive -- an older
+// response without them still renders, the multi-select just has nothing to
+// offer until the first run comes back.
+type ReportResponse = {
+  boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
+  rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
+  availableCategories?: string[]; categoryFilter?: string[];
+};
 
 // R67 G-05 (R-260). This passed `undefined` as the locale, which is the
 // hydration bug src/lib/format-date.ts exists to prevent: with no locale
@@ -133,6 +140,65 @@ function checkTies(rows: LineItemRow[], byCategory: CategoryRow[], mode: ThirdCo
     return `Category subtotals (${money(categorySum)}) do not sum to the grand total (${money(grand.amt.third)}) -- a row is missing from a category group. Export is disabled until this is fixed.`;
   }
   return null;
+}
+
+// R67 I-05 (R-177): the Category multi-select on the parameter bar.
+//
+// Checkboxes, not a shadcn Select -- Select is single-value, and a fake "multi"
+// built on it would silently drop every choice but the last. Nothing is
+// filtered until Apply: re-running on every checkbox click would fire a report
+// request per keystroke-equivalent. "All categories" is what the EMPTY
+// selection is called, stated in words, so an empty control never reads as
+// "nothing matches" -- that wording is load-bearing and is pinned by a test.
+//
+// Exported and purely presentational (props in, callbacks out, no state and no
+// fetching of its own) for the same reason ScopeTable above is: it is the only
+// way this file's markup gets a real test in this repo, where the DOM-backed
+// test runner is unavailable and components are asserted through
+// renderToStaticMarkup. Renders nothing at all when the report has surfaced no
+// categories, so a project whose BOQ has none never shows an empty filter box.
+export function CategoryFilterGroup({
+  available,
+  selected,
+  disabled,
+  onToggle,
+  onApply,
+}: {
+  available: string[];
+  selected: string[];
+  disabled: boolean;
+  onToggle: (name: string, checked: boolean) => void;
+  onApply: () => void;
+}) {
+  if (available.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <Label id="wpr-category-filter-label">Category</Label>
+      <div
+        role="group"
+        aria-labelledby="wpr-category-filter-label"
+        data-testid="wpr-category-filter"
+        className="flex max-w-[420px] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-px-border px-2 py-1.5"
+      >
+        {available.map((c) => (
+          <label key={c} className="flex items-center gap-1 text-xs text-px-ink">
+            <input
+              type="checkbox"
+              checked={selected.includes(c)}
+              onChange={(e) => onToggle(c, e.target.checked)}
+            />
+            {c}
+          </label>
+        ))}
+        <span className="text-xs text-px-muted">
+          {selected.length === 0 ? "All categories" : `${selected.length} selected`}
+        </span>
+        <Button size="sm" variant="outline" disabled={disabled} data-testid="wpr-category-apply" onClick={onApply}>
+          Apply
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string }) {
@@ -282,21 +348,36 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // R67 lane I (WS-I item I-05, R-177): the Category multi-select. Held here,
+  // sent to the server, and APPLIED THERE -- never filtered client-side, or the
+  // Grand Total would keep describing rows the table is no longer showing.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  // The option list comes from the last run (every category present BEFORE the
+  // filter), so selecting one never removes the others from the control.
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  async function runReport(boqId = selectedBoqId) {
+  async function runReport(boqId = selectedBoqId, categories = selectedCategories) {
     setLoading(true);
     try {
       const params = new URLSearchParams({ projectId, from, to });
       if (boqId) params.set("boqId", boqId);
+      // Repeatable, not comma-joined: a real category name may contain a comma.
+      for (const c of categories) params.append("category", c);
       const res = await fetch(`/api/work-progress/report?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       setReport(data);
       if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+      // R67 I-05: only ever GROWS the option list. A filtered run legitimately
+      // reports fewer categories present, and shrinking the control to match
+      // would make it impossible to widen the filter again.
+      if (Array.isArray(data.availableCategories)) {
+        setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+      }
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
       setReport(null);
@@ -390,6 +471,15 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               </Select>
             </div>
           )}
+          <CategoryFilterGroup
+            available={availableCategories}
+            selected={selectedCategories}
+            disabled={loading}
+            onToggle={(name, checked) =>
+              setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
+            }
+            onApply={() => runReport(selectedBoqId, selectedCategories)}
+          />
           {report && (
             <div className="space-y-1.5">
               <Label>Third column</Label>

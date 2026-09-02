@@ -23,8 +23,9 @@ import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
-  boqTotal, withCurrency, childPercentSum, derivedSubQtyRate,
+  boqTotal, withCurrency, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
 } from "@/lib/boq-helpers";
+import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
 // "late" | "neutral" -- veridian-ui-kit/screens/types.ts). "submitted"
@@ -43,6 +44,10 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R67 lane I (WS-I item I-05, R-177): the org's category list, so the
+  // Category column is a real pick-list here too and not free text that would
+  // invent a new category on every typo.
+  const { categories, failed: categoriesFailed, addLocal } = useBoqCategories();
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
@@ -71,7 +76,10 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
 
   useEffect(() => { load(); }, [boqId]);
 
-  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null }) {
+  // R67 lane I (I-03/I-05): the same PATCH now also carries category and the
+  // material/manpower split -- one write path for every per-line budget field,
+  // not a second endpoint per column.
+  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null; category?: string | null; materialAmount?: number | null; manpowerAmount?: number | null }) {
     setSavingRowId(rowId);
     try {
       const res = await fetch(`/api/scope/line-items/${rowId}`, {
@@ -85,6 +93,25 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
     } finally {
       setSavingRowId(null);
+    }
+  }
+
+  // R67 lane I (I-05): "Add new" from the Category column registers the
+  // category org-wide. A registration failure is surfaced, never swallowed --
+  // but the name is still applied to the line, so nothing the user did is lost.
+  async function registerCategory(name: string) {
+    addLocal(name);
+    try {
+      const res = await fetch("/api/scope/categories", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok && res.status !== 409) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? `"${name}" was applied to this line but could not be added to the category list.`);
+      }
+    } catch {
+      toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
     }
   }
 
@@ -179,10 +206,16 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Description</TableHead><TableHead>Unit</TableHead>
+              <TableHead>Description</TableHead>
+              {/* R67 I-05 (R-177): the line's real category, editable in place
+                  and saved through the same PATCH as Budget %/Vendor. */}
+              <TableHead>Category</TableHead>
+              <TableHead>Unit</TableHead>
               <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead className="text-right">Budget %</TableHead><TableHead className="text-right">Budget</TableHead>
+              {/* R67 I-03: the material/manpower split of this line's budget. */}
+              <TableHead className="text-right">Material</TableHead><TableHead className="text-right">Manpower</TableHead>
               <TableHead>Vendor</TableHead><TableHead className="text-right">Vendor Amt</TableHead>
             </TableRow>
           </TableHeader>
@@ -205,6 +238,18 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                     {isSub && r.breakdownPercentage && <span className="ml-2 text-[10px] text-ct-muted">{r.breakdownPercentage}% of parent</span>}
                     {!isSub && childSum !== null && <span className="ml-2 text-[10px] text-ct-muted">(children: {childSum}%)</span>}
                   </TableCell>
+                  <TableCell>
+                    <BoqCategorySelect
+                      value={r.category ?? ""}
+                      categories={categories}
+                      failed={categoriesFailed}
+                      onChange={(next) => saveLineItemBudget(r.id, { category: next.trim() === "" ? null : next })}
+                      onAddNew={registerCategory}
+                    />
+                    {!r.category && (
+                      <span className="ml-1 text-[10px] text-ct-muted">{NO_CATEGORY_CHIP_LABEL}</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived ? derived.rate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") : r.rate}</TableCell>
@@ -220,6 +265,34 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                     />
                   </TableCell>
                   <TableCell className="text-right text-ct-muted">{withCurrency(currencyCode, budget)}</TableCell>
+                  {/* R67 I-03: material/manpower split. Blank means NOT SPLIT
+                      (the placeholder is a dash, never a 0) -- "unsplit" and
+                      "split as zero" are different facts and the report keeps
+                      them apart, so this editor must too. */}
+                  <TableCell className="text-right">
+                    <Input
+                      aria-label="Material amount"
+                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.materialAmount ?? ""} placeholder="—"
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        const amt = raw === "" ? null : Number(raw);
+                        if (raw !== "" && !Number.isFinite(amt)) return;
+                        saveLineItemBudget(r.id, { materialAmount: amt });
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      aria-label="Manpower amount"
+                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.manpowerAmount ?? ""} placeholder="—"
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        const amt = raw === "" ? null : Number(raw);
+                        if (raw !== "" && !Number.isFinite(amt)) return;
+                        saveLineItemBudget(r.id, { manpowerAmount: amt });
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Select disabled={saving} value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId })}>
                       <SelectTrigger className="w-[150px]"><SelectValue placeholder="No vendor" /></SelectTrigger>
