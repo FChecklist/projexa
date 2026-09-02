@@ -22,7 +22,7 @@
 // is still required by this layout.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
   Composer,
@@ -64,6 +64,41 @@ const PILL_USAGE_KEY = "veri.pill.usage";
 // lives here too rather than in any one page.
 const TASK_TAB_PARAM = "taskTab";
 const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
+
+// ─── R67 D-20: the rail-to-page sync contract ────────────────────────────
+//
+// THE SPLIT-BRAIN THIS CLOSES. This shell held its own `projectId` state
+// (below) and the pages under it read `?projectId=` from the URL. Nothing
+// connected the two. So the rail could say "All projects" while /moms
+// rendered Cedar Heights, and switching project in the rail changed the
+// composer's chain root without the page beneath it re-querying anything.
+//
+// THE RULE, one sentence: THE URL WINS. A route that carries ?projectId=
+// sets this shell's state (never the other way round), and switching in the
+// rail writes that same parameter -- preserving every OTHER parameter, so a
+// list's own filter survives a project switch -- which is what makes the
+// page re-query with the new id. The cookie is only a memory of the last
+// choice, consulted when the URL says nothing at all.
+const PROJECT_PARAM = "projectId";
+const PROJECT_COOKIE = "px_project";
+const PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+function readProjectCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.split("; ").find((c) => c.startsWith(`${PROJECT_COOKIE}=`));
+  if (!match) return null;
+  const value = decodeURIComponent(match.slice(PROJECT_COOKIE.length + 1));
+  return value || null;
+}
+
+function writeProjectCookie(projectId: string | null) {
+  if (typeof document === "undefined") return;
+  // A project id the user picked themselves -- not a credential, not
+  // personal data. Lax so it is not sent on cross-site requests at all.
+  document.cookie = projectId
+    ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE}; SameSite=Lax`
+    : `${PROJECT_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+}
 
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
@@ -155,6 +190,7 @@ type Project = { id: string; name: string };
 
 export default function M24Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
 
   const [mode, setMode] = useState<ChainMode>(DEFAULT_CHAIN_MODE);
   const [segments, setSegments] = useState<Chain["segments"]>([]);
@@ -429,6 +465,55 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     };
   }, [noteFailure]);
 
+  // R67 D-20, the reading half of the contract: THE URL WINS. Read on mount,
+  // on every route change, and on back/forward -- the same three triggers the
+  // Task Master tab param below already uses, and for the same reason
+  // (`window.location.search` rather than useSearchParams, so this shell,
+  // which wraps all 53 routes, does not put every one of them behind a
+  // Suspense boundary it does not otherwise need).
+  //
+  // With no ?projectId= in the URL the cookie is consulted ONCE, as a memory
+  // of the user's last choice. It never overrides the URL, and it never
+  // supplies a project to a screen that has opted into the all-projects mode
+  // -- that screen reads the URL server-side, not this state.
+  const adoptedCookie = useRef(false);
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const fromUrl = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
+      if (fromUrl) {
+        adoptedCookie.current = true;
+        setProjectId(fromUrl);
+        writeProjectCookie(fromUrl);
+        return;
+      }
+      if (!adoptedCookie.current) {
+        adoptedCookie.current = true;
+        const remembered = readProjectCookie();
+        if (remembered) setProjectId(remembered);
+      }
+    };
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, [pathname]);
+
+  // The writing half: switching project navigates, carrying every OTHER
+  // search parameter through untouched so a list's filter (D-16's status /
+  // date range / attendee, held in the URL) survives the switch instead of
+  // being silently reset. scroll:false so the page does not jump.
+  const selectProject = useCallback(
+    (next: Project | null) => {
+      setProjectId(next ? next.id : null);
+      writeProjectCookie(next ? next.id : null);
+      const params = new URLSearchParams(window.location.search);
+      if (next) params.set(PROJECT_PARAM, next.id);
+      else params.delete(PROJECT_PARAM);
+      const qs = params.toString();
+      router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router]
+  );
+
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
@@ -639,10 +724,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             // Cycles through real projects and back through the null state.
             // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects') so
             // CRM, pipeline and org-level work are reachable."
+            //
+            // R67 D-20: what changed here is not the cycling -- replacing it
+            // with a real picker list means forking the kit's TopRail, which
+            // is D-04/D-66's own scope and would collide with them -- it is
+            // that the choice is now WRITTEN TO THE URL through
+            // selectProject(), so the page under the rail actually re-queries
+            // with the new id instead of the rail and the page disagreeing.
             if (projects.length === 0) return;
             const i = projects.findIndex((p) => p.id === projectId);
             const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-            setProjectId(next ? next.id : null);
+            selectProject(next);
           }}
           search={<SearchTrigger />}
           alerts={<NotificationBell />}

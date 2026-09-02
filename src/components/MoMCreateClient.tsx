@@ -10,7 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
-export default function MoMCreateClient({ projectId }: { projectId: string }) {
+// R67 D-20: `projectName` is required, not decorative -- the screen states
+// which project it is about to write into ("Project: Cedar Heights Villa -
+// Phase 1"), in the same context tint the rail and the breadcrumb use, so a
+// user can never save minutes into a project they did not knowingly pick.
+// The route above this refuses to render the form at all without one.
+export default function MoMCreateClient({ projectId, projectName }: { projectId: string; projectName: string }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -49,6 +54,10 @@ export default function MoMCreateClient({ projectId }: { projectId: string }) {
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
+        <p className="text-[12px] text-px-muted">
+          Project:{" "}
+          <span style={{ color: "var(--color-veri-status-context)" }}>{projectName}</span>
+        </p>
         <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></div>
       </div>
