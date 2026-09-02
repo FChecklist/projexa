@@ -1677,12 +1677,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   // A-14/A-16: keep the two answers the async ranking callback needs where it
   // can read them -- what is on screen, and whether anything real is on screen
-  // at all. They are mirrored during RENDER rather than in an effect: the
-  // callback runs between renders, and an effect that has not flushed yet would
-  // tell it the strip is still empty milliseconds after it was painted, which
-  // is the one moment A-14's rule exists to cover.
-  rankedPillsRef.current = rankedPills;
-  paintedRef.current = isStripPainted({ cachedRanking: rankedPills, roleKnown });
+  // at all.
+  //
+  // IT IS AN EFFECT, NOT A RENDER-PHASE WRITE. Writing a ref while rendering is
+  // a React rule violation and this repo's lint enforces it (react-hooks/refs).
+  // It is also not needed to be correct here: the only reader is the
+  // /api/pill-usage callback, which is a promise resolution from a fetch STARTED
+  // in a passive effect of an earlier commit. Every passive effect of a commit
+  // -- including this one -- runs before any promise a sibling effect started
+  // can resolve, so the mirror is never stale by the time A-14's rule reads it.
+  useEffect(() => {
+    rankedPillsRef.current = rankedPills;
+    paintedRef.current = isStripPainted({ cachedRanking: rankedPills, roleKnown });
+  }, [rankedPills, roleKnown]);
 
   // A-16 -- THE ORGANISATION, IN WORDS. Three states, three sentences, and none
   // of them is the bare em-dash the kit's string fallback produced.
