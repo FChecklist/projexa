@@ -116,6 +116,102 @@ function unguardedBatchFiles(source: string): boolean {
   return false;
 }
 
+/**
+ * R67 D-55 / D-71 -- THE THIRD SHAPE, and the one that let the defect
+ * survive this guard for a whole release.
+ *
+ *     fetch(`/api/work-progress?projectId=${id}`)
+ *       .then((r) => r.json())
+ *       .then((data) => setEntries(data.entries ?? []))
+ *
+ * Identical fault, invisible to both checks above: there is no
+ * `const res = await fetch(...)` to anchor on, and no `Promise.all([`
+ * either when the chain stands alone. /work-progress, its analytics tab and
+ * /documents all carried it, and all three printed a confident empty state
+ * over a 500 while this file's other two tests passed.
+ *
+ * The window is the whole promise CHAIN, found by BRACKET DEPTH rather than
+ * by looking for a terminating semicolon. The first version of this detector
+ * used "the first line ending in `;`" and produced a false positive on
+ * ScheduleLogTimeClient.tsx, which is written correctly:
+ *
+ *     fetch(url)
+ *       .then(async (res) => {
+ *         const data = await res.json().catch(() => null);   <- ends in ';'
+ *         if (!res.ok) throw new Error(...);                 <- the .ok is HERE
+ *       })
+ *
+ * The semicolon that closed the window was an inner statement inside the
+ * callback body, so the window stopped one line before the status check it
+ * was looking for. Counting `(`/`)` and `{`/`}` from the `fetch(` line, and
+ * then continuing over any following `.then`/`.catch`/`.finally`, covers the
+ * callback bodies too. A `.ok` anywhere in that chain clears the site, which
+ * is the correct signal: reading the status is exactly what the chain has to
+ * do, wherever in it that happens.
+ *
+ * Writes are skipped for the same reason as unguardedSites(): a fetch
+ * carrying an options object is a POST/PATCH/DELETE, and those already read
+ * their status in this codebase.
+ */
+function unguardedChainSites(source: string): string[] {
+  const lines = source.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!/\bfetch\(/.test(line)) continue;
+    if (/^\s*(\/\/|\*)/.test(line)) continue; // a comment describing the defect, not the defect
+    if (line.includes(", {") || /,\s*$/.test(line)) continue; // a write, or a multi-line call with options
+
+    let depth = 0;
+    let chain = "";
+    let started = false;
+    const hardStop = Math.min(lines.length, i + 40);
+    for (let j = i; j < hardStop; j++) {
+      chain += lines[j] + "\n";
+      for (const ch of lines[j]) {
+        if (ch === "(" || ch === "{") { depth++; started = true; }
+        else if (ch === ")" || ch === "}") depth--;
+      }
+      if (!started || depth > 0) continue;
+      // Depth is balanced. Keep going only while the chain literally
+      // continues onto the next line.
+      if (/^\s*\.(then|catch|finally)\b/.test(lines[j + 1] ?? "")) continue;
+      break;
+    }
+
+    if (!/\.json\(\)/.test(chain)) continue;
+    if (/\.ok\b/.test(chain)) continue;
+    found.push(`line ${i + 1}: ${line.trim()}`);
+  }
+  return found;
+}
+
+/**
+ * Files that still carry the chain shape, each named with the module it
+ * belongs to. THIS LIST MAY ONLY SHRINK. It is not a suppression: the guard
+ * above is what stops a NEW one being written, and every entry here is a
+ * screen whose own WS-D item owns the conversion (each of these is an ERP
+ * module -- sales, purchasing, accounting, settings -- outside the
+ * construction surfaces R-184 and R-293 measured).
+ *
+ * Removed by R67 D-55: WorkProgressPageClient, WorkProgressAnalyticalClient,
+ * WorkProgressFormClient, DocumentsClient.
+ */
+const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
+  "CompanyCreateClient.tsx",
+  "CostVarianceAnalyticalClient.tsx",
+  "JournalEntryCreateClient.tsx",
+  "OpportunitiesClient.tsx",
+  "OpportunityCreateClient.tsx",
+  "PurchaseOrderCreateClient.tsx",
+  "PurchaseOrdersClient.tsx",
+  "SalesDashboardClient.tsx",
+  "SalesOrderCreateClient.tsx",
+  "SalesQuotationCreateClient.tsx",
+  "ScheduleTaskCreateClient.tsx",
+  "SettingsClient.tsx",
+]);
+
 describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
   const files = clientComponents();
 
@@ -140,6 +236,77 @@ describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
       .filter((f) => unguardedBatchFiles(readFileSync(f, "utf8")))
       .map((f) => f.replace(process.cwd(), ""));
     expect(offenders).toEqual([]);
+  });
+
+  test("no client component chains .then(r => r.json()) without reading the status", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const base = f.split(/[\\/]/).pop() ?? f;
+      if (CHAIN_SHAPE_NOT_YET_CONVERTED.has(base)) continue;
+      const sites = unguardedChainSites(readFileSync(f, "utf8"));
+      if (sites.length > 0) offenders.push(`${f.replace(process.cwd(), "")}\n    ${sites.join("\n    ")}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("the known-offender list may only shrink -- an entry that is clean must be removed", () => {
+    // Without this, a file could be converted and left on the list, and the
+    // list would stop describing reality. Every name here must still carry
+    // the shape it is excusing.
+    const byBase = new Map(files.map((f) => [f.split(/[\\/]/).pop() ?? f, f]));
+    const stale: string[] = [];
+    for (const base of CHAIN_SHAPE_NOT_YET_CONVERTED) {
+      const full = byBase.get(base);
+      if (!full) {
+        stale.push(`${base} (no such component -- delete the entry)`);
+        continue;
+      }
+      if (unguardedChainSites(readFileSync(full, "utf8")).length === 0) {
+        stale.push(`${base} (already clean -- delete the entry)`);
+      }
+    }
+    expect(stale).toEqual([]);
+  });
+
+  test("the chain detector actually detects -- proven on a synthetic bad case", () => {
+    // A guard whose detector silently stopped matching would pass forever.
+    const bad = `"use client";
+      function load() {
+        fetch("/api/permits?projectId=1")
+          .then((r) => r.json())
+          .then((data) => setPermits(data.permits ?? []));
+      }`;
+    expect(unguardedChainSites(bad)).toHaveLength(1);
+
+    const good = `"use client";
+      function load() {
+        fetch("/api/permits?projectId=1")
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
+          .then((data) => setPermits(data.permits));
+      }`;
+    expect(unguardedChainSites(good)).toEqual([]);
+
+    const write = `"use client";
+      async function save() {
+        const res = await fetch("/api/permits", { method: "POST", body });
+        const data = await res.json();
+      }`;
+    expect(unguardedChainSites(write)).toEqual([]);
+
+    // The false positive the first version of this detector produced: the
+    // status check sits AFTER an inner statement that ends in a semicolon,
+    // inside the callback body.
+    const okInsideCallback = `"use client";
+      function load() {
+        fetch(\`/api/schedule/tasks?projectId=\${id}\`)
+          .then(async (res) => {
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error("failed");
+            setTasks(data.tasks);
+          })
+          .catch(() => setTasksError(true));
+      }`;
+    expect(unguardedChainSites(okInsideCallback)).toEqual([]);
   });
 
   test("fetchJson actually throws on a non-2xx, carrying the backend's own message", async () => {
