@@ -43,6 +43,8 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
   const [siblings, setSiblings] = useState<Boq[]>([]);
   const [against, setAgainst] = useState<string>("");
   const [comparison, setComparison] = useState<BoqComparison | null>(null);
+  // R67 D-27: the Architect/Site Instruction attached to THIS revision, if any.
+  const [siteInstruction, setSiteInstruction] = useState<{ id: string; siNumber: number; boqId: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const currencies = useCurrencies();
@@ -81,6 +83,13 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
       const original = findOriginalBoqId(data, listData.boqs ?? []);
       setAgainst(original);
       setLoadError(null);
+      // Non-fatal: a missing or failing instruction lookup must never stop the
+      // comparison rendering.
+      void fetchJson<{ siteInstructions?: { id: string; siNumber: number; boqId: string | null }[] }>(
+        `/api/site-instructions?projectId=${encodeURIComponent(data.projectId)}`
+      )
+        .then((si) => setSiteInstruction((si.siteInstructions ?? []).find((row) => row.boqId === boqId) ?? null))
+        .catch(() => setSiteInstruction(null));
       await loadComparison(original);
     } catch (err) {
       setBoq(null);
@@ -132,6 +141,19 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
               Total variation:{" "}
               <span className={comparison.totalVariation > 0 ? "text-px-success" : comparison.totalVariation < 0 ? "text-px-error" : ""}>
                 {currencyCode ? `${currencyCode} ` : ""}{formatVariation(comparison.totalVariation)}
+              </span>
+              {/* R67 D-27: the instruction that authorised this variation, beside
+                  the number it authorised. A variation with no instruction on
+                  file says so rather than leaving the question unasked. */}
+              <span className="ml-3 text-px-muted">
+                Site instruction:{" "}
+                {siteInstruction ? (
+                  <button type="button" className="underline" onClick={() => router.push(`/scope/${boqId}`)}>
+                    SI-{siteInstruction.siNumber}
+                  </button>
+                ) : (
+                  <span>–</span>
+                )}
               </span>
             </p>
             <div className="h-[520px] rounded-md border border-ct-border">

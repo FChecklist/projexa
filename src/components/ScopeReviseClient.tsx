@@ -15,7 +15,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import BoqLineGrid from "@/components/BoqLineGrid";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatDayMonthYear } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { conflictLabel, conflictQuantity, overrideActionLabel, type ScopeReductionConflict } from "@/lib/scope-conflicts";
 import {
   type Boq, type BoqLineItemRow, type LineItemDraft,
   TITLE_REQUIRED_MESSAGE, emptyLine, toDrafts, collectLines, missingBoqFields, toPayloadLineItems,
@@ -52,6 +55,12 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       setMessages([{ level: "warning", text: `"${name}" was applied to this line but could not be added to the category list.` }]);
     }
   }
+  // R67 D-27: the lines the 409 is actually about, as rows rather than prose.
+  const [conflicts, setConflicts] = useState<ScopeReductionConflict[]>([]);
+  const [siFile, setSiFile] = useState<File | null>(null);
+  // Set once the revision has been created, so an attachment Retry attaches to
+  // THAT revision instead of creating a second one.
+  const [savedRevisionId, setSavedRevisionId] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -81,6 +90,26 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   const missing = useMemo(() => missingBoqFields(title, lines), [title, lines]);
   const titleError = titleBlurred && !title.trim() ? TITLE_REQUIRED_MESSAGE : null;
 
+  /**
+   * R67 D-27: the site instruction is attached AFTER the revision exists, so
+   * the attachment carries the real revision id. A failure here is reported
+   * with its own sentence and a Retry that still holds the file -- the file is
+   * never dropped on the floor while the revision quietly succeeds.
+   */
+  async function attachSiteInstruction(revisionId: string, projectId: string): Promise<string | null> {
+    if (!siFile) return null;
+    const body = new FormData();
+    body.set("file", siFile);
+    body.set("projectId", projectId);
+    body.set("boqId", revisionId);
+    body.set("description", `Site instruction authorising revision of "${title}"`);
+    const res = await fetch("/api/site-instructions", { method: "POST", body });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 207) return data.attachmentError ?? "The site instruction could not be attached";
+    if (!res.ok) return data.error ?? "The site instruction could not be attached";
+    return null;
+  }
+
   async function submitRevision(allowScopeReductionOverride = false) {
     const { valid: validLines, error: lineError } = collectLines(lines);
     if (lineError) {
@@ -89,6 +118,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     }
     setSubmitting(true);
     setScopeBlock(null);
+    setConflicts([]);
     setMessages([]);
     try {
       const res = await fetch(`/api/scope/${boqId}/revisions`, {
@@ -98,15 +128,53 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) {
         // Owner's hard-block rule: this revision would reduce/remove scope
-        // already completed on site. Surface the real reason and let the
-        // user explicitly override instead of silently failing.
+        // already completed on site. Surface the real reason, the REAL LINES
+        // (D-27's conflicts[]), and let the user explicitly override instead of
+        // silently failing.
         setScopeBlock(data.error ?? "This revision reduces scope already completed on site.");
+        setConflicts(Array.isArray(data.conflicts) ? data.conflicts : []);
         return;
       }
       if (!res.ok) throw new Error(data.error ?? "Failed to create revision");
-      router.push(`/scope/${data.id ?? boqId}`);
+
+      const revisionId: string = data.id ?? boqId;
+      setSavedRevisionId(revisionId);
+      const attachmentError = await attachSiteInstruction(revisionId, boq?.projectId ?? data.projectId);
+      if (attachmentError) {
+        // The revision IS saved. Say so, keep the file, and offer a Retry that
+        // can actually succeed -- navigating away here would lose the file.
+        setMessages([
+          { level: "warning", text: "Revision saved; the site instruction could not be attached - retry from the BOQ page" },
+          { level: "error", text: attachmentError },
+        ]);
+        return;
+      }
+      if (siFile) {
+        router.push(`/scope/${revisionId}?attached=${encodeURIComponent(siFile.name)}`);
+        return;
+      }
+      router.push(`/scope/${revisionId}`);
     } catch (err) {
       setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't create revision" }]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Retry of the attachment ONLY -- the revision already exists, so re-posting it would create a second one. */
+  async function retryAttachment() {
+    if (!savedRevisionId || !boq) return;
+    setSubmitting(true);
+    try {
+      const attachmentError = await attachSiteInstruction(savedRevisionId, boq.projectId);
+      if (attachmentError) {
+        setMessages([
+          { level: "warning", text: "Revision saved; the site instruction could not be attached - retry from the BOQ page" },
+          { level: "error", text: attachmentError },
+        ]);
+        return;
+      }
+      router.push(`/scope/${savedRevisionId}?attached=${encodeURIComponent(siFile?.name ?? "")}`);
     } finally {
       setSubmitting(false);
     }
@@ -167,13 +235,61 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
           />
           <p className="text-xs text-ct-muted">Removing a line, or reducing its quantity/rate, is blocked if that item is already recorded as complete on site.</p>
         </div>
+
+        {/* R67 D-27: Sumeet's second unwired artefact. A revision to a client's
+            BOQ is authorised by a written instruction; there was nowhere to put
+            it, and /api/site-instructions had zero UI callers. */}
+        <div className="max-w-md space-y-1.5">
+          <Label htmlFor="site-instruction">Site instruction (optional) - PDF or photo</Label>
+          <input
+            id="site-instruction"
+            type="file"
+            accept=".pdf,image/*"
+            className="block w-full text-[13px]"
+            onChange={(e) => setSiFile(e.target.files?.[0] ?? null)}
+          />
+          <p className="text-[11.5px] text-px-muted">Attach the client&apos;s instruction that authorises this change</p>
+        </div>
+
+        {savedRevisionId && messages.some((m) => m.level === "warning") && (
+          <Button variant="outline" size="sm" onClick={retryAttachment} disabled={submitting}>
+            Retry attaching {siFile?.name}
+          </Button>
+        )}
+
         {scopeBlock && (
           <div className="rounded-md border border-px-error-border bg-px-error-light p-3">
             <p className="text-sm text-px-error">{scopeBlock}</p>
+
+            {conflicts.length > 0 && (
+              <div className="mt-2 overflow-x-auto rounded-md border border-px-error-border bg-px-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Line</TableHead>
+                      <TableHead className="text-right">Recorded</TableHead>
+                      <TableHead>Last recorded</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {conflicts.map((c, i) => (
+                      <TableRow key={`${c.itemCode ?? c.description}-${i}`}>
+                        <TableCell className="font-medium">{conflictLabel(c)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{conflictQuantity(c)}</TableCell>
+                        <TableCell className="text-px-muted">{formatDayMonthYear(c.lastRecordedAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* The destructive way out is separated by a spacer, never adjacent
+                to a common action, and its label names how much it overrides. */}
             <div className="mt-2 flex items-center">
               <div className="flex-1" />
               <Button size="sm" variant="destructive" onClick={() => submitRevision(true)} disabled={submitting}>
-                Apply anyway (override)
+                {overrideActionLabel(conflicts.length)}
               </Button>
             </div>
           </div>
