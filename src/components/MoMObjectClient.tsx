@@ -23,7 +23,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { MOM_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -233,13 +234,24 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       </div>
     );
   }
-  if (!meeting) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!meeting) return (
+    <ObjectScreen
+      loading
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
+      label={MOM_OBJECT_BREADCRUMB.label}
+      actions={MOM_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const isPublished = meeting.status === "published";
 
   return (
     <ObjectScreen
-      breadcrumb="Minutes of Meeting / Meeting"
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
       mode={mode}
       hasDraft={false}

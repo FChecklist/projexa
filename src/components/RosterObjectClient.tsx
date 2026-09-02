@@ -12,7 +12,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -106,13 +107,24 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       </div>
     );
   }
-  if (!entry) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!entry) return (
+    <ObjectScreen
+      loading
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
+      label={LABOUR_OBJECT_BREADCRUMB.label}
+      actions={LABOUR_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
 
   return (
     <ObjectScreen
-      breadcrumb="Labour / Worker"
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
       hasDraft={false}

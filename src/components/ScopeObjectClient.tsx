@@ -14,7 +14,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { SCOPE_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -118,14 +119,25 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       </div>
     );
   }
-  if (loading || !boq) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (loading || !boq) return (
+    <ObjectScreen
+      loading
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCOPE_OBJECT_BREADCRUMB.label}
+      actions={SCOPE_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const total = boqTotal(rows);
   const isDraft = boq.status === "draft";
 
   return (
     <ObjectScreen
-      breadcrumb="Scope / Bill of Quantities"
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
       title={boq.title}
       subtitle={`Version ${boq.version}`}
       mode="display"

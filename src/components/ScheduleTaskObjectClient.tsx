@@ -15,7 +15,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { SCHEDULE_TASK_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,13 +138,24 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       </div>
     );
   }
-  if (!task) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!task) return (
+    <ObjectScreen
+      loading
+      breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCHEDULE_TASK_OBJECT_BREADCRUMB.label}
+      actions={SCHEDULE_TASK_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const statusLabel = statuses.find((s) => s.id === task.statusId)?.name ?? task.statusId;
 
   return (
     <ObjectScreen
-      breadcrumb="Schedule / Task"
+      breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
       title={`#${task.number} ${task.title}`}
       mode={mode}
       hasDraft={false}
