@@ -6,17 +6,15 @@
 // client-side against the same lookups the form already fetches, passed in
 // as props rather than re-fetched here.
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
+import DataLoadError from "@/components/DataLoadError";
+import type { WorkProgressEntry } from "./WorkProgressDataProvider";
 
-type Entry = {
-  id: string;
-  activityId: string;
-  boqLineItemId: string | null;
-  entryDate: string;
-  quantityDone: string;
-  percentComplete: string;
-  entryBasis: string;
-  remarks: string | null;
-};
+// R67 F-05: the activity name and the BOQ line now arrive ON the entry,
+// joined server-side. This component used to receive two Map props built by
+// its parent from a separate /api/scope + /api/scope/{id} round trip, which is
+// exactly the chain that made this screen 7.4 s to network idle.
+type Entry = WorkProgressEntry;
 
 const COLUMNS: ScreenColumn[] = [
   { label: "Date", field: "entryDate", type: "date", importance: "High" },
@@ -36,19 +34,23 @@ function progressTone(pct: number): StatusTone {
 
 export default function WorkProgressListClient({
   entries,
-  activityNameById,
-  boqLineDescriptionById,
   loading,
+  loadError,
+  onRetry,
 }: {
   entries: Entry[];
-  activityNameById: Map<string, string>;
-  boqLineDescriptionById: Map<string, string>;
   loading: boolean;
+  loadError?: string | null;
+  onRetry?: () => void;
 }) {
   const rows = entries.map((e) => ({
     ...e,
-    activityName: activityNameById.get(e.activityId) ?? e.activityId,
-    boqLineDescription: e.boqLineItemId ? (boqLineDescriptionById.get(e.boqLineItemId) ?? e.boqLineItemId) : null,
+    // A missing name is shown as an em dash, not as the raw uuid the id would
+    // print -- an id in a "Activity" column reads as data, and it is not.
+    activityName: e.activityName ?? "—",
+    boqLineDescription: e.boqItemCode
+      ? `${e.boqItemCode} -- ${e.boqLineDescription ?? ""}`.trim().replace(/ --$/, "")
+      : e.boqLineDescription,
   }));
 
   return (
@@ -64,8 +66,12 @@ export default function WorkProgressListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
+      {/* R67 F-05: the real column headers while loading, not the word
+          "Loading…" over an empty pane. */}
       {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
+        <TableLoadingRows headers={COLUMNS.map((c) => c.label)} rows={4} caption="Loading progress entries..." />
+      ) : loadError ? (
+        <DataLoadError messages={[loadError]} onRetry={onRetry ?? (() => {})} />
       ) : (
         <ListScreen
           functionId="work-progress.list"

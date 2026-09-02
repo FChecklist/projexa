@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatProgressCell } from "@/lib/work-progress-report";
+import { defaultReportRange, takePrewarmedReport } from "@/lib/work-progress-report-prewarm";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -249,15 +250,13 @@ function VendorTable({ rows }: { rows: VendorRow[] }) {
   );
 }
 
-function defaultFrom() {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().slice(0, 10);
-}
-
 export default function WorkProgressReportClient({ projectId }: { projectId: string }) {
-  const [from, setFrom] = useState(defaultFrom());
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  // R67 F-05: the range defaults live in work-progress-report-prewarm.ts,
+  // shared with the Report tab that warms the request on hover. If the two
+  // definitions drifted by a single day the prewarm key would never match and
+  // the warm-up would silently stop working, which is worse than not having it.
+  const [from, setFrom] = useState(() => defaultReportRange().from);
+  const [to, setTo] = useState(() => defaultReportRange().to);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -276,11 +275,23 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   async function runReport(boqId = selectedBoqId) {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ projectId, from, to });
-      if (boqId) params.set("boqId", boqId);
-      const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
+      // R67 F-05: if the Report tab was hovered before it was clicked, the
+      // request for these exact parameters is already in flight -- adopt it
+      // instead of starting a second one. takePrewarmedReport() consumes the
+      // slot, so an explicit rerun is always a real, fresh request, and a
+      // parameter change since the hover simply returns null here.
+      const prewarmed = takePrewarmedReport({ projectId, from, to, boqId: boqId || undefined });
+      let data: ReportResponse;
+      if (prewarmed) {
+        data = (await prewarmed) as ReportResponse;
+      } else {
+        const params = new URLSearchParams({ projectId, from, to });
+        if (boqId) params.set("boqId", boqId);
+        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error);
+        data = body;
+      }
       setReport(data);
       if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
     } catch (err) {

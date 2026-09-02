@@ -31,6 +31,7 @@ import {
 type Activity = { id: string; name: string; unit: string | null };
 type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
 type Boq = { id: string; version: number; status: string; title: string };
+type BoqWithLineItems = Boq & { lineItems?: BoqLineItem[] };
 
 const ENTRY_BASIS_OPTIONS = [
   { value: "DELTA", label: "Delta -- this entry adds to progress already logged" },
@@ -43,7 +44,9 @@ function todayIso() {
 
 export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
+  // R67 F-05: every BOQ's line items arrive with the BOQ list, so switching the
+  // BOQ selector is now instant instead of starting another round trip.
+  const [lineItemsByBoqId, setLineItemsByBoqId] = useState<Record<string, BoqLineItem[]>>({});
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
   // currently selected. Before this, the form resolved exactly ONE "current"
   // BOQ and offered no way to reach any other.
@@ -95,12 +98,19 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     // retained and offered whenever the project holds more than one -- the
     // same shape projexa#94 already established for the work-progress REPORT,
     // rather than inventing a second convention for the same problem.
+    // R67 F-05: /api/scope now returns every BOQ WITH its line items, from one
+    // transaction and one grouped query server-side (construction-boq-
+    // service.ts listBoqs). This effect therefore keeps the full payload and
+    // the second hop below -- GET /api/scope/{id}, fired again on every BOQ
+    // change purely to fetch line items this response already carried -- is
+    // gone.
     fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
       .then((r) => r.json())
       .then((data) => {
-        const all: Boq[] = data.boqs ?? [];
+        const all: BoqWithLineItems[] = data.boqs ?? [];
         if (all.length === 0) return;
         setBoqs(all);
+        setLineItemsByBoqId(Object.fromEntries(all.map((b) => [b.id, b.lineItems ?? []])));
         const current =
           all.find((b) => b.status === "approved") ??
           all.find((b) => b.status === "submitted") ??
@@ -113,21 +123,9 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       .catch(() => { /* optional context -- a missing BOQ link is not a form-blocking error */ });
   }, [projectId]);
 
-  // Loads the selected BOQ's line items. Split out of the effect above so
-  // changing the BOQ re-populates the picker, which is the whole point of the
-  // selector. Org and project scoping are unchanged: this only ever fetches a
-  // BOQ id that /api/scope?projectId= already returned for this project, and
-  // that route is org-scoped server-side -- so widening the CHOICE here does
-  // not widen ACCESS.
-  useEffect(() => {
-    if (!selectedBoqId) return;
-    let cancelled = false;
-    fetch(`/api/scope/${selectedBoqId}`)
-      .then((r) => r.json())
-      .then((boq) => { if (!cancelled) setLineItems(boq.lineItems ?? []); })
-      .catch(() => { if (!cancelled) setLineItems([]); });
-    return () => { cancelled = true; };
-  }, [selectedBoqId]);
+  // The selected BOQ's line items, straight out of the list payload -- no
+  // second request, so changing the BOQ repopulates the picker instantly.
+  const lineItems: BoqLineItem[] = (selectedBoqId ? lineItemsByBoqId[selectedBoqId] : undefined) ?? [];
 
   const columns: ScreenColumn[] = [
     { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },

@@ -8,54 +8,41 @@
 // (?category=), so a drilled state has a real, shareable URL (the part of
 // D-5 this pass delivers without full saved-view persistence -- see
 // AnalyticalScreen.tsx's own scope note).
+// R67 F-05 (R-075): this tab used to repeat Daily Entry's ENTIRE chain on
+// every switch -- entries, activities, then /api/scope (1.5-4.4 s), then
+// /api/scope/{id} -- to rebuild label lookups the entries now carry
+// themselves. It reads the shared WorkProgressDataProvider instead, so a tab
+// switch inside the provider's 60 s window costs nothing, and the only call
+// this tab still owns is its own category-progress report.
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
 import WorkProgressListClient from "./WorkProgressListClient";
+import { useWorkProgressData } from "./WorkProgressDataProvider";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
-type Activity = { id: string; name: string; categoryId: string | null };
 type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
-type LineItem = { id: string; itemCode: string | null; description: string };
 
 export default function WorkProgressAnalyticalClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const categoryFilter = searchParams.get("category");
 
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const { entries, activities, entriesLoading, entriesError, reload } = useWorkProgressData();
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const [entriesRes, activitiesRes, catRes] = await Promise.all([
-        fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ categories: [] })),
-      ]);
-      setEntries(entriesRes.entries ?? []);
-      setActivities(activitiesRes.activities ?? []);
-      setCategories(catRes.categories ?? []);
-
-      const boqsRes = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ boqs: [] }));
-      const boqs: { id: string; version: number; status: string }[] = boqsRes.boqs ?? [];
-      if (boqs.length > 0) {
-        const current = boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boq = await fetch(`/api/scope/${current.id}`).then((r) => r.json());
-        setLineItems(boq.lineItems ?? []);
-      }
-      setLoading(false);
-    }
-    load();
+    let cancelled = false;
+    // The chart's own data, and the only network call this tab makes. It never
+    // gates the table below: a failed category report leaves the bars empty
+    // and the entries perfectly readable.
+    fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`)
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setCategories(data.categories ?? []); })
+      .catch(() => { if (!cancelled) setCategories([]); });
+    return () => { cancelled = true; };
   }, [projectId]);
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
-  const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
@@ -94,9 +81,9 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       table={
         <WorkProgressListClient
           entries={filteredEntries}
-          activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
-          loading={loading}
+          loading={entriesLoading}
+          loadError={entriesError}
+          onRetry={reload}
         />
       }
     />

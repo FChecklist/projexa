@@ -1,47 +1,44 @@
+import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import WorkProgressPageClient from "@/components/WorkProgressPageClient";
-import WorkProgressReportClient from "@/components/WorkProgressReportClient";
-import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
+import WorkProgressTabsClient from "@/components/WorkProgressTabsClient";
 
+// R67 F-05 (R-075) / F-03. Two costs removed before any HTML is sent:
+// resolveSelectedProject() no longer goes through VERIDIAN's 1.4-4.0 s
+// /dashboard aggregate (it uses the cheap /projects read), and the
+// data-dependent subtree is behind <Suspense> so the heading streams first.
+//
+// The tabs themselves moved into a client component so all three can share one
+// WorkProgressDataProvider: Analytics used to re-run Daily Entry's entire
+// load chain on every tab switch.
 export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
+
+  return (
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Work Progress" />
+      <Suspense fallback={<Card><CardContent className="p-8 text-center text-sm text-px-muted">Loading project…</CardContent></Card>}>
+        <WorkProgressSection projectId={projectId} tab={tab} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function WorkProgressSection({ projectId, tab }: { projectId?: string; tab?: string }) {
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
-  return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Work Progress" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {/* R42 seq24: "analytics" added as a real 3rd tab -- this is
-            DASHBOARD.PROJECT's own destination for the "% Complete by
-            Value" and category-bar KPIs (?tab=analytics from
-            DashboardProjectClient). defaultValue reads the real ?tab= so a
-            dashboard click lands directly on it, not on Daily Entry first. */}
-        {project && (
-          <Tabs defaultValue={tab === "analytics" || tab === "report" ? tab : "entry"} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="entry">Daily Entry</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="report">Report</TabsTrigger>
-            </TabsList>
-            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
-            <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
-            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
-          </Tabs>
-        )}
-      </div>
-    </>
-  );
+  if (errorMessage) {
+    return (
+      <Card className="border-px-error-border bg-px-error-light">
+        <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
+      </Card>
+    );
+  }
+  if (!project) {
+    return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
+  }
+  return <WorkProgressTabsClient projectId={project.id} tab={tab} />;
 }
