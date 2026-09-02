@@ -180,7 +180,10 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     route: "/work-progress",
     prefixes: ["/work-progress"],
     pillKeys: ["work_progress", "progress", "analysis"],
-    placeholder: "e.g. 12 nos of R60SK-A done today, 40%",
+    // A-10 supersedes A-04's placeholder here: the item names this one
+    // explicitly for Work Progress, and A-04's own example survives verbatim
+    // as the first of the two worked examples below the input.
+    placeholder: "e.g. record 50% on excavation",
     examples: ["12 nos of R60SK-A done today, 40%", "run the WPR for this month"],
     leaves: [
       // A-04: the two verbs are verbs. "Record progress" puts the cursor in

@@ -23,6 +23,7 @@ import {
   cardUnmetReason,
   cardsForRole,
   rankCards,
+  rankedKeyForCard,
   targetForCard,
   weightFor,
   type CardPreconditionId,
@@ -242,5 +243,32 @@ describe("allModulesEntries -- Sumeet's fixed order, then Other, then Platform",
 
   test("the expanded list never changes between calls -- it is not usage-ranked", () => {
     expect(allModulesEntries().map((e) => e.id)).toEqual(allModulesEntries().map((e) => e.id));
+  });
+});
+
+describe("rankedKeyForCard -- keeping the pill path alive across the rename", () => {
+  test("an exact card id in the ranking is returned", () => {
+    const card = CARD_CATALOGUE.find((c) => c.id === "work-progress.entry")!;
+    expect(rankedKeyForCard(card, [{ pillKey: "work-progress.entry" }])).toBe("work-progress.entry");
+  });
+
+  test("the pipeline's module-name key maps back to the card of that module", () => {
+    // Every row R53's pipeline wrote used chain.steps[0], so the function_id a
+    // click needs is filed under "Work Progress", not "work-progress.entry".
+    const card = CARD_CATALOGUE.find((c) => c.id === "work-progress.entry")!;
+    expect(rankedKeyForCard(card, [{ pillKey: "Work Progress" }])).toBe("Work Progress");
+  });
+
+  test("an exact id wins over a module match", () => {
+    const card = CARD_CATALOGUE.find((c) => c.id === "work-progress.report")!;
+    expect(
+      rankedKeyForCard(card, [{ pillKey: "Work Progress" }, { pillKey: "work-progress.report" }])
+    ).toBe("work-progress.report");
+  });
+
+  test("a card with nothing ranked for its module returns null", () => {
+    const card = CARD_CATALOGUE.find((c) => c.id === "budgets.new")!;
+    expect(rankedKeyForCard(card, [{ pillKey: "Permits" }])).toBeNull();
+    expect(rankedKeyForCard(card, [])).toBeNull();
   });
 });

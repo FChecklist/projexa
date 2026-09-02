@@ -450,6 +450,28 @@ export function cardsForRole(role: string | null | undefined): CardDef[] {
 /** One entry of the server's ranking, as PROJEXA's proxy returns it. */
 export type RankedEntry = { pillKey: string; label?: string | null; pinned?: boolean };
 
+/**
+ * The SERVER'S key for a card, when this user's ranking contains one.
+ *
+ * WHY THIS EXISTS. compliance.pill_usage carries a function_id per key, and
+ * that is what lets a click take R53's PILL PATH -- the server already knows
+ * the function, so the submission costs no classifier call and no model call
+ * at all. But the server's key for a row the PIPELINE wrote is the chain's
+ * first step ("Work Progress"), while a card's id is "work-progress.entry".
+ * Looking the function up by card id alone would silently miss every one of
+ * those rows and quietly demote every click to the typed path. This maps back.
+ */
+export function rankedKeyForCard(card: CardDef, ranked: readonly RankedEntry[]): string | null {
+  for (const entry of ranked) {
+    if (entry.pillKey === card.id) return entry.pillKey;
+  }
+  for (const entry of ranked) {
+    const mod = moduleForPill(entry.pillKey, entry.label ?? undefined);
+    if (mod && mod.id === card.moduleId) return entry.pillKey;
+  }
+  return null;
+}
+
 export type RankCardsInput = {
   /** The server's ranking, in the server's order. Empty when it has not
    *  answered, or when this user has earned no ranking yet. */

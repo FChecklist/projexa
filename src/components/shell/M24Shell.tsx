@@ -62,13 +62,19 @@ import {
   cardHref,
   cardUnmetReason,
   rankCards,
+  rankedKeyForCard,
   targetForCard,
   type AllModulesEntry,
   type CardDef,
   type CardPreconditionId,
   type RankedEntry,
 } from "@/lib/card-catalogue";
-import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
+import {
+  canSend as canSendFrom,
+  chainPrompt,
+  sendLabel as sendLabelFor,
+  type ComposerState,
+} from "@/lib/chain-status";
 import { deriveMode } from "@/lib/chain-mode";
 import { navigationOutcome } from "@/lib/chain-navigation";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
@@ -270,6 +276,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // ever. When null, the typed path { rawInput } is used and the server
   // classifies. Both are the same endpoint.
   const [pendingFunctionId, setPendingFunctionId] = useState<string | null>(null);
+  // R67 A-10 -- WHICH card is armed, not merely that one is. The Send button is
+  // named for what it will do ("Save progress", "Ask", "Run"), and a functionId
+  // alone cannot say that: it is an identifier, not a verb and an object.
+  const [armedCard, setArmedCard] = useState<CardDef | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // R67 A-02: a leaf that needs a project and has none says so, in the
@@ -307,11 +317,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setLoadedChain(next);
   }, []);
   const [draft, setDraft] = useState("");
-  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
+  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number; done: number }>({
     home: 0,
     approval: 0,
     queue: 0,
+    // A-10: whether this account has EVER completed a task. It is the honest
+    // signal for "has this person got a save to their name yet", and it comes
+    // from the same one call the tabs are counted from -- never a second guess.
+    done: 0,
   });
+  const [tasksLoaded, setTasksLoaded] = useState(false);
 
   useEffect(() => {
     try {
@@ -525,7 +540,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           home: Number(data.counts?.total) || 0,
           approval: Number(data.counts?.needsYou) || 0,
           queue: Number(data.counts?.running) || 0,
+          done: Number(data.counts?.done) || 0,
         });
+        setTasksLoaded(true);
         const g = data.groups ?? {};
         // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
         // (below), because the five header tabs used to be pure decoration --
@@ -725,6 +742,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const onReset = useCallback(() => {
     setSegments(resetChain(chain).segments.filter((s) => s.kind !== "root"));
     setPendingFunctionId(null);
+    setArmedCard(null);
     setDraft("");
     setSubmitError(null);
     setProjectPrompt(null);
@@ -811,8 +829,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // Arm the pill path when -- and only when -- a real executable function
       // is known for this card. R53: picking the function means the server does
       // NOT need to classify, so the submission costs no model call at all.
-      const knownFunctionId = card.functionId ?? pillFnRef.current[card.id] ?? null;
+      //
+      // The server files a function_id under ITS key, which for every row the
+      // pipeline wrote is the chain's first step ("Work Progress"), not the
+      // card's id ("work-progress.entry"). rankedKeyForCard maps back, so the
+      // rename to cards does not silently demote every click to the typed path.
+      const rankedKey = rankedKeyForCard(card, rankedPills ?? []);
+      const knownFunctionId =
+        card.functionId ?? pillFnRef.current[card.id] ?? (rankedKey ? (pillFnRef.current[rankedKey] ?? null) : null);
       setPendingFunctionId(knownFunctionId);
+      // A-10: the armed CARD, so the button can be named for what it will do.
+      setArmedCard(knownFunctionId ? card : null);
       setSegments((prev) =>
         prev.some((s) => s.id === card.id)
           ? prev
@@ -824,7 +851,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setProjectPrompt(null);
       router.push(href);
     },
-    [bumpUsage, chainForUsage, projectId, router]
+    [bumpUsage, chainForUsage, projectId, rankedPills, router]
   );
 
   // R67 A-07 -- an entry in the expanded "All modules" list. It opens the
@@ -865,6 +892,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         full: chain.fullChain,
       });
       setPendingFunctionId(null);
+      setArmedCard(null);
       setSegments(
         chain.steps.map((label, i) => ({
           id: `again:${chain.fullChain}:${i}`,
@@ -967,6 +995,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       }
       setDraft("");
       setPendingFunctionId(null);
+      setArmedCard(null);
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
       await loadTasks();
@@ -1140,6 +1169,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     if (outcome === "keep") return;
     setSegments([]);
     setPendingFunctionId(null);
+    setArmedCard(null);
     if (outcome === "clear-all") {
       setDraft("");
       setLoaded(null);
@@ -1220,24 +1250,54 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // role's order would be the same flicker in a different costume.
   const cardsLoading = rankedPills === null && !roleKnown;
 
-  // R67 A-01 -- ONE INSTRUCTION, ONE SEND RULE, both derived from one state.
-  const composerState = useMemo(
+  // R67 A-01/A-10 -- ONE STATE, and every composer string is a function of it.
+  // The strings themselves live in src/lib/chain-status.ts, where each state
+  // maps to exactly one strip question and one Send label and no reachable
+  // combination can bring back one of the four retired sentences.
+  const composerState: ComposerState = useMemo(
     () => ({
+      // A-06: an unshipped URL is a fact about the screen, and the strip says
+      // so instead of asking a question about a page that is not there.
+      shipped: screen.shipped,
       hasProjects: !projectsLoaded || projects.length > 0,
       hasProject: Boolean(project),
       projectName: project?.name ?? null,
       moduleLabel: chainModule?.label ?? null,
-      hasAction: Boolean(pendingFunctionId),
+      action: armedCard ? { label: armedCard.label, object: armedCard.object, kind: armedCard.kind } : null,
+      // HONEST LIMIT: the missing-step state is fully implemented here and in
+      // chain-status.ts, and nothing populates it yet. The list of fields an
+      // armed function still needs is WS-B's { code, missing } closed-
+      // vocabulary payload (D-03), which the executor does not return today --
+      // it returns raw strings. Inventing a list of "required fields" from the
+      // client would be a guess dressed up as a validation.
+      missing: [],
       hasText: draft.trim().length > 0,
       busy: submitting,
-      // A-06: an unshipped URL is a fact about the screen, and the strip says
-      // so instead of asking a question about a page that is not there.
-      shipped: screen.shipped,
+      error: submitError ?? projectPrompt,
     }),
-    [projectsLoaded, projects.length, project, chainModule, pendingFunctionId, draft, submitting, screen.shipped]
+    [
+      screen.shipped,
+      projectsLoaded,
+      projects.length,
+      project,
+      chainModule,
+      armedCard,
+      draft,
+      submitting,
+      submitError,
+      projectPrompt,
+    ]
   );
-  const instruction = composerInstruction(composerState);
+  const instruction = chainPrompt(composerState);
   const sendEnabled = canSendFrom(composerState);
+  const sendButtonLabel = sendLabelFor(composerState);
+
+  // A-10 -- THE FIRST-RUN HINT. One line, under the cards, for an account that
+  // has never completed anything: the three-step shape of the whole product,
+  // said once. It disappears the moment there is a single finished task, and it
+  // is never shown before the task list has actually answered -- a hint offered
+  // on the strength of "not loaded yet" would greet returning users too.
+  const firstRunHint = tasksLoaded && counts.done === 0 && !tasksError;
 
   return (
     <AppShell
@@ -1412,8 +1472,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 onInteract={noteBandInteraction}
                 // A-08: a failed ranking read must not look like a considered
                 // answer. The role cards still stand; one muted line says why
-                // the recent ones are missing.
-                footnote={rankingFailed ? "Recent tasks unavailable" : undefined}
+                // the recent ones are missing. A-10: otherwise, an account with
+                // nothing finished yet gets the one-line shape of the product.
+                footnote={
+                  rankingFailed
+                    ? "Recent tasks unavailable"
+                    : firstRunHint
+                      ? "Click a task, then the thing it is about, then Save."
+                      : undefined
+                }
               />
             </div>
           }
@@ -1439,6 +1506,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // Keeping both mechanisms would print the reason twice, which is the
           // duplicate-instruction defect BOTH lanes were sent to remove.
           instruction={instruction}
+          // A-10: the button is named for what it will do, and never becomes
+          // "Sending..." -- a spinner sits beside it instead.
+          sendLabel={sendButtonLabel}
           canSend={sendEnabled}
           busy={submitting}
           // A-09: the strip admits when the sentence was loaded rather than
@@ -1453,10 +1523,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               : null
           }
           errorMessage={submitError ?? projectPrompt}
+          // A-10: one resting placeholder that shows all three things this box
+          // takes -- a task, a question and a record -- overridden by the
+          // module's own example when the user is standing in one.
           placeholder={
             screenModule
               ? screenModule.placeholder
-              : "Type a task, a question or a record — e.g. 'excavation 50%'"
+              : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
           }
           // R67 A-02: two worked examples in the module's own vocabulary, so a
           // site engineer sees what a sentence this box accepts looks like

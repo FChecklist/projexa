@@ -37,6 +37,21 @@
 //     kit disabled Send whenever the box was empty, which made the pill path
 //     -- pick a module, press Send, no typing required -- silently impossible.
 //     The caller decides what is submittable and says why in one string.
+//
+//  5. THE BUTTON IS NAMED FOR WHAT IT WILL DO (A-10): "Save progress", "Ask",
+//     "Run", or "Send" for free text -- and while a submission is in flight the
+//     LABEL DOES NOT CHANGE. Replacing it with "Sending..." destroys the one
+//     word the user was reading to decide whether to press it and makes the
+//     button jump width mid-click; a spinner sits beside it instead.
+//
+//  6. THE FAILURE LINE MOVED ONTO THE BUTTON'S OWN ROW (A-10), immediately to
+//     its left, instead of floating above the textarea where the composer's
+//     own growth could push it off. The row has a 44 px minimum height so the
+//     button is a real touch target on the phone this product is used on.
+//
+//  7. NAVY ON SAFFRON (A-10, WS-G tokens, no new colour). White on saffron was
+//     the contrast failure; the navy already in the palette fixes it without
+//     inventing a shade.
 
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
@@ -54,10 +69,17 @@ export type ComposerProps = {
   onReset: () => void;
 
   /**
-   * THE ONE STATE-DERIVED INSTRUCTION (A-01). Rendered in the strip, and
-   * reused verbatim as the Send button's tooltip -- never printed twice.
+   * THE ONE STATE-DERIVED INSTRUCTION (A-01/A-10). Rendered in the strip, and
+   * reused verbatim as the Send button's tooltip -- never printed twice. Empty
+   * when the sentence is complete: there is no next question then, and the
+   * button's own name says what will happen.
    */
   instruction: string;
+  /**
+   * A-10: what the button says. "Save progress" | "Ask" | "Run" | "Send", or
+   * the blocked form "Record progress (1 required field)". Never "Sending...".
+   */
+  sendLabel?: string;
   /** When false, Send is disabled and `instruction` says what is missing. */
   canSend: boolean;
   /** A real failure, e.g. a rejected submission. Shown in words, in red. */
@@ -95,6 +117,7 @@ export function Composer({
   onHome,
   onReset,
   instruction,
+  sendLabel = "Send",
   canSend,
   errorMessage,
   busy = false,
@@ -165,11 +188,6 @@ export function Composer({
 
         {/* 4. INPUT -- real height, generous padding. Not a single line. */}
         <div className="shrink-0 px-3 pb-2.5 pt-1">
-          {errorMessage && (
-            <p role="alert" className="pb-1 text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
-              {errorMessage}
-            </p>
-          )}
           <textarea
             ref={taRef}
             value={value}
@@ -191,8 +209,28 @@ export function Composer({
               {examples}
             </div>
           )}
-          <div className="mt-1 flex items-center gap-2">
+          {/* A-10 -- ONE ROW: the failure line sits immediately left of the
+              button, on the same line, at a 44 px minimum height. It used to
+              float above the textarea, where the box's own growth could push
+              it out of the reading path at exactly the moment it mattered. */}
+          <div className="mt-1 flex min-h-[44px] items-center gap-2">
             {attachSlot}
+            {/* THE FOOTER LINE IS EMPTY UNLESS SOMETHING FAILED. The next
+                question lives in the strip; printing it here as well was how
+                one state came to show two contradicting sentences. */}
+            {errorMessage && (
+              <p role="alert" className="min-w-0 text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
+                {errorMessage}
+              </p>
+            )}
+            {/* The spinner sits BESIDE the button, so the label can stay put. */}
+            {busy && (
+              <span
+                aria-hidden
+                className="ml-auto inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent"
+                style={{ borderColor: "var(--color-ct-border2)", borderTopColor: "transparent" }}
+              />
+            )}
             {/* NO FAIL-AFTER-CLICK: when the action cannot succeed the button
                 is disabled and the reason is the strip's own sentence, carried
                 here as the tooltip and the accessible name rather than printed
@@ -202,12 +240,19 @@ export function Composer({
               onClick={onSubmit}
               disabled={sendDisabled}
               aria-busy={busy}
-              aria-label={canSend ? "Send" : `Send — ${instruction}`}
-              title={instruction}
-              className="ml-auto rounded-lg px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-40"
-              style={{ background: "var(--color-ct-saffron)" }}
+              aria-label={canSend ? sendLabel : instruction ? `${sendLabel} — ${instruction}` : sendLabel}
+              title={instruction || sendLabel}
+              className={`${busy ? "" : "ml-auto "}rounded-lg px-3 text-[12px] font-medium disabled:opacity-40`}
+              style={{
+                // WS-G tokens, no new colour: navy on saffron. White on saffron
+                // was the contrast failure this replaces.
+                background: "var(--color-ct-saffron)",
+                color: "var(--color-ct-navy)",
+                minHeight: 44,
+                minWidth: 44,
+              }}
             >
-              Send
+              {sendLabel}
             </button>
           </div>
         </div>
