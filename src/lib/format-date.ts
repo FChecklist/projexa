@@ -54,3 +54,23 @@ export function formatDateTime(value: Date | string | number): string {
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
+
+/**
+ * e.g. "Sep 2, 2026, 2:30 PM" -- the meeting/MoM shape.
+ *
+ * R67 G-05 (R-260): MeetingsClient and MeetingObjectClient each carried their
+ * own private copy of this, written as
+ * `toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })`.
+ * Pinning the locale but NOT the time zone fixes half the bug and leaves the
+ * worse half: the SSR pass renders in the server's zone (UTC) and the browser
+ * in the visitor's, so a meeting at 23:30 UTC is stamped with a different
+ * clock time -- and, near a day boundary, a different DATE -- on the two
+ * passes. Both now call this, which pins both.
+ */
+export function formatDateTimeMedium(value: Date | string | number): string {
+  return new Date(value).toLocaleString(FIXED_LOCALE, {
+    timeZone: FIXED_TIME_ZONE,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}

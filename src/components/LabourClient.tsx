@@ -39,7 +39,9 @@ import DataLoadError from "@/components/DataLoadError";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -50,6 +52,9 @@ type Vendor = { id: string; vendorName: string };
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
+// R67 G-04 (R-231): the roster header reads ID | Name | Trade | Company |
+// Daily Rate | Status, and the Daily Rate header carries the currency, so
+// "AED" is stated once instead of forty times down the column.
 const COLUMNS: ScreenColumn[] = [
   { label: "ID", field: "employeeCode", type: "text", importance: "High" },
   { label: "Name", field: "name", type: "text", importance: "High" },
@@ -58,6 +63,9 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Daily Rate", field: "dailyRate", type: "number", importance: "High" },
   { label: "Status", field: "isActive", type: "text", importance: "High" },
 ];
+
+/** The money column, so the header can carry the unit and the cell can be right-aligned. */
+const MONEY_FIELDS = new Set(["dailyRate"]);
 
 // R67 G-02 (R-087). This map used to be shadcn Badge variants, and every one
 // of the three was wrong for what it meant:
@@ -85,25 +93,31 @@ const VALID_TABS = new Set(["roster", "attendance"]);
 // logic (including the vendorId -> company-name lookup), looked up by
 // field name so a registry row can reorder/relabel these 6 columns live
 // (the hard-stop test) without changing what renders.
-function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, rateCurrencyLabel: string) {
+function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, money: (v: number | string | null | undefined) => string) {
   switch (field) {
+    // R67 G-04 (R-231): the en-dash for an empty cell, everywhere, never the
+    // em-dash and never a blank.
     case "employeeCode":
-      return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
+      return <span className="text-px-muted">{r.employeeCode ?? EMPTY_VALUE}</span>;
     case "name":
       return <span className="font-medium">{r.name}</span>;
     case "trade":
-      return <span className="text-px-muted">{r.trade ?? "—"}</span>;
+      return <span className="text-px-muted">{r.trade ?? EMPTY_VALUE}</span>;
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
+    // R67 G-05: was `${currencyLabel}${r.dailyRate}` -- the raw drizzle
+    // numeric string, so "1200" and "1200.5" rendered with different
+    // precision in the same column. Now the one money formatter: two
+    // decimals, tabular figures, right-aligned, currency in the header.
     case "dailyRate":
-      return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
+      return <span>{money(r.dailyRate)}</span>;
     case "isActive":
       // R67 G-02: was <Badge variant="default"> for active -- the saffron
       // primary fill, on a row that is merely "this worker is on the roster".
       // active -> sage tick, inactive -> grey circle, both with their word.
       return <StatusPill status={r.isActive ? "active" : "inactive"} />;
     default:
-      return String((r as unknown as Record<string, unknown>)[field] ?? "—");
+      return String((r as unknown as Record<string, unknown>)[field] ?? EMPTY_VALUE);
   }
 }
 
@@ -114,11 +128,11 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const currencies = useCurrencies();
-  // dailyRate has no per-row currencyId (roster entries are always in the
-  // org's base currency) -- same undefined-id "org base currency" lookup
-  // QuotationsClient.tsx etc. use for currencyLabel().
-  const rosterCurrencyLabel = currencyLabel(undefined, currencies);
+  // dailyRate and dailyCost have no per-row currencyId (roster entries are
+  // always in the org's base currency), which is exactly what useOrgMoney()
+  // resolves -- and, when the org has no currency row at all, what makes it
+  // render the bare number behind a warning glyph instead of guessing.
+  const orgMoney = useOrgMoney();
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
 
@@ -149,7 +163,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
 
   useEffect(() => { load(); }, [projectId]);
 
-  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
+  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || EMPTY_VALUE;
   const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
@@ -160,6 +174,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   }
 
   return (
+    <>
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="roster">Roster</TabsTrigger>
@@ -185,7 +200,12 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                 <TableHeader>
                   <TableRow>
                     <TableHead>S.No</TableHead>
-                    {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                    {columns.map((col) => (
+                      <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                        {col.label}
+                        {MONEY_FIELDS.has(col.field) ? orgMoney.unitSuffix : ""}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -195,7 +215,9 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                     <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
-                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
+                        <TableCell key={col.field} className={MONEY_FIELDS.has(col.field) ? MONEY_CELL_CLASS : undefined}>
+                          {renderRosterCell(col.field, r, vendorName, orgMoney.money)}
+                        </TableCell>
                       ))}
                     </TableRow>
                   ))}
@@ -222,7 +244,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
               <p className="py-10 text-center text-sm text-px-muted">No attendance recorded yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Worker</TableHead><TableHead>Status</TableHead><TableHead>Hours</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Worker</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Hours</TableHead><TableHead className="text-right">Cost{orgMoney.unitSuffix}</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {attendance.map((a) => (
                     <TableRow key={a.id}>
@@ -236,8 +258,9 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                       <TableCell>
                         <StatusPillTone tone={ATTENDANCE_TONE[a.status] ?? "neutral"} label={a.status.replace(/_/g, " ")} />
                       </TableCell>
-                      <TableCell>{a.hoursWorked ?? "—"}</TableCell>
-                      <TableCell>{a.dailyCost}</TableCell>
+                      <TableCell className="text-right tabular-nums">{a.hoursWorked ?? EMPTY_VALUE}</TableCell>
+                      {/* R67 G-05: was the raw drizzle numeric string. */}
+                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(a.dailyCost)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -247,5 +270,10 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
         </Card>
       </TabsContent>
     </Tabs>
+    {/* R67 G-05: once, at the foot of the screen, explaining the warning
+        glyph on every unlabelled figure -- and nothing at all when the org
+        has a currency. */}
+    <CurrencyNotSetNotice currencySet={orgMoney.currencySet} />
+    </>
   );
 }

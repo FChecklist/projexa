@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EMPTY_VALUE, formatCompactNumber, formatNumber, formatSignedNumber } from "./format-number";
+import { EMPTY_VALUE, formatCompactNumber, formatDecimal, formatNumber, formatSignedNumber } from "./format-number";
 
 describe("formatNumber", () => {
   test("groups and pins the locale", () => {
@@ -17,6 +17,28 @@ describe("formatNumber", () => {
     // The Indian numbering system groups differently -- this is the exact
     // difference that makes an unpinned toLocaleString() a hydration bug.
     expect(formatNumber(1250000, { locale: "en-IN" })).toBe("12,50,000");
+  });
+});
+
+describe("formatDecimal (the quantity shape, not the money shape)", () => {
+  test("drops trailing zeros -- a quantity of 50 is '50', not '50.00'", () => {
+    expect(formatDecimal(50)).toBe("50");
+    expect(formatDecimal(5400)).toBe("5,400");
+    expect(formatDecimal(20833.2)).toBe("20,833.2");
+  });
+
+  test("rounds at two decimals by default", () => {
+    expect(formatDecimal(1.005)).toBe("1.01");
+    expect(formatDecimal(1.2345)).toBe("1.23");
+  });
+
+  test("pins the locale, which is what makes it hydration-safe", () => {
+    expect(formatDecimal(1250000)).toBe("1,250,000");
+    expect(formatDecimal(1250000, { locale: "en-IN" })).toBe("12,50,000");
+  });
+
+  test("a non-finite value renders the en-dash", () => {
+    expect(formatDecimal(Number.NaN)).toBe(EMPTY_VALUE);
   });
 });
 

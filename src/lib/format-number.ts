@@ -30,6 +30,25 @@ export function formatNumber(
 }
 
 /**
+ * A grouped number with UP TO `maxFractionDigits` decimals and no trailing
+ * zeros: 5400 -> "5,400", 20833.2 -> "20,833.2".
+ *
+ * This is the quantity/measurement shape, not the money shape. Money always
+ * shows both decimals so a column aligns on the point (see
+ * src/lib/format-money.ts); a quantity does not -- "50 m3" should not read
+ * "50.00 m3". Kept here, and locale-pinned, so a grid that formats
+ * quantities AND amounts with one helper still cannot produce a hydration
+ * mismatch.
+ */
+export function formatDecimal(
+  value: number,
+  { locale = DEFAULT_NUMBER_LOCALE, maxFractionDigits = 2 }: { locale?: string; maxFractionDigits?: number } = {}
+): string {
+  if (!Number.isFinite(value)) return EMPTY_VALUE;
+  return value.toLocaleString(locale, { maximumFractionDigits: maxFractionDigits });
+}
+
+/**
  * A short number for printing INSIDE a chart, where a full grouped figure
  * would collide with its neighbour: 2025 -> "2k", 1_250_000 -> "1.3M".
  *

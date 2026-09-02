@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { formatDecimal } from "@/lib/format-number";
 import { formatProgressCell } from "@/lib/work-progress-report";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
@@ -51,8 +52,21 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 type BoqOption = { id: string; title: string; status: string; version: number };
 type ReportResponse = { boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[]; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
 
+// R67 G-05 (R-260). This passed `undefined` as the locale, which is the
+// hydration bug src/lib/format-date.ts exists to prevent: with no locale
+// argument the runtime picks its OWN default, so the SSR pass formats in the
+// server's locale and the first client pass in the visitor's, and for any
+// non-en-US visitor (this app ships a real "hi" locale, whose digit grouping
+// is the Indian numbering system) the two strings differ and React reports a
+// mismatch. formatDecimal() pins it.
+//
+// Deliberately formatDecimal and NOT formatMoney: this one helper renders
+// both the Quantity band and the Amount band of the same grid, so a quantity
+// of 50 must stay "50" rather than becoming "50.00", and no cell may carry a
+// currency prefix. The currency belongs in the band header -- see the note on
+// ScopeTable, which takes no currency prop today.
 function money(n: number) {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatDecimal(n);
 }
 
 // T-WPR-14-1 (WPR-14, point 111): money() alone renders every Qty/Amt cell
