@@ -145,6 +145,24 @@ describe("sendLabel -- the button is named for what it will do", () => {
     ).toBe("Record progress (2 required fields)");
   });
 
+  test("A-15: 'Other - type it' makes the button name the one thing it waits for", () => {
+    expect(sendLabel({ ...base, awaitingText: true })).toBe("Send (say what you need)");
+    // ...and stops the moment there is something to send.
+    expect(sendLabel({ ...base, awaitingText: true, hasText: true })).toBe("Send");
+    // ...and never overrides a card that is already armed.
+    expect(sendLabel({ ...base, awaitingText: true, action: RECORD })).toBe("Save progress");
+  });
+
+  test("A-15: choosing 'Other' changes NOTHING the strip says", () => {
+    // The acceptance is that the strip text is unchanged: the flag is about
+    // what Send is waiting for, not about which question is outstanding.
+    for (const state of [base, { ...base, moduleLabel: "Permits" }, { ...base, hasProject: false }]) {
+      expect(chainPrompt({ ...state, awaitingText: true })).toBe(chainPrompt(state));
+      expect(chainStatus({ ...state, awaitingText: true })).toBe(chainStatus(state));
+      expect(canSend({ ...state, awaitingText: true })).toBe(canSend(state));
+    }
+  });
+
   test("it NEVER becomes 'Sending...' -- the spinner sits beside it instead", () => {
     expect(sendLabel({ ...base, action: RECORD, busy: true })).toBe("Save progress");
     expect(sendLabel({ ...base, hasText: true, busy: true })).toBe("Send");

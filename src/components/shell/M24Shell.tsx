@@ -337,6 +337,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // put the cursor there rather than describing what the user should do next.
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [showAllPills, setShowAllPills] = useState(false);
+  // R67 A-15 -- the user chose "Other - type it". It adds no segment and asks
+  // no new question; it puts the cursor in the box, shows an example of what
+  // this box takes, and makes the Send button name what it is waiting for.
+  const [awaitingText, setAwaitingText] = useState(false);
   // A-08: a failed ranking read is admitted in one muted line rather than
   // silently producing a strip that looks like a considered answer.
   const [rankingFailed, setRankingFailed] = useState(false);
@@ -832,6 +836,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSegments(resetChain(chain).segments.filter((s) => s.kind !== "root"));
     setPendingFunctionId(null);
     setArmedCard(null);
+    setAwaitingText(false);
     setDraft("");
     setSubmitError(null);
     setProjectPrompt(null);
@@ -923,6 +928,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setSegments([{ id: mod.id, label: mod.label, kind: "action" as const }]);
       setPendingFunctionId(null);
       setArmedCard(null);
+      setAwaitingText(false);
       setProjectPrompt(null);
       setLoaded(null);
     },
@@ -961,6 +967,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(knownFunctionId);
       // A-10: the armed CARD, so the button can be named for what it will do.
       setArmedCard(knownFunctionId ? card : null);
+      setAwaitingText(false);
       // A-12: one entity segment, replaced rather than chained -- a card IS the
       // whole verb+object, so a second card is a change of mind, not a step.
       setSegments([{ id: card.id, label: card.label, kind: "action" as const }]);
@@ -995,8 +1002,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setShowAllPills(false);
       switch (entry.destination) {
         case "input":
-          // A-15 owns this branch.
+          // R67 A-15 -- "OTHER - TYPE IT" WRITES NOTHING, ANYWHERE.
+          //
+          // Not into the box (that was the old seeding branch, deleted in
+          // A-02) and not into the strip: there is no segment for "I am about
+          // to say something", and inventing one would put a word in the
+          // sentence that the user did not choose. All it does is what its own
+          // name says -- put the cursor in the box, show an example of the kind
+          // of sentence this box takes, and let the Send button admit it is
+          // waiting for words. On Send the ordinary { rawInput } classifier
+          // path runs, entirely unchanged.
+          //
+          // The draft is normalised to empty rather than CLEARED: the item asks
+          // for an empty input, and A-06 rules that words a person actually
+          // typed are theirs. Whitespace is not words.
           bumpUsage(entry.id);
+          setDraft((current) => (current.trim() ? current : ""));
+          setAwaitingText(true);
           composerRef.current?.focus();
           return;
         case "rail":
@@ -1035,6 +1057,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       });
       setPendingFunctionId(null);
       setArmedCard(null);
+      setAwaitingText(false);
       setSegments(
         chain.steps.map((label, i) => ({
           id: `again:${chain.fullChain}:${i}`,
@@ -1125,6 +1148,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setDraft("");
       setPendingFunctionId(null);
       setArmedCard(null);
+      setAwaitingText(false);
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
       await loadTasks();
@@ -1273,6 +1297,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setProjectPrompt(null);
     setSubmitError(null);
     setShowAllPills(false);
+    // A-15: the "say what you need" prompt belonged to the screen it was
+    // asked for; a new screen asks its own question.
+    setAwaitingText(false);
     // A-14: a ranking that arrived while a strip was already on screen was held
     // back rather than re-ordering cards under the user's finger. A navigation
     // is the one moment they have already looked away, so it lands here -- and
@@ -1419,6 +1446,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // client would be a guess dressed up as a validation.
       missing: [],
       hasText: draft.trim().length > 0,
+      // A-15: it changes the Send button's name and nothing else.
+      awaitingText,
       busy: submitting,
       error: submitError ?? projectPrompt,
     }),
@@ -1430,6 +1459,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       activeModule,
       armedCard,
       draft,
+      awaitingText,
       submitting,
       submitError,
       projectPrompt,
@@ -1758,10 +1788,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // placeholder and the two worked examples from that module, which is
           // the whole of what a pill is allowed to do to the input -- it must
           // never type into it (the seeding branch at the old :476-478 is gone).
+          //
+          // A-15: "Other - type it" overrides both. It is the one control whose
+          // whole meaning is "the box is where this happens", so the box shows
+          // an example of the kind of sentence it takes.
           placeholder={
-            promptModule
-              ? promptModule.placeholder
-              : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
+            awaitingText
+              ? "Type what you need, e.g. mark all masons present today"
+              : promptModule
+                ? promptModule.placeholder
+                : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
           }
           // R67 A-02: two worked examples in the module's own vocabulary, so a
           // site engineer sees what a sentence this box accepts looks like

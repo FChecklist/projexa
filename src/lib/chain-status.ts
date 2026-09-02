@@ -68,6 +68,13 @@ export type ComposerState = {
   missing?: readonly MissingParam[];
   /** The input box has real content. */
   hasText: boolean;
+  /**
+   * A-15. The user has said, in as many words, that they will type it: they
+   * chose "Other - type it". It changes nothing about the STATE -- no segment
+   * is added and the strip's own question is untouched -- but it does change
+   * what the Send button is waiting for, and the button says so.
+   */
+  awaitingText?: boolean;
   /** A submission is in flight. */
   busy?: boolean;
   /** Something failed, in the backend's own words. Never a generic string. */
@@ -175,6 +182,12 @@ export function sendLabel(state: ComposerState): string {
         return "Run";
     }
   }
+  // A-15 (and the shape A-19 generalises): once the user has chosen "Other -
+  // type it", the ONE thing standing between them and a submission is the
+  // sentence itself, and the button names it rather than sitting there disabled
+  // with nothing to say. Nothing else on screen changes -- no segment is added
+  // and the strip keeps asking its own question.
+  if (!state.action && !state.hasText && state.awaitingText) return "Send (say what you need)";
   // Free text, and every state where nothing is armed: the generic verb is
   // correct because the server decides what the sentence means.
   return "Send";
