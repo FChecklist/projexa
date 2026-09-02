@@ -18,9 +18,12 @@ export default async function DocumentUploadPage({ searchParams }: { searchParam
     );
   }
 
+  // R67 D-13: the project NAME goes through too, so the create screen can show
+  // "Project: <name>" as a facet -- where the file will land, stated before the
+  // file is chosen rather than after it is filed.
   return (
     <div className="flex-1">
-      <DocumentUploadClient projectId={project.id} />
+      <DocumentUploadClient projectId={project.id} projectName={project.name} />
     </div>
   );
 }

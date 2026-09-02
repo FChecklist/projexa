@@ -26,16 +26,25 @@ async function resolveDocumentsListColumns(organizationId: string | null): Promi
   }
 }
 
+// R67 D-13: the project was already resolved here and everything but its id was
+// thrown away, which is why the screen below it could never name the project it
+// had queried. `fellBack` (added for D-07) says whether the caller asked for
+// this project or got the org's first one by default -- the title band prefixes
+// "Showing" in that case, because "Documents · Cedar Heights" and "Documents ·
+// Showing Cedar Heights" are different claims.
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, projects, errorMessage, fellBack } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveDocumentsListColumns(organizationId);
 
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Documents" />
+        <PageHeading
+          title="Documents"
+          subtitle={project ? `· ${fellBack ? "Showing " : ""}${project.name}` : undefined}
+        />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
@@ -44,7 +53,15 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <DocumentsClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && (
+          <DocumentsClient
+            projectId={project.id}
+            projectName={project.name}
+            fellBack={fellBack}
+            projects={projects}
+            registryColumns={registryColumns}
+          />
+        )}
       </div>
     </>
   );

@@ -12,18 +12,32 @@
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
-import { useEffect, useState } from "react";
+//
+// R67 D-13 (audit R-037/R-038/R-042/R-043). What was wrong: the catch showed a
+// toast and then fell through to the SAME branch the empty case renders, so a
+// 500 or a 504 from VERIDIAN produced the sentence "No documents found for this
+// project." -- a definite claim about the user's data made from a read that
+// failed (the standing rule in src/lib/read-outcome.ts). The toast that carried
+// the real reason was gone in four seconds; the false claim stayed on screen.
+//
+// There are now exactly FOUR branches and they are mutually exclusive: loading,
+// loadError, zero rows, filtered zero rows. The empty-state wording can no
+// longer appear over a failed GET, because loadError is checked first and the
+// rows are cleared when it is set.
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { slowLoadNotice, useElapsedMs } from "@/lib/slow-load";
+import DataLoadError from "@/components/DataLoadError";
 
 type Doc = {
   id: string;
@@ -52,6 +66,35 @@ const COLUMNS: ScreenColumn[] = [
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
+/** "site photo" -- what a category reads as in a sentence. */
+export function categoryWords(category: string): string {
+  return category.replace(/_/g, " ");
+}
+
+/**
+ * R67 D-13. The two empty states, which differ because they mean different
+ * things: "you have not filed anything here yet" and "a filter is holding your
+ * documents back". Neither is reachable over a failed read -- see the branch
+ * order in the component below.
+ */
+export function emptyStateText(category: string, scopeName: string): string {
+  return category === "all"
+    ? `No documents yet for ${scopeName}.`
+    : `No ${categoryWords(category)} documents for ${scopeName}.`;
+}
+
+/**
+ * R67 D-13. The backend's own words, verbatim, prefixed by what the user was
+ * trying to do -- so veridian-client's "did not respond in time, on two
+ * attempts" is recognisable across every screen that shows it. The full stop is
+ * added only when the message does not already end in punctuation, so a message
+ * that ends "Please retry." never renders "Please retry..".
+ */
+export function documentsLoadErrorText(err: unknown): string {
+  const message = errorMessage(err, "Could not load documents");
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 function formatSize(bytes: number | null) {
   if (!bytes) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -74,7 +117,7 @@ function renderDocumentCell(field: string, d: Doc) {
         </span>
       );
     case "category":
-      return <Badge variant="outline">{d.category.replace(/_/g, " ")}</Badge>;
+      return <Badge variant="outline">{categoryWords(d.category)}</Badge>;
     case "fileType":
       return <span className="text-px-muted">{d.fileType ?? "—"}</span>;
     case "fileSize":
@@ -88,28 +131,64 @@ function renderDocumentCell(field: string, d: Doc) {
   }
 }
 
-export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function DocumentsClient({
+  projectId,
+  projectName,
+  fellBack,
+  projects,
+  registryColumns,
+}: {
+  projectId: string;
+  /**
+   * R67 D-13: the screen names the project it queried. Resolved server-side in
+   * documents/page.tsx, which already had the project in hand and was throwing
+   * away everything but its id.
+   */
+  projectName?: string;
+  /** True when no ?projectId was asked for and the org's first project was used. */
+  fellBack?: boolean;
+  /** For the "Change project" switcher shown when the page fell back. */
+  projects?: { id: string; name: string }[];
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const router = useRouter();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [category, setCategory] = useState("all");
+  const [switching, setSwitching] = useState(false);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const scopeName = projectName ?? "this project";
 
-  async function load() {
+  // "Still loading documents from VERIDIAN…" once the read has been running for
+  // 3 s -- D-04's budget. A read that is merely slow is not an error, but a
+  // screen that says nothing for twenty seconds is not honest either.
+  const elapsedMs = useElapsedMs(loading);
+  const slowNotice = loading ? slowLoadNotice("Still loading documents from VERIDIAN…", elapsedMs) : null;
+
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
       if (category !== "all") params.set("category", category);
-      const data = await fetchJson(`/api/documents?${params.toString()}`);
+      const data = await fetchJson<{ documents?: Doc[] }>(`/api/documents?${params.toString()}`);
       setDocs(data.documents ?? []);
+      setLoadError(null);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load documents"));
+      // Never an empty table where an error belongs: the rows are cleared AND
+      // the table is withheld, so "there are none" and "we could not find out"
+      // cannot look identical. No toast -- the reason must persist until it is
+      // resolved or retried.
+      setDocs([]);
+      setLoadError(documentsLoadErrorText(err));
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId, category]);
 
-  useEffect(() => { load(); }, [projectId, category]);
+  useEffect(() => { void load(); }, [load]);
+
+  const filtered = category !== "all";
 
   return (
     <div className="space-y-4">
@@ -121,7 +200,7 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
         <div className="flex items-center gap-2">
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : c.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
+            <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : categoryWords(c)}</SelectItem>)}</SelectContent>
           </Select>
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Upload Document" Dialog popup with a real create route. */}
@@ -129,12 +208,97 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
         </div>
       </div>
 
+      {/* R67 D-13: when the page fell back to the org's first project, the
+          screen says so and offers a real way to change it, rather than showing
+          one project's documents under a rail that still reads "All projects". */}
+      {fellBack && projectName && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="status" className="text-[12.5px] text-px-muted">
+            Showing {projectName} (first project). Choose a project in the top rail to switch.
+          </p>
+          {projects && projects.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setSwitching((open) => !open)}
+                className="text-[12.5px] underline underline-offset-2 text-px-muted hover:text-ct-navy"
+              >
+                Change project
+              </button>
+              {switching && (
+                <select
+                  aria-label="Project"
+                  value={projectId}
+                  onChange={(e) => router.push(`/documents?projectId=${e.target.value}`)}
+                  className="rounded-md border border-ct-border2 px-2 py-1 text-[12.5px]"
+                >
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <Card className="shadow-card">
         <CardContent className="p-0">
           {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            // Branch 1 -- LOADING. A skeleton carrying the REAL column headers,
+            // so the shape of what is coming is already on screen and nothing
+            // moves under the reader's cursor when the rows arrive.
+            <div aria-busy="true">
+              <Table>
+                <TableHeader>
+                  <TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[0, 1, 2].map((row) => (
+                    <TableRow key={row}>
+                      {columns.map((col) => (
+                        <TableCell key={col.field}>
+                          <span className="block h-3.5 w-24 animate-pulse rounded bg-px-cloud" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {slowNotice && <p className="px-4 pb-4 text-[12.5px] text-px-muted">{slowNotice}</p>}
+            </div>
+          ) : loadError ? (
+            // Branch 2 -- ERROR. The backend's own words, and a Retry that is
+            // ignored while a request is already in flight.
+            <div role="alert" className="space-y-2 rounded-md border border-px-error-border bg-px-error-light p-4 text-sm text-px-error">
+              <p>{loadError}</p>
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="underline underline-offset-2 disabled:opacity-50"
+              >
+                Retry
+              </button>
+            </div>
           ) : docs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
+            // Branches 3 and 4 -- EMPTY, reachable only after a read that
+            // SUCCEEDED, and worded differently depending on whether a filter is
+            // holding rows back.
+            <p className="py-10 text-center text-sm text-px-muted">
+              {emptyStateText(category, scopeName)}{" "}
+              {filtered ? (
+                <button
+                  type="button"
+                  onClick={() => setCategory("all")}
+                  className="underline underline-offset-2 hover:text-ct-navy"
+                >
+                  Clear filter
+                </button>
+              ) : (
+                <Link href={`/documents/upload?projectId=${projectId}`} className="underline underline-offset-2 hover:text-ct-navy">
+                  + New Document
+                </Link>
+              )}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -158,6 +322,17 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
           )}
         </CardContent>
       </Card>
+
+      {/* The persistent message band this route will have once ScreenFrame is
+          adopted here. Until then it is DataLoadError under the card, carrying
+          the same backend text and the same Retry, with the error count beside
+          it -- so the reason survives after the reader scrolls past the table. */}
+      {loadError && (
+        <div className="space-y-1.5">
+          <p className="text-[12.5px] text-px-error">1 error</p>
+          <DataLoadError messages={[loadError]} onRetry={() => void load()} />
+        </div>
+      )}
     </div>
   );
 }

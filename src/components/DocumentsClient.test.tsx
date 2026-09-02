@@ -1,0 +1,164 @@
+/// <reference types="bun-types" />
+// R67 D-13. The item's acceptance is a Playwright run against a local dev
+// server, which this lane may not start; the same assertions are made here with
+// /api/documents stubbed.
+//
+// THE ONE THAT MATTERS: over a 500, the page says "Could not load documents",
+// offers a Retry, and contains NO text matching /No documents/. That is the
+// whole defect -- the catch used to show a four-second toast and then fall
+// through to the same branch the empty case renders, so a failed read reported
+// "No documents found for this project." as fact.
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+// `screen` is deliberately NOT imported: it binds to document.body at module
+// init, which under bun + happy-dom happens before the registrator below has
+// run. Every query here comes from render()'s own return value instead.
+import { cleanup, render, waitFor } from "@testing-library/react";
+
+const push = mock((_: string) => {});
+mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
+const mod = await import("./DocumentsClient");
+const DocumentsClient = mod.default;
+const { categoryWords, documentsLoadErrorText, emptyStateText } = mod;
+
+const PROJECT = "Cedar Heights Villa - Phase 1";
+
+const DOC = {
+  id: "doc-1",
+  name: "DEWA permit 2026.pdf",
+  category: "permit",
+  fileType: "application/pdf",
+  fileSize: 240_000,
+  expiryDate: null,
+  versionNumber: 1,
+  createdAt: "2026-08-14T09:30:00.000Z",
+};
+
+const realFetch = globalThis.fetch;
+let requested: string[] = [];
+
+function stubDocuments(rows: unknown[]) {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requested.push(String(input));
+    return new Response(JSON.stringify({ documents: rows }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+}
+
+function stubFailure(status: number, error: string) {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requested.push(String(input));
+    return new Response(JSON.stringify({ error }), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+}
+
+beforeEach(() => {
+  requested = [];
+  stubDocuments([DOC]);
+});
+
+afterEach(() => {
+  cleanup();
+  push.mockClear();
+  globalThis.fetch = realFetch;
+});
+
+describe("documentsLoadErrorText", () => {
+  test("keeps veridian-client's own wording verbatim so users recognise it across screens", () => {
+    const text = documentsLoadErrorText(
+      new Error("The construction data service did not respond in time, on two attempts. Please retry.")
+    );
+    expect(text).toBe(
+      "Could not load documents: The construction data service did not respond in time, on two attempts. Please retry."
+    );
+  });
+
+  test("adds the full stop only when the backend's message does not already end in one", () => {
+    expect(documentsLoadErrorText(new Error("Internal Server Error"))).toBe(
+      "Could not load documents: Internal Server Error."
+    );
+    expect(documentsLoadErrorText(new Error("Nope!"))).toBe("Could not load documents: Nope!");
+  });
+});
+
+describe("emptyStateText", () => {
+  test("names the project, and says which filter is holding rows back", () => {
+    expect(emptyStateText("all", PROJECT)).toBe(`No documents yet for ${PROJECT}.`);
+    expect(emptyStateText("permit", PROJECT)).toBe(`No permit documents for ${PROJECT}.`);
+    // A category reads as words, never as its wire value.
+    expect(emptyStateText("site_photo", PROJECT)).toBe(`No site photo documents for ${PROJECT}.`);
+    expect(categoryWords("site_photo")).toBe("site photo");
+  });
+});
+
+describe("DocumentsClient -- the four branches", () => {
+  test("THE ACCEPTANCE: over a 500 the screen shows the backend's words and a Retry, and never says 'No documents'", async () => {
+    stubFailure(500, "Internal Server Error");
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    await waitFor(() => expect(view.getAllByText(/Could not load documents/).length).toBeGreaterThan(0));
+    expect(view.getAllByRole("button", { name: "Retry" }).length).toBeGreaterThan(0);
+    // The empty-state wording must never appear over a failed GET.
+    expect(view.queryByText(/No documents/)).toBeNull();
+    // ...and the error is mirrored into the persistent band below the card,
+    // counted, so the reason survives after the table scrolls out of view.
+    expect(view.getByText("1 error")).toBeTruthy();
+  });
+
+  test("a successful read with no rows names the project and offers the create route", async () => {
+    stubDocuments([]);
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`, { exact: false })).toBeTruthy());
+    const link = view.getByRole("link", { name: "+ New Document" });
+    expect(link.getAttribute("href")).toBe("/documents/upload?projectId=p1");
+    expect(view.queryByText(/Could not load documents/)).toBeNull();
+  });
+
+  test("the loading branch is a skeleton carrying the REAL column headers, marked aria-busy", () => {
+    // Never resolves, so the component stays in the loading branch.
+    globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch;
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    expect(view.container.querySelector("[aria-busy='true']")).toBeTruthy();
+    for (const header of ["Name", "Category", "Type", "Size", "Expiry", "Added"]) {
+      expect(view.getByText(header)).toBeTruthy();
+    }
+    // No claim about the data is made while the read is still running.
+    expect(view.queryByText(/No documents/)).toBeNull();
+  });
+
+  test("rows are scoped to the project, and a real row renders instead of an empty state", async () => {
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
+    expect(requested[0]).toContain("linkedEntityType=project");
+    expect(requested[0]).toContain("linkedEntityId=p1");
+  });
+
+  test("a fallback project selection is announced rather than shown silently", async () => {
+    const view = render(
+      <DocumentsClient
+        projectId="p1"
+        projectName={PROJECT}
+        fellBack
+        projects={[{ id: "p1", name: PROJECT }, { id: "p2", name: "Marina Tower" }]}
+      />
+    );
+
+    await waitFor(() =>
+      expect(
+        view.getByText(`Showing ${PROJECT} (first project). Choose a project in the top rail to switch.`)
+      ).toBeTruthy()
+    );
+    expect(view.getByRole("button", { name: "Change project" })).toBeTruthy();
+  });
+});

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const CATEGORIES = ["permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
-export default function DocumentUploadClient({ projectId }: { projectId: string }) {
+export default function DocumentUploadClient({ projectId, projectName }: { projectId: string; projectName?: string }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
@@ -48,8 +48,12 @@ export default function DocumentUploadClient({ projectId }: { projectId: string 
 
   return (
     <ObjectScreen
-      breadcrumb="Documents / Upload"
-      title="Upload Document"
+      // R67 D-13: "Upload Document" was the only screen in this product that
+      // named a create screen after the mechanism rather than after the thing
+      // being created. Every other one is "New <Object>".
+      breadcrumb="Documents / New Document"
+      title="New Document"
+      facets={projectName ? [{ label: "Project", value: projectName }] : undefined}
       mode="create"
       hasDraft={false}
       onSave={handleUpload}
