@@ -28,7 +28,7 @@
 // --status-*-text tones declared in src/app/globals.css and asserted in
 // src/lib/theme/contrast.test.ts. Same four hues, readable.
 import type { ComponentType } from "react";
-import { AlertTriangle, CheckCircle2, Circle, Clock, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, CircleDot, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** The four M24 status tones, plus waiting and neutral. */
@@ -61,9 +61,19 @@ type ToneStyle = {
   colorVar: string;
 };
 
+// The SHAPES must differ, not only the tone strings. This map is the whole of
+// rule 1 ("colour is never the only carrier"), and it is only true if a reader
+// who sees no colour at all can still tell two chips apart: needs-you and
+// neutral both drew a plain lucide `Circle` at first, so on the permits list a
+// permit with no expiry date ("-") and one expiring in 12 days carried an
+// identical mark. The word still separated them, but the second cue -- the one
+// this component exists for -- was not there. status-pill.test.ts asserts the
+// six entries resolve to six DISTINCT icon components, not six distinct keys.
 export const TONE_STYLE: Record<StatusTone, ToneStyle> = {
-  // Clay. "Your move." The dot is filled, because it is asking for something.
-  "needs-you": { glyphKey: "needs-you", icon: Circle, colorVar: "var(--status-needs-you-text)" },
+  // Clay. "Your move." The dot is FILLED (CircleDot, a ring around a solid
+  // centre), because it is asking for something -- against neutral's empty
+  // outline circle, which is not.
+  "needs-you": { glyphKey: "needs-you", icon: CircleDot, colorVar: "var(--status-needs-you-text)" },
   // Dusty blue. In flight, nobody has to do anything yet.
   running: { glyphKey: "running", icon: Loader2, colorVar: "var(--status-running-text)" },
   // Grey clock. Someone else's move.

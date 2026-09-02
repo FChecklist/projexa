@@ -48,6 +48,20 @@ describe("the single status map (R-260)", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  test("each tone draws a distinct SHAPE, not just a distinct key", () => {
+    // The key test above passes vacuously if two tones share one icon, and
+    // that is exactly what happened: 'needs-you' and 'neutral' both drew a
+    // plain lucide Circle, so on the permits list "-" (no expiry date) and
+    // "expires in 12 days" carried an identical mark. The word still
+    // separated them, but the SECOND, non-colour cue this component exists
+    // for was not there. needs-you is now CircleDot -- a filled centre,
+    // because it is asking for something -- against neutral's empty outline.
+    const icons = Object.values(TONE_STYLE).map((t) => t.icon);
+    expect(icons.length).toBe(6);
+    expect(new Set(icons).size).toBe(icons.length);
+    expect(TONE_STYLE["needs-you"].icon).not.toBe(TONE_STYLE.neutral.icon);
+  });
+
   test("every tone paints from a CSS custom property, never a literal hex", () => {
     // A literal here would be a colour that globals.css does not know about,
     // which means dark mode would not follow it.
