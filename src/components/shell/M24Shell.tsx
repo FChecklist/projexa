@@ -49,6 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { taskRowDetail } from "@/lib/task-errors";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -76,6 +77,13 @@ type ApiTask = {
   error?: string | null;
   rawInput?: string | null;
   mode?: string | null;
+  // R67 D-03's 'needs_input' payload, added additively by
+  // compliance-tracker's GET /api/v1/projexa/tasks. Optional because a row
+  // that failed outside the closed five-code set carries no code at all, and
+  // because an older backend simply will not send these fields.
+  code?: string | null;
+  missing?: string[] | null;
+  errorContext?: { lineCode?: string; boqVersion?: number } | null;
 };
 type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
@@ -97,7 +105,11 @@ function verbFor(functionId?: string | null): TaskRow["verb"] {
   return "Review";
 }
 
-function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked"): TaskRow {
+function toTaskRow(
+  t: ApiTask,
+  group: "needsYou" | "running" | "done" | "blocked",
+  projectNameById: (id: string | null | undefined) => string | null
+): TaskRow {
   const steps = t.derivedChain?.steps ?? [];
   const root = t.derivedChain?.root ?? null;
   // M24's four glyphs are needs-you / running / waiting / done. A BLOCKED task
@@ -114,9 +126,20 @@ function toTaskRow(t: ApiTask, group: "needsYou" | "running" | "done" | "blocked
     // a row with no label at all would be worse than a technical one.
     object: steps.length ? steps.join(" > ") : (t.functionId ?? "task"),
     // M24: "line 2 is the DECIDING information - without it the user clicks in
-    // to find out, which is the load being removed." R53 says render the
-    // backend's OWN words on a blocked row; never a generic failure.
-    detail: t.error ?? t.rawInput ?? undefined,
+    // to find out, which is the load being removed."
+    //
+    // R67 D-03: it used to be `t.error ?? t.rawInput`, which put the executor's
+    // developer text on screen -- "itemCode is required", "no project resolved
+    // for this task", and (until the R66 fix) an internal IP:port. The
+    // dictionary in src/lib/task-errors.ts turns the server's {code, missing}
+    // into one closed-vocabulary sentence and, where the row failed for a
+    // reason outside that set, passes the backend's own words through ONLY
+    // when they are safe to show. The rawInput fallback for a healthy row is
+    // unchanged.
+    detail: taskRowDetail(
+      { code: t.code, missing: t.missing, errorContext: t.errorContext, error: t.error, projectName: projectNameById(t.projectId) },
+      t.rawInput
+    ),
     urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
     urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
     chain: {
@@ -312,6 +335,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
+  // R67 D-03: BOQ_LINE_NOT_FOUND's sentence names the project ("There is no
+  // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
+  // carry a projectId, not a name. Held in a ref rather than a dependency so
+  // loadTasks keeps its stable identity -- adding `projects` to its deps would
+  // re-run the mount effect below on every project-list load.
+  const projectsRef = useRef<Project[]>([]);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+  const projectNameById = useCallback(
+    (id: string | null | undefined) => (id ? projectsRef.current.find((p) => p.id === id)?.name ?? null : null),
+    []
+  );
+
   const loadTasks = useCallback(async () => {
     {
       try {
@@ -337,19 +374,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // "Needs you" carries what is stuck on the user: blocked first, because
         // a blocked row is the only loud one and the one that costs time.
         setNeedsYou([
-          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
-          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
+          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked", projectNameById)),
+          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou", projectNameById)),
         ]);
         // "Waiting on others" is everything not on the user's desk.
         setWaiting([
-          ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
-          ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
+          ...(g.running ?? []).map((t) => toTaskRow(t, "running", projectNameById)),
+          ...(g.done ?? []).map((t) => toTaskRow(t, "done", projectNameById)),
         ]);
       } catch {
         setTasksError("Couldn't reach the task service.");
       }
     }
-  }, []);
+  }, [projectNameById]);
 
   useEffect(() => {
     let live = true;
