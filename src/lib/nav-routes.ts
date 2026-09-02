@@ -173,6 +173,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/scope/new",
   "/settings",
   "/share/report/[token]",
+  "/shared/mom/[token]",
   "/signup",
   "/site-diary",
   "/site-diary/[id]",
