@@ -83,7 +83,44 @@ type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
   tasks?: ApiTask[];
+  /** R67 F-26: the keyset position of the next page, or null at the end. */
+  nextCursor?: string | null;
 };
+
+// R67 F-26 (audit recommendation R-242). THE THREE NUMBERS THIS CHANGES.
+//
+// Task Master shows ten rows and was fetching FIFTY, on every navigation, at
+// 590-1740 ms -- and again after every Send, which is why the composer sat
+// empty and Send sat disabled for seconds with nothing to look at.
+//
+//   TASK_PAGE_SIZE   20, with an explicit "Show 20 more" at the foot of the
+//                    pane. Twenty covers the ten visible rows plus the group
+//                    the user is most likely to scroll into.
+//   POLL_*           after a Send the minted row goes in AT ONCE from the POST
+//                    response and only THAT row is polled -- fast while the
+//                    user is still watching, then slowly, and never at all once
+//                    the row reaches a terminal status.
+//   TASK_REVALIDATE  the full list is otherwise re-read on a five-minute
+//                    background schedule or an explicit refresh, not on every
+//                    navigation.
+const TASK_PAGE_SIZE = 20;
+const POLL_FAST_MS = 1_000;
+const POLL_FAST_FOR_MS = 10_000;
+const POLL_SLOW_MS = 5_000;
+/** Give up on a row that never settles, rather than polling for the life of the tab. */
+const POLL_GIVE_UP_MS = 5 * 60_000;
+const TASK_REVALIDATE_MS = 5 * 60_000;
+
+const TERMINAL_TASK_STATUSES = new Set(["done", "blocked"]);
+
+/** Which group a task row belongs to, from its status alone -- so an optimistic
+ *  row and a listed row are always placed by the same rule. */
+function groupForStatus(status?: string | null): "needsYou" | "running" | "done" | "blocked" {
+  if (status === "done") return "done";
+  if (status === "blocked") return "blocked";
+  if (status === "in_progress") return "running";
+  return "needsYou";
+}
 
 // M24: "Line 1 must START WITH A VERB from a CLOSED SET ... Six words the user
 // learns once." Task names are system-generated, which is exactly why the
@@ -146,6 +183,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
   const [waiting, setWaiting] = useState<TaskRow[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  // R67 F-26: the keyset position of the next page (null = this is the whole
+  // list, so no "Show 20 more" control is rendered at all), whether that page
+  // is in flight, when the list was last read in full, and which rows came from
+  // a Send rather than from the server.
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [tasksFetchedAt, setTasksFetchedAt] = useState<number | null>(null);
+  const tasksFetchedAtRef = useRef<number | null>(null);
+  tasksFetchedAtRef.current = tasksFetchedAt;
+  const optimisticIdsRef = useRef<Set<string>>(new Set());
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
@@ -351,53 +398,163 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
-  const loadTasks = useCallback(async () => {
-    {
-      try {
-        const res = await fetch("/api/tasks?limit=50");
-        // Status before body: an error body parses perfectly well as JSON, and
-        // treating it as data is how a failed request becomes a confident
-        // empty list.
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          setTasksError(
-            d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
-          );
-          return;
-        }
-        const data = (d ?? {}) as ApiTasks;
-        setTasksError(null);
+  //
+  // R67 F-26: `cursor` appends a page instead of replacing the pane, so "Show
+  // 20 more" grows the list the user is reading rather than re-reading it.
+  const loadTasks = useCallback(async (cursor?: string) => {
+    const append = Boolean(cursor);
+    if (append) setLoadingMore(true);
+    try {
+      const qs = new URLSearchParams({ limit: String(TASK_PAGE_SIZE) });
+      if (cursor) qs.set("cursor", cursor);
+      const res = await fetch(`/api/tasks?${qs.toString()}`);
+      // Status before body: an error body parses perfectly well as JSON, and
+      // treating it as data is how a failed request becomes a confident
+      // empty list.
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        setTasksError(
+          d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
+        );
+        return;
+      }
+      const data = (d ?? {}) as ApiTasks;
+      setTasksError(null);
+      setNextCursor(data.nextCursor ?? null);
+      if (!append) {
         setCounts({
           home: Number(data.counts?.total) || 0,
           approval: Number(data.counts?.needsYou) || 0,
           queue: Number(data.counts?.running) || 0,
         });
-        const g = data.groups ?? {};
-        // "Needs you" carries what is stuck on the user: blocked first, because
-        // a blocked row is the only loud one and the one that costs time.
-        setNeedsYou([
-          ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
-          ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
-        ]);
-        // "Waiting on others" is everything not on the user's desk.
-        setWaiting([
-          ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
-          ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
-        ]);
-      } catch {
-        setTasksError("Couldn't reach the task service.");
       }
+      const g = data.groups ?? {};
+      // "Needs you" carries what is stuck on the user: blocked first, because
+      // a blocked row is the only loud one and the one that costs time.
+      const pageNeedsYou = [
+        ...(g.blocked ?? []).map((t) => toTaskRow(t, "blocked")),
+        ...(g.needsYou ?? []).map((t) => toTaskRow(t, "needsYou")),
+      ];
+      // "Waiting on others" is everything not on the user's desk.
+      const pageWaiting = [
+        ...(g.running ?? []).map((t) => toTaskRow(t, "running")),
+        ...(g.done ?? []).map((t) => toTaskRow(t, "done")),
+      ];
+      // Merge by id, never blind concat: the optimistic row inserted by a Send
+      // is already in the pane and must be REPLACED by its server version, not
+      // rendered twice.
+      const merge = (previous: TaskRow[], page: TaskRow[]) => {
+        if (!append) {
+          const pageIds = new Set(page.map((r) => r.id));
+          // A row the user just created that this page does not yet carry stays
+          // put -- dropping it would make a successful Send look lost.
+          return [...previous.filter((r) => optimisticIdsRef.current.has(r.id) && !pageIds.has(r.id)), ...page];
+        }
+        const seen = new Set(previous.map((r) => r.id));
+        return [...previous, ...page.filter((r) => !seen.has(r.id))];
+      };
+      setNeedsYou((prev) => merge(prev, pageNeedsYou));
+      setWaiting((prev) => merge(prev, pageWaiting));
+      setTasksFetchedAt(Date.now());
+    } catch {
+      setTasksError("Couldn't reach the task service.");
+    } finally {
+      if (append) setLoadingMore(false);
     }
   }, []);
 
   // R67 F-21: the pill ranking moved into the /api/shell bootstrap above --
   // it was a separate per-navigation call for a list that changes when the
-  // user clicks a pill, not when they change route. Tasks stay their own
-  // read: they DO change as the user works.
+  // user clicks a pill, not when they change route.
+  //
+  // R67 F-26: and tasks no longer re-read on every navigation either. This
+  // shell wraps all 53 app routes, so that read fired on every route change for
+  // a list that changes when the USER acts -- and a Send now puts its own row
+  // in directly. The full list is refreshed once per mount and then only on a
+  // five-minute background schedule.
   useEffect(() => {
     if (!bootstrapReady) return;
+    if (tasksFetchedAtRef.current !== null && Date.now() - tasksFetchedAtRef.current < TASK_REVALIDATE_MS) return;
     void loadTasks();
-  }, [loadTasks, bootstrapReady]);
+  }, [loadTasks, bootstrapReady, pathname]);
+
+  // R67 F-26: place ONE row, by id, in whichever group its status belongs to --
+  // used by both the optimistic insert after a Send and the single-task poll,
+  // so a row can never end up in two groups or in the wrong one.
+  //
+  // `pinToNeedsYou` is the Send case: the task the user just submitted stays at
+  // the top of "Needs you" with the running glyph while it is still executing,
+  // because that is the row they are watching. Once it settles it takes its
+  // real group and its real glyph.
+  const upsertTaskRow = useCallback((api: ApiTask, pinToNeedsYou: boolean) => {
+    const status = api.status ?? "";
+    const settled = TERMINAL_TASK_STATUSES.has(status);
+    const group = groupForStatus(status);
+    const pinned = pinToNeedsYou && !settled;
+    const row = toTaskRow(api, pinned ? "running" : group);
+    const belongsInNeedsYou = pinned || group === "needsYou" || group === "blocked";
+    setNeedsYou((prev) => {
+      const without = prev.filter((r) => r.id !== row.id);
+      return belongsInNeedsYou ? [row, ...without] : without;
+    });
+    setWaiting((prev) => {
+      const without = prev.filter((r) => r.id !== row.id);
+      return belongsInNeedsYou ? without : [row, ...without];
+    });
+  }, []);
+
+  // Every scheduled poll, so none of them outlives the component.
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = pollTimersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
+  // R67 F-26: poll ONE row. Fast (1 s) while the user is still watching, then
+  // slowly (5 s), and never once the row is done or blocked. A row that never
+  // settles is abandoned after five minutes rather than polled for the life of
+  // the tab. Self-scheduling through a ref so the callback can re-arm itself
+  // without re-creating on every tick.
+  const pollTaskRef = useRef<(taskId: string, startedAt: number) => void>(() => {});
+  const pollTask = useCallback(
+    (taskId: string, startedAt: number) => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= POLL_GIVE_UP_MS) {
+        optimisticIdsRef.current.delete(taskId);
+        return;
+      }
+      const timer = setTimeout(async () => {
+        pollTimersRef.current.delete(timer);
+        try {
+          const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+          const body = await res.json().catch(() => null);
+          const task = res.ok ? (body?.task as ApiTask | undefined) : undefined;
+          if (task) {
+            upsertTaskRow(task, true);
+            if (TERMINAL_TASK_STATUSES.has(task.status ?? "")) {
+              // Settled. Stop polling, and stop protecting it from the next
+              // full list read -- the server now has the same row.
+              optimisticIdsRef.current.delete(taskId);
+              return;
+            }
+          }
+        } catch {
+          // A poll that could not reach the service is not a failure the user
+          // needs to see -- the row is still on screen, and the next tick tries
+          // again. The list's own error surface covers a real outage.
+        }
+        pollTaskRef.current(taskId, startedAt);
+      }, elapsed < POLL_FAST_FOR_MS ? POLL_FAST_MS : POLL_SLOW_MS);
+      pollTimersRef.current.add(timer);
+    },
+    [upsertTaskRow]
+  );
+  useEffect(() => {
+    pollTaskRef.current = pollTask;
+  }, [pollTask]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
@@ -521,15 +678,59 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // R67 F-21: a Send re-ranks the pills server-side, so mark that ONE key
       // stale rather than re-reading the whole shell.
       invalidateShell("pillUsage");
-      // The minted task must APPEAR. That is the last step of R-80 and the
-      // only part of the path a unit test cannot stand in for.
-      await loadTasks();
+
+      // R67 F-26 (R-242). THE MINTED TASK MUST APPEAR -- and it now appears
+      // IMMEDIATELY, from this response, instead of after a 590-1740 ms re-read
+      // of fifty rows during which the pane showed nothing new.
+      //
+      // verdict is PER TASK, not per submission (see this function's own
+      // comment above), so every minted row is placed independently; a
+      // chat-only submission mints none and nothing is inserted.
+      const minted = ((d?.tasks ?? []) as {
+        taskId: string;
+        functionId?: string | null;
+        status?: string | null;
+        error?: string | null;
+        segmentText?: string | null;
+      }[]).filter((t) => typeof t.taskId === "string" && t.taskId);
+
+      let addedNeedsYou = 0;
+      let addedRunning = 0;
+      for (const task of minted) {
+        const api: ApiTask = {
+          id: task.taskId,
+          projectId,
+          functionId: task.functionId ?? null,
+          status: task.status ?? "in_progress",
+          error: task.error ?? null,
+          rawInput: task.segmentText ?? typed,
+          mode,
+        };
+        optimisticIdsRef.current.add(task.taskId);
+        upsertTaskRow(api, true);
+        const group = groupForStatus(api.status);
+        if (group === "needsYou" || group === "blocked") addedNeedsYou += 1;
+        if (group === "running") addedRunning += 1;
+        // Only a row that has not settled is worth polling. runDirectTask
+        // executes synchronously, so a pill submission is frequently already
+        // done or blocked by the time this response lands.
+        if (!TERMINAL_TASK_STATUSES.has(api.status ?? "")) pollTaskRef.current(task.taskId, Date.now());
+      }
+      // The badge counts move with the rows, from THIS response -- reading them
+      // back from a second endpoint is how tabs and list drift apart.
+      if (minted.length > 0) {
+        setCounts((c) => ({
+          home: c.home + minted.length,
+          approval: c.approval + addedNeedsYou,
+          queue: c.queue + addedRunning,
+        }));
+      }
     } catch {
       setSubmitError("Couldn't reach the task service.");
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, submitting, loadTasks]);
+  }, [draft, pendingFunctionId, mode, projectId, submitting, upsertTaskRow]);
 
   const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
     setPillUsage((prev) => {
@@ -684,6 +885,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
         )}
           </div>
+          {/* R67 F-26 (R-242): the pane now loads 20 rows, not 50, and says so.
+              Rendered ONLY when the backend handed back a cursor -- a control
+              that loads nothing is a dead end, and M24 forbids dead ends. It
+              sits below the kit's TaskMaster rather than inside it, so no kit
+              file is forked for one button. */}
+          {!tasksError && nextCursor && (
+            <div className="shrink-0 border-t px-2 py-1.5" style={{ borderColor: "var(--color-ct-border)" }}>
+              <button
+                type="button"
+                className="veri-view-tab w-full"
+                onClick={() => void loadTasks(nextCursor)}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading…" : `Show ${TASK_PAGE_SIZE} more`}
+              </button>
+            </div>
+          )}
         </div>
       }
       composer={

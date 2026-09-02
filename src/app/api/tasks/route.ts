@@ -31,7 +31,11 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const qs = new URLSearchParams();
-  for (const k of ["projectId", "status", "limit"]) {
+  // R67 F-26 (R-242): `cursor` pages the list. It is an opaque token minted by
+  // VERIDIAN's own task-cursor.ts and forwarded verbatim; nothing here parses
+  // it, and a token the backend no longer understands starts from the top
+  // rather than failing the read.
+  for (const k of ["projectId", "status", "limit", "cursor"]) {
     const v = searchParams.get(k);
     if (v) qs.set(k, v);
   }
