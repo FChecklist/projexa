@@ -31,14 +31,17 @@
 // kit's ListScreen is rendered ONLY when there are rows to put in it --
 // per D-09 the kit stays unchanged, and handing it rows:[] is precisely how
 // its own "0 records" got onto a failed screen.
-import { useCallback, useEffect, useState } from "react";
+//
+// D-71 finishes the job: the twenty lines of load-state bookkeeping that
+// stood here are now useListRead(), the one shared list hook, so the rule
+// lives in a tested module instead of being re-typed per screen.
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { PaneState } from "@/components/PaneState";
-import { ApiError, fetchJson } from "@/lib/fetch-json";
-import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+import { useListRead } from "@/lib/use-list-read";
+import { recordCountLabel } from "@/lib/pane-state";
 
 type Permit = {
   id: string;
@@ -83,39 +86,25 @@ export default function PermitsListClient({
   registryColumns?: RegistryColumn[] | null;
 }) {
   const router = useRouter();
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [status, setStatus] = useState<PaneStatus>("loading");
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
-  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
-  const load = useCallback(async () => {
-    setStatus("loading");
-    setStartedAt(Date.now());
-    setError(null);
-    const params = new URLSearchParams({ projectId });
-    if (withinDays) params.set("withinDays", withinDays);
-    else params.set("all", "true");
-    try {
-      const data = await fetchJson<{ permits?: Permit[] }>(`/api/permits?${params.toString()}`);
-      setPermits(Array.isArray(data.permits) ? data.permits : []);
-      setLoadedAt(new Date());
-      setStatus("ready");
-    } catch (err) {
-      // The rows already held are deliberately NOT cleared -- a failed
-      // refresh must not destroy what the user could see a second ago.
-      setError({
-        status: err instanceof ApiError ? err.status : null,
-        message: err instanceof Error ? err.message : null,
-      });
-      setStatus("error");
-    }
-  }, [projectId, withinDays]);
+  const params = new URLSearchParams({ projectId });
+  if (withinDays) params.set("withinDays", withinDays);
+  else params.set("all", "true");
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Rows already held are deliberately NOT cleared by a failed refresh -- the
+  // hook keeps them and dates them; see PaneState's "as of 14:32" band.
+  const {
+    rows: permits,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Permit>({
+    url: `/api/permits?${params.toString()}`,
+    select: (body) => (body as { permits?: Permit[] } | null)?.permits,
+  });
 
   return (
     <ScreenFrame
@@ -150,7 +139,7 @@ export default function PermitsListClient({
               <Plus className="size-4" aria-hidden /> New
             </Button>
           }
-          onRetry={() => void load()}
+          onRetry={reload}
         >
           <ListScreen
             functionId="permits.list"

@@ -9,8 +9,9 @@
 // the catch, which left `drawings` at [] and so rendered "No drawings or 3D
 // walkthroughs yet." over a 504 -- and once the toast faded, that sentence
 // was the only thing left on screen. The outcome is now held and PaneState
-// decides what may be said; the empty sentence needs a 200.
-import { useCallback, useEffect, useState } from "react";
+// decides what may be said; the empty sentence needs a 200. D-71 replaces
+// this screen's copy of the load-state bookkeeping with the one shared list
+// hook, so permits and drawings cannot drift apart again.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,8 +22,8 @@ import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { PaneState } from "@/components/PaneState";
 import { formatDate } from "@/lib/format-date";
-import { ApiError, fetchJson } from "@/lib/fetch-json";
-import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+import { useListRead } from "@/lib/use-list-read";
+import { recordCountLabel } from "@/lib/pane-state";
 
 type Drawing = {
   id: string;
@@ -90,32 +91,18 @@ export default function DrawingsClient({
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [status, setStatus] = useState<PaneStatus>("loading");
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
-  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
-
-  const load = useCallback(async () => {
-    setStatus("loading");
-    setStartedAt(Date.now());
-    setError(null);
-    try {
-      const data = await fetchJson<{ drawings?: Drawing[] }>(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
-      setDrawings(Array.isArray(data.drawings) ? data.drawings : []);
-      setLoadedAt(new Date());
-      setStatus("ready");
-    } catch (err) {
-      // Rows already held survive a failed refresh -- see PaneState.
-      setError({
-        status: err instanceof ApiError ? err.status : null,
-        message: err instanceof Error ? err.message : null,
-      });
-      setStatus("error");
-    }
-  }, [projectId]);
-
-  useEffect(() => { void load(); }, [load]);
+  // Rows already held survive a failed refresh -- see PaneState.
+  const {
+    rows: drawings,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Drawing>({
+    url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
+    select: (body) => (body as { drawings?: Drawing[] } | null)?.drawings,
+  });
 
   return (
     <div className="space-y-4">
@@ -149,7 +136,7 @@ export default function DrawingsClient({
                 <Plus className="size-4" aria-hidden /> New
               </Button>
             }
-            onRetry={() => void load()}
+            onRetry={reload}
           >
             <Table>
               <TableHeader>
