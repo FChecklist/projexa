@@ -47,8 +47,12 @@ export default async function WorkProgressPage({
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="report">Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
-            <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
+            {/* R67 D-65: the project's NAME goes down with its id, so a
+                waiting pane can say "Loading progress entries for Cedar
+                Heights Villa – Phase 1…" rather than narrating an opaque
+                uuid or nothing at all. */}
+            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} projectName={project.name} /></TabsContent>
+            <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} projectName={project.name} /></TabsContent>
             <TabsContent value="report"><WorkProgressReportClient projectId={project.id} initialParams={reportParams} /></TabsContent>
           </Tabs>
         )}

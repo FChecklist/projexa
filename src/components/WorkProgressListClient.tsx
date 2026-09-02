@@ -5,8 +5,20 @@
 // PermitsListClient.tsx (seq21). Activity/BOQ-line names are resolved
 // client-side against the same lookups the form already fetches, passed in
 // as props rather than re-fetched here.
+//
+// R67 D-55 / D-65: this pane used to take a bare `loading: boolean` and an
+// entries array, and its parent handed it `entriesRes.entries ?? []` from a
+// body whose status was never read. On a 500 the kit's ListScreen printed
+// its own emptyStateLabel -- "No progress entries logged yet." -- for a
+// project with a hundred entries, and there was no error anywhere on the
+// screen to contradict it. The pane now takes the read's OUTCOME, and the
+// kit's ListScreen is only mounted when there are actually rows to show
+// (D-09: the kit is not changed, so it is never handed rows: [] and never
+// gets the chance to make that claim on our behalf).
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 
 type Entry = {
   id: string;
@@ -43,14 +55,25 @@ export default function WorkProgressListClient({
   entries,
   activityNameById,
   boqLineDescriptionById,
-  loading,
+  status,
+  error,
+  onRetry,
+  loadedAt,
+  startedAt,
   projectId,
+  projectName,
 }: {
   entries: Entry[];
   activityNameById: Map<string, string>;
   boqLineDescriptionById: Map<string, string>;
-  loading: boolean;
+  /** The read's own state. There is no boolean here on purpose. */
+  status: PaneStatus;
+  error?: { status?: number | null; message?: string | null } | null;
+  onRetry?: () => void;
+  loadedAt?: Date | null;
+  startedAt?: number | null;
   projectId?: string;
+  projectName?: string | null;
 }) {
   const router = useRouter();
   const rows = entries.map((e) => ({
@@ -72,33 +95,51 @@ export default function WorkProgressListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
-      {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
-      ) : (
-        <ListScreen
-          functionId="work-progress.list"
-          columns={COLUMNS}
-          rows={rows as unknown as Record<string, unknown>[]}
-          getRowId={(row) => row.id as string}
-          // R67 D-67: a Daily Entry row used to do nothing at all when
-          // clicked. It now opens the entry, where the site photo lives.
-          onRowClick={
-            projectId
-              ? (row) =>
-                  router.push(
-                    `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
-                  )
-              : undefined
-          }
-          emptyStateLabel="No progress entries logged yet."
-          renderCell={{
-            percentComplete: (row) => {
-              const pct = Number((row as unknown as Entry).percentComplete);
-              return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
-            },
-          }}
-        />
-      )}
+      <div className="px-4 py-3">
+        {/* The count is an en-dash until a read has actually established it --
+            "0 records" over a failure is a claim nobody made. */}
+        <p className="pb-2 text-[12px] text-px-muted">{recordCountLabel(status, rows.length)}</p>
+        <PaneState
+          status={status}
+          entity="progress entries"
+          projectName={projectName}
+          startedAt={startedAt}
+          error={error}
+          rowCount={rows.length}
+          skeletonColumns={COLUMNS.map((c) => c.label)}
+          emptyMessage="No progress entries logged yet."
+          lastLoadedAt={loadedAt}
+          onRetry={onRetry}
+        >
+          <ListScreen
+            functionId="work-progress.list"
+            columns={COLUMNS}
+            rows={rows as unknown as Record<string, unknown>[]}
+            getRowId={(row) => row.id as string}
+            // R67 D-67: a Daily Entry row used to do nothing at all when
+            // clicked. It now opens the entry, where the site photo lives.
+            onRowClick={
+              projectId
+                ? (row) =>
+                    router.push(
+                      `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
+                    )
+                : undefined
+            }
+            // Unreachable by construction -- PaneState only renders these
+            // children when rowCount > 0 -- but the kit requires the prop,
+            // and a sentence that can never be shown is safer than one that
+            // could be shown over a failure.
+            emptyStateLabel="No progress entries logged yet."
+            renderCell={{
+              percentComplete: (row) => {
+                const pct = Number((row as unknown as Entry).percentComplete);
+                return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
+              },
+            }}
+          />
+        </PaneState>
+      </div>
     </ScreenFrame>
   );
 }

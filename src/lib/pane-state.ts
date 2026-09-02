@@ -90,6 +90,20 @@ export function recordCountLabel(status: PaneStatus, rowCount: number | null): s
 }
 
 /**
+ * The same rule for a KPI tile rather than a row count (R-002, R-019, R-025:
+ * "no screen may render a failed GET as zero, 0 % or an empty list").
+ *
+ * A tile reading "Total entries 0" or "Avg % Complete 0%" over a 500 is a
+ * false statement, and it is MORE dangerous than a false empty list because a
+ * number carries no hint that anything was ever asked for. Anything short of
+ * a successful read renders the en-dash.
+ */
+export function metricLabel(status: PaneStatus, value: number | null, suffix = ""): string {
+  if (status !== "ready" || value === null || Number.isNaN(value)) return "—";
+  return `${value}${suffix}`;
+}
+
+/**
  * "as of 14:32" for rows that were true at some earlier moment and are still
  * on screen under a failed refresh. 24-hour and zone-explicit, for the same
  * hydration reason format-date.ts exists.

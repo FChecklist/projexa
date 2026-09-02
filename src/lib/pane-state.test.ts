@@ -10,6 +10,7 @@ import {
   loadingCaption,
   mayShowEmptyState,
   paneError,
+  metricLabel,
   recordCountLabel,
 } from "./pane-state";
 import { READ_ERROR_CODES, classifyReadError, describeReadError } from "./task-errors";
@@ -89,6 +90,31 @@ describe("recordCountLabel -- a count we do not have is an en-dash", () => {
     expect(recordCountLabel("error", 0)).toBe("—");
     expect(recordCountLabel("error", 12)).toBe("—");
     expect(recordCountLabel("ready", null)).toBe("—");
+  });
+});
+
+describe("metricLabel -- a KPI tile may not invent a number either", () => {
+  test("a real figure reads as a figure, with its unit", () => {
+    expect(metricLabel("ready", 12)).toBe("12");
+    expect(metricLabel("ready", 0)).toBe("0");
+    expect(metricLabel("ready", 64, "%")).toBe("64%");
+  });
+
+  test("a failed or in-flight read renders an en-dash, never 0 and never 0%", () => {
+    // R-002/R-019: "Total entries 0" and "Avg % Complete 0%" over a 500 were
+    // the exact strings the audit found on /work-progress?tab=analytics.
+    expect(metricLabel("error", 0)).toBe("—");
+    expect(metricLabel("error", 0, "%")).toBe("—");
+    expect(metricLabel("loading", 0, "%")).toBe("—");
+    expect(metricLabel("idle", 0)).toBe("—");
+    // A stale figure held from an earlier success is still not a claim this
+    // read may make.
+    expect(metricLabel("error", 41, "%")).toBe("—");
+  });
+
+  test("a missing or unusable value is an en-dash even on a successful read", () => {
+    expect(metricLabel("ready", null)).toBe("—");
+    expect(metricLabel("ready", Number.NaN, "%")).toBe("—");
   });
 });
 

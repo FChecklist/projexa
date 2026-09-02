@@ -44,7 +44,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <DocumentsClient projectId={project.id} registryColumns={registryColumns} />}
+        {/* R67 D-65: the name travels with the id so the waiting caption and
+            the empty sentence can both name the project the user chose. */}
+        {project && <DocumentsClient projectId={project.id} projectName={project.name} registryColumns={registryColumns} />}
       </div>
     </>
   );
