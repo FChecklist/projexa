@@ -14,10 +14,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { takeScreenMessage } from "@/lib/screen-message";
 
 type Drawing = {
   id: string; name: string; category: string | null; fileType: string | null;
@@ -30,6 +31,10 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
   const [d, setD] = useState<Drawing | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [disposing, setDisposing] = useState(false);
+  // R67 D-08: the receipt the create screen handed over ("Drawing <name>
+  // added"), rendered in this screen's persistent message band rather than a
+  // toast that is gone before the page finishes painting.
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
 
   async function load() {
     try {
@@ -45,6 +50,11 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
   }
 
   useEffect(() => { load(); }, [drawingId]);
+
+  useEffect(() => {
+    const handed = takeScreenMessage("drawings.object");
+    if (handed) setMessages([handed]);
+  }, []);
 
   async function handleDispose() {
     setDisposing(true);
@@ -103,7 +113,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       onDelete={!d.isDisposed ? handleDispose : undefined}
       deleteDisabledReason={disposeDisabledReason}
       onBack={() => router.push(`/drawings?projectId=${projectId}`)}
-      messages={[]}
+      messages={messages}
     >
       <div className="px-4 py-3">
         {d.signedUrl && !d.isDisposed ? (
