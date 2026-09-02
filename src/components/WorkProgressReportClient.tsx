@@ -283,6 +283,11 @@ export default function WorkProgressReportClient({
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // The version the USER explicitly chose, which is what belongs in the URL --
+  // null means "let the server pick the latest", and stays out of the link.
+  // Held separately from selectedBoqId so changing the date range afterwards
+  // cannot silently drop the chosen BOQ out of a shareable URL.
+  const [selectedBoqVersion, setSelectedBoqVersion] = useState<number | null>(initialParams.boqVersion);
   // D-02 carries the BOQ in the URL as a VERSION (stable and readable), while
   // the API takes an id. The first response is what maps one to the other, so
   // a link that names a version is honoured exactly once, on arrival.
@@ -301,12 +306,12 @@ export default function WorkProgressReportClient({
         from,
         to,
         view,
-        boqVersion: null,
+        boqVersion: selectedBoqVersion,
         ...next,
       };
       router.replace(`/work-progress?${wprSearchParams(params, projectId).toString()}`, { scroll: false });
     },
-    [from, to, view, projectId, router]
+    [from, to, view, selectedBoqVersion, projectId, router]
   );
 
   const runReport = useCallback(
@@ -441,8 +446,9 @@ export default function WorkProgressReportClient({
                 value={selectedBoqId || report.boqId || ""}
                 onValueChange={(v) => {
                   setSelectedBoqId(v);
-                  const chosen = report.availableBoqs.find((b) => b.id === v);
-                  syncUrl({ boqVersion: chosen?.version ?? null });
+                  const chosen = report.availableBoqs.find((b) => b.id === v)?.version ?? null;
+                  setSelectedBoqVersion(chosen);
+                  syncUrl({ boqVersion: chosen });
                   void runReport({ boqId: v });
                 }}
               >
