@@ -178,6 +178,12 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   const rosterSlow = useSlowRequestFlag(roster === null && rosterError === null);
   const attendanceSlow = useSlowRequestFlag(attendanceLoading);
 
+  // The FIRST load shows its skeleton immediately: this component mounts
+  // directly after the page's own <Suspense> fallback (which already had the
+  // headers on screen), so a 150 ms anti-flash delay here would produce
+  // 150 ms of nothing between the two. A later Retry does use the delay.
+  const rosterLoadedOnce = useRef(false);
+
   const loadRoster = useCallback(async () => {
     setRoster(null);
     setRosterError(null);
@@ -187,6 +193,8 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
     } catch (err) {
       setRoster([]);
       setRosterError(errorMessage(err, "Roster"));
+    } finally {
+      rosterLoadedOnce.current = true;
     }
   }, [projectId]);
 
@@ -273,6 +281,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             headers={LABOUR_FALLBACK_COLUMN_LABELS}
             rows={4}
             caption={rosterSlow ? "Still loading…" : "Loading the roster…"}
+            delayMs={rosterLoadedOnce.current ? 150 : 0}
           />
         ) : (
           <Card className="shadow-card">

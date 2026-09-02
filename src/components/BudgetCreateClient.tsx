@@ -4,7 +4,22 @@
 // "New Budget" Dialog popup with a real create screen, same fields, same
 // live VERIDIAN lookups, same blocked-reason honesty when fiscal
 // years/chart of accounts aren't provisioned.
-import { useEffect, useState } from "react";
+//
+// R67 F-08 (R-112) -- NO ENABLED-THEN-DISABLED FLIP. This form used to render
+// four ENABLED selects and then, once its own client-side Promise.all
+// returned, flip them to disabled with "No fiscal years found in VERIDIAN"
+// inside them. A form that offers a control and then withdraws it is worse
+// than one that never offered it: the user has already decided to click.
+//
+// The four lookups now arrive as props, resolved server-side in
+// budgets/new/page.tsx behind a 300 s per-org cache (D-04: the VERIDIAN key
+// stays server-side, which is why the browser could not do this itself). So
+// the first rendered frame already knows whether the org is set up.
+//
+// The only client-side fetch left is behind "Reload lists", for the case the
+// server lookups reported a FAILURE rather than an empty org -- those are
+// different facts and the form says which one it is.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -14,18 +29,16 @@ import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-fie
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { type Company } from "@/components/company-scope";
+import type { Account, BudgetLookups, CostCenter, FiscalYear } from "@/lib/budget-lookups";
 
-type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
-type CostCenter = { id: string; name: string; projectId: string | null };
-type Account = { id: string; accountName: string; accountNumber: string | null };
-
-export default function BudgetCreateClient() {
+export default function BudgetCreateClient({ initialLookups }: { initialLookups: BudgetLookups }) {
   const router = useRouter();
-  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [lookupsLoading, setLookupsLoading] = useState(true);
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(initialLookups.fiscalYears);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialLookups.costCenters);
+  const [accounts, setAccounts] = useState<Account[]>(initialLookups.accounts);
+  const [companies, setCompanies] = useState<Company[]>(initialLookups.companies);
+  const [lookupError, setLookupError] = useState<string | null>(initialLookups.errorMessage);
+  const [reloading, setReloading] = useState(false);
 
   const [name, setName] = useState("");
   const [fiscalYearId, setFiscalYearId] = useState("");
@@ -36,35 +49,40 @@ export default function BudgetCreateClient() {
   const [errors, setErrors] = useState<FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount">>({});
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLookupsLoading(true);
-      try {
-        const [fyData, ccData, acData, coData] = await Promise.all([
-          fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
-          fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
-          fetchJson<{ accounts?: Account[] }>("/api/accounts"),
-          fetchJson<{ companies?: Company[] }>("/api/companies"),
-        ]);
-        setFiscalYears(fyData.fiscalYears ?? []);
-        setCostCenters(ccData.costCenters ?? []);
-        setAccounts(acData.accounts ?? []);
-        setCompanies(coData.companies ?? []);
-      } catch (err) {
-        toast.error(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
-      } finally {
-        setLookupsLoading(false);
-      }
-    })();
-  }, []);
+  // Only reachable when the server-side lookups actually FAILED -- an org that
+  // simply has no fiscal years has nothing to reload.
+  async function reloadLists() {
+    setReloading(true);
+    try {
+      const [fyData, ccData, acData, coData] = await Promise.all([
+        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
+        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts"),
+        fetchJson<{ companies?: Company[] }>("/api/companies"),
+      ]);
+      setFiscalYears(fyData.fiscalYears ?? []);
+      setCostCenters(ccData.costCenters ?? []);
+      setAccounts(acData.accounts ?? []);
+      setCompanies(coData.companies ?? []);
+      setLookupError(null);
+    } catch (err) {
+      setLookupError(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
+    } finally {
+      setReloading(false);
+    }
+  }
 
   const missingLookups = [
     fiscalYears.length === 0 ? "fiscal years" : null,
     accounts.length === 0 ? "a chart of accounts" : null,
   ].filter(Boolean) as string[];
-  const blockedReason = missingLookups.length
-    ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
-    : null;
+  // A failed lookup and an unconfigured org are DIFFERENT facts and must not
+  // share a message: the first is a retry, the second is a setup task.
+  const blockedReason = lookupError
+    ? `${lookupError}. Nothing has been saved — use Reload lists to try again.`
+    : missingLookups.length
+      ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
+      : null;
 
   async function createBudget() {
     const errs: FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount"> = {};
@@ -103,13 +121,28 @@ export default function BudgetCreateClient() {
       onSave={createBudget}
       onCancel={() => router.push("/budgets")}
       onBack={() => router.push("/budgets")}
-      saveDisabled={submitting || lookupsLoading || blockedReason !== null}
-      saveDisabledReason={submitting ? "Creating…" : blockedReason ?? undefined}
+      saveDisabled={submitting || reloading || blockedReason !== null}
+      saveDisabledReason={submitting ? "Creating…" : reloading ? "Reloading lists…" : blockedReason ?? undefined}
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
         {blockedReason && (
-          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">{blockedReason}</p>
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+            {blockedReason}
+            {lookupError && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={reloadLists}
+                  disabled={reloading}
+                  className="underline underline-offset-2 disabled:opacity-60"
+                >
+                  {reloading ? "Reloading…" : "Reload lists"}
+                </button>
+              </>
+            )}
+          </p>
         )}
         <FormField label="Budget Name" required error={errors.name}>
           {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
