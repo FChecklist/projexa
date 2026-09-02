@@ -45,18 +45,35 @@
 //     itself is Alt+<letter> rather than the bare letter.
 
 import { allModulesEntries, type AllModulesEntry } from "./card-catalogue";
+import { pillTargetFor, type PillTarget } from "./pill-routes";
 
-/** Where a pill goes. There is no fourth kind, and no pill has none. */
+/**
+ * Where a pill goes. There is no fifth kind, and no pill that renders has none.
+ *
+ * R67 A-17 -- "route" SPLIT INTO TWO, because it was answering two different
+ * questions with one word. A MODULE narrows the sentence and offers its verbs
+ * (D-08 / C-09); a VIEW is a screen and is opened. Both used to be "route",
+ * which is how "Analysis" -- a screen, not a noun -- ended up being treated as
+ * a module with no verbs of its own. "platform" is new and is what lets a name
+ * VERIDIAN owns stay in the list with a real destination instead of being
+ * dropped or rendered permanently disabled.
+ */
 export type PillDestination =
-  /** A shipped page. */
-  | "route"
+  /** A module: its verbs render in band 2 (D-08 / C-09). */
+  | "module"
+  /** A named view: it opens. */
+  | "view"
   /** The top rail's project control. */
   | "rail"
   /** The composer's own textarea. */
-  | "input";
+  | "input"
+  /** Not part of PROJEXA: band 2 offers the VERIDIAN link. */
+  | "platform";
 
 export type PillEntry = AllModulesEntry & {
   destination: PillDestination;
+  /** The destination as data, for the kinds that carry one (A-17). */
+  target: PillTarget | null;
   /**
    * A single uppercase letter, unique in this list. Null only if the list ever
    * outgrows the alphabet, which is asserted against in the test.
@@ -88,16 +105,25 @@ export const SHORTCUT_MODIFIER = "Alt";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-/** "Projects" has no /projects page in PROJEXA; its control is the top rail. */
-const RAIL_ENTRIES: Readonly<Record<string, string>> = {
-  "platform.projects": "pick one in the top rail",
+/** Supplementary words for a destination the user could not otherwise guess. */
+const NOTES: Readonly<Record<PillDestination, string | undefined>> = {
+  module: undefined,
+  view: undefined,
+  rail: "pick one in the top rail",
+  input: undefined,
+  platform: "opens VERIDIAN",
 };
 
-function destinationFor(entry: AllModulesEntry): PillDestination | null {
-  if (entry.kind === "other") return "input";
-  if (entry.moduleId) return "route";
-  if (RAIL_ENTRIES[entry.id]) return "rail";
-  return null;
+/**
+ * A-17: the destination is looked up in the ROUTE TABLE, by the entry's own key
+ * -- never inferred from whether the catalogue happens to know a module for it.
+ * An entry the table does not name has no destination and does not render.
+ */
+function targetFor(entry: AllModulesEntry): PillTarget | null {
+  if (entry.kind === "other") return null;
+  // A platform entry's id is "platform.<key>"; a module entry's id IS its key.
+  const key = entry.id.startsWith("platform.") ? entry.id.slice("platform.".length) : entry.id;
+  return pillTargetFor(key, entry.label) ?? (entry.moduleId ? { kind: "module", moduleId: entry.moduleId } : null);
 }
 
 /**
@@ -119,15 +145,18 @@ function withKeyHints(entries: readonly Omit<PillEntry, "keyHint">[]): PillEntry
 function build(): readonly PillEntry[] {
   const wired: Omit<PillEntry, "keyHint">[] = [];
   for (const entry of allModulesEntries()) {
-    const destination = destinationFor(entry);
+    const target = targetFor(entry);
+    const destination: PillDestination | null =
+      entry.kind === "other" ? "input" : target ? target.kind : null;
     // A-11 / A-12: a pill with no wired destination does not render at all.
     if (!destination) continue;
-    const note = RAIL_ENTRIES[entry.id];
+    const note = NOTES[destination];
     wired.push({
       ...entry,
       destination,
+      target,
       // The disabling flag is the CALLER's ("you are here"); a pointer at the
-      // rail is a note, not a refusal.
+      // rail or at VERIDIAN is a note, not a refusal.
       unavailable: undefined,
       ...(note ? { note } : {}),
     });

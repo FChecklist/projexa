@@ -342,11 +342,15 @@ export const SUMEET_MODULE_ORDER: readonly string[] = [
 export const OTHER_ENTRY_LABEL = "Other — type it";
 
 /**
- * The fourteen universal pills, kept as a PLATFORM GROUP under "All modules"
- * (D-10) so that demoting them from the first level does not make any of them
+ * The universal pills, kept as a PLATFORM GROUP under "All modules" (D-10) so
+ * that demoting them from the first level does not make any of them
  * unreachable, and so the same name still reaches the same destination.
  * `other` is excluded: it is the free-text entry above, and listing it twice
- * would be the duplicate vocabulary this programme is removing.
+ * would be the duplicate vocabulary this programme is removing. Task Master and
+ * To Do appear once, as the kit's own merged "Tasks" (see below).
+ *
+ * WHERE EACH ONE ACTUALLY GOES is src/lib/pill-routes.ts (A-17), not here: this
+ * list is the NAMES the platform group carries, the table is the destinations.
  */
 export const PLATFORM_PILLS: readonly { key: string; label: string }[] = [
   { key: "customers", label: "Customers" },
@@ -360,8 +364,13 @@ export const PLATFORM_PILLS: readonly { key: string; label: string }[] = [
   { key: "department", label: "Department" },
   { key: "teams", label: "Teams" },
   { key: "calendar", label: "Calendar" },
-  { key: "task_master", label: "Task Master" },
-  { key: "to_do", label: "To Do" },
+  // R67 A-17: ONE "Tasks" pill, not "Task Master" and "To Do". That is the
+  // kit's OWN rendered set -- pillConfig.ts ships TASKS_PILL_MERGED = true and
+  // MERGED_TASKS_PILL { key: "task_master", label: "Tasks" }, because MP-RISK-2
+  // records Task Master vs To Do as "the confusable pair". A-17's route table
+  // names "Tasks", so listing the two unmerged names here would have put a pair
+  // the kit deliberately merged back on screen, both pointing at one board.
+  { key: "task_master", label: "Tasks" },
 ] as const;
 
 export type AllModulesEntry = {

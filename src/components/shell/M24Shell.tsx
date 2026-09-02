@@ -28,7 +28,6 @@ import {
   COMPOSER_PILLS_BAND_RESERVE,
   OptionChain,
   TaskMaster,
-  TopRail,
   cutChainFrom,
   resetChain,
   DEFAULT_CHAIN_MODE,
@@ -55,7 +54,23 @@ import {
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
 import { PillStrip, type CardView, type ModuleEntryView, type RecentCardView } from "./PillStrip";
+// R67 A-16 / decision D-09: the rail is forked too, for one reason -- the kit
+// types `organisationName` as a string, so it cannot render "Organisation
+// unavailable — [Retry]", and the string fallback it forced was a bare em-dash.
+import { TopRail } from "./TopRail";
 import { useShellScreen, type ScreenProjectSource } from "./shell-screen-context";
+import {
+  EMPTY_RANKED_CACHE,
+  organisationLabel,
+  parseRankedCache,
+  rankingFor,
+  readJsonWithRetry,
+  rememberRanking,
+  sameRanking,
+  serialiseRankedCache,
+  TASKS_UNAVAILABLE,
+  type RankedCache,
+} from "@/lib/shell-resilience";
 import {
   CARD_CATALOGUE,
   KIND_GLYPH,
@@ -76,6 +91,7 @@ import {
   shortcutLabel,
   type PillEntry,
 } from "@/lib/pill-catalogue";
+import { NOT_IN_PROJEXA, VERIDIAN_LINK, isPillRouteOpen, pillHref } from "@/lib/pill-routes";
 import {
   canSend as canSendFrom,
   chainPrompt,
@@ -124,6 +140,14 @@ const LEGACY_PILL_USAGE_KEY = "veri.pill.usage";
 // R67 A-07 -- the last ranking the SERVER gave this browser, painted on the
 // next first render so the strip never shows one set of cards and then swaps
 // it for another. It is a cache of a server answer, never an input to one.
+//
+// R67 A-16 -- AND IT IS KEYED BY USER ID NOW. The value under this key used to
+// be a bare array with no owner, so on a shared browser -- a site office
+// laptop, a supervisor handing over a phone -- the second person's first paint
+// was the first person's strip: a row of write actions ordered by somebody
+// else's job. The shape is now { last, byUser }; parseRankedCache() still reads
+// the old array so nobody loses their cached strip in the upgrade, but it is
+// attributed to nobody and is used only for the pre-identity first paint.
 const RANKED_CARDS_KEY = "veri.pill.ranked";
 
 // R67 A-14 supersedes A-07's five-second settle window: a newly arrived ranking
@@ -239,6 +263,12 @@ function toTaskRow(
 }
 type Project = { id: string; name: string };
 
+/** GET /api/pill-usage, as PROJEXA's proxy returns it (R53 + A-08). */
+type PillPayload = {
+  pills?: { pillKey: string; label?: string; pinned?: boolean; functionId?: string }[];
+  recentChains?: RecentCardView[];
+};
+
 /** Every task the shell has read, kept raw so each Task Master tab can render
  *  the rows that actually belong to it rather than all of them five times. */
 type TaskGroups = {
@@ -270,13 +300,25 @@ const NO_TASKS: TaskGroups = { needsYou: [], running: [], done: [], blocked: [],
  * screen already showing project X's data. The URL is the source of truth, and
  * the shell can read it directly.
  */
-function RouteProjectIdReader({ onChange }: { onChange: (id: string | null) => void }) {
+function RouteProjectIdReader({
+  onChange,
+  onSearch,
+}: {
+  onChange: (id: string | null) => void;
+  /** R67 A-17: the whole query string, so a pill can say whether ITS view is
+   *  the one on screen ("/schedule?tab=board" is not open on the timeline). */
+  onSearch: (search: string) => void;
+}) {
   const params = useSearchParams();
   const raw = params.get("projectId");
   const id = raw && raw.trim() ? raw : null;
+  const search = params.toString();
   useEffect(() => {
     onChange(id);
   }, [id, onChange]);
+  useEffect(() => {
+    onSearch(search);
+  }, [search, onSearch]);
   return null;
 }
 
@@ -312,6 +354,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [rankedPills, setRankedPills] = useState<RankedEntry[] | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  // R67 A-16 -- WHOSE STRIP IS THIS? The ranking is a statement about one
+  // person's work, so the cache that paints it before the server answers is
+  // keyed by the signed-in user. Resolved from this tab's own Supabase session,
+  // which is the same identity every server read is made under.
+  const [userId, setUserId] = useState<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const rankedCacheRef = useRef<RankedCache>(EMPTY_RANKED_CACHE);
+  // A-16: the organisation read failed twice. The rail says so, in the band
+  // M24 says is never covered, with the one control that can change it.
+  const [orgFailed, setOrgFailed] = useState(false);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
@@ -341,6 +393,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // no new question; it puts the cursor in the box, shows an example of what
   // this box takes, and makes the Send button name what it is waiting for.
   const [awaitingText, setAwaitingText] = useState(false);
+  // R67 A-17 -- the name the user picked belongs to VERIDIAN, not to PROJEXA.
+  // Band 2 says so and offers the link; it is a destination, not a refusal.
+  const [platformNotice, setPlatformNotice] = useState<string | null>(null);
   // A-08: a failed ranking read is admitted in one muted line rather than
   // silently producing a strip that looks like a considered answer.
   const [rankingFailed, setRankingFailed] = useState(false);
@@ -391,10 +446,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // finger already moving toward the first one. The last ranking the server
     // gave THIS user is cached and painted immediately, so the strip that
     // appears is the strip that stays.
+    //
+    // A-16: the identity is resolved asynchronously and this is the FIRST
+    // render, so the browser's last user is what can be painted now. The moment
+    // the real identity lands and disagrees, the effect below repaints from
+    // that user's own entry -- or from nothing. Never from someone else's.
     try {
-      const cached = localStorage.getItem(RANKED_CARDS_KEY);
-      const parsed = cached ? JSON.parse(cached) : null;
-      if (Array.isArray(parsed)) setRankedPills(parsed as RankedEntry[]);
+      const cache = parseRankedCache(localStorage.getItem(RANKED_CARDS_KEY));
+      rankedCacheRef.current = cache;
+      const painted = rankingFor(cache, null);
+      if (painted) setRankedPills(painted as RankedEntry[]);
     } catch {
       // No cache is a normal first run, not a failure.
     }
@@ -439,13 +500,43 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // own to read fresh state from.
   const deferredRankingRef = useRef<RankedEntry[] | null>(null);
   const paintedRef = useRef(false);
+  // A-16: what is on screen, where the async ranking callback can read it. The
+  // server's list replaces the strip only when it DIFFERS -- an identical
+  // ranking must not cause a repaint, because a repaint is a frame in which the
+  // cards under a moving finger can move.
+  const rankedPillsRef = useRef<RankedEntry[] | null>(null);
+  // A-16: has the SERVER answered in this session? A server answer is newer
+  // than any cache, so the identity effect above must never overwrite it.
+  const serverAnsweredRef = useRef(false);
+  // The latest server answer, held so it can be written to the cache under the
+  // right user even when the identity resolves after the ranking arrives.
+  const latestServerRankingRef = useRef<RankedEntry[] | null>(null);
+
+  const persistRanking = useCallback(() => {
+    const id = userIdRef.current;
+    const entries = latestServerRankingRef.current;
+    if (!id || !entries) return;
+    const next = rememberRanking(rankedCacheRef.current, id, entries);
+    rankedCacheRef.current = next;
+    try {
+      localStorage.setItem(RANKED_CARDS_KEY, serialiseRankedCache(next));
+    } catch {
+      // A blocked or full storage costs the next visit a cached paint. It must
+      // never cost this one its strip.
+    }
+  }, []);
 
   const applyRanking = useCallback((entries: RankedEntry[]) => {
+    if (sameRanking(rankedPillsRef.current, entries)) {
+      deferredRankingRef.current = null;
+      return;
+    }
     if (rankingArrival({ painted: paintedRef.current }) === "defer") {
       deferredRankingRef.current = entries;
       return;
     }
     deferredRankingRef.current = null;
+    rankedPillsRef.current = entries;
     setRankedPills(entries);
   }, []);
 
@@ -465,49 +556,64 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // it was this component's `info` state going stale relative to the
   // session that now owns the tab. Extracted to a stable callback so it can
   // be re-run below on any Supabase auth-state change, not just on mount.
+  //
+  // R67 A-16 -- AND IT IS ATTEMPTED TWICE BEFORE ANY FALLBACK. A single failed
+  // read is usually a dropped request, not a broken backend: this product runs
+  // on site connections and all four of the shell's reads happen in the same
+  // first second of a page load, which is exactly when a flaky link drops one.
+  // One retry, one second later, removes most of the degraded states the user
+  // would otherwise have to reload out of. The retry policy itself is pure and
+  // lives in src/lib/shell-resilience.ts, so "each call is attempted twice" is
+  // asserted rather than described.
   const loadOrgInfo = useCallback(async () => {
-    try {
-      const res = await fetch("/api/organization");
-      const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
-      if (!res.ok) {
-        noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
-        return;
-      }
-      if (d?.organization?.name) setInfo(d);
-    } catch (err) {
-      noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
+    const read = await readJsonWithRetry<OrgInfo>("/api/organization");
+    if (!read.ok) {
+      setOrgFailed(true);
+      noteFailure("your organisation", read.error);
+      return;
     }
+    setOrgFailed(false);
+    if (read.data?.organization?.name) setInfo(read.data);
+  }, [noteFailure]);
+
+  const loadProjects = useCallback(async () => {
+    const read = await readJsonWithRetry<Project[] | { projects?: Project[] }>("/api/projects");
+    if (!read.ok) {
+      noteFailure("your projects", read.error);
+      return;
+    }
+    const d = read.data;
+    const list: Project[] = Array.isArray(d) ? d : ((d as { projects?: Project[] })?.projects ?? []);
+    if (!Array.isArray(list)) return;
+    setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+    // Only a REAL, successful read can say the org has no projects. An
+    // empty list before the call answers must never produce the "Create
+    // a project first" sentence -- that would be a confident empty state
+    // standing in for "not loaded yet", the exact defect this shell has
+    // been corrected for twice already.
+    setProjectsLoaded(true);
   }, [noteFailure]);
 
   useEffect(() => {
-    let live = true;
     void loadOrgInfo();
-    (async () => {
-      try {
-        const res = await fetch("/api/projects");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) {
-          setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-          // Only a REAL, successful read can say the org has no projects. An
-          // empty list before the call answers must never produce the "Create
-          // a project first" sentence -- that would be a confident empty state
-          // standing in for "not loaded yet", the exact defect this shell has
-          // been corrected for twice already.
-          setProjectsLoaded(true);
-        }
-      } catch (err) {
-        if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
+    void loadProjects();
+  }, [loadOrgInfo, loadProjects]);
+
+  // R67 A-16 -- WHOSE RANKING IS CACHED. Read from this tab's own Supabase
+  // session, which is the identity every server read above is made under. The
+  // cache is repainted from the resolved user the moment it is known, so a
+  // second person signing in on the same browser never inherits the first
+  // person's strip.
+  useEffect(() => {
+    let live = true;
+    const supabase = createClient();
+    void supabase.auth.getUser().then(({ data }) => {
+      if (live) setUserId(data.user?.id ?? null);
+    });
     return () => {
       live = false;
     };
-  }, [noteFailure, loadOrgInfo]);
+  }, []);
 
   // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
   // reports a session change -- a sign-in/sign-out in this same tab (also
@@ -515,15 +621,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // is a harmless no-op, not a reason to special-case which events fire).
   useEffect(() => {
     const supabase = createClient();
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN") {
+        // A-16: the identity moves with the session, so the cached strip does
+        // too -- a sign-in as somebody else must not leave the previous user's
+        // ranking on screen.
+        setUserId(session?.user?.id ?? null);
         void loadOrgInfo();
       } else if (event === "SIGNED_OUT") {
         setInfo(null);
+        setUserId(null);
       }
     });
     return () => sub.subscription.unsubscribe();
   }, [loadOrgInfo]);
+
+  // A-16 -- THE CACHE FOLLOWS THE IDENTITY. Once the user is known, the strip
+  // is repainted from THEIR cached ranking; if this browser has none for them,
+  // the pre-identity paint (the previous user's) is dropped rather than left
+  // standing. Nothing here can produce a ranking for the wrong person.
+  useEffect(() => {
+    userIdRef.current = userId;
+    // A ranking that arrived before the identity did still belongs to this
+    // user; write it under their key now rather than losing it.
+    persistRanking();
+    if (!userId) return;
+    const mine = rankingFor(rankedCacheRef.current, userId) as RankedEntry[] | null;
+    setRankedPills((current) => {
+      if (sameRanking(current, mine)) return current;
+      // A server answer already on screen outranks any cache: it is newer.
+      if (serverAnsweredRef.current) return current;
+      rankedPillsRef.current = mine;
+      return mine;
+    });
+  }, [userId, persistRanking]);
 
   // F_025, second half of the fix: onAuthStateChange above only catches a
   // session change that THIS tab's own GoTrueClient instance initiated or
@@ -564,118 +695,99 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
+  //
+  // A-16: attempted twice, one second apart, before the pane admits a failure
+  // -- and the pane's Retry now calls THIS, not router.refresh(). The refresh
+  // re-rendered a server component that does not own this list, so the one
+  // control offered on a failed read could not actually retry the read.
   const loadTasks = useCallback(async () => {
-    {
-      try {
-        const res = await fetch("/api/tasks?limit=50");
-        // Status before body: an error body parses perfectly well as JSON, and
-        // treating it as data is how a failed request becomes a confident
-        // empty list.
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          setTasksError(
-            d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
-          );
-          return;
-        }
-        const data = (d ?? {}) as ApiTasks;
-        setTasksError(null);
-        setCounts({
-          home: Number(data.counts?.total) || 0,
-          approval: Number(data.counts?.needsYou) || 0,
-          queue: Number(data.counts?.running) || 0,
-          done: Number(data.counts?.done) || 0,
-        });
-        setTasksLoaded(true);
-        const g = data.groups ?? {};
-        // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
-        // (below), because the five header tabs used to be pure decoration --
-        // every one of them rendered the same two lists, so clicking
-        // "Completed" changed nothing on screen.
-        setTaskGroups({
-          needsYou: g.needsYou ?? [],
-          running: g.running ?? [],
-          done: g.done ?? [],
-          blocked: g.blocked ?? [],
-          all: data.tasks ?? [],
-        });
-      } catch {
-        setTasksError("Couldn't reach the task service.");
-      }
+    const read = await readJsonWithRetry<ApiTasks>("/api/tasks?limit=50");
+    if (!read.ok) {
+      setTasksError(read.error);
+      return;
     }
+    const data = read.data ?? ({} as ApiTasks);
+    setTasksError(null);
+    setCounts({
+      home: Number(data.counts?.total) || 0,
+      approval: Number(data.counts?.needsYou) || 0,
+      queue: Number(data.counts?.running) || 0,
+      done: Number(data.counts?.done) || 0,
+    });
+    setTasksLoaded(true);
+    const g = data.groups ?? {};
+    // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
+    // (below), because the five header tabs used to be pure decoration --
+    // every one of them rendered the same two lists, so clicking
+    // "Completed" changed nothing on screen.
+    setTaskGroups({
+      needsYou: g.needsYou ?? [],
+      running: g.running ?? [],
+      done: g.done ?? [],
+      blocked: g.blocked ?? [],
+      all: data.tasks ?? [],
+    });
   }, []);
 
+  // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
+  // order, never re-sorted here. isNewUser true means "nothing earned yet",
+  // which must not look like a failed call.
+  //
+  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
+  // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
+  // org/projects effect above was fixed for in the first PR, just never
+  // applied here. The backend's own message is kept.
+  //
+  // A-16: attempted twice before any fallback, and THE CACHED RANKING SURVIVES
+  // A FAILURE -- what is on screen is a real answer from a previous visit, and
+  // replacing it with a shorter fallback set because one request failed would
+  // be the "two different pill sets" defect wearing an error's clothes.
+  const loadRanking = useCallback(async () => {
+    const read = await readJsonWithRetry<PillPayload>("/api/pill-usage?limit=6");
+    if (!read.ok) {
+      setRankingFailed(true);
+      noteFailure("your ranked modules", read.error);
+      return;
+    }
+    const d = read.data;
+    if (!Array.isArray(d?.pills)) return;
+    setRankingFailed(false);
+    const entries = d.pills.map((p) => ({
+      pillKey: p.pillKey,
+      label: p.label ?? null,
+      pinned: Boolean(p.pinned),
+    }));
+    // A-07/A-16: cache it BEFORE deciding whether to paint it. The cache is
+    // for the next first render, under this user's own key; A-14's rule
+    // decides whether it may replace what is on screen NOW.
+    serverAnsweredRef.current = true;
+    latestServerRankingRef.current = entries;
+    persistRanking();
+    applyRanking(entries);
+    // A-08: no recent chains is a normal first week and must render as
+    // "role cards only", never as an error and never as a placeholder.
+    setRecentChains(
+      Array.isArray(d.recentChains)
+        ? d.recentChains.map((c) => ({
+            fullChain: c.fullChain,
+            label: c.label,
+            steps: c.steps ?? [],
+            projectId: c.projectId ?? null,
+            outcome: c.outcome ?? "ok",
+          }))
+        : []
+    );
+    // R53's payload carries functionId per pill. Held in a ref so the
+    // submit handler can read it without re-rendering the strip.
+    pillFnRef.current = Object.fromEntries(
+      d.pills.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
+    );
+  }, [applyRanking, noteFailure, persistRanking]);
+
   useEffect(() => {
-    let live = true;
     void loadTasks();
-
-    // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-    // order, never re-sorted here. isNewUser true means "nothing earned yet",
-    // which must not look like a failed call.
-    //
-    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-    // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-    // org/projects effect above was fixed for in the first PR, just never
-    // applied here. Same noteFailure() pattern, same shape: status read
-    // before the body is treated as data, the backend's own message kept.
-    (async () => {
-      try {
-        const res = await fetch("/api/pill-usage?limit=6");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) {
-            setRankingFailed(true);
-            noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
-          }
-          return;
-        }
-        if (live && Array.isArray(d?.pills)) {
-          setRankingFailed(false);
-          const entries = (d.pills as { pillKey: string; label?: string; pinned?: boolean }[]).map((p) => ({
-            pillKey: p.pillKey,
-            label: p.label ?? null,
-            pinned: Boolean(p.pinned),
-          }));
-          // A-07: cache it BEFORE deciding whether to paint it. The cache is
-          // for the next first render; the five-second rule below is only
-          // about THIS one.
-          try {
-            localStorage.setItem(RANKED_CARDS_KEY, JSON.stringify(entries));
-          } catch {}
-          applyRanking(entries);
-          // A-08: no recent chains is a normal first week and must render as
-          // "role cards only", never as an error and never as a placeholder.
-          setRecentChains(
-            Array.isArray(d?.recentChains)
-              ? (d.recentChains as RecentCardView[]).map((c) => ({
-                  fullChain: c.fullChain,
-                  label: c.label,
-                  steps: c.steps ?? [],
-                  projectId: c.projectId ?? null,
-                  outcome: c.outcome ?? "ok",
-                }))
-              : []
-          );
-          // R53's payload carries functionId per pill. Held in a ref so the
-          // submit handler can read it without re-rendering the strip.
-          pillFnRef.current = Object.fromEntries(
-            (d.pills as { pillKey: string; functionId?: string }[])
-              .filter((x) => x.functionId)
-              .map((x) => [x.pillKey, x.functionId as string])
-          );
-        }
-      } catch (err) {
-        if (live) {
-          setRankingFailed(true);
-          noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
-        }
-      }
-    })();
-
-    return () => {
-      live = false;
-    };
-  }, [noteFailure]);
+    void loadRanking();
+  }, [loadTasks, loadRanking]);
 
   // R67 A-03 -- ONE PROJECT, AND THE SCREEN'S ANSWER WINS.
   //
@@ -697,6 +809,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // and from the screen's own publication before it has -- the two agree by
   // construction, because both are answers about the same id.
   const [routeProjectId, setRouteProjectId] = useState<string | null>(null);
+  // A-17: the current query string, for "is this pill's own view open".
+  const [routeSearch, setRouteSearch] = useState("");
   // The rail's own answer, applying the SAME rule the server page applies
   // (pickProject): the remembered choice if the user can still reach it, their
   // only project if they have exactly one, otherwise nothing -- the rail's null
@@ -837,6 +951,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setPendingFunctionId(null);
     setArmedCard(null);
     setAwaitingText(false);
+    setPlatformNotice(null);
     setDraft("");
     setSubmitError(null);
     setProjectPrompt(null);
@@ -929,6 +1044,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(null);
       setArmedCard(null);
       setAwaitingText(false);
+      setPlatformNotice(null);
       setProjectPrompt(null);
       setLoaded(null);
     },
@@ -995,11 +1111,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   //
   // The ranked band above is unaffected: a CARD is already a verb and an
   // object ("File minutes"), so it still goes straight to its own screen.
+  //
+  // R67 A-17 -- AND THE DESTINATION IS NOW A TABLE, NOT A CHAIN OF CONDITIONS.
+  // src/lib/pill-routes.ts says where each key goes; this switch only carries
+  // it out. The branch that used to catch everything else and TYPE THE PILL'S
+  // NAME INTO THE BOX has no successor here: "leave the draft untouched" is a
+  // property of every arm below, and there is no arm that writes to it.
   const onModuleEntrySelect = useCallback(
     (entryId: string) => {
       const entry = pillEntryById(entryId);
       if (!entry) return;
       setShowAllPills(false);
+      setPlatformNotice(null);
       switch (entry.destination) {
         case "input":
           // R67 A-15 -- "OTHER - TYPE IT" WRITES NOTHING, ANYWHERE.
@@ -1027,16 +1150,43 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           bumpUsage(entry.id);
           requestProject("Choose a project in the top rail");
           return;
-        case "route": {
-          const mod = entry.moduleId ? MODULE_CATALOGUE.find((m) => m.id === entry.moduleId) : undefined;
+        case "module": {
+          const moduleId = entry.target?.kind === "module" ? entry.target.moduleId : entry.moduleId;
+          const mod = moduleId ? MODULE_CATALOGUE.find((m) => m.id === moduleId) : undefined;
           if (!mod) return;
           bumpUsage(entry.id, chainForUsage(mod.label, null));
+          // D-08 / C-09: the second level is verbs. The module narrows the
+          // sentence; its VERBS open routes (band 2).
           selectEntity(mod);
           return;
         }
+        case "view": {
+          // R67 A-17 -- A NAMED VIEW OPENS ITS REAL ROUTE. "Analysis" is a
+          // screen, not a noun anyone finishes a sentence with, so it goes
+          // where its name goes: the segment is appended to the strip, the URL
+          // changes, and the draft is left exactly as the user left it.
+          const href = entry.target ? pillHref(entry.target, projectId) : null;
+          if (!href) return;
+          bumpUsage(entry.id, chainForUsage(entry.label, null));
+          setSegments([{ id: entry.id, label: entry.label, kind: "action" as const }]);
+          setPendingFunctionId(null);
+          setArmedCard(null);
+          setAwaitingText(false);
+          setProjectPrompt(null);
+          setLoaded(null);
+          router.push(href);
+          return;
+        }
+        case "platform":
+          // R67 A-17 -- NOT A DEAD END AND NOT A LIE. The name belongs to
+          // VERIDIAN and has no PROJEXA screen; band 2 says so and offers the
+          // one thing that helps, which is the way there.
+          bumpUsage(entry.id);
+          setPlatformNotice(entry.label);
+          return;
       }
     },
-    [bumpUsage, chainForUsage, requestProject, selectEntity]
+    [bumpUsage, chainForUsage, projectId, requestProject, router, selectEntity, setLoaded]
   );
 
   // R67 A-08 -- "DO AGAIN". It LOADS the sentence and STOPS.
@@ -1298,8 +1448,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSubmitError(null);
     setShowAllPills(false);
     // A-15: the "say what you need" prompt belonged to the screen it was
-    // asked for; a new screen asks its own question.
+    // asked for; a new screen asks its own question. A-17: so did the "not
+    // part of PROJEXA" line.
     setAwaitingText(false);
+    setPlatformNotice(null);
     // A-14: a ranking that arrived while a strip was already on screen was held
     // back rather than re-ordering cards under the user's finger. A navigation
     // is the one moment they have already looked away, so it lands here -- and
@@ -1401,12 +1553,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         label: entry.label,
         shortcut: shortcutLabel(entry),
         note: entry.note,
+        // R67 A-17: "the pill carries aria-pressed while its route is open".
+        // For a view that is its own pathname AND its own query -- a pill for
+        // /schedule?tab=board is not open while the timeline is showing.
+        pressed: entry.target ? isPillRouteOpen(entry.target, pathname ?? "", routeSearch) : false,
         unavailable:
           entry.moduleId && pillPointsAtCurrentScreen(entry.moduleId, entry.label, pathname ?? "")
             ? "you are here"
             : undefined,
       })),
-    [pathname]
+    [pathname, routeSearch]
   );
 
   // A-07: three skeletons appear ONLY when there is genuinely nothing to paint
@@ -1415,12 +1571,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // role's order would be the same flicker in a different costume.
   const cardsLoading = rankedPills === null && !roleKnown;
 
-  // A-14: keep the "is anything real on screen" answer where the async ranking
-  // callback can read it. It is the ONLY input to whether a fresh ranking is
-  // painted now or held until the next navigation.
-  useEffect(() => {
-    paintedRef.current = isStripPainted({ cachedRanking: rankedPills, roleKnown });
-  }, [rankedPills, roleKnown]);
+  // A-14/A-16: keep the two answers the async ranking callback needs where it
+  // can read them -- what is on screen, and whether anything real is on screen
+  // at all. They are mirrored during RENDER rather than in an effect: the
+  // callback runs between renders, and an effect that has not flushed yet would
+  // tell it the strip is still empty milliseconds after it was painted, which
+  // is the one moment A-14's rule exists to cover.
+  rankedPillsRef.current = rankedPills;
+  paintedRef.current = isStripPainted({ cachedRanking: rankedPills, roleKnown });
+
+  // A-16 -- THE ORGANISATION, IN WORDS. Three states, three sentences, and none
+  // of them is the bare em-dash the kit's string fallback produced.
+  const orgLabel = organisationLabel({ name: info?.organization?.name, failed: orgFailed });
 
   // R67 A-01/A-10 -- ONE STATE, and every composer string is a function of it.
   // The strings themselves live in src/lib/chain-status.ts, where each state
@@ -1512,6 +1674,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // programme is removing. Band 2 also stays empty on a create route, where
   // the page's own form is the card (A-06).
   const optionLevel = useMemo(() => {
+    // R67 A-17 -- THE ONE LINE FOR A NAME PROJEXA DOES NOT HAVE. It outranks
+    // the option chain because it IS the answer to the click that produced it:
+    // "Email" has no verbs here, and offering another module's would be worse
+    // than saying so.
+    if (platformNotice) {
+      return (
+        <p className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-ct-muted)" }}>
+          <span>
+            {platformNotice} — {NOT_IN_PROJEXA}
+          </span>
+          <a href={VERIDIAN_LINK} target="_blank" rel="noopener noreferrer" className="veri-view-tab">
+            Open VERIDIAN
+          </a>
+        </p>
+      );
+    }
     if (!selectedModule || screen.createSegment) return null;
     const leaves = chainOptionsFor(selectedModule);
     if (leaves.length === 0) return null;
@@ -1529,7 +1707,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         }}
       />
     );
-  }, [selectedModule, screen.createSegment, segments, onLeafSelect]);
+  }, [platformNotice, selectedModule, screen.createSegment, segments, onLeafSelect]);
 
   return (
     <AppShell
@@ -1556,11 +1734,28 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           {/* A-13: the URL's own ?projectId=, read behind the Suspense boundary
               this repo already uses for useSearchParams(). Renders nothing. */}
           <Suspense fallback={null}>
-            <RouteProjectIdReader onChange={setRouteProjectId} />
+            <RouteProjectIdReader onChange={setRouteProjectId} onSearch={setRouteSearch} />
           </Suspense>
           <TopRail
             brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
-            organisationName={info?.organization?.name ?? "—"}
+            // A-16: "Organisation unavailable — [Retry]" when two attempts
+            // failed, "Loading…" until the first answers, and the name once it
+            // has. A lone "—" is not one of the reachable states any more.
+            organisation={
+              <>
+                <span>{orgLabel.text}</span>
+                {orgLabel.retry && (
+                  <button
+                    type="button"
+                    onClick={() => void loadOrgInfo()}
+                    className="veri-view-tab"
+                    style={{ minHeight: 24 }}
+                  >
+                    Retry
+                  </button>
+                )}
+              </>
+            }
             project={railLabelProject}
             onSwitchProject={() => {
               // Cycles through real projects and back through the null state.
@@ -1636,16 +1831,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // backend's OWN words, with a retry that costs one click.
           <div className="flex h-full flex-col">
             <div className="m-2 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
-              <p role="alert" className="text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
-                {tasksError}
+              {/* A-16 -- ONE LINE, then the backend's own words under it. The
+                  notice names the thing that failed in the user's language;
+                  the detail is kept because it is the only sentence that can
+                  tell an operator WHY, and hiding it in a tooltip would lose
+                  it. Retry calls the task read itself: the old control called
+                  router.refresh(), which re-renders a server component that
+                  does not own this list, so the one control offered on a
+                  failure could not actually retry it. */}
+              <p role="alert" className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
+                <span>{TASKS_UNAVAILABLE}</span>
+                <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
+                  Retry
+                </button>
               </p>
-              <button
-                type="button"
-                onClick={() => router.refresh()}
-                className="veri-view-tab mt-2"
-              >
-                Retry
-              </button>
+              {tasksError && (
+                <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  {tasksError}
+                </p>
+              )}
             </div>
           </div>
         ) : (

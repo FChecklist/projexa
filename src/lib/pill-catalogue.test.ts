@@ -65,24 +65,41 @@ describe("PILL_CATALOGUE -- fixed, frozen, and handed out by identity", () => {
   });
 });
 
-describe("every pill has a wired destination (A-11 / A-12)", () => {
+describe("every pill has a wired destination (A-11 / A-12 / A-17)", () => {
   test("nothing renders without one", () => {
     for (const entry of PILL_CATALOGUE) {
-      expect(["route", "rail", "input"]).toContain(entry.destination);
+      expect(["module", "view", "rail", "input", "platform"]).toContain(entry.destination);
+      // A-17: the destination is DATA on the entry, not a branch in a handler.
+      if (entry.destination !== "input") expect(entry.target).not.toBeNull();
     }
   });
 
-  test("the four universal pills with no PROJEXA screen are dropped, not disabled", () => {
-    for (const label of ["Email", "Policies", "Department", "Teams"]) {
-      expect(PILL_CATALOGUE.some((e) => e.label === label)).toBe(false);
-    }
+  test("A-17 supersedes A-11 for the four pills with no module: they are back, with real destinations", () => {
+    // A-11 dropped Email / Policies / Department / Teams because none of them
+    // had a wired destination and four permanent non-controls in a list of
+    // twenty is worse than four absences. A-17 gives all four one -- two turned
+    // out to have shipped PROJEXA screens, and the other two get the VERIDIAN
+    // link -- so the rule that kept them out ("no destination, no render") is
+    // the same rule that now puts them back.
+    expect(pillEntryById("platform.policies")?.destination).toBe("view");
+    expect(pillEntryById("platform.department")?.destination).toBe("view");
+    expect(pillEntryById("platform.email")?.destination).toBe("platform");
+    expect(pillEntryById("platform.teams")?.destination).toBe("platform");
   });
 
-  test("a route pill points at a module that exists", () => {
-    const broken = PILL_CATALOGUE.filter(
-      (e) => e.destination === "route" && !MODULE_CATALOGUE.some((m) => m.id === e.moduleId)
-    ).map((e) => e.id);
+  test("a module pill points at a module that exists", () => {
+    const modulePills = PILL_CATALOGUE.filter((e) => e.destination === "module");
+    expect(modulePills.length).toBeGreaterThan(10);
+    const broken = modulePills
+      .filter((e) => !MODULE_CATALOGUE.some((m) => m.id === (e.target as { moduleId?: string })?.moduleId))
+      .map((e) => e.id);
     expect(broken).toEqual([]);
+  });
+
+  test("Task Master and To Do appear once, as the kit's own merged 'Tasks'", () => {
+    expect(PILL_CATALOGUE.filter((e) => e.label === "Tasks").length).toBe(1);
+    expect(PILL_CATALOGUE.some((e) => e.label === "Task Master")).toBe(false);
+    expect(PILL_CATALOGUE.some((e) => e.label === "To Do")).toBe(false);
   });
 
   test("D-10: a demoted universal pill still reaches the same destination", () => {

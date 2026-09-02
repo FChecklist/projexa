@@ -84,6 +84,8 @@ export type ModuleEntryView = {
   note?: string;
   /** Words that DO disable it -- today only "you are here". */
   unavailable?: string;
+  /** A-17: this pill's own route is what is on screen right now. */
+  pressed?: boolean;
 };
 
 export type PillStripProps = {
@@ -270,9 +272,13 @@ export function PillStrip({
                 type="button"
                 onClick={() => onSelectModule(entry.id)}
                 disabled={blocked}
+                // A-17: aria-pressed while this pill's own route is open, so a
+                // screen reader is told which of these the user is standing on
+                // -- the same fact the sighted "you are here" note carries.
+                aria-pressed={entry.pressed ?? undefined}
                 aria-label={entry.shortcut ? `${name} (${entry.shortcut})` : name}
                 title={entry.shortcut ? `${name} · ${entry.shortcut}` : name}
-                className="veri-mode-pill disabled:opacity-45"
+                className={`veri-mode-pill disabled:opacity-45${entry.pressed ? " active" : ""}`}
               >
                 {entry.label}
                 {aside && (
