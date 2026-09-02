@@ -53,7 +53,14 @@ import {
 // is dead and unexplained is kept and strengthened -- see the Composer props
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
-import { PillStrip, type CardView, type ModuleEntryView, type RecentCardView } from "./PillStrip";
+import {
+  PillStrip,
+  type CardView,
+  type ModuleEntryView,
+  type RecentCardView,
+  type ScreenCardView,
+} from "./PillStrip";
+import { cardsFor, chainForScreenCard, hrefForScreenCard, type ScreenCard } from "@/lib/composer-cards";
 // R67 A-16 / decision D-09: the rail is forked too, for one reason -- the kit
 // types `organisationName` as a string, so it cannot render "Organisation
 // unavailable — [Retry]", and the string fallback it forced was a bare em-dash.
@@ -1288,6 +1295,65 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [bumpUsage, chainForUsage, projectId, requestProject, router]
   );
 
+  // R67 A-20 -- THE SCREEN'S OWN CARDS, KEYED BY ROUTE AND TAB.
+  //
+  // This replaces the row that rendered the MODULE's leaves. A module has one
+  // set of leaves however many tabs it has, which is why eight of the
+  // seventeen composer crops the audit captured were byte-for-byte identical:
+  // the attendance register, the timesheet, the receipts book and the schedule
+  // board all offered the same controls. The table (src/lib/composer-cards.ts)
+  // is keyed by route AND tab, and a screen it does not name still falls back
+  // to its module's leaves, so nothing loses the verbs it had.
+  const screenCards = useMemo(
+    () => cardsFor(pathname ?? "/", new URLSearchParams(routeSearch).get("tab")),
+    [pathname, routeSearch]
+  );
+
+  // A CARD CLICK NEVER EXECUTES. It opens a real page, or it loads its sentence
+  // into the strip and stops -- and when it stops, the cursor goes to the box
+  // and the Send button admits it is waiting for words, because a chain nobody
+  // can finish is a dead end however good the sentence looks.
+  const onScreenCardSelect = useCallback(
+    (cardId: string) => {
+      const card: ScreenCard | undefined = screenCards.find((c) => c.id === cardId);
+      if (!card) return;
+      const mod = MODULE_CATALOGUE.find((m) => m.id === card.moduleId) ?? null;
+      bumpUsage(card.id, chainForUsage(card.label, mod?.label ?? null));
+      setPendingFunctionId(null);
+      setArmedCard(null);
+      setPlatformNotice(null);
+      // The sentence, minus the word the strip is already showing -- see
+      // chainForScreenCard() for why the module must not be named twice, and
+      // why leaving it in would stand this very card row down.
+      setSegments(
+        chainForScreenCard(card, chainModule?.id ?? null).map((s) => ({ id: s.id, label: s.label, kind: s.kind }))
+      );
+      const href = hrefForScreenCard(card, { pathname: pathname ?? "/", projectId });
+      if (!href) {
+        // Load-and-stop. Completing such a sentence in ONE more click is WS-C's
+        // ConfirmCard over WS-B's registered executors -- this item's own
+        // declared dependencies (C-16, B-11). Until they land the sentence is
+        // finished in words, which is a path that works end to end today.
+        setAwaitingText(true);
+        composerRef.current?.focus();
+        return;
+      }
+      if (mod && mod.needsProject !== false && !projectId && !href.includes("projectId=")) {
+        requestProject(noProjectPromptFor(mod));
+        return;
+      }
+      setAwaitingText(false);
+      setProjectPrompt(null);
+      router.push(href);
+    },
+    [bumpUsage, chainForUsage, chainModule, pathname, projectId, requestProject, router, screenCards]
+  );
+
+  const screenCardViews: ScreenCardView[] = useMemo(
+    () => screenCards.map((c) => ({ id: c.id, label: c.label, verb: c.verb, opens: Boolean(c.open) })),
+    [screenCards]
+  );
+
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.
   //
@@ -1956,22 +2022,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   over band 2 and this row stands down -- two modules' verbs on
                   one screen is exactly the duplicate vocabulary being removed,
                   and the sentence in the strip names only one of them. */}
-              {chainModule && !selectedModule && (
-                <div className="flex flex-wrap items-center gap-1">
-                  {chainOptionsFor(chainModule).map((leaf) => (
-                    <button
-                      key={leaf.id}
-                      type="button"
-                      onClick={() => onLeafSelect(chainModule, leaf)}
-                      className="veri-mode-pill active"
-                    >
-                      {leaf.label}
-                    </button>
-                  ))}
-                </div>
-              )}
               <PillStrip
                 cards={cardViews}
+                // A-20: the screen's own verbs are a PROP of the strip now,
+                // keyed by route AND tab, instead of a separate row above it
+                // rendering the module's leaves. A module has one set of leaves
+                // however many tabs it has, which is exactly why eight of the
+                // seventeen captured composer crops were identical.
+                screenCards={selectedModule ? [] : screenCardViews}
+                onSelectScreenCard={onScreenCardSelect}
                 recent={recentChains}
                 onSelectRecent={onRecentSelect}
                 onSelect={onCardSelect}

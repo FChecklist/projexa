@@ -196,6 +196,16 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
         query: { tab: "entry", focus: "activity" },
       },
       { id: "work-progress.report", label: "Run WPR", path: "/work-progress", query: { tab: "report", run: "1" } },
+      // A-20: "Export CSV" is a verb too, and the file is the whole point of
+      // it -- so the leaf runs the report AND exports it, rather than landing
+      // the user on a report they still have to run before the export button
+      // stops being useless. WorkProgressReportClient honours both parameters.
+      {
+        id: "work-progress.export",
+        label: "Export CSV",
+        path: "/work-progress",
+        query: { tab: "report", run: "1", export: "csv" },
+      },
       { id: "work-progress.analytics", label: "Analytics", path: "/work-progress", query: { tab: "analytics" } },
     ],
   },

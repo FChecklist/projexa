@@ -94,8 +94,25 @@ export type ModuleEntryView = {
   pressed?: boolean;
 };
 
+/**
+ * R67 A-20 -- one card that belongs to THIS route and tab. Rendered before the
+ * ranked cards, because the thing the user is standing in front of outranks the
+ * things they do most.
+ */
+export type ScreenCardView = {
+  id: string;
+  label: string;
+  /** "Record" | "Run" | "Ask" ... the card's own verb, rendered as the word. */
+  verb: string;
+  /** True when the card opens a page; false when it loads its chain and stops. */
+  opens: boolean;
+};
+
 export type PillStripProps = {
   cards: readonly CardView[];
+  /** A-20: the current screen's own verbs, before everything else. */
+  screenCards?: readonly ScreenCardView[];
+  onSelectScreenCard?: (cardId: string) => void;
   /** A-08: rendered at the front of the ranked band. Empty for a user with
    *  no recent chains, which is a normal first week and not a failure. */
   recent?: readonly RecentCardView[];
@@ -136,6 +153,8 @@ function SkeletonCards() {
 
 export function PillStrip({
   cards,
+  screenCards,
+  onSelectScreenCard,
   recent,
   onSelectRecent,
   onSelect,
@@ -173,6 +192,28 @@ export function PillStrip({
           </>
         ) : (
           <>
+            {/* R67 A-20 -- THIS SCREEN'S OWN VERBS, FIRST. Keyed by route AND
+                tab, which is what stopped eight of the seventeen captured
+                composer crops being byte-for-byte identical: a module has one
+                set of leaves however many tabs it has, and the attendance
+                register, the timesheet and the receipts book are three
+                different jobs. A card either opens a real page or loads its
+                sentence into the strip and stops -- neither one executes. */}
+            {(screenCards ?? []).map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => onSelectScreenCard?.(card.id)}
+                aria-label={`${card.verb}: ${card.label}`}
+                title={card.label}
+                className="veri-mode-pill active"
+              >
+                <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
+                  {card.verb}
+                </span>
+                {card.label}
+              </button>
+            ))}
             {/* R67 A-08 -- "DO AGAIN". The three chains this user actually ran
                 in the last seven days, at the front of the band, each labelled
                 with the whole sentence rather than a fragment: M24 is explicit

@@ -405,9 +405,10 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // ONCE. The ref, not the report state, is the guard: a run that FAILS must
   // not retry itself on every re-render, and the user must be able to press
   // Run Report again afterwards without the effect fighting them. The ref also
-  // makes the effect safe now that runReport's identity changes with
+  // makes the effect safe now that runReport's identity changes with lane I's
   // selectedCategories: picking a category cannot silently re-fire the run.
-  const autoRunRequested = useSearchParams().get("run") === "1";
+  const searchParams = useSearchParams();
+  const autoRunRequested = searchParams.get("run") === "1";
   const autoRanRef = useRef(false);
   useEffect(() => {
     if (!autoRunRequested || autoRanRef.current) return;
@@ -423,7 +424,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // used for BOQ import, not export). Honestly labelled "Export CSV", not
   // claimed as XLSX. Disabled when the tie check fails -- an export of a
   // report that doesn't add up is worse than no export.
-  function exportCsv() {
+  const exportCsv = useCallback(() => {
     if (!report) return;
     const lines = [
       ["S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt", "% Prev", "% Current", `% ${thirdColumnMode === "balance" ? "Balance" : "Total"}`, "Qty Prev", "Qty Current", "Qty Third", "Amt Prev", "Amt Current", "Amt Third"].join(","),
@@ -440,7 +441,27 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
     a.href = url; a.download = `wpr-${projectId}-${from}-to-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
+  }, [report, thirdColumnMode, tieError, projectId, from, to]);
+
+  // R67 A-20. The composer's "Export CSV" card is a verb and the FILE is the
+  // whole point of it, so the card navigates here with ?tab=report&run=1&
+  // export=csv and the export happens once the report the effect above ran has
+  // actually arrived. Landing the user on an empty report with an export button
+  // that can do nothing until they press Run would be the same "card that is
+  // really a place" this programme is removing.
+  //
+  // ONCE, and never over a report that does not add up: the tie check is the
+  // same one that disables the button, and "an export of a report that doesn't
+  // add up is worse than no export" (see exportCsv's own comment above). When
+  // the check fails the tie-error card is already on screen saying why.
+  const autoExportRequested = searchParams.get("export") === "csv";
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExportRequested || autoExportedRef.current) return;
+    if (!report || tieError) return;
+    autoExportedRef.current = true;
+    exportCsv();
+  }, [autoExportRequested, report, tieError, exportCsv]);
 
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
   // Business API (explicitly ruled out). Copies the URL so the user can
