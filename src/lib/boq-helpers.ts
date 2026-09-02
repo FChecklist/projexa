@@ -44,9 +44,11 @@ export type BoqLineItemRow = {
   computedBudget?: number | null;
   vendorId?: string | null;
   vendorAmount?: string | null;
-  // R67 lane I (WS-I item I-03) / D-26: the material/manpower split of this
-  // line's budget. Served by VERIDIAN's BOQ GET and written by the same
-  // PATCH /api/scope/line-items/{id} that carries vendorAmount and category.
+  // R67 lane I (WS-I item I-03) / D-26: the other two thirds of Sumeet's
+  // budget model, the material/manpower split of this line. Served by
+  // VERIDIAN's BOQ GET and written by the same PATCH /api/scope/line-items/{id}
+  // that carries vendorAmount and category. null means NOT COSTED and renders
+  // as an en dash; "0" is a real, entered zero and renders as "AED 0.00".
   materialAmount?: string | null;
   manpowerAmount?: string | null;
 };
