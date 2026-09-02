@@ -34,6 +34,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import AttendeesField from "@/components/AttendeesField";
 import OrgUserPicker from "@/components/OrgUserPicker";
 import { setFooterMessage } from "@/lib/footer-message";
+import { defaultMeetingTitle, nextHalfHourLocalInput } from "@/lib/mom-format";
 import {
   clearMoMDraft, draftHasContent, draftSavedAtLabel, loadMoMDraft, saveMoMDraft,
   type MoMDraftActionItem,
@@ -47,10 +48,18 @@ function emptyActionItem(): MoMDraftActionItem {
   return { title: "", assigneeUserId: null, assigneeName: null, dueDate: "" };
 }
 
-export default function MoMCreateClient({ projectId }: { projectId: string }) {
+export default function MoMCreateClient({ projectId, projectName }: { projectId: string; projectName?: string | null }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
+  // R67 lane D22 (item D-63, rec R-203): the form is SAVABLE ON ARRIVAL. A
+  // coordination meeting is minuted while it runs; opening to two blank
+  // required fields costs two interactions before a word of what was said can
+  // be typed. Both defaults are ordinary editable values, not placeholders --
+  // one typed word makes the title specific.
+  //
+  // Computed once via useState's initialiser rather than in a module constant,
+  // so "now" is the moment this form opened, not the moment the bundle loaded.
+  const [title, setTitle] = useState(() => defaultMeetingTitle(projectName));
+  const [scheduledAt, setScheduledAt] = useState(() => nextHalfHourLocalInput());
   const [attendees, setAttendees] = useState<string[]>([]);
   const [agenda, setAgenda] = useState<string[]>([""]);
   const [minutes, setMinutes] = useState("");
@@ -122,9 +131,13 @@ export default function MoMCreateClient({ projectId }: { projectId: string }) {
       clearMoMDraft(projectId);
       // The receipt belongs on the page the user lands on, not on the one they
       // are leaving -- see footer-message.ts.
+      // R67 D-63 supersedes D-58's wording here: the receipt names the MoM
+      // number the meeting was just given ("Meeting MOM-2026-0007 created"),
+      // which is the reference anyone will quote afterwards -- the title is
+      // already the <h1> of the page it lands on.
       setFooterMessage(`/moms/${meeting.id}`, {
         level: "success",
-        text: `Meeting ${meeting.title} saved - ${meeting.systemId ?? "MoM"}`,
+        text: `Meeting ${meeting.systemId ?? meeting.title} created`,
       });
       router.push(`/moms/${meeting.id}`);
     } catch (err) {

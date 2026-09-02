@@ -30,7 +30,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 lane D22 (item D-63, rec R-203): the FORKED ObjectScreen, not the kit's.
+// The fork adds one thing -- a header-actions slot -- because R-203's global
+// object-screen rule puts an object's own actions in its header, in a fixed
+// order, and the kit's ObjectScreen puts Edit in the footer with no way to add
+// Export/Share beside it. See src/components/screens/ScreenFrame.tsx's header
+// for why this is a fork and not a kit change (programme decision D-09).
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +46,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Sparkles, Link2, Ban } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatDayMonthYear } from "@/lib/format-date";
+import { meetingShareSummary } from "@/lib/mom-format";
 import ShareSheet, { type ShareLinkResult } from "@/components/ShareSheet";
 import OrgUserPicker from "@/components/OrgUserPicker";
 import { takeFooterMessage } from "@/lib/footer-message";
@@ -261,15 +268,32 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   // The backend refuses to share a draft (createMeetingShareLink, 409). Say so
   // on the control rather than letting the click fail.
   const shareDisabledReason = isPublished ? null : "Publish the meeting first";
-  const shareSheet = (
-    <ShareSheet
-      pdfHref={`/api/moms/${meeting.id}/pdf`}
-      createShareLink={createShareLink}
-      shareUrl={activeShareUrl}
-      shareDisabledReason={shareDisabledReason}
-      onMessage={(m) => setScreenMessages([{ level: m.level, text: m.text }])}
-    />
-  );
+  // R67 D-63: the header actions, as words, in this fixed order --
+  // Edit | Export PDF | Share on WhatsApp | Share link. One place to look on
+  // every object screen, rather than an Edit in the footer, a PDF glyph beside
+  // the minutes and a share button at the bottom of the page.
+  const headerActions = mode === "display" ? (
+    <span className="flex items-center gap-1">
+      <Button
+        variant="ghost" size="sm"
+        disabled={isPublished}
+        title={isPublished ? "Published meetings are locked" : undefined}
+        onClick={startEdit}
+      >
+        Edit
+      </Button>
+      <ShareSheet
+        pdfHref={`/api/moms/${meeting.id}/pdf`}
+        createShareLink={createShareLink}
+        shareUrl={activeShareUrl}
+        // The one line that goes ahead of the link, so a client who receives it
+        // knows what they have been sent before opening anything.
+        whatsappSummary={meetingShareSummary(meeting.title, formatDayMonthYear(meeting.scheduledAt), meeting.actionItems.length)}
+        shareDisabledReason={shareDisabledReason}
+        onMessage={(m) => setScreenMessages([{ level: m.level, text: m.text }])}
+      />
+    </span>
+  ) : undefined;
 
   return (
     <ObjectScreen
@@ -284,7 +308,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
         { label: "Type", value: meeting.meetingType },
         ...(meeting.publishedAt ? [{ label: "Published", value: formatDateTime(meeting.publishedAt) }] : []),
       ]}
-      onEdit={!isPublished && mode === "display" ? startEdit : undefined}
+      headerActions={headerActions}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
       onBack={() => router.push(meeting.projectId ? `/moms?projectId=${meeting.projectId}` : "/moms")}
@@ -295,12 +319,9 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
         ...(isPublished ? [{ level: "info" as const, text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []),
       ]}
     >
-      {mode === "display" && (
+      {mode === "display" && !isPublished && (
         <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
-          {!isPublished && (
-            <Button size="sm" disabled={publishing} onClick={publish}>{publishing ? "Publishing…" : "Publish & Lock"}</Button>
-          )}
-          {shareSheet}
+          <Button size="sm" disabled={publishing} onClick={publish}>{publishing ? "Publishing…" : "Publish & Lock"}</Button>
         </div>
       )}
 

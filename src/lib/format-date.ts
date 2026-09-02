@@ -54,3 +54,18 @@ export function formatDateTime(value: Date | string | number): string {
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
+
+/**
+ * e.g. "28 Aug 2026" -- the day-first form used in prose a person reads, as
+ * opposed to formatDate()'s numeric "8/28/2026" used in table cells.
+ *
+ * R67 lane D22 (item D-63): the MoM's WhatsApp summary line is a sentence sent
+ * to a client, and "8/28/2026" in a sentence is both ugly and ambiguous outside
+ * the US. Same pinned locale and time zone as every other helper here, for the
+ * same hydration reason.
+ */
+export function formatDayMonthYear(value: Date | string | number): string {
+  return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: FIXED_TIME_ZONE, day: "2-digit", month: "short", year: "numeric",
+  });
+}

@@ -20,7 +20,9 @@ export default async function MoMNewPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="flex-1">
-      <MoMCreateClient projectId={project.id} />
+      {/* R67 lane D22 (item D-63): the project's name is what makes the
+          default title specific ("Skyline Tower A - site coordination"). */}
+      <MoMCreateClient projectId={project.id} projectName={project.name} />
     </div>
   );
 }
