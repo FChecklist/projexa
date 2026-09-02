@@ -261,6 +261,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/[id]",
   "/scope/[id]/compare",
   "/scope/[id]/revise",
+  // R67 D-25: the BOQ Excel import screen. Same class as "/scope/new" -- it is
+  // reached by the "Import" header action and by the empty state on /scope,
+  // both of which pass the ?projectId= it needs, never by a standalone sidebar
+  // item that could not carry one.
+  "/scope/import",
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",

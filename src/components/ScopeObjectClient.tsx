@@ -42,7 +42,18 @@ const STATUS_TONE: Record<string, "needs-you" | "running" | "waiting" | "done" |
   draft: "neutral", submitted: "needs-you", approved: "done", superseded: "neutral",
 };
 
-export default function ScopeObjectClient({ boqId }: { boqId: string }) {
+export default function ScopeObjectClient({
+  boqId,
+  importedNotice = null,
+}: {
+  boqId: string;
+  /**
+   * R67 D-25: the "Imported BOQ <title> · Rev0 · N lines" confirmation, carried
+   * here in ?imported= because the import screen that produced it unmounts with
+   * the navigation. A persistent notice in the message band, never a toast.
+   */
+  importedNotice?: string | null;
+}) {
   const router = useRouter();
   const [boq, setBoq] = useState<Boq | null>(null);
   const [rows, setRows] = useState<BoqLineItemRow[]>([]);
@@ -202,7 +213,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       // /scope/{id} URL with no ?projectId= at all. router.back() alone has
       // no history entry to return to after a full reload.
       onBack={() => router.push(`/scope?projectId=${boq.projectId}`)}
-      messages={[]}
+      messages={importedNotice ? [{ level: "success", text: importedNotice }] : []}
     >
       {/* Real, object-specific workflow toolbar — BOQ's own actions, since
           ObjectScreen's fixed footer has no slot for anything beyond
