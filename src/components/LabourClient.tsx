@@ -186,14 +186,17 @@ export default function LabourClient({
   // Landing: the roster only, and only when the server did not already send it.
   // Attendance stays untouched until its own tab is opened -- unless the user
   // deep-linked straight to it with ?tab=attendance.
+  // Synced in an effect, never during render -- see MaterialsClient's own
+  // panesRef for the same reasoning.
   const rosterPaneRef = useRef(roster);
-  rosterPaneRef.current = roster;
+  useEffect(() => {
+    rosterPaneRef.current = roster;
+  });
   useEffect(() => {
     if (needsLoad(rosterPaneRef.current)) void loadRoster();
     if (activeTab === "attendance") void loadAttendance(attendanceDay, showEarlier);
     // Deliberately mount-only per project: the tab handler below owns every
     // later load, and re-running this on a tab change would double-fetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";

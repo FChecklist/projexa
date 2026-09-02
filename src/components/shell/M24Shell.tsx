@@ -189,9 +189,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // a Send rather than from the server.
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [tasksFetchedAt, setTasksFetchedAt] = useState<number | null>(null);
+  // A ref, not state: nothing RENDERS from "when did the list last load" -- it
+  // only decides whether the navigation effect should go to the network -- and
+  // a ref written inside loadTasks is read by that effect without adding a
+  // render or a dependency that would re-run it.
   const tasksFetchedAtRef = useRef<number | null>(null);
-  tasksFetchedAtRef.current = tasksFetchedAt;
   const optimisticIdsRef = useRef<Set<string>>(new Set());
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
@@ -455,7 +457,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       };
       setNeedsYou((prev) => merge(prev, pageNeedsYou));
       setWaiting((prev) => merge(prev, pageWaiting));
-      setTasksFetchedAt(Date.now());
+      if (!append) tasksFetchedAtRef.current = Date.now();
     } catch {
       setTasksError("Couldn't reach the task service.");
     } finally {

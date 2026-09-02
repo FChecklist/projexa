@@ -146,8 +146,13 @@ export default function MaterialsClient({
   const [report, setReport] = useState<Pane<CostReportRow>>(idlePane<CostReportRow>);
 
   const panes: Record<TabId, Pane<unknown>> = { master, receipts, "cost-report": report };
+  // Synced in an effect, never during render: loadPane() reads this to decide
+  // whether a tab has already answered, and an effect runs before any click
+  // that could ask.
   const panesRef = useRef(panes);
-  panesRef.current = panes;
+  useEffect(() => {
+    panesRef.current = panes;
+  });
 
   // One update path for all three panes, so loadPane() below is one function
   // rather than three near-identical ones. The casts are safe because each
@@ -196,7 +201,6 @@ export default function MaterialsClient({
     };
     // activeTab is handled by goToTab (which loads on demand); re-running this
     // on every tab change would abort the pane that is already in flight.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadPane]);
 
   // A project switch invalidates every pane -- the rows on screen belong to the
