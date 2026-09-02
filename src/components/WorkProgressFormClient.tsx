@@ -28,7 +28,8 @@ import {
   type QueuedWorkProgressEntry,
 } from "@/lib/offline/work-progress-queue";
 
-type Activity = { id: string; name: string; unit: string | null };
+import type { Activity, ActivityLookup } from "./WorkProgressPageClient";
+
 type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
 type Boq = { id: string; version: number; status: string; title: string };
 
@@ -41,8 +42,22 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
-  const [activities, setActivities] = useState<Activity[]>([]);
+// R67 F-24 (R-240): the activity lookup is now OWNED BY THE PAGE and passed in,
+// with its own three honest states. This form used to fetch /api/work-progress/
+// activities itself while WorkProgressPageClient fetched exactly the same list
+// alongside it -- two requests, one screen, one answer. The BOQ lookups below
+// stay here: they are this form's own picker, not a translation table, and
+// without them a site engineer cannot record progress against a line at all.
+export default function WorkProgressFormClient({
+  projectId,
+  activities,
+  onLogged,
+}: {
+  projectId: string;
+  activities: ActivityLookup;
+  onLogged: () => void;
+}) {
+  const activityOptions: Activity[] = activities.options;
   const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
   // currently selected. Before this, the form resolved exactly ONE "current"
@@ -69,11 +84,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   useEffect(() => { refreshQueued(); }, [refreshQueued]);
 
   useEffect(() => {
-    fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`)
-      .then((r) => r.json())
-      .then((data) => setActivities(data.activities ?? []))
-      .catch(() => toast.error("Couldn't load activities"));
-
     // R47-005 (fault R46M13_TC30_01, reproduced live in production 2026-08-25):
     // this used to resolve ONE "current" BOQ -- approved, else submitted, else
     // highest version -- fetch only that BOQ's line items, and offer no BOQ
@@ -129,8 +139,20 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     return () => { cancelled = true; };
   }, [selectedBoqId]);
 
+  // R67 F-24: the Activity select says which of the three states it is in --
+  // a placeholder while the lookup is in flight, the real options once it
+  // lands, and the backend's own reason (never a silently empty dropdown) when
+  // it failed. A failed REQUIRED lookup also becomes the submit button's own
+  // reason, below -- the same disabled-with-reason pattern /labour/new proves.
+  const activityOptionList =
+    activities.status === "ready"
+      ? activityOptions.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name }))
+      : activities.status === "loading"
+        ? [{ value: "", label: "Loading activities…" }]
+        : [{ value: "", label: activities.error ?? "Couldn't load activities" }];
+
   const columns: ScreenColumn[] = [
-    { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },
+    { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activityOptionList },
     // Shown only when the project actually holds more than one BOQ -- with a
     // single BOQ the choice is not a choice, and an extra control on a site
     // engineer's form is cost with no benefit (projexa#94's own rule).
@@ -258,6 +280,14 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   // GLOBAL rule this violated.
   const requiredFields = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
   const missingCount = requiredFields.filter((f) => values[f] === undefined || values[f] === null || values[f] === "").length;
+  // R67 F-24: a failed REQUIRED lookup is a reason the button states, not a
+  // dead control the user clicks and then has to work out for themselves.
+  const submitBlockedReason =
+    activities.status === "error"
+      ? "Activity list failed to load"
+      : missingCount > 0
+        ? `${missingCount} required field${missingCount === 1 ? "" : "s"}`
+        : undefined;
 
   return (
     <FormScreen
@@ -266,8 +296,8 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       onSubmit={handleSubmit}
       submitLabel="Log Entry"
       submitting={submitting}
-      submitDisabled={missingCount > 0}
-      submitDisabledReason={missingCount > 0 ? `${missingCount} required field${missingCount === 1 ? "" : "s"}` : undefined}
+      submitDisabled={submitBlockedReason !== undefined}
+      submitDisabledReason={submitBlockedReason}
       messages={messages}
       banner={queued.length > 0 ? (
         <div className="mx-4 mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">

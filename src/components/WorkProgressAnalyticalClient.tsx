@@ -8,15 +8,21 @@
 // (?category=), so a drilled state has a real, shareable URL (the part of
 // D-5 this pass delivers without full saved-view persistence -- see
 // AnalyticalScreen.tsx's own scope note).
+//
+// R67 F-24 (audit recommendation R-240): the second panel on this tab -- the
+// entries table -- used to sit on the word "Loading..." indefinitely, because
+// `loading` only cleared after a SERIAL tail of /api/scope plus one
+// /api/scope/{id}, fetched purely to translate the BOQ column. Those two calls
+// are gone: VERIDIAN sends activityName/boqItemCode/boqDescription with each
+// entry now, so the table renders as soon as the entries do, and a failure says
+// what failed instead of spinning.
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
-import WorkProgressListClient from "./WorkProgressListClient";
+import WorkProgressListClient, { type Entry } from "./WorkProgressListClient";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
 type Activity = { id: string; name: string; categoryId: string | null };
 type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
-type LineItem = { id: string; itemCode: string | null; description: string };
 
 export default function WorkProgressAnalyticalClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -26,36 +32,45 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
   const [entries, setEntries] = useState<Entry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
     async function load() {
       setLoading(true);
-      const [entriesRes, activitiesRes, catRes] = await Promise.all([
-        fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ categories: [] })),
+      const [entriesRes, activitiesRes, catRes] = await Promise.allSettled([
+        fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`, { signal }).then(async (r) => {
+          const body = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(body?.error ?? `Couldn't load progress entries (HTTP ${r.status})`);
+          return body as { entries?: Entry[] };
+        }),
+        fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`, { signal }).then((r) => r.json()),
+        fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`, { signal }).then((r) => r.json()),
       ]);
-      setEntries(entriesRes.entries ?? []);
-      setActivities(activitiesRes.activities ?? []);
-      setCategories(catRes.categories ?? []);
+      if (signal.aborted) return;
 
-      const boqsRes = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ boqs: [] }));
-      const boqs: { id: string; version: number; status: string }[] = boqsRes.boqs ?? [];
-      if (boqs.length > 0) {
-        const current = boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boq = await fetch(`/api/scope/${current.id}`).then((r) => r.json());
-        setLineItems(boq.lineItems ?? []);
+      if (entriesRes.status === "fulfilled") {
+        setEntries(entriesRes.value.entries ?? []);
+        setEntriesError(null);
+      } else {
+        setEntries([]);
+        setEntriesError(
+          entriesRes.reason instanceof Error && entriesRes.reason.message
+            ? entriesRes.reason.message
+            : "Couldn't load progress entries."
+        );
       }
+      setActivities(activitiesRes.status === "fulfilled" ? (activitiesRes.value.activities ?? []) : []);
+      setCategories(catRes.status === "fulfilled" ? (catRes.value.categories ?? []) : []);
       setLoading(false);
     }
-    load();
+    void load();
+    return () => controller.abort();
   }, [projectId]);
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
-  const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
@@ -92,12 +107,7 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       drillSlices={categoryFilter ? [{ label: categoryFilter, onRemove: () => router.push(`/work-progress?projectId=${projectId}&tab=analytics`) }] : []}
       chart={<BarChart data={bars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />}
       table={
-        <WorkProgressListClient
-          entries={filteredEntries}
-          activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
-          loading={loading}
-        />
+        <WorkProgressListClient entries={filteredEntries} loading={loading} loadError={entriesError} />
       }
     />
   );
