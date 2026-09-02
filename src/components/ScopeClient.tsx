@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, GitCompare, GitBranchPlus } from "lucide-react";
+import { Loader2, Plus, GitCompare, GitBranchPlus, Upload } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -167,7 +167,20 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {/* R67 lane D22 (item D-52): the shipped BOQ importer finally has a
+            way in. Disabled-with-reason rather than hidden when there is no
+            project -- an action that silently disappears teaches nothing,
+            and /scope/import needs a project to import into. */}
+        <Button
+          variant="outline"
+          disabled={!projectId}
+          title={projectId ? undefined : "Select a project first"}
+          onClick={() => router.push(`/scope/import?projectId=${projectId}`)}
+        >
+          <Upload className="size-4" /> Import
+        </Button>
+        {!projectId && <span className="text-[12.5px] text-px-muted">Select a project first</span>}
         {/* Real screen navigation (2026-08-30) -- replaces the old "New BOQ"
             Dialog popup with a real create route. */}
         <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>

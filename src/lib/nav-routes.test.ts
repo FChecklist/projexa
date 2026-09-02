@@ -260,6 +260,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/[id]",
   "/scope/[id]/compare",
   "/scope/[id]/revise",
+  // R67 lane D22 (item D-52): reached from the "Import" action beside "+ New
+  // BOQ" on /scope, and from the composer's own Scope leaf -- never a
+  // standalone sidebar item, same class as /scope/new beside it.
+  "/scope/import",
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",

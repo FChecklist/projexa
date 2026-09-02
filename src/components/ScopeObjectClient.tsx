@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { takeFooterMessage, type FooterMessage } from "@/lib/footer-message";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
   boqTotal, withCurrency, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
@@ -44,6 +45,11 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R67 lane D22 (item D-52): the import receipt, written on /scope/import
+  // just before it navigated here. Taken ONCE on mount and then held in state,
+  // so it persists on screen (the kit's MessageArea, never a toast -- see that
+  // component's own header) without re-announcing itself on every reload.
+  const [receipt, setReceipt] = useState<FooterMessage | null>(null);
   // R67 lane I (WS-I item I-05, R-177): the org's category list, so the
   // Category column is a real pick-list here too and not free text that would
   // invent a new category on every typo.
@@ -75,6 +81,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   }
 
   useEffect(() => { load(); }, [boqId]);
+  useEffect(() => { setReceipt(takeFooterMessage(`/scope/${boqId}`)); }, [boqId]);
 
   // R67 lane I (I-03/I-05): the same PATCH now also carries category and the
   // material/manpower split -- one write path for every per-line budget field,
@@ -172,7 +179,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       // /scope/{id} URL with no ?projectId= at all. router.back() alone has
       // no history entry to return to after a full reload.
       onBack={() => router.push(`/scope?projectId=${boq.projectId}`)}
-      messages={[]}
+      messages={receipt ? [{ level: receipt.level, text: receipt.text }] : []}
     >
       {/* Real, object-specific workflow toolbar — BOQ's own actions, since
           ObjectScreen's fixed footer has no slot for anything beyond
