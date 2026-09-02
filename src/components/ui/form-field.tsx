@@ -42,8 +42,14 @@ export function FormField({
 }: {
   label: React.ReactNode;
   required?: boolean;
-  /** A validation message to show under the field. Falsy renders nothing. */
-  error?: string | null;
+  /**
+   * A validation message to show under the field. Falsy renders nothing.
+   * R67 D-18: widened from `string` to ReactNode so a caller can put a
+   * warning glyph beside the sentence (the audit asked for glyph + text, not
+   * colour alone) without a second, parallel error slot. Every existing
+   * caller passes a plain string, which is still a ReactNode.
+   */
+  error?: React.ReactNode;
   /** Static helper text, always shown. Announced with the field. */
   hint?: React.ReactNode;
   className?: string;
