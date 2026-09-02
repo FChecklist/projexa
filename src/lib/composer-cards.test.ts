@@ -133,7 +133,15 @@ describe("the eight identical composer crops: no two screens now offer the same 
       const signature = cardsFor(path, tab)
         .map((c) => c.id)
         .join(",");
-      expect(signature.length).toBeGreaterThan(0);
+      // "/reports|" is the one key whose only card opens /reports itself, so on
+      // /reports it is dropped by the A-01 rule below and the row is empty
+      // there -- the ranked cards are the whole answer, exactly as on the
+      // Dashboard. Two DIFFERENT screens both offering nothing is not the
+      // defect this test guards (identical rows of controls are).
+      if (!signature) {
+        expect(key).toBe("/reports|");
+        continue;
+      }
       const clash = seen.get(signature);
       if (clash) throw new Error(`${key} offers the same cards as ${clash}`);
       seen.set(signature, key);
@@ -198,9 +206,94 @@ describe("every destination is a page that really ships", () => {
   });
 });
 
+describe("A-01 applies to this band too: no card opens the screen it is rendered on", () => {
+  // The review found this band shipping the exact control A-01 exists to
+  // remove: "Open" on every module list route, the create leaf on every create
+  // route, "Run report" on /reports. The rule is applied by resolved
+  // destination, so it holds for a card added tomorrow as well as for these.
+  const CURRENT_URLS: readonly (readonly [string, string])[] = [
+    ["/permits", ""],
+    ["/permits/new", ""],
+    ["/permits", "withinDays=30"],
+    ["/moms", ""],
+    ["/moms/new", ""],
+    ["/scope", ""],
+    ["/scope/new", ""],
+    ["/labour", ""],
+    ["/labour/attendance/new", ""],
+    ["/labour/new", ""],
+    ["/materials", ""],
+    ["/materials/new", ""],
+    ["/materials/receipts/new", ""],
+    ["/budgets", ""],
+    ["/budgets/new", ""],
+    ["/drawings", ""],
+    ["/drawings/new", ""],
+    ["/documents", ""],
+    ["/documents/upload", ""],
+    ["/schedule", ""],
+    ["/schedule/tasks/new", ""],
+    ["/schedule/log-time", ""],
+    ["/customers", ""],
+    ["/customers/new", ""],
+    ["/vendors", ""],
+    ["/vendors/new", ""],
+    ["/reports", ""],
+    ["/work-progress", "tab=report&run=1"],
+    ["/moms/abc", "focus=share"],
+  ];
+
+  for (const [path, search] of CURRENT_URLS) {
+    test(`no card on ${path}${search ? `?${search}` : ""} resolves to that same URL`, () => {
+      const tab = new URLSearchParams(search).get("tab");
+      for (const card of cardsFor(path, tab, search)) {
+        const href = hrefForScreenCard(card, { pathname: path, projectId: "p1" });
+        if (!href) continue; // load-and-stop: it opens nothing at all
+        const [hrefPath, hrefSearch] = href.split("?");
+        if (hrefPath !== path) continue;
+        const target = new URLSearchParams(hrefSearch ?? "");
+        const current = new URLSearchParams(search);
+        // projectId is context the shell appends, not a different page, so a
+        // card that differs only by it would still be a dead control.
+        target.delete("projectId");
+        current.delete("projectId");
+        const sameQuery = [...target.entries()].every(([k, v]) => current.get(k) === v);
+        // Named rather than boolean, so a failure says which card is dead.
+        expect(sameQuery ? `${card.id} reopens ${href}` : "no dead card").toBe("no dead card");
+      }
+    });
+  }
+
+  test("the dead cards named in the review are gone, and the live ones stay", () => {
+    expect(cardsFor("/permits").map((c) => c.label)).toEqual(["New", "Expiring soon"]);
+    expect(cardsFor("/permits/new").map((c) => c.label)).toEqual(["Expiring soon", "Open"]);
+    expect(cardsFor("/reports", "")).toEqual([]);
+    expect(cardsFor("/moms/new").map((c) => c.id)).toEqual(["moms.open"]);
+    expect(cardsFor("/schedule/log-time").map((c) => c.id)).toEqual(["schedule.task", "schedule.open"]);
+  });
+
+  test("a filter or a tab the user is NOT on is still offered", () => {
+    // "Expiring soon" changes the URL from /permits, so it is a real control
+    // there; it is only dead once that filter is applied.
+    expect(cardsFor("/permits", null, "").map((c) => c.id)).toContain("permits.expiring");
+    expect(cardsFor("/permits", null, "withinDays=30").map((c) => c.id)).not.toContain("permits.expiring");
+    // A-04's two verbs both carry a tab, so both survive on /work-progress.
+    expect(cardsFor("/work-progress", null, "").map((c) => c.label).slice(0, 2)).toEqual([
+      "Record progress",
+      "Run WPR",
+    ]);
+  });
+
+  test("a load-and-stop card is never dropped -- it opens nothing to be dead at", () => {
+    expect(cardsFor("/work-progress", "analytics", "tab=analytics").map((c) => c.id)).toEqual(["wp.explain"]);
+  });
+});
+
 describe("the fallback, and what it protects", () => {
   test("a screen the table does not name still offers its module's leaves", () => {
-    expect(cardsFor("/permits").map((c) => c.label)).toEqual(["New", "Expiring soon", "Open"]);
+    // "Open" is dropped here by the A-01 rule above: on /permits it opens
+    // /permits.
+    expect(cardsFor("/permits").map((c) => c.label)).toEqual(["New", "Expiring soon"]);
   });
 
   test("A-04 SURVIVES: /work-progress with no ?tab still leads with its two verbs", () => {
@@ -213,12 +306,20 @@ describe("the fallback, and what it protects", () => {
     expect(labels[1]).toBe("Run WPR");
   });
 
-  test("a create page shows its module's leaves, not a third set", () => {
-    expect(cardsFor("/permits/new").map((c) => c.id)).toEqual(cardsFor("/permits").map((c) => c.id));
+  test("a create page shows its module's own leaves, not a third set", () => {
+    // Same module, same leaf ids -- minus the one that opens this very page.
+    const onCreate = cardsFor("/permits/new").map((c) => c.id);
+    expect(onCreate.every((id) => id.startsWith("permits."))).toBe(true);
+    expect([...onCreate, "permits.new"].sort()).toEqual(
+      [...cardsFor("/permits").map((c) => c.id), "permits.open"].sort()
+    );
   });
 
   test("/scope/new is a create page, not an object page", () => {
-    expect(cardsFor("/scope/new").map((c) => c.id)).toEqual(cardsFor("/scope").map((c) => c.id));
+    // The object page offers revise/compare/progress; the create page offers
+    // its module's leaves (minus "New BOQ", which is the page it is on).
+    expect(cardsFor("/scope/new").map((c) => c.id)).toEqual(["scope.open"]);
+    expect(cardsFor("/scope/abc").map((c) => c.id)).toEqual(["scope.revise", "scope.compare", "scope.progress"]);
   });
 
   test("the Dashboard offers no verbs of its own -- it IS the module directory", () => {

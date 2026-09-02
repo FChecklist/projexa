@@ -1366,8 +1366,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // board all offered the same controls. The table (src/lib/composer-cards.ts)
   // is keyed by route AND tab, and a screen it does not name still falls back
   // to its module's leaves, so nothing loses the verbs it had.
+  //
+  // THE QUERY STRING IS PASSED, NOT ONLY THE TAB. A-01's rule -- never offer a
+  // control whose only destination is the screen already on show -- is applied
+  // to these cards by their RESOLVED DESTINATION (composer-cards.ts's
+  // cardPointsAtCurrentScreen), and a destination is a path AND its parameters:
+  // "Expiring soon" is a live control on /permits and a dead one on
+  // /permits?withinDays=30. Without the search this row would keep offering the
+  // filter the user is already looking at.
   const screenCards = useMemo(
-    () => cardsFor(pathname ?? "/", new URLSearchParams(routeSearch).get("tab")),
+    () => cardsFor(pathname ?? "/", new URLSearchParams(routeSearch).get("tab"), routeSearch),
     [pathname, routeSearch]
   );
 

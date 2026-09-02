@@ -60,8 +60,32 @@
 //   "Run <selected report>" on /reports ships as "Run report". Which report is
 //   selected lives inside ReportsClient's own state and is not published to the
 //   shell; naming a report the composer cannot see would be a guess.
+//
+// AND -- A-01's RULE APPLIES TO THIS BAND TOO (review fix). A-01 removed every
+// control whose only destination is the screen the user is already standing on,
+// and M24Shell enforces it twice: pillPointsAtCurrentScreen() for the expanded
+// "All modules" list, excludeModuleId for the ranked band. This row was added
+// afterwards and bypassed both, so it was the one band left shipping dead
+// controls -- "New" on /permits/new, which reloads the form the user is filling
+// in; "Open" on /permits, /moms, /scope and nine more, which is the page it is
+// rendered on; "Run report" on /reports. cardPointsAtCurrentScreen() below
+// applies the same rule by RESOLVED DESTINATION rather than by band, so it
+// holds for a card that arrives tomorrow as much as for these.
+//
+// THE COMPARISON IS AGAINST THE CARD'S DECLARED QUERY, NOT ITS FULL HREF. The
+// projectId the shell appends is context, not a different page: "Open" on
+// /permits?projectId=P1 resolves to /permits?projectId=P1 and is just as dead
+// as it is on /permits. Conversely "Expiring soon" (?withinDays=30) and the
+// ?tab= cards really do change the URL and survive -- until the user is
+// actually on that filter or tab, at which point they are dead in turn.
 
-import { MODULE_CATALOGUE, moduleHref, normalisePathname, type ModuleDef } from "./module-catalogue";
+import {
+  MODULE_CATALOGUE,
+  moduleHref,
+  normalisePathname,
+  type ModuleDef,
+  type ModuleLeaf,
+} from "./module-catalogue";
 
 /** One segment of the chain a card loads. Never a root -- the project and the
  *  screen's own module are already the strip's first segments. */
@@ -233,6 +257,57 @@ function leafCards(mod: ModuleDef): ScreenCard[] {
   });
 }
 
+/** The leaf a "leaf" card opens, looked up across the whole catalogue: a card
+ *  may borrow another module's leaf ("Record progress" on a BOQ page). */
+function leafById(leafId: string): ModuleLeaf | null {
+  for (const mod of MODULE_CATALOGUE) {
+    const leaf = mod.leaves.find((l) => l.id === leafId);
+    if (leaf) return leaf;
+  }
+  return null;
+}
+
+/**
+ * The page a card DECLARES it opens, before the shell adds the project. Null
+ * for a load-and-stop card: it has no destination, so it cannot be dead at one.
+ */
+function declaredDestination(
+  card: ScreenCard,
+  path: string
+): { path: string; query: Readonly<Record<string, string>> } | null {
+  if (!card.open) return null;
+  switch (card.open.kind) {
+    case "leaf": {
+      const leaf = leafById(card.open.leafId);
+      return leaf ? { path: normalisePathname(leaf.path), query: leaf.query ?? {} } : null;
+    }
+    case "suffix":
+      return { path: normalisePathname(`${path}${card.open.suffix}`), query: {} };
+    case "query":
+      // By construction this opens the page it is rendered on, so it is dead
+      // exactly when its parameter is already in the URL.
+      return { path, query: card.open.query };
+  }
+}
+
+/**
+ * A-01, BY DESTINATION: true when clicking this card would land the user
+ * exactly where they already are. Same page AND every parameter the card
+ * carries already set to the value it would set -- so "Expiring soon" is dead
+ * on /permits?withinDays=30 and live on /permits, from one rule.
+ */
+export function cardPointsAtCurrentScreen(
+  card: ScreenCard,
+  pathname: string,
+  search?: string | null
+): boolean {
+  const path = normalisePathname(pathname);
+  const destination = declaredDestination(card, path);
+  if (!destination || destination.path !== path) return false;
+  const current = new URLSearchParams(search ?? "");
+  return Object.entries(destination.query).every(([key, value]) => current.get(key) === value);
+}
+
 /**
  * The cards for this screen.
  *
@@ -240,21 +315,28 @@ function leafCards(mod: ModuleDef): ScreenCard[] {
  * ?tab= falls through to the module's leaves deliberately: A-04's acceptance is
  * that the first two cards there are "Record progress" and "Run WPR", and
  * resolving the page's default tab here would silently reduce that to one.
+ *
+ * `search` is the current query string. It is optional because a caller that
+ * does not pass one is still filtered on the pathname (which is what drops the
+ * create leaf on a create route and "Open" on a module's own list); passing it
+ * additionally drops a card whose filter or tab is already applied.
  */
-export function cardsFor(pathname: string, tab?: string | null): ScreenCard[] {
+export function cardsFor(pathname: string, tab?: string | null, search?: string | null): ScreenCard[] {
   const path = normalisePathname(pathname);
+  const live = (cards: readonly ScreenCard[]) =>
+    cards.filter((card) => !cardPointsAtCurrentScreen(card, path, search));
   for (const page of OBJECT_PAGES) {
-    if (page.test.test(path)) return [...page.cards];
+    if (page.test.test(path)) return live(page.cards);
   }
   const keyed = BY_ROUTE_AND_TAB[`${path}|${tab ?? ""}`];
-  if (keyed) return [...keyed];
+  if (keyed) return live(keyed);
   const mod = MODULE_CATALOGUE.find((m) =>
     m.prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
   );
   // The Dashboard is the grouped module directory, not a module you build a
   // task in (module-catalogue's chainModule: false), so it offers no verbs of
   // its own -- the ranked cards below are the whole answer there.
-  return mod && mod.chainModule !== false ? leafCards(mod) : [];
+  return mod && mod.chainModule !== false ? live(leafCards(mod)) : [];
 }
 
 /** The URL a card opens, or null when it loads its chain and stops. */
@@ -266,17 +348,10 @@ export function hrefForScreenCard(
   const path = normalisePathname(context.pathname);
   switch (card.open.kind) {
     case "leaf": {
-      const mod = MODULE_CATALOGUE.find((m) => m.id === card.moduleId) ?? null;
       // A card may borrow another module's leaf -- "Record progress" on a BOQ
       // object page opens Work Progress -- so the leaf is looked up across the
       // catalogue rather than only inside the card's own module.
-      const owner =
-        mod?.leaves.some((l) => l.id === (card.open as { leafId: string }).leafId)
-          ? mod
-          : (MODULE_CATALOGUE.find((m) =>
-              m.leaves.some((l) => l.id === (card.open as { leafId: string }).leafId)
-            ) ?? null);
-      const leaf = owner?.leaves.find((l) => l.id === (card.open as { leafId: string }).leafId);
+      const leaf = leafById(card.open.leafId);
       return leaf ? moduleHref(leaf, context.projectId) : null;
     }
     case "suffix":
