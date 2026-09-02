@@ -215,6 +215,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/new",
   "/labour/[id]",
   "/labour/attendance/new",
+  // R67 D-34: the bulk roster load. Same class as "/scope/import" -- reached by
+  // the "Import from Excel" action on /labour, which passes the ?projectId= it
+  // needs, never by a standalone sidebar item that could not carry one.
+  "/labour/import",
   "/labour/new",
   "/materials/[id]",
   "/materials/new",
