@@ -1,4 +1,3 @@
-import { PageHeading } from "@/components/PageHeading";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import BudgetsClient, { type RegistryColumn } from "@/components/BudgetsClient";
@@ -29,10 +28,13 @@ export default async function BudgetsPage() {
   const organizationId = await getServerOrganizationId();
   const registryColumns = await resolveBudgetsListColumns(organizationId);
 
+  // R67 D-43: the bare <PageHeading title="Budgets" /> is gone -- BudgetsClient
+  // renders the kit's own ScreenFrame header (breadcrumb + Filter | Export |
+  // + New in that fixed order), the same way PermitsListClient does, so this
+  // module's header cannot drift from every other module's.
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Budgets" />
         <BudgetsClient registryColumns={registryColumns} />
       </div>
     </>
