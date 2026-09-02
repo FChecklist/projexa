@@ -206,6 +206,13 @@ type ApiTask = {
   /** Real column on compliance.pipeline_tasks, selected by the route's own
    *  query and already ordered desc -- used by the History tab's dedup. */
   createdAt?: string | null;
+  // R67 B-06/B-01: the server now sends the function's HUMAN LABEL ("Record
+  // progress") beside the id, so a row title never has to fall back to
+  // "Record record_work_progress".
+  label?: string | null;
+  // R67 B-01/B-08 (D-03): the STRUCTURED failure. The sentence is composed
+  // here, from src/lib/task-errors.ts, never sent by the server.
+  failure?: { code?: string | null; missing?: string[]; context?: Record<string, string | number | null> | null } | null;
 };
 type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
@@ -253,9 +260,15 @@ function toTaskRow(
     state,
     verb: verbFor(t.functionId),
     // The chain's steps read as the object of the sentence: "Record Work
-    // Progress > New entry". Falling back to the functionId is deliberate --
-    // a row with no label at all would be worse than a technical one.
-    object: steps.length ? steps.join(" > ") : (t.functionId ?? "task"),
+    // Progress > New entry".
+    //
+    // R67 B-06: the fallback was `t.functionId`, which rendered rows reading
+    // "Record record_work_progress" -- a function id on a site engineer's
+    // screen. The server now resolves the id through the function catalogue
+    // and sends its human label, so the fallback is a real name; "task" is
+    // only reached when there is genuinely no function at all (an
+    // unresolved segment), and is still a word rather than an identifier.
+    object: steps.length ? steps.join(" > ") : (t.label ?? "task"),
     // M24: "line 2 is the DECIDING information - without it the user clicks in
     // to find out, which is the load being removed." R53 says render the
     // backend's OWN words on a blocked row; never a generic failure.
