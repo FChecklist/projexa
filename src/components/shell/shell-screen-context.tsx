@@ -27,6 +27,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import type { ShellObjectRecord } from "@/lib/object-screens";
 
 export type ScreenProject = { id: string; name: string };
 
@@ -48,9 +49,16 @@ export type ShellScreen = {
   moduleId: string | null;
   project: ScreenProject | null;
   source: ScreenProjectSource | null;
+  /**
+   * R67 A-21. The RECORD an object page is showing, when this screen is one.
+   * It carries its own projectId because an object page resolves nothing on the
+   * server -- the client fetches the record, and the record is where the
+   * project comes from. Null on every list, create and dashboard screen.
+   */
+  object: ShellObjectRecord | null;
 };
 
-const EMPTY: ShellScreen = { pathname: null, moduleId: null, project: null, source: null };
+const EMPTY: ShellScreen = { pathname: null, moduleId: null, project: null, source: null, object: null };
 
 const ScreenValueContext = createContext<ShellScreen>(EMPTY);
 const ScreenPublishContext = createContext<(screen: ShellScreen) => void>(() => {});
@@ -61,7 +69,15 @@ function sameScreen(a: ShellScreen, b: ShellScreen): boolean {
     a.moduleId === b.moduleId &&
     a.source === b.source &&
     a.project?.id === b.project?.id &&
-    a.project?.name === b.project?.name
+    a.project?.name === b.project?.name &&
+    // A-21: the record is part of the screen's identity. A BOQ whose title was
+    // just edited, or whose project was corrected, is a different sentence in
+    // the strip -- and a record that is still loading (null) is a different
+    // screen from one that has arrived.
+    a.object?.moduleId === b.object?.moduleId &&
+    a.object?.label === b.object?.label &&
+    a.object?.projectId === b.object?.projectId &&
+    a.object?.kind === b.object?.kind
   );
 }
 
@@ -116,8 +132,64 @@ export function ScreenContext({
       moduleId,
       project: projectId && projectName ? { id: projectId, name: projectName } : null,
       source: projectId ? source : null,
+      // A list, create or dashboard screen is not about one record. Publishing
+      // null here rather than leaving the field out is what stops a stale
+      // object segment surviving from the object page the user just left.
+      object: null,
     }),
     [pathname, moduleId, projectId, projectName, source]
+  );
+  useEffect(() => {
+    publish(screen);
+  }, [publish, screen]);
+  return null;
+}
+
+/**
+ * R67 A-21 -- WHAT RECORD IS THIS PAGE ABOUT?
+ *
+ * Rendered by an object page's own client once its record has LOADED, which is
+ * the only moment it can answer honestly: these pages fetch in the browser
+ * (/scope/<id> and /moms/<id> resolve nothing on the server), so before the
+ * fetch returns there is no title and no project to publish, and rendering this
+ * with an empty label would put "<project> › BOQ" on screen -- a kind word with
+ * no record, which names nothing.
+ *
+ * It publishes THREE facts and no more: which module the record belongs to, the
+ * record's own label, and the record's own project. The kind word ("BOQ",
+ * "Worker") is NOT published per page -- src/lib/object-screens.ts owns it, so
+ * every screen showing the same kind of record uses the same word.
+ *
+ * It renders nothing, and it needs no cleanup: like ScreenContext, the
+ * publication carries the pathname it describes and the shell ignores any
+ * record that is not about the screen currently on show.
+ */
+export function ObjectContext({
+  moduleId,
+  kind,
+  label,
+  projectId,
+}: {
+  moduleId: string;
+  /** Only for a page whose records are not the module's headline record. */
+  kind?: string;
+  label: string;
+  projectId: string | null;
+}) {
+  const publish = usePublishScreen();
+  const pathname = usePathname();
+  const screen = useMemo<ShellScreen>(
+    () => ({
+      pathname,
+      moduleId,
+      // The NAME is the shell's to resolve: an object page knows the project's
+      // id (it is on the record) and never its name, so publishing a name here
+      // would mean fetching one this screen has no other use for.
+      project: null,
+      source: projectId ? "route" : null,
+      object: { moduleId, label, projectId, ...(kind ? { kind } : {}) },
+    }),
+    [pathname, moduleId, kind, label, projectId]
   );
   useEffect(() => {
     publish(screen);

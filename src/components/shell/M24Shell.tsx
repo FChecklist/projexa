@@ -111,6 +111,7 @@ import { deriveMode } from "@/lib/chain-mode";
 import { isStripPainted, rankingArrival } from "@/lib/pill-ranking";
 import { navigationOutcome } from "@/lib/chain-navigation";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
+import { objectPromptLabel, objectSegmentFor, railDestinationForObject } from "@/lib/object-screens";
 import { useScreenModule } from "./use-screen-module";
 import {
   MODULE_CATALOGUE,
@@ -841,19 +842,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     return null;
   }, [routeProjectId, projects, routeScreen]);
 
-  // A-13 -- ONE ROOT, AND THE URL WINS. Route, then whatever the screen
-  // published, then the rail's own remembered choice.
-  const project = routeProject ?? routeScreen?.project ?? railProject;
+  // R67 A-21 -- AND THE RECORD ITSELF, ON AN OBJECT PAGE.
+  //
+  // A-13 wired the URL's ?projectId= into the shell and recorded what it could
+  // NOT do: /scope/<id> and /moms/<id> carry no ?projectId= at all, resolve
+  // nothing on the server, and fetch their record in the browser -- so the shell
+  // fell back to the RAIL there. A bookmarked BOQ could therefore be described
+  // in the strip under a different project's name than the one whose line items
+  // were rendered beneath it. The record carries its own project, and the page
+  // publishes it the moment it has one.
+  const screenObject = routeScreen?.object ?? null;
+  const objectProject = useMemo(() => {
+    const id = screenObject?.projectId ?? null;
+    if (!id) return null;
+    // The page publishes the ID; the names are the shell's, from the one
+    // /api/projects read it already makes. A project the user cannot reach
+    // resolves to nothing rather than to a name invented here.
+    return projects.find((p) => p.id === id) ?? null;
+  }, [screenObject, projects]);
+
+  // A-13 -- ONE ROOT, AND THE URL WINS. Route, then the record the URL names,
+  // then whatever the screen published, then the rail's remembered choice.
+  const project = routeProject ?? objectProject ?? routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
   // HOW it was chosen, for the rail's label. A project named by the URL was
-  // never automatic, whatever the page had to do to render it.
-  const projectSource: ScreenProjectSource | null = routeProject
-    ? "route"
-    : routeScreen?.project
-      ? routeScreen.source
-      : railProject
-        ? "preference"
-        : null;
+  // never automatic, whatever the page had to do to render it -- and neither
+  // was one read off the record the URL names.
+  const projectSource: ScreenProjectSource | null =
+    routeProject || objectProject
+      ? "route"
+      : routeScreen?.project
+        ? routeScreen.source
+        : railProject
+          ? "preference"
+          : null;
 
   // R67 A-04 -- THE RAIL ADMITS AN AUTOMATIC CHOICE.
   //
@@ -917,16 +939,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // segment for the same reason the module is: the user is standing on it, so
   // there is nothing to remove. Band 2 stays empty on these routes because the
   // page's own form IS the card.
+  //
+  // R67 A-21: on an OBJECT page the second fixed segment names the record --
+  // "<project> › BOQ R66 Audit BOQ 1009b" -- and REPLACES the module segment
+  // rather than following it. "BOQ" is the word this product already uses for a
+  // Scope of Work record (the page's own breadcrumb reads "Scope / Bill of
+  // Quantities"), so "<project> › Scope of Work › BOQ 1009b" would name the
+  // module twice in one line. It is a root for the same reason the module is:
+  // the user is standing in this record, so there is nothing to remove -- and
+  // the kit's floor takes the LAST root, so both fixed segments are protected
+  // by the same rule with no new mechanism.
+  const objectSegment = useMemo(() => objectSegmentFor(screenObject), [screenObject]);
   const chain: Chain = useMemo(() => {
     const root = project ? [{ id: project.id, label: project.name, kind: "root" as const }] : [];
-    const mod = chainModule
-      ? [{ id: `screen:${chainModule.id}`, label: chainModule.label, kind: "root" as const }]
-      : [];
+    const mod = objectSegment
+      ? [{ id: objectSegment.id, label: objectSegment.label, kind: "root" as const }]
+      : chainModule
+        ? [{ id: `screen:${chainModule.id}`, label: chainModule.label, kind: "root" as const }]
+        : [];
     const created = screen.createSegment
       ? [{ id: screen.createSegment.id, label: screen.createSegment.label, kind: "root" as const }]
       : [];
     return { mode, segments: [...root, ...mod, ...created, ...segments] };
-  }, [mode, project, chainModule, screen.createSegment, segments]);
+  }, [mode, project, objectSegment, chainModule, screen.createSegment, segments]);
 
   // Every (x) goes through the kit's clamp. This component never slices the
   // segment array itself -- the whole point of the rule living in chain.ts.
@@ -1057,9 +1092,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         router.push(`${window.location.pathname}${qs ? `?${qs}` : ""}`);
         return;
       }
+      // R67 A-21 -- ON AN OBJECT PAGE THE SWITCH LEAVES THE RECORD, ON PURPOSE.
+      //
+      // The record's own project now outranks the rail (that is the whole item),
+      // so writing the preference here would leave a control that changes
+      // nothing the user can see -- while making it change the strip would claim
+      // this BOQ belongs to a project it does not. The honest third answer is the
+      // one a person means by the switch: the same module, in the project they
+      // just chose. It is exactly where this page's own Back button goes.
+      const away = railDestinationForObject(screenObject, nextId);
+      if (away) {
+        router.push(away);
+        return;
+      }
       router.refresh();
     },
-    [routeProjectId, router]
+    [routeProjectId, router, screenObject]
   );
 
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
@@ -1713,7 +1761,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       projectName: project?.name ?? null,
       // A-11/A-12: the module in play -- the one just picked, else the one the
       // screen IS. One answer, so the next question names one module.
-      moduleLabel: activeModule?.label ?? null,
+      //
+      // A-21: on an object page, and until the user picks a different module,
+      // the question names the RECORD's kind -- "type what you need on this
+      // BOQ" -- because the strip beside it is saying "BOQ <title>" and calling
+      // one thing two names on one screen is the defect being removed.
+      moduleLabel:
+        (!selectedModule ? objectPromptLabel(screenObject) : null) ?? activeModule?.label ?? null,
       action: armedCard ? { label: armedCard.label, object: armedCard.object, kind: armedCard.kind } : null,
       // HONEST LIMIT: the missing-step state is fully implemented here and in
       // chain-status.ts, and nothing populates it yet. The list of fields an
@@ -1737,6 +1791,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       projects.length,
       project,
       activeModule,
+      selectedModule,
+      screenObject,
       armedCard,
       draft,
       segments,

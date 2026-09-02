@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -142,6 +143,12 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
   const statusLabel = statuses.find((s) => s.id === task.statusId)?.name ?? task.statusId;
 
   return (
+    <>
+    {/* R67 A-21: "<project> › Task #14 Shuttering, ground floor". The number is
+        part of the label because it is how this product identifies a task on
+        every other screen -- the page heading, the board card and the timesheet
+        all lead with it. */}
+    <ObjectContext moduleId="schedule" label={`#${task.number} ${task.title}`} projectId={task.projectId} />
     <ObjectScreen
       breadcrumb="Schedule / Task"
       title={`#${task.number} ${task.title}`}
@@ -216,5 +223,6 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
         )}
       </div>
     </ObjectScreen>
+    </>
   );
 }

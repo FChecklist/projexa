@@ -25,6 +25,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -273,6 +274,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       <Suspense fallback={null}>
         <FocusRequest />
       </Suspense>
+      {/* R67 A-21 -- THE STRIP NAMES THIS MEETING. Same reason and same moment
+          as the focus request above: the meeting is fetched in the browser, so
+          the title and the project only exist once it has arrived.
+          `meeting.projectId` is genuinely nullable here -- a meeting can be
+          filed against no project at all -- and null is published as null
+          rather than being replaced with the rail's guess. */}
+      <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
     <ObjectScreen
       breadcrumb="Minutes of Meeting / Meeting"
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
