@@ -12,10 +12,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
+import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
 
 type Drawing = {
   id: string;
@@ -23,7 +24,11 @@ type Drawing = {
   kind: "dwg" | "3d_walkthrough";
   discipline: string | null;
   isExternalLink: boolean;
+  // R67 F-02: documentUrl is now present ONLY for external links (a stored
+  // URL string, free to return). A storage-backed drawing reports
+  // hasDocument and its signed URL is minted on click -- see openDrawing().
   documentUrl: string | null;
+  hasDocument: boolean;
   createdAt: string;
 };
 
@@ -44,6 +49,11 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Discipline", field: "discipline", type: "text", importance: "High" },
   { label: "Added", field: "createdAt", type: "date", importance: "High" },
 ];
+
+// R67 F-02: the labels drawings/page.tsx paints in its Suspense fallback (plus
+// the always-present "Open" action column), so the header row on screen while
+// loading is the header row that stays there when rows arrive.
+export const DRAWINGS_FALLBACK_COLUMN_LABELS = [...COLUMNS.map((c) => c.label), "Open"];
 
 function renderDrawingCell(column: ScreenColumn, d: Drawing) {
   switch (column.field) {
@@ -83,6 +93,37 @@ export default function DrawingsClient({
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  // R67 F-02. The register no longer carries a signed URL per row, so this
+  // asks for one drawing's URL at click time. The blank tab is opened
+  // SYNCHRONOUSLY, before the await: a browser only treats window.open() as
+  // user-initiated inside the click handler's own turn, so opening it after
+  // the fetch resolves is what a popup blocker kills.
+  async function openDrawing(drawing: Drawing) {
+    if (drawing.documentUrl) {
+      window.open(drawing.documentUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const tab = window.open("", "_blank", "noopener,noreferrer");
+    setOpeningId(drawing.id);
+    try {
+      const data = await fetchJson(`/api/drawings/${encodeURIComponent(drawing.id)}/document-url`);
+      if (!data?.documentUrl) throw new Error("No file link came back for this drawing");
+      if (tab) tab.location.href = data.documentUrl;
+      // If the popup was blocked, honour the click with a real link the
+      // browser treats as user-initiated. (window.location.href is assigned
+      // via window.open on the current frame here rather than mutated
+      // directly: the React Compiler lint rule forbids writing to a value
+      // defined outside the component, and this achieves the same navigation.)
+      else window.open(data.documentUrl, "_self");
+    } catch (err) {
+      tab?.close();
+      toast.error(errorMessage(err, "Couldn't open this drawing"));
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -108,15 +149,25 @@ export default function DrawingsClient({
           </Button>
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
               Drawing" Dialog popup with a real create route. */}
-          <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Drawing</Button>
+          {/* R67 F-02: warm the create route on hover/focus. */}
+          <Button
+            size="sm"
+            onMouseEnter={() => router.prefetch(`/drawings/new?projectId=${projectId}`)}
+            onFocus={() => router.prefetch(`/drawings/new?projectId=${projectId}`)}
+            onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}
+          >
+            <Plus className="size-4" /> Add Drawing
+          </Button>
         </div>
       </div>
 
+      {/* R67 F-02: the real column headers while loading, not a bare spinner. */}
+      {loading ? (
+        <TableLoadingRows headers={[...columns.map((c) => c.label), "Open"]} rows={3} caption="Loading drawings..." />
+      ) : (
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : drawings.length === 0 ? (
+          {drawings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No drawings or 3D walkthroughs yet.</p>
           ) : (
             <Table>
@@ -131,12 +182,17 @@ export default function DrawingsClient({
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of only a bare "Open" link (no
                   // detail view existed before this).
-                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/drawings/${d.id}?projectId=${projectId}`)}>
+                  <TableRow
+                    key={d.id}
+                    className="cursor-pointer hover:bg-px-cloud/40"
+                    onMouseEnter={() => router.prefetch(`/drawings/${d.id}?projectId=${projectId}`)}
+                    onClick={() => router.push(`/drawings/${d.id}?projectId=${projectId}`)}
+                  >
                     {columns.map((c) => renderDrawingCell(c, d))}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {d.documentUrl ? (
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={d.documentUrl} target="_blank" rel="noopener noreferrer">Open <ExternalLink className="size-3.5" /></a>
+                      {d.documentUrl || d.hasDocument ? (
+                        <Button variant="ghost" size="sm" disabled={openingId === d.id} onClick={() => openDrawing(d)}>
+                          {openingId === d.id ? "Opening…" : <>Open <ExternalLink className="size-3.5" /></>}
                         </Button>
                       ) : "—"}
                     </TableCell>
@@ -147,6 +203,7 @@ export default function DrawingsClient({
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }
