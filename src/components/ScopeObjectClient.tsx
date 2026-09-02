@@ -14,7 +14,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 D-22: the PROJEXA-local fork of the kit's ObjectScreen (programme
+// decision D-09 -- the kit cannot be released from this machine). The fork
+// always renders Edit and Delete and shows the reason beside a disabled one;
+// the kit hid both entirely, which is exactly the fault this item closes. Only
+// the scope screens are re-pointed here -- every other screen keeps importing
+// the kit until its own item forks it.
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -175,9 +181,21 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
         { label: "Line items", value: String(rows.length) },
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
-      // never a fake-enabled button that fails after the click.
-      onDelete={isDraft ? () => runAction("delete") : undefined}
+      // never a fake-enabled button that fails after the click. R67 D-22:
+      // onDelete is now passed UNCONDITIONALLY. Previously it was withheld on
+      // anything but a draft, and the kit's ObjectScreen answered a missing
+      // handler by rendering nothing at all — so on every approved or
+      // superseded BOQ (the majority of rows) the user saw no Delete and no
+      // reason. The fork renders it disabled with the reason beside the word.
+      onDelete={() => runAction("delete")}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
+      // Edit was never offered on this screen at all (no onEdit was ever
+      // passed), for a real reason: a BOQ's lines are immutable once issued and
+      // change through a revision. That reason is now on screen instead of
+      // being inferable only from the absence of a button. The line-level
+      // budget/vendor cells below stay directly editable — they are commercial
+      // annotation, not the scope itself.
+      editDisabledReason="Lines change through a revision - use Create Revision"
       // Real Back, preserving ?projectId= — derived from the loaded BOQ
       // itself (same pattern as PermitObjectClient's permit.projectId), not
       // a page-level query param, so Back is correct even from a bookmarked
