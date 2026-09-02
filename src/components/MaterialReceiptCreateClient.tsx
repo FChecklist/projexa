@@ -13,7 +13,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { PaneErrorCard } from "@/components/PaneState";
-import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 type Material = { id: string; name: string; isActive: boolean };
@@ -27,8 +28,6 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsError, setMaterialsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({ receivedDate: todayIso() });
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const loadMaterials = useCallback(async () => {
     setMaterialsError(null);
@@ -72,11 +71,11 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     },
   ];
 
-  async function createReceipt() {
-    setSaving(true);
-    setError(null);
-    try {
-      await fetchJson("/api/materials", {
+  const submit = useSubmit({
+    objectLabel: "Receipt",
+    buildRequest: () => ({
+      input: "/api/materials",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -86,15 +85,12 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
           quantity: Number(values.quantity),
           unitCost: values.unitCost ? Number(values.unitCost) : undefined,
         }),
-      });
-      // A receipt has no object page -- it is a write-once movement -- so the
-      // destination is the ledger it was just added to, on its own tab.
-      router.replace(moduleHref);
-    } catch (err) {
-      setError(errorMessage(err, "The receipt could not be recorded."));
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    // A receipt has no object page -- it is a write-once movement -- so the
+    // destination is the ledger it was just added to, on its own tab.
+    onSuccess: () => router.replace(moduleHref),
+  });
 
   return (
     <CreateScreen
@@ -113,9 +109,11 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
           <PaneErrorCard entity="the material master" error={materialsError} onRetry={() => void loadMaterials()} />
         ) : undefined
       }
-      error={error}
-      saving={saving}
-      onSubmit={createReceipt}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

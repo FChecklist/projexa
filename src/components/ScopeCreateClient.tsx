@@ -37,7 +37,7 @@
 // The greying of Qty/Rate on a sub-task row was already right; it keeps its
 // behaviour and gains the reason in words rather than only in a title
 // attribute.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson } from "@/lib/fetch-json";
+import { useSubmit, formFailure } from "@/lib/use-submit";
 import { emptyLine, childPercentSum, collectLines, toPayloadLineItems, type LineItemDraft } from "@/lib/boq-helpers";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -98,8 +99,10 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activitiesError, setActivitiesError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A line the form can see is wrong, checked before anything is sent. Kept
+  // apart from the submit's own failure so a local complaint and a server
+  // refusal can never be mistaken for one another.
+  const [lineError, setLineError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -125,41 +128,51 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
 
-  async function save() {
-    const { valid: validLines, error: lineError } = collectLines(lines);
-    if (lineError) {
-      setError(lineError);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/scope", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title: (values.title ?? "").trim(), lineItems: toPayloadLineItems(validLines) }),
-      });
-      let data: { id?: unknown; lineItems?: unknown; error?: unknown } | null = null;
-      let parseFailed = false;
-      try {
-        data = await res.json();
-      } catch {
-        parseFailed = true;
-      }
+  // How many lines the submit sent, so the response can be checked against
+  // what was actually asked for rather than against the grid as it stands now.
+  const sentLineCount = useRef(0);
 
-      if (!res.ok) throw new Error((typeof data?.error === "string" && data.error) || `The server refused the save (HTTP ${res.status}).`);
-      if (parseFailed || !data) throw new Error("The server's response was unreadable, so nothing is confirmed saved.");
+  const submit = useSubmit<{ id?: unknown; lineItems?: unknown } | null>({
+    objectLabel: "BOQ",
+    buildRequest: () => {
+      const { valid: validLines } = collectLines(lines);
+      sentLineCount.current = validLines.length;
+      return {
+        input: "/api/scope",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            title: (values.title ?? "").trim(),
+            lineItems: toPayloadLineItems(validLines),
+          }),
+        },
+      };
+    },
+    onSuccess: (data) => {
+      // An unreadable body over a 2xx is not a refusal: the write may well
+      // have happened, and the sentence the user reads says exactly that.
+      if (!data) throw new Error("The server's response was unreadable");
       const savedId = typeof data.id === "string" ? data.id.trim() : "";
-      if (!savedId) throw new Error("The server did not confirm a saved BOQ.");
+      if (!savedId) throw new Error("The server did not return a BOQ id");
       const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
-      if (savedLineItems < validLines.length) {
-        throw new Error(`${validLines.length} line item(s) were submitted but only ${savedLineItems} came back saved.`);
+      if (savedLineItems < sentLineCount.current) {
+        throw new Error(
+          `${sentLineCount.current} line item(s) were submitted but only ${savedLineItems} came back saved`
+        );
       }
       router.replace(createdHref("/scope", savedId, (values.title ?? "").trim()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The request did not complete.");
-      setSaving(false);
-    }
+    },
+  });
+
+  function save() {
+    // Checked BEFORE anything is sent, so a malformed line costs no round
+    // trip and the complaint names the line rather than the request.
+    const { error: invalid } = collectLines(lines);
+    setLineError(invalid ?? null);
+    if (invalid) return;
+    submit.submit();
   }
 
   const scopeHref = `/scope?projectId=${encodeURIComponent(projectId)}`;
@@ -174,9 +187,11 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       values={values}
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
       extraMissing={missingLineFields(lines)}
-      error={error}
-      saving={saving}
-      onSubmit={() => void save()}
+      failure={lineError ? formFailure(lineError) : submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={save}
       onCancel={() => router.push(scopeHref)}
     >
       <div className="space-y-2">

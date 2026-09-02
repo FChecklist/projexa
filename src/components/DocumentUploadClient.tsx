@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 const CATEGORIES = ["permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
@@ -38,31 +39,30 @@ export default function DocumentUploadClient({ projectId }: { projectId: string 
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({ category: "other" });
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const moduleHref = `/documents?projectId=${projectId}`;
 
-  async function handleUpload() {
-    if (!file) return;
-    setSaving(true);
-    setError(null);
-    const formData = new FormData();
-    formData.set("file", file);
-    if ((values.name ?? "").trim()) formData.set("name", values.name.trim());
-    formData.set("category", values.category || "other");
-    formData.set("linkedEntityType", "project");
-    formData.set("linkedEntityId", projectId);
-    try {
-      const res = await fetch("/api/documents", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
-      router.replace(createdHref("/documents", data.id, values.name || file.name));
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "The document could not be uploaded.");
-      setSaving(false);
-    }
-  }
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Document",
+    // R67 D-72: the old handler opened `if (!file) return;` -- a click that
+    // produced no request, no message and no change on screen. Returning null
+    // makes the same guard SPEAK: "Nothing was sent — try again".
+    buildRequest: () => {
+      if (!file) return null;
+      const formData = new FormData();
+      formData.set("file", file);
+      if ((values.name ?? "").trim()) formData.set("name", values.name.trim());
+      formData.set("category", values.category || "other");
+      formData.set("linkedEntityType", "project");
+      formData.set("linkedEntityId", projectId);
+      return { input: "/api/documents", init: { method: "POST", body: formData } };
+    },
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved document");
+      router.replace(createdHref("/documents", id, values.name || file?.name));
+    },
+  });
 
   return (
     <CreateScreen
@@ -75,9 +75,11 @@ export default function DocumentUploadClient({ projectId }: { projectId: string 
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
       files={{ file }}
       onFileChange={(_, chosen) => setFile(chosen)}
-      error={error}
-      saving={saving}
-      onSubmit={handleUpload}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

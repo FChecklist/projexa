@@ -25,6 +25,7 @@ import { ExternalLink } from "lucide-react";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import { type Company } from "@/components/company-scope";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -53,8 +54,6 @@ export default function BudgetCreateClient() {
   const [lookupError, setLookupError] = useState<string | null>(null);
 
   const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -145,11 +144,11 @@ export default function BudgetCreateClient() {
       : []),
   ];
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const data = await fetchJson<{ id: string }>("/api/project-budgets", {
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Budget",
+    buildRequest: () => ({
+      input: "/api/project-budgets",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -159,13 +158,14 @@ export default function BudgetCreateClient() {
           companyId: values.companyId || undefined,
           lineItems: [{ accountId: values.accountId, annualAmount: Number(values.annualAmount) }],
         }),
-      });
-      router.replace(createdHref("/budgets", data.id, (values.name ?? "").trim()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The request did not complete.");
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved budget");
+      router.replace(createdHref("/budgets", id, (values.name ?? "").trim()));
+    },
+  });
 
   return (
     <CreateScreen
@@ -177,9 +177,11 @@ export default function BudgetCreateClient() {
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
       // C-15: the short label. The paragraph lives in the banner.
       extraMissing={blocked ? [BUDGET_PRECONDITION_LABEL] : []}
-      error={error}
-      saving={saving || lookupsLoading}
-      onSubmit={() => void save()}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving || lookupsLoading}
+      saved={submit.saved}
+      onSubmit={submit.submit}
       onCancel={() => router.push("/budgets")}
       secondaryAction={
         blocked ? (

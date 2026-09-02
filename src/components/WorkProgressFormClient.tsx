@@ -36,6 +36,7 @@ import { toast } from "sonner";
 import { FormScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { PaneErrorCard } from "@/components/PaneState";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import { pickCurrentBoq } from "@/lib/work-progress-reads";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -75,7 +76,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   const [boqError, setBoqError] = useState<ReadError>(null);
   const [values, setValues] = useState<Record<string, unknown>>({ entryDate: todayIso(), entryBasis: "DELTA" });
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const [submitting, setSubmitting] = useState(false);
   const [scope, setScope] = useState<string | null>(null);
   const [queued, setQueued] = useState<QueuedWorkProgressEntry[]>([]);
 
@@ -242,6 +242,82 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     setValues((v) => ({ ...v, [field]: value }));
   }
 
+  /** What this form is about to send, from the values as they stand. */
+  function currentPayload() {
+    return {
+      projectId,
+      activityId: values.activityId as string,
+      boqLineItemId: (values.boqLineItemId as string) || undefined,
+      entryDate: values.entryDate as string,
+      quantityDone: Number(values.quantityDone),
+      percentComplete: Number(values.percentComplete),
+      entryBasis: values.entryBasis as "DELTA" | "SNAPSHOT",
+      remarks: (values.remarks as string) || undefined,
+    };
+  }
+
+  function currentPhoto(): File | null {
+    return values.photo instanceof File ? values.photo : null;
+  }
+
+  function resetForm() {
+    setValues({ entryDate: todayIso(), entryBasis: "DELTA" });
+    onLogged();
+  }
+
+  /** Puts the entry on this device and clears the form, as if it had landed. */
+  async function queueOnDevice(reason: string): Promise<boolean> {
+    if (!scope) {
+      setMessages([{ level: "error", text: "Still verifying your session -- try again in a moment" }]);
+      return false;
+    }
+    const photo = currentPhoto();
+    await enqueueWorkProgressEntry(scope, {
+      ...currentPayload(),
+      photo: photo ? { blob: photo, name: photo.name, type: photo.type } : null,
+    });
+    setMessages([{ level: "info", text: reason }]);
+    resetForm();
+    refreshQueued();
+    return true;
+  }
+
+  // R67 D-72: the online write goes through the one submit -- so it carries a
+  // ten-second ceiling (it had none), and a refusal stays on the screen
+  // instead of being a toast that faded while the site engineer was looking
+  // at the entry they had just typed.
+  const submit = useSubmit<{ id?: string }>({
+    objectLabel: "progress entry",
+    buildRequest: () => ({
+      input: "/api/work-progress",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentPayload()),
+      },
+    }),
+    onSuccess: async (created) => {
+      const photo = currentPhoto();
+      // R42 seq22 fix: the online path never uploaded a photo before this --
+      // see uploadQueuedPhoto()'s own comment for the full finding.
+      if (photo && created?.id) {
+        await uploadQueuedPhoto(created.id, { blob: photo, name: photo.name, type: photo.type }).catch(() => {
+          setMessages([
+            { level: "warning", text: "Progress logged, but the photo failed to upload" },
+          ]);
+        });
+      }
+      resetForm();
+    },
+    // A dropped connection is not a failure on this form: the entry is kept
+    // on the device and synced when the radio comes back. That is a real
+    // second outcome, which is why the hook asks rather than assuming.
+    onTransportError: async (err) =>
+      err instanceof TypeError
+        ? queueOnDevice("Network unavailable -- progress saved on this device, will sync automatically")
+        : false,
+  });
+
   async function handleSubmit() {
     const required = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
     const missing = required.filter((f) => values[f] === undefined || values[f] === null || values[f] === "");
@@ -255,64 +331,13 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       return;
     }
     setMessages([]);
-    setSubmitting(true);
-
-    const payload = {
-      projectId,
-      activityId: values.activityId as string,
-      boqLineItemId: (values.boqLineItemId as string) || undefined,
-      entryDate: values.entryDate as string,
-      quantityDone: Number(values.quantityDone),
-      percentComplete: pct,
-      entryBasis: values.entryBasis as "DELTA" | "SNAPSHOT",
-      remarks: (values.remarks as string) || undefined,
-    };
-    const photo = values.photo instanceof File ? values.photo : null;
-    const photoField = photo ? { blob: photo, name: photo.name, type: photo.type } : null;
-
-    async function reset() {
-      setValues({ entryDate: todayIso(), entryBasis: "DELTA" });
-      onLogged();
-    }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      if (!scope) { setMessages([{ level: "error", text: "Still verifying your session -- try again in a moment" }]); setSubmitting(false); return; }
-      await enqueueWorkProgressEntry(scope, { ...payload, photo: photoField });
-      toast.info("You're offline -- progress saved on this device, will sync automatically");
-      await reset(); refreshQueued(); setSubmitting(false);
+      await queueOnDevice("You're offline -- progress saved on this device, will sync automatically");
       return;
     }
 
-    try {
-      const res = await fetch("/api/work-progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to log progress");
-      }
-      const created = await res.json();
-      // R42 seq22 fix: the online path never uploaded a photo before this --
-      // see uploadQueuedPhoto()'s own comment for the full finding.
-      if (photo) {
-        await uploadQueuedPhoto(created.id, { blob: photo, name: photo.name, type: photo.type }).catch(() => {
-          toast.error("Progress logged, but the photo failed to upload");
-        });
-      }
-      toast.success("Progress logged");
-      await reset();
-    } catch (err) {
-      if (err instanceof TypeError) {
-        if (!scope) { setMessages([{ level: "error", text: "Still verifying your session -- try again in a moment" }]); }
-        else {
-          await enqueueWorkProgressEntry(scope, { ...payload, photo: photoField });
-          toast.info("Network unavailable -- progress saved on this device, will sync automatically");
-          await reset(); refreshQueued();
-        }
-      } else {
-        setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't log progress" }]);
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    submit.submit();
   }
 
   useEffect(() => {
@@ -370,10 +395,15 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       title="Log Work Progress"
       onSubmit={handleSubmit}
       submitLabel="Log Entry"
-      submitting={submitting}
-      submitDisabled={missingCount > 0 || Boolean(activitiesError)}
+      submitting={submit.saving}
+      submitDisabled={missingCount > 0 || Boolean(activitiesError) || submit.saving}
       submitDisabledReason={submitDisabledReason}
-      messages={messages}
+      // The failure is a MESSAGE on the screen, not a notification: the kit's
+      // message area persists until the next submit, which is the whole point
+      // of moving off toast.error().
+      messages={
+        submit.failure ? [...messages, { level: "error" as const, text: submit.failure.message }] : messages
+      }
       banner={activitiesError || boqError || queued.length > 0 ? banner : undefined}
     >
       <FormSection title="Progress entry" columns={columns} values={values} mode="edit" onFieldChange={handleFieldChange} />

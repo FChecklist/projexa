@@ -17,14 +17,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 export default function DrawingCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({ kind: "dwg" });
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const kind = values.kind || "dwg";
   // A walkthrough may be a hosted link instead of an upload; a DWG never is.
@@ -85,29 +84,24 @@ export default function DrawingCreateClient({ projectId }: { projectId: string }
         ] as CreateField[])),
   ];
 
-  async function createDrawing() {
-    setSaving(true);
-    setError(null);
-    const formData = new FormData();
-    formData.set("projectId", projectId);
-    formData.set("kind", kind);
-    formData.set("name", (values.name ?? "").trim());
-    if ((values.discipline ?? "").trim()) formData.set("discipline", values.discipline.trim());
-    if (usingLink) formData.set("externalUrl", (values.externalUrl ?? "").trim());
-    else if (file) formData.set("file", file);
-
-    try {
-      const res = await fetch("/api/drawings", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
-      router.replace(`${createdHref("/drawings", data.id, values.name)}&projectId=${encodeURIComponent(projectId)}`);
-    } catch (err) {
-      // The File object is held in state, not in the input, so it survives
-      // this -- CreateScreen echoes its name so the user can see that.
-      setError(err instanceof Error && err.message ? err.message : "The drawing could not be added.");
-      setSaving(false);
-    }
-  }
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Drawing",
+    buildRequest: () => {
+      const formData = new FormData();
+      formData.set("projectId", projectId);
+      formData.set("kind", kind);
+      formData.set("name", (values.name ?? "").trim());
+      if ((values.discipline ?? "").trim()) formData.set("discipline", values.discipline.trim());
+      if (usingLink) formData.set("externalUrl", (values.externalUrl ?? "").trim());
+      else if (file) formData.set("file", file);
+      return { input: "/api/drawings", init: { method: "POST", body: formData } };
+    },
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved drawing");
+      router.replace(`${createdHref("/drawings", id, values.name)}&projectId=${encodeURIComponent(projectId)}`);
+    },
+  });
 
   return (
     <CreateScreen
@@ -129,11 +123,15 @@ export default function DrawingCreateClient({ projectId }: { projectId: string }
           return next;
         })
       }
+      // The File object is held in state, not in the input, so it survives a
+      // refusal -- CreateScreen echoes its name so the user can see that.
       files={{ file }}
       onFileChange={(_, chosen) => setFile(chosen)}
-      error={error}
-      saving={saving}
-      onSubmit={createDrawing}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

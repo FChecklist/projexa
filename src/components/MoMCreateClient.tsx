@@ -18,7 +18,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 const FIELDS: CreateField[] = [
@@ -29,14 +29,12 @@ const FIELDS: CreateField[] = [
 export default function MoMCreateClient({ projectId, projectName }: { projectId: string; projectName: string }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const meeting = await fetchJson<{ id: string }>("/api/moms", {
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Meeting",
+    buildRequest: () => ({
+      input: "/api/moms",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -44,13 +42,14 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
           scheduledAt: values.scheduledAt,
           projectId,
         }),
-      });
-      router.replace(createdHref("/moms", meeting.id, (values.title ?? "").trim()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The request did not complete.");
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (meeting) => {
+      const id = typeof meeting?.id === "string" ? meeting.id : "";
+      if (!id) throw new Error("The server did not confirm a saved meeting");
+      router.replace(createdHref("/moms", id, (values.title ?? "").trim()));
+    },
+  });
 
   return (
     <CreateScreen
@@ -60,9 +59,11 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
       fields={FIELDS}
       values={values}
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
-      error={error}
-      saving={saving}
-      onSubmit={() => void save()}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
       onCancel={() => router.push(`/moms?projectId=${encodeURIComponent(projectId)}`)}
       banner={
         // The one fact this screen exists to keep in front of the user: which

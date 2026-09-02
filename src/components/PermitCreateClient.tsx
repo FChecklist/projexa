@@ -23,10 +23,16 @@
 //
 // All three are now the archetype's job. What is NOT changed: the POST
 // contract (multipart FormData to /api/permits) and the fields it carries.
+//
+// R67 D-72: and the submit itself is now the shared one. What this screen's
+// own handler could not do: give up on a hung upstream (it called fetch with
+// no signal at all), or distinguish a refusal from a request that never left
+// the device -- both arrived as the same sentence.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 const FIELDS: CreateField[] = [
@@ -61,43 +67,30 @@ export default function PermitCreateClient({ projectId }: { projectId: string })
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File | null>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    const body = new FormData();
-    for (const field of FIELDS) {
-      if (field.kind === "file") {
-        const file = files[field.name];
-        if (file) body.set(field.name, file);
-        continue;
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Permit",
+    buildRequest: () => {
+      const body = new FormData();
+      for (const field of FIELDS) {
+        if (field.kind === "file") {
+          const file = files[field.name];
+          if (file) body.set(field.name, file);
+          continue;
+        }
+        const value = (values[field.name] ?? "").trim();
+        if (value) body.set(field.name, value);
       }
-      const value = (values[field.name] ?? "").trim();
-      if (value) body.set(field.name, value);
-    }
-    body.set("projectId", projectId);
-
-    try {
-      const res = await fetch("/api/permits", { method: "POST", body });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(
-          (data && typeof data.error === "string" && data.error) || `The server refused the save (HTTP ${res.status}).`
-        );
-      }
+      body.set("projectId", projectId);
+      return { input: "/api/permits", init: { method: "POST", body } };
+    },
+    onSuccess: (data) => {
       const id = typeof data?.id === "string" ? data.id : "";
-      if (!id) throw new Error("The server did not confirm a saved permit.");
+      if (!id) throw new Error("The server did not confirm a saved permit");
       // Display mode with a lasting receipt -- never back to an empty form.
       router.replace(createdHref("/permits", id, values.permitNumber || values.name));
-    } catch (err) {
-      // Every value and the chosen File stay exactly where they were: state
-      // is never reset on a failure.
-      setError(err instanceof Error ? err.message : "The request did not complete.");
-      setSaving(false);
-    }
-  }
+    },
+  });
 
   return (
     <CreateScreen
@@ -106,12 +99,16 @@ export default function PermitCreateClient({ projectId }: { projectId: string })
       objectLabel="Permit"
       fields={FIELDS}
       values={values}
+      // Every value and the chosen File stay exactly where they were: nothing
+      // here is reset on a failure.
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
       files={files}
       onFileChange={(name, file) => setFiles((prev) => ({ ...prev, [name]: file }))}
-      error={error}
-      saving={saving}
-      onSubmit={() => void save()}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
       onCancel={() => router.push("/permits")}
     />
   );

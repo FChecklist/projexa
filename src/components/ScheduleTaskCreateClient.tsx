@@ -14,7 +14,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import { PaneErrorCard } from "@/components/PaneState";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -26,8 +27,6 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   const [types, setTypes] = useState<IssueType[]>([]);
   const [typesError, setTypesError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const loadTypes = useCallback(async () => {
     setTypesError(null);
@@ -71,11 +70,11 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
     { name: "dueDate", label: "Due Date", kind: "date" },
   ];
 
-  async function createTask() {
-    setSaving(true);
-    setError(null);
-    try {
-      const data = await fetchJson<{ id: string }>("/api/schedule/tasks", {
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Task",
+    buildRequest: () => ({
+      input: "/api/schedule/tasks",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -85,13 +84,14 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
           priority: values.priority,
           dueDate: values.dueDate || undefined,
         }),
-      });
-      router.replace(createdHref("/schedule/tasks", data.id, values.title));
-    } catch (err) {
-      setError(errorMessage(err, "The task could not be created."));
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved task");
+      router.replace(createdHref("/schedule/tasks", id, values.title));
+    },
+  });
 
   return (
     <CreateScreen
@@ -109,9 +109,11 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
           <PaneErrorCard entity="the task-type list" error={typesError} onRetry={() => void loadTypes()} />
         ) : undefined
       }
-      error={error}
-      saving={saving}
-      onSubmit={createTask}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

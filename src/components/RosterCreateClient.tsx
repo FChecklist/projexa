@@ -20,7 +20,8 @@ import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { PaneErrorCard } from "@/components/PaneState";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 type Vendor = { id: string; vendorName: string };
@@ -30,8 +31,6 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsError, setVendorsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const loadVendors = useCallback(async () => {
     setVendorsError(null);
@@ -68,11 +67,11 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
     { name: "dailyRate", label: "Daily Rate", kind: "number", required: true, placeholder: "e.g. 180" },
   ];
 
-  async function createRoster() {
-    setSaving(true);
-    setError(null);
-    try {
-      const entry = await fetchJson<{ id: string }>("/api/labour-roster", {
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Worker",
+    buildRequest: () => ({
+      input: "/api/labour-roster",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,13 +82,14 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
           vendorId: values.vendorId || undefined,
           dailyRate: Number(values.dailyRate),
         }),
-      });
-      router.replace(createdHref("/labour", entry.id, values.name));
-    } catch (err) {
-      setError(errorMessage(err, "The worker could not be added."));
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (entry) => {
+      const id = typeof entry?.id === "string" ? entry.id : "";
+      if (!id) throw new Error("The server did not confirm a saved worker");
+      router.replace(createdHref("/labour", id, values.name));
+    },
+  });
 
   return (
     <CreateScreen
@@ -107,9 +107,11 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
           <PaneErrorCard entity="the subcontractor list" error={vendorsError} onRetry={() => void loadVendors()} />
         ) : undefined
       }
-      error={error}
-      saving={saving}
-      onSubmit={createRoster}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

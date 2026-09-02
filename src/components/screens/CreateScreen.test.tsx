@@ -28,6 +28,7 @@ mock.module("next/navigation", () => ({
 
 const { CreateScreen } = await import("./CreateScreen");
 const { ProjectScopeProvider } = await import("../shell/project-context");
+const { submitFailure } = await import("../../lib/use-submit");
 
 afterEach(cleanup);
 
@@ -43,8 +44,10 @@ function renderScreen(
   props: {
     values?: Record<string, string>;
     files?: Record<string, File | null>;
-    error?: string | null;
+    failure?: ReturnType<typeof submitFailure> | null;
+    onRetry?: () => void;
     saving?: boolean;
+    saved?: boolean;
   } = {}
 ) {
   return render(
@@ -67,8 +70,10 @@ function renderScreen(
         onChange={() => {}}
         files={props.files ?? {}}
         onFileChange={() => {}}
-        error={props.error}
+        failure={props.failure}
+        onRetry={props.onRetry}
         saving={props.saving}
+        saved={props.saved}
         onSubmit={() => {}}
       />
     </ProjectScopeProvider>
@@ -115,7 +120,7 @@ describe("CreateScreen", () => {
   test("a server refusal renders in place, says nothing was saved, and keeps the values", () => {
     const { container, getByLabelText } = renderScreen({
       values: { name: "BP-2026-0142" },
-      error: "A permit with that number already exists on this project.",
+      failure: submitFailure("refused", "Permit", "A permit with that number already exists on this project"),
     });
     const text = container.textContent ?? "";
     expect(text).toContain("Could not save the permit");
@@ -124,15 +129,47 @@ describe("CreateScreen", () => {
     expect((getByLabelText(/Permit name/) as HTMLInputElement).value).toBe("BP-2026-0142");
   });
 
+  test("a timeout is NOT framed as a refusal -- it is its own sentence, said once", () => {
+    // R67 D-72: the old prop was a bare reason this component wrapped in
+    // "Could not save the permit — … Nothing was saved.", which turned a
+    // ten-second timeout into a sentence that said "nothing was saved" twice.
+    const { container } = renderScreen({ failure: submitFailure("timeout", "Permit") });
+    const text = container.textContent ?? "";
+    expect(text).toContain("The server did not answer in 10 s — nothing was saved.");
+    expect(text).not.toContain("Could not save the permit");
+    expect(text.match(/nothing was saved/gi)?.length).toBe(1);
+  });
+
+  test("a retryable failure offers Try again, and it re-issues the same save", () => {
+    let retries = 0;
+    const { getByRole } = renderScreen({
+      failure: submitFailure("unreachable", "Permit"),
+      onRetry: () => {
+        retries += 1;
+      },
+    });
+    (getByRole("button", { name: "Try again" }) as HTMLButtonElement).click();
+    expect(retries).toBe(1);
+  });
+
   test("a chosen file's name is echoed, because the input itself cannot hold it across a failure", () => {
     const file = new File(["x"], "permit-BP-2026-0142.pdf", { type: "application/pdf" });
-    const { container } = renderScreen({ files: { file }, error: "upstream refused" });
+    const { container } = renderScreen({
+      files: { file },
+      failure: submitFailure("refused", "Permit", "upstream refused"),
+    });
     expect(container.textContent).toContain("permit-BP-2026-0142.pdf");
   });
 
   test("while saving the primary reads 'Saving…' and cannot be pressed twice", () => {
     const { getByRole } = renderScreen({ saving: true });
     expect((getByRole("button", { name: /Saving/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("after a 2xx the primary reads 'Saved' and stays disabled while navigation runs", () => {
+    const file = new File(["x"], "permit.pdf", { type: "application/pdf" });
+    const { getByRole } = renderScreen({ values: { name: "BP-1" }, files: { file }, saved: true });
+    expect((getByRole("button", { name: "Saved" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test("the breadcrumb names the project, the module and the object", () => {

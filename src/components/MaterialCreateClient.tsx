@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 const FIELDS: CreateField[] = [
@@ -35,16 +35,16 @@ const FIELDS: CreateField[] = [
 export default function MaterialCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const moduleHref = `/materials?projectId=${projectId}`;
 
-  async function createMaterial() {
-    setSaving(true);
-    setError(null);
-    try {
-      const material = await fetchJson<{ id: string }>("/api/materials/master", {
+  // Never a toast, and never a reset: the values stay on the form behind the
+  // refusal so a rejected save costs a correction, not a retype.
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Material",
+    buildRequest: () => ({
+      input: "/api/materials/master",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -54,15 +54,14 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
           unit: values.unit,
           unitCost: values.unitCost ? Number(values.unitCost) : undefined,
         }),
-      });
-      router.replace(createdHref("/materials", material.id, values.name));
-    } catch (err) {
-      // Never a toast, and never a reset: the values stay on the form behind
-      // the refusal so a rejected save costs a correction, not a retype.
-      setError(errorMessage(err, "The material could not be added."));
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (material) => {
+      const id = typeof material?.id === "string" ? material.id : "";
+      if (!id) throw new Error("The server did not confirm a saved material");
+      router.replace(createdHref("/materials", id, values.name));
+    },
+  });
 
   return (
     <CreateScreen
@@ -73,9 +72,11 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
       fields={FIELDS}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
-      error={error}
-      saving={saving}
-      onSubmit={createMaterial}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

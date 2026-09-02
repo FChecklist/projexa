@@ -15,7 +15,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { PaneErrorCard } from "@/components/PaneState";
-import { fetchJson, errorMessage, ApiError } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
 type RosterEntry = { id: string; name: string; isActive: boolean };
@@ -29,8 +30,6 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({ attendanceDate: todayIso(), status: "present" });
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const loadRoster = useCallback(async () => {
     setRosterError(null);
@@ -78,11 +77,11 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
     { name: "hoursWorked", label: "Hours Worked", kind: "number", placeholder: "e.g. 8" },
   ];
 
-  async function createAttendance() {
-    setSaving(true);
-    setError(null);
-    try {
-      await fetchJson("/api/attendance", {
+  const submit = useSubmit({
+    objectLabel: "Attendance",
+    buildRequest: () => ({
+      input: "/api/attendance",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,14 +91,11 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
           status: values.status,
           hoursWorked: values.hoursWorked ? Number(values.hoursWorked) : undefined,
         }),
-      });
-      // No object page for an attendance row -- back to the tab it joined.
-      router.replace(moduleHref);
-    } catch (err) {
-      setError(errorMessage(err, "The attendance could not be recorded."));
-      setSaving(false);
-    }
-  }
+      },
+    }),
+    // No object page for an attendance row -- back to the tab it joined.
+    onSuccess: () => router.replace(moduleHref),
+  });
 
   return (
     <CreateScreen
@@ -116,9 +112,11 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
           <PaneErrorCard entity="this project's roster" error={rosterError} onRetry={() => void loadRoster()} />
         ) : undefined
       }
-      error={error}
-      saving={saving}
-      onSubmit={createAttendance}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
     />
   );
 }

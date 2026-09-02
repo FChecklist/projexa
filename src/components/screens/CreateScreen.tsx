@@ -31,6 +31,13 @@
 //      value and every chosen File still on the form. A toast that fades and
 //      a form that resets are how a user loses ten minutes of typing.
 //   4. VALIDATORS THAT RUN ON BLUR, never while the user is mid-word.
+//
+// R67 D-72 adds the fifth: the primary's three states are the SUBMIT's three
+// states. "Save (…)" while nothing has been sent, "Saving…" from the click,
+// "Saved" from the 2xx until the caller's navigation lands -- so the screen
+// is never idle-looking over a write that already happened. The words for a
+// failure come from src/lib/use-submit.ts, whole, because a timeout and a
+// refusal are different sentences and only one of them fits "Could not save".
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -43,6 +50,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 import { createSaveLabel, missingCreateFields, type CreateField, type CreateFiles, type CreateValues } from "@/lib/create-screen";
 import { saveDisabledReason } from "@/lib/save-label";
+import type { SubmitFailure } from "@/lib/use-submit";
 
 export type CreateScreenProps = {
   /** "Permits", "Minutes of Meeting" -- what the breadcrumb and Back point at. */
@@ -63,9 +71,23 @@ export type CreateScreenProps = {
   children?: React.ReactNode;
   /** Rendered above the fields. Used for a precondition the user must read first. */
   banner?: React.ReactNode;
-  /** The server's own refusal. Rendered in place; values are never cleared. */
-  error?: string | null;
+  /**
+   * How the save failed, from src/lib/use-submit.ts. Rendered in place, above
+   * the buttons, with every value and every chosen File still on the form.
+   *
+   * R67 D-72: this used to be a bare reason string that THIS component framed
+   * ("Could not save the permit — {error} Nothing was saved."). That frame
+   * only fits a refusal: a ten-second timeout and a click that sent nothing
+   * are not refusals, and wrapping them in it produced sentences that said
+   * "nothing was saved" twice. The whole sentence is written once, in the
+   * hook, where it is unit-tested.
+   */
+  failure?: SubmitFailure | null;
+  /** Re-issues the same save. Rendered as "Try again" beside the failure. */
+  onRetry?: () => void;
   saving?: boolean;
+  /** A 2xx landed; the primary reads "Saved" until the caller has navigated. */
+  saved?: boolean;
   onSubmit: () => void;
   /** Defaults to going back to the module list. */
   onCancel?: () => void;
@@ -86,8 +108,10 @@ export function CreateScreen({
   extraMissing = [],
   children,
   banner,
-  error,
+  failure,
+  onRetry,
   saving = false,
+  saved = false,
   onSubmit,
   onCancel,
   secondaryAction,
@@ -95,7 +119,7 @@ export function CreateScreen({
   const router = useRouter();
   const [touched, setTouched] = useState<Record<string, string | null>>({});
   const missing = missingCreateFields(fields, values, files, extraMissing);
-  const blocked = missing.length > 0 || saving;
+  const blocked = missing.length > 0 || saving || saved;
 
   const cancel = onCancel ?? (() => router.push(moduleHref));
 
@@ -222,14 +246,26 @@ export function CreateScreen({
 
             {children}
 
-            {/* The server's own refusal, in place, above the buttons, with
-                every value still on the form behind it. */}
-            {error && (
+            {/* The failure, in place, above the buttons, with every value
+                still on the form behind it -- and its own way out. */}
+            {failure && (
               <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm">
                 <p className="flex items-start gap-2 text-px-error">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   <span>
-                    Could not save the {objectLabel.toLowerCase()} — {error} Nothing was saved.
+                    {failure.message}
+                    {failure.retryable && onRetry && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={onRetry}
+                          className="font-medium underline underline-offset-2"
+                        >
+                          Try again
+                        </button>
+                      </>
+                    )}
                   </span>
                 </p>
               </div>
@@ -241,7 +277,9 @@ export function CreateScreen({
                 Cancel
               </Button>
               <Button type="submit" disabled={blocked} title={saveDisabledReason(missing, saving)}>
-                {saving ? (
+                {saved ? (
+                  "Saved"
+                ) : saving ? (
                   <>
                     <Loader2 className="size-4 animate-spin" aria-hidden /> Saving…
                   </>
