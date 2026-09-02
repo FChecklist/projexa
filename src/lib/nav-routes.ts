@@ -97,6 +97,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/kpis/new",
   "/labour",
   "/labour/[id]",
+  "/labour/attendance/[date]",
   "/labour/attendance/new",
   "/labour/new",
   "/login",

@@ -205,6 +205,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/[id]",
   "/kpis/new",
   "/labour/[id]",
+  // R67 D-30: one day's attendance sheet. Reached from the Manpower module's
+  // Attendance tab (the "Mark Attendance" action and every sheet row), never
+  // from the sidebar -- a nav entry would have to invent a date.
+  "/labour/attendance/[date]",
   "/labour/attendance/new",
   "/labour/new",
   "/materials/[id]",

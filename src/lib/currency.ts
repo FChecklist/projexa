@@ -40,9 +40,13 @@ export type Currency = { id: string; code: string; name: string; symbol: string 
 // This is deliberately a CODE ("AED ") and never a symbol, matching the
 // resolved path below, so the fallback can never be mistaken for a
 // confirmed per-org value at a glance.
-const DEFAULT_CURRENCY_CODE = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY_CODE ?? "").trim();
-
-export const CURRENCY_FALLBACK_LABEL = DEFAULT_CURRENCY_CODE ? `${DEFAULT_CURRENCY_CODE} ` : "";
+// R67: this constant used to be defined here, but this module is "use client"
+// so a server component could not reach it -- which is how the product ended
+// up with several private money formatters. The single definition now lives in
+// the server-safe src/lib/format-money.ts and is re-exported here so every
+// existing client call site is unchanged.
+export { DEFAULT_CURRENCY_CODE, CURRENCY_FALLBACK_LABEL } from "./format-money";
+import { CURRENCY_FALLBACK_LABEL } from "./format-money";
 
 // id null/undefined means "org base currency" (see erp-selling-service.ts's
 // resolveDocumentCurrency() comment) -- looks up the base-currency row in

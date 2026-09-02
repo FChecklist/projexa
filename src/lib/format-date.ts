@@ -54,3 +54,19 @@ export function formatDateTime(value: Date | string | number): string {
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
+
+// R67: the date form the product's own sentences use -- "Attendance for
+// 02 Sep 2026 saved", "No attendance marked for 02 Sep 2026". Built from a
+// fixed month table rather than Intl because EVERY locale Intl offers spells
+// September differently in its short form (en-GB gives "Sept", en-US gives
+// "Sep"), and the copy these strings appear in is written once, in English,
+// with the three-letter form. Same UTC-pinned, hydration-safe posture as the
+// three helpers above.
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** e.g. "02 Sep 2026". Returns the en-dash for an unparseable value, never "Invalid Date". */
+export function formatDayMonthYear(value: Date | string | number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${String(date.getUTCDate()).padStart(2, "0")} ${SHORT_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}

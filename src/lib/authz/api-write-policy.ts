@@ -70,6 +70,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review/certifications/[id]": "ORG_ADMIN",
   "/assistant": "ANY_MEMBER",
   "/attendance": "FIELD",
+  // R67 D-30: the whole-roster daily sheet. Same tier as the one-worker
+  // write it batches -- marking a site's attendance is field work, and a
+  // batch of the same act is not a more privileged one.
+  "/attendance/bulk": "FIELD",
   "/audit-engagements": "ORG_ADMIN",
   "/audit-findings": "ORG_ADMIN",
   "/audit-findings/[id]": "ORG_ADMIN",
