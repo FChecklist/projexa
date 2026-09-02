@@ -137,6 +137,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/auth/callback",
   "/invite/[token]",
   "/share/report/[token]",
+  // R67 D-31: the public, read-only trade-wise attendance summary a Share token
+  // resolves to. Same class as /share/report/[token] -- opened by someone with
+  // no PROJEXA account, so a sidebar entry would be meaningless.
+  "/share/attendance/[token]",
   // R67 D-21: the public, read-only Minutes of Meeting a WhatsApp share token
   // resolves to. Same class as /share/report/[token] -- opened by a client who
   // has no PROJEXA account, so a sidebar entry would be meaningless.
