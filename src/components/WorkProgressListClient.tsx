@@ -14,7 +14,12 @@
 // rendered the raw id. VERIDIAN now joins the line server-side
 // (listProgressEntries -> attachBoqLines), so the cell reads
 // "R60SK-A — R60 skiphop sub" and links to the line on its own BOQ page.
+//
+// R67 lane D22 (item D-77, rec R-289): the rows are now a way IN. Every row
+// navigates to /work-progress/<id>, the entry's own object page -- this list
+// was the last one in the app with nowhere to click.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { boqLineHref, boqLineLabel } from "@/lib/boq-line-options";
 
@@ -65,6 +70,7 @@ export default function WorkProgressListClient({
   activityNameById: Map<string, string>;
   loading: boolean;
 }) {
+  const router = useRouter();
   const rows = entries.map((e) => ({
     ...e,
     activityName: activityNameById.get(e.activityId) ?? e.activityId,
@@ -96,6 +102,7 @@ export default function WorkProgressListClient({
           columns={COLUMNS}
           rows={rows as unknown as Record<string, unknown>[]}
           getRowId={(row) => row.id as string}
+          onRowClick={(row) => router.push(`/work-progress/${row.id as string}`)}
           emptyStateLabel="No progress entries logged yet."
           renderCell={{
             percentComplete: (row) => {

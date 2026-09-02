@@ -93,7 +93,8 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
                       <button
                         type="button"
                         className="text-left underline-offset-2 hover:underline"
-                        onClick={() => router.push(`/schedule/tasks/${entry.issueId}`)}
+                        // R67 D-77: ?from= so the task page's Back returns to Timesheet.
+                        onClick={() => router.push(`/schedule/tasks/${entry.issueId}?from=timesheet`)}
                       >
                         {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}
                       </button>

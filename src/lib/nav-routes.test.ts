@@ -278,6 +278,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/submittals/new",
   "/vendors/[id]",
   "/vendors/new",
+  // R67 lane D22 (item D-77): a work-progress entry's own object page, reached
+  // by clicking its row on /work-progress -- same class as /scope/[id] above.
+  // The sidebar entry is the list; a row is what carries the id.
+  "/work-progress/[id]",
   "/wiki/[id]",
   "/wiki/new",
 ]);

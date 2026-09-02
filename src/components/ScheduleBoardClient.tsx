@@ -159,7 +159,9 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
                       key={issue.id}
                       draggable
                       onDragStart={(e) => e.dataTransfer.setData("text/issue-id", issue.id)}
-                      onClick={() => router.push(`/schedule/tasks/${issue.id}`)}
+                      // R67 D-77: ?from= carries the tab, so the task page's Back
+                      // returns to the Board rather than the module's default tab.
+                      onClick={() => router.push(`/schedule/tasks/${issue.id}?from=board`)}
                       className={`cursor-pointer rounded-md border border-px-border bg-white p-2.5 text-sm shadow-sm transition-opacity hover:border-px-ink/30 ${movingId === issue.id ? "opacity-50" : ""}`}
                     >
                       <p className="mb-1.5 font-medium text-px-ink">{issue.title}</p>

@@ -192,6 +192,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/wiki/[id]",
   "/wiki/new",
   "/work-progress",
+  // R67 lane D22 (item D-77): the work-progress entry's own object page.
+  "/work-progress/[id]",
 ];
 
 const STATIC_ROUTES = new Set(SHIPPED_ROUTES.filter((r) => !r.includes("[")));

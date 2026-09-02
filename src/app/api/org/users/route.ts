@@ -18,9 +18,13 @@ export async function GET(request: NextRequest) {
 
   const q = request.nextUrl.searchParams.get("q") ?? "";
   const limit = request.nextUrl.searchParams.get("limit") ?? "";
+  // R67 D-77: resolve ids a screen already holds (a task's assignees) into
+  // names, so no screen prints a user id.
+  const ids = request.nextUrl.searchParams.get("ids") ?? "";
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (limit) params.set("limit", limit);
+  if (ids) params.set("ids", ids);
   const suffix = params.toString() ? `?${params.toString()}` : "";
 
   try {

@@ -309,6 +309,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",
+  // R67 lane D22 (item D-77): correcting or removing an entry you recorded is
+  // the same act, at the same authority, as recording it -- the site engineer
+  // who typed 500 instead of 50 must be able to fix it without a PM.
+  "/work-progress/[id]": "FIELD",
   "/work-progress/activities": "FIELD",
   "/work-progress/photos": "FIELD",
   "/work-progress/report/share": "PM_OR_ABOVE",

@@ -12,24 +12,42 @@
 // dependencies/sprint membership attached is a real data-model decision the
 // backend hasn't made. Archiving is the one real "remove this from view"
 // action that already exists.
-import { useEffect, useState } from "react";
+//
+// ─── R67 lane D22 (item D-77, rec R-289) ──────────────────────────────────
+// THREE THINGS THIS PAGE COULD NOT ANSWER. It never showed the task's TYPE
+// (bug/task/story -- the one field createIssue actually requires), never
+// showed WHO IT IS ASSIGNED TO even though getIssue has always returned
+// assigneeIds, and never showed the TIME LOGGED against it even though it
+// carried a Log Time control that wrote exactly that. It also always sent Back
+// to the Timeline, whichever tab you had clicked from. All four are fixed
+// here; Edit moves into the header per the global object-screen rule, and
+// Delete (an archive) stays isolated in the footer and now asks first.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// The FORKED ObjectScreen (programme decision D-09) -- it is the only one with
+// a header-actions slot. See src/components/screens/ScreenFrame.tsx's header.
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 
 type Task = {
   id: string; projectId: string; number: number; title: string; description: string | null;
-  priority: string; statusId: string; startDate: string | null; dueDate: string | null;
+  priority: string; statusId: string; typeId: string | null; startDate: string | null; dueDate: string | null;
   completionPercentage: number; isArchived: boolean;
+  /** getIssue has always returned these; nothing ever displayed them. */
+  assigneeIds?: string[];
 };
 type StatusOption = { id: string; name: string };
+type TypeOption = { id: string; name: string };
+type OrgUser = { id: string; name: string; email: string; role: string };
+type TimeEntry = { id: string; issueId: string; hours: string; spentOn: string };
 
 // R67 lane D22 (item D-49, rec R-125): where this activity's percentage came
 // from, and which BOQ lines it delivers. Served by
@@ -56,15 +74,23 @@ type CompletionProvenance = {
 
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-export default function ScheduleTaskObjectClient({ taskId }: { taskId: string }) {
+export default function ScheduleTaskObjectClient({ taskId, fromTab = null }: { taskId: string; fromTab?: string | null }) {
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<StatusOption[]>([]);
+  const [types, setTypes] = useState<TypeOption[]>([]);
+  const [assignees, setAssignees] = useState<OrgUser[]>([]);
+  const [hoursLogged, setHoursLogged] = useState<number | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [values, setValues] = useState<Partial<Task>>({});
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  // R67 D-77: archiving is isolated AND asks. It is not destructive in the
+  // database (isArchived, a real soft delete) but it removes the task from
+  // every board and backlog somebody is working from, which is destructive
+  // enough to be worth one confirming click.
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
 
   // R67 lane D22 (item D-49): the site-records link. Loaded alongside the task
   // rather than folded into it -- it is construction data about a schedule
@@ -85,16 +111,35 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
   const [logSpentOn, setLogSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [loggingTime, setLoggingTime] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const data = await fetchJson<Task>(`/api/schedule/tasks/${taskId}`);
       setTask(data);
       setValues(data);
       setLoadError(null);
-      // Status options come from the board's own column list (the real
-      // status taxonomy for this project) -- no separate endpoint needed.
-      const board = await fetchJson<{ columns: StatusOption[] }>(`/api/board?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ columns: [] }));
+      // Everything below enriches the page and none of it may keep the page
+      // from opening -- each is caught to its own empty value.
+      const assigneeIds = data.assigneeIds ?? [];
+      const [board, typeData, timeData, people] = await Promise.all([
+        // Status options come from the board's own column list (the real
+        // status taxonomy for this project) -- no separate endpoint needed.
+        fetchJson<{ columns: StatusOption[] }>(`/api/board?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ columns: [] })),
+        fetchJson<{ types: TypeOption[] }>("/api/schedule/types").catch(() => ({ types: [] })),
+        // The real query parameter is issueId, not taskId: pms_time_entries
+        // points at pms_issues, and /api/timesheets refuses a request with
+        // neither projectId nor issueId. "Task" is this screen's word for the
+        // same row.
+        fetchJson<{ entries: TimeEntry[] }>(`/api/timesheets?issueId=${encodeURIComponent(taskId)}`).catch(() => ({ entries: [] })),
+        // Names, from the ids getIssue already returns. A screen never prints
+        // a user id (R-289).
+        assigneeIds.length
+          ? fetchJson<{ users: OrgUser[] }>(`/api/org/users?ids=${encodeURIComponent(assigneeIds.join(","))}`).catch(() => ({ users: [] }))
+          : Promise.resolve({ users: [] as OrgUser[] }),
+      ]);
       setStatuses(board.columns ?? []);
+      setTypes(typeData.types ?? []);
+      setHoursLogged((timeData.entries ?? []).reduce((sum, e) => sum + Number(e.hours || 0), 0));
+      setAssignees(people.users ?? []);
       // Never fatal: an activity nobody linked to a BOQ line is the normal
       // case on a non-construction project, and this page must open anyway.
       const prov = await fetchJson<CompletionProvenance>(`/api/schedule/tasks/${taskId}/completion`).catch(() => null);
@@ -103,9 +148,16 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       setTask(null);
       setLoadError(errorMessage(err, "Couldn't load this task"));
     }
-  }
+  }, [taskId]);
 
-  useEffect(() => { load(); }, [taskId]);
+  useEffect(() => { load(); }, [load]);
+
+  // R67 D-77: Back returns to the tab the click came from. Declared here, above
+  // every handler that uses it, so archiving and Back can never disagree about
+  // where "back" is.
+  const backHref = task
+    ? `/schedule?projectId=${encodeURIComponent(task.projectId)}${fromTab ? `&tab=${encodeURIComponent(fromTab)}` : ""}`
+    : "/schedule";
 
   async function handleSave() {
     setSaving(true);
@@ -140,10 +192,9 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to archive task");
       toast.success("Task archived");
-      router.push(`/schedule?projectId=${task!.projectId}`);
+      router.push(backHref);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't archive task");
-    } finally {
       setArchiving(false);
     }
   }
@@ -185,6 +236,9 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       if (!res.ok) throw new Error(data.error ?? "Failed to log time");
       toast.success("Time logged");
       setLogHours(""); setLoggingTimeOpen(false);
+      // R67 D-77: the "Time logged" facet is now on this page, so it has to
+      // move when you log time on it.
+      await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't log time");
     } finally {
@@ -200,10 +254,25 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       </div>
     );
   }
-  if (!task) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 D-77: the same loading skeleton shape as the work-progress entry page
+  // -- the page's own frame while it arrives, not the word "Loading" floating
+  // in an empty column.
+  if (!task) {
+    return (
+      <div className="space-y-3 p-6">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-7 w-72" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
 
   const statusLabel = statuses.find((s) => s.id === task.statusId)?.name ?? task.statusId;
+  const typeLabel = types.find((t) => t.id === task.typeId)?.name ?? null;
   const linkedToBoq = !!provenance && provenance.links.length > 0;
+  // A name, or nothing -- an id is never a substitute for a name.
+  const assigneeLabel = assignees.length ? assignees.map((u) => u.name).join(", ") : "Unassigned";
 
   return (
     <ObjectScreen
@@ -213,20 +282,32 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       hasDraft={false}
       headerStatus={{ tone: task.isArchived ? "neutral" : task.completionPercentage >= 100 ? "done" : "waiting", label: task.isArchived ? "archived" : statusLabel }}
       facets={[
+        // R67 D-77: type, assignee and time logged -- all three were already in
+        // the data and none of them were on the screen.
+        ...(typeLabel ? [{ label: "Type", value: typeLabel }] : []),
         { label: "Priority", value: task.priority.replace(/_/g, " ") },
+        { label: "Due", value: task.dueDate ?? "—" },
+        { label: "Assignee", value: assigneeLabel },
         { label: "% Complete", value: `${task.completionPercentage}%` },
+        { label: "Time logged", value: hoursLogged === null ? "—" : `${hoursLogged} h` },
         // R67 lane D22 (item D-49): the codes, not the ids. A QS recognises
         // "R60SK-A"; nobody recognises a 25-character key.
         ...(provenance && provenance.links.length > 0
           ? [{ label: "Linked BOQ items", value: provenance.links.map((l) => l.code ?? "(no code)").join(", ") }]
           : []),
       ]}
-      onEdit={!task.isArchived ? () => { setValues(task); setMode("edit"); } : undefined}
+      // R67 D-77: Edit is a header action, per the global object-screen rule,
+      // and it is this page's one primary.
+      headerActions={mode === "display" && !task.isArchived ? (
+        <Button size="sm" onClick={() => { setValues(task); setConfirmingArchive(false); setMode("edit"); }}>Edit</Button>
+      ) : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
       onCancel={mode === "edit" ? () => { setValues(task); setMode("display"); } : undefined}
-      onDelete={!task.isArchived ? handleArchive : undefined}
+      // Delete asks first. The footer button opens the confirm at the bottom of
+      // the body, immediately above it, rather than archiving on one click.
+      onDelete={!task.isArchived ? () => setConfirmingArchive(true) : undefined}
       deleteDisabledReason={task.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
-      onBack={() => router.push(`/schedule?projectId=${task.projectId}`)}
+      onBack={() => router.push(backHref)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
       messages={[]}
@@ -342,6 +423,17 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
               </section>
             )}
           </>
+        )}
+
+        {/* R67 D-77: the inline confirm for the footer's isolated Delete. It
+            sits at the very bottom of the body, directly above the button that
+            opened it -- inline, never a modal (the global no-dialogs rule). */}
+        {mode === "display" && confirmingArchive && !task.isArchived && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-2 text-[12.5px] text-ct-navy">
+            <span>Archiving removes this task from the board and every backlog; its time entries and links are kept</span>
+            <Button size="sm" variant="outline" disabled={archiving} onClick={handleArchive}>{archiving ? "Archiving…" : "Archive"}</Button>
+            <Button size="sm" variant="ghost" disabled={archiving} onClick={() => setConfirmingArchive(false)}>Cancel</Button>
+          </div>
         )}
 
         {mode === "display" && !task.isArchived && (
