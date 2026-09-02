@@ -122,7 +122,7 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
-export default function LabourClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+export default function LabourClient({ projectId, registryColumns, initialTab, importedNotice }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string; importedNotice?: string | null }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
@@ -183,10 +183,20 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       </TabsList>
 
       <TabsContent value="roster" className="space-y-4">
-        <div className="flex justify-end">
+        {/* R67 D-34: the import screen's confirmation, carried in the URL
+            because that screen unmounts with the navigation. */}
+        {importedNotice && (
+          <p className="rounded-md border border-px-border2 px-3 py-2 text-[12.5px] text-px-ink">{importedNotice}</p>
+        )}
+        <div className="flex justify-end gap-2">
+          {/* R67 D-34 (R-091): adding 38 workers one form at a time is why real
+              rosters never got entered. */}
+          <Button variant="outline" onClick={() => router.push(`/labour/import?projectId=${projectId}`)}>Import from Excel</Button>
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Worker" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
+              Worker" Dialog popup with a real create route. R67 D-34 renames it
+              "New Worker", the same verb+object wording every other create
+              action in this product uses. */}
+          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> New Worker</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
