@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { invalidateShell } from "@/lib/shell-store";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,10 @@ export function CreateProjectDialog() {
         );
       }
       toast.success("Project created");
+      // R67 F-21: the shell's project list is held in a session store; mark
+      // that ONE key stale so the new project appears in the top rail's
+      // switcher at once, without re-reading the whole bootstrap.
+      invalidateShell("projects");
       setProductId(""); setName(""); setDescription(""); setStartDate(""); setTargetDate(""); setOpen(false);
       router.refresh();
     } catch (err) {

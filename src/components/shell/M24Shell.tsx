@@ -49,6 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
@@ -240,74 +241,76 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
-  // F_025 fix: this used to run exactly once, inline in the mount effect
-  // below, with no way to re-invoke it. That made the account menu's
-  // identity a snapshot of whoever was signed in at the moment THIS TAB
-  // first mounted -- reproduced live: sign in as user A in one tab (menu
-  // correctly shows A), then in a SEPARATE tab of the SAME browser sign in
-  // as user B (Supabase's cookie-backed session is shared per-origin, so
-  // this silently replaces A's session for every open tab). The first tab,
-  // never having re-fetched, went on showing A indefinitely -- while a
-  // fresh `fetch("/api/organization")` issued from that exact same tab
-  // (same cookies) correctly returned B, because that route always reads
-  // the CURRENT request's session fresh. The mismatch was never in
-  // /api/organization or requireAuth() (both were already correct, per
-  // that route's `email: ctx.user!.email` straight off the verified JWT) --
-  // it was this component's `info` state going stale relative to the
-  // session that now owns the tab. Extracted to a stable callback so it can
-  // be re-run below on any Supabase auth-state change, not just on mount.
-  const loadOrgInfo = useCallback(async () => {
-    try {
-      const res = await fetch("/api/organization");
-      const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
-      if (!res.ok) {
-        noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
-        return;
-      }
-      if (d?.organization?.name) setInfo(d);
-    } catch (err) {
-      noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
-    }
-  }, [noteFailure]);
+  // R67 F-21 (R-236). THE SHELL'S SIX LOOKUPS ARE NOW ONE CALL.
+  //
+  // This component used to fetch /api/organization (two or three times),
+  // /api/projects, /api/notifications, /api/pill-usage and, through the chat
+  // provider, /api/capability-tree ON EVERY NAVIGATION -- 3.8-4.6 s to network
+  // idle for six answers that do not change between /permits and /scope. They
+  // now come from GET /api/shell once per session, held in the store in
+  // src/lib/shell-store.ts, which revalidates in the BACKGROUND on each key's
+  // own schedule (5 min for projects and the pill ranking, 24 h for the
+  // capability tree and currencies) and only when a write says to.
+  //
+  // F_025 IS PRESERVED, and this is the part that must not be lost: the
+  // account menu's identity used to be a snapshot of whoever was signed in
+  // when the tab first mounted. Sign in as A here, then as B in another tab of
+  // the same browser (@supabase/ssr persists the session in COOKIES, which
+  // GoTrueClient's localStorage `storage`-event sync never sees), and this tab
+  // kept showing A forever. So the store is still refreshed on this tab's own
+  // auth-state change AND on focus/visibility -- the cases where the identity
+  // under us can have moved on with no event of any kind.
+  const shell = useShell({ enabled: bootstrapReady });
 
   useEffect(() => {
-    if (!bootstrapReady) return;
-    let live = true;
-    void loadOrgInfo();
-    (async () => {
-      try {
-        const res = await fetch("/api/projects");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-      } catch (err) {
-        if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
-    return () => {
-      live = false;
+    if (!shell.loaded) return;
+    if (shell.organization?.name) {
+      setInfo({
+        organization: { id: shell.organization.id, name: shell.organization.name },
+        role: shell.role ?? undefined,
+        email: shell.email ?? undefined,
+      });
+    }
+    setProjects((shell.projects ?? []).map((p) => ({ id: p.id, name: p.name })));
+    if (Array.isArray(shell.pillUsage)) {
+      setRankedPills(shell.pillUsage as unknown as RankedPill[]);
+      // R53's payload carries functionId per pill. Held in a ref so the submit
+      // handler can read it without re-rendering the strip.
+      pillFnRef.current = Object.fromEntries(
+        shell.pillUsage.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
+      );
+    }
+    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01: a half-loaded shell
+    // says so, with the backend's own words, instead of rendering an em-dash
+    // and an empty project switcher as if that were the answer.
+    const labels: Record<string, string> = {
+      organization: "your organisation",
+      projects: "your projects",
+      pillUsage: "your ranked modules",
+      notifications: "your notifications",
+      capabilityTree: "your module list",
+      currencies: "your currencies",
+      shell: "your workspace",
     };
-  }, [noteFailure, loadOrgInfo, bootstrapReady]);
+    for (const [key, detail] of Object.entries(shell.errors)) {
+      noteFailure(labels[key] ?? key, detail);
+    }
+  }, [shell.loaded, shell.organization, shell.projects, shell.pillUsage, shell.role, shell.email, shell.errors, noteFailure]);
 
-  // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
-  // reports a session change -- a sign-in/sign-out in this same tab (also
-  // covers a token silently refreshing to the same user; re-fetching then
-  // is a harmless no-op, not a reason to special-case which events fire).
+  const refreshShell = shell.refresh;
+
+  // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
     const supabase = createClient();
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
-        void loadOrgInfo();
+        void refreshShell();
       } else if (event === "SIGNED_OUT") {
         setInfo(null);
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // F_025, second half of the fix: onAuthStateChange above only catches a
   // session change that THIS tab's own GoTrueClient instance initiated or
@@ -326,7 +329,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // actually looks at it again.
   useEffect(() => {
     const onFocusOrVisible = () => {
-      if (document.visibilityState === "visible") void loadOrgInfo();
+      if (document.visibilityState === "visible") void refreshShell();
     };
     window.addEventListener("focus", onFocusOrVisible);
     document.addEventListener("visibilitychange", onFocusOrVisible);
@@ -334,7 +337,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", onFocusOrVisible);
       document.removeEventListener("visibilitychange", onFocusOrVisible);
     };
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
@@ -387,47 +390,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // R67 F-21: the pill ranking moved into the /api/shell bootstrap above --
+  // it was a separate per-navigation call for a list that changes when the
+  // user clicks a pill, not when they change route. Tasks stay their own
+  // read: they DO change as the user works.
   useEffect(() => {
     if (!bootstrapReady) return;
-    let live = true;
     void loadTasks();
-
-    // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-    // order, never re-sorted here. isNewUser true means "nothing earned yet",
-    // which must not look like a failed call.
-    //
-    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-    // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-    // org/projects effect above was fixed for in the first PR, just never
-    // applied here. Same noteFailure() pattern, same shape: status read
-    // before the body is treated as data, the backend's own message kept.
-    (async () => {
-      try {
-        const res = await fetch("/api/pill-usage?limit=6");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
-          return;
-        }
-        if (live && Array.isArray(d?.pills)) {
-          setRankedPills(d.pills as RankedPill[]);
-          // R53's payload carries functionId per pill. Held in a ref so the
-          // submit handler can read it without re-rendering the strip.
-          pillFnRef.current = Object.fromEntries(
-            (d.pills as { pillKey: string; functionId?: string }[])
-              .filter((x) => x.functionId)
-              .map((x) => [x.pillKey, x.functionId as string])
-          );
-        }
-      } catch (err) {
-        if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
-
-    return () => {
-      live = false;
-    };
-  }, [noteFailure, loadTasks, bootstrapReady]);
+  }, [loadTasks, bootstrapReady]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
@@ -548,6 +518,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       }
       setDraft("");
       setPendingFunctionId(null);
+      // R67 F-21: a Send re-ranks the pills server-side, so mark that ONE key
+      // stale rather than re-reading the whole shell.
+      invalidateShell("pillUsage");
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
       await loadTasks();
@@ -651,7 +624,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             rememberSelectedProject(next ? next.id : null);
           }}
           search={<SearchTrigger />}
-          alerts={<NotificationBell />}
+          alerts={<NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />}
           account={<AccountMenu email={info?.email} />}
         />
       }

@@ -28,26 +28,48 @@ const ROUTE_BY_TYPE: Record<string, (projectId: string) => string> = {
   punch_list_created: (projectId) => `/punch-list?projectId=${encodeURIComponent(projectId)}`,
 };
 
-export function NotificationBell() {
+export function NotificationBell({
+  initialNotifications,
+  initialUnreadCount,
+}: {
+  // R67 F-21: normally supplied by the /api/shell bootstrap, so the bell costs
+  // no request of its own. It keeps its own fetch for the case where the
+  // bootstrap has not answered yet (or failed), so the bell is never silently
+  // stuck on zero.
+  initialNotifications?: NotificationItem[];
+  initialUnreadCount?: number;
+} = {}) {
   const router = useRouter();
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount ?? 0);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications ?? []);
   // R66 code-quality fix: a failed load used to no-op silently, leaving the
   // bell showing 0 unread forever with nothing telling the user it didn't
   // actually load. This is a minimal, non-blocking indicator -- a title/
   // tooltip plus a distinct dot color -- not a full error-state redesign.
   const [failedToLoad, setFailedToLoad] = useState(false);
 
+  // The bootstrap answers this for the whole session; only fetch when it did
+  // not (a create route where the shell bootstrap is still deferred, or a
+  // failed /api/shell).
+  const seeded = initialNotifications !== undefined;
   useEffect(() => {
-    fetch("/api/notifications")
+    if (seeded) {
+      setNotifications(initialNotifications ?? []);
+      setUnreadCount(initialUnreadCount ?? 0);
+      return;
+    }
+    const controller = new AbortController();
+    fetch("/api/notifications", { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        if (controller.signal.aborted) return;
         if (!d) { setFailedToLoad(true); return; }
         setUnreadCount(d.unreadCount ?? 0);
         setNotifications(d.notifications ?? []);
       })
-      .catch(() => setFailedToLoad(true));
-  }, []);
+      .catch(() => { if (!controller.signal.aborted) setFailedToLoad(true); });
+    return () => controller.abort();
+  }, [seeded, initialNotifications, initialUnreadCount]);
 
   async function handleClick(n: NotificationItem) {
     if (!n.isRead) {

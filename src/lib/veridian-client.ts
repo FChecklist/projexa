@@ -112,7 +112,10 @@ export class VeridianApiError extends Error {
 // inside Vercel's 300 s cap and inside the 8 s at which the UI gives up too
 // (the shared figure D-04 fixes: veridian-client aborts at the same moment
 // the screen says "This is taking longer than usual").
-const VERIDIAN_FETCH_TIMEOUT_MS = 8_000;
+// Exported so the budget itself is assertable: a wall-clock measurement in a
+// busy test process is not a reliable way to prove "the budget is 8 s", but
+// this constant is.
+export const VERIDIAN_FETCH_TIMEOUT_MS = 8_000;
 
 // The ceiling on ONE callVeridian, retry included. A connection failure fails
 // fast (no TCP peer, DNS miss), so a retry normally costs milliseconds -- but

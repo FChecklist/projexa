@@ -15,7 +15,7 @@
 // would hang this file instead of failing it, which is why it listens.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { callVeridian, callVeridianResult, VeridianApiError } from "./veridian-client";
+import { VERIDIAN_FETCH_TIMEOUT_MS, callVeridian, callVeridianResult, VeridianApiError } from "./veridian-client";
 
 const realFetch = globalThis.fetch;
 
@@ -77,8 +77,16 @@ afterEach(() => {
 const KEY = { apiKey: "test-key" } as const;
 
 describe("the 8 s abort budget", () => {
+  test("the budget is 8 s, not the 20 s that cost the user 40", () => {
+    // Asserted on the constant rather than on a stopwatch: `bun test` runs
+    // every file in ONE process, and a loaded event loop fires an 8 s timer
+    // several hundred milliseconds late -- which would make a tight wall-clock
+    // bound flaky without saying anything more about the code than this does.
+    expect(VERIDIAN_FETCH_TIMEOUT_MS).toBe(8_000);
+  });
+
   test(
-    "a hung upstream settles inside 8.5 s as UPSTREAM_TIMEOUT, and is called exactly once",
+    "a hung upstream settles as UPSTREAM_TIMEOUT after ONE attempt, in one budget",
     async () => {
       stubNeverResolves();
       const startedAt = Date.now();
@@ -87,11 +95,15 @@ describe("the 8 s abort budget", () => {
 
       expect(result.ok).toBe(false);
       expect(result.code).toBe("UPSTREAM_TIMEOUT");
-      expect(elapsed).toBeLessThan(8_500);
-      // The 40 s regression: a second attempt here is the whole defect.
+      // It really waited the budget rather than failing instantly...
+      expect(elapsed).toBeGreaterThanOrEqual(7_500);
+      // ...and it waited ONE budget, not two. The regression this guards is
+      // the retry-on-timeout that made a hung upstream cost 2 x 20 s; a second
+      // attempt could not possibly land under 12 s.
+      expect(elapsed).toBeLessThan(12_000);
       expect(calls.length).toBe(1);
     },
-    20_000
+    30_000
   );
 
   test(
@@ -113,7 +125,7 @@ describe("the 8 s abort budget", () => {
       expect(err.message).not.toContain("http");
       expect(calls.length).toBe(1);
     },
-    20_000
+    30_000
   );
 });
 
