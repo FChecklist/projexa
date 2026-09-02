@@ -85,7 +85,7 @@ export async function Hero() {
             </div>
 
             <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-              <Button asChild size="lg" className="h-12 w-full bg-px-orange px-8 text-base text-white shadow-orange hover:bg-px-orange-hover sm:w-auto">
+              <Button asChild size="lg" className="h-12 w-full bg-brand-fill-deep px-8 text-base text-white shadow-orange hover:brightness-95 sm:w-auto">
                 <Link href="#contact">
                   {t("ctaTalk")} <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -124,7 +124,7 @@ export async function Hero() {
                     {["PM", "SE", "DS", "PR"].map((initials) => (
                       <span
                         key={initials}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-px-ink2 bg-px-orange/80 text-[10px] font-semibold text-white"
+                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-px-ink2 bg-brand-fill-deep text-[10px] font-semibold text-white"
                       >
                         {initials}
                       </span>

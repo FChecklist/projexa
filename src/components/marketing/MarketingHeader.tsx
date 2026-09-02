@@ -70,7 +70,7 @@ export function MarketingHeader() {
           <Button asChild variant="ghost" className="text-px-cloud2 hover:bg-white/10 hover:text-white">
             <Link href="/login">{t("login")}</Link>
           </Button>
-          <Button asChild className="bg-px-orange text-white shadow-orange hover:bg-px-orange-hover">
+          <Button asChild className="bg-brand-fill-deep text-white shadow-orange hover:brightness-95">
             <Link href={contactHref}>
               {t("talkToEngineer")} <ArrowRight className="h-4 w-4" />
             </Link>
@@ -106,7 +106,7 @@ export function MarketingHeader() {
             <Button asChild variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white">
               <Link href="/login" onClick={() => setOpen(false)}>{t("login")}</Link>
             </Button>
-            <Button asChild className="bg-px-orange text-white hover:bg-px-orange-hover">
+            <Button asChild className="bg-brand-fill-deep text-white hover:brightness-95">
               <Link href={contactHref} onClick={() => setOpen(false)}>
                 {t("talkToEngineer")} <ArrowRight className="h-4 w-4" />
               </Link>
