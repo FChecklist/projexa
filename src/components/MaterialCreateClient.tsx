@@ -35,6 +35,7 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
   const [spec, setSpec] = useState("");
   const [unit, setUnit] = useState("");
   const [unitCost, setUnitCost] = useState("");
+  const [reorderLevel, setReorderLevel] = useState("");
   const [errors, setErrors] = useState<FieldErrors<"name" | "unit">>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -60,7 +61,13 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
     try {
       const material = await fetchJson<{ id: string }>("/api/materials/master", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, name, spec: spec || undefined, unit, unitCost: unitCost ? Number(unitCost) : undefined }),
+        body: JSON.stringify({
+          projectId, name, spec: spec || undefined, unit,
+          unitCost: unitCost ? Number(unitCost) : undefined,
+          // R67 D-40: omitted means "no threshold" (null), which is a different
+          // fact from 0 ("flag me the moment it runs out").
+          reorderLevel: reorderLevel.trim() === "" ? undefined : Number(reorderLevel),
+        }),
       });
       toast.success("Material added");
       router.push(`/materials/${material.id}`);
@@ -111,6 +118,12 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
         </FormField>
         <FormField label="Unit Cost (optional)">
           {(f) => <Input {...f} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />}
+        </FormField>
+        <FormField
+          label="Reorder level (optional)"
+          hint="When On hand falls below this, the master row is flagged Low. Leave empty for no threshold."
+        >
+          {(f) => <Input {...f} type="number" min={0} step="any" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} />}
         </FormField>
       </div>
     </ObjectScreen>

@@ -141,6 +141,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // correcting a mis-keyed delivery is the same site work as entering it,
   // and the void keeps the row rather than destroying it.
   "/materials/[id]": "FIELD",
+  // R67 D-40: issuing material to site is the storekeeper's own job, the same
+  // site work as recording what arrived -- so the same tier as /materials.
+  "/materials/issues": "FIELD",
   "/materials/master": "FIELD",
   "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",

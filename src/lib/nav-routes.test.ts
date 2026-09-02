@@ -212,6 +212,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/labour/attendance/new",
   "/labour/new",
   "/materials/[id]",
+  // R67 D-40: recording material issued to site. Reached from the Materials
+  // module's Issues tab ("Record Issue"), never from the sidebar -- it is an
+  // action on a project's material master, not a module of its own.
+  "/materials/issues/new",
   "/materials/new",
   // R67 D-36: one inbound receipt. Reached by clicking a row in the Materials
   // module's Inbound Receipts tab, never from the sidebar.

@@ -58,7 +58,20 @@ import { formatMoney, formatQty, resolveCurrencyCode } from "@/lib/format-money"
 import { useCurrencies, type Currency } from "@/lib/currency";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
-type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+type Material = {
+  id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean;
+  // R67 D-40: computed by the master GET, never stored -- see listMaterials()
+  // in construction-materials-service.ts. Optional on this type only because a
+  // cached older response can still be in flight during a deploy.
+  reorderLevel?: string | null;
+  receivedToDate?: number;
+  issuedToDate?: number;
+  onHand?: number;
+};
+type Issue = {
+  id: string; materialId: string; issuedDate: string; quantity: string;
+  boqItemId: string | null; issuedTo: string | null; note: string | null;
+};
 type Receipt = {
   id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null;
   vendorId: string | null;
@@ -75,14 +88,25 @@ type CostReportRow = { materialId: string; name: string; spec: string | null; un
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
+// R67 D-40: the master finally carries a quantity. Sumeet's item 8 is
+// "material database -- spec, cost, qty" and until now the module answered two
+// of those three.
+const QUANTITY_COLUMNS: ScreenColumn[] = [
+  { label: "Received to date", field: "receivedToDate", type: "number", importance: "High" },
+  { label: "On hand", field: "onHand", type: "number", importance: "High" },
+];
+
 const MASTER_COLUMNS: ScreenColumn[] = [
   { label: "Name", field: "name", type: "text", importance: "High" },
   { label: "Spec", field: "spec", type: "text", importance: "Medium" },
   { label: "Unit", field: "unit", type: "text", importance: "High" },
   { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
+  ...QUANTITY_COLUMNS,
 ];
 
-const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
+const RIGHT_ALIGNED_FIELDS = new Set(["unitCost", "receivedToDate", "onHand"]);
+
+const VALID_TABS = new Set(["master", "receipts", "issues", "cost-report"]);
 
 // Per-field cell renderer for the Material Master table -- same reasoning
 // as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
@@ -106,6 +130,31 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
       // shared formatter, so "AED 420.00" reads identically here, on the
       // receipts tab and on the Cost Report.
       return formatMoney(m.unitCost, currencies);
+    // R67 D-40. Quantities are not money: no currency token, and an absent
+    // figure is an en-dash, never a confident "0".
+    case "receivedToDate":
+      return formatQty(m.receivedToDate);
+    case "onHand": {
+      const onHand = m.onHand;
+      const reorderLevel = m.reorderLevel === null || m.reorderLevel === undefined ? null : Number(m.reorderLevel);
+      const low =
+        onHand !== undefined && reorderLevel !== null && Number.isFinite(reorderLevel) && onHand < reorderLevel;
+      return (
+        <span className="inline-flex items-center justify-end gap-1">
+          {formatQty(onHand)}
+          {low && (
+            // Never colour alone: the needs-you glyph AND the word.
+            <span
+              className="text-[11px] font-medium"
+              style={{ color: "var(--color-veri-status-needs-you)" }}
+              title={`Below the reorder level of ${formatQty(reorderLevel)} ${m.unit}`}
+            >
+              ▲ Low
+            </span>
+          )}
+        </span>
+      );
+    }
     default:
       return String((m as unknown as Record<string, unknown>)[field] ?? "—");
   }
@@ -154,7 +203,17 @@ export default function MaterialsClient({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+  // R67 D-40: a seeded screen_definitions row still drives the ORDER and LABELS
+  // of the stored columns, but it predates the quantity columns, so a registry
+  // row that has not been updated must not silently hide the one thing this
+  // item exists to add. The two quantity columns are appended when the resolved
+  // set does not already name them -- when the registry row gains them, this
+  // appends nothing.
+  const columns = useMemo(() => {
+    const resolved = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+    const present = new Set(resolved.map((col) => col.field));
+    return [...resolved, ...QUANTITY_COLUMNS.filter((col) => !present.has(col.field))];
+  }, [registryColumns]);
   const currencies = useCurrencies();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
   const [materialFilter, setMaterialFilter] = useState(initialMaterialId ?? "");
@@ -169,6 +228,7 @@ export default function MaterialsClient({
   const [footerMessage, setFooterMessage] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [report, setReport] = useState<CostReportRow[]>([]);
   // R67 D-37: ONE loading flag used to gate all three tabs, so the Material
@@ -178,8 +238,9 @@ export default function MaterialsClient({
   // arrives.
   const [loadingMaterials, setLoadingMaterials] = useState(true);
   const [loadingReceipts, setLoadingReceipts] = useState(true);
+  const [loadingIssues, setLoadingIssues] = useState(true);
   const [loadingReport, setLoadingReport] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
+  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; issues?: string; report?: string }>({});
 
   const loadMaterials = useCallback(async () => {
     setLoadingMaterials(true);
@@ -206,6 +267,21 @@ export default function MaterialsClient({
       setLoadErrors((prev) => ({ ...prev, receipts: errorMessage(err, "Inbound receipts") }));
     } finally {
       setLoadingReceipts(false);
+    }
+  }, [projectId]);
+
+  // R67 D-40
+  const loadIssues = useCallback(async () => {
+    setLoadingIssues(true);
+    try {
+      const data = await fetchJson<{ issues?: Issue[] }>(`/api/materials/issues?projectId=${encodeURIComponent(projectId)}`);
+      setIssues(data.issues ?? []);
+      setLoadErrors((prev) => ({ ...prev, issues: undefined }));
+    } catch (err) {
+      setIssues([]);
+      setLoadErrors((prev) => ({ ...prev, issues: errorMessage(err, "Material issues") }));
+    } finally {
+      setLoadingIssues(false);
     }
   }, [projectId]);
 
@@ -238,9 +314,10 @@ export default function MaterialsClient({
   useEffect(() => {
     void loadMaterials();
     void loadReceipts();
+    void loadIssues();
     void loadReport();
     void loadVendors();
-  }, [loadMaterials, loadReceipts, loadReport, loadVendors]);
+  }, [loadMaterials, loadReceipts, loadIssues, loadReport, loadVendors]);
 
   // R67 D-37: an "Opening…" that never resolves is worse than no feedback at
   // all -- it tells the user the click landed when it did not. The timer is
@@ -364,8 +441,17 @@ export default function MaterialsClient({
 
   function exportMaster() {
     const code = resolveCurrencyCode(currencies);
-    const rows = visibleMaterials.map((m, i) => [i + 1, m.name, m.spec ?? "", m.unit, m.unitCost, m.isActive ? "active" : "inactive"]);
-    const csv = toCsv(["S.No", "Name", "Spec", "Unit", code ? `Unit Cost (${code})` : "Unit Cost", "Status"], rows);
+    const rows = visibleMaterials.map((m, i) => [
+      i + 1, m.name, m.spec ?? "", m.unit, m.unitCost,
+      // R67 D-40: the export carries the same quantities the table shows -- an
+      // export that disagrees with the screen is worse than no export.
+      m.receivedToDate ?? "", m.issuedToDate ?? "", m.onHand ?? "",
+      m.isActive ? "active" : "inactive",
+    ]);
+    const csv = toCsv(
+      ["S.No", "Name", "Spec", "Unit", code ? `Unit Cost (${code})` : "Unit Cost", "Received to date", "Issued to date", "On hand", "Status"],
+      rows
+    );
     downloadCsv(csvFilename("materials", projectName, new Date().toISOString().slice(0, 10)), csv);
   }
 
@@ -430,6 +516,9 @@ export default function MaterialsClient({
       <TabsList>
         <TabsTrigger value="master">Material Master</TabsTrigger>
         <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
+        {/* R67 D-40: the OUT side of the same ledger. Without it "On hand" on
+            the master would be a number nobody could ever move. */}
+        <TabsTrigger value="issues">Issues</TabsTrigger>
         <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
       </TabsList>
 
@@ -468,7 +557,7 @@ export default function MaterialsClient({
                 <TableHeader>
                   <TableRow>
                     {columns.map((col) => (
-                      <TableHead key={col.field} className={col.field === "unitCost" ? "text-right" : undefined}>{col.label}</TableHead>
+                      <TableHead key={col.field} className={RIGHT_ALIGNED_FIELDS.has(col.field) ? "text-right" : undefined}>{col.label}</TableHead>
                     ))}
                     {/* R67 D-35: a row click produced NO visible change, even
                         though the object page existed. The affordance is a
@@ -494,7 +583,7 @@ export default function MaterialsClient({
                         return (
                           <TableCell
                             key={col.field}
-                            className={col.field === "unitCost" ? "text-right tabular-nums" : undefined}
+                            className={RIGHT_ALIGNED_FIELDS.has(col.field) ? "text-right tabular-nums" : undefined}
                             onClick={editable ? (event) => { event.stopPropagation(); if (!isEditing) startInlineEdit(m, col.field as "unit" | "unitCost"); } : undefined}
                           >
                             {isEditing && col.field === "unit" ? (
@@ -669,6 +758,73 @@ export default function MaterialsClient({
                       </TableRow>
                     );
                   })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="issues" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            data-testid="materials-record-issue"
+            disabled={!!readOnlyReason || loadingMaterials || materials.length === 0}
+            title={readOnlyReason}
+            onClick={() => { setFooterMessage(null); navigate(`/materials/issues/new?projectId=${projectId}`); }}
+          >
+            <Plus className="size-4" /> {readOnlyReason ? `Record Issue (${readOnlyReason})` : "Record Issue"}
+          </Button>
+          {!readOnlyReason && !loadingMaterials && materials.length === 0 && (
+            <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>
+              Add a material first
+            </Button>
+          )}
+        </div>
+        <Card className="shadow-card">
+          <CardContent className="p-0">
+            {loadingIssues ? (
+              <SkeletonTable
+                headers={["Date", "Material", "Issued to", "BOQ item", "Quantity"]}
+                rows={3}
+                caption={`Loading issues for ${projectName}…`}
+              />
+            ) : loadErrors.issues ? (
+              <div className="p-4"><DataLoadError messages={[loadErrors.issues]} onRetry={loadIssues} /></div>
+            ) : issues.length === 0 ? (
+              <p className="flex flex-wrap items-center justify-center gap-1 py-10 text-center text-sm text-px-muted">
+                <span>Nothing issued to site yet —</span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0"
+                  disabled={!!readOnlyReason || materials.length === 0}
+                  onClick={() => { setFooterMessage(null); navigate(`/materials/issues/new?projectId=${projectId}`); }}
+                >
+                  Record Issue
+                </Button>
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Issued to</TableHead>
+                    <TableHead>BOQ item</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {issues.map((issue) => (
+                    <TableRow key={issue.id}>
+                      <TableCell className="text-px-muted">{formatDateNumeric(issue.issuedDate)}</TableCell>
+                      <TableCell className="font-medium">{materialName(issue.materialId)}</TableCell>
+                      <TableCell className="text-px-muted">{issue.issuedTo ?? "—"}</TableCell>
+                      <TableCell className="text-px-muted">{issue.boqItemId ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(issue.quantity)}</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             )}

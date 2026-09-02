@@ -25,8 +25,14 @@ mock.module("next/navigation", () => ({
 
 const MaterialsClient = (await import("./MaterialsClient")).default;
 
-const CEMENT = { id: "mat-cement", name: "Cement OPC 53", spec: "53 grade", unit: "bag", unitCost: "420", isActive: true };
-const STEEL = { id: "mat-steel", name: "Steel rebar 12mm", spec: null, unit: "kg", unitCost: "3", isActive: true };
+const CEMENT = {
+  id: "mat-cement", name: "Cement OPC 53", spec: "53 grade", unit: "bag", unitCost: "420", isActive: true,
+  reorderLevel: null as string | null, receivedToDate: 200, issuedToDate: 80, onHand: 120,
+};
+const STEEL = {
+  id: "mat-steel", name: "Steel rebar 12mm", spec: null, unit: "kg", unitCost: "3", isActive: true,
+  reorderLevel: null as string | null, receivedToDate: 0, issuedToDate: 0, onHand: 0,
+};
 
 const REPORT_ROW = {
   materialId: CEMENT.id,
@@ -61,6 +67,7 @@ const CURRENCIES = { currencies: [{ id: "c1", code: "AED", name: "Dirham", symbo
 function handlers(over: Partial<Record<string, Handler>> = {}): Record<string, Handler> {
   return {
     "/api/materials/master": () => jsonRes({ materials: [CEMENT, STEEL] }),
+    "/api/materials/issues": () => jsonRes({ issues: [] }),
     "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
     "/api/materials": () => jsonRes({ receipts: [] }),
     "/api/vendors": () => jsonRes({ vendors: [] }),
@@ -201,6 +208,85 @@ describe("MaterialsClient -- no click is silent (D-37)", () => {
     expect(button.textContent).toBe("Opening…");
     expect(button.disabled).toBe(true);
     expect(push).toHaveBeenCalledWith("/materials/new?projectId=p1");
+  });
+});
+
+describe("MaterialsClient -- the master finally carries a quantity (D-40)", () => {
+  test("Received to date and On hand are columns on the master", async () => {
+    const { getByText } = renderClient();
+
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    expect(getByText("Received to date")).toBeDefined();
+    expect(getByText("On hand")).toBeDefined();
+    expect(getByText("200")).toBeDefined();
+    expect(getByText("120")).toBeDefined();
+  });
+
+  test("a registry row that predates the quantity columns does not hide them", async () => {
+    globalThis.fetch = router(handlers());
+    const { getByText } = render(
+      <MaterialsClient
+        projectId="p1"
+        projectName="Cedar Heights Villa - Phase 1"
+        registryColumns={[{ label: "Material", field: "name", type: "text", importance: "High" }]}
+      />
+    );
+
+    await waitFor(() => expect(getByText("Material")).toBeDefined());
+    expect(getByText("On hand")).toBeDefined();
+  });
+
+  test("below its reorder level a row is flagged with the glyph AND the word, never colour alone", async () => {
+    const { getByText, queryByText } = renderClient({
+      "/api/materials/master": () => jsonRes({ materials: [{ ...CEMENT, reorderLevel: "150" }, STEEL] }),
+    });
+
+    await waitFor(() => expect(getByText("▲ Low")).toBeDefined());
+    // Steel has no threshold at all, so it is never "Low" -- an absent
+    // threshold is not a threshold of zero.
+    expect(queryByText("▲ Low")!.textContent).toBe("▲ Low");
+  });
+
+  test("with no reorder level nothing is flagged", async () => {
+    const { getByText, queryByText } = renderClient();
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    expect(queryByText("▲ Low")).toBeNull();
+  });
+
+  test("the Issues tab lists what left the store and offers Record Issue", async () => {
+    const { getByText, getByTestId } = renderClient({
+      "/api/materials/issues": () => jsonRes({
+        issues: [{ id: "iss-1", materialId: "mat-cement", issuedDate: "2026-09-01", quantity: "80", boqItemId: null, issuedTo: "Falcon gang 3", note: null }],
+      }),
+    }, "issues");
+
+    await waitFor(() => expect(getByText("Falcon gang 3")).toBeDefined());
+    expect(getByText("Issued to")).toBeDefined();
+    expect((getByTestId("materials-record-issue") as HTMLButtonElement).textContent).toContain("Record Issue");
+  });
+
+  test("an empty Issues tab says so and offers the way in", async () => {
+    const { getByText } = renderClient({}, "issues");
+    await waitFor(() => expect(getByText("Nothing issued to site yet —")).toBeDefined());
+  });
+});
+
+describe("MaterialsClient -- a closed project is read-only (D-38)", () => {
+  test("the rose banner is shown and every write carries its reason", async () => {
+    globalThis.fetch = router(handlers());
+    const { getByText, getByTestId } = render(
+      <MaterialsClient
+        projectId="p1"
+        projectName="Marina Tower Fit-out"
+        registryColumns={null}
+        readOnlyReason="This project is closed — materials are read-only"
+      />
+    );
+
+    await waitFor(() => expect(getByText("This project is closed — materials are read-only")).toBeDefined());
+    const newMaterial = getByTestId("materials-new") as HTMLButtonElement;
+    expect(newMaterial.textContent).toBe("+ New Material (This project is closed — materials are read-only)");
+    expect(newMaterial.disabled).toBe(true);
   });
 });
 
