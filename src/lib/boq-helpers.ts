@@ -36,6 +36,11 @@ export type BoqLineItemRow = {
   computedBudget?: number | null;
   vendorId?: string | null;
   vendorAmount?: string | null;
+  // R67 D-26 (drizzle/0529): the other two thirds of Sumeet's budget model.
+  // null means NOT COSTED and renders as an en dash; "0" is a real, entered
+  // zero and renders as "AED 0".
+  materialAmount?: string | null;
+  manpowerAmount?: string | null;
 };
 
 export type Vendor = { id: string; vendorName: string };
