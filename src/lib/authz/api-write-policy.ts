@@ -123,6 +123,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/kpi-entries": "FIELD",
   "/kpi-entries/[id]/approve": "FIELD",
   "/kpis": "PM_OR_ABOVE",
+  // R67 lane D22 (item D-68): importing a roster is NOT the same act as adding
+  // one worker. It rewrites the crew list wholesale and, when the vendor
+  // opt-in is used, creates vendor master records -- commercial decisions, at
+  // the same tier as the BOQ and programme imports. Adding a single worker
+  // stays FIELD below, which is the site engineer's own route in.
+  "/labour/import": "PM_OR_ABOVE",
   "/labour-roster": "FIELD",
   "/labour-roster/[id]": "FIELD",
   "/leads": "PM_OR_ABOVE",
@@ -257,10 +263,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // already PM_OR_ABOVE by the "/scope" entry above.
   "/scope/categories": "PM_OR_ABOVE",
   "/scope/categories/[id]": "PM_OR_ABOVE",
-  // NOTE (recorded, not fixed here): this route has zero callers anywhere in
-  // src -- BOQ import exists only as a direct API surface with no
-  // click-reachable UI. Gating it does not make it reachable; that is a
-  // separate product gap.
+  // The NOTE that stood here -- "zero callers anywhere in src, BOQ import
+  // exists only as a direct API surface with no click-reachable UI" -- was
+  // true when it was written and is no longer: R67 lane D22 (item D-52, and
+  // the shared ImportScreen from D-68) gave it /scope/import, reachable from
+  // the "Import" action beside "+ New BOQ" and from the list's empty state.
+  // The tier is unchanged and correct: importing a BOQ rewrites the priced
+  // scope of the whole project.
   "/scope/import": "PM_OR_ABOVE",
   "/scope/line-items/[id]": "PM_OR_ABOVE",
   "/screen-drafts": "FIELD",
