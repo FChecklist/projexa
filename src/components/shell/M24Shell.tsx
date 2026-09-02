@@ -31,13 +31,9 @@ import {
   cutChainFrom,
   resetChain,
   DEFAULT_CHAIN_MODE,
-  UNIVERSAL_PILLS,
   type Chain,
   type ChainLoad,
   type ChainMode,
-  type PillSelection,
-  type PillUsage,
-  type RankedPill,
   type TaskRow,
   type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
@@ -56,13 +52,28 @@ import {
 // is dead and unexplained is kept and strengthened -- see the Composer props
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
-import { PillStrip } from "./PillStrip";
+import { PillStrip, type CardView, type RecentCardView } from "./PillStrip";
 import { useShellScreen } from "./shell-screen-context";
+import {
+  CARD_CATALOGUE,
+  KIND_GLYPH,
+  KIND_WORD,
+  allModulesEntries,
+  cardHref,
+  cardUnmetReason,
+  rankCards,
+  targetForCard,
+  type AllModulesEntry,
+  type CardDef,
+  type CardPreconditionId,
+  type RankedEntry,
+} from "@/lib/card-catalogue";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
 import { deriveMode } from "@/lib/chain-mode";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
 import { useScreenModule } from "./use-screen-module";
 import {
+  MODULE_CATALOGUE,
   chainOptionsFor,
   moduleForPill,
   moduleHref,
@@ -83,6 +94,18 @@ import { createClient } from "@/lib/supabase/client";
 // the server's own ranking does not answer, and a fallback that forgot itself
 // every session would be no fallback at all.
 const PILL_USAGE_KEY = "veri.pill.usage";
+
+// R67 A-07 -- the last ranking the SERVER gave this browser, painted on the
+// next first render so the strip never shows one set of cards and then swaps
+// it for another. It is a cache of a server answer, never an input to one.
+const RANKED_CARDS_KEY = "veri.pill.ranked";
+
+// R67 A-07 -- how long a newly arrived ranking waits after the user last
+// touched the band. Re-ordering cards under a moving finger is how a person
+// clicks "Run WPR" and gets "Record progress"; five seconds is long enough
+// that a deliberate reach is never overtaken, and short enough that the next
+// navigation always applies the fresh order anyway.
+const RANK_SETTLE_MS = 5000;
 
 // R67 A-05. MODE_KEY ("veri.chain.mode") is GONE. It backed a row of three
 // tabs -- Projects | Customers | Vendors -- that changed nothing on PROJEXA
@@ -219,8 +242,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // The RAIL's own selection. It is no longer the only answer to "which
   // project": a screen that resolved one from the URL outranks it (A-03).
   const [railProjectId, setRailProjectId] = useState<string | null>(null);
-  const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
-  const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
+  // A-07: the user's own pinned cards, per browser. Pinning is how a user
+  // defeats the 7-day decay for work they know is periodic, so it must survive
+  // a session -- localStorage, not sessionStorage.
+  const [pinnedCards, setPinnedCards] = useState<string[]>([]);
+  // A-07 -- THE RANKING THAT IS ON SCREEN, which is deliberately NOT the same
+  // thing as the last ranking the server sent. See applyRanking() below.
+  const [rankedPills, setRankedPills] = useState<RankedEntry[] | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
   const [tasksError, setTasksError] = useState<string | null>(null);
   // What the SHELL itself could not load, separate from the task read.
@@ -240,7 +268,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // The top rail's DOM, so a click that needs a project can send the user to
   // the control that chooses one (A-03) instead of only saying "no".
   const railRef = useRef<HTMLDivElement>(null);
+  // The composer's own box, so a control whose whole meaning is "type it" can
+  // put the cursor there rather than describing what the user should do next.
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [showAllPills, setShowAllPills] = useState(false);
+  // A-08: a failed ranking read is admitted in one muted line rather than
+  // silently producing a strip that looks like a considered answer.
+  const [rankingFailed, setRankingFailed] = useState(false);
+  // R67 A-08: the three "Do again" chains, computed by the server from the
+  // SAME compliance.chain_history rows the History tab reads.
+  const [recentChains, setRecentChains] = useState<RecentCardView[]>([]);
   const [draft, setDraft] = useState("");
   const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
     home: 0,
@@ -251,9 +288,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const p = localStorage.getItem(PILL_USAGE_KEY);
-      if (p) setPillUsage(JSON.parse(p) as PillUsage[]);
+      const parsed = p ? JSON.parse(p) : null;
+      if (Array.isArray(parsed)) setPinnedCards(parsed.filter((x): x is string => typeof x === "string"));
     } catch {
       // A blocked or unavailable storage must not take the shell down.
+    }
+    // R67 A-07 -- KILL THE FLICKER. Every page load used to paint one set of
+    // cards from a local table for half a second to three seconds, then swap
+    // it for the server's ranking: two different strips on one screen, and a
+    // finger already moving toward the first one. The last ranking the server
+    // gave THIS user is cached and painted immediately, so the strip that
+    // appears is the strip that stays.
+    try {
+      const cached = localStorage.getItem(RANKED_CARDS_KEY);
+      const parsed = cached ? JSON.parse(cached) : null;
+      if (Array.isArray(parsed)) setRankedPills(parsed as RankedEntry[]);
+    } catch {
+      // No cache is a normal first run, not a failure.
     }
     // R67 A-05: the rail's last choice is restored before any request, so the
     // rail does not flash "All projects" on every reload and then correct
@@ -284,6 +335,31 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // already owns "something did not load".
   const noteFailure = useCallback((what: string, detail: string) => {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
+  }, []);
+
+  // R67 A-07 -- WHEN A NEW RANKING MAY REPLACE WHAT IS ON SCREEN.
+  //
+  // The ranking arrives asynchronously and can legitimately differ from the
+  // cached one. Applying it the instant it lands re-orders the cards under
+  // whatever the user is currently reaching for, which is how a person aiming
+  // at "Run WPR" presses "Record progress" instead. So: apply it immediately
+  // when the band has been untouched for five seconds, otherwise hold it and
+  // let the next navigation -- when the user has already looked away -- put it
+  // in place. Nothing is lost either way; only the moment changes.
+  const lastInteractionRef = useRef<number>(0);
+  const deferredRankingRef = useRef<RankedEntry[] | null>(null);
+
+  const noteBandInteraction = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+  }, []);
+
+  const applyRanking = useCallback((entries: RankedEntry[]) => {
+    if (Date.now() - lastInteractionRef.current < RANK_SETTLE_MS) {
+      deferredRankingRef.current = entries;
+      return;
+    }
+    deferredRankingRef.current = null;
+    setRankedPills(entries);
   }, []);
 
   // F_025 fix: this used to run exactly once, inline in the mount effect
@@ -458,11 +534,39 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         const res = await fetch("/api/pill-usage?limit=6");
         const d = await res.json().catch(() => null);
         if (!res.ok) {
-          if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
+          if (live) {
+            setRankingFailed(true);
+            noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
+          }
           return;
         }
         if (live && Array.isArray(d?.pills)) {
-          setRankedPills(d.pills as RankedPill[]);
+          setRankingFailed(false);
+          const entries = (d.pills as { pillKey: string; label?: string; pinned?: boolean }[]).map((p) => ({
+            pillKey: p.pillKey,
+            label: p.label ?? null,
+            pinned: Boolean(p.pinned),
+          }));
+          // A-07: cache it BEFORE deciding whether to paint it. The cache is
+          // for the next first render; the five-second rule below is only
+          // about THIS one.
+          try {
+            localStorage.setItem(RANKED_CARDS_KEY, JSON.stringify(entries));
+          } catch {}
+          applyRanking(entries);
+          // A-08: no recent chains is a normal first week and must render as
+          // "role cards only", never as an error and never as a placeholder.
+          setRecentChains(
+            Array.isArray(d?.recentChains)
+              ? (d.recentChains as RecentCardView[]).map((c) => ({
+                  fullChain: c.fullChain,
+                  label: c.label,
+                  steps: c.steps ?? [],
+                  projectId: c.projectId ?? null,
+                  outcome: c.outcome ?? "ok",
+                }))
+              : []
+          );
           // R53's payload carries functionId per pill. Held in a ref so the
           // submit handler can read it without re-rendering the strip.
           pillFnRef.current = Object.fromEntries(
@@ -472,7 +576,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           );
         }
       } catch (err) {
-        if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
+        if (live) {
+          setRankingFailed(true);
+          noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
+        }
       }
     })();
 
@@ -590,59 +697,127 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [router]
   );
 
-  // Usage is recorded on every pill and leaf click, so MP-RULE-3 can rank the
-  // strip from what this user actually does. It is deliberately separate from
-  // what the click DOES -- ranking must not depend on whether the click
-  // navigated, and navigating must not depend on whether ranking worked.
-  const bumpUsage = useCallback((pillKey: string) => {
-    setPillUsage((prev) => {
-      const now = Date.now();
-      const existing = prev.find((r) => r.pillKey === pillKey);
-      const next = existing
-        ? prev.map((r) => (r.pillKey === pillKey ? { ...r, useCount: r.useCount + 1, lastUsedAt: now } : r))
-        : [...prev, { pillKey: pillKey as PillUsage["pillKey"], useCount: 1, lastUsedAt: now, pinned: false }];
-      try {
-        localStorage.setItem(PILL_USAGE_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+  // R67 A-07 -- USAGE IS RECORDED ON THE SERVER NOW, not only in this browser.
+  //
+  // Every card and leaf click was counted in localStorage and nowhere else, so
+  // the ranking the SERVER computes was built from rows only the pipeline had
+  // ever written -- and most card clicks NAVIGATE rather than execute. A site
+  // engineer who opened "Record progress" forty times a week had that fact
+  // recorded on one laptop and nowhere the ranking could see it. POST
+  // /api/pill-usage closes that: one row per card, upserted, per user.
+  //
+  // IT IS DELIBERATELY SEPARATE FROM WHAT THE CLICK DOES. Ranking must not
+  // depend on whether the click navigated, and navigating must never depend on
+  // whether ranking worked -- so this is fire-and-forget and its failure is
+  // swallowed. The click has already happened; reporting a failed counter as a
+  // failed navigation would be a lie about what the user just did.
+  const bumpUsage = useCallback((pillKey: string, chain?: { root: string | null; steps: string[]; full: string }) => {
+    void fetch("/api/pill-usage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pillKey, chain }),
+    }).catch(() => {});
   }, []);
 
-  // A pill click records usage and OPENS THE MODULE. It does NOT execute:
-  // PillSelection carries authorizes:false and has no callable member.
+  /** The chain a click means, in the words the strip is showing. Sent with the
+   *  usage row so another device can label a card id it has never seen. */
+  const chainForUsage = useCallback(
+    (leafLabel: string, moduleLabel: string | null) => ({
+      root: project?.name ?? null,
+      steps: [...(moduleLabel ? [moduleLabel] : []), leafLabel],
+      full: [project?.name, moduleLabel, leafLabel].filter(Boolean).join(" > "),
+    }),
+    [project]
+  );
+
+  // R67 A-07 -- A CARD CLICK. It records usage and OPENS THE CARD'S OWN ROUTE.
+  // It does NOT execute: the callback carries a card id, a plain string, so
+  // nothing on this path has a callable member.
   //
   // R67 A-02 -- THE TEXT SEEDING IS DELETED. A first-time pill click used to
   // type its own label into the box ("Permits", "Reports") and leave it there
   // for the classifier to interpret. It was a real fix for a real dead end --
   // Send did nothing at all before it -- but it makes the composer write words
   // the user did not, and it sends a module NAME to a classifier when the
-  // module already has a real screen. A pill now goes where its name goes:
-  // the module's own route, carrying the current project, which is the same
-  // URL the screen's own header button produces. The same name reaches the
-  // same destination whichever path you took, and the box stays the user's.
-  const onPillSelect = useCallback(
-    (sel: PillSelection) => {
-      bumpUsage(sel.pillKey);
-      // Arm the pill path when -- and only when -- the server told us this
-      // pill maps to a real executable function. R53: picking the function
-      // means the server does NOT need to classify, so the submission costs no
-      // model call at all. pillFnRef is populated from /api/pill-usage's own
-      // payload; a pill it does not name is a category entry point, not a
-      // zero-parameter function, and is opened rather than armed.
-      const knownFunctionId = pillFnRef.current[sel.pillKey] ?? null;
+  // module already has a real screen. A card now goes where its name goes: the
+  // exact URL the screen's own header control produces.
+  const onCardSelect = useCallback(
+    (cardId: string) => {
+      const card = CARD_CATALOGUE.find((c) => c.id === cardId);
+      if (!card) return;
+      const target = targetForCard(card);
+      const moduleLabel = target?.module.label ?? null;
+      bumpUsage(card.id, chainForUsage(card.label, moduleLabel));
+      // Arm the pill path when -- and only when -- a real executable function
+      // is known for this card. R53: picking the function means the server does
+      // NOT need to classify, so the submission costs no model call at all.
+      const knownFunctionId = card.functionId ?? pillFnRef.current[card.id] ?? null;
       setPendingFunctionId(knownFunctionId);
       setSegments((prev) =>
-        prev.some((s) => s.id === sel.pillKey)
+        prev.some((s) => s.id === card.id)
           ? prev
-          : [...prev, { id: sel.pillKey, label: sel.label, kind: "action" as const }]
+          : [...prev, { id: card.id, label: card.label, kind: "action" as const }]
       );
       if (knownFunctionId) return;
-      const mod = moduleForPill(sel.pillKey, sel.label);
-      if (!mod) return; // a pill with no PROJEXA screen: nothing to open, nothing typed.
+      const href = cardHref(card, card.needsProject ? projectId : null);
+      if (!href) return;
       setProjectPrompt(null);
+      router.push(href);
+    },
+    [bumpUsage, chainForUsage, projectId, router]
+  );
+
+  // R67 A-07 -- an entry in the expanded "All modules" list. It opens the
+  // module's own list route; it never types and never executes. The free-text
+  // entry only moves the cursor into the box, which is the one thing it means.
+  const onModuleEntrySelect = useCallback(
+    (entry: AllModulesEntry) => {
+      if (entry.kind === "other") {
+        bumpUsage("other");
+        setShowAllPills(false);
+        composerRef.current?.focus();
+        return;
+      }
+      const mod = entry.moduleId ? MODULE_CATALOGUE.find((m) => m.id === entry.moduleId) : undefined;
+      if (!mod) return;
+      bumpUsage(entry.id, chainForUsage(mod.label, null));
+      setProjectPrompt(null);
+      setShowAllPills(false);
       router.push(moduleRoute(mod, projectId));
     },
-    [bumpUsage, projectId, router]
+    [bumpUsage, chainForUsage, projectId, router]
+  );
+
+  // R67 A-08 -- "DO AGAIN". It LOADS the sentence and STOPS.
+  //
+  // The chain is restored into the strip exactly as it was recorded and the
+  // screen it belongs to is opened. What it deliberately does NOT do is carry
+  // the old task's parameters: repeating "Record progress > EX-01" means doing
+  // that job again TODAY, with today's date and this shift's quantity, and a
+  // form pre-filled with last week's number is the most expensive kind of
+  // convenience this product could offer. pendingFunctionId is left null, so
+  // Send is not armed and nothing can execute from a single click.
+  const onRecentSelect = useCallback(
+    (chain: RecentCardView) => {
+      bumpUsage(chain.steps[0] ?? chain.fullChain, {
+        root: project?.name ?? null,
+        steps: [...chain.steps],
+        full: chain.fullChain,
+      });
+      setPendingFunctionId(null);
+      setSegments(
+        chain.steps.map((label, i) => ({
+          id: `again:${chain.fullChain}:${i}`,
+          label,
+          kind: i === 0 ? ("action" as const) : ("step" as const),
+        }))
+      );
+      const mod = moduleForPill(chain.steps[0] ?? "", chain.steps[0]);
+      if (!mod) return;
+      setProjectPrompt(null);
+      router.push(moduleRoute(mod, chain.projectId ?? projectId));
+    },
+    [bumpUsage, project, projectId, router]
   );
 
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
@@ -663,7 +838,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // the screen's own control produces. It never executes and never types.
   const onLeafSelect = useCallback(
     (mod: ModuleDef, leaf: ModuleLeaf) => {
-      bumpUsage(leaf.id);
+      bumpUsage(leaf.id, chainForUsage(leaf.label, mod.label));
       if (leaf.needsProject !== false && !projectId) {
         // No fail-after-click and no silent no-op: say which decision is
         // missing, in the module's own words, and send the user to the rail.
@@ -676,7 +851,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       );
       router.push(moduleHref(leaf, projectId));
     },
-    [bumpUsage, projectId, requestProject, router]
+    [bumpUsage, chainForUsage, projectId, requestProject, router]
   );
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
@@ -736,12 +911,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks]);
 
-  const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
-    setPillUsage((prev) => {
-      const existing = prev.find((r) => r.pillKey === key);
-      const next = existing
-        ? prev.map((r) => (r.pillKey === key ? { ...r, pinned: !r.pinned } : r))
-        : [...prev, { pillKey: key, useCount: 0, lastUsedAt: Date.now(), pinned: true }];
+  // A-07: pinning is how a user defeats the 7-day decay for work they know is
+  // periodic (a month-end report used heavily on the 30th and invisible from
+  // the 8th). It is stored per browser and applied on top of whatever the
+  // server ranked, so a pin never has to wait for a round trip to take effect.
+  const onTogglePin = useCallback((cardId: string) => {
+    setPinnedCards((prev) => {
+      const next = prev.includes(cardId) ? prev.filter((k) => k !== cardId) : [...prev, cardId];
       try {
         localStorage.setItem(PILL_USAGE_KEY, JSON.stringify(next));
       } catch {}
@@ -874,14 +1050,89 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setPendingFunctionId(null);
     setProjectPrompt(null);
     setSubmitError(null);
+    setShowAllPills(false);
+    // A-07: a ranking that arrived while the user was working the band was
+    // held back rather than re-ordering cards under their finger. A navigation
+    // is the moment they have already looked away, so it lands here.
+    if (deferredRankingRef.current) {
+      setRankedPills(deferredRankingRef.current);
+      deferredRankingRef.current = null;
+    }
   }, [screen.pathname]);
 
-  // R67 A-01: a pill whose destination is the screen already on show is a dead
-  // end, so it is not offered at all.
-  const hidePill = useCallback(
-    (pill: { key: string; label: string }) => pillPointsAtCurrentScreen(pill.key, pill.label, pathname ?? ""),
+  // R67 A-07 -- BAND 3, AS CARDS.
+  //
+  // WHAT REPLACED WHAT. The strip used to render MODULE NAMES ranked by usage:
+  // "Permits", "Reports", "Work Progress". A module name is a place, not a
+  // thing you can do, so every click was a navigation followed by a second
+  // decision on the next screen. Per owner approval D-10 the first level is
+  // now six role-ranked VERB+OBJECT cards -- "Record progress", "Run WPR",
+  // "Add permit" -- plus "All modules", which expands in place to Sumeet's
+  // fixed order and never re-sorts itself.
+  //
+  // THE ORDER COMES FROM THE SERVER WHEN THERE IS ONE, and from this user's
+  // ROLE when there is not. It is never a local guess dressed up as a ranking.
+  const role = info?.role ?? null;
+  const roleKnown = Boolean(info);
+  const { cards: rankedCards, unknownKeys } = useMemo(
+    () =>
+      rankCards({
+        ranked: rankedPills ?? [],
+        role,
+        // The screen's own module is already band 2. Offering it here as well
+        // would be the same words twice, one of them pointing at this page.
+        excludeModuleId: screenModule?.id ?? null,
+        limit: 6,
+      }),
+    [rankedPills, role, screenModule]
+  );
+
+  // A-07 -- PRECONDITIONS, EVALUATED FROM WHAT THE SHELL ACTUALLY KNOWS.
+  // A card whose precondition is unmet is rendered, disabled, with the reason
+  // in words. Today the shell can answer one of them honestly -- whether a
+  // project is resolved -- and it does. The BOQ precondition is declared on
+  // the cards that have it and is never asserted here, because this shell has
+  // no cheap signal for "does this project have a BOQ" (the only source is the
+  // eight-second /api/scope fan-out), and a precondition guessed at is worse
+  // than one not yet evaluated.
+  const unmetPreconditions = useMemo(() => {
+    const unmet = new Set<CardPreconditionId>();
+    if (!projectId) unmet.add("project");
+    return unmet;
+  }, [projectId]);
+
+  const cardViews: CardView[] = useMemo(
+    () =>
+      rankedCards.map((card: CardDef) => ({
+        id: card.id,
+        label: card.label,
+        kindWord: KIND_WORD[card.kind],
+        kindGlyph: KIND_GLYPH[card.kind],
+        pinned: pinnedCards.includes(card.id),
+        disabledReason: cardUnmetReason(card, unmetPreconditions),
+      })),
+    [rankedCards, pinnedCards, unmetPreconditions]
+  );
+
+  // A-07: the expanded list is FIXED (Sumeet's eleven, then "Other - type it",
+  // then the Platform group). The only thing computed per screen is that the
+  // module you are already standing in says so instead of pretending to be a
+  // destination -- the same no-dead-end rule A-01 applied to the ranked band.
+  const allModules = useMemo(
+    () =>
+      allModulesEntries().map((entry) =>
+        entry.moduleId && pillPointsAtCurrentScreen(entry.moduleId, entry.label, pathname ?? "")
+          ? { ...entry, unavailable: "you are here" }
+          : entry
+      ),
     [pathname]
   );
+
+  // A-07: three skeletons appear ONLY when there is genuinely nothing to paint
+  // -- no cached ranking from a previous visit and no role to order the
+  // catalogue by. Painting the default order and then swapping it for the
+  // role's order would be the same flicker in a different costume.
+  const cardsLoading = rankedPills === null && !roleKnown;
 
   // R67 A-01 -- ONE INSTRUCTION, ONE SEND RULE, both derived from one state.
   const composerState = useMemo(
@@ -1017,58 +1268,71 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         <Composer
           chain={chain}
           onCutFrom={onCutFrom}
-          onHome={() => router.push(HOME_ROUTE)}
+          // R67 A-08: HOME must never router.push the route the user is
+          // already on -- a control that appears to navigate and does nothing
+          // reads as a broken button. On the home screen it does the thing
+          // HOME actually means here instead: opens the grouped module
+          // directory, which on PROJEXA is the "All modules" list.
+          onHome={() => {
+            if (screen.pathname === HOME_ROUTE) {
+              setShowAllPills(true);
+              return;
+            }
+            router.push(HOME_ROUTE);
+          }}
           onReset={onReset}
           value={draft}
           onChange={setDraft}
-          // BAND 3 -- the ranked pill set. M24 keeps all 14 universal pills but
-          // shows "their top five or six ... That IS the load reduction", so the
-          // strip renders the ranked top 6 with an explicit way to see the rest.
-          // Without that affordance the remaining modules would be unreachable
-          // from here, which is a dead end, and M24 forbids dead ends.
+          // BAND 3 -- the screen's own verbs first, then six role-ranked cards
+          // and "All modules". M24 shows "their top five or six ... That IS the
+          // load reduction"; D-10 makes those six verb+object CARDS rather than
+          // module names, and keeps every demoted pill reachable under "All
+          // modules" so nothing becomes a dead end.
           pills={
-            <div className="flex flex-wrap items-center gap-1">
+            <div className="flex flex-col gap-1">
               {/* R67 A-02 -- THE SCREEN'S OWN VERBS COME FIRST. On a module
                   route the composer already knows the module, so band 3 leads
                   with that module's real leaf actions -- each one navigating
                   to exactly the URL the screen's own header control produces
-                  -- and the ranked pills that follow are the ways OUT of this
-                  screen. The module's own pill is not among them (A-01): it
-                  would only point back here. */}
-              {chainModule &&
-                chainOptionsFor(chainModule).map((leaf) => (
-                  <button
-                    key={leaf.id}
-                    type="button"
-                    onClick={() => onLeafSelect(chainModule, leaf)}
-                    className="veri-mode-pill active"
-                  >
-                    {leaf.label}
-                  </button>
-                ))}
+                  -- and the ranked cards that follow are the ways OUT of this
+                  screen. The module's own cards are not among them (A-01/A-07):
+                  they would only point back here. */}
+              {chainModule && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {chainOptionsFor(chainModule).map((leaf) => (
+                    <button
+                      key={leaf.id}
+                      type="button"
+                      onClick={() => onLeafSelect(chainModule, leaf)}
+                      className="veri-mode-pill active"
+                    >
+                      {leaf.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <PillStrip
-                usage={pillUsage}
-                now={Date.now()}
-                // Server ranking wins and is rendered verbatim; the local
-                // ranking is only the fallback when the call did not answer.
-                ordered={showAllPills ? undefined : rankedPills}
-                onSelect={onPillSelect}
+                cards={cardViews}
+                recent={recentChains}
+                onSelectRecent={onRecentSelect}
+                onSelect={onCardSelect}
                 onTogglePin={onTogglePin}
-                limit={showAllPills ? UNIVERSAL_PILLS.length : 6}
-                // R67 A-01: never offer the screen the user is standing on.
-                hide={hidePill}
+                loading={cardsLoading}
+                expanded={showAllPills}
+                onToggleExpanded={() => setShowAllPills((v) => !v)}
+                allModules={allModules}
+                onSelectModule={onModuleEntrySelect}
+                unknownKeys={unknownKeys}
+                onInteract={noteBandInteraction}
+                // A-08: a failed ranking read must not look like a considered
+                // answer. The role cards still stand; one muted line says why
+                // the recent ones are missing.
+                footnote={rankingFailed ? "Recent tasks unavailable" : undefined}
               />
-              <button
-                type="button"
-                onClick={() => setShowAllPills((v) => !v)}
-                className="veri-mode-pill"
-                style={{ color: "var(--color-ct-muted)" }}
-              >
-                {showAllPills ? "Show fewer" : "More modules"}
-              </button>
             </div>
           }
           onSubmit={onSubmit}
+          textareaRef={composerRef}
           // R67 A-01: ONE state-derived sentence. It renders in the strip and
           // is reused verbatim as this button's tooltip and accessible name --
           // it is never printed twice, and the four strings it replaces

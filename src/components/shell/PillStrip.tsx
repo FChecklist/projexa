@@ -1,136 +1,288 @@
 "use client";
 
-// R67 WS-A (A-01) -- PROJEXA'S FORK of the kit's shell/PillStrip.
+// R67 WS-A (A-01, A-07) -- PROJEXA'S FORK of the kit's shell/PillStrip, now a
+// CARD strip.
 //
 // WHY A FORK (decision D-09): the kit's source is not in this repo and a
 // node_modules edit is erased by CI's frozen-lockfile install. The forks are
 // the components whose behaviour this programme changes.
 //
-// WHAT CHANGED FROM THE KIT COPY: one rule, `hide`.
+// WHAT CHANGED FROM THE KIT COPY, and why (owner approval D-10):
 //
-// The strip used to render whatever the server ranked, unfiltered -- which on
-// /dashboard meant a "Dashboard" pill and on /work-progress a "Work Progress"
-// pill: a control whose only destination is the screen the user is already
-// standing on. That is a dead end, and M24 forbids dead ends. `hide` is a
-// predicate applied to BOTH the server's ranking and the local fallback
-// ordering, so the rule cannot hold on one path and lapse on the other, and
-// the limit is applied AFTER hiding so the strip still fills its six slots.
+//  1. IT RENDERS CARDS, NOT MODULE NAMES. "Permits" is a place; "Add permit"
+//     is something a person can do. The first level is now six role-ranked
+//     verb+object cards -- the catalogue and the ranking live in
+//     src/lib/card-catalogue.ts, which is product data and belongs in this
+//     repo, not in a shared kit.
 //
-// *** CLASSIFICATION NEVER AUTHORIZES *** is unchanged and load-bearing: the
-// only outward callback is onSelect(PillSelection), and PillSelection (still
-// the kit's own type) has no callable member and a readonly `authorizes:
-// false`. Picking a pill cannot perform a write, because there is nothing on
-// the value it produces that could perform one.
+//  2. THE KIND IS A WORD, not a colour. Every card carries its glyph AND the
+//     word Record / Ask / Run. A strip whose meaning is carried by hue alone
+//     is unreadable to a colour-blind user and to anyone holding a phone in
+//     direct sunlight, which is most of the people this product is for.
+//
+//  3. A BLOCKED CARD STAYS AND EXPLAINS ITSELF. A card whose precondition is
+//     missing is rendered, disabled, with the reason in words on the card
+//     ("Run WPR - no BOQ on this project yet"). Hiding it would make the
+//     strip's contents depend on invisible state and the user could never
+//     learn the control exists.
+//
+//  4. "ALL MODULES" REPLACES "MORE MODULES", and expands in place to a FIXED
+//     list (Sumeet's eleven, then "Other - type it", then the Platform group
+//     holding the fourteen universal pills) that is never re-sorted by usage.
+//     The ranked six answer "what do you do most"; the expanded list answers
+//     "where is everything", and a list that moves is a list you must re-read.
+//
+//  5. NO FLICKER. The strip paints from a cached ranking or the role's own
+//     cold-start order; three skeleton cards appear only when there is
+//     genuinely neither. The caller decides WHEN a newly arrived ranking may
+//     replace what is on screen -- see M24Shell's five-second rule -- because
+//     a strip that re-orders under a moving finger is how a user records
+//     progress against the wrong thing.
+//
+// *** CLASSIFICATION NEVER AUTHORIZES *** is unchanged and load-bearing, and
+// is now stronger than the kit's: the outward callback carries a card ID, a
+// plain string. There is no object with a callable member anywhere on this
+// path, so selecting a card cannot perform a write.
 
-import {
-  UNIVERSAL_PILLS,
-  rankPills,
-  selectPill,
-  type PillDef,
-  type PillKey,
-  type PillSelection,
-  type PillUsage,
-  type RankedPill,
-} from "@fchecklist/veridian-ui-kit/shell";
+import { useEffect, useRef } from "react";
+import type { AllModulesEntry } from "@/lib/card-catalogue";
 
-export type PillStripProps = {
-  /** compliance.pill_usage rows for THIS user. Used only for the OFFLINE
-   *  fallback ordering when the server did not answer. */
-  usage: PillUsage[];
-  /** Injected so the fallback ordering is deterministic and testable. */
-  now: number;
-  /**
-   * The server's ranking. WHEN PRESENT THIS WINS AND IS RENDERED VERBATIM --
-   * the ranking is authoritative on the server and re-sorting it here would
-   * silently produce a different strip from the one the backend computed.
-   */
-  ordered?: RankedPill[];
-  activeKey?: string | null;
-  onSelect: (selection: PillSelection) => void;
-  onTogglePin?: (key: PillKey) => void;
-  limit?: number;
-  /**
-   * A-01. Return true for a pill that must not be offered on this screen --
-   * today, the pill whose destination IS this screen. Applied to the server's
-   * ranking and to the local fallback alike, before the limit is taken.
-   */
-  hide?: (pill: { key: string; label: string }) => boolean;
+export type CardView = {
+  id: string;
+  label: string;
+  /** "Record" | "Ask" | "Run" -- rendered as text, beside the glyph. */
+  kindWord: string;
+  kindGlyph: string;
+  pinned: boolean;
+  /** Words, on the card, when it cannot run here. Null when it can. */
+  disabledReason: string | null;
 };
 
+/** R67 A-08 -- one "Do again" card: a whole chain this user really ran. */
+export type RecentCardView = {
+  fullChain: string;
+  /** The closed-verb sentence, without the project root. */
+  label: string;
+  steps: readonly string[];
+  projectId: string | null;
+  /** "ok" | "failed". A failed chain is KEPT and shown -- the commonest
+   *  reason to re-run something is that it went wrong. */
+  outcome: string;
+};
+
+export type PillStripProps = {
+  cards: readonly CardView[];
+  /** A-08: rendered at the front of the ranked band. Empty for a user with
+   *  no recent chains, which is a normal first week and not a failure. */
+  recent?: readonly RecentCardView[];
+  onSelectRecent?: (chain: RecentCardView) => void;
+  onSelect: (cardId: string) => void;
+  onTogglePin?: (cardId: string) => void;
+  /** True only when there is neither a cached ranking nor a known role. */
+  loading?: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  allModules: readonly AllModulesEntry[];
+  onSelectModule: (entry: AllModulesEntry) => void;
+  /**
+   * Ranked keys this build has no card for. Warned once, never rendered: a raw
+   * key like "work-progress.entry" on a strip is worse than a shorter strip.
+   */
+  unknownKeys?: readonly string[];
+  /** Fires on hover or click, so the caller can hold a re-rank back. */
+  onInteract?: () => void;
+  /** One muted line under the cards -- a degraded read, or a first-run hint. */
+  footnote?: React.ReactNode;
+};
+
+/** Three of these stand in for the six cards, and only when nothing at all is
+ *  known yet. They are visibly placeholders, never plausible card labels. */
+function SkeletonCards() {
+  return (
+    <div className="flex items-center gap-1" aria-hidden data-testid="card-skeletons">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block h-[26px] w-[104px] animate-pulse rounded-full"
+          style={{ background: "var(--color-ct-border)" }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function PillStrip({
-  usage,
-  now,
-  ordered,
-  activeKey,
+  cards,
+  recent,
+  onSelectRecent,
   onSelect,
   onTogglePin,
-  limit,
-  hide,
+  loading = false,
+  expanded,
+  onToggleExpanded,
+  allModules,
+  onSelectModule,
+  unknownKeys,
+  onInteract,
+  footnote,
 }: PillStripProps) {
-  const fromServer = Boolean(ordered && ordered.length > 0);
-  const max = limit ?? 6;
-
-  const candidates: PillDef[] = fromServer
-    ? // Rendered in the server's order. A pill the local set does not know
-      // about still renders, using the server's own label -- the backend is
-      // allowed to know about modules this build does not.
-      ordered!.map((p, i) => {
-        const known = UNIVERSAL_PILLS.find((u) => u.key === p.pillKey || u.label === p.pillKey);
-        return known ?? ({ key: p.pillKey as PillKey, label: p.label ?? p.pillKey, sortOrder: i } as PillDef);
-      })
-    : // Ask for headroom before hiding, so removing the current screen's own
-      // pill does not leave the strip one short.
-      rankPills(usage, now, { limit: max + 4 });
-
-  const pills = candidates.filter((p) => !hide?.({ key: p.key, label: p.label })).slice(0, max);
-
-  const pinnedKeys = new Set<string>(
-    fromServer
-      ? ordered!.filter((p) => p.pinned).map((p) => p.pillKey)
-      : usage.filter((r) => r.pinned).map((r) => r.pillKey)
-  );
+  // Warned once per distinct set, in the console only. A key the server ranks
+  // and this build cannot render is a deployment-skew fact for a developer,
+  // never a sentence to put in front of a site engineer.
+  const warnedRef = useRef<string>("");
+  useEffect(() => {
+    const signature = (unknownKeys ?? []).join(",");
+    if (!signature || warnedRef.current === signature) return;
+    warnedRef.current = signature;
+    console.warn(
+      `[composer] the server ranked ${unknownKeys!.length} key(s) this build has no card for and they were dropped: ${signature}`
+    );
+  }, [unknownKeys]);
 
   return (
-    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Modules">
-      {pills.map((p) => {
-        const isPinned = pinnedKeys.has(p.key);
-        return (
-          <span key={p.key} className="inline-flex items-center">
-            <button
-              type="button"
-              onClick={() => onSelect(selectPill(p))}
-              aria-pressed={activeKey === p.key}
-              className={`veri-mode-pill${activeKey === p.key ? " active" : ""}`}
-            >
-              {isPinned && (
-                <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-saffron)" }}>
-                  ★
-                </span>
-              )}
-              {p.label}
-              {p.isFreeText && (
-                <span aria-hidden className="ml-1" style={{ color: "var(--color-ct-muted)" }}>
-                  …
-                </span>
-              )}
-            </button>
-            {onTogglePin && (
+    <div onMouseEnter={onInteract} onFocusCapture={onInteract}>
+      <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Things you can do">
+        {loading ? (
+          <>
+            <SkeletonCards />
+            <span className="text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+              Loading your modules…
+            </span>
+          </>
+        ) : (
+          <>
+            {/* R67 A-08 -- "DO AGAIN". The three chains this user actually ran
+                in the last seven days, at the front of the band, each labelled
+                with the whole sentence rather than a fragment: M24 is explicit
+                that "Import BOQ" alone is ambiguous. A click LOADS the sentence
+                and opens its screen -- it never executes, and it carries no
+                quantity from last time. A FAILED chain is shown too, and says
+                so, because the commonest reason to repeat something is that it
+                went wrong. */}
+            {(recent ?? []).map((chain) => (
               <button
+                key={chain.fullChain}
                 type="button"
-                onClick={() => onTogglePin(p.key)}
-                // Pinning is how a user defeats the 7-day decay for work they
-                // know is periodic. It needs a real label, not just a star.
-                aria-label={isPinned ? `Unpin ${p.label}` : `Pin ${p.label} so it never drops off`}
-                title={isPinned ? "Unpin" : "Pin — never drops off"}
-                className="veri-icon-btn"
-                style={{ width: 20, height: 20, fontSize: 11 }}
+                onClick={() => {
+                  onInteract?.();
+                  onSelectRecent?.(chain);
+                }}
+                aria-label={`Do again: ${chain.label}${chain.outcome === "failed" ? " (failed last time)" : ""}`}
+                title={chain.fullChain}
+                className="veri-mode-pill"
               >
-                {isPinned ? "★" : "☆"}
+                <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+                  ↻
+                </span>
+                <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
+                  Do again
+                </span>
+                {chain.label}
+                {chain.outcome === "failed" && (
+                  <span className="ml-1 text-[10px]" style={{ color: "var(--color-veri-status-late)" }}>
+                    failed last time
+                  </span>
+                )}
               </button>
-            )}
-          </span>
-        );
-      })}
+            ))}
+            {cards.map((card) => {
+            const blocked = card.disabledReason !== null;
+            return (
+              <span key={card.id} className="inline-flex items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onInteract?.();
+                    onSelect(card.id);
+                  }}
+                  disabled={blocked}
+                  // NO FAIL-AFTER-CLICK: the reason is the accessible name and
+                  // the tooltip, so it is available before the click, not after.
+                  aria-label={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
+                  title={blocked ? card.disabledReason! : card.label}
+                  className="veri-mode-pill disabled:opacity-45"
+                >
+                  <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+                    {card.kindGlyph}
+                  </span>
+                  {/* THE KIND, IN WORDS. Never colour alone. */}
+                  <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
+                    {card.kindWord}
+                  </span>
+                  {card.label}
+                  {card.pinned && (
+                    <span aria-hidden className="ml-1" style={{ color: "var(--color-ct-saffron)" }}>
+                      ★
+                    </span>
+                  )}
+                </button>
+                {onTogglePin && (
+                  <button
+                    type="button"
+                    onClick={() => onTogglePin(card.id)}
+                    // Pinning is how a user defeats the 7-day decay for work
+                    // they know is periodic. It needs a real label, not a star.
+                    aria-label={card.pinned ? `Unpin ${card.label}` : `Pin ${card.label} so it never drops off`}
+                    title={card.pinned ? "Unpin" : "Pin — never drops off"}
+                    className="veri-icon-btn"
+                    style={{ width: 20, height: 20, fontSize: 11 }}
+                  >
+                    {card.pinned ? "★" : "☆"}
+                  </button>
+                )}
+              </span>
+            );
+            })}
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            onInteract?.();
+            onToggleExpanded();
+          }}
+          aria-expanded={expanded}
+          className="veri-mode-pill"
+          style={{ color: "var(--color-ct-muted)" }}
+        >
+          {expanded ? "Show fewer" : "All modules"}
+        </button>
+      </div>
+
+      {expanded && (
+        // FIXED ORDER, EXPANDED IN PLACE. Not a menu, not a dialog: the list
+        // appears under the cards it belongs to and closes with "Show fewer".
+        <div className="mt-1 flex flex-wrap items-center gap-1" role="group" aria-label="All modules">
+          {allModules.map((entry) => {
+            const blocked = Boolean(entry.unavailable);
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => onSelectModule(entry)}
+                disabled={blocked}
+                aria-label={blocked ? `${entry.label} — ${entry.unavailable}` : entry.label}
+                title={blocked ? `${entry.label} — ${entry.unavailable}` : entry.label}
+                className="veri-mode-pill disabled:opacity-45"
+              >
+                {entry.label}
+                {blocked && (
+                  <span className="ml-1 text-[10px]" style={{ color: "var(--color-ct-muted)" }}>
+                    — {entry.unavailable}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {footnote && (
+        <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+          {footnote}
+        </p>
+      )}
     </div>
   );
 }
