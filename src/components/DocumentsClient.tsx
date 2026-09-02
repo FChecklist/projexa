@@ -4,10 +4,8 @@
 // established for permits.list and R46 P8 seq134 established for
 // variations.list (see PermitsListClient.tsx's and ChangeOrdersClient.tsx's
 // header comments for the full history). This screen never adopted the
-// kit's ListScreen component -- it's a plain shadcn Table with its own
-// category filter (kept exactly as-is, outside the registry-driven table)
-// -- so only the 6 real data columns (Name/Category/Type/Size/Expiry/Added)
-// are registry-driven: COLUMNS is now the fallback used when
+// kit's ListScreen component -- it's a plain shadcn Table -- so only the real
+// data columns are registry-driven: COLUMNS is the fallback used when
 // documents/page.tsx's server-side resolve of the documents.list
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
@@ -24,30 +22,43 @@
 // loadError, zero rows, filtered zero rows. The empty-state wording can no
 // longer appear over a failed GET, because loadError is checked first and the
 // rows are cleared when it is set.
-import { useCallback, useEffect, useState } from "react";
+//
+// R67 D-14 (audit R-039/R-044). The header was an unlabelled dropdown and a
+// button called "+ Upload" -- a control that named the mechanism, next to a
+// control that named nothing. It is now the standard trio every list screen in
+// this product shares, in the same order: Filter | Export | + New Document.
+// Filter opens a real inline bar (Category, File type, Added between, Relates
+// to) with "Showing n of m" beside it; Export serialises exactly the rows on
+// screen to CSV and says "Nothing to export" rather than producing an empty
+// file.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { FileText, Plus } from "lucide-react";
+import { Download, FileText, Filter, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { slowLoadNotice, useElapsedMs } from "@/lib/slow-load";
+import { DOCUMENT_CATEGORIES, describeFileSize, relatesToWord } from "@/lib/document-intake";
+import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
 import DataLoadError from "@/components/DataLoadError";
 
 type Doc = {
   id: string;
   name: string;
-  category: string;
+  category: string | null;
   fileType: string | null;
   fileSize: number | null;
   expiryDate: string | null;
   versionNumber: number;
   createdAt: string;
+  // R67 D-14: what the document is RELATED to, which is no longer always the
+  // project it belongs to.
+  linkedEntityType: string | null;
+  linkedEntityId: string | null;
 };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -64,7 +75,15 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Added", field: "createdAt", type: "date", importance: "High" },
 ];
 
-const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
+/**
+ * Not part of the registry's column set -- it is not data the registry
+ * describes. Appended when the registry row does not already carry it, the same
+ * way DrawingsClient appends its File column.
+ */
+const RELATES_TO_COLUMN: ScreenColumn = { label: "Relates to", field: "__relatesTo", type: "text", importance: "Medium" };
+
+/** "all" plus the shared list, so the filter and the create screen cannot drift. */
+const FILTER_CATEGORIES = ["all", ...DOCUMENT_CATEGORIES];
 
 /** "site photo" -- what a category reads as in a sentence. */
 export function categoryWords(category: string): string {
@@ -77,10 +96,13 @@ export function categoryWords(category: string): string {
  * documents back". Neither is reachable over a failed read -- see the branch
  * order in the component below.
  */
-export function emptyStateText(category: string, scopeName: string): string {
-  return category === "all"
-    ? `No documents yet for ${scopeName}.`
-    : `No ${categoryWords(category)} documents for ${scopeName}.`;
+export function emptyStateText(category: string, scopeName: string, otherFiltersActive: boolean = false): string {
+  if (category !== "all") return `No ${categoryWords(category)} documents for ${scopeName}.`;
+  // R67 D-14: the filter bar can also empty the list without touching Category
+  // (a file type, a date range, a Relates to). Saying "No documents yet" then
+  // would be the same false claim in a different costume.
+  if (otherFiltersActive) return `No documents match this filter for ${scopeName}.`;
+  return `No documents yet for ${scopeName}.`;
 }
 
 /**
@@ -95,40 +117,61 @@ export function documentsLoadErrorText(err: unknown): string {
   return /[.!?]$/.test(message) ? message : `${message}.`;
 }
 
-function formatSize(bytes: number | null) {
-  if (!bytes) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+export type DocumentFilters = {
+  category: string;
+  fileType: string;
+  addedFrom: string;
+  addedTo: string;
+  relatesTo: string;
+};
+
+export const EMPTY_DOCUMENT_FILTERS: DocumentFilters = {
+  category: "all",
+  fileType: "",
+  addedFrom: "",
+  addedTo: "",
+  relatesTo: "",
+};
+
+/**
+ * The client-side half of the filter bar. Category is a backend parameter (it
+ * always was); File type, Added between and Relates to are applied here over the
+ * rows already in hand, which is also what makes Export honest -- it serialises
+ * exactly what these rules leave on screen.
+ *
+ * Dates are compared as ISO prefixes rather than as Date objects: createdAt is
+ * an ISO timestamp and the inputs are yyyy-mm-dd, so a lexical compare is both
+ * correct and immune to the reader's time zone (the rule format-date.ts states).
+ */
+export function applyDocumentFilters(docs: Doc[], filters: DocumentFilters): Doc[] {
+  return docs.filter((d) => {
+    if (filters.fileType && !(d.fileType ?? "").toLowerCase().includes(filters.fileType.toLowerCase())) return false;
+    const addedOn = d.createdAt.slice(0, 10);
+    if (filters.addedFrom && addedOn < filters.addedFrom) return false;
+    if (filters.addedTo && addedOn > filters.addedTo) return false;
+    if (filters.relatesTo && (d.linkedEntityType ?? "") !== filters.relatesTo) return false;
+    return true;
+  });
 }
 
-// Per-field cell renderer -- this screen isn't built on the kit's
-// ListScreen, so unlike PermitsListClient there's no generic
-// column-type-driven renderer to hand columns to. A registry row can still
-// reorder/relabel these 6 columns live (the hard-stop test); the actual
-// cell value for each known field is still this project's own formatting
-// logic, looked up by field name so reordering doesn't change what renders.
-function renderDocumentCell(field: string, d: Doc) {
-  switch (field) {
-    case "name":
-      return (
-        <span className="flex items-center gap-2 font-medium">
-          <FileText className="size-4 text-px-muted" />{d.name}
-        </span>
-      );
-    case "category":
-      return <Badge variant="outline">{categoryWords(d.category)}</Badge>;
-    case "fileType":
-      return <span className="text-px-muted">{d.fileType ?? "—"}</span>;
-    case "fileSize":
-      return <span className="text-px-muted">{formatSize(d.fileSize)}</span>;
-    case "expiryDate":
-      return <span className="text-px-muted">{d.expiryDate ? formatDate(d.expiryDate) : "—"}</span>;
-    case "createdAt":
-      return <span className="text-px-muted">{formatDate(d.createdAt)}</span>;
-    default:
-      return String((d as unknown as Record<string, unknown>)[field] ?? "—");
-  }
+export function hasActiveFilter(filters: DocumentFilters): boolean {
+  return (
+    filters.category !== "all" ||
+    filters.fileType.trim() !== "" ||
+    filters.addedFrom !== "" ||
+    filters.addedTo !== "" ||
+    filters.relatesTo !== ""
+  );
+}
+
+/** The distinct file types actually present, so the filter offers real values. */
+export function knownFileTypes(docs: Doc[]): string[] {
+  return [...new Set(docs.map((d) => d.fileType).filter((t): t is string => !!t && !!t.trim()))].sort();
+}
+
+function formatSize(bytes: number | null) {
+  if (bytes === null || bytes === undefined) return "—";
+  return describeFileSize(bytes);
 }
 
 export default function DocumentsClient({
@@ -155,9 +198,17 @@ export default function DocumentsClient({
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [category, setCategory] = useState("all");
+  const [filters, setFilters] = useState<DocumentFilters>(EMPTY_DOCUMENT_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  /** id -> "Permit — BP-2026-0142", so the Relates to column never shows a cuid. */
+  const [relatedLabels, setRelatedLabels] = useState<Record<string, string>>({});
+
+  const base = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = useMemo(
+    () => [...base, ...(base.some((c) => c.field === RELATES_TO_COLUMN.field) ? [] : [RELATES_TO_COLUMN])],
+    [base]
+  );
   const scopeName = projectName ?? "this project";
 
   // "Still loading documents from VERIDIAN…" once the read has been running for
@@ -169,8 +220,10 @@ export default function DocumentsClient({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
-      if (category !== "all") params.set("category", category);
+      // R67 D-14: by project SCOPE, not by "linked to this project" -- a
+      // document related to one of this project's permits still belongs here.
+      const params = new URLSearchParams({ projectScopeId: projectId });
+      if (filters.category !== "all") params.set("category", filters.category);
       const data = await fetchJson<{ documents?: Doc[] }>(`/api/documents?${params.toString()}`);
       setDocs(data.documents ?? []);
       setLoadError(null);
@@ -184,27 +237,137 @@ export default function DocumentsClient({
     } finally {
       setLoading(false);
     }
-  }, [projectId, category]);
+  }, [projectId, filters.category]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const filtered = category !== "all";
+  // The names behind "Relates to". Three independent reads, each allowed to
+  // fail on its own: a permit list that does not answer costs one column's
+  // labels (the row still renders "Permit"), never the documents themselves.
+  useEffect(() => {
+    let cancelled = false;
+    const scope = encodeURIComponent(projectId);
+    (async () => {
+      const [permits, rfis, moms] = await Promise.allSettled([
+        fetchJson<{ permits?: { id: string; name: string; permitNumber: string | null }[] }>(`/api/permits?projectId=${scope}&all=true`),
+        fetchJson<{ rfis?: { id: string; number: number; subject: string }[] }>(`/api/rfis?projectId=${scope}`),
+        fetchJson<{ meetings?: { id: string; title: string }[] }>(`/api/moms?projectId=${scope}`),
+      ]);
+      if (cancelled) return;
+      const labels: Record<string, string> = {};
+      if (permits.status === "fulfilled") {
+        for (const p of permits.value.permits ?? []) labels[p.id] = p.permitNumber ? `${p.name} (${p.permitNumber})` : p.name;
+      }
+      if (rfis.status === "fulfilled") {
+        for (const r of rfis.value.rfis ?? []) labels[r.id] = `RFI ${r.number} — ${r.subject}`;
+      }
+      if (moms.status === "fulfilled") {
+        for (const m of moms.value.meetings ?? []) labels[m.id] = m.title;
+      }
+      setRelatedLabels(labels);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  const visible = useMemo(() => applyDocumentFilters(docs, filters), [docs, filters]);
+  const fileTypes = useMemo(() => knownFileTypes(docs), [docs]);
+
+  /** "Permit — BP-2026-0142", or the type alone until its name resolves. */
+  function relatesToText(d: Doc): string {
+    if (!d.linkedEntityType) return "—";
+    if (d.linkedEntityType === "project") return projectName ? `Project — ${projectName}` : "Project";
+    const label = d.linkedEntityId ? relatedLabels[d.linkedEntityId] : undefined;
+    return label ? `${relatesToWord(d.linkedEntityType)} — ${label}` : relatesToWord(d.linkedEntityType);
+  }
+
+  // Per-field cell renderer -- this screen isn't built on the kit's ListScreen,
+  // so unlike PermitsListClient there's no generic column-type-driven renderer
+  // to hand columns to. A registry row can still reorder/relabel the data
+  // columns live (the hard-stop test); the cell value for each known field is
+  // this project's own formatting logic, looked up by field name so reordering
+  // does not change what renders.
+  function renderDocumentCell(field: string, d: Doc) {
+    switch (field) {
+      case "name":
+        return (
+          <span className="flex items-center gap-2 font-medium">
+            <FileText className="size-4 text-px-muted" />{d.name}
+          </span>
+        );
+      case "category":
+        return d.category ? <Badge variant="outline">{categoryWords(d.category)}</Badge> : <span className="text-px-muted">—</span>;
+      case "fileType":
+        return <span className="text-px-muted">{d.fileType ?? "—"}</span>;
+      case "fileSize":
+        return <span className="text-px-muted">{formatSize(d.fileSize)}</span>;
+      case "expiryDate":
+        return <span className="text-px-muted">{d.expiryDate ? formatDate(d.expiryDate) : "—"}</span>;
+      case "createdAt":
+        return <span className="text-px-muted">{formatDate(d.createdAt)}</span>;
+      case "__relatesTo":
+        return <span className="text-px-muted">{relatesToText(d)}</span>;
+      default:
+        return String((d as unknown as Record<string, unknown>)[field] ?? "—");
+    }
+  }
+
+  function exportVisible() {
+    const csv = rowsToCsv(
+      ["Name", "Category", "Type", "Size", "Relates to", "Expiry", "Added"],
+      visible.map((d) => [
+        d.name,
+        d.category ? categoryWords(d.category) : "",
+        d.fileType ?? "",
+        formatSize(d.fileSize),
+        relatesToText(d),
+        d.expiryDate ? formatDate(d.expiryDate) : "",
+        formatDate(d.createdAt),
+      ])
+    );
+    downloadCsv(`documents-${projectId}.csv`, csv);
+  }
+
+  const exportDisabledReason = loading ? "Still loading" : visible.length === 0 ? "Nothing to export" : undefined;
+  const filtered = hasActiveFilter(filters);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-px-muted">
-          Documents linked directly to this project (permits, drawings, site photos, etc.). Records attached to a
-          specific RFI, work progress entry, or other item are visible from that record.
+          Documents that belong to this project — the ones filed against the project itself and the ones filed against
+          one of its permits, RFIs or meetings. The Relates to column says which.
         </p>
-        <div className="flex items-center gap-2">
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>{CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : categoryWords(c)}</SelectItem>)}</SelectContent>
-          </Select>
-          {/* Real screen navigation (2026-08-30) -- replaces the old
-              "Upload Document" Dialog popup with a real create route. */}
-          <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}><Plus className="size-4" /> Upload</Button>
+        {/* GLOBAL: Filter | Export | + New, same order, every screen. This
+            route has no ScreenFrame yet (see D-13's note on the message band),
+            so the trio is drawn here rather than by the frame. */}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFilterOpen((open) => !open)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-ct-border2 px-2.5 py-1.5 text-[13px] text-ct-navy hover:bg-ct-cloud"
+          >
+            <Filter className="size-3.5" aria-hidden />
+            Filter
+          </button>
+          <button
+            type="button"
+            onClick={exportVisible}
+            disabled={!!exportDisabledReason}
+            title={exportDisabledReason}
+            className="inline-flex items-center gap-1.5 rounded-md border border-ct-border2 px-2.5 py-1.5 text-[13px] text-ct-navy hover:bg-ct-cloud disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <Download className="size-3.5" aria-hidden />
+            Export
+            {exportDisabledReason && <span className="text-[11px] text-ct-muted">({exportDisabledReason})</span>}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-ct-navy px-2.5 py-1.5 text-[13px] text-white hover:opacity-90"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            New Document
+          </button>
         </div>
       </div>
 
@@ -236,6 +399,83 @@ export default function DocumentsClient({
                 </select>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {filterOpen && (
+        <div className="flex flex-wrap items-end gap-4 rounded-md border border-ct-border px-4 py-3">
+          <div className="space-y-1">
+            <label htmlFor="documents-filter-category" className="block text-[12.5px] text-ct-muted">Category</label>
+            <select
+              id="documents-filter-category"
+              value={filters.category}
+              onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            >
+              {FILTER_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c === "all" ? "All categories" : categoryWords(c)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="documents-filter-filetype" className="block text-[12.5px] text-ct-muted">File type</label>
+            <select
+              id="documents-filter-filetype"
+              value={filters.fileType}
+              onChange={(e) => setFilters({ ...filters, fileType: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            >
+              <option value="">All</option>
+              {fileTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <span className="block text-[12.5px] text-ct-muted">Added between</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                aria-label="Added from"
+                value={filters.addedFrom}
+                onChange={(e) => setFilters({ ...filters, addedFrom: e.target.value })}
+                className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+              />
+              <span className="text-[12.5px] text-ct-muted">and</span>
+              <input
+                type="date"
+                aria-label="Added to"
+                value={filters.addedTo}
+                onChange={(e) => setFilters({ ...filters, addedTo: e.target.value })}
+                className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="documents-filter-relates" className="block text-[12.5px] text-ct-muted">Relates to</label>
+            <select
+              id="documents-filter-relates"
+              value={filters.relatesTo}
+              onChange={(e) => setFilters({ ...filters, relatesTo: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            >
+              <option value="">All</option>
+              <option value="project">Project</option>
+              <option value="permit">Permit</option>
+              <option value="rfi">RFI</option>
+              <option value="mom">Minutes of Meeting</option>
+            </select>
+          </div>
+          {filtered && (
+            <div className="flex items-center gap-3 pb-1.5">
+              <span className="text-[12.5px] text-ct-muted">Showing {visible.length} of {docs.length}</span>
+              <button
+                type="button"
+                onClick={() => setFilters(EMPTY_DOCUMENT_FILTERS)}
+                className="text-[12.5px] text-ct-muted underline underline-offset-2 hover:text-ct-navy"
+              >
+                Clear all
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -279,16 +519,16 @@ export default function DocumentsClient({
                 Retry
               </button>
             </div>
-          ) : docs.length === 0 ? (
+          ) : visible.length === 0 ? (
             // Branches 3 and 4 -- EMPTY, reachable only after a read that
             // SUCCEEDED, and worded differently depending on whether a filter is
             // holding rows back.
             <p className="py-10 text-center text-sm text-px-muted">
-              {emptyStateText(category, scopeName)}{" "}
+              {emptyStateText(filters.category, scopeName, filtered)}{" "}
               {filtered ? (
                 <button
                   type="button"
-                  onClick={() => setCategory("all")}
+                  onClick={() => setFilters(EMPTY_DOCUMENT_FILTERS)}
                   className="underline underline-offset-2 hover:text-ct-navy"
                 >
                   Clear filter
@@ -307,7 +547,7 @@ export default function DocumentsClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {docs.map((d) => (
+                {visible.map((d) => (
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of nothing (no way to view/
                   // download an uploaded file again existed before this).

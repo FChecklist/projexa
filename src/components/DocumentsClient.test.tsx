@@ -22,7 +22,14 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const mod = await import("./DocumentsClient");
 const DocumentsClient = mod.default;
-const { categoryWords, documentsLoadErrorText, emptyStateText } = mod;
+const {
+  EMPTY_DOCUMENT_FILTERS,
+  applyDocumentFilters,
+  categoryWords,
+  documentsLoadErrorText,
+  emptyStateText,
+  hasActiveFilter,
+} = mod;
 
 const PROJECT = "Cedar Heights Villa - Phase 1";
 
@@ -35,6 +42,8 @@ const DOC = {
   expiryDate: null,
   versionNumber: 1,
   createdAt: "2026-08-14T09:30:00.000Z",
+  linkedEntityType: "project",
+  linkedEntityId: "p1",
 };
 
 const realFetch = globalThis.fetch;
@@ -97,6 +106,37 @@ describe("emptyStateText", () => {
     expect(emptyStateText("site_photo", PROJECT)).toBe(`No site photo documents for ${PROJECT}.`);
     expect(categoryWords("site_photo")).toBe("site photo");
   });
+
+  test("R67 D-14: a filter that is not Category still cannot produce 'No documents yet'", () => {
+    expect(emptyStateText("all", PROJECT, true)).toBe(`No documents match this filter for ${PROJECT}.`);
+  });
+});
+
+describe("applyDocumentFilters -- R67 D-14", () => {
+  const ROWS = [
+    { ...DOC, id: "a", fileType: "application/pdf", createdAt: "2026-08-14T09:30:00.000Z", linkedEntityType: "project" },
+    { ...DOC, id: "b", fileType: "image/jpeg", createdAt: "2026-09-01T09:30:00.000Z", linkedEntityType: "permit" },
+  ];
+
+  test("File type, Added between and Relates to each narrow the rows on screen", () => {
+    expect(applyDocumentFilters(ROWS, { ...EMPTY_DOCUMENT_FILTERS, fileType: "image/jpeg" }).map((d) => d.id)).toEqual(["b"]);
+    expect(applyDocumentFilters(ROWS, { ...EMPTY_DOCUMENT_FILTERS, relatesTo: "permit" }).map((d) => d.id)).toEqual(["b"]);
+    expect(
+      applyDocumentFilters(ROWS, { ...EMPTY_DOCUMENT_FILTERS, addedFrom: "2026-08-01", addedTo: "2026-08-31" }).map((d) => d.id)
+    ).toEqual(["a"]);
+  });
+
+  test("the range is inclusive at both ends -- a document added ON the boundary is in it", () => {
+    expect(
+      applyDocumentFilters(ROWS, { ...EMPTY_DOCUMENT_FILTERS, addedFrom: "2026-08-14", addedTo: "2026-08-14" }).map((d) => d.id)
+    ).toEqual(["a"]);
+  });
+
+  test("an untouched filter set changes nothing and is not 'active'", () => {
+    expect(applyDocumentFilters(ROWS, EMPTY_DOCUMENT_FILTERS)).toHaveLength(2);
+    expect(hasActiveFilter(EMPTY_DOCUMENT_FILTERS)).toBe(false);
+    expect(hasActiveFilter({ ...EMPTY_DOCUMENT_FILTERS, relatesTo: "rfi" })).toBe(true);
+  });
 });
 
 describe("DocumentsClient -- the four branches", () => {
@@ -129,8 +169,8 @@ describe("DocumentsClient -- the four branches", () => {
     const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
 
     expect(view.container.querySelector("[aria-busy='true']")).toBeTruthy();
-    for (const header of ["Name", "Category", "Type", "Size", "Expiry", "Added"]) {
-      expect(view.getByText(header)).toBeTruthy();
+    for (const header of ["Name", "Category", "Type", "Size", "Expiry", "Added", "Relates to"]) {
+      expect(view.getAllByText(header).length).toBeGreaterThan(0);
     }
     // No claim about the data is made while the read is still running.
     expect(view.queryByText(/No documents/)).toBeNull();
@@ -140,8 +180,9 @@ describe("DocumentsClient -- the four branches", () => {
     const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
 
     await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
-    expect(requested[0]).toContain("linkedEntityType=project");
-    expect(requested[0]).toContain("linkedEntityId=p1");
+    // R67 D-14: by project SCOPE, so a document filed against one of this
+    // project's permits is still on this list.
+    expect(requested.some((url) => url.includes("/api/documents?projectScopeId=p1"))).toBe(true);
   });
 
   test("a fallback project selection is announced rather than shown silently", async () => {
@@ -160,5 +201,31 @@ describe("DocumentsClient -- the four branches", () => {
       ).toBeTruthy()
     );
     expect(view.getByRole("button", { name: "Change project" })).toBeTruthy();
+  });
+});
+
+describe("DocumentsClient -- R67 D-14 header trio", () => {
+  test("the header controls are Filter | Export | + New Document, in that DOM order", async () => {
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
+
+    const header = view.container.querySelector("div.flex.shrink-0") as HTMLElement;
+    const labels = [...header.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim());
+    expect(labels).toEqual(["Filter", "Export", "New Document"]);
+    // The old unlabelled category dropdown is gone from the header -- Category
+    // now lives in the Filter bar with a label of its own.
+    expect(header.querySelector("select")).toBeNull();
+  });
+
+  test("Export refuses to produce an empty file, and says why", async () => {
+    stubDocuments([]);
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`, { exact: false })).toBeTruthy());
+    const exportButton = [...view.container.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").startsWith("Export")
+    ) as HTMLButtonElement;
+    expect(exportButton.disabled).toBe(true);
+    expect(exportButton.textContent).toContain("Nothing to export");
   });
 });
