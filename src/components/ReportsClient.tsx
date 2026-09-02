@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -127,11 +128,29 @@ function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencie
 // report/analysis type across the whole platform (ERP, compliance,
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
+// R67 F-10 (R-134). A report run is a full round trip that replaces whatever
+// is on screen with a spinner -- including when the user re-runs the SAME
+// report on the SAME project a moment later, or comes back to /reports having
+// just looked at it. Three changes, none of which can make the screen show a
+// figure it did not receive from the server:
+//
+//   1. RESULTS ARE CACHED per (report, project, params) in sessionStorage and
+//      painted immediately while a fresh run replaces them. The reader gets
+//      something to read at once; the number they end up with is still current.
+//      A cached result is labelled as such until the live one lands, so nobody
+//      mistakes a remembered figure for a just-computed one.
+//   2. CHANGING THE PICKER PREFETCHES that report, so Run Report is usually
+//      instant instead of starting the round trip on the click.
+//   3. A 20 s ABORT BUDGET, so a hung upstream ends in a message and a usable
+//      screen rather than an indefinite spinner.
+const REPORT_REQUEST_BUDGET_MS = 20_000;
+
 function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
   const [reportName, setReportName] = useState("project-status");
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [ranOnce, setRanOnce] = useState(false);
   const currencies = useCurrencies();
 
@@ -147,25 +166,88 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   // latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
+  // The params that identify THIS run, in one place, so the cache key, the
+  // request and the prefetch cannot drift apart.
+  const currentParams = useCallback(
+    (name: string): Record<string, string> => (name === "weekly-project" ? { weekStart } : {}),
+    [weekStart]
+  );
+
+  const requestUrl = useCallback(
+    (name: string) => {
+      const params = new URLSearchParams({ projectId, ...currentParams(name) });
+      return `/api/reports/${encodeURIComponent(name)}?${params.toString()}`;
+    },
+    [projectId, currentParams]
+  );
+
+  const cacheKeyFor = useCallback(
+    (name: string) => reportCacheKey(name, projectId, currentParams(name)),
+    [projectId, currentParams]
+  );
+
+  // Paint from cache the moment the selection changes, and warm the live run.
+  // Both are safe: the cached value is labelled, and the fetch below overwrites
+  // it with the server's answer.
+  useEffect(() => {
+    const cached = readCachedReport(cacheKeyFor(reportName));
+    if (cached !== null) {
+      setResult(cached);
+      setFromCache(true);
+      setRanOnce(true);
+    }
+  }, [reportName, cacheKeyFor]);
+
   async function runReport() {
     const myGeneration = ++requestGeneration.current;
+    const name = reportName;
+    const key = cacheKeyFor(name);
     setLoading(true);
     try {
-      const params = new URLSearchParams({ projectId });
-      if (reportName === "weekly-project") params.set("weekStart", weekStart);
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
+      // A hung upstream must end in a message and a usable screen, not an
+      // indefinite spinner on a page whose whole content is this one panel.
+      const res = await fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
+      setFromCache(false);
       setRanOnce(true);
+      writeCachedReport(key, data);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      toast.error(err instanceof Error && err.message ? err.message : "Could not generate report");
-      setResult(null);
+      const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      toast.error(
+        aborted
+          ? "The report did not finish in time. Try a narrower range, or run it again."
+          : err instanceof Error && err.message
+            ? err.message
+            : "Could not generate report"
+      );
+      // A previously cached result is deliberately LEFT on screen when a fresh
+      // run fails: it is still the last real answer, and it is still labelled
+      // as remembered. Only a panel with nothing real to show is cleared.
+      if (!fromCache) setResult(null);
     } finally {
       if (myGeneration === requestGeneration.current) setLoading(false);
     }
+  }
+
+  // Changing the picker warms the next report, so Run Report is usually
+  // instant. Failures are swallowed: a prefetch must never surface an error,
+  // and the real Run that follows reports properly.
+  function prefetchReport(name: string) {
+    void fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) })
+      .then(async (res) => {
+        if (!res.ok) return;
+        writeCachedReport(cacheKeyFor(name), await res.json());
+      })
+      .catch(() => {});
+  }
+
+  function onReportChange(name: string) {
+    setReportName(name);
+    prefetchReport(name);
   }
 
   return (
@@ -174,7 +256,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5">
             <Label>Report</Label>
-            <Select value={reportName} onValueChange={setReportName}>
+            <Select value={reportName} onValueChange={onReportChange}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -192,16 +274,26 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
         <CardContent className="p-4">
           {!ranOnce ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
-          ) : loading ? (
+          ) : loading && result === null ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : result === null ? (
             <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
           ) : (
-            <ReportOutput
-              data={result}
-              fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
-            />
+            <>
+              {/* A remembered result is readable immediately, but it is never
+                  presented as freshly computed -- the reader is told which one
+                  they are looking at. */}
+              {(fromCache || loading) && (
+                <p role="status" className="mb-3 text-[12.5px] text-px-muted">
+                  {loading ? "Showing the last result while this run finishes…" : "Showing the last result. Click Run Report for current figures."}
+                </p>
+              )}
+              <ReportOutput
+                data={result}
+                fieldLabels={REPORT_FIELD_LABELS[reportName]}
+                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
+              />
+            </>
           )}
         </CardContent>
       </Card>
