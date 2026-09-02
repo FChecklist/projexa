@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { defaultMomsRange, parseMomsFilter, type MomsFilter } from "@/lib/moms-list";
 import MoMsClient, { type RegistryColumn } from "@/components/MoMsClient";
 
 // R46 P8 seq129 (registry-model proof, same shape as R43 seq2's
@@ -27,25 +28,70 @@ async function resolveMoMsListColumns(organizationId: string | null): Promise<Re
   }
 }
 
-export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+// R67 D-20. This screen is the first to OPT IN to the honest all-projects
+// mode: with no ?projectId= in the URL it no longer resolves to the org's
+// first project behind the user's back. That mattered here more than
+// anywhere else -- minutes typed under a silently-chosen project can be
+// Published, which locks them server-side (assertEditable), so the wrong
+// answer is not just wrong, it is irreversible.
+//
+// R67 D-16. `from`/`to`/`status`/`attendee` are read HERE, on the server,
+// rather than in the client, for two reasons: "the last 90 days" needs a
+// notion of today and computing it during a client render would produce a
+// different string from the server's pass (a hydration mismatch, exactly the
+// class format-date.ts exists to prevent), and reading them here is what
+// makes the browser's own Back button restore the filter.
+export default async function MoMsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; status?: string; from?: string; to?: string; attendee?: string }>;
+}) {
+  const params = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, projects, errorMessage, mode, fellBack } = await resolveSelectedProject(
+    params.projectId,
+    organizationId,
+    { allProjectsWhenUnset: true }
+  );
   const registryColumns = await resolveMoMsListColumns(organizationId);
+
+  const today = new Date();
+  const range = defaultMomsRange(today);
+  const defaultFilter: MomsFilter = { status: "", attendee: "", ...range };
+  const initialFilter = parseMomsFilter(
+    new URLSearchParams(
+      Object.entries(params)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([k, v]) => [k, v])
+    ),
+    today
+  );
 
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Minutes of Meeting" />
+        <PageHeading
+          title="Minutes of Meeting"
+          context={project ? project.name : mode === "all" ? "All projects" : null}
+          contextNote={fellBack ? "(auto-selected)" : null}
+        />
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
           </Card>
         )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
+        {!errorMessage && (
+          <MoMsClient
+            projectId={project?.id ?? null}
+            projectName={project?.name ?? null}
+            mode={mode}
+            fellBack={fellBack}
+            projects={projects}
+            initialFilter={initialFilter}
+            defaultFilter={defaultFilter}
+            registryColumns={registryColumns}
+          />
         )}
-        {project && <MoMsClient projectId={project.id} registryColumns={registryColumns} />}
       </div>
     </>
   );
