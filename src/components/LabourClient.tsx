@@ -10,36 +10,58 @@
 // labour/page.tsx's server-side resolve of the manpower.list
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits,
-// documents, drawings and change-orders. The Attendance tab is a separate
-// transactional log (not the "manpower list" itself) and stays fully
-// hardcoded, same as Documents' category filter or ChangeOrders' Actions
-// column staying outside their registry-driven columns. The row-index
-// (S.No) column is likewise not real data and stays hardcoded, always
-// rendered first.
+// documents, drawings and change-orders. The row-index (S.No) column is
+// likewise not real data and stays hardcoded, always rendered first.
 //
 // Real-screen conversion (2026-08-30): the "Add Worker"/"Mark Attendance"
 // Dialog popups are gone -- Add Worker routes to a real create screen
 // (RosterCreateClient.tsx), roster rows route to a real Object Page
-// (RosterObjectClient.tsx, which gained real Edit/Deactivate this
-// conversion -- updateRosterEntry() didn't exist before). Mark Attendance
-// routes to a real create screen (AttendanceCreateClient.tsx) -- no Object
-// Page for attendance rows, a write-once daily transaction log same as
-// Expenses/Stock Entries. Also fixes the same uncontrolled-Tabs-no-URL-sync
-// bug found and fixed repeatedly this session.
-import { useEffect, useState } from "react";
+// (RosterObjectClient.tsx). Mark Attendance routes to a real create screen
+// (AttendanceCreateClient.tsx).
+//
+// R67 D-32 (audit R-083/R-084/R-086/R-092) and D-30 (R-082/R-089). Four
+// things changed here and each fixes something the screen was actually doing
+// wrong:
+//
+//  1. IT NAMED NO PROJECT. The header said "Manpower & Attendance" while the
+//     top rail could read "All projects" and every call underneath carried
+//     exactly one projectId. The header now prints the project in the context
+//     tint, and when that project was reached by falling back to the org's
+//     first one, it says so in a sentence instead of leaving the user to
+//     guess.
+//  2. THE ACTIONS LIVED INSIDE A TAB. "+ Add Worker" was inside the Roster
+//     tab body, so it vanished on Attendance. Filter | Export | + New Worker
+//     is now one header trio, in that fixed order, on every tab.
+//  3. LOADING WAS A SPINNER IN A 128px BOX that the real table then resized,
+//     moving whatever the user was aiming at. It is now a skeleton built from
+//     the same columns array, captioned with what is loading.
+//  4. THE ATTENDANCE TAB WAS A FLAT TRANSACTION LOG plus a button. It is now
+//     a list of DAILY SHEETS -- one row per date, opening
+//     /labour/attendance/{date} -- because attendance is marked a day at a
+//     time, not a row at a time. The one-worker form stays reachable as
+//     "Mark one worker".
+//
+// Every disabled control carries its reason in the visible label, in the
+// product's existing "Label (reason)" form.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import { Loader2, Plus } from "lucide-react";
+import SkeletonTable from "@/components/SkeletonTable";
+import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
+import { fetchJson } from "@/lib/fetch-json";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { formatDayMonthYear } from "@/lib/format-date";
+import { formatMoney, resolveCurrencyCode } from "@/lib/format-money";
+import { useCurrencies } from "@/lib/currency";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
+import { ATTENDANCE_STATUS_LABEL, loadFailureSentence } from "@/lib/attendance-sheet";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -59,11 +81,53 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Status", field: "isActive", type: "text", importance: "High" },
 ];
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  present: "default", half_day: "secondary", absent: "destructive",
-};
+const SHEET_HEADERS = ["Date", "Workers marked", "Present", "Half day", "Absent", "Cost", "Status"];
 
 const VALID_TABS = new Set(["roster", "attendance"]);
+
+type StatusFilter = "active" | "inactive" | "all";
+
+export type RosterFilterState = { q: string; trade: string; company: string; status: StatusFilter };
+
+const EMPTY_FILTER: RosterFilterState = { q: "", trade: "", company: "", status: "active" };
+
+// Exported for the sibling test: the filter is the screen's own contract, not
+// the backend's, so it is asserted directly rather than through the DOM.
+export function filterRoster(roster: readonly RosterEntry[], filter: RosterFilterState, vendorName: (id: string | null) => string): RosterEntry[] {
+  const needle = filter.q.trim().toLowerCase();
+  return roster.filter((r) => {
+    if (filter.status === "active" && !r.isActive) return false;
+    if (filter.status === "inactive" && r.isActive) return false;
+    if (filter.trade && (r.trade ?? "") !== filter.trade) return false;
+    if (filter.company && vendorName(r.vendorId) !== filter.company) return false;
+    if (needle && !`${r.name} ${r.employeeCode ?? ""}`.toLowerCase().includes(needle)) return false;
+    return true;
+  });
+}
+
+export type AttendanceSheetSummary = {
+  date: string;
+  marked: number;
+  present: number;
+  halfDay: number;
+  absent: number;
+  cost: number;
+};
+
+/** Exported for the sibling test: one row per date, newest first. */
+export function summariseSheets(attendance: readonly AttendanceEntry[]): AttendanceSheetSummary[] {
+  const byDate = new Map<string, AttendanceSheetSummary>();
+  for (const row of attendance) {
+    const entry = byDate.get(row.attendanceDate) ?? { date: row.attendanceDate, marked: 0, present: 0, halfDay: 0, absent: 0, cost: 0 };
+    entry.marked++;
+    if (row.status === "present") entry.present++;
+    else if (row.status === "half_day") entry.halfDay++;
+    else if (row.status === "absent") entry.absent++;
+    entry.cost = Math.round((entry.cost + Number(row.dailyCost || 0)) * 100) / 100;
+    byDate.set(row.attendanceDate, entry);
+  }
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
+}
 
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike a generic column-type-driven renderer, the actual
@@ -71,7 +135,12 @@ const VALID_TABS = new Set(["roster", "attendance"]);
 // logic (including the vendorId -> company-name lookup), looked up by
 // field name so a registry row can reorder/relabel these 6 columns live
 // (the hard-stop test) without changing what renders.
-function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, rateCurrencyLabel: string) {
+function renderRosterCell(
+  field: string,
+  r: RosterEntry,
+  vendorName: (id: string | null) => string,
+  money: (value: string) => string
+) {
   switch (field) {
     case "employeeCode":
       return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
@@ -82,7 +151,7 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
     case "dailyRate":
-      return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
+      return money(r.dailyRate);
     case "isActive":
       return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
     default:
@@ -90,7 +159,25 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
-export default function LabourClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+function isNumericColumn(field: string): boolean {
+  return field === "dailyRate";
+}
+
+export default function LabourClient({
+  projectId,
+  projectName,
+  resolvedByFallback = false,
+  registryColumns,
+  initialTab,
+  initialFilter,
+}: {
+  projectId: string;
+  projectName: string;
+  resolvedByFallback?: boolean;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  initialFilter?: Partial<RosterFilterState>;
+}) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
@@ -99,13 +186,17 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const currencies = useCurrencies();
   // dailyRate has no per-row currencyId (roster entries are always in the
-  // org's base currency) -- same undefined-id "org base currency" lookup
-  // QuotationsClient.tsx etc. use for currencyLabel().
-  const rosterCurrencyLabel = currencyLabel(undefined, currencies);
+  // org's base currency) -- same undefined-id "org base currency" lookup the
+  // rest of the product uses.
+  const money = useCallback((value: string | number | null) => formatMoney(value, currencies), [currencies]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
+  const [filter, setFilter] = useState<RosterFilterState>({ ...EMPTY_FILTER, ...initialFilter });
+  const [filterOpen, setFilterOpen] = useState(
+    Boolean(initialFilter && Object.keys(initialFilter).length > 0)
+  );
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     // allSettled: a failing vendors lookup must not blank the roster, and a
     // failing roster must not be reported to the user as "no workers".
@@ -117,10 +208,10 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
 
     const errors: { roster?: string; attendance?: string } = {};
     if (rosterR.status === "fulfilled") setRoster(rosterR.value.roster ?? []);
-    else { setRoster([]); errors.roster = errorMessage(rosterR.reason, "Roster"); }
+    else { setRoster([]); errors.roster = loadFailureSentence(rosterR.reason, "roster"); }
 
     if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
-    else { setAttendance([]); errors.attendance = errorMessage(attR.reason, "Attendance"); }
+    else { setAttendance([]); errors.attendance = loadFailureSentence(attR.reason, "attendance"); }
 
     // Vendors is a display-only lookup (company name); its failure degrades to
     // an em-dash rather than to an alert.
@@ -128,100 +219,288 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
 
     setLoadErrors(errors);
     setLoading(false);
-  }
+  }, [projectId]);
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { void load(); }, [load]);
 
-  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
-  const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
+  const vendorName = useCallback(
+    (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—",
+    [vendors]
+  );
+
+  const visibleRoster = useMemo(() => filterRoster(roster, filter, vendorName), [roster, filter, vendorName]);
+  const sheets = useMemo(() => summariseSheets(attendance), [attendance]);
+  const activeRosterCount = useMemo(() => roster.filter((r) => r.isActive).length, [roster]);
+
+  const trades = useMemo(
+    () => [...new Set(roster.map((r) => r.trade).filter((t): t is string => !!t && t.trim().length > 0))].sort(),
+    [roster]
+  );
+  const companies = useMemo(
+    () => [...new Set(roster.map((r) => vendorName(r.vendorId)).filter((c) => c !== "—"))].sort(),
+    [roster, vendorName]
+  );
+
+  // Both the tab and the filter live in the URL, so Back restores the screen
+  // as the user left it rather than resetting it to "Roster, no filter".
+  const writeUrl = useCallback((tab: string, next: RosterFilterState) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    for (const [key, value] of [["q", next.q], ["trade", next.trade], ["company", next.company]] as const) {
+      if (value) params.set(key, value); else params.delete(key);
+    }
+    if (next.status === EMPTY_FILTER.status) params.delete("status"); else params.set("status", next.status);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, []);
 
   function goToTab(tab: string) {
     setActiveTab(tab);
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", tab);
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    writeUrl(tab, filter);
   }
 
-  return (
-    <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="roster">Roster</TabsTrigger>
-        <TabsTrigger value="attendance">Attendance</TabsTrigger>
-      </TabsList>
+  function updateFilter(patch: Partial<RosterFilterState>) {
+    const next = { ...filter, ...patch };
+    setFilter(next);
+    writeUrl(activeTab, next);
+  }
 
-      <TabsContent value="roster" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Worker" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
-        </div>
+  function exportRoster() {
+    const rows = visibleRoster.map((r, i) => [
+      i + 1,
+      r.employeeCode ?? "",
+      r.name,
+      r.trade ?? "",
+      vendorName(r.vendorId) === "—" ? "" : vendorName(r.vendorId),
+      r.dailyRate,
+      r.isActive ? "active" : "inactive",
+    ]);
+    // "Daily Rate (AED)" -- the currency belongs in the header, not repeated
+    // on every cell, so the column stays sortable as a number in Excel.
+    const code = resolveCurrencyCode(currencies);
+    const csv = toCsv(["S.No", "ID", "Name", "Trade", "Company", code ? `Daily Rate (${code})` : "Daily Rate", "Status"], rows);
+    downloadCsv(csvFilename("roster", projectName, new Date().toISOString().slice(0, 10)), csv);
+  }
+
+  const newWorkerReason = loading ? "Loading…" : undefined;
+  const exportReason = loading ? "Loading…" : visibleRoster.length === 0 ? "No rows" : undefined;
+  const filterReason = loading ? "Loading…" : roster.length === 0 ? "No workers to filter" : undefined;
+
+  const headerActions: PageHeadingAction[] = [
+    { label: filterOpen ? "Hide filter" : "Filter", disabledReason: filterReason, onClick: () => setFilterOpen((open) => !open) },
+    { label: "Export", disabledReason: exportReason, onClick: exportRoster },
+    {
+      label: "+ New Worker",
+      variant: "default",
+      disabledReason: newWorkerReason,
+      onClick: () => router.push(`/labour/new?projectId=${projectId}`),
+      testId: "labour-new-worker",
+    },
+  ];
+
+  // "Mark Attendance" is the Attendance tab's own primary action and keeps
+  // its own reason: during load it is "Loading…", and on an empty roster it
+  // says what to do first rather than being silently grey.
+  const attendanceDisabledReason = loading ? "Loading…" : activeRosterCount === 0 ? "Add a worker first" : undefined;
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="space-y-4">
+      <PageHeading
+        title="Manpower & Attendance"
+        project={projectName}
+        note={
+          resolvedByFallback
+            ? `Showing ${projectName} — pick a project in the top rail to change`
+            : undefined
+        }
+        actions={headerActions}
+      />
+
+      {filterOpen && (
         <Card className="shadow-card">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.roster ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={load} /></div>
-            ) : roster.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>S.No</TableHead>
-                    {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {/* Real screen navigation (2026-08-30) -- rows open the
-                      real Object Page, where Edit/Deactivate now live. */}
-                  {roster.map((r, i) => (
-                    <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
-                      <TableCell className="text-px-muted">{i + 1}</TableCell>
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="roster-filter-q" className="text-[12px] text-px-muted">Name or ID contains</Label>
+              <Input
+                id="roster-filter-q"
+                className="h-9 w-56"
+                value={filter.q}
+                onChange={(event) => updateFilter({ q: event.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="roster-filter-trade" className="text-[12px] text-px-muted">Trade</Label>
+              <select
+                id="roster-filter-trade"
+                className="h-9 rounded-md border border-ct-border2 bg-background px-2 text-sm"
+                value={filter.trade}
+                onChange={(event) => updateFilter({ trade: event.target.value })}
+              >
+                <option value="">All trades</option>
+                {trades.map((trade) => <option key={trade} value={trade}>{trade}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="roster-filter-company" className="text-[12px] text-px-muted">Company</Label>
+              <select
+                id="roster-filter-company"
+                className="h-9 rounded-md border border-ct-border2 bg-background px-2 text-sm"
+                value={filter.company}
+                onChange={(event) => updateFilter({ company: event.target.value })}
+              >
+                <option value="">All companies</option>
+                {companies.map((company) => <option key={company} value={company}>{company}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="roster-filter-status" className="text-[12px] text-px-muted">Status</Label>
+              <select
+                id="roster-filter-status"
+                className="h-9 rounded-md border border-ct-border2 bg-background px-2 text-sm"
+                value={filter.status}
+                onChange={(event) => updateFilter({ status: event.target.value as StatusFilter })}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { setFilter(EMPTY_FILTER); writeUrl(activeTab, EMPTY_FILTER); }}>
+              Clear filter
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="roster">Roster</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="roster" className="space-y-4">
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {loading ? (
+                <SkeletonTable
+                  headers={["S.No", ...columns.map((col) => col.label)]}
+                  rows={5}
+                  caption={`Loading roster for ${projectName}…`}
+                />
+              ) : loadErrors.roster ? (
+                <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={() => void load()} /></div>
+              ) : roster.length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
+              ) : visibleRoster.length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No workers match this filter.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>S.No</TableHead>
                       {columns.map((col) => (
-                        <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
+                        <TableHead key={col.field} className={isNumericColumn(col.field) ? "text-right" : undefined}>
+                          {col.label}
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </TabsContent>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Rows open the real Object Page, where Edit/Deactivate live. */}
+                    {visibleRoster.map((r, i) => (
+                      <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
+                        <TableCell className="text-px-muted">{i + 1}</TableCell>
+                        {columns.map((col) => (
+                          <TableCell
+                            key={col.field}
+                            className={isNumericColumn(col.field) ? "text-right tabular-nums" : undefined}
+                          >
+                            {renderRosterCell(col.field, r, vendorName, money)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <TabsContent value="attendance" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
-              Attendance" Dialog popup with a real create route. */}
-          <Button disabled={roster.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
-        </div>
-        <Card className="shadow-card">
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.attendance ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={load} /></div>
-            ) : attendance.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No attendance recorded yet.</p>
-            ) : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Worker</TableHead><TableHead>Status</TableHead><TableHead>Hours</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {attendance.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
-                      <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
-                      <TableCell><Badge variant={STATUS_VARIANT[a.status] ?? "outline"}>{a.status.replace(/_/g, " ")}</Badge></TableCell>
-                      <TableCell>{a.hoursWorked ?? "—"}</TableCell>
-                      <TableCell>{a.dailyCost}</TableCell>
+        <TabsContent value="attendance" className="space-y-4">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!!attendanceDisabledReason}
+              title={attendanceDisabledReason}
+              onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}
+            >
+              {attendanceDisabledReason ? `Mark one worker (${attendanceDisabledReason})` : "Mark one worker"}
+            </Button>
+            <Button
+              size="sm"
+              disabled={!!attendanceDisabledReason}
+              title={attendanceDisabledReason}
+              data-testid="labour-mark-attendance"
+              onClick={() => router.push(`/labour/attendance/${todayIso}?projectId=${projectId}`)}
+            >
+              {attendanceDisabledReason ? `Mark Attendance (${attendanceDisabledReason})` : "Mark Attendance"}
+            </Button>
+          </div>
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              {loading ? (
+                <SkeletonTable headers={SHEET_HEADERS} rows={5} caption={`Loading attendance for ${projectName}…`} />
+              ) : loadErrors.attendance ? (
+                <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={() => void load()} /></div>
+              ) : sheets.length === 0 ? (
+                <p className="py-10 text-center text-sm text-px-muted">No attendance sheets yet — Mark Attendance starts today&apos;s.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {SHEET_HEADERS.map((header) => (
+                        <TableHead key={header} className={header === "Cost" ? "text-right" : undefined}>{header}</TableHead>
+                      ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
+                  </TableHeader>
+                  <TableBody>
+                    {sheets.map((sheet) => {
+                      const complete = activeRosterCount > 0 && sheet.marked >= activeRosterCount;
+                      return (
+                        <TableRow
+                          key={sheet.date}
+                          className="cursor-pointer hover:bg-px-cloud/40"
+                          onClick={() => router.push(`/labour/attendance/${sheet.date}?projectId=${projectId}`)}
+                        >
+                          <TableCell className="font-medium">{formatDayMonthYear(sheet.date)}</TableCell>
+                          <TableCell>{sheet.marked}</TableCell>
+                          <TableCell>{sheet.present}</TableCell>
+                          <TableCell>{sheet.halfDay}</TableCell>
+                          <TableCell>{sheet.absent}</TableCell>
+                          <TableCell className="text-right tabular-nums">{money(sheet.cost)}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={complete ? "default" : "outline"}
+                              title={`Measured against the ${activeRosterCount} active workers on the roster today`}
+                            >
+                              {complete ? "Complete" : "Partial"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+          <p className="text-[12px] text-px-muted">
+            A sheet row opens that day&apos;s {ATTENDANCE_STATUS_LABEL.present}/{ATTENDANCE_STATUS_LABEL.half_day}/{ATTENDANCE_STATUS_LABEL.absent} marks for the whole roster.
+          </p>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

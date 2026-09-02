@@ -6,6 +6,13 @@ export type ProjectSelection = {
   project: SelectableProject | null;
   projects: SelectableProject[];
   errorMessage: string | null;
+  // R67 (audit R-084/R-097): TRUE when nothing asked for this project -- no
+  // ?projectId= in the URL and no rail selection -- and it is simply the org's
+  // first project. Every screen used to take projects[0] silently, so a
+  // capture could show "All projects" in the top rail while the rows on
+  // screen, and every data call behind them, belonged to exactly one project.
+  // Additive: callers that ignore this field behave exactly as before.
+  resolvedByFallback: boolean;
 };
 
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
@@ -33,13 +40,22 @@ export async function resolveSelectedProject(
       organizationId: organizationId ?? undefined,
     });
     const projects = data.projects ?? [];
-    const project = (requestedProjectId && projects.find((p) => p.id === requestedProjectId)) || projects[0] || null;
-    return { project, projects, errorMessage: null };
+    const requested = requestedProjectId ? projects.find((p) => p.id === requestedProjectId) ?? null : null;
+    const project = requested ?? projects[0] ?? null;
+    return {
+      project,
+      projects,
+      errorMessage: null,
+      // A single-project org is not "a fallback the user should be warned
+      // about" -- there is nothing else it could be showing.
+      resolvedByFallback: requested === null && project !== null && projects.length > 1,
+    };
   } catch (err) {
     return {
       project: null,
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
+      resolvedByFallback: false,
     };
   }
 }

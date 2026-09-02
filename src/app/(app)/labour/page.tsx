@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import LabourClient, { type RegistryColumn } from "@/components/LabourClient";
+import LabourClient, { type RegistryColumn, type RosterFilterState } from "@/components/LabourClient";
 
 // R46 P8 seq132 (registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns in permits/page.tsx, R46 P8 seq128's
@@ -27,26 +27,50 @@ async function resolveLabourListColumns(organizationId: string | null): Promise<
   }
 }
 
-export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+// R67 D-32: the page no longer renders the heading when a project resolves --
+// LabourClient owns the header band, because the header's Filter and Export
+// actions operate on the rows the client is holding and cannot be driven from
+// a server component. The page keeps a plain heading for the two states where
+// there are no rows at all (a projects lookup failure, or an org with no
+// projects), so the screen is never headless.
+//
+// resolvedByFallback is passed straight through: it is the difference between
+// "the user picked this project" and "this is simply the org's first project",
+// and the screen has to say which.
+export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; q?: string; trade?: string; company?: string; status?: string }> }) {
+  const { projectId, tab, q, trade, company, status } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, resolvedByFallback } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveLabourListColumns(organizationId);
 
+  const initialFilter: Partial<RosterFilterState> = {
+    ...(q ? { q } : {}),
+    ...(trade ? { trade } : {}),
+    ...(company ? { company } : {}),
+    ...(status === "active" || status === "inactive" || status === "all" ? { status } : {}),
+  };
+
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Manpower & Attendance" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && <LabourClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      {!project && <PageHeading title="Manpower & Attendance" />}
+      {errorMessage && (
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
+        </Card>
+      )}
+      {!errorMessage && !project && (
+        <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
+      )}
+      {project && (
+        <LabourClient
+          projectId={project.id}
+          projectName={project.name}
+          resolvedByFallback={resolvedByFallback}
+          registryColumns={registryColumns}
+          initialTab={tab}
+          initialFilter={initialFilter}
+        />
+      )}
+    </div>
   );
 }
