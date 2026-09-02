@@ -190,6 +190,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/wiki/[id]",
   "/wiki/new",
   "/work-progress",
+  "/work-progress/[id]",
 ];
 
 const STATIC_ROUTES = new Set(SHIPPED_ROUTES.filter((r) => !r.includes("[")));

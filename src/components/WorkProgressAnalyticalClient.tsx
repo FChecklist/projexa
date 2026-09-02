@@ -11,12 +11,10 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
-import WorkProgressListClient from "./WorkProgressListClient";
+import WorkProgressListClient, { type Entry } from "./WorkProgressListClient";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
 type Activity = { id: string; name: string; categoryId: string | null };
 type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
-type LineItem = { id: string; itemCode: string | null; description: string };
 
 export default function WorkProgressAnalyticalClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -26,7 +24,6 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
   const [entries, setEntries] = useState<Entry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,22 +37,18 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       setEntries(entriesRes.entries ?? []);
       setActivities(activitiesRes.activities ?? []);
       setCategories(catRes.categories ?? []);
-
-      const boqsRes = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ boqs: [] }));
-      const boqs: { id: string; version: number; status: string }[] = boqsRes.boqs ?? [];
-      if (boqs.length > 0) {
-        const current = boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boq = await fetch(`/api/scope/${current.id}`).then((r) => r.json());
-        setLineItems(boq.lineItems ?? []);
-      }
+      // R67 D-28: the BOQ round-trip that used to happen here is gone. It
+      // existed only to build a lineItemId -> description map for the table
+      // below, out of ONE resolved BOQ -- so an entry recorded against another
+      // revision printed a raw id. Those names now arrive on the entry row
+      // itself (VERIDIAN's LEFT JOIN), which also removes two serial fetches
+      // from this tab's load.
       setLoading(false);
     }
     load();
   }, [projectId]);
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
-  const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
@@ -92,12 +85,7 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       drillSlices={categoryFilter ? [{ label: categoryFilter, onRemove: () => router.push(`/work-progress?projectId=${projectId}&tab=analytics`) }] : []}
       chart={<BarChart data={bars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />}
       table={
-        <WorkProgressListClient
-          entries={filteredEntries}
-          activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
-          loading={loading}
-        />
+        <WorkProgressListClient entries={filteredEntries} loading={loading} />
       }
     />
   );
