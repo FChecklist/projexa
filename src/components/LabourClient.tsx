@@ -36,6 +36,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import AttendanceSummaryPanel from "@/components/AttendanceSummaryPanel";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -229,6 +230,11 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
+        {/* R67 D-31 (R-090): the trade-wise summary, between the tab bar and
+            the attendance log, populated by pressing nothing. Before this, the
+            only place these numbers existed was the report catalogue, which
+            PROJEXA renders as a read-only card. */}
+        <AttendanceSummaryPanel projectId={projectId} />
         <div className="flex justify-end">
           {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
               Attendance" Dialog popup with a real create route. */}
