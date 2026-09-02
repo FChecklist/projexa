@@ -48,6 +48,7 @@ import {
   grandTotalTies,
   groupBudgetLinesByCategory,
   isOverBudget,
+  lineActual,
   type BudgetLine,
   type BudgetSubtotal,
 } from "@/lib/budget-lines";
@@ -183,7 +184,10 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
     visibleLines.forEach((line, index) => map.set(line.lineItemId, index + 1));
     return map;
   }, [visibleLines]);
-  const hasActuals = grandTotal.actual > 0;
+  // "One actual exists" means one line has been costed at all -- a line costed
+  // at exactly zero is still a recorded fact, so this asks whether anything was
+  // entered rather than whether the total is above zero.
+  const hasActuals = useMemo(() => visibleLines.some((l) => lineActual(l) !== null), [visibleLines]);
   const tiesToBoq = boqTotalValue === null || grandTotalTies(unfilteredTotal.amount, boqTotalValue);
 
   // Sorted worst-first, the kit's own category-comparison rule: a bullet per
