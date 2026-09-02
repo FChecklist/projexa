@@ -1,48 +1,63 @@
+import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
+import { resolveRegistryColumns as resolveCachedRegistryColumns } from "@/lib/screen-definitions";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
+import ScopeClient, { SCOPE_FALLBACK_COLUMN_LABELS, type RegistryColumn } from "@/components/ScopeClient";
 import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
 
-// R44 seq3 (M28 registry-model proof, same pattern as permits/page.tsx's
-// resolvePermitsListColumns): resolved server-side so ScopeClient never
-// needs its own Bearer-key-authenticated fetch. A missing or errored
+// R44 seq3 (M28 registry-model proof): resolved server-side so ScopeClient
+// never needs its own Bearer-key-authenticated fetch. A missing or errored
 // registry row is NOT fatal -- ScopeClient falls back to its own hardcoded
-// columns when this is null. R46 P8 seq121 factored the body out to a
-// shared helper so the new boq.custom lookup (main BOQ table's column
-// labels -- CUSTOM archetype, see below) didn't duplicate this try/catch.
+// columns when this is null.
+//
+// R67 F-04: the body moved to src/lib/screen-definitions.ts, which adds the
+// per-org unstable_cache every module page now shares (a registry row changes
+// when somebody edits the registry, not on every navigation). This wrapper is
+// kept because scope/[id]/compare/page.tsx imports it from here.
 export async function resolveRegistryColumns(functionId: string, organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>(`/screen-definitions/${functionId}`, {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error(`[scope/page] screen_definitions resolve failed for ${functionId}, falling back to hardcoded columns:`, err instanceof Error ? err.message : err);
-    return null;
-  }
+  return resolveCachedRegistryColumns(functionId, organizationId, SCOPE_COLUMNS_TTL_SECONDS) as Promise<RegistryColumn[] | null>;
 }
+
+const SCOPE_COLUMNS_TTL_SECONDS = 600;
 
 export default async function ScopePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-  // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays
-  // a fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks
-  // are too bespoke for a generic LIST renderer), but the main BOQ table's
-  // column LABELS now come from this registry row so they're editable with
-  // no redeploy, same as every other converted screen. Nothing about data
-  // fetching, row shape, or cell rendering is registry-driven here.
-  const boqListColumns = await resolveRegistryColumns("boq.custom", organizationId);
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Scope of Work (BOQ)" />
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Scope of Work (BOQ)" />
+      <Suspense
+        fallback={<TableLoadingRows headers={SCOPE_FALLBACK_COLUMN_LABELS} rows={6} caption="Loading BOQs..." delayMs={0} />}
+      >
+        <ScopeSection projectId={projectId} tab={tab} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function ScopeSection({ projectId, tab }: { projectId?: string; tab?: string }) {
+  const organizationId = await getServerOrganizationId();
+  // R67 F-04: these two ran SERIALLY -- the project first, then the registry
+  // row -- so the page paid both round trips end to end before sending any
+  // HTML. Neither depends on the other.
+  //
+  // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays a
+  // fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks are
+  // too bespoke for a generic LIST renderer), but the main BOQ table's column
+  // LABELS come from this registry row so they are editable with no redeploy.
+  // Nothing about data fetching, row shape, or cell rendering is
+  // registry-driven here.
+  const [{ project, errorMessage }, boqListColumns] = await Promise.all([
+    resolveSelectedProject(projectId, organizationId),
+    resolveRegistryColumns("boq.custom", organizationId),
+  ]);
+
+  return (
+      <>
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
@@ -66,7 +81,6 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
             <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
-      </div>
-    </>
+      </>
   );
 }

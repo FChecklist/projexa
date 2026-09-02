@@ -52,15 +52,99 @@ export function currencyLabel(id: string | null | undefined, currencies: Currenc
   return c ? `${c.code} ` : CURRENCY_FALLBACK_LABEL;
 }
 
-// Wraps the fetch-once-on-mount pattern every fixed file used to duplicate
-// by hand (`useEffect(() => { fetch("/api/currencies")... }, [])`). Safe to
-// call from multiple components on the same page -- each mounts its own
-// independent fetch, matching how these components already independently
-// fetch their own report/list data.
+// R67 F-04 (R-060). The org's currency list is the definition of
+// session-stable reference data -- it changes when somebody changes the org's
+// currencies, which is approximately never -- and yet EVERY component calling
+// useCurrencies() used to mount its own independent fetch, on every mount, on
+// every navigation. /scope alone has two consumers; a page with three money
+// tables made three identical requests.
+//
+// One in-flight promise is now shared across every caller in the tab, and the
+// resolved list is remembered in sessionStorage so a navigation re-renders
+// with the code ALREADY THERE rather than flashing an unlabelled number.
+// sessionStorage (not localStorage) on purpose: it dies with the tab, so a
+// user who switches org in a new session can never be shown the previous
+// org's currency code.
+const CURRENCIES_SESSION_KEY = "px.currencies";
+
+let currenciesPromise: Promise<Currency[]> | null = null;
+
+function readCachedCurrencies(): Currency[] | null {
+  try {
+    const raw = sessionStorage.getItem(CURRENCIES_SESSION_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as Currency[]) : null;
+  } catch {
+    // Private mode, disabled storage, corrupt entry -- all mean "no cache",
+    // never a thrown error on a render path.
+    return null;
+  }
+}
+
+function writeCachedCurrencies(currencies: Currency[]): void {
+  try {
+    sessionStorage.setItem(CURRENCIES_SESSION_KEY, JSON.stringify(currencies));
+  } catch {
+    // Storage full or unavailable: the in-memory promise above still dedupes
+    // for the life of this page, which is the larger half of the win.
+  }
+}
+
+export function loadCurrencies(): Promise<Currency[]> {
+  if (!currenciesPromise) {
+    currenciesPromise = fetch("/api/currencies")
+      .then((r) => r.json())
+      .then((d) => {
+        const currencies: Currency[] = d.currencies ?? [];
+        writeCachedCurrencies(currencies);
+        return currencies;
+      })
+      .catch(() => {
+        // A failed lookup must not be cached as "this org has no currencies"
+        // -- that would render every amount unlabelled for the whole session.
+        // Clear the memo so the next mount retries.
+        currenciesPromise = null;
+        return [];
+      });
+  }
+  return currenciesPromise;
+}
+
+// Test seam: bun test runs every file in one process, so the module-level
+// memo above would otherwise leak between test files.
+export function __resetCurrenciesCacheForTests(): void {
+  currenciesPromise = null;
+  try {
+    sessionStorage.removeItem(CURRENCIES_SESSION_KEY);
+  } catch {
+    // nothing to clear
+  }
+}
+
+// Wraps the fetch-once pattern every fixed file used to duplicate by hand
+// (`useEffect(() => { fetch("/api/currencies")... }, [])`). Safe to call from
+// any number of components: they share one request, and after the first they
+// render with the list already in hand.
 export function useCurrencies(): Currency[] {
+  // Deliberately starts empty even when a cached list exists: this hook runs
+  // inside components that are server-rendered first, and seeding state from
+  // sessionStorage (which the server does not have) would make the client's
+  // first render disagree with the HTML it is hydrating. The cache is read in
+  // the effect below instead -- synchronously, before the network call, so the
+  // code still appears in the same commit rather than a round trip later.
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   useEffect(() => {
-    fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {});
+    let active = true;
+    const cached = readCachedCurrencies();
+    if (cached && cached.length > 0) setCurrencies(cached);
+    loadCurrencies().then((list) => {
+      // Never overwrite a good cached list with an empty failure result.
+      if (active && list.length > 0) setCurrencies(list);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
   return currencies;
 }

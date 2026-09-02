@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, GitCompare, GitBranchPlus } from "lucide-react";
+import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -35,6 +36,11 @@ const DEFAULT_LIST_COLUMNS: ScreenColumn[] = [
   { field: "createdAt", label: "Created", type: "date", importance: "High" },
 ];
 
+// R67 F-04: the labels scope/page.tsx paints in its Suspense fallback (the
+// five data columns plus the always-present Actions column), so the header row
+// on screen while the server resolves is the header row that stays.
+export const SCOPE_FALLBACK_COLUMN_LABELS = [...DEFAULT_LIST_COLUMNS.map((c) => c.label), "Actions"];
+
 function columnLabel(columns: ScreenColumn[], field: string, fallback: string): string {
   return columns.find((c) => c.field === field)?.label || fallback;
 }
@@ -46,34 +52,12 @@ type Boq = {
   status: string;
   parentBoqId: string | null;
   createdAt: string;
-};
-
-type BoqLineItemRow = {
-  id: string; itemCode: string | null; description: string; unit: string;
-  quantity: string; rate: string; amount: string; activityId: string | null;
-  parentLineItemId?: string | null; breakdownPercentage?: string | null;
-  // R39/R-C09: Point 154's budget overlay -- computedBudget is derived
-  // server-side (amount * budgetPercentage / 100, construction-boq-
-  // service.ts#computedBudget), never sent back independently editable.
-  budgetPercentage?: string | null;
-  computedBudget?: number | null;
-  vendorId?: string | null;
-  vendorAmount?: string | null;
-};
-
-type ChangedLineItem = {
-  key: string; previous: BoqLineItemRow; current: BoqLineItemRow;
-  // Sumeet audit fix (2026-08-30, requirement #18: "Percentage-only change
-  // detected as a variation"). The real backend (construction-boq-
-  // service.ts's compareBoq) has always sent this field on every changed
-  // row -- this type just never declared it, so toCompareResult() below
-  // could never read it even though it was already on the wire.
-  quantityChange: number; rateChange: number; breakdownPercentageChange: number; netVariation: number;
-};
-
-type BoqComparison = {
-  added: BoqLineItemRow[]; removed: BoqLineItemRow[]; changed: ChangedLineItem[];
-  warnings: string[]; totalVariation: number;
+  // R67 F-04: both figures now arrive ON THE ROW, computed server-side inside
+  // the one transaction that read the BOQs (construction-boq-service.ts's
+  // listBoqs -> buildBoqListRows). null (never 0) when there is no baseline to
+  // differ from -- "nothing to compare against" is not "no change".
+  totalVariation: number | null;
+  totalVariationVsOriginal: number | null;
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -97,6 +81,11 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
+// R67 F-04: a real BOQ register can run to dozens of revisions; showing all
+// of them at once is a wall of rows nobody reads. 25 at a time, with the full
+// count named on the button so "Show more" is never a mystery.
+const PAGE_SIZE = 25;
+
 function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
   return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -116,37 +105,34 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [shownRows, setShownRows] = useState(PAGE_SIZE);
 
-  // Variation vs. immediate parent, per revision -- the "running total
-  // variation value" the Owner asked for, fetched from VERIDIAN's compareBoq
-  // rather than stored (this codebase computes diffs at read time, never
-  // denormalizes them).
-  const [variationByBoqId, setVariationByBoqId] = useState<Record<string, number>>({});
-
-
+  // R67 F-04: the currency code is a LABEL, not a precondition. useCurrencies
+  // returns "" until /api/currencies answers (and that answer is cached for
+  // the session, so on every navigation after the first it is already there);
+  // the number renders immediately either way and the code appears beside it
+  // when it arrives.
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
-  async function load() {
+  // R67 F-04. This used to fire GET /api/scope/{id}/compare once PER REVISION
+  // after the list arrived -- eight calls at 0.58-1.44 s each on an
+  // eight-revision project, 22 requests and 7.7 s to network idle, on a screen
+  // the backend itself answers in 652-781 ms. The variation figures now come
+  // back ON the list rows (compliance-tracker computes both inside the single
+  // transaction that reads the BOQs, reusing the same diffLineItems/
+  // computeTotalVariation pair /compare uses, so the numbers cannot disagree).
+  // /compare still backs the Compare screen, which needs the added/removed/
+  // changed detail a list row does not.
+  const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setShownRows(PAGE_SIZE);
     try {
       const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
         signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
       });
-      const loaded: Boq[] = data.boqs ?? [];
-      setBoqs(loaded);
-
-      const revisions = loaded.filter((b) => b.parentBoqId);
-      const entries = await Promise.all(
-        revisions.map(async (b) => {
-          const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
-          if (!cmpRes.ok) return null;
-          const cmp: BoqComparison = await cmpRes.json();
-          return [b.id, cmp.totalVariation] as const;
-        })
-      );
-      setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
+      setBoqs(data.boqs ?? []);
     } catch (err) {
       // A timed-out AbortSignal surfaces as a bare "TimeoutError"/"AbortError"
       // with no useful .message -- errorMessage() would render something like
@@ -161,23 +147,51 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [load]);
+
+  // R67 F-04: warm the create route so "+ New BOQ" opens instantly.
+  useEffect(() => { router.prefetch(`/scope/new?projectId=${projectId}`); }, [router, projectId]);
+
+  // Every row action lands on /scope/{id} or one of its children, so warming
+  // the object route on row hover covers View, Compare and New Revision.
+  const prefetchBoq = useCallback((boqId: string) => { router.prefetch(`/scope/${boqId}`); }, [router]);
+
+  // The header labels the skeleton and the real table share, so the words on
+  // screen while loading are the words that stay.
+  const HEADER_LABELS = [
+    columnLabel(boqListColumns, "title", "Title"),
+    columnLabel(boqListColumns, "version", "Version"),
+    columnLabel(boqListColumns, "status", "Status"),
+    columnLabel(boqListColumns, "variation", "Variation vs. prior"),
+    columnLabel(boqListColumns, "createdAt", "Created"),
+    "Actions",
+  ];
+
+  // Paginated only once the register is genuinely long: a project with a
+  // handful of revisions should never see a "Show more" it does not need.
+  const paginated = boqs.length > 50;
+  const visibleBoqs = paginated ? boqs.slice(0, shownRows) : boqs;
+  const hiddenCount = boqs.length - visibleBoqs.length;
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         {/* Real screen navigation (2026-08-30) -- replaces the old "New BOQ"
             Dialog popup with a real create route. */}
-        <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
+        <Button onMouseEnter={() => router.prefetch(`/scope/new?projectId=${projectId}`)} onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
       </div>
 
+      {/* R67 F-04: the bare spinner is replaced by the real column headers plus
+          six grey rows, so the table's shape is on screen from the first frame
+          and nothing reflows when the rows land. */}
+      {loading ? (
+        <TableLoadingRows headers={HEADER_LABELS} rows={6} caption="Loading BOQs..." />
+      ) : (
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
+          {loadError ? (
             <DataLoadError messages={[loadError]} onRetry={load} />
           ) : boqs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
@@ -194,17 +208,19 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boqs.map((b) => {
-                  const variation = variationByBoqId[b.id];
+                {visibleBoqs.map((b) => {
+                  const variation = b.totalVariation;
                   return (
-                    <TableRow key={b.id}>
+                    <TableRow key={b.id} onMouseEnter={() => prefetchBoq(b.id)} onFocus={() => prefetchBoq(b.id)}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
                       <TableCell>
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
-                        ) : variation === undefined ? (
+                        ) : variation === null || variation === undefined ? (
+                          // null means the server had no baseline to compare
+                          // against -- honestly a dash, never a fabricated 0.
                           <span className="text-px-muted">—</span>
                         ) : (
                           <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
@@ -215,9 +231,9 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                         {/* Real screen navigation (2026-08-30) -- replaces the old
                             "View" Dialog popup with a real Object Page route,
                             same as PermitObjectClient's proven pattern. */}
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}`)}>View</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/compare`)}><GitCompare className="size-3.5" /> Compare</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/revise`)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
+                        <Button variant="ghost" size="sm" onMouseEnter={() => prefetchBoq(b.id)} onClick={() => router.push(`/scope/${b.id}`)}>View</Button>
+                        <Button variant="ghost" size="sm" onMouseEnter={() => router.prefetch(`/scope/${b.id}/compare`)} onClick={() => router.push(`/scope/${b.id}/compare`)}><GitCompare className="size-3.5" /> Compare</Button>
+                        <Button variant="ghost" size="sm" onMouseEnter={() => router.prefetch(`/scope/${b.id}/revise`)} onClick={() => router.push(`/scope/${b.id}/revise`)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -225,8 +241,16 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
               </TableBody>
             </Table>
           )}
+          {hiddenCount > 0 && (
+            <div className="border-t border-px-border p-3 text-center">
+              <Button variant="outline" size="sm" onClick={() => setShownRows((n) => n + PAGE_SIZE)}>
+                Show more ({hiddenCount} more)
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }
