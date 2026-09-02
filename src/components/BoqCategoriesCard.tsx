@@ -121,7 +121,16 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
         ) : (
           <ul className="space-y-2">
             {categories.map((c) => (
-              <li key={c.id} className="flex items-center gap-2">
+              // Keyed on id AND stored name on purpose. The name field below is
+              // an UNCONTROLLED <Input>: React does not reset a mounted input's
+              // DOM value when defaultValue changes, so after a rejected rename
+              // (the 409 '"Civil" is already a category') the reload in
+              // rename()'s catch would leave the rejected text on screen while
+              // the server still holds the old name -- screen and database
+              // silently disagreeing. Including the name in the key remounts
+              // the row whenever the stored name changes or reverts, so the
+              // field always shows what the server actually has.
+              <li key={`${c.id}:${c.name}`} className="flex items-center gap-2">
                 <Input
                   aria-label={`Category name: ${c.name}`}
                   className="max-w-[240px]"

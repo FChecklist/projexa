@@ -142,6 +142,65 @@ function checkTies(rows: LineItemRow[], byCategory: CategoryRow[], mode: ThirdCo
   return null;
 }
 
+// R67 I-05 (R-177): the Category multi-select on the parameter bar.
+//
+// Checkboxes, not a shadcn Select -- Select is single-value, and a fake "multi"
+// built on it would silently drop every choice but the last. Nothing is
+// filtered until Apply: re-running on every checkbox click would fire a report
+// request per keystroke-equivalent. "All categories" is what the EMPTY
+// selection is called, stated in words, so an empty control never reads as
+// "nothing matches" -- that wording is load-bearing and is pinned by a test.
+//
+// Exported and purely presentational (props in, callbacks out, no state and no
+// fetching of its own) for the same reason ScopeTable above is: it is the only
+// way this file's markup gets a real test in this repo, where the DOM-backed
+// test runner is unavailable and components are asserted through
+// renderToStaticMarkup. Renders nothing at all when the report has surfaced no
+// categories, so a project whose BOQ has none never shows an empty filter box.
+export function CategoryFilterGroup({
+  available,
+  selected,
+  disabled,
+  onToggle,
+  onApply,
+}: {
+  available: string[];
+  selected: string[];
+  disabled: boolean;
+  onToggle: (name: string, checked: boolean) => void;
+  onApply: () => void;
+}) {
+  if (available.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <Label id="wpr-category-filter-label">Category</Label>
+      <div
+        role="group"
+        aria-labelledby="wpr-category-filter-label"
+        data-testid="wpr-category-filter"
+        className="flex max-w-[420px] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-px-border px-2 py-1.5"
+      >
+        {available.map((c) => (
+          <label key={c} className="flex items-center gap-1 text-xs text-px-ink">
+            <input
+              type="checkbox"
+              checked={selected.includes(c)}
+              onChange={(e) => onToggle(c, e.target.checked)}
+            />
+            {c}
+          </label>
+        ))}
+        <span className="text-xs text-px-muted">
+          {selected.length === 0 ? "All categories" : `${selected.length} selected`}
+        </span>
+        <Button size="sm" variant="outline" disabled={disabled} data-testid="wpr-category-apply" onClick={onApply}>
+          Apply
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">No BoQ line items for this project yet.</p>;
   const thirdLabel = mode === "balance" ? "Balance" : "Total";
@@ -412,51 +471,15 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               </Select>
             </div>
           )}
-          {/* R67 I-05 (R-177): Category multi-select. Checkboxes, not a
-              shadcn Select -- Select is single-value, and a fake "multi" built
-              on it would silently drop every choice but the last. Nothing is
-              filtered until Apply: re-running on every checkbox click would
-              fire a report request per keystroke-equivalent. "All categories"
-              is the empty selection, stated in words so an empty control never
-              reads as "nothing matches". */}
-          {availableCategories.length > 0 && (
-            <div className="space-y-1.5">
-              <Label id="wpr-category-filter-label">Category</Label>
-              <div
-                role="group"
-                aria-labelledby="wpr-category-filter-label"
-                data-testid="wpr-category-filter"
-                className="flex max-w-[420px] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-px-border px-2 py-1.5"
-              >
-                {availableCategories.map((c) => (
-                  <label key={c} className="flex items-center gap-1 text-xs text-px-ink">
-                    <input
-                      type="checkbox"
-                      checked={selectedCategories.includes(c)}
-                      onChange={(e) =>
-                        setSelectedCategories((prev) =>
-                          e.target.checked ? [...prev, c] : prev.filter((x) => x !== c)
-                        )
-                      }
-                    />
-                    {c}
-                  </label>
-                ))}
-                <span className="text-xs text-px-muted">
-                  {selectedCategories.length === 0 ? "All categories" : `${selectedCategories.length} selected`}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={loading}
-                  data-testid="wpr-category-apply"
-                  onClick={() => runReport(selectedBoqId, selectedCategories)}
-                >
-                  Apply
-                </Button>
-              </div>
-            </div>
-          )}
+          <CategoryFilterGroup
+            available={availableCategories}
+            selected={selectedCategories}
+            disabled={loading}
+            onToggle={(name, checked) =>
+              setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
+            }
+            onApply={() => runReport(selectedBoqId, selectedCategories)}
+          />
           {report && (
             <div className="space-y-1.5">
               <Label>Third column</Label>
