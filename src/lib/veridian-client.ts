@@ -114,20 +114,38 @@ function isTimeout(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+// R67 F-06/F-07/F-08/F-09, decision D-04. The 20 s ceiling above exists to stop
+// a hung upstream consuming Vercel's whole 300 s function budget -- it is a
+// LAST resort, not a page's latency budget. A module page that renders a list
+// has no business waiting twenty seconds: after eight it should say so and
+// offer Retry, which is what the user can actually act on.
+//
+// So a caller may state its own, SHORTER budget. It is opt-in and it can only
+// tighten, never loosen: whichever of the caller's budget and the 20 s ceiling
+// is smaller wins, so no call site can accidentally extend PROJEXA's exposure
+// to the chronic upstream hang documented above.
+export const VERIDIAN_PAGE_BUDGET_MS = 8_000;
+
+function budgetFor(timeoutMs?: number): number {
+  if (!timeoutMs || timeoutMs <= 0) return VERIDIAN_FETCH_TIMEOUT_MS;
+  return Math.min(timeoutMs, VERIDIAN_FETCH_TIMEOUT_MS);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
   const attempts = VERIDIAN_RETRY_ON_TIMEOUT && isIdempotent(init) ? 2 : 1;
+  const budgetMs = budgetFor(timeoutMs);
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(budgetMs) });
     } catch (err) {
       lastErr = err;
       if (!isTimeout(err)) throw err;
       if (attempt < attempts) {
         // Logged so a retry is visible in the runtime logs rather than hiding
         // the upstream's real failure rate behind a success.
-        console.warn(`[veridian] timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms, retrying once:`, url);
+        console.warn(`[veridian] timed out after ${budgetMs}ms, retrying once:`, url);
       }
     }
   }
@@ -144,7 +162,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
     // service, and that it was retried -- which is what C19 ERROR_TRUTHFUL
     // asks for. The internal address and the millisecond budget move to
     // `detail`, which is logged here and never returned to a client.
-    const detail = `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`;
+    const detail = `VERIDIAN request timed out after ${budgetMs}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`;
     console.error(`[veridian] ${detail}`);
     throw new VeridianApiError(
       attempts > 1
@@ -213,7 +231,11 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN's PUT /currencies/base (compliance-tracker PR #1391) -- every
 // prior caller in this file used POST/PATCH for writes, so PUT was simply
 // never needed here before.
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+// R67 F-06..F-09 (D-04): `timeoutMs` lets a module page state its own request
+// budget (see VERIDIAN_PAGE_BUDGET_MS above). It can only tighten the 20 s
+// ceiling, never extend it, and it is optional -- every existing caller keeps
+// the ceiling it has always had.
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; timeoutMs?: number };
 
 // Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
 // route (a real binary response, not JSON) can reuse the exact same
@@ -232,7 +254,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
-  });
+  }, options.timeoutMs);
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));

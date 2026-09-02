@@ -19,9 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { loadVendors, type Vendor } from "@/lib/reference-lookups";
 
 type RosterEntry = { id: string; projectId: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
-type Vendor = { id: string; vendorName: string };
 
 export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   const router = useRouter();
@@ -37,12 +37,15 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
 
   async function load() {
     try {
-      const [data, vendorData] = await Promise.all([
+      // R67 F-06: the vendor list is shared across /labour, /labour/new and
+      // this screen (src/lib/reference-lookups.ts) -- arriving here from the
+      // roster costs no vendor request at all.
+      const [data, vendorList] = await Promise.all([
         fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`),
-        fetchJson<{ vendors?: Vendor[] }>("/api/vendors").catch(() => ({ vendors: [] })),
+        loadVendors(),
       ]);
       setEntry(data);
-      setVendors(vendorData.vendors ?? []);
+      setVendors(vendorList);
       setLoadError(null);
     } catch (err) {
       setEntry(null);

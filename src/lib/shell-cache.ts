@@ -19,6 +19,11 @@
 //
 // Deliberately NOT sessionStorage: this is identity-adjacent data, and it
 // should die with the page, not linger in a store another sign-in could read.
+//
+// R67 F-06: the same store now also backs the module-level reference lookups
+// in src/lib/reference-lookups.ts (vendors today), which have exactly the same
+// shape -- session-stable data that several screens each re-fetched on every
+// mount. The mechanism is general; only the keys differ.
 export const SHELL_CACHE_TTL_MS = 60_000;
 
 type Entry = { at: number; value: unknown };

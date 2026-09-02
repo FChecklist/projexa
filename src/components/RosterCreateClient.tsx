@@ -10,8 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-
-type Vendor = { id: string; vendorName: string };
+import { loadVendors, type Vendor } from "@/lib/reference-lookups";
 
 export default function RosterCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -23,8 +22,10 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
   const [dailyRate, setDailyRate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R67 F-06: shared with /labour and /labour/[id] -- one tab-lifetime request
+  // for the whole module instead of one per screen per mount.
   useEffect(() => {
-    fetchJson<{ vendors?: Vendor[] }>("/api/vendors").then((d) => setVendors(d.vendors ?? [])).catch(() => {});
+    void loadVendors().then(setVendors);
   }, []);
 
   const missing = [...(name.trim() ? [] : ["Name"]), ...(dailyRate ? [] : ["Daily Rate"])];

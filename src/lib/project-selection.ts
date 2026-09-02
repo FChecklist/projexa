@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 export type SelectableProject = { id: string; name: string; status?: string };
@@ -41,16 +42,59 @@ export const SELECTED_PROJECT_COOKIE = "px_project";
 // it. Optional/nullable so a page that somehow calls this before resolving
 // auth still gets the same demo-key fallback callVeridian() has always had,
 // rather than a hard failure.
+export type ResolveProjectOptions = {
+  /**
+   * R67 F-06/F-07/F-09. When set, the PROJECT LIST read is memoised per org
+   * for this many seconds (Next's Data Cache), so a run of navigations across
+   * project-scoped pages costs one round trip rather than one per page.
+   *
+   * Only the LIST is cached. Which project is selected -- the ?projectId=
+   * param, the px_project cookie, the first-project fallback -- is decided
+   * outside the cache on every call, so switching project is still instant and
+   * a cached list can never pin the wrong selection.
+   *
+   * Omitted by default: ~50 callers share this function and a page that has
+   * just created a project must be able to see it immediately.
+   */
+  cacheSeconds?: number;
+};
+
+export function projectsCacheTag(organizationId: string | null): string {
+  return `projects:${organizationId ?? "shared"}`;
+}
+
+// The read itself, optionally wrapped in Next's Data Cache. Split out so the
+// caching decision is one place and the selection logic below is unaffected by
+// it. A failure is deliberately NOT cached -- see screen-definitions.ts for the
+// same reasoning: caching "this org has no projects" for a minute would turn
+// one blip into a minute of "No active projects yet."
+async function listProjects(organizationId: string | null, cacheSeconds?: number): Promise<SelectableProject[]> {
+  const read = async (orgId: string | null) => {
+    const data = await callVeridian<{ projects: SelectableProject[] }>("/projects", {
+      organizationId: orgId ?? undefined,
+    });
+    return data.projects ?? [];
+  };
+  if (!cacheSeconds || cacheSeconds <= 0) return read(organizationId);
+  // organizationId is both an explicit key part and the wrapped function's
+  // argument, so the entry is org-scoped two independent ways -- callVeridian
+  // attaches a PER-ORG bearer token and Next keys its fetch cache on URL only
+  // (see createCachedVeridianGet's comment on that cross-tenant leak).
+  const cached = unstable_cache(read, ["projects", organizationId ?? "shared"], {
+    revalidate: cacheSeconds,
+    tags: [projectsCacheTag(organizationId)],
+  });
+  return cached(organizationId);
+}
+
 export async function resolveSelectedProject(
   requestedProjectId?: string,
-  organizationId?: string | null
+  organizationId?: string | null,
+  options: ResolveProjectOptions = {}
 ): Promise<ProjectSelection> {
   const preferredId = requestedProjectId || (await readSelectedProjectCookie());
   try {
-    const data = await callVeridian<{ projects: SelectableProject[] }>("/projects", {
-      organizationId: organizationId ?? undefined,
-    });
-    const projects = data.projects ?? [];
+    const projects = await listProjects(organizationId ?? null, options.cacheSeconds);
     const project = (preferredId && projects.find((p) => p.id === preferredId)) || projects[0] || null;
     return { project, projects, errorMessage: null };
   } catch (err) {
