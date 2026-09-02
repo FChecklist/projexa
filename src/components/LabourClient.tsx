@@ -30,7 +30,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -59,8 +59,22 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Status", field: "isActive", type: "text", importance: "High" },
 ];
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  present: "default", half_day: "secondary", absent: "destructive",
+// R67 G-02 (R-087). This map used to be shadcn Badge variants, and every one
+// of the three was wrong for what it meant:
+//   present    -> "default", which is the SAFFRON PRIMARY FILL. Saffron means
+//                 "the one action on this screen"; painting a resting,
+//                 nothing-to-do-here state in it made a log entry look like a
+//                 button, and white-on-saffron measures 2.60:1 besides.
+//   half_day   -> "secondary", a neutral grey that said nothing at all.
+//   absent     -> "destructive", bright red. Rose is reserved for late and
+//                 error; a worker who did not come in is not an error.
+// The tones below are the M24 four, each carrying its own glyph AND its own
+// word (the word is the attendance status itself), so the row is readable in
+// greyscale and to a colour-blind reader.
+const ATTENDANCE_TONE: Record<string, StatusTone> = {
+  present: "done",
+  half_day: "needs-you",
+  absent: "late",
 };
 
 const VALID_TABS = new Set(["roster", "attendance"]);
@@ -84,7 +98,10 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
     case "dailyRate":
       return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
     case "isActive":
-      return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
+      // R67 G-02: was <Badge variant="default"> for active -- the saffron
+      // primary fill, on a row that is merely "this worker is on the roster".
+      // active -> sage tick, inactive -> grey circle, both with their word.
+      return <StatusPill status={r.isActive ? "active" : "inactive"} />;
     default:
       return String((r as unknown as Record<string, unknown>)[field] ?? "—");
   }
@@ -211,7 +228,14 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                     <TableRow key={a.id}>
                       <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
                       <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
-                      <TableCell><Badge variant={STATUS_VARIANT[a.status] ?? "outline"}>{a.status.replace(/_/g, " ")}</Badge></TableCell>
+                      {/* R67 G-02: glyph + word, never the tone alone. An
+                          attendance value the backend adds later that is not
+                          in ATTENDANCE_TONE draws neutral with its own raw
+                          word, so a new state is visible rather than
+                          silently coloured as something it is not. */}
+                      <TableCell>
+                        <StatusPillTone tone={ATTENDANCE_TONE[a.status] ?? "neutral"} label={a.status.replace(/_/g, " ")} />
+                      </TableCell>
                       <TableCell>{a.hoursWorked ?? "—"}</TableCell>
                       <TableCell>{a.dailyCost}</TableCell>
                     </TableRow>
