@@ -7,6 +7,13 @@
 // and reintroduce the hydration mismatch". These assertions pin the actual
 // output so that regression is a visible, failing test, not a silent
 // runtime-dependent flake.
+import { formatDateTimeMedium } from "./format-date";
+// R67 D-74/G-05 reconciliation: the org helpers used to return their own
+// em-dash literal while format-number.ts/format-money.ts returned an EN-dash,
+// so one screen could show two different "no value" marks depending on which
+// helper wrote the cell. There is one mark now, and it is asserted through the
+// constant rather than re-typed, so the two cannot drift apart again.
+import { EMPTY_VALUE } from "./format-number";
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_ORG_DATE_FORMAT,
@@ -86,10 +93,10 @@ describe("formatDateTimeOrg", () => {
   });
 
   test("an absent or unparseable value renders an en-dash, never the string 'Invalid Date'", () => {
-    expect(formatDateTimeOrg(null)).toBe("—");
-    expect(formatDateTimeOrg(undefined)).toBe("—");
-    expect(formatDateTimeOrg("")).toBe("—");
-    expect(formatDateTimeOrg("not a date")).toBe("—");
+    expect(formatDateTimeOrg(null)).toBe(EMPTY_VALUE);
+    expect(formatDateTimeOrg(undefined)).toBe(EMPTY_VALUE);
+    expect(formatDateTimeOrg("")).toBe(EMPTY_VALUE);
+    expect(formatDateTimeOrg("not a date")).toBe(EMPTY_VALUE);
   });
 
   test("is deterministic for a fixed (locale, timeZone) pair -- the property that keeps it hydration-safe", () => {
@@ -130,8 +137,8 @@ describe("formatOrgDate", () => {
   });
 
   test("an absent or unparseable value renders an en-dash", () => {
-    expect(formatOrgDate(null)).toBe("—");
-    expect(formatOrgDate("not a date")).toBe("—");
+    expect(formatOrgDate(null)).toBe(EMPTY_VALUE);
+    expect(formatOrgDate("not a date")).toBe(EMPTY_VALUE);
   });
 });
 
@@ -141,6 +148,25 @@ describe("formatDateOrg", () => {
   });
 
   test("shares the en-dash rule", () => {
-    expect(formatDateOrg(null)).toBe("—");
+    expect(formatDateOrg(null)).toBe(EMPTY_VALUE);
+  });
+});
+
+describe("formatDateTimeMedium (the meeting / MoM shape)", () => {
+  test("pins BOTH the locale and the time zone", () => {
+    expect(formatDateTimeMedium("2026-08-25T14:30:00.000Z")).toBe("Aug 25, 2026, 2:30 PM");
+  });
+
+  test("a timestamp near midnight UTC keeps ONE calendar day, whatever the runtime's zone", () => {
+    // This is the half of the bug that pinning the locale alone left behind:
+    // 23:30 UTC is the next day in Asia/Dubai, so an unpinned formatter would
+    // render a different DATE on the server pass than in the browser.
+    expect(formatDateTimeMedium("2026-08-25T23:30:00.000Z")).toBe("Aug 25, 2026, 11:30 PM");
+  });
+
+  test("accepts a Date and a numeric timestamp, like its siblings", () => {
+    const iso = "2026-08-25T14:30:00.000Z";
+    expect(formatDateTimeMedium(new Date(iso))).toBe(formatDateTimeMedium(iso));
+    expect(formatDateTimeMedium(new Date(iso).getTime())).toBe(formatDateTimeMedium(iso));
   });
 });

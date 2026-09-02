@@ -27,29 +27,34 @@
 //    Breakdown % encode the whole sub-task model and nothing on screen said
 //    so. The help line does.
 //  * "✕" WAS THE ONLY WAY TO REMOVE A LINE. A glyph with no accessible name.
-//  * CATEGORY COULD NOT BE SET AT ALL. LineItemDraft has carried `activityId`
-//    and toPayloadLineItems has forwarded it since this file was written, but
-//    no input ever set it -- so every BOQ created here had uncategorised
-//    lines, and the Work Progress report's Category-wise view had nothing to
-//    group by. The select is fed from the project's REAL activity list
-//    (/api/work-progress/activities), the same source the progress form uses.
+//  * CATEGORY COULD NOT BE SET AT ALL. Every BOQ created here had
+//    uncategorised lines, so the Work Progress report's Category-wise view had
+//    nothing to group by.
+//
+// R67 I-05 (R-177) answers that last point properly, and this file keeps its
+// answer rather than the interim one: the category is the LINE'S OWN
+// registered category (construction_boq_line_items.category, with the org's
+// list served by /api/scope/categories), through the shared BoqCategorySelect
+// that /scope/revise also uses -- so the two screens cannot drift into
+// different behaviour for the same field. The earlier `activityId` select is
+// gone: a BOQ line's category is a first-class column now, not a link to a
+// work-progress activity that may not exist yet.
 //
 // The greying of Qty/Rate on a sub-task row was already right; it keeps its
 // behaviour and gains the reason in words rather than only in a title
 // attribute.
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson } from "@/lib/fetch-json";
 import { useSubmit, formFailure } from "@/lib/use-submit";
 import { emptyLine, childPercentSum, collectLines, toPayloadLineItems, type LineItemDraft } from "@/lib/boq-helpers";
+import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
-
-type Activity = { id: string; name: string; unit: string | null };
 
 const FIELDS: CreateField[] = [
   {
@@ -68,13 +73,17 @@ const SUB_TASK_REASON = "derived from the root line";
  * What the line grid still needs, in the words the header row uses. Returned
  * as labels so they can go straight into the primary's own label -- an empty
  * form reads "Save (Title, Description, Qty, Rate)".
+ *
+ * Category is deliberately NOT among them. R67 I-05's own rule is that a line
+ * with no category is never blocked from saving: the gap is made VISIBLE (the
+ * control reads "no category") rather than made fatal.
  */
 function missingLineFields(lines: LineItemDraft[]): string[] {
   const val = (s: string | undefined) => (s ?? "").trim();
   const touched = lines.filter(
     (l) =>
       val(l.description) || val(l.unit) || val(l.quantity) || val(l.rate) ||
-      val(l.itemCode) || val(l.parentItemCode) || val(l.breakdownPercentage)
+      val(l.itemCode) || val(l.parentItemCode) || val(l.breakdownPercentage) || val(l.category)
   );
   // A BOQ with no lines at all is legitimate to the backend, but it is not
   // what someone opening this screen means to create, and R-257 lists "at
@@ -97,35 +106,37 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [activitiesError, setActivitiesError] = useState<string | null>(null);
+  // R67 I-05 (R-177): the org's registered category list, shared with
+  // /scope/revise so both screens offer exactly the same vocabulary.
+  const { categories, failed: categoriesFailed, addLocal } = useBoqCategories();
   // A line the form can see is wrong, checked before anything is sent. Kept
   // apart from the submit's own failure so a local complaint and a server
   // refusal can never be mistaken for one another.
   const [lineError, setLineError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const data = await fetchJson<{ activities?: Activity[] }>(
-          `/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`
-        );
-        if (live) setActivities(Array.isArray(data.activities) ? data.activities : []);
-      } catch (err) {
-        // Category is optional, so a failed lookup must not block the save --
-        // but it must be SAID, rather than leaving an empty select that looks
-        // like a project with no activities.
-        if (live) setActivitiesError(err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [projectId]);
-
   function updateLine(index: number, field: keyof LineItemDraft, value: string) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
+  }
+
+  // "Add new" registers the category org-wide so it is offered on every other
+  // line and on the next BOQ. A failure to register is NOT fatal and NOT
+  // silent: the name still lands on this line (nothing the user typed is
+  // lost), and the toast says the list was not updated.
+  async function registerCategory(name: string) {
+    addLocal(name);
+    try {
+      const res = await fetch("/api/scope/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok && res.status !== 409) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? `"${name}" was applied to this line but could not be added to the category list.`);
+      }
+    } catch {
+      toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
+    }
   }
 
   // How many lines the submit sent, so the response can be checked against
@@ -199,11 +210,6 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
         <p className="text-xs text-px-muted">
           Parent Item Code links a sub-task to its root line; Breakdown % is its share of the root&apos;s quantity
         </p>
-        {activitiesError && (
-          <p role="alert" className="text-xs text-px-error">
-            Could not load this project&apos;s categories: {activitiesError}. Lines can still be saved without one.
-          </p>
-        )}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
@@ -238,21 +244,24 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <select
-                        aria-label={`Category, line ${i + 1}`}
-                        className="h-9 w-[150px] rounded-md border border-px-border bg-white px-2 text-sm"
-                        value={line.activityId ?? ""}
-                        onChange={(e) => updateLine(i, "activityId", e.target.value)}
-                      >
-                        <option value="">
-                          {activities.length ? "Uncategorised" : "No categories yet"}
-                        </option>
-                        {activities.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
+                      {/* R67 I-05: the org's registered list, with an inline
+                          "+ Add new" so someone typing a category the org has
+                          not registered yet does not have to leave the form and
+                          lose their lines. A blank one is never blocked -- the
+                          control itself reads "no category", so the gap is
+                          visible rather than silent. If the list fails to load
+                          the control degrades to free text: a broken lookup
+                          must never stop someone entering a BOQ. The visible
+                          label lives in the header row above, so showLabel
+                          stays false on every row and the control keeps its
+                          per-row aria-label. */}
+                      <BoqCategorySelect
+                        value={line.category ?? ""}
+                        categories={categories}
+                        failed={categoriesFailed}
+                        onChange={(next) => updateLine(i, "category", next)}
+                        onAddNew={registerCategory}
+                      />
                     </td>
                     <td className="px-1 py-1">
                       <Input

@@ -46,7 +46,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
+import { MoneyInput } from "@/components/ui/money-input";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 import { createSaveLabel, missingCreateFields, type CreateField, type CreateFiles, type CreateValues } from "@/lib/create-screen";
 import { saveDisabledReason } from "@/lib/save-label";
@@ -93,6 +96,17 @@ export type CreateScreenProps = {
   onCancel?: () => void;
   /** An action rendered beside Save -- C-15's "Set up in VERIDIAN" link. */
   secondaryAction?: React.ReactNode;
+  /**
+   * The org's money settings, for any field of kind "money" (R67 G-05).
+   *
+   * Passed in rather than read here with useOrgMoney(): that hook mounts its
+   * own /api/currencies fetch, and eleven of the thirteen create screens have
+   * no money field at all. A screen that HAS one calls the hook and hands the
+   * answer down. With nothing passed, a money box shows NO currency token and
+   * no warning glyph -- an unlabelled number is recoverable, a confidently
+   * wrong code is not.
+   */
+  money?: { currency: string | null; loaded?: boolean; currencySet?: boolean };
 };
 
 export function CreateScreen({
@@ -115,6 +129,7 @@ export function CreateScreen({
   onSubmit,
   onCancel,
   secondaryAction,
+  money,
 }: CreateScreenProps) {
   const router = useRouter();
   const [touched, setTouched] = useState<Record<string, string | null>>({});
@@ -158,6 +173,10 @@ export function CreateScreen({
                   >
                     <Label htmlFor={field.name}>
                       {field.label}
+                      {/* R67 G-05: the code goes in the LABEL as well as the
+                          box, so a screen reader hears "Unit Cost, AED" and
+                          not "AED" as a stray word before an unlabelled box. */}
+                      {field.kind === "money" && money?.currency ? ` (${money.currency})` : ""}
                       {/* R-257: "Optional fields carry no marker" is the rule
                           for ASTERISKS. The word is the opposite -- it tells
                           the user they may skip the field, which is the
@@ -177,17 +196,37 @@ export function CreateScreen({
                           setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
                         }
                       />
+                    ) : field.kind === "select" && field.loading ? (
+                      /* R67 G-04 (R-231): while the options are in flight the
+                         control is a disabled skeleton in the select's own
+                         shape. It cannot be opened onto an empty menu (which
+                         reads exactly like "there is nothing to choose"), and
+                         it puts NO WORD in the value slot -- "Loading…" there
+                         reads as a chosen answer. Nothing moves when the real
+                         select replaces it: same height, same width. */
+                      <div
+                        id={field.name}
+                        aria-busy="true"
+                        aria-disabled="true"
+                        aria-label={`${field.label}, loading`}
+                        data-testid={field.testId ? `${field.testId}-loading` : undefined}
+                        className="flex h-9 w-full items-center rounded-md border border-px-border bg-white px-3 opacity-60"
+                      >
+                        <Skeleton className="h-4 w-28" />
+                      </div>
                     ) : field.kind === "select" ? (
                       <select
                         id={field.name}
                         name={field.name}
                         value={value}
+                        disabled={field.disabled}
+                        data-testid={field.testId}
                         aria-describedby={describedBy || undefined}
                         onChange={(e) => onChange(field.name, e.target.value)}
                         onBlur={() =>
                           setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
                         }
-                        className="h-9 w-full rounded-md border border-px-border bg-white px-3 text-sm"
+                        className="h-9 w-full rounded-md border border-px-border bg-white px-3 text-sm disabled:opacity-60"
                       >
                         <option value="">{field.placeholder ?? "Choose…"}</option>
                         {(field.options ?? []).map((o) => (
@@ -196,6 +235,33 @@ export function CreateScreen({
                           </option>
                         ))}
                       </select>
+                    ) : field.kind === "money" ? (
+                      /* R67 G-05 (R-260): the currency sits inside the box,
+                         beside the caret, so it is still visible while the
+                         number is being typed -- a placeholder vanishes on
+                         the first keystroke, which is exactly when the unit
+                         matters. The prefix is NOT part of the value. */
+                      <div className="space-y-1">
+                        <MoneyInput
+                          id={field.name}
+                          name={field.name}
+                          currency={money?.currency ?? null}
+                          pending={money ? money.loaded === false : true}
+                          value={value}
+                          placeholder={field.placeholder}
+                          aria-describedby={describedBy || undefined}
+                          onChange={(e) => onChange(field.name, e.target.value)}
+                          onBlur={() =>
+                            setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
+                          }
+                        />
+                        {money && (
+                          <CurrencyNotSetNotice
+                            currencySet={money.currencySet ?? true}
+                            loaded={money.loaded ?? true}
+                          />
+                        )}
+                      </div>
                     ) : field.kind === "file" ? (
                       <div className="space-y-1">
                         <Input

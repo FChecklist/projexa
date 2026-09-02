@@ -8,7 +8,15 @@
 // permits.list row server-side via VERIDIAN's /screen-definitions/
 // permits.list and passes it down as `registryColumns`. COLUMNS below is
 // now ONLY the fallback for when that row doesn't exist yet (404) or the
-// call errors.
+// call errors -- kept, per r43_queue seq2's own instruction, until the
+// registry path is verified live, then removable in a follow-up PR once
+// every screen using this pattern has a seeded row.
+//
+// R67 G-01 (R-017): the "Days left" cell no longer renders a bare signed
+// number in a coloured chip. See src/components/permit-status.ts for what
+// changed and why; this file only renders what that module decides, and adds
+// the two things a pure function cannot: the header band (status at header
+// level as well as item level) and the filtered-view banner.
 //
 // ─── R67 D-65 / D-59 / D-71: THE READ IS NO LONGER ALLOWED TO LIE ───────
 //
@@ -35,13 +43,22 @@
 // D-71 finishes the job: the twenty lines of load-state bookkeeping that
 // stood here are now useListRead(), the one shared list hook, so the rule
 // lives in a tested module instead of being re-typed per screen.
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { PaneState } from "@/components/PaneState";
 import { useListRead } from "@/lib/use-list-read";
 import { recordCountLabel } from "@/lib/pane-state";
+import { StatusPillTone } from "@/components/ui/status-pill";
+import {
+  parseWithinDays,
+  permitHeaderParts,
+  permitStatus,
+  permitStatusCounts,
+  sortByExpiryAscending,
+} from "@/components/permit-status";
 
 type Permit = {
   id: string;
@@ -64,15 +81,10 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Authority", field: "permitAuthority", type: "text", importance: "High" },
   { label: "Issue date", field: "issueDate", type: "date", importance: "High" },
   { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
-  { label: "Days left", field: "daysToExpiry", type: "number", importance: "High" },
+  // R67 G-01: was "Days left", which promised a number. The cell now answers
+  // a question, so the header asks one.
+  { label: "Status", field: "daysToExpiry", type: "text", importance: "High" },
 ];
-
-function daysLeftTone(days: number | null): StatusTone {
-  if (days === null) return "neutral";
-  if (days < 0) return "late";
-  if (days <= 30) return "needs-you";
-  return "done";
-}
 
 export default function PermitsListClient({
   projectId,
@@ -106,6 +118,25 @@ export default function PermitsListClient({
     select: (body) => (body as { permits?: Permit[] } | null)?.permits,
   });
 
+  // R67 G-01: "Default the sort to endDate ascending so the most urgent
+  // permit is first." Done here rather than asking the API for an order,
+  // because the header counts below are computed from these same rows -- one
+  // array, so the summary and the list can never disagree.
+  const rows = useMemo(() => sortByExpiryAscending(permits), [permits]);
+
+  // The dashboard's "Permits Expiring" KPI lands here with ?withinDays=30.
+  // Arriving on a filtered list with no way to tell it IS filtered is how a
+  // user concludes the project has three permits when it has eleven.
+  //
+  // The route accepts any N, so the WINDOW is read from the parameter and then
+  // used everywhere -- the banner sentence, the header clause and the row
+  // chips all take the same N. Hard-coding 30 in the sentence while the API
+  // filtered on 60 would print "within 30 days" over a 60-day list.
+  const filtered = Boolean(withinDays);
+  const windowDays = parseWithinDays(withinDays);
+  const counts = useMemo(() => permitStatusCounts(rows, windowDays), [rows, windowDays]);
+  const headerParts = permitHeaderParts(counts, windowDays);
+
   return (
     <ScreenFrame
       breadcrumb="Permits"
@@ -116,8 +147,52 @@ export default function PermitsListClient({
       // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
       // Filter/Export aren't built for this module yet -- say so instead of
       // faking availability.
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      // R67 D-59: "(Not yet available)" was the placeholder on both, and the
+      // shared ListHeaderActions on Labour/Materials/Schedule says something
+      // real. Two conventions for the same disabled control is the finding.
+      // Export names the honest reason it has TODAY -- an empty list has
+      // nothing to export -- and falls back to the not-built sentence.
+      exportAction={{
+        label: "Export",
+        disabledReason: permits.length === 0 ? "Export — no rows to export" : "Exporting permits is not built yet",
+      }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering permits is not built yet" }}
+      // R67 G-01: status at HEADER level as well as item level. Same three
+      // glyphs, same three tones, same counts as the rows beneath -- so the
+      // answer to "is anything wrong here" costs no scanning.
+      // Gated on a SUCCESSFUL read, not merely on "not loading": over a 500
+      // the counts are all zero, and this band would then assert "No permits
+      // on this project yet." -- the same false-empty claim D-65 removed from
+      // the list itself.
+      headerMessageStrip={
+        status !== "ready" ? null : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {filtered && (
+              <span className="flex flex-wrap items-center gap-2">
+                <span>Showing permits expiring within {windowDays} days</span>
+                {/* A word-link, not an icon and not a chip: it drops the
+                    parameter and shows the whole list. */}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/permits?projectId=${encodeURIComponent(projectId)}`)}
+                  className="underline underline-offset-2 hover:no-underline"
+                  style={{ color: "var(--brand-text)" }}
+                >
+                  Show all
+                </button>
+                {headerParts.length > 0 && <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>|</span>}
+              </span>
+            )}
+            {headerParts.map((part, i) => (
+              <span key={part.key} className="flex items-center gap-3">
+                {i > 0 && <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>-</span>}
+                <StatusPillTone tone={part.tone} label={part.text} />
+              </span>
+            ))}
+            {headerParts.length === 0 && !filtered && <span>No permits on this project yet.</span>}
+          </div>
+        )
+      }
       messages={[]}
     >
       <div className="px-1 pb-1">
@@ -141,18 +216,21 @@ export default function PermitsListClient({
           }
           onRetry={reload}
         >
+          {/* R67 G-01: the rows are the SORTED ones, so the list and the
+              header counts above are computed from one array and cannot
+              disagree. The cell renders what permit-status.ts decides -- a
+              glyph and words, never a bare signed number in a chip. */}
           <ListScreen
             functionId="permits.list"
             columns={columns}
-            rows={permits as unknown as Record<string, unknown>[]}
+            rows={rows as unknown as Record<string, unknown>[]}
             getRowId={(row) => row.id as string}
             onRowClick={(row) => router.push(`/permits/${row.id}`)}
             emptyStateLabel="No permits yet for this project."
             renderCell={{
               daysToExpiry: (row) => {
-                const days = (row as unknown as Permit).daysToExpiry;
-                const tone = daysLeftTone(days);
-                return <StatusBadge tone={tone} label={days === null ? "—" : `${days} day${days === 1 ? "" : "s"}`} />;
+                const rowStatus = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
+                return <StatusPillTone tone={rowStatus.tone} label={rowStatus.label} />;
               },
             }}
           />

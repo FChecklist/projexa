@@ -37,6 +37,8 @@
 // no per-org/per-user time zone preference anywhere in this codebase to
 // prefer instead. Existing numeric `.toLocaleString("en-US", ...)` call
 // sites are unaffected by this file; they were already hydration-safe.
+import { EMPTY_VALUE } from "@/lib/format-number";
+
 const FIXED_LOCALE = "en-US";
 const FIXED_TIME_ZONE = "UTC";
 
@@ -53,6 +55,26 @@ export function formatDateTime(value: Date | string | number): string {
 /** e.g. "2:30 PM" -- identical on server and client, any visitor. */
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
+}
+
+/**
+ * e.g. "Sep 2, 2026, 2:30 PM" -- the meeting/MoM shape.
+ *
+ * R67 G-05 (R-260): MeetingsClient and MeetingObjectClient each carried their
+ * own private copy of this, written as
+ * `toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })`.
+ * Pinning the locale but NOT the time zone fixes half the bug and leaves the
+ * worse half: the SSR pass renders in the server's zone (UTC) and the browser
+ * in the visitor's, so a meeting at 23:30 UTC is stamped with a different
+ * clock time -- and, near a day boundary, a different DATE -- on the two
+ * passes. Both now call this, which pins both.
+ */
+export function formatDateTimeMedium(value: Date | string | number): string {
+  return new Date(value).toLocaleString(FIXED_LOCALE, {
+    timeZone: FIXED_TIME_ZONE,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 // ─── R67 D-16: the ORG's date, not the server's ──────────────────────────
@@ -92,7 +114,7 @@ export function formatDateTimeOrg(
   timeZone: string = DEFAULT_ORG_TIME_ZONE
 ): string {
   const date = toValidDate(value);
-  if (!date) return "—";
+  if (!date) return EMPTY_VALUE;
   return new Intl.DateTimeFormat(locale, {
     timeZone,
     day: "2-digit",
@@ -111,7 +133,7 @@ export function formatDateOrg(
   timeZone: string = DEFAULT_ORG_TIME_ZONE
 ): string {
   const date = toValidDate(value);
-  if (!date) return "—";
+  if (!date) return EMPTY_VALUE;
   return new Intl.DateTimeFormat(locale, { timeZone, day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
@@ -142,7 +164,7 @@ export function formatOrgDate(
   timeZone: string = DEFAULT_ORG_TIME_ZONE
 ): string {
   const date = toValidDate(value);
-  if (!date) return "—";
+  if (!date) return EMPTY_VALUE;
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone,
     day: "2-digit",

@@ -50,15 +50,41 @@
 // this file changing again. Currency is different: it IS real, from
 // /api/currencies, and is therefore never defaulted -- see formatMoney.
 
+// ─── ONE MONEY MODULE, NOT TWO ───────────────────────────────────────────
+//
+// This file briefly carried its own formatMoney(value, currency?, options?)
+// with a different rule (whole amounts to 0 decimals, "AED 7,500"). r67(G)
+// shipped src/lib/format-money.ts to main with the opposite rule -- two
+// decimals always, so a column lines up on the point -- which is also D-39's
+// own stated acceptance ("formatMoney(21750, aedCurrencies) === 'AED
+// 21,750.00'"). Two modules exporting the same name with contradictory output
+// IS the "one value type rendered three ways on one module" defect this
+// programme exists to remove, so there is now exactly one implementation and
+// this file re-exports it. Its `fractionDigits` covers the whole-unit case a
+// headline KPI wants; nothing needs a second formatter.
 import { DEFAULT_ORG_DATE_FORMAT, DEFAULT_ORG_TIME_ZONE, formatOrgDate } from "@/lib/format-date";
+import { EMPTY_VALUE } from "@/lib/format-money";
 
 export { DEFAULT_ORG_DATE_FORMAT, DEFAULT_ORG_TIME_ZONE };
+export {
+  formatMoney,
+  formatQty,
+  formatSignedMoney,
+  currencyUnitSuffix,
+  MONEY_CELL_CLASS,
+  type MoneyFormat,
+} from "@/lib/format-money";
 
 /** The org's number grouping. "en-GB" groups 7500 as "7,500". */
 export const DEFAULT_ORG_LOCALE = "en-GB";
 
-/** What a cell shows when the value is genuinely unset. Never "Invalid Date". */
-export const EMPTY_CELL = "—";
+/**
+ * What a cell shows when the value is genuinely unset. Never "Invalid Date".
+ * The SAME glyph the money and number formatters use -- a screen must not
+ * show two different "no value" marks depending on which helper wrote the
+ * cell, which is why this is an alias rather than its own constant.
+ */
+export const EMPTY_CELL = EMPTY_VALUE;
 
 export type DateFormatOptions = {
   /** IANA zone. The calendar day is resolved in it, so a timestamp and a
@@ -106,49 +132,6 @@ export function formatClock(value: Date | string | number | null | undefined, tz
     // "24:00" in some ICU builds, which is a time that does not exist.
     hourCycle: "h23",
   }).format(date);
-}
-
-export type MoneyFormatOptions = {
-  locale?: string;
-  /**
-   * Force a fixed number of decimals. Left unset, a whole amount renders
-   * whole ("AED 7,500") and a fractional one to two places ("AED 28.50") --
-   * money is never shown to one decimal place.
-   */
-  decimals?: number;
-};
-
-/**
- * "AED 7,500". Grouping comes from the org locale; the CURRENCY CODE is
- * passed in and never guessed.
- *
- * WHY NO DEFAULT CURRENCY. src/lib/currency.ts states the rule this follows:
- * "NEVER render a currency token we cannot source... An unlabelled '1,000' is
- * recoverable -- the reader knows something is missing. A confidently wrong
- * '₹1,000' is not: it reads as fact." So an absent code renders the bare
- * grouped number, and callers pass currencyLabel()'s resolved code.
- *
- * A value that is not a number renders an en-dash rather than "NaN": a cell
- * that cannot say what something cost must not print a figure.
- */
-export function formatMoney(
-  value: string | number | null | undefined,
-  currency?: string | null,
-  options: MoneyFormatOptions = {}
-): string {
-  const amount = typeof value === "number" ? value : Number((value ?? "").toString().trim());
-  if (value === null || value === undefined || value === "" || !Number.isFinite(amount)) return EMPTY_CELL;
-
-  const decimals = options.decimals ?? (Number.isInteger(amount) ? 0 : 2);
-  const number = new Intl.NumberFormat(options.locale ?? DEFAULT_ORG_LOCALE, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(amount);
-
-  // The code carries a trailing space in currencyLabel()'s own convention,
-  // so it is trimmed here rather than producing "AED  7,500".
-  const code = (currency ?? "").trim();
-  return code ? `${code} ${number}` : number;
 }
 
 /**

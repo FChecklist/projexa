@@ -241,6 +241,14 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/scope/[id]/approve": "PM_OR_ABOVE",
   "/scope/[id]/revisions": "PM_OR_ABOVE",
   "/scope/[id]/submit": "PM_OR_ABOVE",
+  // R67 lane I (WS-I item I-05, R-177): the org's BOQ category list. Same tier
+  // as the BOQ itself -- renaming a category rewrites every BOQ line carrying
+  // it, and deleting one is refused only when it is in use, so this is
+  // commercial master data, not a field-level setting. The "+ Add new" flow on
+  // a BOQ line row POSTs here too, which is correct: someone entering a BOQ is
+  // already PM_OR_ABOVE by the "/scope" entry above.
+  "/scope/categories": "PM_OR_ABOVE",
+  "/scope/categories/[id]": "PM_OR_ABOVE",
   // NOTE (recorded, not fixed here): this route has zero callers anywhere in
   // src -- BOQ import exists only as a direct API surface with no
   // click-reachable UI. Gating it does not make it reachable; that is a

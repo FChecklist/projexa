@@ -80,7 +80,7 @@ export default function CustomersClient() {
                 {customers.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">
-                      <Link href={`/customers/${c.id}`} className="hover:text-px-orange hover:underline">{c.customerName}</Link>
+                      <Link href={`/customers/${c.id}`} className="hover:text-brand-text hover:underline">{c.customerName}</Link>
                     </TableCell>
                     {isIndiaOrg && <TableCell className="text-px-muted">{c.gstin ?? "—"}</TableCell>}
                     <TableCell className="text-px-muted">{c.creditLimit ? `${currencyLabel(undefined, currencies)}${Number(c.creditLimit).toLocaleString("en-US")}` : "—"}</TableCell>

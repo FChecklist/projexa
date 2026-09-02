@@ -3,13 +3,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
-import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate, formatMoney } from "@/lib/format";
+// R67 D-74 keeps the ORG date form; R67 G-05 owns the money.
+import { formatDate } from "@/lib/format";
+import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
@@ -76,8 +79,18 @@ type BoqComparison = {
   warnings: string[]; totalVariation: number;
 };
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
+// R67 G-05 (R-260). This was shadcn Badge variants, and the worst of them was
+// `superseded: "destructive"` -- a BRIGHT RED badge on every superseded BOQ
+// revision. Rose is reserved for late and error; a superseded revision is not
+// a fault, it is history, and painting it red made every project with a
+// revision look like it had a problem. `submitted: "default"` was the saffron
+// primary fill, which made a passive state look like the screen's one action.
+// Both now come from the single status map in ui/status-pill.tsx.
+const BOQ_STATUS: Record<string, SemanticStatus> = {
+  draft: "draft",
+  submitted: "running",
+  approved: "current",
+  superseded: "superseded",
 };
 
 // R66 visual QA (2026-09-02): reproduced live on a real project's BOQ list --
@@ -97,13 +110,12 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-// R67 D-74: a THIRD copy of the same figure, and the only one still on
-// `toLocaleString(undefined, ...)` -- the runtime's locale, which differs
-// between the server pass and the visitor's browser. It is the shared one now.
-function formatVariation(amount: number): string {
-  const sign = amount > 0 ? "+" : "";
-  return `${sign}${formatMoney(amount)}`;
-}
+// R67 G-05 / D-74: formatVariation() lived here and passed `undefined` as the
+// locale -- the exact hydration bug src/lib/format-date.ts exists to prevent,
+// since the server formats in ITS locale and the browser in the visitor's. It
+// also carried its meaning in colour (green for up, red for down). Both are
+// gone: the figure now comes from the one money formatter, and its DIRECTION
+// is a glyph plus an explicit sign ("▲ AED +2,025"), rendered in ink.
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level
 // helpers (create/revise line drafting, budget/vendor overlay, derived
@@ -141,8 +153,7 @@ export default function ScopeClient({
   const [variationByBoqId, setVariationByBoqId] = useState<Record<string, number>>({});
 
 
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  const orgMoney = useOrgMoney();
 
   async function load() {
     setStatus("loading");
@@ -223,9 +234,17 @@ export default function ScopeClient({
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
-                  <TableHead>{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
+                  {/* R67 G-05: the unit lives in the column header, not
+                      repeated down every row. */}
+                  <TableHead className="text-right">
+                    {columnLabel(boqListColumns, "variation", "Variation vs. prior")}
+                    {orgMoney.unitSuffix}
+                  </TableHead>
                   <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  {/* R67 G-04: a minimum width, so the three action labels
+                      never truncate to "Ne...". The TABLE scrolls; the
+                      actions do not. */}
+                  <TableHead className="w-[300px] min-w-[300px] whitespace-nowrap text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -235,18 +254,26 @@ export default function ScopeClient({
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
-                      <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
                       <TableCell>
+                        {BOQ_STATUS[b.status] ? (
+                          <StatusPill status={BOQ_STATUS[b.status]} label={b.status} />
+                        ) : (
+                          <StatusPillTone tone="neutral" label={b.status} />
+                        )}
+                      </TableCell>
+                      <TableCell className={MONEY_CELL_CLASS}>
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
                         ) : variation === undefined ? (
-                          <span className="text-px-muted">—</span>
+                          <span className="text-px-muted">{EMPTY_VALUE}</span>
                         ) : (
-                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
+                          // In ink, with the direction in the glyph and the
+                          // sign -- not in the colour.
+                          <span className="text-ct-navy">{orgMoney.signedMoney(variation)}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-px-muted">{formatDate(b.createdAt)}</TableCell>
-                      <TableCell className="text-right space-x-1">
+                      <TableCell className="w-[300px] min-w-[300px] whitespace-nowrap text-right space-x-1">
                         {/* Real screen navigation (2026-08-30) -- replaces the old
                             "View" Dialog popup with a real Object Page route,
                             same as PermitObjectClient's proven pattern. */}
@@ -262,6 +289,10 @@ export default function ScopeClient({
           </PaneState>
         </CardContent>
       </Card>
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

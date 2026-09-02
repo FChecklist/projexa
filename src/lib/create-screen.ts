@@ -14,13 +14,24 @@
 // still missing, and what the user is told after a save -- and nothing about
 // rendering, so both can be asserted without a DOM or a router.
 
+import type { ReactNode } from "react";
 import { saveLabel } from "@/lib/save-label";
 
-/** The kinds of input the archetype renders. Deliberately small. */
+/**
+ * The kinds of input the archetype renders. Deliberately small.
+ *
+ * R67 G-05 (R-260) merge: "money" is a distinct kind from "number" because a
+ * money box owes the reader the currency CODE inside the box, beside the
+ * caret, for as long as they are typing -- a placeholder disappears on the
+ * first keystroke, which is exactly when the unit matters most. The archetype
+ * renders it through src/components/ui/money-input.tsx, so the thirteen create
+ * screens cannot each decide differently.
+ */
 export type CreateFieldKind =
   | "text"
   | "textarea"
   | "number"
+  | "money"
   | "date"
   | "time"
   | "datetime-local"
@@ -35,9 +46,24 @@ export type CreateField = {
   kind: CreateFieldKind;
   required?: boolean;
   placeholder?: string;
-  /** A sentence under the field. Where a term needs explaining, explain it here. */
-  help?: string;
+  /**
+   * A sentence under the field. Where a term needs explaining, explain it
+   * here. A node rather than a string so a field whose options failed to load
+   * can put a Retry alongside its own explanation, instead of the screen
+   * growing a second error region for one control.
+   */
+  help?: ReactNode;
   options?: { value: string; label: string }[];
+  /**
+   * R67 G-04 (R-231) merge: a select whose options are still arriving renders
+   * a disabled skeleton in the control's own shape rather than putting a word
+   * like "Loading…" in the VALUE SLOT, where it reads as a chosen answer.
+   */
+  loading?: boolean;
+  /** A control there is nothing to choose in yet. It still shows its placeholder. */
+  disabled?: boolean;
+  /** Stable hook for the browser-level specs that assert this control's states. */
+  testId?: string;
   accept?: string;
   /** Full-width rather than half. */
   wide?: boolean;

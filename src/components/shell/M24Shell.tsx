@@ -25,7 +25,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
-  Composer,
   COMPOSER_PILLS_BAND_RESERVE,
   PillStrip,
   TaskMaster,
@@ -43,6 +42,16 @@ import {
   type TaskRow,
   type TaskTab,
 } from "@fchecklist/veridian-ui-kit/shell";
+// R67 G-04, programme decision D-09: Composer (and, through it, ControlStrip)
+// is PROJEXA'S FORK of the kit file, because the kit is an unpublished git
+// dependency whose source is not on this machine. The fork fixes two things
+// the kit cannot be asked to fix in this programme: the Send button's
+// white-on-saffron 2.60:1 text, and a disabled reason that rendered at 11px
+// in the bottom-left corner (behind Next's development badge) and was absent
+// entirely when the button was disabled for an empty input. EVERYTHING ELSE
+// -- AppShell, TopRail, TaskMaster, PillStrip, HistoryDrop, the chain API --
+// is still the kit's, imported above.
+import { Composer } from "@/components/shell/Composer";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -906,12 +915,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             </div>
           }
           onSubmit={onSubmit}
+          // R67 G-04: EXACTLY ONE INSTRUCTION PER STATE. The order is
+          // most-specific-first, so a real server refusal is never hidden
+          // behind a generic prompt:
+          //   1. the server said no        -> its own words
+          //   2. the request is in flight  -> "Sending…"
+          //   3. nothing to run it against -> "Pick a project or a module first"
+          // The fourth state -- nothing typed yet -- is the one the kit left
+          // silent, and the fork's emptyInputReason below now covers it, so
+          // there is no state in which Send is dead and unexplained.
           disabledReason={
             submitError ??
             // R67 D-66: the rail is where a project is chosen, so the reason
             // names that control rather than leaving the user to find it.
             (submitting ? "Sending…" : projectId || pendingFunctionId ? undefined : "Pick a project in the top bar")
           }
+          // With a module armed there is something to run, so an empty
+          // input is a real submission and Send stays live -- which is what
+          // the placeholder has always claimed. Without one, the empty input
+          // is genuinely blocking and gets the sentence that says so.
+          allowEmptySubmit={Boolean(pendingFunctionId)}
+          emptyInputReason="Type what you need, then press Send."
           placeholder={
             pendingFunctionId
               ? "Press send to run this, or add detail first…"

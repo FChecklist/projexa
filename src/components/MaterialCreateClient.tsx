@@ -11,11 +11,22 @@
 // saw a form that had simply not saved and no reason why. And a successful
 // save lands on the object page with a persistent "Created material Cement
 // OPC 43" rather than a four-second notification.
+//
+// R67 G-05 (R-260), merged in from main rather than reverted: Unit is a
+// SELECT over the closed vocabulary in src/lib/material-units.ts, and Unit
+// Cost is a money box carrying the org's currency code as a fixed prefix.
+// The archetype's earlier free-text Unit field asked the user to solve by
+// discipline ("use the same word every time") a defect that is solved
+// structurally by not offering the wrong word -- "bag" and "Bag" split the
+// materials cost report into two rows for one material, and no total is
+// right afterwards.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { useSubmit } from "@/lib/use-submit";
+import { MATERIAL_UNITS } from "@/lib/material-units";
+import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
 
 const FIELDS: CreateField[] = [
@@ -24,17 +35,18 @@ const FIELDS: CreateField[] = [
   {
     name: "unit",
     label: "Unit",
-    kind: "text",
+    kind: "select",
     required: true,
-    placeholder: "e.g. bag, cum, kg",
-    help: "Use the same word every time — 'bag' and 'Bag' are two different units in the cost report.",
+    placeholder: "Pick a unit",
+    options: MATERIAL_UNITS,
   },
-  { name: "unitCost", label: "Unit Cost", kind: "number", placeholder: "e.g. 28.50" },
+  { name: "unitCost", label: "Unit Cost", kind: "money", placeholder: "e.g. 28.50" },
 ];
 
 export default function MaterialCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
+  const orgMoney = useOrgMoney();
 
   const moduleHref = `/materials?projectId=${projectId}`;
 
@@ -72,6 +84,7 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
       fields={FIELDS}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       failure={submit.failure}
       onRetry={submit.submit}
       saving={submit.saving}

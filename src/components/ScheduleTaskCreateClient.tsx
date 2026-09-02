@@ -10,13 +10,28 @@
 // sent -- so its failure does not block the save; it is simply no longer
 // silent, and the select says why it is empty instead of sitting on
 // "Loading…" forever.
+//
+// R67 G-04 (R-231) states the same rule more precisely and is kept whole:
+// the four states of the Type control, their one instruction each, and the
+// rule that "Loading…" is never a VALUE live in
+// src/lib/schedule-type-state.ts, where they are unit-tested, and are
+// rendered by the archetype's own select. Two situations that used to
+// collapse into one empty list -- "this org has no task types" and "the call
+// failed" -- now read differently, which is what
+// e2e/schedule-task-type-signage.spec.ts asserts in a browser.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { fetchJson } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
-import { PaneErrorCard } from "@/components/PaneState";
+import {
+  SCHEDULE_TYPE_HINT,
+  SCHEDULE_TYPE_PLACEHOLDER,
+  scheduleTypeDisabled,
+  scheduleTypesState,
+  type ScheduleTypesState,
+} from "@/lib/schedule-type-state";
 import type { CreateField } from "@/lib/create-screen";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
@@ -25,23 +40,24 @@ const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 export default function ScheduleTaskCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [types, setTypes] = useState<IssueType[]>([]);
-  const [typesError, setTypesError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [typesState, setTypesState] = useState<ScheduleTypesState>("loading");
   const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
 
   const loadTypes = useCallback(async () => {
-    setTypesError(null);
+    setTypesState("loading");
     try {
+      // fetchJson throws on a non-2xx. The old `.then((res) => res.json())`
+      // let a 502 fall through to `data.types ?? []`, so an upstream failure
+      // was displayed as "this org has no task types" -- different facts.
       const data = await fetchJson<{ types?: IssueType[] }>("/api/schedule/types");
       const loaded = data.types ?? [];
       setTypes(loaded);
       const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
       if (defaultType) setValues((v) => ({ ...v, typeId: v.typeId ?? defaultType.id }));
-    } catch (err) {
+      setTypesState(scheduleTypesState({ loaded, failed: false }));
+    } catch {
       setTypes([]);
-      setTypesError({
-        status: err instanceof ApiError ? err.status : null,
-        message: err instanceof Error && err.message ? err.message : null,
-      });
+      setTypesState(scheduleTypesState({ loaded: null, failed: true }));
     }
   }, []);
 
@@ -51,14 +67,38 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
 
   const moduleHref = `/schedule?projectId=${projectId}`;
 
+  const typeHint = SCHEDULE_TYPE_HINT[typesState];
   const fields: CreateField[] = [
     { name: "title", label: "Title", kind: "text", required: true, placeholder: "e.g. Pour foundation slab", wide: true },
     {
       name: "typeId",
       label: "Type",
       kind: "select",
-      placeholder: typesError ? "Could not be loaded — the project's default will be used" : "Select a type",
+      testId: "schedule-task-type",
+      loading: typesState === "loading",
+      disabled: scheduleTypeDisabled(typesState),
+      placeholder: SCHEDULE_TYPE_PLACEHOLDER[typesState],
       options: types.map((t) => ({ value: t.id, label: t.name })),
+      // The one instruction for this state, plus -- when the call FAILED
+      // rather than came back empty -- a way to ask again without losing the
+      // title already typed.
+      help: typeHint ? (
+        <>
+          {typeHint}
+          {typesState === "error" && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => void loadTypes()}
+                className="font-medium underline underline-offset-2"
+              >
+                Retry
+              </button>
+            </>
+          )}
+        </>
+      ) : undefined,
     },
     {
       name: "priority",
@@ -102,13 +142,6 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
-      // Type is optional and the server has its own default, so a failed
-      // read is reported without blocking the save.
-      banner={
-        typesError ? (
-          <PaneErrorCard entity="the task-type list" error={typesError} onRetry={() => void loadTypes()} />
-        ) : undefined
-      }
       failure={submit.failure}
       onRetry={submit.submit}
       saving={submit.saving}

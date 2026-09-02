@@ -66,11 +66,44 @@ describe("MaterialCreateClient on the create archetype", () => {
     }
   });
 
-  test("the unit field explains the trap that split the cost report", () => {
-    // 'bag' and 'Bag' were two units in the same project, and the cost
-    // report added them up separately.
+  // R67 G-05 (R-260). This test used to assert a HELP LINE reading "'bag' and
+  // 'Bag' are two different units in the cost report" under a free-text input
+  // -- which asked the user to solve by discipline a defect the product can
+  // simply not have. main shipped the structural fix (a closed vocabulary),
+  // and the merge keeps that: there is no wrong word to type, so there is
+  // nothing to warn about.
+  test("Unit is a closed vocabulary, not free text -- 'bag' and 'Bag' cannot both exist", () => {
     const { container } = render(<MaterialCreateClient projectId="p-cedar" />);
-    expect(container.textContent).toContain("'bag' and 'Bag' are two different units");
+    const unit = container.querySelector("#unit");
+    expect(unit?.tagName).toBe("SELECT");
+    // Not an input the user can type any spelling into.
+    expect(container.querySelector("input#unit")).toBeNull();
+
+    const options = Array.from(unit?.querySelectorAll("option") ?? []).map((o) => (o as HTMLOptionElement).value);
+    // The blank first option is the placeholder, not a unit.
+    expect(options[0]).toBe("");
+    expect(options).toContain("bag");
+    // Every offered value is the canonical lower-case string, so the cost
+    // report cannot end up grouping one material into several rows.
+    for (const value of options.slice(1)) {
+      expect(value).toBe(value.toLowerCase());
+    }
+    expect(options).not.toContain("Bag");
+    // And the old help line -- the instruction that stood in for the fix -- is
+    // gone rather than left beside a control that no longer needs it.
+    expect(container.textContent).not.toContain("are two different units");
+  });
+
+  test("Unit Cost carries the currency inside the box, not in a placeholder that vanishes", () => {
+    const { container } = render(<MaterialCreateClient projectId="p-cedar" />);
+    // The box exists and is a number input; the prefix slot is the archetype's
+    // money rendering rather than a plain <Input type="number">.
+    const cost = container.querySelector("#unitCost") as HTMLInputElement | null;
+    expect(cost).not.toBeNull();
+    expect(cost?.getAttribute("type")).toBe("number");
+    // With /api/currencies unanswered in this render, NOTHING is claimed --
+    // neither a code nor the "this org has no currency" warning glyph.
+    expect(container.textContent).not.toContain("Currency not set");
   });
 
   test("the screen says where it is and how to leave", () => {
