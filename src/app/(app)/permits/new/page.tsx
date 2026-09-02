@@ -25,7 +25,10 @@ export default async function NewPermitPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="flex-1 p-6">
-      <PermitCreateClient projectId={project.id} />
+      {/* R67 D-06: the name goes down with the id so the screen can state
+          "For project: <name>" under its title -- a create screen must say
+          where the record it is about to write will land. */}
+      <PermitCreateClient projectId={project.id} projectName={project.name} />
     </div>
   );
 }
