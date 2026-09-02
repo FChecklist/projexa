@@ -51,6 +51,28 @@ describe("request-timing ledger", () => {
     expect(b.upstreamMs).toBe(7);
     expect(b.upstreamCalls).toBe(1);
   });
+
+  test("the ledger keeps the SLOWEST single call as well as the sum", () => {
+    // A fan-out route (/api/shell runs six lookups at once) waited for the
+    // slowest of them; its sum is the work it caused, not the wait it cost.
+    // Both figures live here so no route computes a rival one of its own --
+    // /api/shell used to, in a header withTiming overwrote a moment later.
+    const t = beginRequestTiming();
+    runWithRequestTiming(t, async () => {
+      recordUpstream(40);
+      recordUpstream(310);
+      recordUpstream(90);
+    });
+    expect(t.upstreamMs).toBe(440);
+    expect(t.upstreamMaxMs).toBe(310);
+    expect(t.upstreamCalls).toBe(3);
+  });
+
+  test("a ledger with no upstream call at all reports zero, not NaN", () => {
+    const t = beginRequestTiming();
+    expect(t.upstreamMaxMs).toBe(0);
+    expect(t.upstreamMs).toBe(0);
+  });
 });
 
 describe("withTiming", () => {

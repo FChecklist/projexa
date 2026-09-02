@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { callVeridianResult } from "@/lib/veridian-client";
-import { serverTimingHeader } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
 // R67 F-21 (audit recommendation R-236) -- ONE bootstrap for the shell.
@@ -53,7 +52,6 @@ export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
-  const startedAt = Date.now();
   const supabase = await createClient();
   const organizationId = ctx.organizationId!;
 
@@ -131,17 +129,13 @@ export const GET = withTiming("GET", async function GET() {
     errors,
   };
 
-  // The slowest upstream is what this route actually cost -- they ran
-  // concurrently, so summing them would misreport it.
-  const upstreamMs = Math.max(
-    projectsValue?.durationMs ?? 0,
-    pillValue?.durationMs ?? 0,
-    treeValue?.durationMs ?? 0,
-    currencyValue?.durationMs ?? 0,
-    vendorValue?.durationMs ?? 0
-  );
-
-  return NextResponse.json(payload, {
-    headers: { "Server-Timing": serverTimingHeader(upstreamMs, Date.now() - startedAt) },
-  });
+  // No Server-Timing is set here on purpose. withTiming() above owns that
+  // header -- it overwrites whatever a handler sets, from the request-timing
+  // ledger -- so a second computation here could never be observed, and a
+  // header nobody can read that disagrees with the one they can is worse than
+  // none. The "slowest of the concurrent lookups" figure this route used to
+  // compute was worth keeping, so it moved to where it can be seen: the ledger
+  // records upstreamMaxMs for every request and the structured log line emits
+  // it beside upstreamMs.
+  return NextResponse.json(payload);
 });

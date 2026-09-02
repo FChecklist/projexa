@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianResult } from "@/lib/veridian-client";
-import { serverTimingHeader, veridianErrorResponse } from "@/lib/veridian-response";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
 // Thin proxy: the browser-side Chain Selector needs this tree, but the
@@ -45,10 +45,12 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
 
   const body = JSON.stringify(result.data);
   const etag = etagFor(body);
+  // No Server-Timing here: withTiming() above sets it from the request-timing
+  // ledger AFTER this returns and overwrites anything set locally, so a second
+  // one could never be observed.
   const headers = {
     ETag: etag,
     "Cache-Control": "private, max-age=" + ONE_DAY_SECONDS,
-    "Server-Timing": serverTimingHeader(result.durationMs),
   };
 
   // A matching validator means the client already has these exact bytes.

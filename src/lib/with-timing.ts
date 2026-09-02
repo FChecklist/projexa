@@ -71,6 +71,14 @@ function emit(
       upstreamMs: Math.round(timing.upstreamMs),
       appMs: Math.round(appMs),
       upstreamCalls: timing.upstreamCalls,
+      // The slowest SINGLE upstream call. On a fan-out route (/api/shell runs
+      // six lookups at once) upstreamMs is the work caused and this is the
+      // wait endured; they differ by a lot, and reading the sum as the wait is
+      // how a concurrent route gets blamed for latency it does not have. One
+      // definition, recorded in request-timing.ts, so no route computes a
+      // second one of its own -- a header set inside a handler is overwritten
+      // by the one this wrapper sets anyway.
+      upstreamMaxMs: Math.round(timing.upstreamMaxMs),
       orgId: timing.orgId,
     })
   );

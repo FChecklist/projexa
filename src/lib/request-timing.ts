@@ -27,6 +27,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type RequestTiming = {
   /** Total wall time spent waiting on VERIDIAN in this request, ms. */
   upstreamMs: number;
+  /**
+   * The SLOWEST single upstream call in this request, ms.
+   *
+   * On a FAN-OUT route the sum above overstates the wait: /api/shell issues
+   * six lookups concurrently, so its user waited for the slowest one, not for
+   * all six added together. Both numbers are wanted and they answer different
+   * questions -- the sum is how much upstream work a request caused, the max is
+   * how long the person actually sat there -- so both are recorded in ONE place
+   * rather than each route inventing its own. `Server-Timing: upstream` stays
+   * the sum, which is what perf-harness.mjs reads; the max goes in the
+   * structured log line beside it.
+   */
+  upstreamMaxMs: number;
   /** How many upstream calls it took. A screen budget cares about this too. */
   upstreamCalls: number;
   /** The caller's organisation, once an auth guard has resolved it. */
@@ -36,7 +49,7 @@ export type RequestTiming = {
 const timingStore = new AsyncLocalStorage<RequestTiming>();
 
 export function beginRequestTiming(): RequestTiming {
-  return { upstreamMs: 0, upstreamCalls: 0, orgId: null };
+  return { upstreamMs: 0, upstreamMaxMs: 0, upstreamCalls: 0, orgId: null };
 }
 
 /** Runs `fn` with `timing` as the ambient ledger for everything it awaits. */
@@ -56,7 +69,9 @@ export function runWithRequestTiming<T>(timing: RequestTiming, fn: () => Promise
 export function recordUpstream(durationMs: number): void {
   const timing = timingStore.getStore();
   if (!timing) return;
-  timing.upstreamMs += Math.max(0, durationMs);
+  const ms = Math.max(0, durationMs);
+  timing.upstreamMs += ms;
+  if (ms > timing.upstreamMaxMs) timing.upstreamMaxMs = ms;
   timing.upstreamCalls += 1;
 }
 
