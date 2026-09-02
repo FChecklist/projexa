@@ -20,6 +20,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
+import { AsOfStamp } from "@/components/AsOfStamp";
 
 // Exported so drawings/page.tsx can type the rows it fetches server-side.
 export type Drawing = {
@@ -85,7 +86,7 @@ export default function DrawingsClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
 
-  const { rows: drawings, error, loading } = useModuleList<Drawing>({
+  const { rows: drawings, error, loading, asOf } = useModuleList<Drawing>({
     initial,
     url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
     pick: (d) => d.drawings as Drawing[] | undefined,
@@ -95,7 +96,9 @@ export default function DrawingsClient({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-px-muted">DWG drawings and 3D walkthroughs for this project.</p>
+        <p className="text-sm text-px-muted">
+          DWG drawings and 3D walkthroughs for this project. <AsOfStamp at={asOf} />
+        </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>
             <Link href={`/floor-plans?projectId=${projectId}`}><Box className="size-4" /> Floor Plans / 3D Walkthrough</Link>

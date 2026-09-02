@@ -24,12 +24,29 @@
 // icon-only cards, and the domain heading always visible so the vocabulary is
 // learned by reading rather than by exploring.
 
+//
+// R67 F-22 (audit recommendation R-247): every card here now speculates on
+// hover or focus, after a 100 ms hover-intent delay -- the route's own payload
+// via router.prefetch() and the module's primary list call via the bounded
+// prefetch store. A cursor dragged across the grid fires nothing; a cursor
+// that stops on a card gets that screen's rows before the click.
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { VISIBLE_NAV_SECTIONS } from "@/components/AppSidebar";
+import { useHoverPrefetch } from "@/lib/use-hover-prefetch";
+import { readSelectedProjectId } from "@/lib/project-cookie";
+import { useEffect, useState } from "react";
 
 export default function ModuleDirectory({ projectId }: { projectId?: string | null }) {
   const t = useTranslations("Nav");
+  // The rail's own selection, read once on mount -- the directory is rendered
+  // without a project prop on the dashboard, and speculation needs one to
+  // build the list url.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projectId ?? null);
+  useEffect(() => {
+    setSelectedProjectId(projectId ?? readSelectedProjectId());
+  }, [projectId]);
+  const { hoverProps } = useHoverPrefetch(selectedProjectId);
 
   // Carry the project through, so a card lands on the module already scoped to
   // the project in the top rail rather than resetting it. M24 treats acting on
@@ -64,6 +81,7 @@ export default function ModuleDirectory({ projectId }: { projectId?: string | nu
                 <li key={item.href}>
                   <Link
                     href={withProject(item.href)}
+                    {...hoverProps(item.href)}
                     className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-[12.5px] transition-colors hover:bg-[var(--color-ct-cloud)]"
                     style={{ borderColor: "var(--color-ct-border)", color: "var(--color-ct-navy)" }}
                   >

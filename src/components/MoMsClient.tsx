@@ -40,6 +40,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
 import { MOMS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
+import { AsOfStamp } from "@/components/AsOfStamp";
 
 // Exported so moms/page.tsx can type the rows it fetches server-side.
 export type Meeting = {
@@ -94,7 +95,7 @@ export default function MoMsClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MOMS_LIST_COLUMNS;
 
-  const { rows: meetings, error, loading } = useModuleList<Meeting>({
+  const { rows: meetings, error, loading, asOf } = useModuleList<Meeting>({
     initial,
     url: `/api/moms?projectId=${encodeURIComponent(projectId)}`,
     pick: (d) => d.meetings as Meeting[] | undefined,
@@ -104,7 +105,9 @@ export default function MoMsClient({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-px-muted">Minutes of Meeting for this project — live notes, AI summary, PDF export.</p>
+        <p className="text-sm text-px-muted">
+          Minutes of Meeting for this project — live notes, AI summary, PDF export. <AsOfStamp at={asOf} />
+        </p>
         {/* Real screen navigation (2026-08-30) -- replaces the old "New
             Meeting" Dialog popup with a real create route. */}
         <Button size="sm" onClick={() => router.push(`/moms/new?projectId=${projectId}`)}><Plus className="size-4" /> New Meeting</Button>

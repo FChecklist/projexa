@@ -24,6 +24,7 @@ import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { PERMITS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
+import { AsOfStamp } from "@/components/AsOfStamp";
 
 // Exported so permits/page.tsx can type the rows it fetches server-side.
 export type Permit = {
@@ -69,7 +70,7 @@ export default function PermitsListClient({
   if (withinDays) params.set("withinDays", withinDays);
   else params.set("all", "true");
 
-  const { rows: permits, error, loading } = useModuleList<Permit>({
+  const { rows: permits, error, loading, asOf } = useModuleList<Permit>({
     initial,
     url: `/api/permits?${params.toString()}`,
     pick: (d) => d.permits as Permit[] | undefined,
@@ -90,6 +91,11 @@ export default function PermitsListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
+      {asOf !== null && (
+        <div className="px-4 pt-2 text-right">
+          <AsOfStamp at={asOf} />
+        </div>
+      )}
       {loading ? (
         <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
       ) : error ? (

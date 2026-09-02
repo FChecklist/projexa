@@ -8,6 +8,7 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+import { DashboardSpeculation } from "@/components/DashboardSpeculation";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -114,6 +115,11 @@ export default function DashboardHomeView({
 
   return (
     <>
+      {/* R67 F-22: renders nothing. It spends the seconds the user spends
+          READING this screen prefetching the two lists they are most likely
+          to open next (Scope, Work Progress), so that click lands on data
+          instead of on a spinner. Every guard lives in prefetch-store.ts. */}
+      <DashboardSpeculation fallbackProjectId={data?.projects?.[0]?.id ?? null} />
       {/* No PageHeading here -- this is PROJEXA's designated home route
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
           already renders a real "Good morning, {name}." heading; a second

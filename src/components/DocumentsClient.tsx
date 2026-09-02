@@ -30,6 +30,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
+import { AsOfStamp } from "@/components/AsOfStamp";
 
 // Exported so documents/page.tsx can type the rows it fetches server-side.
 export type Doc = {
@@ -107,7 +108,7 @@ export default function DocumentsClient({
 
   // The server prefetched the UNFILTERED list, which is what "all" renders --
   // so the first paint is free and only a real category change costs a fetch.
-  const { rows: docs, error, loading } = useModuleList<Doc>({
+  const { rows: docs, error, loading, asOf } = useModuleList<Doc>({
     initial: category === "all" ? initial : null,
     url: `/api/documents?${params.toString()}`,
     pick: (d) => d.documents as Doc[] | undefined,
@@ -119,7 +120,7 @@ export default function DocumentsClient({
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">
           Documents linked directly to this project (permits, drawings, site photos, etc.). Records attached to a
-          specific RFI, work progress entry, or other item are visible from that record.
+          specific RFI, work progress entry, or other item are visible from that record. <AsOfStamp at={asOf} />
         </p>
         <div className="flex items-center gap-2">
           <Select value={category} onValueChange={setCategory}>

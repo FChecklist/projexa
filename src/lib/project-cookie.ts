@@ -41,3 +41,23 @@ export function rememberSelectedProject(projectId: string | null): void {
     // never take the shell down.
   }
 }
+
+/**
+ * The project the rail last selected, read from the browser's own cookie jar.
+ * Null when nothing has been selected in this browser yet.
+ */
+export function readSelectedProjectId(): string | null {
+  if (typeof document === "undefined") return null;
+  try {
+    for (const part of document.cookie.split(";")) {
+      const [name, ...rest] = part.trim().split("=");
+      if (name === PROJECT_COOKIE) {
+        const value = decodeURIComponent(rest.join("="));
+        return value.trim() ? value : null;
+      }
+    }
+  } catch {
+    // A blocked cookie jar is simply "we do not know".
+  }
+  return null;
+}
