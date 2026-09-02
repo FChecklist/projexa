@@ -31,10 +31,20 @@ import { VeridianApiError, type VeridianErrorCode } from "@/lib/veridian-client"
 // honest status is "service unavailable, try again" rather than whatever
 // number the transport happened to produce. A 4xx is NOT in this set: a 404
 // or a 400 is a real, specific answer and retrying it changes nothing.
+//
+// STORAGE_UNAVAILABLE is deliberately NOT here, although it is an
+// infrastructure failure. It means VERIDIAN's file-storage client has no
+// supabaseKey configured, and the sentence the user is shown says so: "…this
+// needs an administrator." An unconfigured key does not become configured in
+// five seconds. Telling every client to come back then would build precisely
+// the queue behind a broken service that RETRY_AFTER_SECONDS below says it is
+// avoiding, and it would contradict the words already on the screen. The code
+// still travels -- it is what lets a screen say "this needs an administrator"
+// instead of "something went wrong" -- it just keeps its own status and gets
+// no Retry-After.
 const RETRYABLE_CODES: ReadonlySet<VeridianErrorCode> = new Set<VeridianErrorCode>([
   "UPSTREAM_TIMEOUT",
   "NETWORK",
-  "STORAGE_UNAVAILABLE",
 ]);
 
 // Seconds. Deliberately short: veridian-client's own budget is 8 s, so a
@@ -117,14 +127,13 @@ export function veridianErrorResponse(err: unknown, fallbackMessage: string, app
   );
 }
 
-/**
- * The success counterpart: the same Server-Timing header on the fast path, so
- * a per-screen budget can be measured from real responses rather than guessed
- * at from a dev-server log.
- */
-export function veridianJsonResponse(data: unknown, upstreamMs: number, status = 200, appMs?: number): NextResponse {
-  return NextResponse.json(data, {
-    status,
-    headers: { "Server-Timing": serverTimingHeader(upstreamMs, appMs) },
-  });
-}
+// There is deliberately NO veridianJsonResponse() success counterpart here.
+// One was written for the success path before F-28 landed, and F-28 made it a
+// trap: withTiming() wraps every handler in this repo and sets Server-Timing
+// from the request-timing ledger AFTER the handler returns, overwriting
+// whatever the handler set. A helper that invites a route to compute a second
+// upstream figure produces a number nobody can observe and that disagrees with
+// the one they can. The success header has exactly one owner (withTiming); the
+// error path keeps its own because veridianErrorResponse also decides the
+// STATUS and the Retry-After, and its duration comes from the failure it is
+// already holding.

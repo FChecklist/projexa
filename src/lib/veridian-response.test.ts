@@ -2,12 +2,14 @@
 // R67 F-20 -- the proxy's half of the abort budget.
 //
 // The rule these assertions hold: a failure where the upstream never gave a
-// real answer (a timeout, a dead socket, an unconfigured storage client)
-// answers 503 with Retry-After, because retrying is genuinely the next move.
-// A failure where it DID answer (404, 400) keeps its own status, because
-// retrying it changes nothing and pretending otherwise sends the user round a
-// loop. Both carry Server-Timing so a per-screen latency budget can be
-// measured rather than guessed.
+// real answer AND might give one shortly (a timeout, a dead socket) answers 503
+// with Retry-After, because retrying is genuinely the next move. Everything
+// else keeps its own status, because retrying it changes nothing and pretending
+// otherwise sends the user round a loop -- a 404 or a 400 because the upstream
+// DID answer, and STORAGE_UNAVAILABLE because an unconfigured supabaseKey will
+// still be unconfigured in five seconds and the screen already says so ("this
+// needs an administrator"). Every one of them carries Server-Timing so a
+// per-screen latency budget can be measured rather than guessed.
 
 import { describe, expect, test } from "bun:test";
 import { VeridianApiError } from "./veridian-client";
@@ -16,7 +18,6 @@ import {
   classifyUpstreamFailure,
   serverTimingHeader,
   veridianErrorResponse,
-  veridianJsonResponse,
 } from "./veridian-response";
 
 describe("classifyUpstreamFailure", () => {
@@ -30,9 +31,23 @@ describe("classifyUpstreamFailure", () => {
     expect(f.message).toBe("did not respond in time");
   });
 
-  test("a dead socket and an unconfigured storage client are the same class", () => {
-    expect(classifyUpstreamFailure(new VeridianApiError("x", 502, undefined, "NETWORK", 3), "f").status).toBe(503);
-    expect(classifyUpstreamFailure(new VeridianApiError("x", 500, undefined, "STORAGE_UNAVAILABLE", 3), "f").status).toBe(503);
+  test("a dead socket never answered, so it is 503 + retryable", () => {
+    const f = classifyUpstreamFailure(new VeridianApiError("x", 502, undefined, "NETWORK", 3), "f");
+    expect(f.status).toBe(503);
+    expect(f.retryable).toBe(true);
+  });
+
+  test("an unconfigured storage client keeps its own status and gets NO Retry-After", () => {
+    // It is infrastructure, but it is not transient: the message the same
+    // failure carries is "…this needs an administrator", and a supabaseKey
+    // that is missing now will still be missing in five seconds. Sending every
+    // client back in 5 s would queue them behind a broken service AND
+    // contradict the sentence on the screen. The CODE survives -- that is what
+    // lets the screen name the cause instead of shrugging.
+    const f = classifyUpstreamFailure(new VeridianApiError("x", 500, undefined, "STORAGE_UNAVAILABLE", 3), "f");
+    expect(f.status).toBe(500);
+    expect(f.retryable).toBe(false);
+    expect(f.code).toBe("STORAGE_UNAVAILABLE");
   });
 
   test("a 404 keeps its own status and is not retryable", () => {
@@ -100,10 +115,19 @@ describe("the responses a proxy returns", () => {
     expect(res.headers.get("Retry-After")).toBeNull();
   });
 
-  test("a success carries the same timing header", async () => {
-    const res = veridianJsonResponse({ meetings: [] }, 210);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Server-Timing")).toBe("upstream;dur=210");
-    expect(await res.json()).toEqual({ meetings: [] });
+  test("unconfigured storage answers 500 with the code, and no Retry-After to contradict it", async () => {
+    const res = veridianErrorResponse(
+      new VeridianApiError(
+        "The construction data service's file storage is not configured. Nothing was lost -- this needs an administrator.",
+        500,
+        undefined,
+        "STORAGE_UNAVAILABLE",
+        14
+      ),
+      "Failed to upload"
+    );
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Retry-After")).toBeNull();
+    expect((await res.json()).code).toBe("STORAGE_UNAVAILABLE");
   });
 });
