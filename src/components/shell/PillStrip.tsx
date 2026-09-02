@@ -45,7 +45,6 @@
 // path, so selecting a card cannot perform a write.
 
 import { useEffect, useRef } from "react";
-import type { AllModulesEntry } from "@/lib/card-catalogue";
 
 export type CardView = {
   id: string;
@@ -70,6 +69,22 @@ export type RecentCardView = {
   outcome: string;
 };
 
+/**
+ * R67 A-12 -- one entry of the expanded "All modules" list, as this component
+ * needs it. Deliberately a VIEW type rather than the catalogue's own: the strip
+ * renders words and reports an id, and holds nothing it could accidentally call.
+ */
+export type ModuleEntryView = {
+  id: string;
+  label: string;
+  /** A-12: the pill's own key hint, already carrying its modifier ("Alt+P"). */
+  shortcut?: string | null;
+  /** Words that do NOT disable it -- "pick one in the top rail". */
+  note?: string;
+  /** Words that DO disable it -- today only "you are here". */
+  unavailable?: string;
+};
+
 export type PillStripProps = {
   cards: readonly CardView[];
   /** A-08: rendered at the front of the ranked band. Empty for a user with
@@ -82,8 +97,9 @@ export type PillStripProps = {
   loading?: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
-  allModules: readonly AllModulesEntry[];
-  onSelectModule: (entry: AllModulesEntry) => void;
+  allModules: readonly ModuleEntryView[];
+  /** Reports the entry's ID. Never an object with a callable member. */
+  onSelectModule: (entryId: string) => void;
   /**
    * Ranked keys this build has no card for. Warned once, never rendered: a raw
    * key like "work-progress.entry" on a strip is worse than a shorter strip.
@@ -256,20 +272,36 @@ export function PillStrip({
         <div className="mt-1 flex flex-wrap items-center gap-1" role="group" aria-label="All modules">
           {allModules.map((entry) => {
             const blocked = Boolean(entry.unavailable);
+            // A-12: the note explains where the pill goes; it never refuses.
+            const aside = entry.unavailable ?? entry.note;
+            const name = aside ? `${entry.label} — ${aside}` : entry.label;
             return (
               <button
                 key={entry.id}
                 type="button"
-                onClick={() => onSelectModule(entry)}
+                onClick={() => onSelectModule(entry.id)}
                 disabled={blocked}
-                aria-label={blocked ? `${entry.label} — ${entry.unavailable}` : entry.label}
-                title={blocked ? `${entry.label} — ${entry.unavailable}` : entry.label}
+                aria-label={entry.shortcut ? `${name} (${entry.shortcut})` : name}
+                title={entry.shortcut ? `${name} · ${entry.shortcut}` : name}
                 className="veri-mode-pill disabled:opacity-45"
               >
                 {entry.label}
-                {blocked && (
+                {aside && (
                   <span className="ml-1 text-[10px]" style={{ color: "var(--color-ct-muted)" }}>
-                    — {entry.unavailable}
+                    — {aside}
+                  </span>
+                )}
+                {/* A-12 -- THE KEY HINT, ON THE PILL. Shown with its modifier:
+                    a hint reading "P" would be a shortcut that appears not to
+                    work, because a bare letter has to stay typeable in the box
+                    directly below this row. */}
+                {entry.shortcut && (
+                  <span
+                    aria-hidden
+                    className="ml-1.5 rounded px-1 text-[9px] tracking-wide"
+                    style={{ background: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
+                  >
+                    {entry.shortcut}
                   </span>
                 )}
               </button>

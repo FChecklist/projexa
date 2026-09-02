@@ -52,23 +52,22 @@ import {
 // is dead and unexplained is kept and strengthened -- see the Composer props
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
-import { PillStrip, type CardView, type RecentCardView } from "./PillStrip";
+import { PillStrip, type CardView, type ModuleEntryView, type RecentCardView } from "./PillStrip";
 import { useShellScreen } from "./shell-screen-context";
 import {
   CARD_CATALOGUE,
   KIND_GLYPH,
   KIND_WORD,
-  allModulesEntries,
   cardHref,
   cardUnmetReason,
   rankCards,
   rankedKeyForCard,
   targetForCard,
-  type AllModulesEntry,
   type CardDef,
   type CardPreconditionId,
   type RankedEntry,
 } from "@/lib/card-catalogue";
+import { PILL_CATALOGUE, pillEntryById, shortcutLabel, type PillEntry } from "@/lib/pill-catalogue";
 import {
   canSend as canSendFrom,
   chainPrompt,
@@ -682,6 +681,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const screenModule = screen.module;
   const chainModule = screen.chainModule;
 
+  // R67 A-11/A-12 -- THE MODULE THE USER PICKED, as distinct from the one they
+  // are standing on. It is DERIVED from the chain rather than kept beside it:
+  // the strip's entity segment and "which module is the composer about" are the
+  // same fact, and holding them in two pieces of state is how they come to
+  // disagree (which is the whole reason the mode tabs were deleted in A-05).
+  const selectedModule = useMemo(() => {
+    const entity = segments.find((s) => s.kind === "action");
+    return entity ? (MODULE_CATALOGUE.find((m) => m.id === entity.id) ?? null) : null;
+  }, [segments]);
+
+  // What the composer is ABOUT: the module just picked, else the screen's own.
+  // The strip's next question comes from this one answer, so it cannot name two
+  // different modules at once.
+  const activeModule: ModuleDef | null = selectedModule ?? chainModule;
+
+  // The placeholder and the worked examples take the Dashboard too -- it has
+  // its own vocabulary ("how much of the BOQ is complete") even though
+  // "Dashboard ›" is not the start of a sentence anyone finishes, which is why
+  // it is excluded from the strip's own chain (see chainModuleForPathname).
+  const promptModule: ModuleDef | null = selectedModule ?? screenModule;
+
   // R67 A-05: the mode is a fact about the chain, not a tab anyone clicks.
   const mode: ChainMode = useMemo(() => deriveMode(segments), [segments]);
 
@@ -808,6 +828,38 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [project]
   );
 
+  // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
+  // cannot proceed without a project says so in the module's own words AND
+  // moves keyboard focus to the rail's project control, so the next keystroke
+  // is the one that fixes it. Telling a user "no" and leaving them where they
+  // were is how a dead end feels.
+  const requestProject = useCallback((reason: string) => {
+    setProjectPrompt(reason);
+    const control = railRef.current?.querySelector<HTMLButtonElement>(
+      'button[aria-label*="choose a project"], button[aria-label*="switch project"]'
+    );
+    control?.focus();
+  }, []);
+
+  // R67 A-12 -- EXACTLY ONE ENTITY SEGMENT, REPLACED RATHER THAN CHAINED.
+  //
+  // Picking Minutes of Meeting and then Reports must leave the strip reading
+  // "<project> › Reports", not "<project> › Minutes of Meeting › Reports": two
+  // nouns in a row is not a sentence, and the second click plainly means the
+  // user changed their mind. Replacing the whole user-built tail also drops the
+  // steps that belonged to the module they just left, which would otherwise
+  // survive under a heading that no longer describes them.
+  const selectEntity = useCallback(
+    (mod: ModuleDef) => {
+      setSegments([{ id: mod.id, label: mod.label, kind: "action" as const }]);
+      setPendingFunctionId(null);
+      setArmedCard(null);
+      setProjectPrompt(null);
+      setLoaded(null);
+    },
+    [setLoaded]
+  );
+
   // R67 A-07 -- A CARD CLICK. It records usage and OPENS THE CARD'S OWN ROUTE.
   // It does NOT execute: the callback carries a card id, a plain string, so
   // nothing on this path has a callable member.
@@ -840,11 +892,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(knownFunctionId);
       // A-10: the armed CARD, so the button can be named for what it will do.
       setArmedCard(knownFunctionId ? card : null);
-      setSegments((prev) =>
-        prev.some((s) => s.id === card.id)
-          ? prev
-          : [...prev, { id: card.id, label: card.label, kind: "action" as const }]
-      );
+      // A-12: one entity segment, replaced rather than chained -- a card IS the
+      // whole verb+object, so a second card is a change of mind, not a step.
+      setSegments([{ id: card.id, label: card.label, kind: "action" as const }]);
       if (knownFunctionId) return;
       const href = cardHref(card, card.needsProject ? projectId : null);
       if (!href) return;
@@ -854,25 +904,48 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [bumpUsage, chainForUsage, projectId, rankedPills, router]
   );
 
-  // R67 A-07 -- an entry in the expanded "All modules" list. It opens the
-  // module's own list route; it never types and never executes. The free-text
-  // entry only moves the cursor into the box, which is the one thing it means.
+  // R67 A-11/A-12 -- AN ENTRY IN THE EXPANDED "ALL MODULES" LIST.
+  //
+  // WHAT CHANGED, AND WHY IT NO LONGER NAVIGATES. A-07 made this open the
+  // module's list route immediately. D-08 and correction C-09 rule that the
+  // SECOND LEVEL IS VERBS, not free text and not a destination: "a module card
+  // asks for its verbs and only navigates straight to a route when the verb is
+  // a multi-field form". So picking Permits now says "Permits" in the strip and
+  // offers New · Expiring soon · Open underneath it (band 2), and it is the
+  // VERB that navigates. That is M24's own description of the mechanism --
+  // "clicks a card -> THE STRIP FILLS IN AS HE WATCHES" -- and it is why a
+  // module click is one deliberate selection rather than a page load the user
+  // has to read before deciding anything.
+  //
+  // The ranked band above is unaffected: a CARD is already a verb and an
+  // object ("File minutes"), so it still goes straight to its own screen.
   const onModuleEntrySelect = useCallback(
-    (entry: AllModulesEntry) => {
-      if (entry.kind === "other") {
-        bumpUsage("other");
-        setShowAllPills(false);
-        composerRef.current?.focus();
-        return;
-      }
-      const mod = entry.moduleId ? MODULE_CATALOGUE.find((m) => m.id === entry.moduleId) : undefined;
-      if (!mod) return;
-      bumpUsage(entry.id, chainForUsage(mod.label, null));
-      setProjectPrompt(null);
+    (entryId: string) => {
+      const entry = pillEntryById(entryId);
+      if (!entry) return;
       setShowAllPills(false);
-      router.push(moduleRoute(mod, projectId));
+      switch (entry.destination) {
+        case "input":
+          // A-15 owns this branch.
+          bumpUsage(entry.id);
+          composerRef.current?.focus();
+          return;
+        case "rail":
+          // "Projects" has no page in PROJEXA; its control is the top rail, so
+          // the click goes there rather than nowhere.
+          bumpUsage(entry.id);
+          requestProject("Choose a project in the top rail");
+          return;
+        case "route": {
+          const mod = entry.moduleId ? MODULE_CATALOGUE.find((m) => m.id === entry.moduleId) : undefined;
+          if (!mod) return;
+          bumpUsage(entry.id, chainForUsage(mod.label, null));
+          selectEntity(mod);
+          return;
+        }
+      }
     },
-    [bumpUsage, chainForUsage, projectId, router]
+    [bumpUsage, chainForUsage, requestProject, selectEntity]
   );
 
   // R67 A-08 -- "DO AGAIN". It LOADS the sentence and STOPS.
@@ -913,19 +986,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     },
     [bumpUsage, project, projectId, router, setLoaded]
   );
-
-  // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
-  // cannot proceed without a project says so in the module's own words AND
-  // moves keyboard focus to the rail's project control, so the next keystroke
-  // is the one that fixes it. Telling a user "no" and leaving them where they
-  // were is how a dead end feels.
-  const requestProject = useCallback((reason: string) => {
-    setProjectPrompt(reason);
-    const control = railRef.current?.querySelector<HTMLButtonElement>(
-      'button[aria-label*="choose a project"], button[aria-label*="switch project"]'
-    );
-    control?.focus();
-  }, []);
 
   // R67 A-02 -- THE SECOND LEVEL, as real routes. A leaf is the module's own
   // verb ("New", "Expiring soon", "Open") and it navigates to exactly the URL
@@ -1195,12 +1255,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       rankCards({
         ranked: rankedPills ?? [],
         role,
-        // The screen's own module is already band 2. Offering it here as well
-        // would be the same words twice, one of them pointing at this page.
-        excludeModuleId: screenModule?.id ?? null,
+        // The module in play is already band 2 -- the screen's own, or the one
+        // just picked. Offering it here as well would be the same words twice,
+        // one of them pointing at where the user already is.
+        excludeModuleId: selectedModule?.id ?? screenModule?.id ?? null,
         limit: 6,
       }),
-    [rankedPills, role, screenModule]
+    [rankedPills, role, screenModule, selectedModule]
   );
 
   // A-07 -- PRECONDITIONS, EVALUATED FROM WHAT THE SHELL ACTUALLY KNOWS.
@@ -1230,17 +1291,24 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [rankedCards, pinnedCards, unmetPreconditions]
   );
 
-  // A-07: the expanded list is FIXED (Sumeet's eleven, then "Other - type it",
-  // then the Platform group). The only thing computed per screen is that the
-  // module you are already standing in says so instead of pretending to be a
-  // destination -- the same no-dead-end rule A-01 applied to the ranked band.
-  const allModules = useMemo(
+  // A-07/A-11/A-14: the expanded list is FIXED (Sumeet's eleven, then "Other -
+  // type it", then the Platform group), it is a FROZEN array built once at
+  // module load, and it is NEVER re-ordered by usage -- see pill-catalogue.ts.
+  // The only thing computed per screen is that the module you are already
+  // standing in says so instead of pretending to be a destination, the same
+  // no-dead-end rule A-01 applied to the ranked band.
+  const allModules: ModuleEntryView[] = useMemo(
     () =>
-      allModulesEntries().map((entry) =>
-        entry.moduleId && pillPointsAtCurrentScreen(entry.moduleId, entry.label, pathname ?? "")
-          ? { ...entry, unavailable: "you are here" }
-          : entry
-      ),
+      PILL_CATALOGUE.map((entry: PillEntry) => ({
+        id: entry.id,
+        label: entry.label,
+        shortcut: shortcutLabel(entry),
+        note: entry.note,
+        unavailable:
+          entry.moduleId && pillPointsAtCurrentScreen(entry.moduleId, entry.label, pathname ?? "")
+            ? "you are here"
+            : undefined,
+      })),
     [pathname]
   );
 
@@ -1262,7 +1330,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       hasProjects: !projectsLoaded || projects.length > 0,
       hasProject: Boolean(project),
       projectName: project?.name ?? null,
-      moduleLabel: chainModule?.label ?? null,
+      // A-11/A-12: the module in play -- the one just picked, else the one the
+      // screen IS. One answer, so the next question names one module.
+      moduleLabel: activeModule?.label ?? null,
       action: armedCard ? { label: armedCard.label, object: armedCard.object, kind: armedCard.kind } : null,
       // HONEST LIMIT: the missing-step state is fully implemented here and in
       // chain-status.ts, and nothing populates it yet. The list of fields an
@@ -1280,7 +1350,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       projectsLoaded,
       projects.length,
       project,
-      chainModule,
+      activeModule,
       armedCard,
       draft,
       submitting,
@@ -1526,18 +1596,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // A-10: one resting placeholder that shows all three things this box
           // takes -- a task, a question and a record -- overridden by the
           // module's own example when the user is standing in one.
+          //
+          // A-11/A-12: PICKING a module changes it too. The pill click sets the
+          // placeholder and the two worked examples from that module, which is
+          // the whole of what a pill is allowed to do to the input -- it must
+          // never type into it (the seeding branch at the old :476-478 is gone).
           placeholder={
-            screenModule
-              ? screenModule.placeholder
+            promptModule
+              ? promptModule.placeholder
               : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
           }
           // R67 A-02: two worked examples in the module's own vocabulary, so a
           // site engineer sees what a sentence this box accepts looks like
           // before typing one.
           examples={
-            screenModule ? (
+            promptModule ? (
               <span>
-                e.g. “{screenModule.examples[0]}” · “{screenModule.examples[1]}”
+                e.g. “{promptModule.examples[0]}” · “{promptModule.examples[1]}”
               </span>
             ) : undefined
           }
