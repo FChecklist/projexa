@@ -29,11 +29,13 @@
 // minted token) because it would expose the org API key or need a second
 // proxy. Everything here is server-side; no key moves.
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { PROJECT_COOKIE } from "@/lib/project-cookie";
+import { timeUpstream } from "@/lib/debug-latency";
 
 // Written by the top rail when the user switches project (see
 // src/lib/project-cookie.ts, which owns the name and the browser-side writer
@@ -265,6 +267,95 @@ export const fetchRosterList = createModuleList(
   (p) => p.roster as unknown[] | undefined,
   { root: true }
 );
+
+// ---------------------------------------------------------------------------
+// R67 F-30 (audit recommendation R-274) -- the /labour landing, in ONE hop.
+// ---------------------------------------------------------------------------
+//
+// The Manpower screen needs two things on arrival: the roster (its opening
+// tab) and the day's attendance summary (the strip above it). Fetching them
+// one after the other is two round trips to VERIDIAN and, upstream, two
+// transactions on a five-connection pool for one landing --  the shape R-274
+// asked to be profiled and, if serial, collapsed. VERIDIAN's labour route now
+// answers both from one transaction behind `includeAttendanceSummary=1`, and
+// this asks for exactly that.
+//
+// TWO <Suspense> BOUNDARIES, ONE FETCH. The page renders the summary strip and
+// the roster in separate boundaries so each streams as soon as it can. Both
+// call getLabourLanding() below, and React's cache() makes the SECOND call
+// return the FIRST call's promise -- so two boundaries cost one request, not
+// two. Without it, splitting the page into boundaries would have doubled its
+// network cost, which is the opposite of this item.
+
+export type LabourAttendanceSummary = {
+  date: string;
+  recorded: number;
+  present: number;
+  halfDay: number;
+  absent: number;
+  totalCost: number;
+};
+
+export type LabourLanding<T> = {
+  roster: T[];
+  attendanceSummary: LabourAttendanceSummary | null;
+  /** The backend's own words when the landing could not be read. */
+  errorMessage: string | null;
+};
+
+const cachedLabourLanding = unstable_cache(
+  (organizationId: string | null, projectId: string, date: string) =>
+    callVeridian<Record<string, unknown>>(
+      `/construction/labour-roster?projectId=${q(projectId)}&includeAttendanceSummary=1&date=${q(date)}`,
+      { organizationId: organizationId ?? undefined, root: true }
+    ),
+  ["veridian-module-list", MODULE_TAGS.manpower, "landing"],
+  // Tagged with the SAME module tag as the roster list, so an "Add Worker"
+  // write clears both and a new worker is visible immediately.
+  { revalidate: 30, tags: [MODULE_TAGS.manpower] }
+);
+
+/**
+ * The roster and one day's attendance summary, deduplicated per request.
+ *
+ * `cache()` is request-scoped, so the two <Suspense> boundaries on /labour
+ * share ONE in-flight call; `unstable_cache` underneath then shares it across
+ * requests for 30 s, keyed org + project + day.
+ */
+export const getLabourLanding = cache(async function getLabourLanding<T>(
+  organizationId: string | null,
+  projectId: string,
+  date: string
+): Promise<LabourLanding<T>> {
+  try {
+    const payload = await timeUpstream("labour:roster+attendance-summary", () =>
+      cachedLabourLanding(organizationId ?? null, projectId, date)
+    );
+    return {
+      roster: ((payload.roster as unknown[]) ?? []) as T[],
+      attendanceSummary: (payload.attendanceSummary as LabourAttendanceSummary | null) ?? null,
+      errorMessage: null,
+    };
+  } catch (err) {
+    const message = err instanceof VeridianApiError ? err.message : "Couldn't load the roster.";
+    console.error("[module-list-source] labour landing failed:", err instanceof Error ? err.message : err);
+    // rows EMPTY and errorMessage set: the screen renders the reason, never a
+    // calm "no workers on the roster yet" over a failed read.
+    return { roster: [], attendanceSummary: null, errorMessage: message };
+  }
+});
+
+/**
+ * The organisation id for this request, resolved ONCE however many <Suspense>
+ * boundaries ask for it. requireAuth() costs a Supabase claims decode plus a
+ * memberships query; /labour has two boundaries and paying for that twice
+ * would be a regression introduced by the very restructure meant to speed the
+ * page up.
+ */
+export const getCachedServerOrganizationId = cache(async function getCachedServerOrganizationId(): Promise<string | null> {
+  const { getServerOrganizationId } = await import("@/lib/supabase/auth-guard");
+  return timeUpstream("shell:organization", () => getServerOrganizationId());
+});
 
 export const fetchMaterialMasterList = createModuleList(
   MODULE_TAGS.materials,

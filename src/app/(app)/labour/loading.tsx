@@ -13,6 +13,10 @@ export default function Loading() {
       columns={MANPOWER_LIST_COLUMNS}
       tabs={["Roster","Attendance"]}
       actions={["Add Worker"]}
+      // R67 F-30 / F-31: at 3 s this says "Still loading roster… <n> s" rather
+      // than sitting silently, and at 8 s -- the abort budget -- it says the
+      // wait is abnormal.
+      label="roster"
     />
   );
 }
