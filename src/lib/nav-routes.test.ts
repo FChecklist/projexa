@@ -231,6 +231,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01 / correction C-01: the home screen's Create Project dialog became
+  // a real create route. Reached by the "Create Project" button on /dashboard
+  // and on /dashboard/overview -- the same class as /invoices/new above, not a
+  // standalone sidebar destination.
+  "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",
   "/purchase-orders/new",

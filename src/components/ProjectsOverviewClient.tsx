@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeading } from "@/components/PageHeading";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -82,10 +82,17 @@ export default function ProjectsOverviewClient({
           ) : bars.length === 0 ? (
             <div className="space-y-3 py-8 text-center">
               <p className="text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
-              {/* The real dialog, not a link to the page that has it -- R46S11_02
-                  recorded /dashboard offering a Create Project button here and
-                  this screen offering nothing. */}
-              <div className="flex justify-center"><CreateProjectDialog /></div>
+              {/* R46S11_02 recorded /dashboard offering a Create Project
+                  button here and this screen offering nothing, so the control
+                  stays. R67 D-01 / C-01: it is now the same real /projects/new
+                  route the home screen points at -- one create screen, reached
+                  the same way from both surfaces, instead of two copies of one
+                  dialog that could drift apart. */}
+              <div className="flex justify-center">
+                <Button size="sm" asChild>
+                  <Link href="/projects/new"><Plus className="size-4" /> Create Project</Link>
+                </Button>
+              </div>
             </div>
           ) : (
             // Real screen navigation (2026-08-30): cross-linking fix (module

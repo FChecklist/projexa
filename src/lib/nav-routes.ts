@@ -22,7 +22,8 @@
 // fs.readdirSync walk nav-routes.test.ts itself uses (this tree contains
 // [id]/[token] dynamic segments, and a PowerShell path with unescaped
 // brackets is a wildcard that silently matches nothing -- see that file's
-// own comment). All 161 are listed below.
+// own comment). All 161 were listed below; R67 D-01 added /projects/new,
+// taking it to 162.
 export const SHIPPED_ROUTES: readonly string[] = [
   "/",
   "/accounting",
@@ -133,6 +134,11 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01 / correction C-01: the home screen's "+ Create Project" dialog
+  // became a real route. Reached from the Create Project button on /dashboard
+  // and on /dashboard/overview, never from the sidebar -- see
+  // nav-routes.test.ts's ROUTES_INTENTIONALLY_NOT_IN_NAV entry.
+  "/projects/new",
   "/punch-list",
   "/punch-list/[id]",
   "/punch-list/new",

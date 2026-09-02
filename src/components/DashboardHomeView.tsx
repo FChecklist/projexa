@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
@@ -148,8 +148,16 @@ export default function DashboardHomeView({
           </Card>
         )}
 
+        {/* R67 D-01 / correction C-01: this was the one popup left in
+            PROJEXA (CreateProjectDialog). It is now a real route --
+            /projects/new -- with its own breadcrumb, Back control and a
+            Save that names the fields still missing, the same create
+            archetype /labour/new already uses. The dialog component is
+            deleted rather than left behind, so the two forms cannot drift. */}
         <div className="flex justify-end">
-          <CreateProjectDialog />
+          <Button size="sm" asChild>
+            <Link href="/projects/new"><Plus className="size-4" /> Create Project</Link>
+          </Button>
         </div>
 
         {data && (
