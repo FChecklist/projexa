@@ -22,7 +22,7 @@
 // is still required by this layout.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
   Composer,
@@ -163,6 +163,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     queue: 0,
   });
 
+  // R67 F-19 (audit recommendation R-245). THE SHELL YIELDS TO THE FORM ON A
+  // CREATE ROUTE.
+  //
+  // This shell refetches its organisation, projects, tasks and pill ranking on
+  // every navigation -- 3.8-4.6 s to network idle -- INCLUDING on create
+  // forms, which need none of them: /permits/new needs a project id (already
+  // in the URL) and its own field lookups, and nothing else. Those shell calls
+  // were competing with the form's own for the browser's connections and for
+  // the main thread, on exactly the screens where the user is waiting to type.
+  //
+  // So on /new, /upload and /log-time the bootstrap is deferred to the first
+  // idle callback: the form mounts, focuses its first field and issues its own
+  // lookups first, and the shell fills in behind it. requestIdleCallback is
+  // not in Safari, hence the setTimeout(0) fallback -- which still yields a
+  // frame, which is the point. The 2 s timeout guarantees the rail is never
+  // left empty on a page the user keeps open.
+  const pathname = usePathname();
+  const isCreateRoute = /\/(new|upload|log-time)$/.test(pathname ?? "");
+  const [bootstrapReady, setBootstrapReady] = useState(!isCreateRoute);
+
+  useEffect(() => {
+    if (bootstrapReady) return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(() => setBootstrapReady(true), { timeout: 2000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(() => setBootstrapReady(true), 0);
+    return () => clearTimeout(timer);
+  }, [bootstrapReady]);
+
   useEffect(() => {
     try {
       const m = sessionStorage.getItem(MODE_KEY) as ChainMode | null;
@@ -237,6 +271,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, [noteFailure]);
 
   useEffect(() => {
+    if (!bootstrapReady) return;
     let live = true;
     void loadOrgInfo();
     (async () => {
@@ -256,7 +291,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     return () => {
       live = false;
     };
-  }, [noteFailure, loadOrgInfo]);
+  }, [noteFailure, loadOrgInfo, bootstrapReady]);
 
   // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
   // reports a session change -- a sign-in/sign-out in this same tab (also
@@ -353,6 +388,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!bootstrapReady) return;
     let live = true;
     void loadTasks();
 
@@ -391,7 +427,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     return () => {
       live = false;
     };
-  }, [noteFailure]);
+  }, [noteFailure, loadTasks, bootstrapReady]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 

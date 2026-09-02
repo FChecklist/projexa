@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
 
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
@@ -33,44 +34,78 @@ export default function BudgetCreateClient() {
   const [accountId, setAccountId] = useState("");
   const [annualAmount, setAnnualAmount] = useState("");
   const [budgetCompanyId, setBudgetCompanyId] = useState<string>("__none__");
+  const [failedLookups, setFailedLookups] = useState<string[]>([]);
   const [errors, setErrors] = useState<FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount">>({});
   const [submitting, setSubmitting] = useState(false);
 
+  // R67 F-19 (R-245). THIS WAS Promise.all, AND THAT WAS THE BUG: one failed
+  // lookup rejected the whole batch, so a 500 on /api/companies -- a field
+  // that is optional on this form -- blanked the fiscal years and the chart of
+  // accounts too, and the screen then told the user this organisation HAS no
+  // fiscal years. That is a failed read reported as a fact about their data
+  // (the empty-state-honesty rule in read-outcome.ts).
+  //
+  // allSettled keeps each lookup's outcome separate, and `failed` records
+  // which ones did not answer, so "we could not find out" and "there are none"
+  // are never again the same sentence.
   useEffect(() => {
-    (async () => {
+    const controller = new AbortController();
+    void (async () => {
       setLookupsLoading(true);
-      try {
-        const [fyData, ccData, acData, coData] = await Promise.all([
-          fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
-          fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
-          fetchJson<{ accounts?: Account[] }>("/api/accounts"),
-          fetchJson<{ companies?: Company[] }>("/api/companies"),
-        ]);
-        setFiscalYears(fyData.fiscalYears ?? []);
-        setCostCenters(ccData.costCenters ?? []);
-        setAccounts(acData.accounts ?? []);
-        setCompanies(coData.companies ?? []);
-      } catch (err) {
-        toast.error(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
-      } finally {
-        setLookupsLoading(false);
-      }
+      const [fyR, ccR, acR, coR] = await Promise.allSettled([
+        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years", { signal: controller.signal }),
+        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers", { signal: controller.signal }),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts", { signal: controller.signal }),
+        fetchJson<{ companies?: Company[] }>("/api/companies", { signal: controller.signal }),
+      ]);
+      if (controller.signal.aborted) return;
+
+      const failures: string[] = [];
+      if (fyR.status === "fulfilled") setFiscalYears(fyR.value.fiscalYears ?? []);
+      else if (!isAbortError(fyR.reason, controller.signal)) failures.push("fiscal years");
+
+      if (ccR.status === "fulfilled") setCostCenters(ccR.value.costCenters ?? []);
+      else if (!isAbortError(ccR.reason, controller.signal)) failures.push("cost centres");
+
+      if (acR.status === "fulfilled") setAccounts(acR.value.accounts ?? []);
+      else if (!isAbortError(acR.reason, controller.signal)) failures.push("the chart of accounts");
+
+      if (coR.status === "fulfilled") setCompanies(coR.value.companies ?? []);
+      else if (!isAbortError(coR.reason, controller.signal)) failures.push("companies");
+
+      setFailedLookups(failures);
+      if (failures.length) toast.error(`Couldn't load ${failures.join(", ")} from VERIDIAN`);
+      setLookupsLoading(false);
     })();
+    return () => controller.abort();
   }, []);
 
+  // A lookup that FAILED is not a lookup that came back empty. The first is a
+  // fault to retry; the second is a real org-setup precondition.
+  const failedRequired = failedLookups.filter((f) => f === "fiscal years" || f === "the chart of accounts");
   const missingLookups = [
-    fiscalYears.length === 0 ? "fiscal years" : null,
-    accounts.length === 0 ? "a chart of accounts" : null,
+    !failedLookups.includes("fiscal years") && fiscalYears.length === 0 ? "fiscal years" : null,
+    !failedLookups.includes("the chart of accounts") && accounts.length === 0 ? "a chart of accounts" : null,
   ].filter(Boolean) as string[];
-  const blockedReason = missingLookups.length
+  const blockedReason = failedRequired.length
+    ? `Couldn't load ${failedRequired.join(" and ")} from VERIDIAN, so this form can't tell whether a budget can be created yet. Reload to retry.`
+    : missingLookups.length
     ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
     : null;
 
   async function createBudget() {
     const errs: FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount"> = {};
     if (!name.trim()) errs.name = "Budget name is required.";
-    if (!fiscalYearId) errs.fiscalYearId = fiscalYears.length ? "Select a fiscal year." : "No fiscal years exist in VERIDIAN for this organisation.";
-    if (!accountId.trim()) errs.accountId = accounts.length ? "Select an account." : "No chart of accounts exists in VERIDIAN for this organisation.";
+    if (!fiscalYearId) errs.fiscalYearId = fiscalYears.length
+      ? "Select a fiscal year."
+      : failedLookups.includes("fiscal years")
+        ? "Couldn't load fiscal years from VERIDIAN."
+        : "No fiscal years exist in VERIDIAN for this organisation.";
+    if (!accountId.trim()) errs.accountId = accounts.length
+      ? "Select an account."
+      : failedLookups.includes("the chart of accounts")
+        ? "Couldn't load the chart of accounts from VERIDIAN."
+        : "No chart of accounts exists in VERIDIAN for this organisation.";
     if (!annualAmount) errs.annualAmount = "Annual amount is required.";
     else if (Number.isNaN(Number(annualAmount))) errs.annualAmount = "Annual amount must be a number.";
     setErrors(errs);

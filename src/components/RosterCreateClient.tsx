@@ -2,7 +2,14 @@
 
 // Real-screen conversion (2026-08-30): replaces LabourClient.tsx's old "Add
 // Worker" Dialog popup with a real create screen.
-import { useEffect, useState } from "react";
+//
+// R67 F-19 (R-245): the vendor lookup no longer swallows its own failure.
+// While it is in flight the Company select says "Loading subcontractors…";
+// if it fails, the field says "Couldn't load subcontractors — Retry" instead
+// of showing an empty dropdown that is indistinguishable from "this org has
+// no subcontractors". Company is OPTIONAL, so a failed lookup does NOT block
+// Save -- the button keeps naming the fields that really are missing.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -10,22 +17,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { useLookup } from "@/lib/use-lookup";
+import { LookupFieldError } from "@/components/LookupFieldError";
 
 type Vendor = { id: string; vendorName: string };
 
 export default function RosterCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const vendorLookup = useLookup<Vendor>({
+    url: "/api/vendors",
+    pick: (d) => d.vendors as Vendor[] | undefined,
+    label: "subcontractors",
+  });
   const [name, setName] = useState("");
   const [employeeCode, setEmployeeCode] = useState("");
   const [trade, setTrade] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [dailyRate, setDailyRate] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetchJson<{ vendors?: Vendor[] }>("/api/vendors").then((d) => setVendors(d.vendors ?? [])).catch(() => {});
-  }, []);
 
   const missing = [...(name.trim() ? [] : ["Name"]), ...(dailyRate ? [] : ["Daily Rate"])];
 
@@ -60,15 +69,16 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. EMP-001" /></div>
+        <div className="space-y-1.5"><Label>ID (optional)</Label><Input autoFocus value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. EMP-001" /></div>
         <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Mason, Electrician" /></div>
         <div className="space-y-1.5">
           <Label>Company (optional)</Label>
-          <Select value={vendorId} onValueChange={setVendorId}>
-            <SelectTrigger><SelectValue placeholder="Select subcontractor" /></SelectTrigger>
-            <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
+          <Select value={vendorId} onValueChange={setVendorId} disabled={vendorLookup.status !== "ready"}>
+            <SelectTrigger><SelectValue placeholder={vendorLookup.status === "ready" ? "Select subcontractor" : vendorLookup.placeholder} /></SelectTrigger>
+            <SelectContent>{vendorLookup.options.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
           </Select>
+          <LookupFieldError lookup={vendorLookup} />
         </div>
         <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} /></div>
       </div>

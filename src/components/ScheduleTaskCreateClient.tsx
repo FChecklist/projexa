@@ -2,6 +2,11 @@
 
 // Real-screen conversion (2026-08-30) -- replaces ScheduleBoardClient.tsx's
 // old "New Task" Dialog popup with a real create screen, same fields.
+//
+// R67 F-19 (R-245): the type lookup says which of its three states it is in --
+// "Loading task types…", the options, or "Couldn't load task types — Retry".
+// Type is OPTIONAL (the server applies its own default), so a failed lookup
+// does not block Save; the button keeps naming the real missing field.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,6 +14,8 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useLookup } from "@/lib/use-lookup";
+import { LookupFieldError } from "@/components/LookupFieldError";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
@@ -16,23 +23,23 @@ const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 export default function ScheduleTaskCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [types, setTypes] = useState<IssueType[]>([]);
+  const typeLookup = useLookup<IssueType>({
+    url: "/api/schedule/types",
+    pick: (d) => d.types as IssueType[] | undefined,
+    label: "task types",
+  });
   const [typeId, setTypeId] = useState("");
   const [priority, setPriority] = useState("no_priority");
   const [dueDate, setDueDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Preselect the org's default type once the lookup answers, exactly as
+  // before -- only the fetch moved into the shared, status-aware hook.
   useEffect(() => {
-    fetch("/api/schedule/types")
-      .then((res) => res.json())
-      .then((data) => {
-        const loaded: IssueType[] = data.types ?? [];
-        setTypes(loaded);
-        const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
-        if (defaultType) setTypeId(defaultType.id);
-      })
-      .catch(() => { /* type dropdown is a convenience -- create still works with server-side default */ });
-  }, []);
+    if (typeLookup.status !== "ready" || typeId) return;
+    const defaultType = typeLookup.options.find((t) => t.isDefault) ?? typeLookup.options[0];
+    if (defaultType) setTypeId(defaultType.id);
+  }, [typeLookup.status, typeLookup.options, typeId]);
 
   async function createTask() {
     if (!title.trim()) {
@@ -72,15 +79,16 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
           <Label>Title</Label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Pour foundation slab" />
+          <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Pour foundation slab" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label>Type</Label>
-            <Select value={typeId} onValueChange={setTypeId}>
-              <SelectTrigger className="w-full"><SelectValue placeholder={types.length ? "Select a type" : "Loading…"} /></SelectTrigger>
-              <SelectContent>{types.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+            <Select value={typeId} onValueChange={setTypeId} disabled={typeLookup.status !== "ready"}>
+              <SelectTrigger className="w-full"><SelectValue placeholder={typeLookup.status === "ready" ? "Select a type" : typeLookup.placeholder} /></SelectTrigger>
+              <SelectContent>{typeLookup.options.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
             </Select>
+            <LookupFieldError lookup={typeLookup} />
           </div>
           <div className="space-y-1.5">
             <Label>Priority</Label>

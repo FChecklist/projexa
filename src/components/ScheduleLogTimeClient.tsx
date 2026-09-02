@@ -5,19 +5,31 @@
 // from the Task Object Page's own inline "Log Time" action (ScheduleTaskObjectClient.tsx)
 // because this one's real job is picking WHICH task to log against, when
 // the user hasn't navigated to a specific task first.
-import { useEffect, useState } from "react";
+//
+// R67 F-19 (R-245): the task lookup is REQUIRED -- there is nothing to log
+// time against without it -- so its failure is reported twice: beside the
+// field ("Couldn't load tasks — Retry") and inside the primary button
+// ("Save (Task list failed to load)"), rather than leaving the user with an
+// empty dropdown and a Save that can never succeed.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { requiredLookupFailure, useLookup } from "@/lib/use-lookup";
+import { LookupFieldError } from "@/components/LookupFieldError";
 
 type Task = { id: string; number: number; title: string };
 
 export default function ScheduleLogTimeClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const taskLookup = useLookup<Task>({
+    url: `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`,
+    pick: (d) => d.tasks as Task[] | undefined,
+    label: "tasks",
+  });
   const [issueId, setIssueId] = useState("");
   const [hours, setHours] = useState("");
   const [spentOn, setSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
@@ -25,12 +37,7 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
   const [comments, setComments] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => res.json())
-      .then((data) => setTasks(data.tasks ?? []))
-      .catch(() => { /* task dropdown is a convenience */ });
-  }, [projectId]);
+  const taskListFailure = requiredLookupFailure(taskLookup, "Task list");
 
   async function logTime() {
     if (!issueId || !hours || !spentOn) {
@@ -63,17 +70,26 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
       onSave={logTime}
       onCancel={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
       onBack={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
-      saveDisabled={submitting || !issueId || !hours || !spentOn}
-      saveDisabledReason={submitting ? "Logging…" : !issueId || !hours || !spentOn ? "Task, hours, and date are required" : undefined}
+      saveDisabled={submitting || !issueId || !hours || !spentOn || taskListFailure !== null}
+      saveDisabledReason={
+        submitting
+          ? "Logging…"
+          : // A failed REQUIRED lookup is the more useful reason: "Task, hours
+            // and date are required" would blame the user for a field they
+            // cannot fill.
+            (taskListFailure ??
+              (!issueId || !hours || !spentOn ? "Task, hours, and date are required" : undefined))
+      }
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
           <Label>Task</Label>
-          <Select value={issueId} onValueChange={setIssueId}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
-            <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
+          <Select value={issueId} onValueChange={setIssueId} disabled={taskLookup.status !== "ready"}>
+            <SelectTrigger className="w-full"><SelectValue placeholder={taskLookup.status === "ready" ? "Select a task" : taskLookup.placeholder} /></SelectTrigger>
+            <SelectContent>{taskLookup.options.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
           </Select>
+          <LookupFieldError lookup={taskLookup} />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
