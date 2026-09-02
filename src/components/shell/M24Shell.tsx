@@ -93,6 +93,7 @@ import {
 } from "@/lib/card-catalogue";
 import {
   PILL_CATALOGUE,
+  isRankablePill,
   matchPillShortcut,
   pillEntryById,
   shortcutLabel,
@@ -1210,6 +1211,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // it out. The branch that used to catch everything else and TYPE THE PILL'S
   // NAME INTO THE BOX has no successor here: "leave the draft untouched" is a
   // property of every arm below, and there is no arm that writes to it.
+  //
+  // WHAT IS RECORDED, AND WHAT IS DELIBERATELY NOT (review fix). Usage exists
+  // for ONE purpose: to rank band 3's cards for this user. So a click is
+  // recorded only when it names something band 3 can rank -- a module or a
+  // view, both of which pass a derived chain whose last step resolves back
+  // through moduleForPill(). The rail, "Other - type it" and the platform names
+  // have no rankable card at all: rankCards() finds neither a card id nor a
+  // module for "other" or "platform.email", pushes them to unknownKeys, and the
+  // strip logs a warning and drops them -- after they have already consumed one
+  // of the six slots the server returns, so the user's real sixth card never
+  // reaches them. Recording them could only ever pollute the ranking it feeds.
+  // card-catalogue.test.ts asserts that what IS recorded all resolves.
   const onModuleEntrySelect = useCallback(
     (entryId: string) => {
       const entry = pillEntryById(entryId);
@@ -1232,7 +1245,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // The draft is normalised to empty rather than CLEARED: the item asks
           // for an empty input, and A-06 rules that words a person actually
           // typed are theirs. Whitespace is not words.
-          bumpUsage(entry.id);
           setDraft((current) => (current.trim() ? current : ""));
           setAwaitingText(true);
           composerRef.current?.focus();
@@ -1240,14 +1252,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         case "rail":
           // "Projects" has no page in PROJEXA; its control is the top rail, so
           // the click goes there rather than nowhere.
-          bumpUsage(entry.id);
           requestProject("Choose a project in the top rail");
           return;
         case "module": {
           const moduleId = entry.target?.kind === "module" ? entry.target.moduleId : entry.moduleId;
           const mod = moduleId ? MODULE_CATALOGUE.find((m) => m.id === moduleId) : undefined;
           if (!mod) return;
-          bumpUsage(entry.id, chainForUsage(mod.label, null));
+          if (isRankablePill(entry)) bumpUsage(entry.id, chainForUsage(mod.label, null));
           // D-08 / C-09: the second level is verbs. The module narrows the
           // sentence; its VERBS open routes (band 2).
           selectEntity(mod);
@@ -1260,7 +1271,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // changes, and the draft is left exactly as the user left it.
           const href = entry.target ? pillHref(entry.target, projectId) : null;
           if (!href) return;
-          bumpUsage(entry.id, chainForUsage(entry.label, null));
+          // Policies (/grc?tab=policies) and Department (/employees?tab=
+          // departments) are real PROJEXA screens with no module in this
+          // catalogue, so nothing in band 3 could ever rank them either -- the
+          // same reason the rail and the platform names record nothing.
+          if (isRankablePill(entry)) bumpUsage(entry.id, chainForUsage(entry.label, null));
           setSegments([{ id: entry.id, label: entry.label, kind: "action" as const }]);
           setPendingFunctionId(null);
           setArmedCard(null);
@@ -1274,7 +1289,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // R67 A-17 -- NOT A DEAD END AND NOT A LIE. The name belongs to
           // VERIDIAN and has no PROJEXA screen; band 2 says so and offers the
           // one thing that helps, which is the way there.
-          bumpUsage(entry.id);
           setPlatformNotice(entry.label);
           return;
       }

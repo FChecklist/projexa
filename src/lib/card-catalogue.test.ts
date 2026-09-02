@@ -29,6 +29,7 @@ import {
   type CardPreconditionId,
 } from "./card-catalogue";
 import { MODULE_CATALOGUE } from "./module-catalogue";
+import { PILL_CATALOGUE, isRankablePill, type PillEntry } from "./pill-catalogue";
 import { isShippedRoute } from "./nav-routes";
 
 const NO_UNMET = new Set<CardPreconditionId>();
@@ -270,5 +271,87 @@ describe("rankedKeyForCard -- keeping the pill path alive across the rename", ()
     const card = CARD_CATALOGUE.find((c) => c.id === "budgets.new")!;
     expect(rankedKeyForCard(card, [{ pillKey: "Permits" }])).toBeNull();
     expect(rankedKeyForCard(card, [])).toBeNull();
+  });
+});
+
+// R67 WS-A -- REVIEW FIX. The shell used to record a pill_usage row for every
+// entry in the expanded list, including four -- "Other - type it", "Projects"
+// (the rail), Email and Teams -- that have no rankable card at all. The server
+// stored them, labelForPillKey() humanised them to "Other" and "Platform
+// Email", and on the next read rankCards() found neither a card id nor a module
+// for them, pushed them to unknownKeys and the strip logged a warning and
+// dropped them -- AFTER each had consumed one of the six slots the server
+// returns, so the user's real sixth card never arrived.
+//
+// The rule is now isRankablePill(), and this is the assertion that keeps the
+// two halves honest: everything the shell records resolves, and everything it
+// declines to record really has nothing to resolve to.
+describe("every key the shell records can be ranked back into a card", () => {
+  /** The last step of the chain the shell sends, which is what
+   *  compliance-tracker's labelForPillKey() returns for a row that carries one
+   *  (projexa-pill-usage-service.ts:82-84) -- mirroring M24Shell's two arms. */
+  function recordedLabel(entry: PillEntry): string {
+    if (entry.destination === "module") {
+      return MODULE_CATALOGUE.find((m) => m.id === entry.moduleId)?.label ?? entry.label;
+    }
+    return entry.label;
+  }
+
+  const recorded = PILL_CATALOGUE.filter(isRankablePill);
+
+  test("the sweep is not vacuous", () => {
+    expect(recorded.length).toBeGreaterThan(10);
+    expect(recorded.some((e) => e.destination === "view")).toBe(true);
+  });
+
+  test("none of them lands in unknownKeys", () => {
+    for (const entry of recorded) {
+      const { unknownKeys } = rankCards({
+        ranked: [{ pillKey: entry.id, label: recordedLabel(entry) }],
+        role: null,
+      });
+      expect({ id: entry.id, unknownKeys }).toEqual({ id: entry.id, unknownKeys: [] });
+    }
+  });
+
+  test("and each one really pulls its own module's card to the front", () => {
+    // Stronger than "no warning": rankCards() always tops up from the role
+    // order, so an ignored key would still return six cards.
+    for (const entry of recorded) {
+      const { cards } = rankCards({ ranked: [{ pillKey: entry.id, label: recordedLabel(entry) }], role: null });
+      expect({ id: entry.id, module: cards[0]?.moduleId }).toEqual({ id: entry.id, module: entry.moduleId });
+    }
+  });
+
+  test("what is NOT recorded is exactly what could not be ranked", () => {
+    const declined = PILL_CATALOGUE.filter((e) => !isRankablePill(e));
+    // The four the review named ("Other", the rail's Projects, Email, Teams),
+    // the two real screens that belong to no module in this catalogue
+    // (Policies -> /grc, Department -> /employees), and the two modules that
+    // have no card in CARD_CATALOGUE for a ranking to stand in for.
+    expect(declined.map((e) => e.id).sort()).toEqual(
+      [
+        "other",
+        "platform.customers",
+        "platform.department",
+        "platform.email",
+        "platform.policies",
+        "platform.projects",
+        "platform.teams",
+        "platform.vendors",
+      ].sort()
+    );
+  });
+
+  test("...because ranking any of them would change nothing on screen", () => {
+    // The precise cost, stated as an equality: a row for one of these produces
+    // the SAME strip as no row at all, having spent one of the server's six
+    // slots to do it. Four are rejected outright (unknownKeys) and two resolve
+    // to a module with no card, which rankCards() then skips.
+    const baseline = rankCards({ ranked: [], role: null }).cards.map((c) => c.id);
+    for (const entry of PILL_CATALOGUE.filter((e) => !isRankablePill(e))) {
+      const { cards } = rankCards({ ranked: [{ pillKey: entry.id, label: entry.label }], role: null });
+      expect({ id: entry.id, cards: cards.map((c) => c.id) }).toEqual({ id: entry.id, cards: baseline });
+    }
   });
 });

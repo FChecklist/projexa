@@ -44,7 +44,7 @@
 //     label, unique across the list. See KEY HINTS below for why the shortcut
 //     itself is Alt+<letter> rather than the bare letter.
 
-import { allModulesEntries, type AllModulesEntry } from "./card-catalogue";
+import { CARD_CATALOGUE, allModulesEntries, type AllModulesEntry } from "./card-catalogue";
 import { pillTargetFor, type PillTarget } from "./pill-routes";
 
 /**
@@ -178,6 +178,34 @@ export function pillCatalogue(): readonly PillEntry[] {
 
 export function pillEntryById(id: string): PillEntry | null {
   return PILL_CATALOGUE.find((e) => e.id === id) ?? null;
+}
+
+/**
+ * TRUE when a click on this pill is worth recording as usage (review fix).
+ *
+ * Usage exists for ONE purpose: ranking band 3's cards for this user. A key
+ * that cannot be ranked back into a card is not merely useless -- it is
+ * harmful. rankCards() finds neither a card id nor a module for "other",
+ * "platform.email" or "platform.policies", so it pushes them to unknownKeys and
+ * the strip drops them with a console warning; but the server has already spent
+ * one of the six slots in its ranked response on them, so the user's real sixth
+ * card never arrives.
+ *
+ * SO THE TEST IS "COULD BAND 3 PUT THIS ON SCREEN", not "does the key parse".
+ * Resolving to a module is not enough: rankCards() stands a ranked module in
+ * for THAT MODULE'S HIGHEST-WEIGHTED CARD, so a module with no card in
+ * CARD_CATALOGUE (Customers, Vendors) is recognised and then silently skipped,
+ * which spends a server slot to change nothing. Whenever such a module gains a
+ * card its pill starts recording again, with no change here.
+ *
+ * card-catalogue.test.ts asserts both halves: every entry this admits pulls its
+ * own module's card to the front of the ranking, and every entry it excludes
+ * really has nothing to rank.
+ */
+export function isRankablePill(entry: PillEntry): boolean {
+  if (entry.destination !== "module" && entry.destination !== "view") return false;
+  if (!entry.moduleId) return false;
+  return CARD_CATALOGUE.some((card) => card.moduleId === entry.moduleId);
 }
 
 /** The words rendered on the pill and read out as its shortcut. */
