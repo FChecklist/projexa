@@ -20,6 +20,11 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FormScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { createClient } from "@/lib/supabase/client";
+import { messageFor } from "@/lib/task-errors";
+// R67 B-09 (DE-22): the required-field rule and the Save button's own words
+// live beside the server's rule, not inside this component -- see that
+// module's header for why.
+import { missingFieldNames, missingProgressFields, submitLabelFor } from "@/lib/work-progress-form-fields";
 import {
   enqueueWorkProgressEntry,
   listQueuedWorkProgressEntries,
@@ -40,6 +45,7 @@ const ENTRY_BASIS_OPTIONS = [
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
+
 
 export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -129,6 +135,11 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     return () => { cancelled = true; };
   }, [selectedBoqId]);
 
+  // R67 B-09: whether THIS project is measured against a BOQ at all. The
+  // /api/scope fetch below already answers it, so this needs no extra call.
+  const projectHasBoq = boqs.length > 0;
+  const missingRequired = missingProgressFields(values, projectHasBoq);
+
   const columns: ScreenColumn[] = [
     { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },
     // Shown only when the project actually holds more than one BOQ -- with a
@@ -142,7 +153,16 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
             .map((b) => ({ value: b.id, label: `${b.title} (v${b.version}, ${b.status})` })),
         } as ScreenColumn]
       : []),
-    { label: "BOQ line item", field: "boqLineItemId", control: "SELECT", type: "text", required: false, fieldStatus: "OPTIONAL", options: lineItems.map((l) => ({ value: l.id, label: l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description })) },
+    // R67 B-09: REQUIRED whenever the project actually has a BOQ, matching
+    // the one rule the API route now enforces for both callers
+    // (construction-progress-service.createEntry). An entry with no line on a
+    // project measured against a BOQ cannot be rolled up, cannot be valued,
+    // and vanishes from the Work Progress Report -- so the form must ask for
+    // it up front rather than let the server refuse after the click. On a
+    // project with NO BOQ there is nothing to link to and the field stays
+    // optional (and its picker empty), which is why this is derived from
+    // `projectHasBoq` rather than hard-coded either way.
+    { label: "BOQ line", field: "boqLineItemId", control: "SELECT", type: "text", required: projectHasBoq, fieldStatus: projectHasBoq ? "REQUIRED" : "OPTIONAL", options: lineItems.map((l) => ({ value: l.id, label: l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description })) },
     { label: "Line item description", field: "description", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
     { label: "Unit", field: "unit", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
     { label: "Rate", field: "rate", control: "DERIVED", type: "number", fieldStatus: "OPTIONAL" },
@@ -172,10 +192,11 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   }
 
   async function handleSubmit() {
-    const required = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
-    const missing = required.filter((f) => values[f] === undefined || values[f] === null || values[f] === "");
+    const missing = missingRequired;
     if (missing.length > 0) {
-      setMessages([{ level: "error", text: `${missing.length} required field${missing.length === 1 ? "" : "s"} missing` }]);
+      // R67 B-09 (DE-22): NAME the fields, do not count them. "2 required
+      // fields missing" makes the user hunt; "Activity, BOQ line" does not.
+      setMessages([{ level: "error", text: `Still needed: ${missingFieldNames(missing)}` }]);
       return;
     }
     const pct = Number(values.percentComplete);
@@ -216,6 +237,15 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       const res = await fetch("/api/work-progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        // R67 B-09 (D-03): the route answers a rule violation with a CODE.
+        // Rendering it through the SAME dictionary the composer uses is what
+        // makes both paths produce the same words -- "Pick a BOQ line", never
+        // "itemCode" and never "boqLineItemId".
+        if (typeof err.code === "string") {
+          setMessages([{ field: "boqLineItemId", level: "error", text: messageFor(err.code) }]);
+          setSubmitting(false);
+          return;
+        }
         throw new Error(err.error ?? "Failed to log progress");
       }
       const created = await res.json();
@@ -256,18 +286,22 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   // Permits' Save applies here too -- Log Entry was clickable with required
   // fields still empty. See PermitObjectClient.tsx's own comment for the
   // GLOBAL rule this violated.
-  const requiredFields = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
-  const missingCount = requiredFields.filter((f) => values[f] === undefined || values[f] === null || values[f] === "").length;
+  //
+  // R67 B-09: `boqLineItemId` joins the list whenever the project has a BOQ,
+  // which is exactly the rule the API route enforces -- so the button is
+  // disabled for the same reason the server would have refused, instead of
+  // the user finding out after the click.
+  const missingCount = missingRequired.length;
 
   return (
     <FormScreen
       breadcrumb="Work Progress / Log entry"
       title="Log Work Progress"
       onSubmit={handleSubmit}
-      submitLabel="Log Entry"
+      submitLabel={submitLabelFor(missingRequired)}
       submitting={submitting}
       submitDisabled={missingCount > 0}
-      submitDisabledReason={missingCount > 0 ? `${missingCount} required field${missingCount === 1 ? "" : "s"}` : undefined}
+      submitDisabledReason={missingCount > 0 ? missingFieldNames(missingRequired) : undefined}
       messages={messages}
       banner={queued.length > 0 ? (
         <div className="mx-4 mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
