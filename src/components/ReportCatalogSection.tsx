@@ -83,8 +83,21 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
   );
 }
 
+// R67 D-31 (R-090): a static catalogue entry whose figures ARE now rendered
+// inside PROJEXA, and where. Until this, the Attendance Report and the Manpower
+// Cost Report both carried "Not yet viewable here" while the same numbers were
+// live on the Manpower screen -- so the product gave three different answers to
+// "where is my attendance report". An entry listed here shows the destination
+// instead of the badge. Keyed by the catalogue id VERIDIAN's own
+// report-catalog-service.ts assigns (CONSTRUCTION_REPORT_META).
+const VIEWABLE_HERE: Record<string, { href: string; label: string }> = {
+  "construction-attendance": { href: "/labour?tab=attendance", label: "Open in Manpower › Attendance" },
+  "construction-manpower-cost": { href: "/labour?tab=attendance", label: "Open in Manpower › Attendance" },
+};
+
 function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies: Company[] }) {
   const [expanded, setExpanded] = useState(false);
+  const viewableHere = VIEWABLE_HERE[entry.id];
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -92,7 +105,7 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
         <span className="text-sm font-medium text-px-ink">{entry.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={entry.status} />
-          {entry.source === "static" && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
+          {entry.source === "static" && !viewableHere && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
           {entry.source === "definition" && (
             <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30">Engine</Badge>
           )}
@@ -100,7 +113,11 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
       </div>
       <p className="text-xs text-px-muted mb-1.5">{entry.description}</p>
 
-      {entry.source === "static" ? (
+      {entry.source === "static" && viewableHere ? (
+        <a href={viewableHere.href} className="text-xs font-medium text-px-teal hover:text-px-ink transition-colors">
+          {viewableHere.label}
+        </a>
+      ) : entry.source === "static" ? (
         <p className="text-[10.5px] text-px-muted/80">
           Runs on VERIDIAN own dashboard ({entry.route}) -- not yet renderable inside PROJEXA, shown for visibility only.
         </p>
