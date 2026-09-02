@@ -46,6 +46,52 @@
   --color-px-steel: var(--color-ct-teal);
   --color-px-steel-hover: var(--color-ct-teal);
 
+  /* ─── R67 WS-G status TEXT tones (R-197 / R-214 / R-227 / R-260) ────────
+     PROJEXA-local by programme decision D-09: the kit's token file is NOT
+     edited and no kit release is cut, so these are declared here, AFTER the
+     kit's own @import above, and shadow nothing the kit owns.
+
+     WHY THEY EXIST. The kit's four M24 status tones
+     (--color-veri-status-context/needs-you/done/late) are TINTS -- they are
+     right as a chip fill or a glyph stroke on a tinted chip, and wrong as the
+     WORD, because as text on cream they land between 2.4:1 and 3.4:1. R-214's
+     rule is that a status is a glyph PLUS A WORD, so the word has to clear
+     4.5:1. These five are the same four hues (plus grey) darkened until they
+     do. Measured ratios on #FFFDF9 / #FFFFFF, asserted in
+     src/lib/theme/contrast.test.ts, which is the machine-readable copy of
+     this block -- change one, change the other:
+       needs-you 5.79 / 5.88 | running 6.71 / 6.82
+       done      5.78 / 5.87 | late    5.94 / 6.04 | neutral 7.41 / 7.53
+     The tints stay fills. Rose (--status-late-text) is reserved for LATE and
+     ERROR only; "superseded" and "draft" are the neutral grey chip. */
+  --color-status-needs-you-text: var(--status-needs-you-text);
+  --color-status-running-text: var(--status-running-text);
+  --color-status-done-text: var(--status-done-text);
+  --color-status-late-text: var(--status-late-text);
+  --color-status-neutral-text: var(--status-neutral-text);
+  /* Saffron's readable text-weight sibling. R-197: saffron itself is 2.56:1
+     on cream and is therefore NEVER text -- not the Home badge, not the
+     active tab, not the avatar, not the greeting icon. Where a brand-coloured
+     WORD is genuinely wanted, this is the token. */
+  --color-brand-text: var(--brand-text);
+  /* C-13: the fallback FILL for the rare control where white text is
+     unavoidable (white on this is 5.33:1). The preferred fix stays navy text
+     on the unchanged saffron fill -- no new colour. */
+  --color-brand-fill-deep: var(--brand-fill-deep);
+
+  /* ─── R67 WS-G / R-260: one 13px body scale ───────────────────────────────
+     `text-sm` is this app's de-facto body class (several hundred call sites),
+     so re-valuing the SCALE is what actually collapses the panes onto one
+     size -- rewriting every call site to `text-[13px]` would be the same
+     result with three hundred more diff lines and three hundred more chances
+     to miss one. `text-xs` follows it down proportionally so the secondary
+     step keeps its relationship. Headings are untouched: they use
+     --font-heading (DM Serif Display) and their own text-base/lg/xl steps. */
+  --text-sm: 13px;
+  --text-sm--line-height: 1.5;
+  --text-xs: 11.5px;
+  --text-xs--line-height: 1.45;
+
   /* ─── Semantic Colors (unchanged -- veridian-ui-kit doesn't define
      success/warning/error/info tones yet; these stay PROJEXA-local until
      it does) ─── */
@@ -141,7 +187,17 @@
   --popover: #FFFFFF;
   --popover-foreground: #1C2B3A;
   --primary: #F5820A;
-  --primary-foreground: #FFFFFF;
+  /* R67 WS-G (R-197 / R-260 / R-087), the single highest-traffic fix in this
+     workstream. This was #FFFFFF: white on the saffron fill measures 2.60:1,
+     so EVERY primary button in PROJEXA failed WCAG AA -- and the default
+     shadcn Button variant is `bg-primary text-primary-foreground`, so this
+     one line is the whole fix, with no per-button rewrite and no new colour.
+     Navy on the same saffron fill is 5.55:1 (asserted, see
+     src/lib/theme/contrast.test.ts). C-13's darker-orange fill (#A8540A with
+     white text, 5.33:1) stays available as --brand-fill-deep for the rare
+     control where white text is genuinely unavoidable; it is the fallback,
+     not the default. */
+  --primary-foreground: #1C2B3A;
   --secondary: #F0F4F8;
   --secondary-foreground: #1C2B3A;
   --muted: #F0F4F8;
@@ -153,20 +209,34 @@
   --input: #CBD5E1;
   --ring: #F5820A;
 
-  /* Reports pivot/chart UI (2026-07-27): these 5 slots previously carried
-     Priority-11-era placeholder hex values that were never validated for
-     categorical use and were consumed nowhere in the codebase (grep-
-     confirmed before this change). Replaced with the dataviz skill's
-     validated 5-slot categorical order (blue/orange/aqua/yellow/magenta) --
-     passes lightness band, chroma floor, CVD adjacent-pair separation, and
-     normal-vision floor on this surface (#FFFDF9); see
-     ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md for the validator output.
-     Do not reorder -- the slot order IS the CVD-safety mechanism. */
-  --chart-1: #2a78d6;
-  --chart-2: #eb6834;
-  --chart-3: #1baf7a;
-  --chart-4: #eda100;
-  --chart-5: #e87ba4;
+  /* R67 WS-G (R-227). The previous five (2026-07-27) were a SATURATED
+     categorical order -- #eb6834 in slot 2 in particular is a near-neighbour
+     of the brand saffron, so a bar chart and a primary button carried the
+     same colour on the same screen, and the reader had no way to know one was
+     data and the other was a control. Replaced by the muted, CVD-checked set
+     R-227 names, IDENTICAL in light and dark so a legend swatch is the same
+     colour whichever theme the reader is in: dusty blue / sage / clay / rose
+     / grey. Do not reorder -- the slot order IS the CVD-safety mechanism, and
+     these five separate by HUE, not by lightness, which is why R-227 also
+     requires bar radius 0 with the value printed at the bar end. Rose here is
+     a data slot, not the status "late" tone; nothing reads status from a
+     chart. Asserted in src/lib/theme/contrast.test.ts (CHART_SERIES). */
+  --chart-1: #4a7fa5;
+  --chart-2: #5a9178;
+  --chart-3: #c08a4a;
+  --chart-4: #b5748a;
+  --chart-5: #718096;
+
+  /* R67 WS-G status TEXT tones -- see the @theme inline block above for the
+     full rationale and the measured ratios. Fills stay the kit's tints; these
+     are what the glyph and the WORD are painted in. */
+  --status-needs-you-text: #8A5A24;
+  --status-running-text: #2F5F82;
+  --status-done-text: #3E6E58;
+  --status-late-text: #8F4F66;
+  --status-neutral-text: #4A5568;
+  --brand-text: #9A4D0A;
+  --brand-fill-deep: #A8540A;
 
   --sidebar: #FFFDF9;
   --sidebar-foreground: #4A5568;
@@ -197,17 +267,28 @@
   --input: #33495C;
   --ring: #F5820A;
 
-  /* Reports pivot/chart UI (2026-07-27): dark-mode chart series were never
-     defined before this change (the .dark block had no --chart-N overrides
-     at all, so dark mode silently reused the light-mode hexes against a
-     dark surface, unvalidated). These are the dataviz skill's own dark
-     steps for the same 5 slots, validated against this app's dark
-     surface (#182430/#10181F). */
-  --chart-1: #3987e5;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #c98500;
-  --chart-5: #d55181;
+  /* R67 WS-G (R-227): the SAME five values as light mode, deliberately. The
+     previous dark steps were a second set of hexes for the same five slots,
+     so a legend swatch a reader had learned in light mode was a different
+     colour in dark mode. The muted set clears the 3:1 non-text floor against
+     this surface too (3.65 / 4.32 / 5.23 / 4.37 / 3.92, asserted in
+     src/lib/theme/contrast.test.ts), so one set serves both. */
+  --chart-1: #4a7fa5;
+  --chart-2: #5a9178;
+  --chart-3: #c08a4a;
+  --chart-4: #b5748a;
+  --chart-5: #718096;
+
+  /* Status TEXT tones, lightened for the dark card (#182430): the word must
+     clear 4.5:1 in BOTH themes, per R-087. Measured 7.98 / 8.12 / 8.49 /
+     7.71 / 6.53. */
+  --status-needs-you-text: #E0B078;
+  --status-running-text: #8FC0E4;
+  --status-done-text: #8FCBAF;
+  --status-late-text: #E5A3BA;
+  --status-neutral-text: #9AA9B5;
+  --brand-text: #F0A65A;
+  --brand-fill-deep: #A8540A;
 }
 
 @layer base {
@@ -215,6 +296,13 @@
     @apply border-px-border outline-ring/50;
   }
   body {
+    /* R67 WS-G (R-260): ONE body scale. `text-sm` is re-valued to 13px in the
+       @theme block above; this sets the same size for everything that never
+       carried a text-* utility at all, so there is a single resting size
+       across both panes rather than a 14px/13px mix that reads as two
+       systems. Headings keep DM Serif Display and their own steps. */
+    font-size: 13px;
+    line-height: 1.5;
     @apply bg-background text-foreground font-sans antialiased;
   }
   h1, h2, h3, h4, .font-heading {

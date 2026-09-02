@@ -32,6 +32,7 @@ mock.module("next/navigation", () => ({
 // `globalThis?.document` check -- is evaluated AFTER register() has run.
 const ScopeClient = (await import("./ScopeClient")).default;
 const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
+const { EMPTY_VALUE } = await import("@/lib/format-money");
 
 afterEach(() => {
   cleanup();
@@ -140,7 +141,10 @@ describe("ScopeClient -- one list call, no per-revision compare fan-out", () => 
     const { findByText, container } = render(<ScopeClient projectId="proj-1" />);
     await findByText("Orphan revision");
 
-    expect(container.textContent).toContain("—");
+    // R67 G-04's one empty marker, not a local em-dash: "the server had no
+    // baseline to compare against" reads the same here as in every other
+    // empty cell in the product.
+    expect(container.textContent).toContain(EMPTY_VALUE);
     // the honest dash, not a confident zero
     expect(container.textContent).not.toContain("+0");
   });

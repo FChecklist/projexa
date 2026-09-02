@@ -6,6 +6,69 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// R67 WS-G (R-197 / R-260): the editor half of the saffron rule. #F5820A is a
+// FILL -- as text on the app's cream it measures 2.56:1, and white on it
+// measures 2.60:1, which is what made every primary button in this app fail
+// WCAG AA. `text-brand-text` (#9A4D0A, 6.01:1) is the brand-coloured WORD,
+// and `bg-brand-fill-deep` (#A8540A, white at 5.33:1) is correction C-13's
+// fill for the rare control where white text is unavoidable.
+//
+// This selector matches a className written as a plain string literal, which
+// is the shape that gets typed by hand and therefore the one worth catching
+// AS you type it. Template literals and cn() calls are covered by
+// src/lib/saffron-discipline.test.ts, which scans the source directly -- the
+// two halves together are the rule.
+const SAFFRON_TEXT_MESSAGE =
+  "Saffron is a fill, never text: #F5820A on cream is 2.56:1 (WCAG AA needs 4.5:1). Use text-brand-text for a brand-coloured word, or text-ct-navy on a saffron fill.";
+const WHITE_ON_SAFFRON_MESSAGE =
+  "White on a saffron fill is 2.60:1. The default is navy on saffron (5.55:1) -- which --primary-foreground already gives every shadcn Button -- or bg-brand-fill-deep with white (5.33:1, correction C-13).";
+
+const saffronDiscipline = {
+  files: ["src/**/*.tsx"],
+  // The marketing landing page (src/components/marketing) sits on navy, where
+  // saffron text is 5.55:1 and passes; the app surfaces are cream. Only the
+  // TEXT half is exempt there -- white-on-saffron is caught everywhere,
+  // because both of those colours are fixed.
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector: "JSXAttribute[name.name='className'] > Literal[value=/\\btext-(px-orange|ct-saffron)\\b/]",
+        message: SAFFRON_TEXT_MESSAGE,
+      },
+      {
+        selector:
+          "JSXAttribute[name.name='className'] > Literal[value=/\\bbg-(px-orange|ct-saffron)(\\/\\d+)?\\b[^\"']*\\btext-white\\b/]",
+        message: WHITE_ON_SAFFRON_MESSAGE,
+      },
+      {
+        selector:
+          "JSXAttribute[name.name='className'] > Literal[value=/\\btext-white\\b[^\"']*\\bbg-(px-orange|ct-saffron)(\\/\\d+)?\\b/]",
+        message: WHITE_ON_SAFFRON_MESSAGE,
+      },
+    ],
+  },
+};
+
+const marketingSaffronTextAllowed = {
+  files: ["src/components/marketing/**/*.tsx"],
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "JSXAttribute[name.name='className'] > Literal[value=/\\bbg-(px-orange|ct-saffron)(\\/\\d+)?\\b[^\"']*\\btext-white\\b/]",
+        message: WHITE_ON_SAFFRON_MESSAGE,
+      },
+      {
+        selector:
+          "JSXAttribute[name.name='className'] > Literal[value=/\\btext-white\\b[^\"']*\\bbg-(px-orange|ct-saffron)(\\/\\d+)?\\b/]",
+        message: WHITE_ON_SAFFRON_MESSAGE,
+      },
+    ],
+  },
+};
+
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
     // TypeScript rules
@@ -51,7 +114,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-unreachable": "off",
     "no-useless-escape": "off",
   },
-}, {
+}, saffronDiscipline, marketingSaffronTextAllowed, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
 }];
 

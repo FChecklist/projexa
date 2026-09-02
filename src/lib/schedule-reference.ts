@@ -19,17 +19,28 @@ import { callVeridian, VERIDIAN_PAGE_BUDGET_MS } from "@/lib/veridian-client";
 export type IssueType = { id: string; name: string; isDefault?: boolean | null };
 export type ScheduleTask = { id: string; number: number; title: string };
 
-export async function resolveIssueTypes(organizationId: string | null): Promise<IssueType[]> {
+// R67 G-04 (R-231) merged with F-09: "the lookup failed" and "this org has no
+// task types" are different facts, and schedule-type-state.ts says a different
+// sentence about each -- so the resolver has to tell them apart rather than
+// collapsing both into []. Same shape and same rule as the task lookup below.
+export type IssueTypeLookup = { types: IssueType[]; unavailable: boolean };
+
+export async function resolveIssueTypesLookup(organizationId: string | null): Promise<IssueTypeLookup> {
   try {
     const data = await callVeridian<{ types?: IssueType[] }>("/schedule/types", {
       organizationId: organizationId ?? undefined,
       timeoutMs: VERIDIAN_PAGE_BUDGET_MS,
     });
-    return data.types ?? [];
+    return { types: data.types ?? [], unavailable: false };
   } catch (err) {
     console.error("[schedule-reference] task types lookup failed:", err instanceof Error ? err.message : err);
-    return [];
+    return { types: [], unavailable: true };
   }
+}
+
+/** The list alone, for callers with nothing different to say about a failure. */
+export async function resolveIssueTypes(organizationId: string | null): Promise<IssueType[]> {
+  return (await resolveIssueTypesLookup(organizationId)).types;
 }
 
 // R67 F-11 (R-146): "the lookup failed" and "this project has no tasks" are

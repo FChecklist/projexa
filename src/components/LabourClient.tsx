@@ -51,7 +51,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -61,8 +61,10 @@ import { TableLoadingRows } from "@/components/TableLoadingRows";
 import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { loadVendors, type Vendor } from "@/lib/reference-lookups";
+import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -72,6 +74,9 @@ type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; s
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
+// R67 G-04 (R-231): the roster header reads ID | Name | Trade | Company |
+// Daily Rate | Status, and the Daily Rate header carries the currency, so
+// "AED" is stated once instead of forty times down the column.
 const COLUMNS: ScreenColumn[] = [
   { label: "ID", field: "employeeCode", type: "text", importance: "High" },
   { label: "Name", field: "name", type: "text", importance: "High" },
@@ -87,8 +92,25 @@ const COLUMNS: ScreenColumn[] = [
 export const LABOUR_FALLBACK_COLUMN_LABELS = ["S.No", ...COLUMNS.map((c) => c.label)];
 export const ATTENDANCE_COLUMN_LABELS = ["Date", "Worker", "Status", "Hours", "Cost"];
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  present: "default", half_day: "secondary", absent: "destructive",
+/** The money column, so the header can carry the unit and the cell can be right-aligned. */
+const MONEY_FIELDS = new Set(["dailyRate"]);
+
+// R67 G-02 (R-087). This map used to be shadcn Badge variants, and every one
+// of the three was wrong for what it meant:
+//   present    -> "default", which is the SAFFRON PRIMARY FILL. Saffron means
+//                 "the one action on this screen"; painting a resting,
+//                 nothing-to-do-here state in it made a log entry look like a
+//                 button, and white-on-saffron measures 2.60:1 besides.
+//   half_day   -> "secondary", a neutral grey that said nothing at all.
+//   absent     -> "destructive", bright red. Rose is reserved for late and
+//                 error; a worker who did not come in is not an error.
+// The tones below are the M24 four, each carrying its own glyph AND its own
+// word (the word is the attendance status itself), so the row is readable in
+// greyscale and to a colour-blind reader.
+const ATTENDANCE_TONE: Record<string, StatusTone> = {
+  present: "done",
+  half_day: "needs-you",
+  absent: "late",
 };
 
 const VALID_TABS = new Set(["roster", "attendance"]);
@@ -112,22 +134,31 @@ function isoToday(): string {
 // logic (including the vendorId -> company-name lookup), looked up by
 // field name so a registry row can reorder/relabel these 6 columns live
 // (the hard-stop test) without changing what renders.
-function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, rateCurrencyLabel: string) {
+function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string | null) => string, money: (v: number | string | null | undefined) => string) {
   switch (field) {
+    // R67 G-04 (R-231): the en-dash for an empty cell, everywhere, never the
+    // em-dash and never a blank.
     case "employeeCode":
-      return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
+      return <span className="text-px-muted">{r.employeeCode ?? EMPTY_VALUE}</span>;
     case "name":
       return <span className="font-medium">{r.name}</span>;
     case "trade":
-      return <span className="text-px-muted">{r.trade ?? "—"}</span>;
+      return <span className="text-px-muted">{r.trade ?? EMPTY_VALUE}</span>;
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
+    // R67 G-05: was `${currencyLabel}${r.dailyRate}` -- the raw drizzle
+    // numeric string, so "1200" and "1200.5" rendered with different
+    // precision in the same column. Now the one money formatter: two
+    // decimals, tabular figures, right-aligned, currency in the header.
     case "dailyRate":
-      return <span>{rateCurrencyLabel}{r.dailyRate}</span>;
+      return <span>{money(r.dailyRate)}</span>;
     case "isActive":
-      return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
+      // R67 G-02: was <Badge variant="default"> for active -- the saffron
+      // primary fill, on a row that is merely "this worker is on the roster".
+      // active -> sage tick, inactive -> grey circle, both with their word.
+      return <StatusPill status={r.isActive ? "active" : "inactive"} />;
     default:
-      return String((r as unknown as Record<string, unknown>)[field] ?? "—");
+      return String((r as unknown as Record<string, unknown>)[field] ?? EMPTY_VALUE);
   }
 }
 
@@ -168,12 +199,18 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   // boundary; null until the effect below runs is the honest initial state.
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const loadedRangeRef = useRef<string | null>(null);
+  // R67 F-06 review fix: the range a request is IN FLIGHT for, as distinct from
+  // the one already loaded. loadedRangeRef is only set when a request resolves,
+  // so hovering the Attendance tab and then clicking it used to start the same
+  // request twice -- the hover began it, and the tab effect could not yet see
+  // that it had. Cleared on failure, so a Retry is always a real retry.
+  const requestedRangeRef = useRef<string | null>(null);
 
-  const currencies = useCurrencies();
-  // dailyRate has no per-row currencyId (roster entries are always in the
-  // org's base currency) -- same undefined-id "org base currency" lookup
-  // QuotationsClient.tsx etc. use for currencyLabel().
-  const rosterCurrencyLabel = currencyLabel(undefined, currencies);
+  // dailyRate and dailyCost have no per-row currencyId (roster entries are
+  // always in the org's base currency), which is exactly what useOrgMoney()
+  // resolves -- and, when the org has no currency row at all, what makes it
+  // render the bare number behind a warning glyph instead of guessing.
+  const orgMoney = useOrgMoney();
 
   const rosterSlow = useSlowRequestFlag(roster === null && rosterError === null);
   const attendanceSlow = useSlowRequestFlag(attendanceLoading);
@@ -241,7 +278,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
     void loadAttendance(range.from, range.to);
   }, [activeTab, range, loadAttendance]);
 
-  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
+  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || EMPTY_VALUE;
   const workerName = (id: string) => (roster ?? []).find((r) => r.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
@@ -254,6 +291,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   const rangeLabel = range ? `${formatDate(range.from)} – ${formatDate(range.to)}` : null;
 
   return (
+    <>
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="roster">Roster</TabsTrigger>
@@ -300,7 +338,14 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                   <TableHeader>
                     <TableRow>
                       <TableHead>S.No</TableHead>
-                      {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                      {/* R67 G-05: the currency is stated once, in the money
+                          column header, instead of forty times down it. */}
+                      {columns.map((col) => (
+                        <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                          {col.label}
+                          {MONEY_FIELDS.has(col.field) ? orgMoney.unitSuffix : ""}
+                        </TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -315,7 +360,9 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                       >
                         <TableCell className="text-px-muted">{i + 1}</TableCell>
                         {columns.map((col) => (
-                          <TableCell key={col.field}>{renderRosterCell(col.field, r, vendorName, rosterCurrencyLabel)}</TableCell>
+                          <TableCell key={col.field} className={MONEY_FIELDS.has(col.field) ? MONEY_CELL_CLASS : undefined}>
+                            {renderRosterCell(col.field, r, vendorName, orgMoney.money)}
+                          </TableCell>
                         ))}
                       </TableRow>
                     ))}
@@ -374,15 +421,32 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
                 </p>
               ) : (
                 <Table>
-                  <TableHeader><TableRow>{ATTENDANCE_COLUMN_LABELS.map((label) => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Worker</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Hours</TableHead>
+                      {/* R67 G-05: the currency once, in the header. */}
+                      <TableHead className="text-right">Cost{orgMoney.unitSuffix}</TableHead>
+                    </TableRow>
+                  </TableHeader>
                   <TableBody>
                     {(attendance ?? []).map((a) => (
                       <TableRow key={a.id}>
                         <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
                         <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
-                        <TableCell><Badge variant={STATUS_VARIANT[a.status] ?? "outline"}>{a.status.replace(/_/g, " ")}</Badge></TableCell>
-                        <TableCell>{a.hoursWorked ?? "—"}</TableCell>
-                        <TableCell>{a.dailyCost}</TableCell>
+                        {/* R67 G-02: glyph + word, never the tone alone. An
+                            attendance value the backend adds later that is not
+                            in ATTENDANCE_TONE draws neutral with its own raw
+                            word, so a new state is visible rather than
+                            silently coloured as something it is not. */}
+                        <TableCell>
+                          <StatusPillTone tone={ATTENDANCE_TONE[a.status] ?? "neutral"} label={a.status.replace(/_/g, " ")} />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{a.hoursWorked ?? EMPTY_VALUE}</TableCell>
+                        {/* R67 G-05: was the raw drizzle numeric string. */}
+                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(a.dailyCost)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -393,5 +457,10 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
         )}
       </TabsContent>
     </Tabs>
+    {/* R67 G-05: once, at the foot of the screen, explaining the warning
+        glyph on every unlabelled figure -- and nothing at all when the org
+        has a currency. */}
+    <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

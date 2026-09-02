@@ -33,6 +33,7 @@ mock.module("next/navigation", () => ({
 const LabourClient = (await import("./LabourClient")).default;
 const { invalidateVendors } = await import("@/lib/reference-lookups");
 const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
+const { EMPTY_VALUE } = await import("@/lib/format-money");
 
 afterEach(() => {
   cleanup();
@@ -132,13 +133,15 @@ describe("LabourClient — the attendance log is windowed and deferred", () => {
     expect(spanDays).toBe(60);
   });
 
-  test("a failing vendors lookup degrades the Company cell to an em-dash and never blocks the roster", async () => {
+  test("a failing vendors lookup degrades the Company cell to the empty marker and never blocks the roster", async () => {
     stubFetch({ vendorsFail: true });
 
     const { getByText, getAllByText } = render(<LabourClient projectId="p1" />);
 
     await waitFor(() => expect(getByText("Ravi Kumar")).toBeDefined(), WAIT);
     // The Company cell for a worker whose vendor could not be resolved.
-    expect(getAllByText("—").length).toBeGreaterThan(0);
+    // R67 G-04's one empty marker (EMPTY_VALUE), not a local em-dash -- an
+    // unresolvable company reads the same as every other empty cell.
+    expect(getAllByText(EMPTY_VALUE).length).toBeGreaterThan(0);
   });
 });

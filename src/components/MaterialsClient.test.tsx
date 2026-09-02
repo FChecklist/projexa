@@ -75,6 +75,9 @@ function stubFetch() {
   return calls;
 }
 
+// The derived Total Cost cell, matched by its digits.
+const totalCostCell = (content: string) => content.includes("3,725.00");
+
 const materialsDataCalls = (calls: string[]) =>
   calls.filter((u) => u.includes("/api/materials") || u.includes("/api/construction-materials"));
 
@@ -99,8 +102,11 @@ describe("MaterialsClient — one data call on landing", () => {
     activateTab(getByRole("tab", { name: "Cost Report" }));
 
     // 3725 = 100 x 24.5 + 50 x 25.5, the same figure getMaterialCostReport()
-    // produces server-side.
-    await waitFor(() => expect(getByText("3725.00")).toBeDefined());
+    // produces server-side. Matched on the DIGITS rather than the whole
+    // rendered string: R67 G-05 owns how a money cell is presented (grouping,
+    // the currency code, the warning glyph when the org has none), and this
+    // test is about the arithmetic, not that presentation.
+    await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
     expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(0);
   });
 
@@ -116,7 +122,7 @@ describe("MaterialsClient — one data call on landing", () => {
     );
 
     activateTab(getByRole("tab", { name: "Cost Report" }));
-    await waitFor(() => expect(getByText("3725.00")).toBeDefined());
+    await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
 
     expect(calls.filter((u) => u.includes("/api/materials") && !u.includes("master"))).toHaveLength(1);
   });

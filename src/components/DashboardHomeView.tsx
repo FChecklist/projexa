@@ -8,8 +8,13 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
-import { formatTime } from "@/lib/format-date";
+import { formatHourMinute } from "@/lib/format-date";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
+
+/** Money column headers align with their cells. */
+const MONEY_HEAD_CLASS = "text-right";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -45,16 +50,28 @@ export type CurrencyRow = { id: string; code: string; name: string; symbol: stri
 // The value is duplicated rather than imported because that module is
 // "use client" and this is a Server Component -- see the note above; the
 // two must be kept in step.
-const CURRENCY_FALLBACK_LABEL = (() => {
-  const code = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY_CODE ?? "").trim();
-  return code ? `${code} ` : "";
-})();
-function currencyLabel(currencies: CurrencyRow[]): string {
-  const c = currencies.find((c) => c.isBaseCurrency);
-  return c ? `${c.code} ` : CURRENCY_FALLBACK_LABEL;
+// R67 G-05 (R-260): this file's own local formatCurrency() is gone. It was
+// the third independent copy of the same logic in this app, and it disagreed
+// with the other two in two ways that showed on screen: 0 decimals here
+// against 2 elsewhere, so one amount read "AED 1,200" on the home page and
+// "AED 1,200.00" one click away; and a null value fell through to the same
+// rendering as zero. src/lib/format-money.ts is now the only copy. It has no
+// "use client" and no React, precisely so this Server Component can use it.
+//
+// NEXT_PUBLIC_DEFAULT_CURRENCY_CODE is deliberately NOT consulted: it is a
+// deployment-wide guess, and R-260's rule is that a screen with no per-org
+// currency renders the number behind a warning glyph and says so once,
+// rather than labelling an amount with a code nobody confirmed. The
+// CurrencyNotSetNotice at the foot of the page is that sentence.
+function orgCurrency(currencies: CurrencyRow[]): string | null {
+  return currencies.find((c) => c.isBaseCurrency)?.code ?? null;
 }
-function formatCurrency(n: number, currencies: CurrencyRow[]) {
-  return `${currencyLabel(currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+/** KPI tiles show whole units -- the fraction is noise at that size. Every table cell keeps two decimals. */
+function formatKpi(n: number | null, currencies: CurrencyRow[]) {
+  return formatMoney(n, { currency: orgCurrency(currencies), fractionDigits: 0 });
+}
+function formatCurrency(n: number | null, currencies: CurrencyRow[]) {
+  return formatMoney(n, { currency: orgCurrency(currencies) });
 }
 
 // R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
@@ -108,11 +125,13 @@ export default function DashboardHomeView({
   // R67 F-01: an "as of" line under the KPI band. These figures are computed
   // at request time, so without it a reader has no way to tell a fresh number
   // from one their browser restored from the back/forward cache. Rendered with
-  // format-date.ts's pinned en-US/UTC formatter so the server's HTML and the
-  // client's hydration produce the same string -- a locale-dependent time here
-  // would be a guaranteed hydration mismatch on every request outside UTC --
-  // and labelled UTC rather than pretending to be the reader's local clock.
-  const updatedAt = formatTime(new Date());
+  // format-date.ts's pinned en-US/UTC HH:MM formatter so the server's HTML and
+  // the client's hydration produce the same string -- a locale-dependent time
+  // here would be a guaranteed hydration mismatch on every request outside UTC
+  // -- and labelled UTC rather than pretending to be the reader's local clock.
+  const updatedAt = formatHourMinute(new Date());
+  const currencySet = hasCurrency({ currency: orgCurrency(currencies) });
+  const unitSuffix = currencyUnitSuffix({ currency: orgCurrency(currencies) }) ?? "";
 
   // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
   // mockup): /dashboard is PROJEXA's designated home route (see
@@ -166,18 +185,24 @@ export default function DashboardHomeView({
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatCurrency(data.totalBudget, currencies)} icon={Wallet} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatCurrency(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatCurrency(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+              <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
+              <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
+              <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>
 
             <p className="text-[12.5px] text-px-muted">Updated {updatedAt} UTC</p>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
+                {/* R67 G-04 (R-231): the second branch used to end "Create
+                    another one below.", which referred to nothing -- the
+                    only create control is the button to the RIGHT of this
+                    sentence, not below it, and the first branch's "create one
+                    below" had the same fault. Both now point at the control
+                    that actually exists, by its own label. */}
                 {data.totalRevenue === 0
-                  ? `Total Revenue shows ${formatCurrency(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org — create one below.`
-                  : "Revenue reflects VERIDIAN ERP sales invoices for this org. Create another one below."}
+                  ? `Total Revenue shows ${formatKpi(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org.`
+                  : "Revenue reflects VERIDIAN ERP sales invoices for this org."}
               </p>
               {/* Real-screen conversion (2026-08-30) -- was a separate,
                   duplicate "Create / Link Invoice" Dialog popup
@@ -210,12 +235,13 @@ export default function DashboardHomeView({
                     <TableHeader>
                       <TableRow>
                         <TableHead>{columnLabel(columns, "project", "Project")}</TableHead>
-                        <TableHead>{columnLabel(columns, "value", "Value")}</TableHead>
-                        <TableHead>{columnLabel(columns, "earnedValue", "Earned Value")}</TableHead>
-                        <TableHead>{columnLabel(columns, "revenue", "Revenue")}</TableHead>
-                        <TableHead>{columnLabel(columns, "expenses", "Expenses")}</TableHead>
-                        <TableHead>{columnLabel(columns, "tasks", "Tasks")}</TableHead>
-                        <TableHead>{columnLabel(columns, "delayed", "Delayed")}</TableHead>
+                        {/* R67 G-05: the unit is stated once, in the header. */}
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "value", "Value")}{unitSuffix}</TableHead>
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "earnedValue", "Earned Value")}{unitSuffix}</TableHead>
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "revenue", "Revenue")}{unitSuffix}</TableHead>
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "expenses", "Expenses")}{unitSuffix}</TableHead>
+                        <TableHead className="text-right">{columnLabel(columns, "tasks", "Tasks")}</TableHead>
+                        <TableHead className="text-right">{columnLabel(columns, "delayed", "Delayed")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -225,8 +251,8 @@ export default function DashboardHomeView({
                           <TableCell className="font-medium">
                             <Link href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink hover:underline">{p.name}</Link>
                           </TableCell>
-                          <TableCell>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
-                          <TableCell>
+                          <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
+                          <TableCell className={MONEY_CELL_CLASS}>
                             {p.earnedValue === null ? (
                               <span className="text-px-muted">No progress yet</span>
                             ) : (
@@ -236,12 +262,15 @@ export default function DashboardHomeView({
                               </>
                             )}
                           </TableCell>
-                          <TableCell>{formatCurrency(p.revenue, currencies)}</TableCell>
-                          <TableCell>{formatCurrency(p.expenses, currencies)}</TableCell>
-                          <TableCell>{p.taskCount}</TableCell>
-                          <TableCell>
+                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.revenue, currencies)}</TableCell>
+                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.expenses, currencies)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{p.taskCount}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {p.delayedTaskCount > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-px-error">
+                              // R67 WS-G: the glyph and the number both carry
+                              // it; the tone is the readable rose text token,
+                              // not the raw error red.
+                              <span className="inline-flex items-center gap-1" style={{ color: "var(--status-late-text)" }}>
                                 <AlertTriangle className="size-3.5" /> {p.delayedTaskCount}
                               </span>
                             ) : (
@@ -255,6 +284,8 @@ export default function DashboardHomeView({
                 )}
               </CardContent>
             </Card>
+            {/* R67 G-05: said once, at the foot of the page. */}
+            <CurrencyNotSetNotice currencySet={currencySet} />
           </>
         )}
       </div>

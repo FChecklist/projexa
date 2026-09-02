@@ -12,7 +12,8 @@ import { Loader2, Play } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
@@ -107,9 +108,17 @@ const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
 // prefixes the same live label ReportOutput's cellValue() would otherwise
 // skip. Built inside ProjectReportsPanel (below) since it needs the live
 // `currencies` list from useCurrencies().
-function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencies>): Record<string, (v: unknown) => string> {
+//
+// R67 G-05 (R-260): the fix above prefixed the currency label onto the RAW
+// value, so a contract value came back "AED 4500000" on one report and
+// "AED 4500000.5" on another -- the same column, two precisions, no
+// grouping. It also rendered the em-dash for an absent value while the rest
+// of the app renders the en-dash. Both now come from the one money
+// formatter, which also means an org with NO currency gets the warning glyph
+// and the footer notice instead of an unexplained bare number.
+function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: unknown) => string> {
   return {
-    contractValue: (v) => (v === null || v === undefined ? "—" : `${currencyLabel(undefined, currencies)}${v}`),
+    contractValue: (v) => orgMoney.money(v as number | string | null | undefined),
   };
 }
 
@@ -152,7 +161,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   const [result, setResult] = useState<unknown>(null);
   const [fromCache, setFromCache] = useState(false);
   const [ranOnce, setRanOnce] = useState(false);
-  const currencies = useCurrencies();
+  const orgMoney = useOrgMoney();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
@@ -291,12 +300,15 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
               <ReportOutput
                 data={result}
                 fieldLabels={REPORT_FIELD_LABELS[reportName]}
-                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
+                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
               />
             </>
           )}
         </CardContent>
       </Card>
+      {/* R67 G-05: once, at the foot -- explains the warning glyph on every
+          unlabelled figure above, and renders nothing when a currency is set. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

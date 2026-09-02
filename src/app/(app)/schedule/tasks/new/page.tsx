@@ -1,7 +1,7 @@
 import ScheduleTaskCreateClient from "@/components/ScheduleTaskCreateClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { resolveIssueTypes } from "@/lib/schedule-reference";
+import { resolveIssueTypesLookup } from "@/lib/schedule-reference";
 import { Card, CardContent } from "@/components/ui/card";
 
 // Real-screen conversion (2026-08-30): replaces the old "New Task" Dialog
@@ -15,9 +15,12 @@ import { Card, CardContent } from "@/components/ui/card";
 export default async function ScheduleTaskNewPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const [{ project, errorMessage }, types] = await Promise.all([
+  // R67 G-04: the LOOKUP, not just the list -- a failed call and an org with
+  // no task types are different facts and the form says a different sentence
+  // about each.
+  const [{ project, errorMessage }, typeLookup] = await Promise.all([
     resolveSelectedProject(projectId, organizationId, { cacheSeconds: 60 }),
-    resolveIssueTypes(organizationId),
+    resolveIssueTypesLookup(organizationId),
   ]);
 
   if (errorMessage || !project) {
@@ -30,7 +33,11 @@ export default async function ScheduleTaskNewPage({ searchParams }: { searchPara
 
   return (
     <div className="flex-1">
-      <ScheduleTaskCreateClient projectId={project.id} types={types} />
+      <ScheduleTaskCreateClient
+        projectId={project.id}
+        types={typeLookup.types}
+        typesUnavailable={typeLookup.unavailable}
+      />
     </div>
   );
 }

@@ -33,14 +33,36 @@ export function defaultReportRange(): { from: string; to: string } {
 
 let slot: PrewarmedReport | null = null;
 
-export function reportRequestUrl(params: { projectId: string; from: string; to: string; boqId?: string }): string {
+export type ReportRequestParams = {
+  projectId: string;
+  from: string;
+  to: string;
+  boqId?: string;
+  /**
+   * R67 I-05's category filter. Part of the KEY, not an afterthought: a
+   * prewarm armed on the unfiltered arrival state must never be served to a
+   * run that asked for "Civil" only, or the screen would show every category
+   * under a filtered heading. Repeatable rather than comma-joined, matching
+   * the route -- a real category name may contain a comma.
+   */
+  categories?: string[];
+};
+
+/**
+ * The ONE place the report's request URL is built, used by the prewarm and by
+ * the component's own run. Two builders would eventually drift by one
+ * parameter, and the only symptom would be a prewarm that silently never
+ * matches -- a performance fix that quietly stops working.
+ */
+export function reportRequestUrl(params: ReportRequestParams): string {
   const search = new URLSearchParams({ projectId: params.projectId, from: params.from, to: params.to });
   if (params.boqId) search.set("boqId", params.boqId);
+  for (const category of params.categories ?? []) search.append("category", category);
   return `/api/work-progress/report?${search.toString()}`;
 }
 
 /** Starts the request if one for these exact parameters is not already armed. */
-export function prewarmReport(params: { projectId: string; from: string; to: string; boqId?: string }): void {
+export function prewarmReport(params: ReportRequestParams): void {
   const url = reportRequestUrl(params);
   if (slot?.key === url) return;
   const promise = fetch(url)
@@ -61,7 +83,7 @@ export function prewarmReport(params: { projectId: string; from: string; to: str
 }
 
 /** Returns and clears the armed promise, if it is for these exact parameters. */
-export function takePrewarmedReport(params: { projectId: string; from: string; to: string; boqId?: string }): Promise<unknown> | null {
+export function takePrewarmedReport(params: ReportRequestParams): Promise<unknown> | null {
   const url = reportRequestUrl(params);
   if (!slot || slot.key !== url) return null;
   const { promise } = slot;

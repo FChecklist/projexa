@@ -700,3 +700,93 @@ describe("vendorsFromRoster (R67 F-13: the sixth call, removed)", () => {
     expect(fromRoster).toEqual(fromMaster);
   });
 });
+// ---------------------------------------------------------------------------
+// R67 lane I (WS-I item I-05, R-177): the BOQ line's own `category` column
+// (drizzle/0532) is now the primary source of a row's categoryName, and the
+// Category multi-select on the parameter bar filters server-side, before the
+// roll-up, so subtotals and the Grand Total both describe the filtered set.
+describe("R67 I-05: category resolution order and the server-side Category filter", () => {
+  const CIVIL: BoqLineItem = { id: "c1", activityId: null, itemCode: "1", description: "Blockwork", unit: "sqm", quantity: 10, rate: 10, amount: 100, category: "Civil" };
+  const PAINT: BoqLineItem = { id: "p1", activityId: null, itemCode: "2", description: "Emulsion", unit: "sqm", quantity: 20, rate: 10, amount: 200, category: "Paint" };
+  const BARE: BoqLineItem = { id: "u1", activityId: null, itemCode: "3", description: "Odd job", unit: "ls", quantity: 1, rate: 50, amount: 50 };
+
+  function build(lineItems: BoqLineItem[], categoryFilter?: string[]) {
+    return buildWorkProgressReport({
+      lineItems, entries: [], activities: ACTIVITIES, categories: CATEGORIES,
+      from: "2026-07-01", to: "2026-07-31", categoryFilter,
+    });
+  }
+
+  test("the line's own category wins, and carries no fabricated categoryId", () => {
+    const [row] = build([CIVIL]).rows;
+    expect(row.categoryName).toBe("Civil");
+    expect(row.categoryId).toBeNull();
+  });
+
+  test("a line with no category of its own still resolves through activityId -> activity -> category, exactly as before", () => {
+    const [row] = build([LINE_ITEM]).rows;
+    expect(row.categoryName).toBe("Civil Works");
+    expect(row.categoryId).toBe("cat_1");
+  });
+
+  test('a blank or whitespace category is not a category -- the row reads "Uncategorized"', () => {
+    expect(build([{ ...BARE, category: "" }]).rows[0].categoryName).toBe("Uncategorized");
+    expect(build([{ ...BARE, category: "   " }]).rows[0].categoryName).toBe("Uncategorized");
+    expect(build([BARE]).rows[0].categoryName).toBe("Uncategorized");
+  });
+
+  test("direct-category rows group into SEPARATE buckets -- never collapsed onto one 'uncategorized' key", () => {
+    const { byCategory } = build([CIVIL, PAINT, BARE]);
+    expect(byCategory.map((c) => c.name).sort()).toEqual(["Civil", "Paint", "Uncategorized"]);
+    expect(byCategory.find((c) => c.name === "Civil")!.amtTotal).toBe(100);
+    expect(byCategory.find((c) => c.name === "Paint")!.amtTotal).toBe(200);
+  });
+
+  test("availableCategories lists every category present BEFORE the filter, with Uncategorized last", () => {
+    expect(build([PAINT, CIVIL, BARE]).availableCategories).toEqual(["Civil", "Paint", "Uncategorized"]);
+    // Still complete when a filter is applied, so the multi-select does not
+    // lose the options it just filtered out.
+    expect(build([PAINT, CIVIL, BARE], ["Civil"]).availableCategories).toEqual(["Civil", "Paint", "Uncategorized"]);
+  });
+
+  test("categoryFilter=['Civil'] returns only Civil rows, and the category subtotal is the whole report", () => {
+    const report = build([CIVIL, PAINT, BARE], ["Civil"]);
+    expect(report.rows.map((r) => r.lineItemId)).toEqual(["c1"]);
+    expect(report.byCategory).toHaveLength(1);
+    expect(report.byCategory[0].name).toBe("Civil");
+    expect(sumRootAmtTotal(report.rows)).toBe(report.byCategory[0].amtTotal);
+  });
+
+  test("the filter is case-insensitive -- an imported 'civil' line is not silently dropped", () => {
+    const report = build([{ ...CIVIL, category: "civil" }, PAINT], ["Civil"]);
+    expect(report.rows.map((r) => r.lineItemId)).toEqual(["c1"]);
+  });
+
+  test("an empty or all-blank filter means every category, not none", () => {
+    expect(build([CIVIL, PAINT, BARE], []).rows).toHaveLength(3);
+    expect(build([CIVIL, PAINT, BARE], ["  "]).rows).toHaveLength(3);
+    expect(build([CIVIL, PAINT, BARE], undefined).rows).toHaveLength(3);
+  });
+
+  test("Uncategorized is selectable by name and matches only lines that truly have none", () => {
+    const report = build([CIVIL, PAINT, BARE], ["Uncategorized"]);
+    expect(report.rows.map((r) => r.lineItemId)).toEqual(["u1"]);
+  });
+
+  test("filterRowsByCategory is applied AFTER the weighted parent roll-up, so a parent keeps its children's numbers", () => {
+    // A parent in Civil with a child in Paint: filtering to Civil must still
+    // show the parent's rolled-up total (which came from that Paint child),
+    // not a parent recomputed as if the child did not exist.
+    const parent: BoqLineItem = { id: "P", activityId: "act_1", itemCode: "P", description: "Main", unit: "sqm", quantity: 100, rate: 10, amount: 1000, category: "Civil" };
+    const child: BoqLineItem = { id: "C", activityId: "act_1", itemCode: "P.1", description: "Sub", unit: "sqm", quantity: 0, rate: 0, amount: 400, parentLineItemId: "P", breakdownPercentage: 40, category: "Paint" };
+    const entries: ProgressEntry[] = [{ id: "e", activityId: "act_1", boqLineItemId: "C", entryDate: "2026-07-10", quantityDone: 50 }];
+    const unfiltered = buildWorkProgressReport({ lineItems: [parent, child], entries, activities: ACTIVITIES, categories: CATEGORIES, from: "2026-07-01", to: "2026-07-31" });
+    const filtered = buildWorkProgressReport({ lineItems: [parent, child], entries, activities: ACTIVITIES, categories: CATEGORIES, from: "2026-07-01", to: "2026-07-31", categoryFilter: ["Civil"] });
+
+    const parentUnfiltered = unfiltered.rows.find((r) => r.lineItemId === "P")!;
+    const parentFiltered = filtered.rows.find((r) => r.lineItemId === "P")!;
+    expect(filtered.rows.map((r) => r.lineItemId)).toEqual(["P"]);
+    expect(parentFiltered.amt).toEqual(parentUnfiltered.amt);
+    expect(parentFiltered.qty).toEqual(parentUnfiltered.qty);
+  });
+})
