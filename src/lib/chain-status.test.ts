@@ -120,6 +120,10 @@ describe("sendLabel -- the button is named for what it will do", () => {
     expect(sendLabel({ ...base, action: WPR })).toBe("Run");
   });
 
+  test("a failure does not rename the button -- the next move is to try again", () => {
+    expect(sendLabel({ ...base, action: RECORD, error: "Nothing was saved" })).toBe("Save progress");
+  });
+
   test("free text keeps the generic verb -- the server decides what it means", () => {
     expect(sendLabel({ ...base, hasText: true })).toBe("Send");
     expect(sendLabel(base)).toBe("Send");

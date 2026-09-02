@@ -155,7 +155,11 @@ export function chainPrompt(state: ComposerState): string {
  * the button's width jump; a spinner sits beside it instead (see Composer).
  */
 export function sendLabel(state: ComposerState): string {
-  const status = chainStatus(state);
+  // Computed from the state UNDERNEATH any error, for the same reason
+  // chainPrompt() is: after a failure the user's next move is to try again, and
+  // a button that renamed itself from "Save progress" to "Send" the moment
+  // something went wrong would be describing the error rather than the action.
+  const status = chainStatus(state.error ? { ...state, error: null } : state);
   if (status.startsWith("missing-step:")) {
     const missing = state.missing ?? [];
     const n = missing.length;
