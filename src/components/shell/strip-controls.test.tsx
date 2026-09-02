@@ -21,6 +21,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { ControlStrip } from "./ControlStrip";
 import { PillStrip, type CardView } from "./PillStrip";
+import { ALL_PROJECTS_LABEL, TopRail } from "./TopRail";
 
 afterEach(cleanup);
 
@@ -178,5 +179,53 @@ describe("44 px minimums, on the elements that produce the box", () => {
   test("and the loaded-chain pin", () => {
     const { getByText } = renderControlStrip(true);
     atLeast44(getByText("Pin").closest("button")!);
+  });
+});
+
+// R67 WS-A (A-16), review fix -- THE THIRD FORK GETS A RENDER TEST.
+//
+// TopRail was forked for ONE reason: the kit types `organisationName` as a
+// string, so the slot could not hold "Organisation unavailable" AND the control
+// that retries it -- which is why the bare em-dash was on screen in the first
+// place. organisationLabel()'s three states are already asserted in
+// shell-resilience.test.ts; what was not asserted anywhere is that the widened
+// slot really renders a control, which is the entire point of the fork.
+describe("TopRail's organisation slot is a node, not a string", () => {
+  test("a message and its Retry control both render, and Retry is reachable", () => {
+    let retried = 0;
+    const { getByText, getByRole } = render(
+      <TopRail
+        brand={<span>PROJEXA</span>}
+        organisation={
+          <>
+            <span>Organisation unavailable</span>
+            <button type="button" onClick={() => retried++}>
+              Retry
+            </button>
+          </>
+        }
+        project={null}
+        onSwitchProject={() => {}}
+      />
+    );
+    expect(getByText("Organisation unavailable")).toBeDefined();
+    const retry = getByRole("button", { name: "Retry" });
+    retry.click();
+    expect(retried).toBe(1);
+    // M24's null state survives beside it: org-level work stays reachable.
+    expect(getByText(ALL_PROJECTS_LABEL)).toBeDefined();
+  });
+
+  test("a plain organisation name still renders as a name", () => {
+    const { getByText } = render(
+      <TopRail
+        brand={<span>PROJEXA</span>}
+        organisation={<span>Skyline Builders</span>}
+        project={{ id: "p1", name: "Cedar Heights Villa - Phase 1" }}
+        onSwitchProject={() => {}}
+      />
+    );
+    expect(getByText("Skyline Builders")).toBeDefined();
+    expect(getByText("Cedar Heights Villa - Phase 1")).toBeDefined();
   });
 });

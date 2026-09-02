@@ -113,26 +113,42 @@ describe("the tab constant and its storage key cannot come back by accident", ()
   // This file names the forbidden constant in order to forbid it, so it is the
   // one file the sweep must skip.
   const files = sourceFiles(SRC).filter((f) => !f.endsWith("composer-modes.test.tsx"));
+  // READ THE TREE ONCE. Both sweeps below used to readFileSync every .ts/.tsx
+  // file in src for themselves -- two full-tree reads inside bun's default 5 s
+  // per-test budget, which is fine on a quiet machine (4.9 s for the file) and
+  // times out on a loaded CI runner (measured: 81.8 s for one of them while the
+  // linter was running). One read, shared, plus an explicit budget, so a slow
+  // runner reports a real failure instead of a timeout.
+  const sources: readonly (readonly [string, string])[] = files.map((f) => [f, readFileSync(f, "utf8")] as const);
+  const SWEEP_TIMEOUT_MS = 30_000;
 
   test("the sweep is actually reading this repo", () => {
     // A silent zero would make every assertion below vacuously true.
-    expect(files.length).toBeGreaterThan(100);
-    expect(files.some((f) => f.endsWith("M24Shell.tsx"))).toBe(true);
+    expect(sources.length).toBeGreaterThan(100);
+    expect(sources.some(([f]) => f.endsWith("M24Shell.tsx"))).toBe(true);
   });
 
-  test("nothing imports or mentions CHAIN_MODES", () => {
-    // The kit still EXPORTS it -- other products keep the row -- so this is one
-    // import away from being untrue at any time.
-    const offenders = files.filter((f) => readFileSync(f, "utf8").includes("CHAIN_MODES"));
-    expect(offenders).toEqual([]);
-  });
+  test(
+    "nothing imports or mentions CHAIN_MODES",
+    () => {
+      // The kit still EXPORTS it -- other products keep the row -- so this is
+      // one import away from being untrue at any time.
+      const offenders = sources.filter(([, text]) => text.includes("CHAIN_MODES")).map(([f]) => f);
+      expect(offenders).toEqual([]);
+    },
+    SWEEP_TIMEOUT_MS
+  );
 
-  test("nothing reads or writes the 'veri.chain.mode' storage key", () => {
-    // Matched as a STORAGE CALL, not as a string: the deleted key is named in
-    // two comments that explain why it is gone, and a test that forbade the
-    // words would forbid the explanation.
-    const storageCall = /(?:get|set|remove)Item\s*\(\s*[^)]*veri\.chain\.mode/;
-    const offenders = files.filter((f) => storageCall.test(readFileSync(f, "utf8")));
-    expect(offenders).toEqual([]);
-  });
+  test(
+    "nothing reads or writes the 'veri.chain.mode' storage key",
+    () => {
+      // Matched as a STORAGE CALL, not as a string: the deleted key is named in
+      // two comments that explain why it is gone, and a test that forbade the
+      // words would forbid the explanation.
+      const storageCall = /(?:get|set|remove)Item\s*\(\s*[^)]*veri\.chain\.mode/;
+      const offenders = sources.filter(([, text]) => storageCall.test(text)).map(([f]) => f);
+      expect(offenders).toEqual([]);
+    },
+    SWEEP_TIMEOUT_MS
+  );
 });
