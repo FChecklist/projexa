@@ -163,6 +163,93 @@ export function describeTaskError(payload: TaskErrorPayload): TaskErrorDescripti
   return { sentence, fix: [], retryable: sentence === GENERIC_FAILURE, missingLabels };
 }
 
+// ─── R67 D-65/D-55: the READ half of the same dictionary ─────────────────
+//
+// D-65 is explicit -- "extend that file, do not start a second dictionary".
+// Everything above is about a TASK that failed to run; everything below is
+// about a SCREEN that failed to load. They are different vocabularies but
+// they answer to the same two rules, which is why they live together: a user
+// never reads a camelCase key, a host:port or a function id, and a sentence
+// is never invented about something we do not know.
+
+export const READ_ERROR_CODES = [
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_ERROR",
+  "STORAGE_UNAVAILABLE",
+  "NOT_AUTHORISED",
+  "NOT_FOUND",
+] as const;
+
+export type ReadErrorCode = (typeof READ_ERROR_CODES)[number];
+
+// The two backend messages this product is known to surface verbatim, each
+// translated once, here, instead of at every screen that can hit them.
+//
+//   "supabaseKey is required" -- a real message a user has seen. It names an
+//   internal variable and tells them nothing; the true statement is that
+//   file storage is not set up.
+//   a timeout -- the client already turns this into human prose
+//   (veridian-client.ts), and this is where a screen turns it into a code.
+const STORAGE_MESSAGE = /supabasekey is required|supabase_?key/i;
+const TIMEOUT_MESSAGE = /did not respond in time|timed out|timeout|ETIMEDOUT|ECONNRESET/i;
+
+/**
+ * What kind of read failure this was, from what the transport actually told
+ * us. Never a guess: with neither a recognised status nor a recognised
+ * message, the answer is the generic UPSTREAM_ERROR, which says only that
+ * the call failed -- which is all we know.
+ */
+export function classifyReadError(input: { status?: number | null; message?: string | null }): ReadErrorCode {
+  const message = (input.message ?? "").trim();
+  if (STORAGE_MESSAGE.test(message)) return "STORAGE_UNAVAILABLE";
+  if (input.status === 401 || input.status === 403) return "NOT_AUTHORISED";
+  if (input.status === 404) return "NOT_FOUND";
+  if (input.status === 504 || input.status === 408 || TIMEOUT_MESSAGE.test(message)) return "UPSTREAM_TIMEOUT";
+  return "UPSTREAM_ERROR";
+}
+
+const READ_ERROR_REASON: Record<ReadErrorCode, string> = {
+  UPSTREAM_TIMEOUT: "the construction data service didn't answer",
+  UPSTREAM_ERROR: "the construction data service returned an error",
+  STORAGE_UNAVAILABLE: "file storage is not configured for this environment",
+  NOT_AUTHORISED: "you don't have access to it",
+  NOT_FOUND: "it isn't there any more",
+};
+
+export type ReadErrorDescription = {
+  /** "Couldn't load permits — the construction data service didn't answer (UPSTREAM_TIMEOUT)." */
+  sentence: string;
+  /** The backend's own words, kept when they are safe to show. */
+  detail: string | null;
+  /** Whether Retry is worth offering: a 401 or a 404 will not fix itself. */
+  retryable: boolean;
+  /** The persistent footer band's line. */
+  footer: string;
+  code: ReadErrorCode;
+};
+
+/**
+ * The one sentence a failed pane shows. `entity` is the plural noun the user
+ * would use -- "permits", "drawings", "your tasks" -- so the sentence reads
+ * as English rather than as a template.
+ */
+export function describeReadError(
+  entity: string,
+  input: { status?: number | null; message?: string | null }
+): ReadErrorDescription {
+  const code = classifyReadError(input);
+  const detail = input.message?.trim() ? sanitiseBackendMessage(input.message) : null;
+  return {
+    sentence: `Couldn't load ${entity} — ${READ_ERROR_REASON[code]} (${code}).`,
+    // A message we replaced wholesale carries no information the sentence
+    // above does not already carry, so it is dropped rather than repeated.
+    detail: detail && detail !== GENERIC_FAILURE ? detail : null,
+    retryable: code !== "NOT_AUTHORISED" && code !== "NOT_FOUND",
+    footer: "1 error on this screen",
+    code,
+  };
+}
+
 /**
  * The single line a Task Master row shows under its title: the dictionary's
  * sentence when the task failed, otherwise what the user actually typed.

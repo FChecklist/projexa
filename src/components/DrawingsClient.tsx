@@ -4,18 +4,25 @@
 // files/links, per project -- same Card/Table/Dialog primitives as
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
 // (category='drawing'|'drawing_3d').
-import { useEffect, useState } from "react";
+//
+// R67 D-65 / D-59 / D-71: the failure path used to be a toast.error() inside
+// the catch, which left `drawings` at [] and so rendered "No drawings or 3D
+// walkthroughs yet." over a 504 -- and once the toast faded, that sentence
+// was the only thing left on screen. The outcome is now held and PaneState
+// decides what may be said; the empty sentence needs a 200.
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
+import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { PaneState } from "@/components/PaneState";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 
 type Drawing = {
   id: string;
@@ -74,29 +81,41 @@ function renderDrawingCell(column: ScreenColumn, d: Drawing) {
 
 export default function DrawingsClient({
   projectId,
+  projectName,
   registryColumns,
 }: {
   projectId: string;
+  projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
 
-  async function load() {
-    setLoading(true);
+  const load = useCallback(async () => {
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setError(null);
     try {
-      const data = await fetchJson(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
-      setDrawings(data.drawings ?? []);
+      const data = await fetchJson<{ drawings?: Drawing[] }>(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
+      setDrawings(Array.isArray(data.drawings) ? data.drawings : []);
+      setLoadedAt(new Date());
+      setStatus("ready");
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load drawings"));
-    } finally {
-      setLoading(false);
+      // Rows already held survive a failed refresh -- see PaneState.
+      setError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error ? err.message : null,
+      });
+      setStatus("error");
     }
-  }
+  }, [projectId]);
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="space-y-4">
@@ -113,12 +132,25 @@ export default function DrawingsClient({
       </div>
 
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : drawings.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No drawings or 3D walkthroughs yet.</p>
-          ) : (
+        <CardContent className="p-2">
+          <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(status, drawings.length)}</p>
+          <PaneState
+            status={status}
+            entity="drawings"
+            projectName={projectName}
+            startedAt={startedAt}
+            error={error}
+            rowCount={drawings.length}
+            lastLoadedAt={loadedAt}
+            skeletonColumns={[...columns.map((c) => c.label), "Open"]}
+            emptyMessage="No drawings yet for this project."
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}>
+                <Plus className="size-4" aria-hidden /> New
+              </Button>
+            }
+            onRetry={() => void load()}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -144,7 +176,7 @@ export default function DrawingsClient({
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
     </div>

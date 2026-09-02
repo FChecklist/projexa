@@ -48,7 +48,18 @@ export default async function PermitsPage({ searchParams }: { searchParams: Prom
             not on the unfiltered list -- withinDays passes straight through
             to the same /api/permits?withinDays= param the KPI count itself
             used, so the two always agree. */}
-        {project && <PermitsListClient projectId={project.id} withinDays={withinDays} registryColumns={registryColumns} />}
+        {project && (
+          <PermitsListClient
+            projectId={project.id}
+            // R67 D-65: the waiting caption names the project out loud
+            // ("Loading permits for Cedar Heights Villa – Phase 1…"), which
+            // is also the only way a user can tell a slow read from a read
+            // of the wrong project.
+            projectName={project.name}
+            withinDays={withinDays}
+            registryColumns={registryColumns}
+          />
+        )}
       </div>
     </>
   );

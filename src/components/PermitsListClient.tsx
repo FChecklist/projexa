@@ -8,12 +8,37 @@
 // permits.list row server-side via VERIDIAN's /screen-definitions/
 // permits.list and passes it down as `registryColumns`. COLUMNS below is
 // now ONLY the fallback for when that row doesn't exist yet (404) or the
-// call errors -- kept, per r43_queue seq2's own instruction, until the
-// registry path is verified live, then removable in a follow-up PR once
-// every screen using this pattern has a seeded row.
-import { useEffect, useState } from "react";
+// call errors.
+//
+// ─── R67 D-65 / D-59 / D-71: THE READ IS NO LONGER ALLOWED TO LIE ───────
+//
+// BEFORE, in full:
+//
+//   fetch(`/api/permits?...`)
+//     .then((r) => r.json())            // status never read
+//     .then((data) => setPermits(data.permits ?? []))   // error body -> []
+//     .finally(() => setLoading(false));
+//
+// A 500 parsed cleanly as JSON, `data.permits` came back undefined, `?? []`
+// produced an empty array, and the kit's ListScreen then rendered "0
+// records" and "No permits yet for this project." -- on a project with
+// permits, with no error anywhere on screen and no way to tell a broken
+// backend from an empty one. There was not even a catch: a network failure
+// left the spinner up forever.
+//
+// AFTER: the outcome is held (loading | error | ready) and PaneState decides
+// what may be said. The empty sentence is reachable only from a 200. The
+// kit's ListScreen is rendered ONLY when there are rows to put in it --
+// per D-09 the kit stays unchanged, and handing it rows:[] is precisely how
+// its own "0 records" got onto a failed screen.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { PaneState } from "@/components/PaneState";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 
 type Permit = {
   id: string;
@@ -48,27 +73,49 @@ function daysLeftTone(days: number | null): StatusTone {
 
 export default function PermitsListClient({
   projectId,
+  projectName,
   withinDays,
   registryColumns,
 }: {
   projectId: string;
+  projectName?: string | null;
   withinDays?: string;
   registryColumns?: RegistryColumn[] | null;
 }) {
   const router = useRouter();
   const [permits, setPermits] = useState<Permit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
-  useEffect(() => {
+  const load = useCallback(async () => {
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setError(null);
     const params = new URLSearchParams({ projectId });
     if (withinDays) params.set("withinDays", withinDays);
     else params.set("all", "true");
-    fetch(`/api/permits?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => setPermits(data.permits ?? []))
-      .finally(() => setLoading(false));
+    try {
+      const data = await fetchJson<{ permits?: Permit[] }>(`/api/permits?${params.toString()}`);
+      setPermits(Array.isArray(data.permits) ? data.permits : []);
+      setLoadedAt(new Date());
+      setStatus("ready");
+    } catch (err) {
+      // The rows already held are deliberately NOT cleared -- a failed
+      // refresh must not destroy what the user could see a second ago.
+      setError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error ? err.message : null,
+      });
+      setStatus("error");
+    }
   }, [projectId, withinDays]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <ScreenFrame
@@ -84,25 +131,44 @@ export default function PermitsListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
-      {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
-      ) : (
-        <ListScreen
-          functionId="permits.list"
-          columns={columns}
-          rows={permits as unknown as Record<string, unknown>[]}
-          getRowId={(row) => row.id as string}
-          onRowClick={(row) => router.push(`/permits/${row.id}`)}
-          emptyStateLabel="No permits yet for this project."
-          renderCell={{
-            daysToExpiry: (row) => {
-              const days = (row as unknown as Permit).daysToExpiry;
-              const tone = daysLeftTone(days);
-              return <StatusBadge tone={tone} label={days === null ? "—" : `${days} day${days === 1 ? "" : "s"}`} />;
-            },
-          }}
-        />
-      )}
+      <div className="px-1 pb-1">
+        {/* The record count is an en-dash until a read has actually
+            succeeded -- "0 records" over a 500 is a claim nobody made. */}
+        <p className="px-3 py-2 text-[12px] text-px-muted">{recordCountLabel(status, permits.length)}</p>
+        <PaneState
+          status={status}
+          entity="permits"
+          projectName={projectName}
+          startedAt={startedAt}
+          error={error}
+          rowCount={permits.length}
+          lastLoadedAt={loadedAt}
+          skeletonColumns={columns.map((c) => c.label)}
+          emptyMessage="No permits yet for this project."
+          emptyAction={
+            <Button size="sm" onClick={() => router.push(`/permits/new?projectId=${projectId}`)}>
+              <Plus className="size-4" aria-hidden /> New
+            </Button>
+          }
+          onRetry={() => void load()}
+        >
+          <ListScreen
+            functionId="permits.list"
+            columns={columns}
+            rows={permits as unknown as Record<string, unknown>[]}
+            getRowId={(row) => row.id as string}
+            onRowClick={(row) => router.push(`/permits/${row.id}`)}
+            emptyStateLabel="No permits yet for this project."
+            renderCell={{
+              daysToExpiry: (row) => {
+                const days = (row as unknown as Permit).daysToExpiry;
+                const tone = daysLeftTone(days);
+                return <StatusBadge tone={tone} label={days === null ? "—" : `${days} day${days === 1 ? "" : "s"}`} />;
+              },
+            }}
+          />
+        </PaneState>
+      </div>
     </ScreenFrame>
   );
 }

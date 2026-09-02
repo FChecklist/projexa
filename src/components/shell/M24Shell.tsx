@@ -49,7 +49,8 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
-import { taskRowDetail } from "@/lib/task-errors";
+import { describeReadError, taskRowDetail } from "@/lib/task-errors";
+import { asOfLabel } from "@/lib/pane-state";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -202,7 +203,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
   const [needsYou, setNeedsYou] = useState<TaskRow[]>([]);
   const [waiting, setWaiting] = useState<TaskRow[]>([]);
-  const [tasksError, setTasksError] = useState<string | null>(null);
+  // R67 D-55/D-65: what the transport actually said, not a pre-formatted
+  // sentence -- so the ONE shared dictionary in src/lib/task-errors.ts writes
+  // the words, exactly as it already does for a failed task row.
+  const [tasksError, setTasksError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [tasksLoadedAt, setTasksLoadedAt] = useState<Date | null>(null);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
@@ -215,10 +220,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const pillFnRef = useRef<Record<string, string>>({});
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
-  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
-    home: 0,
-    approval: 0,
-    queue: 0,
+  // R67 D-55: null, not 0. A tab badge reading 0 over a failed read is a
+  // claim nobody made; the kit renders no badge at all for an absent count,
+  // which is the honest rendering of "we have not been told".
+  const [counts, setCounts] = useState<{ home: number | null; approval: number | null; queue: number | null }>({
+    home: null,
+    approval: null,
+    queue: null,
   });
 
   useEffect(() => {
@@ -394,13 +402,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // empty list.
         const d = await res.json().catch(() => null);
         if (!res.ok) {
-          setTasksError(
-            d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't load tasks (HTTP ${res.status})`
-          );
+          setTasksError({
+            status: res.status,
+            message: d && typeof d.error === "string" && d.error.trim() ? d.error : null,
+          });
+          // The counts are forgotten, not kept: a badge left over from the
+          // last successful read would be asserting a number this read did
+          // not confirm.
+          setCounts({ home: null, approval: null, queue: null });
           return;
         }
         const data = (d ?? {}) as ApiTasks;
         setTasksError(null);
+        setTasksLoadedAt(new Date());
         setCounts({
           home: Number(data.counts?.total) || 0,
           approval: Number(data.counts?.needsYou) || 0,
@@ -418,8 +432,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           ...(g.running ?? []).map((t) => toTaskRow(t, "running", projectNameById)),
           ...(g.done ?? []).map((t) => toTaskRow(t, "done", projectNameById)),
         ]);
-      } catch {
-        setTasksError("Couldn't reach the task service.");
+      } catch (err) {
+        setTasksError({ status: null, message: err instanceof Error ? err.message : null });
+        setCounts({ home: null, approval: null, queue: null });
       }
     }
   }, [projectNameById]);
@@ -657,14 +672,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const tabs: TaskTab[] = [
-    { id: "home", label: "Home", count: counts.home },
-    { id: "approval-pending", label: "Approval Pending", count: counts.approval },
-    { id: "in-queue", label: "In Queue", count: counts.queue },
+    { id: "home", label: "Home", count: counts.home ?? undefined },
+    { id: "approval-pending", label: "Approval Pending", count: counts.approval ?? undefined },
+    { id: "in-queue", label: "In Queue", count: counts.queue ?? undefined },
     // M24: Completed and History carry no count -- nothing there needs action.
     { id: "completed", label: "Completed" },
     { id: "history", label: "History" },
   ];
   const [activeTab, setActiveTab] = useState<TaskTab["id"]>("home");
+
+  // "Couldn't load your tasks - ... (UPSTREAM_TIMEOUT)." from the same
+  // dictionary a failed task row uses. Never "Nothing is waiting on you."
+  const taskReadError = tasksError ? describeReadError("your tasks", tasksError) : null;
 
   // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
   // written to the URL -- a hard reload always fell back to "home", the
@@ -767,24 +786,46 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <div className="min-h-0 flex-1">
-        {tasksError ? (
+        {taskReadError ? (
           // Never an empty list in place of an error -- that is the exact
           // defect this codebase has shipped repeatedly, and it makes a broken
-          // backend indistinguishable from "you have nothing to do". The
-          // backend's OWN words, with a retry that costs one click.
+          // backend indistinguishable from "you have nothing to do".
+          //
+          // R67 D-55/D-65: the kit's TaskMaster prints "Nothing is waiting on
+          // you." whenever BOTH lists are empty, so on a failure it is
+          // rendered only when real rows survive from an earlier read --
+          // greyed, and labelled with when they were true. The sentence comes
+          // from the one shared dictionary, and Retry re-issues the read
+          // rather than reloading the whole route.
           <div className="flex h-full flex-col">
-            <div className="m-2 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+            <div className="m-2 shrink-0 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
               <p role="alert" className="text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
-                {tasksError}
+                {taskReadError.sentence}
               </p>
-              <button
-                type="button"
-                onClick={() => router.refresh()}
-                className="veri-view-tab mt-2"
-              >
+              {taskReadError.detail && (
+                <p className="mt-1 text-[12px]" style={{ color: "var(--color-ct-muted)" }}>
+                  {taskReadError.detail}
+                </p>
+              )}
+              <button type="button" onClick={() => void loadTasks()} className="veri-view-tab mt-2">
                 Retry
               </button>
             </div>
+            {needsYou.length + waiting.length > 0 && (
+              <div className="min-h-0 flex-1 opacity-70">
+                <p className="px-3 pb-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  Showing what loaded {asOfLabel(tasksLoadedAt) ?? "earlier"}.
+                </p>
+                <TaskMaster
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                  needsYou={needsYou}
+                  waitingOnOthers={waiting}
+                  onLoad={onLoadChain}
+                />
+              </div>
+            )}
           </div>
         ) : (
         <TaskMaster
