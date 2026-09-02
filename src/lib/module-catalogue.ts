@@ -330,6 +330,23 @@ export function noProjectPromptFor(mod: ModuleDef): string {
   return mod.noProjectPrompt ?? `Choose a project for ${mod.label}`;
 }
 
+/**
+ * A-03 -- THE SEAM FOR WS-B'S CHAIN-OPTIONS ENDPOINT.
+ *
+ * The second level of the chain (Permits > New | Expiring soon | Open) is
+ * server-owned in the finished design: WS-B is building an endpoint that
+ * answers "what are this module's next options for this user". It does not
+ * exist yet -- the repo has capability-tree and module-chain, which return the
+ * WHOLE tree, and nothing that answers one level.
+ *
+ * So the leaves are hard-coded in the catalogue above, but every caller asks
+ * for them THROUGH this function rather than reading `.leaves` directly. When
+ * the endpoint lands, this body is the only thing that changes.
+ */
+export function chainOptionsFor(mod: ModuleDef): readonly ModuleLeaf[] {
+  return mod.leaves;
+}
+
 /** Every distinct route the catalogue can navigate to (used by its test). */
 export function catalogueRoutes(): string[] {
   const routes = new Set<string>();

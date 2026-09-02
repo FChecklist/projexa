@@ -57,9 +57,11 @@ import {
 // below, where A-19 moves that sentence into the button's own label.
 import { Composer } from "./Composer";
 import { PillStrip } from "./PillStrip";
+import { useShellScreen } from "./shell-screen-context";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
 import {
   chainModuleForPathname,
+  chainOptionsFor,
   moduleForPathname,
   moduleForPill,
   moduleHref,
@@ -205,7 +207,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  // The RAIL's own selection. It is no longer the only answer to "which
+  // project": a screen that resolved one from the URL outranks it (A-03).
+  const [railProjectId, setRailProjectId] = useState<string | null>(null);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
@@ -224,6 +228,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // to explain itself.
   const [projectPrompt, setProjectPrompt] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
+  // The top rail's DOM, so a click that needs a project can send the user to
+  // the control that chooses one (A-03) instead of only saying "no".
+  const railRef = useRef<HTMLDivElement>(null);
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
   const [counts, setCounts] = useState<{ home: number; approval: number; queue: number }>({
@@ -468,7 +475,26 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     };
   }, [noteFailure]);
 
-  const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
+  // R67 A-03 -- ONE PROJECT, AND THE SCREEN'S ANSWER WINS.
+  //
+  // A module page resolves its project on the server (the ?projectId= if there
+  // is one, else the org's first) and renders that project's data. Before this,
+  // the shell kept its own independent `projectId`, set only by the rail, so
+  // the pane could be showing Cedar Heights' meetings while the rail said "All
+  // projects" and the composer refused to send for want of a project. The
+  // screen's own published answer is now the root, and the rail's selection is
+  // the fallback for screens that publish nothing (a settings page, a 404).
+  //
+  // A publication is only trusted for the pathname it names -- see
+  // shell-screen-context.tsx for why that is what makes it order-independent.
+  const publishedScreen = useShellScreen();
+  const routeScreen = publishedScreen.pathname === pathname ? publishedScreen : null;
+  const railProject = useMemo(
+    () => projects.find((p) => p.id === railProjectId) ?? null,
+    [projects, railProjectId]
+  );
+  const project = routeScreen?.project ?? railProject;
+  const projectId = project?.id ?? null;
 
   // R67 A-01/A-02 -- THE SCREEN THE COMPOSER IS SERVING.
   //   screenModule    answers "which module do these pills belong to", and so
@@ -578,6 +604,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [bumpUsage, projectId, router]
   );
 
+  // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
+  // cannot proceed without a project says so in the module's own words AND
+  // moves keyboard focus to the rail's project control, so the next keystroke
+  // is the one that fixes it. Telling a user "no" and leaving them where they
+  // were is how a dead end feels.
+  const requestProject = useCallback((reason: string) => {
+    setProjectPrompt(reason);
+    const control = railRef.current?.querySelector<HTMLButtonElement>(
+      'button[aria-label*="choose a project"], button[aria-label*="switch project"]'
+    );
+    control?.focus();
+  }, []);
+
   // R67 A-02 -- THE SECOND LEVEL, as real routes. A leaf is the module's own
   // verb ("New", "Expiring soon", "Open") and it navigates to exactly the URL
   // the screen's own control produces. It never executes and never types.
@@ -586,8 +625,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       bumpUsage(leaf.id);
       if (leaf.needsProject !== false && !projectId) {
         // No fail-after-click and no silent no-op: say which decision is
-        // missing, in the module's own words, and leave the click undone.
-        setProjectPrompt(noProjectPromptFor(mod));
+        // missing, in the module's own words, and send the user to the rail.
+        requestProject(noProjectPromptFor(mod));
         return;
       }
       setProjectPrompt(null);
@@ -596,7 +635,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       );
       router.push(moduleHref(leaf, projectId));
     },
-    [bumpUsage, projectId, router]
+    [bumpUsage, projectId, requestProject, router]
   );
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
@@ -614,9 +653,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // R67 A-03 -- THE MODULE HINT TRAVELS WITH THE SUBMISSION. When the user
+      // types inside a module, the module is a fact about what they meant, and
+      // the endpoint already has a field for it: `selectedChain`, which
+      // POST /api/v1/projexa/tasks stores on the submission row.
+      //
+      // HONEST LIMIT, stated rather than implied: the pipeline deliberately
+      // does NOT consult selectedChain when classifying today -- run-submission
+      // .ts records that M25 calls it a HINT and M26 rules the phrase is the
+      // authority. So this makes the hint real and recorded; making the
+      // classifier PREFER a module's functions is a change to the pipeline and
+      // belongs to WS-B's item, not to the shell.
+      const hint = chainModule
+        ? { module: chainModule.id, label: chainModule.label, route: chainModule.route }
+        : undefined;
       const body = pendingFunctionId
-        ? { functionId: pendingFunctionId, params: {}, mode, projectId }
-        : { rawInput: typed, mode, projectId };
+        ? { functionId: pendingFunctionId, params: {}, mode, projectId, selectedChain: hint }
+        : { rawInput: typed, mode, projectId, selectedChain: hint };
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -640,7 +693,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, submitting, loadTasks]);
+  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks]);
 
   const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
     setPillUsage((prev) => {
@@ -814,23 +867,32 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // for the full mechanism this constant accounts for.
       composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
       topRail={
-        <TopRail
-          brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
-          organisationName={info?.organization?.name ?? "—"}
-          project={project}
-          onSwitchProject={() => {
-            // Cycles through real projects and back through the null state.
-            // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects') so
-            // CRM, pipeline and org-level work are reachable."
-            if (projects.length === 0) return;
-            const i = projects.findIndex((p) => p.id === projectId);
-            const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-            setProjectId(next ? next.id : null);
-          }}
-          search={<SearchTrigger />}
-          alerts={<NotificationBell />}
-          account={<AccountMenu email={info?.email} />}
-        />
+        // The wrapper exists so the composer can put keyboard focus on the
+        // project control when a click could not proceed without one (A-03):
+        // the rail is where that decision is made, so that is where the user
+        // is sent, rather than being told "no" and left where they were.
+        <div ref={railRef}>
+          <TopRail
+            brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
+            organisationName={info?.organization?.name ?? "—"}
+            project={project}
+            onSwitchProject={() => {
+              // Cycles through real projects and back through the null state.
+              // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects')
+              // so CRM, pipeline and org-level work are reachable." The cycle
+              // starts from the project actually on show, which after A-03 may
+              // be the one the SCREEN resolved rather than the last one clicked.
+              if (projects.length === 0) return;
+              setProjectPrompt(null);
+              const i = projects.findIndex((p) => p.id === projectId);
+              const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
+              setRailProjectId(next ? next.id : null);
+            }}
+            search={<SearchTrigger />}
+            alerts={<NotificationBell />}
+            account={<AccountMenu email={info?.email} />}
+          />
+        </div>
       }
       taskMaster={
         <div className="flex h-full min-h-0 flex-col">
@@ -912,16 +974,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   -- and the ranked pills that follow are the ways OUT of this
                   screen. The module's own pill is not among them (A-01): it
                   would only point back here. */}
-              {chainModule?.leaves.map((leaf) => (
-                <button
-                  key={leaf.id}
-                  type="button"
-                  onClick={() => onLeafSelect(chainModule, leaf)}
-                  className="veri-mode-pill active"
-                >
-                  {leaf.label}
-                </button>
-              ))}
+              {chainModule &&
+                chainOptionsFor(chainModule).map((leaf) => (
+                  <button
+                    key={leaf.id}
+                    type="button"
+                    onClick={() => onLeafSelect(chainModule, leaf)}
+                    className="veri-mode-pill active"
+                  >
+                    {leaf.label}
+                  </button>
+                ))}
               <PillStrip
                 usage={pillUsage}
                 now={Date.now()}
