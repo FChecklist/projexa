@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -125,6 +126,11 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const legacyUnit = draft.unit && !isMaterialUnit(draft.unit) ? draft.unit : null;
 
   return (
+    <>
+    {/* R67 A-21: the strip reads "<project> › Material OPC 43-grade cement"
+        rather than naming the module, and the project is the one on the record
+        rather than whichever one the top rail was left on. */}
+    <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
     <ObjectScreen
       breadcrumb="Materials / Material"
       title={mode === "edit" ? "Edit Material" : material.name}
@@ -187,5 +193,6 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
         </div>
       )}
     </ObjectScreen>
+    </>
   );
 }

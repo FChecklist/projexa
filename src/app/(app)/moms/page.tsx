@@ -4,6 +4,7 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import MoMsClient, { type RegistryColumn } from "@/components/MoMsClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 // R46 P8 seq129 (registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns in permits/page.tsx, R46 P8 seq134's
@@ -30,11 +31,15 @@ async function resolveMoMsListColumns(organizationId: string | null): Promise<Re
 export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMoMsListColumns(organizationId);
 
   return (
     <>
+      {/* R67 A-03: tell the shell what this screen resolved, so the top rail
+          and the composer's strip name the same project the pane is showing
+          instead of reading "All projects" beside one project's meetings. */}
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Minutes of Meeting" />
         {errorMessage && (
