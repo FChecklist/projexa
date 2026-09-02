@@ -87,7 +87,7 @@ describe("DrawingCreateClient with a failed project resolution", () => {
     // The failure is still reported...
     expect(view.getByRole("alert").textContent).toContain("did not respond in time");
     // ...but the screen is usable, and Save's reason is about the form again.
-    expect(view.getByRole("button", { name: "Save (Name, File)" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Save (Name, Drawing No., Rev, File)" })).toBeTruthy();
   });
 });
 
@@ -112,31 +112,46 @@ describe("DrawingCreateClient with a resolved project", () => {
 // therefore asserted against the exact function the button's name is built
 // from, plus the rendered empty form for the first of them.
 
+// D-12 (later in this same lane) added Drawing No. and Rev to the mandatory
+// set: the supersede rule is keyed on the drawing number, so a register entry
+// without one can never take over from the revision it replaces. The counter
+// below therefore names four fields where D-09 alone named two.
 describe("missingDrawingFields", () => {
-  const EMPTY = { name: "", usingLink: false, externalUrl: "", hasFile: false };
+  const EMPTY = { name: "", drawingNo: "", rev: "", usingLink: false, externalUrl: "", hasFile: false };
+  const IDENTIFIED = { drawingNo: "AR-101", rev: "B" };
 
-  test("an empty upload form is missing Name and File -- the old counter saw only Name", () => {
-    expect(missingDrawingFields(EMPTY)).toEqual(["Name", "File"]);
+  test("an empty upload form names every mandatory field -- the old counter saw only Name", () => {
+    expect(missingDrawingFields(EMPTY)).toEqual(["Name", "Drawing No.", "Rev", "File"]);
   });
 
-  test("a named upload form is missing only the File", () => {
-    expect(missingDrawingFields({ ...EMPTY, name: "AR-101" })).toEqual(["File"]);
+  test("counts down in FIELD order as the form fills", () => {
+    expect(missingDrawingFields({ ...EMPTY, name: "AR-101 Ground floor" })).toEqual(["Drawing No.", "Rev", "File"]);
+    expect(missingDrawingFields({ ...EMPTY, name: "AR-101 Ground floor", ...IDENTIFIED })).toEqual(["File"]);
   });
 
   test("on the External link source it is the URL that is mandatory, never a file", () => {
-    expect(missingDrawingFields({ ...EMPTY, name: "Villa walkthrough", usingLink: true })).toEqual([
-      "Walkthrough URL",
-    ]);
     expect(
-      missingDrawingFields({ name: "Villa walkthrough", usingLink: true, externalUrl: "https://example.com/x", hasFile: false })
+      missingDrawingFields({ ...EMPTY, name: "Villa walkthrough", ...IDENTIFIED, usingLink: true })
+    ).toEqual(["Walkthrough URL"]);
+    expect(
+      missingDrawingFields({
+        name: "Villa walkthrough",
+        ...IDENTIFIED,
+        usingLink: true,
+        externalUrl: "https://example.com/x",
+        hasFile: false,
+      })
     ).toEqual([]);
   });
 
-  test("whitespace is not a name and is not a URL", () => {
-    expect(missingDrawingFields({ ...EMPTY, name: "   ", hasFile: true })).toEqual(["Name"]);
-    expect(missingDrawingFields({ name: "x", usingLink: true, externalUrl: "  ", hasFile: false })).toEqual([
-      "Walkthrough URL",
+  test("whitespace is not a name, not a drawing number and not a URL", () => {
+    expect(missingDrawingFields({ ...EMPTY, name: "   ", ...IDENTIFIED, hasFile: true })).toEqual(["Name"]);
+    expect(missingDrawingFields({ ...EMPTY, name: "x", drawingNo: "  ", rev: "B", hasFile: true })).toEqual([
+      "Drawing No.",
     ]);
+    expect(
+      missingDrawingFields({ name: "x", ...IDENTIFIED, usingLink: true, externalUrl: "  ", hasFile: false })
+    ).toEqual(["Walkthrough URL"]);
   });
 });
 
@@ -187,8 +202,21 @@ describe("acceptFor", () => {
 describe("DrawingCreateClient's create form", () => {
   test("an empty form disables Save and names EVERY mandatory field, not just Name", () => {
     const view = render(<DrawingCreateClient projectId="proj-1" projectName="Cedar Heights" projectError={null} />);
-    const save = view.getByRole("button", { name: "Save (Name, File)" }) as HTMLButtonElement;
+    const save = view.getByRole("button", { name: "Save (Name, Drawing No., Rev, File)" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+  });
+
+  // R67 D-12: the register's own identity, and the state it is uploaded in.
+  test("carries the register fields, with Status defaulting to For approval", () => {
+    const view = render(<DrawingCreateClient projectId="proj-1" projectName="Cedar Heights" projectError={null} />);
+    expect((view.getByLabelText("Drawing No.") as HTMLInputElement).placeholder).toBe("e.g. AR-101");
+    expect((view.getByLabelText("Rev") as HTMLInputElement).placeholder).toBe("e.g. A");
+    expect((view.getByLabelText("Status") as HTMLSelectElement).value).toBe("for_approval");
+    expect(
+      view.getByText(
+        "Choosing Current supersedes the drawing with the same Drawing No. that people are building from today."
+      )
+    ).toBeTruthy();
   });
 
   test("the file field states its limit and filters the picker by Kind", () => {

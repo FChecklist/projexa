@@ -8,16 +8,26 @@
 // and is still what every other object screen in this app renders; editing
 // node_modules is erased by CI's frozen-lockfile install.
 //
-// THE ONE BEHAVIOURAL DIFFERENCE, and the whole reason for the fork:
-// `deleteLabel`. The kit hard-codes the destructive control's word as "Delete",
+// THE DIFFERENCES FROM THE KIT, both of them small and both listed here so a
+// future reader can diff this against the kit source and find nothing else.
+//
+// 1. `deleteLabel`. The kit hard-codes the destructive control's word as "Delete",
 // which is right for a permit (D-05) and wrong for a drawing: R67 D-11 gives
 // the drawings object page TWO different destructive acts with different
 // meanings and different gates -- "Remove" (a hard delete inside the 24-hour
 // grace window, the file goes too) and "Dispose" (the records-management act,
 // gated on the retention policy). A screen that called both of them "Delete"
-// would be lying about one of them. Everything else -- layout, the draft
-// lifecycle, the autosave timing, the spacer that keeps a destructive action
-// away from the common ones -- is carried over verbatim.
+// would be lying about one of them.
+//
+// 2. A facet's `value` is a ReactNode rather than a string (R67 D-12). The
+// drawings object page's "Supersedes" facet has to LINK to the revision it
+// replaced -- a facet that named the previous revision without going there
+// would make the reader search the register by hand. Every existing caller is
+// unaffected: a string is a ReactNode.
+//
+// Everything else -- layout, the draft lifecycle, the autosave timing, the
+// spacer that keeps a destructive action away from the common ones -- is
+// carried over verbatim.
 //
 // Original kit header follows.
 //
@@ -51,7 +61,7 @@ export type ObjectScreenProps = {
   title: string; // "New <Object>" until named, per M29 -- caller supplies this already resolved
   subtitle?: string;
   headerStatus?: { tone: StatusTone; label: string }; // dual header/item status -- this is the HEADER half (M31)
-  facets?: { label: string; value: string }[];
+  facets?: { label: string; value: React.ReactNode }[];
   documentFlow?: DocumentFlowData;
   mode: ObjectScreenMode;
   hasDraft: boolean; // an existing draft the user left mid-edit (editing icon, M29)

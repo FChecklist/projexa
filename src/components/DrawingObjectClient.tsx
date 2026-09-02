@@ -24,6 +24,7 @@
 // retention-gated Dispose is unchanged, and every reason is written in the
 // user's language rather than the schema's.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 // The fork, per programme decision D-09: the kit hard-codes this screen's
@@ -37,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
+import { normaliseDrawingStatus, statusPresentation, type DrawingStatus } from "@/lib/drawing-status";
 
 export type Drawing = {
   id: string;
@@ -56,9 +58,12 @@ export type Drawing = {
   isRecent: boolean;
   /** Later versions of this drawing, plus anything filed against it. */
   references: number;
-  /** R67 D-12 populates these; absent until then. */
+  /** R67 D-12: the register's own identity and state. */
   drawingNo?: string | null;
   rev?: string | null;
+  status?: string;
+  /** The revision this one replaced, resolved by VERIDIAN in the same read. */
+  supersedes?: { id: string; name: string; drawingNo: string | null; rev: string | null } | null;
 };
 
 /**
@@ -69,6 +74,17 @@ export type Drawing = {
 export function drawingLabel(d: { name: string; drawingNo?: string | null; rev?: string | null }): string {
   if (!d.drawingNo) return d.name;
   return d.rev ? `${d.drawingNo} Rev ${d.rev}` : d.drawingNo;
+}
+
+/**
+ * R67 D-12. The status tone the object header shows, mapped onto the four tones
+ * that have a real --color-veri-status-* variable behind them. 'superseded' is
+ * deliberately neutral: it is not a warning, it is simply not the build set.
+ */
+export function statusTone(status: DrawingStatus): "done" | "needs-you" | "neutral" {
+  if (status === "current") return "done";
+  if (status === "for_approval") return "needs-you";
+  return "neutral";
 }
 
 export type DestructiveAction = { label: "Remove" | "Dispose"; disabledReason?: string };
@@ -233,6 +249,8 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
 
   const kind = d.kind === "3d_walkthrough" ? "3D Walkthrough" : "DWG";
   const label = drawingLabel(d);
+  const status = normaliseDrawingStatus(d.status);
+  const statusLook = statusPresentation(status);
   const action = destructiveAction(d);
   const editing = mode === "edit";
 
@@ -250,10 +268,34 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       subtitle={d.projectName ?? undefined}
       mode={mode}
       hasDraft={false}
-      headerStatus={{ tone: d.isDisposed ? "late" : "neutral", label: d.isDisposed ? "removed" : kind }}
+      // R67 D-12: the register's own answer to "is this the one I build from?",
+      // in the same words and the same glyph the list uses.
+      headerStatus={{
+        tone: d.isDisposed ? "late" : statusTone(status),
+        label: d.isDisposed ? "removed" : `${statusLook.glyph} ${statusLook.word}`,
+      }}
       facets={[
+        { label: "Kind", value: kind },
+        { label: "Rev", value: d.rev ?? "—" },
         { label: "Discipline", value: d.discipline ?? "—" },
         { label: "Added", value: formatDate(d.createdAt) },
+        // A facet that named the revision this one replaced without going there
+        // would make the reader search the register by hand.
+        ...(d.supersedes
+          ? [
+              {
+                label: "Supersedes",
+                value: (
+                  <Link
+                    href={`/drawings/${d.supersedes.id}${backProjectId ? `?projectId=${backProjectId}` : ""}`}
+                    className="underline underline-offset-2"
+                  >
+                    {drawingLabel(d.supersedes)}
+                  </Link>
+                ),
+              },
+            ]
+          : []),
       ]}
       onEdit={!editing && !d.isDisposed ? () => setMode("edit") : undefined}
       onSave={editing ? handleSave : undefined}

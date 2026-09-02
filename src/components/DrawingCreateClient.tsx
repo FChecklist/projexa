@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DataLoadError from "@/components/DataLoadError";
 import { setScreenMessage } from "@/lib/screen-message";
 import { fileSizeError, fileTypeError } from "@/lib/file-limits";
+import { CREATE_STATUS_OPTIONS, DEFAULT_DRAWING_STATUS, type DrawingStatus } from "@/lib/drawing-status";
 
 export type DrawingKind = "dwg" | "3d_walkthrough";
 
@@ -57,12 +58,19 @@ export function acceptFor(kind: DrawingKind): string {
  */
 export function missingDrawingFields(input: {
   name: string;
+  drawingNo: string;
+  rev: string;
   usingLink: boolean;
   externalUrl: string;
   hasFile: boolean;
 }): string[] {
   return [
     ...(input.name.trim() ? [] : ["Name"]),
+    // R67 D-12: a register that cannot answer "is this the one I build from?"
+    // is not a register, and it cannot answer it for a drawing that has no
+    // number and no revision -- the supersede rule is keyed on exactly those.
+    ...(input.drawingNo.trim() ? [] : ["Drawing No."]),
+    ...(input.rev.trim() ? [] : ["Rev"]),
     ...(input.usingLink
       ? input.externalUrl.trim()
         ? []
@@ -132,6 +140,9 @@ export default function DrawingCreateClient({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<DrawingKind>("dwg");
   const [name, setName] = useState("");
+  const [drawingNo, setDrawingNo] = useState("");
+  const [rev, setRev] = useState("");
+  const [status, setStatus] = useState<DrawingStatus>(DEFAULT_DRAWING_STATUS);
   const [discipline, setDiscipline] = useState("");
   const [linkMode, setLinkMode] = useState(false);
   const [externalUrl, setExternalUrl] = useState("");
@@ -154,7 +165,7 @@ export default function DrawingCreateClient({
   // waiting for a blur that may never come would hide the problem until Save.
   const fileError = file ? fileTypeError(file.name, extensions) ?? fileSizeError(file.size, MAX_DRAWING_MB) : undefined;
   const urlError = urlTouched && usingLink ? walkthroughUrlError(externalUrl) : undefined;
-  const missing = missingDrawingFields({ name, usingLink, externalUrl, hasFile: !usingLink && file !== null });
+  const missing = missingDrawingFields({ name, drawingNo, rev, usingLink, externalUrl, hasFile: !usingLink && file !== null });
   const attention = (fileError ? 1 : 0) + (urlError ? 1 : 0);
   const saveDisabledReason = drawingSaveReason({
     projectLoaded: !!resolvedId,
@@ -196,9 +207,8 @@ export default function DrawingCreateClient({
   // manual Retry.
   useEffect(() => {
     if (resolvedId && resolvedName) return;
-    void loadProjects();
     // Runs once per mount; Retry is the explicit re-run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadProjects();
   }, []);
 
   // Switching Kind changes what the file field accepts, so a file chosen
@@ -216,6 +226,9 @@ export default function DrawingCreateClient({
     formData.set("projectId", resolvedId);
     formData.set("kind", kind);
     formData.set("name", name.trim());
+    formData.set("drawingNo", drawingNo.trim());
+    formData.set("rev", rev.trim());
+    formData.set("status", status);
     if (discipline.trim()) formData.set("discipline", discipline.trim());
     if (usingLink) {
       formData.set("externalUrl", externalUrl.trim());
@@ -290,6 +303,35 @@ export default function DrawingCreateClient({
           </Select>
         </div>
         <div className="space-y-1.5"><Label htmlFor="name">Name</Label><Input id="name" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        {/* R67 D-12: the register's own identity. The supersede rule is keyed
+            on Drawing No., so a drawing without one can never take over from
+            the revision it replaces. */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="drawingNo">Drawing No.</Label>
+            <Input id="drawingNo" value={drawingNo} onChange={(e) => setDrawingNo(e.target.value)} placeholder="e.g. AR-101" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rev">Rev</Label>
+            <Input id="rev" value={rev} onChange={(e) => setRev(e.target.value)} placeholder="e.g. A" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="status">Status</Label>
+          <select
+            id="status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as DrawingStatus)}
+            className="w-full rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+          >
+            {CREATE_STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <p className="text-[12.5px] text-ct-muted">
+            Choosing Current supersedes the drawing with the same Drawing No. that people are building from today.
+          </p>
+        </div>
         <div className="space-y-1.5"><Label htmlFor="discipline">Discipline (optional)</Label><Input id="discipline" value={discipline} onChange={(e) => setDiscipline(e.target.value)} placeholder="Architectural, Structural, MEP..." /></div>
         {/* R67 D-09: was an underlined text button reading "Use an external
             link instead" -- a toggle whose current state you had to infer

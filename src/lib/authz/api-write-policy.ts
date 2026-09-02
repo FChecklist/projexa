@@ -99,6 +99,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/documents/[id]": "FIELD",
   "/documents/[id]/dispose": "FIELD",
   "/drawings": "FIELD",
+  // R67 D-11: same tier as /drawings and /documents/[id] -- the people who
+  // upload a drawing are the people who fix its name, its discipline, and the
+  // upload they made by mistake. The destructive half is gated far harder than
+  // by role anyway: VERIDIAN refuses a hard delete outside the 24-hour window,
+  // under a legal hold, or with anything referencing the row.
+  "/drawings/[id]": "FIELD",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",

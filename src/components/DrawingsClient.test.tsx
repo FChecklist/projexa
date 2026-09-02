@@ -16,7 +16,7 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const mod = await import("./DrawingsClient");
 const DrawingsClient = mod.default;
-const { activeFilterChips, drawingQuery, hasActiveFilter, EMPTY_FILTERS, KIND_OPTIONS } = mod;
+const { activeFilterChips, drawingQuery, hasActiveFilter, DEFAULT_FILTERS, EMPTY_FILTERS, KIND_OPTIONS } = mod;
 
 const DRAWING = {
   id: "d1",
@@ -58,17 +58,25 @@ describe("drawingQuery", () => {
     expect(drawingQuery("p1", EMPTY_FILTERS)).toBe("projectId=p1");
   });
 
+  test("the Status filter is carried too", () => {
+    expect(drawingQuery("p1", { kind: "", discipline: "", status: "superseded" })).toBe(
+      "projectId=p1&status=superseded"
+    );
+  });
+
   test("the Kind filter is carried to the backend as kind=dwg -- the exact string the acceptance watches for", () => {
-    expect(drawingQuery("p1", { kind: "dwg", discipline: "" })).toContain("kind=dwg");
-    expect(drawingQuery("p1", { kind: "3d_walkthrough", discipline: "" })).toContain("kind=3d_walkthrough");
+    expect(drawingQuery("p1", { kind: "dwg", discipline: "", status: "" })).toContain("kind=dwg");
+    expect(drawingQuery("p1", { kind: "3d_walkthrough", discipline: "", status: "" })).toContain(
+      "kind=3d_walkthrough"
+    );
   });
 
   test("Discipline goes to the backend too, trimmed and encoded", () => {
-    expect(drawingQuery("p1", { kind: "", discipline: " MEP " })).toBe("projectId=p1&discipline=MEP");
+    expect(drawingQuery("p1", { kind: "", discipline: " MEP ", status: "" })).toBe("projectId=p1&discipline=MEP");
   });
 
   test("the list and the export are built from the SAME query, so an export cannot show something else", () => {
-    const filters = { kind: "dwg", discipline: "MEP" };
+    const filters = { kind: "dwg", discipline: "MEP", status: "" };
     expect(`/api/drawings?${drawingQuery("p1", filters)}`).toBe("/api/drawings?projectId=p1&kind=dwg&discipline=MEP");
     expect(`/api/drawings/export?${drawingQuery("p1", filters)}`).toBe(
       "/api/drawings/export?projectId=p1&kind=dwg&discipline=MEP"
@@ -79,16 +87,26 @@ describe("drawingQuery", () => {
 describe("hasActiveFilter / activeFilterChips", () => {
   test("whitespace is not a filter", () => {
     expect(hasActiveFilter(EMPTY_FILTERS)).toBe(false);
-    expect(hasActiveFilter({ kind: "", discipline: "   " })).toBe(false);
-    expect(hasActiveFilter({ kind: "dwg", discipline: "" })).toBe(true);
+    expect(hasActiveFilter({ kind: "", discipline: "   ", status: "" })).toBe(false);
+    expect(hasActiveFilter({ kind: "dwg", discipline: "", status: "" })).toBe(true);
+    expect(hasActiveFilter(DEFAULT_FILTERS)).toBe(true); // "Current only" IS a filter
   });
 
   test("each active filter becomes one removable chip, in the register's own words", () => {
-    expect(activeFilterChips({ kind: "3d_walkthrough", discipline: "MEP" })).toEqual([
+    expect(activeFilterChips({ kind: "3d_walkthrough", discipline: "MEP", status: "current" })).toEqual([
       { key: "kind", label: "Kind: 3D Walkthrough" },
       { key: "discipline", label: "Discipline: MEP" },
+      { key: "status", label: "Current only" },
     ]);
     expect(activeFilterChips(EMPTY_FILTERS)).toEqual([]);
+  });
+
+  // R67 D-12: the register opens on the build set, and says so with a chip the
+  // user can remove -- nothing is hidden silently.
+  test("the default filter is 'Current only', and it is a removable chip", () => {
+    expect(DEFAULT_FILTERS.status).toBe("current");
+    expect(activeFilterChips(DEFAULT_FILTERS)).toEqual([{ key: "status", label: "Current only" }]);
+    expect(drawingQuery("p1", DEFAULT_FILTERS)).toBe("projectId=p1&status=current");
   });
 
   test("the Kind options are All / DWG / 3D Walkthrough", () => {
@@ -110,7 +128,13 @@ describe("DrawingsClient", () => {
   test("Export is disabled with its reason when there is nothing to export", async () => {
     stubDrawings([]);
     const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
-    await waitFor(() => expect(view.getByText("No drawings yet for Cedar Heights.")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        view.getByText(
+          "No current drawings yet. Remove the Current only filter to see revisions awaiting approval."
+        )
+      ).toBeTruthy()
+    );
     const exportButton = view.getByRole("button", { name: "Export (No rows to export)" }) as HTMLButtonElement;
     expect(exportButton.disabled).toBe(true);
   });
@@ -131,10 +155,14 @@ describe("DrawingsClient", () => {
     expect(controlTexts.filter((t) => t.includes("3D Walkthrough"))).toEqual([]);
   });
 
-  test("the first load is unfiltered, so 'Showing n of m' and the Discipline options have a real m", async () => {
+  // R67 D-12: the rows are filtered from the first load ("Current only" is on
+  // by default), so the "of m" figure and the Discipline options come from a
+  // separate unfiltered read -- once per project, not once per filter change.
+  test("asks for the build set, and separately for the unfiltered register behind 'of m'", async () => {
     render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
-    await waitFor(() => expect(requested.length).toBeGreaterThan(0));
-    expect(requested[0]).toBe("/api/drawings?projectId=p1");
+    await waitFor(() => expect(requested.length).toBeGreaterThan(1));
+    expect(requested).toContain("/api/drawings?projectId=p1&status=current");
+    expect(requested).toContain("/api/drawings?projectId=p1");
   });
 
   test("a filter saved by a previous visit is restored on the way Back", async () => {
@@ -154,8 +182,10 @@ describe("DrawingsClient", () => {
       expect(document.body.textContent).toContain("VERIDIAN did not respond in time, on two attempts")
     );
     // An empty register and a failed request must not look identical: the
-    // table (and its "no drawings yet" line) is withheld, and a Retry is offered.
-    expect(view.queryByText("No drawings yet for Cedar Heights.")).toBeNull();
+    // table (and its empty-state line) is withheld, and a Retry is offered.
+    expect(
+      view.queryByText("No current drawings yet. Remove the Current only filter to see revisions awaiting approval.")
+    ).toBeNull();
     expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 });

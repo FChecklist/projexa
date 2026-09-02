@@ -25,6 +25,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import { readListFilters, writeListFilters } from "@/lib/list-view-state";
 import { takeScreenMessage } from "@/lib/screen-message";
+import { statusPresentation } from "@/lib/drawing-status";
 import DataLoadError from "@/components/DataLoadError";
 
 type Drawing = {
@@ -35,6 +36,11 @@ type Drawing = {
   isExternalLink: boolean;
   documentUrl: string | null;
   createdAt: string;
+  // R67 D-12: the four fields that answer "is this the one I build from?".
+  drawingNo: string | null;
+  rev: string | null;
+  status: string;
+  supersedesId: string | null;
 };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -46,10 +52,17 @@ const FUNCTION_ID = "drawings.list";
 
 // Fallback only: page.tsx prefers the compliance.screen_definitions row for
 // drawings.list when one exists.
+// R67 D-12: Name | Drawing No. | Rev | Kind | Discipline | Status | Added --
+// seven High columns, which is exactly the M28 cap ListScreen enforces. The
+// registry row carrying the same set for databases that have one ships as
+// drizzle/0528_r67_drawings_list_columns.sql in compliance-tracker.
 const COLUMNS: ScreenColumn[] = [
   { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Drawing No.", field: "drawingNo", type: "text", importance: "High" },
+  { label: "Rev", field: "rev", type: "text", importance: "High" },
   { label: "Kind", field: "kind", type: "text", importance: "High" },
   { label: "Discipline", field: "discipline", type: "text", importance: "High" },
+  { label: "Status", field: "status", type: "text", importance: "High" },
   { label: "Added", field: "createdAt", type: "date", importance: "High" },
 ];
 
@@ -58,9 +71,17 @@ const COLUMNS: ScreenColumn[] = [
 // ListScreen caps High columns at 7 and silently drops the overflow.
 const FILE_COLUMN: ScreenColumn = { label: "File", field: "__file", type: "text", importance: "Medium" };
 
-export type DrawingFilters = { kind: string; discipline: string };
+export type DrawingFilters = { kind: string; discipline: string; status: string };
 
-export const EMPTY_FILTERS: DrawingFilters = { kind: "", discipline: "" };
+/**
+ * R67 D-12: "Current only" is ON by default, so the register opens on the build
+ * set -- the drawings people are actually building from -- rather than on every
+ * revision ever uploaded. It is a removable chip, and "Showing n of m" beside it
+ * says how many rows it is holding back, so nothing is hidden silently.
+ */
+export const DEFAULT_FILTERS: DrawingFilters = { kind: "", discipline: "", status: "current" };
+
+export const EMPTY_FILTERS: DrawingFilters = { kind: "", discipline: "", status: "" };
 
 /** The Kind filter's options, in the register's own vocabulary. */
 export const KIND_OPTIONS: { value: string; label: string }[] = [
@@ -70,7 +91,7 @@ export const KIND_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export function hasActiveFilter(filters: DrawingFilters): boolean {
-  return filters.kind !== "" || filters.discipline.trim() !== "";
+  return filters.kind !== "" || filters.discipline.trim() !== "" || filters.status !== "";
 }
 
 /** The query string the list and the export both use -- one filter, two calls. */
@@ -78,6 +99,7 @@ export function drawingQuery(projectId: string, filters: DrawingFilters): string
   const params = new URLSearchParams({ projectId });
   if (filters.kind) params.set("kind", filters.kind);
   if (filters.discipline.trim()) params.set("discipline", filters.discipline.trim());
+  if (filters.status) params.set("status", filters.status);
   return params.toString();
 }
 
@@ -91,6 +113,8 @@ export function activeFilterChips(filters: DrawingFilters): { key: keyof Drawing
     });
   }
   if (filters.discipline.trim()) chips.push({ key: "discipline", label: `Discipline: ${filters.discipline.trim()}` });
+  if (filters.status === "current") chips.push({ key: "status", label: "Current only" });
+  else if (filters.status) chips.push({ key: "status", label: `Status: ${filters.status}` });
   return chips;
 }
 
@@ -114,7 +138,7 @@ export default function DrawingsClient({
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<DrawingFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<DrawingFilters>(DEFAULT_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [knownDisciplines, setKnownDisciplines] = useState<string[]>([]);
@@ -134,8 +158,15 @@ export default function DrawingsClient({
   // the same note about the sort/scroll half of this rule).
   useEffect(() => {
     const saved = readListFilters(FUNCTION_ID);
-    if (saved.kind || saved.discipline) {
-      setFilters({ kind: saved.kind ?? "", discipline: saved.discipline ?? "" });
+    // `status` is written on every change, including when the chip is turned
+    // off (as "all"), so an absent key means "never filtered here" -- keep the
+    // default -- while a stored "all" means the user deliberately removed it.
+    if (saved.kind || saved.discipline || saved.status) {
+      setFilters({
+        kind: saved.kind ?? "",
+        discipline: saved.discipline ?? "",
+        status: saved.status === "all" ? "" : saved.status ?? DEFAULT_FILTERS.status,
+      });
       setFilterOpen(true);
     }
   }, []);
@@ -152,15 +183,6 @@ export default function DrawingsClient({
         // object page handed over a moment ago, which this load would otherwise
         // wipe before it was ever read.
         setMessages((prev) => prev.filter((m) => m.level !== "error"));
-        // "Showing n of m" needs an m that no filter has touched, and the
-        // Discipline options need every discipline the project has -- both
-        // come from the unfiltered load, which always happens first.
-        if (!hasActiveFilter(active)) {
-          setTotalCount(rows.length);
-          setKnownDisciplines(
-            [...new Set(rows.map((d) => d.discipline).filter((d): d is string => !!d && !!d.trim()))].sort()
-          );
-        }
       } catch (err) {
         // Never an empty table where an error belongs. The rows are cleared AND
         // the table is withheld -- an empty register and a failed request must
@@ -180,9 +202,44 @@ export default function DrawingsClient({
     void load(filters);
   }, [load, filters]);
 
+  // The unfiltered register, once per project. R67 D-12 turns the "Current
+  // only" chip ON by default, so the rows on screen are filtered from the very
+  // first load -- which means the list itself can no longer be the source of
+  // either figure this needs: the "of m" in "Showing n of m" (how many rows the
+  // filter is holding back) or the full set of Disciplines to offer. One extra
+  // read, not one per filter change.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchJson<{ drawings: Drawing[] }>(`/api/drawings?${drawingQuery(projectId, EMPTY_FILTERS)}`);
+        if (cancelled) return;
+        const rows = data.drawings ?? [];
+        setTotalCount(rows.length);
+        setKnownDisciplines(
+          [...new Set(rows.map((d) => d.discipline).filter((d): d is string => !!d && !!d.trim()))].sort()
+        );
+      } catch {
+        // A failed overview costs the "of m" figure and the Discipline options,
+        // nothing else -- the register itself has its own error path above, and
+        // reporting the same outage twice helps nobody.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   function applyFilters(next: DrawingFilters) {
     setFilters(next);
-    writeListFilters(FUNCTION_ID, { kind: next.kind, discipline: next.discipline.trim() });
+    writeListFilters(FUNCTION_ID, {
+      kind: next.kind,
+      discipline: next.discipline.trim(),
+      // "all" rather than "" so that turning the DEFAULT chip off is itself
+      // remembered: an empty value is dropped by writeListFilters, which would
+      // restore the default on the way back.
+      status: next.status || "all",
+    });
   }
 
   // PROJEXA has no XLSX library and must not gain one -- the workbook is built
@@ -282,6 +339,20 @@ export default function DrawingsClient({
             </select>
           </div>
           <div className="space-y-1">
+            <label htmlFor="drawings-filter-status" className="block text-[12.5px] text-ct-muted">Status</label>
+            <select
+              id="drawings-filter-status"
+              value={filters.status}
+              onChange={(e) => applyFilters({ ...filters, status: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            >
+              <option value="">All</option>
+              <option value="current">Current only</option>
+              <option value="for_approval">For approval</option>
+              <option value="superseded">Superseded</option>
+            </select>
+          </div>
+          <div className="space-y-1">
             <label htmlFor="drawings-filter-discipline" className="block text-[12.5px] text-ct-muted">Discipline</label>
             <select
               id="drawings-filter-discipline"
@@ -316,6 +387,13 @@ export default function DrawingsClient({
           <span className="text-[12.5px] text-ct-muted">
             Showing {drawings.length} of {totalCount ?? drawings.length}
           </span>
+          <button
+            type="button"
+            onClick={() => applyFilters(EMPTY_FILTERS)}
+            className="text-[12.5px] text-ct-muted underline underline-offset-2 hover:text-ct-navy"
+          >
+            Clear all
+          </button>
         </div>
       )}
 
@@ -334,13 +412,28 @@ export default function DrawingsClient({
           onRowClick={(row) => router.push(`/drawings/${row.id}?projectId=${projectId}`)}
           emptyStateLabel={
             hasActiveFilter(filters)
-              ? "No drawings match this filter."
+              ? filters.status === "current" && !filters.kind && !filters.discipline.trim()
+                ? "No current drawings yet. Remove the Current only filter to see revisions awaiting approval."
+                : "No drawings match this filter."
               : projectName
                 ? `No drawings yet for ${projectName}.`
                 : "No drawings or 3D walkthroughs yet."
           }
           renderCell={{
             kind: (row) => <span>{(row as unknown as Drawing).kind === "3d_walkthrough" ? "3D Walkthrough" : "DWG"}</span>,
+            drawingNo: (row) => <span>{(row as unknown as Drawing).drawingNo ?? "—"}</span>,
+            rev: (row) => <span>{(row as unknown as Drawing).rev ?? "—"}</span>,
+            // Glyph AND word, never a bare colour (WS-G): a colour alone is
+            // unreadable to a colour-blind user and meaningless to anyone who
+            // has not been told the code.
+            status: (row) => {
+              const presentation = statusPresentation((row as unknown as Drawing).status);
+              return (
+                <span className={presentation.className}>
+                  <span aria-hidden>{presentation.glyph}</span> {presentation.word}
+                </span>
+              );
+            },
             discipline: (row) => <span className="text-ct-muted">{(row as unknown as Drawing).discipline ?? "—"}</span>,
             createdAt: (row) => <span className="text-ct-muted">{formatDate((row as unknown as Drawing).createdAt)}</span>,
             __file: (row) => {
