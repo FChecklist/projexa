@@ -170,6 +170,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/scope/[id]",
   "/scope/[id]/compare",
   "/scope/[id]/revise",
+  "/scope/import",
   "/scope/new",
   "/settings",
   "/share/report/[token]",
