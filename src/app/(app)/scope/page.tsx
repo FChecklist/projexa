@@ -1,72 +1,69 @@
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale. /scope was the worst measured screen: this page awaited
+// getServerOrganizationId(), then a VERIDIAN /dashboard call, then a
+// /screen-definitions/boq.custom call, all in series, before the first byte --
+// and only then did ScopeClient start fetching. The frame now streams first
+// and the revision list is fetched here on the server.
+//
+// The per-revision compare fan-out inside ScopeClient is NOT addressed here;
+// folding those figures into the list payload is F-23/F-29.
+import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { fetchScopeList, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
+import ScopeClient, { type Boq } from "@/components/ScopeClient";
 import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
 
-// R44 seq3 (M28 registry-model proof, same pattern as permits/page.tsx's
-// resolvePermitsListColumns): resolved server-side so ScopeClient never
-// needs its own Bearer-key-authenticated fetch. A missing or errored
-// registry row is NOT fatal -- ScopeClient falls back to its own hardcoded
-// columns when this is null. R46 P8 seq121 factored the body out to a
-// shared helper so the new boq.custom lookup (main BOQ table's column
-// labels -- CUSTOM archetype, see below) didn't duplicate this try/catch.
-export async function resolveRegistryColumns(functionId: string, organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>(`/screen-definitions/${functionId}`, {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error(`[scope/page] screen_definitions resolve failed for ${functionId}, falling back to hardcoded columns:`, err instanceof Error ? err.message : err);
-    return null;
-  }
+const SKELETON = (
+  <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+);
+
+async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
+  const organizationId = await getServerOrganizationId();
+  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
+  if (!projectId) return <ModuleProjectNotice errorMessage={errorMessage} />;
+
+  // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays a
+  // fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks are
+  // too bespoke for a generic LIST renderer), but the main BOQ table's column
+  // LABELS come from this registry row so they're editable with no redeploy.
+  const [boqListColumns, list] = await Promise.all([
+    getScreenColumns("boq.custom", organizationId),
+    fetchScopeList<Boq>(organizationId, projectId, "scope of work"),
+  ]);
+
+  return (
+    // R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
+    // destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
+    // screen; variance is a different, flat "which line is worst" question.
+    <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="boq">BOQ</TabsTrigger>
+        <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+      </TabsList>
+      <TabsContent value="boq">
+        <ScopeClient projectId={projectId} listColumns={boqListColumns} initial={list} />
+      </TabsContent>
+      <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]">
+        <CostVarianceAnalyticalClient projectId={projectId} />
+      </TabsContent>
+    </Tabs>
+  );
 }
 
 export default async function ScopePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-  // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays
-  // a fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks
-  // are too bespoke for a generic LIST renderer), but the main BOQ table's
-  // column LABELS now come from this registry row so they're editable with
-  // no redeploy, same as every other converted screen. Nothing about data
-  // fetching, row shape, or cell rendering is registry-driven here.
-  const boqListColumns = await resolveRegistryColumns("boq.custom", organizationId);
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Scope of Work (BOQ)" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && (
-          // R42 seq24: "variance" tab added -- DASHBOARD.PROJECT's own
-          // "Budget vs Actual" KPI destination (?tab=variance from
-          // DashboardProjectClient). The BOQ tab (ScopeClient) stays the
-          // CUSTOM weighted-tree screen for editing/hierarchy; variance is
-          // a different, flat "which line is worst" question.
-          <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="boq">BOQ</TabsTrigger>
-              <TabsTrigger value="variance">Cost Variance</TabsTrigger>
-            </TabsList>
-            <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
-            <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
-          </Tabs>
-        )}
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Scope of Work (BOQ)" />
+      <Suspense fallback={SKELETON}>
+        <ScopeSection requestedProjectId={projectId} tab={tab} />
+      </Suspense>
+    </div>
   );
 }

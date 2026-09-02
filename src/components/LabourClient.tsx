@@ -26,7 +26,13 @@
 // Page for attendance rows, a write-once daily transaction log same as
 // Expenses/Stock Entries. Also fixes the same uncontrolled-Tabs-no-URL-sync
 // bug found and fixed repeatedly this session.
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the ROSTER now normally arrives as a prop, fetched by
+// labour/page.tsx on the server inside its Suspense boundary, so the Roster
+// tab -- the one this screen opens on -- paints filled on first render
+// instead of after a client round trip. Attendance and the vendor lookup are
+// still fetched here; splitting those onto their own tabs is F-25.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
@@ -38,10 +44,13 @@ import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
-type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
+// Exported so labour/page.tsx can type the rows it fetches server-side.
+export type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
 type Vendor = { id: string; vendorName: string };
 
@@ -50,14 +59,8 @@ type Vendor = { id: string; vendorName: string };
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "ID", field: "employeeCode", type: "text", importance: "High" },
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Trade", field: "trade", type: "text", importance: "High" },
-  { label: "Company", field: "vendorId", type: "text", importance: "High" },
-  { label: "Daily Rate", field: "dailyRate", type: "number", importance: "High" },
-  { label: "Status", field: "isActive", type: "text", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   present: "default", half_day: "secondary", absent: "destructive",
@@ -90,11 +93,21 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
-export default function LabourClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+export default function LabourClient({
+  projectId,
+  registryColumns,
+  initialTab,
+  initialRoster = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  initialRoster?: ModuleListInitial<RosterEntry>;
+}) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
-  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [roster, setRoster] = useState<RosterEntry[]>(initialRoster?.rows ?? []);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const currencies = useCurrencies();
@@ -102,35 +115,60 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
   // org's base currency) -- same undefined-id "org base currency" lookup
   // QuotationsClient.tsx etc. use for currencyLabel().
   const rosterCurrencyLabel = currencyLabel(undefined, currencies);
-  const [loading, setLoading] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
+  // Not loading when the server already handed us the roster: the tab the
+  // screen opens on has its data, so a spinner over it would be a lie.
+  const [loading, setLoading] = useState(initialRoster === null);
+  const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>(
+    initialRoster?.errorMessage ? { roster: initialRoster.errorMessage } : {}
+  );
+  // The roster the server sent answers THIS project; a project switch must
+  // still go to the network.
+  const rosterFromServerFor = useRef(initialRoster ? projectId : null);
 
-  async function load() {
-    setLoading(true);
-    // allSettled: a failing vendors lookup must not blank the roster, and a
-    // failing roster must not be reported to the user as "no workers".
-    const [rosterR, attR, vendorsR] = await Promise.allSettled([
-      fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ attendance?: AttendanceEntry[] }>(`/api/attendance?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`),
-    ]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      const rosterAlreadyLoaded = rosterFromServerFor.current === projectId;
+      setLoading(true);
+      // allSettled: a failing vendors lookup must not blank the roster, and a
+      // failing roster must not be reported to the user as "no workers".
+      const [rosterR, attR, vendorsR] = await Promise.allSettled([
+        rosterAlreadyLoaded
+          ? Promise.resolve(null)
+          : fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`, { signal }),
+        fetchJson<{ attendance?: AttendanceEntry[] }>(`/api/attendance?projectId=${encodeURIComponent(projectId)}`, { signal }),
+        fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`, { signal }),
+      ]);
+      // A cancelled read is not a failure and must not reach the screen the
+      // user has already left.
+      if (signal?.aborted) return;
+      rosterFromServerFor.current = null;
 
-    const errors: { roster?: string; attendance?: string } = {};
-    if (rosterR.status === "fulfilled") setRoster(rosterR.value.roster ?? []);
-    else { setRoster([]); errors.roster = errorMessage(rosterR.reason, "Roster"); }
+      const errors: { roster?: string; attendance?: string } = {};
+      if (rosterR.status === "fulfilled") {
+        if (rosterR.value) setRoster(rosterR.value.roster ?? []);
+      } else if (!isAbortError(rosterR.reason, signal)) {
+        setRoster([]);
+        errors.roster = errorMessage(rosterR.reason, "Roster");
+      }
 
-    if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
-    else { setAttendance([]); errors.attendance = errorMessage(attR.reason, "Attendance"); }
+      if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
+      else if (!isAbortError(attR.reason, signal)) { setAttendance([]); errors.attendance = errorMessage(attR.reason, "Attendance"); }
 
-    // Vendors is a display-only lookup (company name); its failure degrades to
-    // an em-dash rather than to an alert.
-    setVendors(vendorsR.status === "fulfilled" ? (vendorsR.value.vendors ?? []) : []);
+      // Vendors is a display-only lookup (company name); its failure degrades to
+      // an em-dash rather than to an alert.
+      setVendors(vendorsR.status === "fulfilled" ? (vendorsR.value.vendors ?? []) : []);
 
-    setLoadErrors(errors);
-    setLoading(false);
-  }
+      setLoadErrors(errors);
+      setLoading(false);
+    },
+    [projectId]
+  );
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
   const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
@@ -160,7 +198,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.roster ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={() => load()} /></div>
             ) : roster.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
             ) : (
@@ -200,7 +238,7 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.attendance ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={() => load()} /></div>
             ) : attendance.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No attendance recorded yet.</p>
             ) : (

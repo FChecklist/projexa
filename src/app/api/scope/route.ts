@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { MODULE_TAGS } from "@/lib/module-list-source";
+import { revalidateTag } from "next/cache";
 
 export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
@@ -72,6 +74,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // R67 F-18: the cached list must be cleared or the new row is
+    // invisible until the 30 s window expires, which reads as a failed save.
+    revalidateTag(MODULE_TAGS.scope, "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create BOQ");

@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the revision list now normally arrives as a prop, fetched by
+// scope/page.tsx on the server inside its Suspense boundary, so the table
+// paints filled on first render. The per-revision compare fan-out below is
+// still a client loop -- collapsing it into the list payload is F-23/F-29.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,6 +17,8 @@ import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 import DataLoadError from "@/components/DataLoadError";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
@@ -27,19 +34,15 @@ export type RegistryColumn = ScreenColumn;
 // the same way every other converted screen's are. Only label text reads
 // from the registry row; the "Actions" column has no backing field and
 // always stays hardcoded.
-const DEFAULT_LIST_COLUMNS: ScreenColumn[] = [
-  { field: "title", label: "Title", type: "text", importance: "High" },
-  { field: "version", label: "Version", type: "text", importance: "High" },
-  { field: "status", label: "Status", type: "text", importance: "High" },
-  { field: "variation", label: "Variation vs. prior", type: "text", importance: "High" },
-  { field: "createdAt", label: "Created", type: "date", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 function columnLabel(columns: ScreenColumn[], field: string, fallback: string): string {
   return columns.find((c) => c.field === field)?.label || fallback;
 }
 
-type Boq = {
+// Exported so scope/page.tsx can type the rows it fetches server-side.
+export type Boq = {
   id: string;
   version: number;
   title: string;
@@ -110,12 +113,22 @@ function formatVariation(amount: number): string {
 // to live in this file are gone, replaced by real routes. This List Report
 // only needs the list-row shape and the per-row variation figure.
 
-export default function ScopeClient({ projectId, listColumns }: { projectId: string; listColumns?: RegistryColumn[] | null }) {
+export default function ScopeClient({
+  projectId,
+  listColumns,
+  initial = null,
+}: {
+  projectId: string;
+  listColumns?: RegistryColumn[] | null;
+  initial?: ModuleListInitial<Boq>;
+}) {
   const router = useRouter();
-  const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
-  const [boqs, setBoqs] = useState<Boq[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : BOQ_LIST_COLUMNS;
+  const [boqs, setBoqs] = useState<Boq[]>(initial?.rows ?? []);
+  const [loading, setLoading] = useState(initial === null);
+  const [loadError, setLoadError] = useState<string | null>(initial?.errorMessage ?? null);
+  // The list the server sent answers THIS project; a switch still fetches.
+  const listFromServerFor = useRef(initial ? projectId : null);
 
   // Variation vs. immediate parent, per revision -- the "running total
   // variation value" the Owner asked for, fetched from VERIDIAN's compareBoq
@@ -127,27 +140,43 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
-  async function load() {
-    setLoading(true);
-    setLoadError(null);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const listAlreadyLoaded = listFromServerFor.current === projectId;
+    if (!listAlreadyLoaded) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
-      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
-        signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
-      });
-      const loaded: Boq[] = data.boqs ?? [];
-      setBoqs(loaded);
+      let loaded: Boq[];
+      if (listAlreadyLoaded) {
+        // The server already fetched this exact list; only the compare
+        // figures below are still missing.
+        loaded = initial?.rows ?? [];
+        listFromServerFor.current = null;
+      } else {
+        const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
+          signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
+        });
+        loaded = data.boqs ?? [];
+        if (signal?.aborted) return;
+        setBoqs(loaded);
+      }
 
       const revisions = loaded.filter((b) => b.parentBoqId);
       const entries = await Promise.all(
         revisions.map(async (b) => {
-          const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
+          const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS) });
           if (!cmpRes.ok) return null;
           const cmp: BoqComparison = await cmpRes.json();
           return [b.id, cmp.totalVariation] as const;
         })
       );
+      if (signal?.aborted) return;
       setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
     } catch (err) {
+      // A cancelled read is not a failure and must not reach a screen the
+      // user has already left.
+      if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) return;
       // A timed-out AbortSignal surfaces as a bare "TimeoutError"/"AbortError"
       // with no useful .message -- errorMessage() would render something like
       // "Couldn't load scope of work: signal timed out". Give the timeout case
@@ -159,11 +188,18 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
       setLoadError(msg);
       toast.error(msg);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }
+    // `initial` is intentionally not a dependency: it is a server payload
+    // object, read only on the seeded first run, and listing it would re-run
+    // the whole load on every server re-render.
+  }, [projectId]);
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   return (
     <div className="space-y-4">

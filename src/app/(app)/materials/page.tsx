@@ -1,57 +1,56 @@
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale: the three serial round-trips that ran before the first byte are
+// gone, the frame streams first, and the material master -- the tab this
+// screen opens on -- is fetched here on the server inside the Suspense
+// boundary and handed to MaterialsClient as props.
+import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { MATERIAL_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { fetchMaterialMasterList, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import MaterialsClient, { type RegistryColumn } from "@/components/MaterialsClient";
+import MaterialsClient, { type Material } from "@/components/MaterialsClient";
 
-// R46 P8 seq131 (registry-model proof, same shape as R43 seq2's
-// resolvePermitsListColumns in permits/page.tsx and R46 P8 seq128/seq134's
-// documents.list/variations.list resolvers): resolved server-side, same
-// place organizationId/project already are, so MaterialsClient (a client
-// component) never needs its own Bearer-key-authenticated fetch. Only the
-// Material Master table (name/spec/unit/unitCost) is registry-driven --
-// Inbound Receipts has no registry equivalent and stays exactly as-is,
-// same "one table only" contract Documents/ChangeOrders used for their own
-// non-registry pieces (category filter / Actions column). A missing or
-// errored registry row is NOT fatal -- MaterialsClient falls back to its
-// own hardcoded COLUMNS when this is null.
-async function resolveMaterialsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/material.list", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[materials/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
-    return null;
-  }
+const SKELETON = (
+  <ModuleListSkeletonBody
+    columns={MATERIAL_LIST_COLUMNS}
+    tabs={["Material Master", "Inbound Receipts", "Cost Report"]}
+    actions={["Add Material"]}
+  />
+);
+
+async function MaterialsSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
+  const organizationId = await getServerOrganizationId();
+  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
+  if (!projectId) return <ModuleProjectNotice errorMessage={errorMessage} />;
+
+  const [registryColumns, master] = await Promise.all([
+    getScreenColumns("material.list", organizationId),
+    fetchMaterialMasterList<Material>(organizationId, projectId, "the material master"),
+  ]);
+
+  return (
+    <MaterialsClient
+      projectId={projectId}
+      registryColumns={registryColumns}
+      initialTab={tab}
+      initialMaster={master}
+    />
+  );
 }
 
 // Point 33: repointed to a real project-scoped material master + receipts
-// (was org-wide ERP ledger listing only, no create path) -- same
-// resolveSelectedProject pattern as moms/page.tsx.
+// (was org-wide ERP ledger listing only, no create path).
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-  const registryColumns = await resolveMaterialsListColumns(organizationId);
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Materials" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Materials" />
+      <Suspense fallback={SKELETON}>
+        <MaterialsSection requestedProjectId={projectId} tab={tab} />
+      </Suspense>
+    </div>
   );
 }

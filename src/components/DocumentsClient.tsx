@@ -12,9 +12,14 @@
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the documents now normally arrive as props, fetched by
+// documents/page.tsx on the server inside its Suspense boundary. The category
+// filter still refetches on the client -- useModuleList keys on the whole URL,
+// so changing the category is exactly the case that SHOULD go to the network,
+// and it aborts the previous request when it does.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +28,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2, FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 
-type Doc = {
+// Exported so documents/page.tsx can type the rows it fetches server-side.
+export type Doc = {
   id: string;
   name: string;
   category: string;
@@ -41,14 +48,8 @@ type Doc = {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Category", field: "category", type: "text", importance: "High" },
-  { label: "Type", field: "fileType", type: "text", importance: "High" },
-  { label: "Size", field: "fileSize", type: "number", importance: "High" },
-  { label: "Expiry", field: "expiryDate", type: "date", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
@@ -88,28 +89,30 @@ function renderDocumentCell(field: string, d: Doc) {
   }
 }
 
-export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function DocumentsClient({
+  projectId,
+  registryColumns,
+  initial = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initial?: ModuleListInitial<Doc>;
+}) {
   const router = useRouter();
-  const [docs, setDocs] = useState<Doc[]>([]);
-  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DOCUMENTS_LIST_COLUMNS;
 
-  async function load() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
-      if (category !== "all") params.set("category", category);
-      const data = await fetchJson(`/api/documents?${params.toString()}`);
-      setDocs(data.documents ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load documents"));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
+  if (category !== "all") params.set("category", category);
 
-  useEffect(() => { load(); }, [projectId, category]);
+  // The server prefetched the UNFILTERED list, which is what "all" renders --
+  // so the first paint is free and only a real category change costs a fetch.
+  const { rows: docs, error, loading } = useModuleList<Doc>({
+    initial: category === "all" ? initial : null,
+    url: `/api/documents?${params.toString()}`,
+    pick: (d) => d.documents as Doc[] | undefined,
+    context: "documents",
+  });
 
   return (
     <div className="space-y-4">
@@ -133,6 +136,9 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : error ? (
+            // Never an empty table over a failed read.
+            <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
           ) : docs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
           ) : (

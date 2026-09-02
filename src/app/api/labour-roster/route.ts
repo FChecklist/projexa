@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { MODULE_TAGS } from "@/lib/module-list-source";
+import { revalidateTag } from "next/cache";
 
 // Roster (workers) lives at VERIDIAN's /api/v1/construction/labour-roster --
 // it was never re-exported under /api/v1/projexa/*, unlike attendance
@@ -27,6 +29,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   try {
     const data = await callVeridian("/construction/labour-roster", { organizationId: ctx.organizationId!, method: "POST", body, root: true });
+    // R67 F-18: the module list is cached for 30 s on the server, so a
+    // create must clear it or the new row is invisible until the window
+    // expires -- which reads exactly like a failed save.
+    revalidateTag(MODULE_TAGS.manpower, "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to add worker");

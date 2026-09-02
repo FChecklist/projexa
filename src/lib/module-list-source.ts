@@ -1,0 +1,280 @@
+// R67 F-18 / decision D-04 option A -- where a module page gets its data.
+//
+// THE CHAIN THIS REPLACES. Every one of the eleven module page.tsx files ran
+// three network round-trips IN SERIES before Next.js could send a single byte:
+//
+//     await getServerOrganizationId()          // Supabase session
+//     await resolveSelectedProject(...)        // VERIDIAN /dashboard
+//     await resolve<Module>ListColumns(...)    // VERIDIAN /screen-definitions
+//
+// and only then rendered a client component that went and fetched the actual
+// rows. /budgets, which skips the chain entirely, paints at 616 ms; the module
+// pages took 1.5-1.65 s to first byte and 6-8 s to a usable screen. The chain
+// is pure overhead on the critical path: the project id is nearly always
+// already in the URL (every "+ New" button, KPI tile and pill passes
+// ?projectId=), and the screen-definitions row is slowly-changing reference
+// data whose absence has a correct, instant answer -- the hardcoded columns in
+// module-list-columns.ts, which were already the 404 path.
+//
+// So: the project id is read WITHOUT a network call (query string, then the
+// projexa_project cookie); the columns are cached for an hour per org and fall
+// back synchronously; and the rows are fetched by the SERVER inside a
+// <Suspense> boundary and handed to the client component as props, so the
+// frame streams first and the client makes no round trip of its own on first
+// paint. The /dashboard hop survives only for the case it is actually needed
+// for -- neither the URL nor the cookie names a project -- and it happens
+// inside the boundary, after the frame is on screen.
+//
+// D-04 rejects the alternative (browser calls straight to VERIDIAN with a
+// minted token) because it would expose the org API key or need a second
+// proxy. Everything here is server-side; no key moves.
+
+import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { PROJECT_COOKIE } from "@/lib/project-cookie";
+
+// Written by the top rail when the user switches project (see
+// src/lib/project-cookie.ts, which owns the name and the browser-side writer
+// because a client component may never import this file -- next/headers).
+export { PROJECT_COOKIE } from "@/lib/project-cookie";
+
+/**
+ * The project id, WITHOUT a network call: the `?projectId=` the navigation
+ * already carried, else the cookie the rail wrote. `null` means neither knew,
+ * and only then is the /dashboard hop worth paying for.
+ */
+export async function resolveProjectIdFast(requestedProjectId?: string): Promise<string | null> {
+  if (requestedProjectId) return requestedProjectId;
+  try {
+    const jar = await cookies();
+    const value = jar.get(PROJECT_COOKIE)?.value;
+    return value && value.trim() ? value : null;
+  } catch {
+    // cookies() throws outside a request scope; a missing cookie is simply
+    // "we don't know yet", never an error the user should see.
+    return null;
+  }
+}
+
+export type ResolvedModuleProject = { projectId: string | null; errorMessage: string | null };
+
+/**
+ * The project a module page is about.
+ *
+ * The fast path costs nothing. The /dashboard hop is only paid when neither
+ * the URL nor the cookie knew, and callers run this INSIDE their <Suspense>
+ * boundary so even that case has the frame on screen first.
+ */
+export async function resolveProjectForModule(
+  requestedProjectId: string | undefined,
+  organizationId: string | null
+): Promise<ResolvedModuleProject> {
+  const fast = await resolveProjectIdFast(requestedProjectId);
+  if (fast) return { projectId: fast, errorMessage: null };
+  const { resolveSelectedProject } = await import("@/lib/project-selection");
+  const { project, errorMessage } = await resolveSelectedProject(undefined, organizationId);
+  return { projectId: project?.id ?? null, errorMessage };
+}
+
+// ---------------------------------------------------------------------------
+// Screen definitions: cached an hour, per org, never fatal.
+// ---------------------------------------------------------------------------
+//
+// SECURITY, same reasoning as createCachedVeridianGet() in veridian-client.ts:
+// the same `path` returns a DIFFERENT org's data depending on the Bearer token,
+// and Next's `fetch` cache keys on URL + method + body only, NEVER on headers.
+// So this uses unstable_cache with the organization id as both an explicit key
+// part and the wrapped function's own argument -- org-scoped two independent
+// ways -- rather than putting `next: { revalidate }` on the shared fetch inside
+// veridian-client, which would serve org A's columns to org B.
+const cachedScreenDefinition = unstable_cache(
+  (screen: string, organizationId: string | null) =>
+    callVeridian<{ columns: ScreenColumn[] }>(`/screen-definitions/${screen}`, {
+      organizationId: organizationId ?? undefined,
+    }),
+  ["veridian-screen-definition"],
+  { revalidate: 3600, tags: ["screen-definitions"] }
+);
+
+/**
+ * A screen's registry columns, or null to use the module's hardcoded fallback.
+ * NEVER throws and never blocks the frame: a 404 is the normal state for a
+ * screen with no seeded row, and any other failure is logged and answered the
+ * same way, because the hardcoded columns are a correct answer.
+ */
+export async function getScreenColumns(
+  screen: string,
+  organizationId: string | null
+): Promise<ScreenColumn[] | null> {
+  try {
+    const definition = await cachedScreenDefinition(screen, organizationId ?? null);
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
+  } catch (err) {
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected
+    console.error(
+      `[module-list-source] screen_definitions resolve failed for ${screen}, using the hardcoded columns:`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The project's NAME, for the screens that show it.
+// ---------------------------------------------------------------------------
+//
+// The fast path gives an id, not a name, and /schedule prints the name as a
+// subheading. Rather than putting the /dashboard hop back on the critical path
+// for one string, the name is resolved from a 60 s per-org cache and rendered
+// inside its own nested <Suspense>, so it fills in beside a frame that is
+// already on screen.
+const cachedProjects = unstable_cache(
+  (organizationId: string | null) =>
+    callVeridian<{ projects: { id: string; name: string }[] }>("/dashboard", {
+      organizationId: organizationId ?? undefined,
+    }),
+  ["veridian-projects"],
+  { revalidate: 60, tags: ["projects"] }
+);
+
+/** The project's display name, or null when it cannot be established. */
+export async function getProjectName(projectId: string, organizationId: string | null): Promise<string | null> {
+  try {
+    const data = await cachedProjects(organizationId ?? null);
+    return (data.projects ?? []).find((p) => p.id === projectId)?.name ?? null;
+  } catch (err) {
+    console.error("[module-list-source] project name lookup failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Module lists: cached 30 s, per org + project, tagged so a write refreshes it.
+// ---------------------------------------------------------------------------
+
+/**
+ * What a page hands its client component. `rows` is what VERIDIAN returned;
+ * `errorMessage` is the backend's own words when it did not answer. Both are
+ * present so the client can tell "there are none" from "we could not find
+ * out" -- the empty-state-honesty rule in read-outcome.ts.
+ */
+export type ModuleListOutcome<T> = { rows: T[]; errorMessage: string | null };
+
+// The tags a write path passes to revalidateTag() so a create shows up
+// immediately instead of up to 30 s later. One tag per module: unstable_cache
+// applies its tags to every entry of the wrapper, so revalidating "permits"
+// clears the permit list for every project of every org in this deployment's
+// cache -- broader than strictly needed, and correct: the next read simply
+// re-fetches. A per-project tag would need a wrapper built per request, which
+// is precisely what unstable_cache must not be used for.
+export const MODULE_TAGS = {
+  permits: "module:permits",
+  moms: "module:moms",
+  drawings: "module:drawings",
+  documents: "module:documents",
+  manpower: "module:manpower",
+  materials: "module:materials",
+  workProgress: "module:work-progress",
+  scope: "module:scope",
+} as const;
+
+export type ModuleTag = (typeof MODULE_TAGS)[keyof typeof MODULE_TAGS];
+
+/**
+ * Builds a cached, org-scoped list fetcher for one module.
+ *
+ * The wrapped function is the THROWING callVeridian on purpose: Next's data
+ * cache stores what a cached function returns, so returning a failure object
+ * would pin the failure in the cache for the full 30 s. A thrown error is not
+ * cached, so a failed read is retried on the very next request -- and is
+ * converted to a message here, outside the cache.
+ *
+ * Defined once per module at module scope, never inside a request handler.
+ */
+function createModuleList(
+  tag: ModuleTag,
+  buildPath: (projectId: string) => string,
+  pick: (payload: Record<string, unknown>) => unknown[] | undefined,
+  options: { root?: boolean } = {}
+) {
+  const cached = unstable_cache(
+    (organizationId: string | null, projectId: string) =>
+      callVeridian<Record<string, unknown>>(buildPath(projectId), {
+        organizationId: organizationId ?? undefined,
+        root: options.root,
+      }),
+    ["veridian-module-list", tag],
+    { revalidate: 30, tags: [tag] }
+  );
+
+  // Generic at the CALL site, not at creation: the row type belongs to the
+  // client component that renders it (Permit, Doc, RosterEntry...), and each
+  // page passes it explicitly so a payload-shape change is a type error rather
+  // than a runtime surprise.
+  return async function fetchList<T>(
+    organizationId: string | null,
+    projectId: string,
+    context: string
+  ): Promise<ModuleListOutcome<T>> {
+    try {
+      const payload = await cached(organizationId ?? null, projectId);
+      return { rows: (pick(payload) ?? []) as T[], errorMessage: null };
+    } catch (err) {
+      const message = err instanceof VeridianApiError ? err.message : `Couldn't load ${context}.`;
+      console.error(`[module-list-source] ${tag} failed:`, err instanceof Error ? err.message : err);
+      // rows stays EMPTY and errorMessage is set: the client renders the error,
+      // never a calm "there are none" over a failed read.
+      return { rows: [], errorMessage: message };
+    }
+  };
+}
+
+const q = encodeURIComponent;
+
+export const fetchPermitsList = createModuleList(
+  MODULE_TAGS.permits,
+  (projectId) => `/permits?projectId=${q(projectId)}&all=true`,
+  (p) => p.permits as unknown[] | undefined
+);
+
+export const fetchMomsList = createModuleList(
+  MODULE_TAGS.moms,
+  (projectId) => `/veri-meetings?projectId=${q(projectId)}`,
+  (p) => p.meetings as unknown[] | undefined
+);
+
+export const fetchDrawingsList = createModuleList(
+  MODULE_TAGS.drawings,
+  (projectId) => `/drawings?projectId=${q(projectId)}`,
+  (p) => p.drawings as unknown[] | undefined
+);
+
+// /api/v1/documents was never re-exported under /api/v1/projexa/*, hence root.
+export const fetchDocumentsList = createModuleList(
+  MODULE_TAGS.documents,
+  (projectId) => `/documents?linkedEntityType=project&linkedEntityId=${q(projectId)}`,
+  (p) => p.documents as unknown[] | undefined,
+  { root: true }
+);
+
+export const fetchRosterList = createModuleList(
+  MODULE_TAGS.manpower,
+  (projectId) => `/construction/labour-roster?projectId=${q(projectId)}`,
+  (p) => p.roster as unknown[] | undefined,
+  { root: true }
+);
+
+export const fetchMaterialMasterList = createModuleList(
+  MODULE_TAGS.materials,
+  (projectId) => `/construction/materials?projectId=${q(projectId)}`,
+  (p) => p.materials as unknown[] | undefined,
+  { root: true }
+);
+
+export const fetchScopeList = createModuleList(
+  MODULE_TAGS.scope,
+  (projectId) => `/scope?projectId=${q(projectId)}`,
+  (p) => p.boqs as unknown[] | undefined
+);

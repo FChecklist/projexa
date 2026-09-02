@@ -24,9 +24,13 @@
 // real Edit/Publish/Action-Items/Share-link-management -- see that
 // component's own header comment for the full list of previously-hidden
 // backend capability this closes.
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the meetings now normally arrive as props, fetched by
+// moms/page.tsx on the server inside its Suspense boundary, so this list
+// paints filled on first render. useModuleList keeps the client fetch for a
+// project switch and gives it an AbortController; a failed read is now shown
+// as the backend's own words in place of the table, never as an empty one.
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -34,9 +38,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2, NotebookText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { MOMS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 
-type Meeting = {
+// Exported so moms/page.tsx can type the rows it fetches server-side.
+export type Meeting = {
   id: string;
   title: string;
   status: string;
@@ -50,11 +56,8 @@ type Meeting = {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Meeting", field: "title", type: "text", importance: "High" },
-  { label: "Date", field: "scheduledAt", type: "date", importance: "High" },
-  { label: "Status", field: "status", type: "text", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike PermitsListClient there's no generic
@@ -79,25 +82,24 @@ function renderMeetingCell(field: string, m: Meeting) {
   }
 }
 
-export default function MoMsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function MoMsClient({
+  projectId,
+  registryColumns,
+  initial = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initial?: ModuleListInitial<Meeting>;
+}) {
   const router = useRouter();
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MOMS_LIST_COLUMNS;
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchJson<{ meetings?: Meeting[] }>(`/api/moms?projectId=${encodeURIComponent(projectId)}`);
-      setMeetings(data.meetings ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load meeting minutes"));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, [projectId]);
+  const { rows: meetings, error, loading } = useModuleList<Meeting>({
+    initial,
+    url: `/api/moms?projectId=${encodeURIComponent(projectId)}`,
+    pick: (d) => d.meetings as Meeting[] | undefined,
+    context: "meeting minutes",
+  });
 
   return (
     <div className="space-y-4">
@@ -112,6 +114,10 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : error ? (
+            // Never an empty table over a failed read -- the user must be able
+            // to tell "no meetings" from "we could not find out".
+            <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
           ) : meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings recorded yet.</p>
           ) : (

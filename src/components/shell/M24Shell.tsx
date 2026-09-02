@@ -49,6 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -606,6 +607,12 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             const i = projects.findIndex((p) => p.id === projectId);
             const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
             setProjectId(next ? next.id : null);
+            // R67 F-18: record the choice where the SERVER can read it. Module
+            // pages resolve their project from ?projectId= or this cookie with
+            // no network call at all (D-04); without the write, a module
+            // opened from the directory rather than from a link would still
+            // pay for the /dashboard hop.
+            rememberSelectedProject(next ? next.id : null);
           }}
           search={<SearchTrigger />}
           alerts={<NotificationBell />}

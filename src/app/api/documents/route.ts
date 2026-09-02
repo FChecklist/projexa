@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { MODULE_TAGS } from "@/lib/module-list-source";
+import { revalidateTag } from "next/cache";
 
 // Wave 143 (Documents real upload): VERIDIAN's /api/v1/documents gained a
 // real POST (createDocumentRecord, Bearer-key-callable) -- this is no
@@ -33,6 +35,10 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const data = await callVeridianUpload("/documents", formData, { organizationId: ctx.organizationId!, root: true });
+    // R67 F-18: the module list is cached for 30 s on the server, so a
+    // create must clear it or the new row is invisible until the window
+    // expires -- which reads exactly like a failed save.
+    revalidateTag(MODULE_TAGS.documents, "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to upload document");

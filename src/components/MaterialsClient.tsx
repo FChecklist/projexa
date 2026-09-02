@@ -39,12 +39,19 @@
 // (api/construction-materials/cost-report/route.ts) had been calling a
 // VERIDIAN path that 502'd for the same reason as Inbound: nothing
 // implemented it on the other side either, until now.
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the MATERIAL MASTER now normally arrives as a prop, fetched by
+// materials/page.tsx on the server inside its Suspense boundary, so the tab
+// this screen opens on paints filled on first render. Receipts and the cost
+// report are still fetched here; moving them onto their own tabs is F-25.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { MATERIAL_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
 import DataLoadError from "@/components/DataLoadError";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
@@ -52,7 +59,8 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
-type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+// Exported so materials/page.tsx can type the rows it fetches server-side.
+export type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
 type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
@@ -61,12 +69,8 @@ type CostReportRow = { materialId: string; name: string; spec: string | null; un
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const MASTER_COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Spec", field: "spec", type: "text", importance: "Medium" },
-  { label: "Unit", field: "unit", type: "text", importance: "High" },
-  { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
 
@@ -97,40 +101,73 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
   }
 }
 
-export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+export default function MaterialsClient({
+  projectId,
+  registryColumns,
+  initialTab,
+  initialMaster = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  initialMaster?: ModuleListInitial<Material>;
+}) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MATERIAL_LIST_COLUMNS;
   const currencies = useCurrencies();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
-  const [materials, setMaterials] = useState<Material[]>([]);
+  const [materials, setMaterials] = useState<Material[]>(initialMaster?.rows ?? []);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [report, setReport] = useState<CostReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
+  const [loading, setLoading] = useState(initialMaster === null);
+  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>(
+    initialMaster?.errorMessage ? { materials: initialMaster.errorMessage } : {}
+  );
+  // The master the server sent answers THIS project; a project switch still
+  // goes to the network.
+  const masterFromServerFor = useRef(initialMaster ? projectId : null);
 
-  async function load() {
-    setLoading(true);
-    const [matR, recR, repR] = await Promise.allSettled([
-      fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
-    ]);
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      const masterAlreadyLoaded = masterFromServerFor.current === projectId;
+      setLoading(true);
+      const [matR, recR, repR] = await Promise.allSettled([
+        masterAlreadyLoaded
+          ? Promise.resolve(null)
+          : fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`, { signal }),
+        fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`, { signal }),
+        fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`, { signal }),
+      ]);
+      // A cancelled read is not a failure and must not reach a screen the user
+      // has already left.
+      if (signal?.aborted) return;
+      masterFromServerFor.current = null;
 
-    const errors: { materials?: string; receipts?: string; report?: string } = {};
-    if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
-    else { setMaterials([]); errors.materials = errorMessage(matR.reason, "Material master"); }
+      const errors: { materials?: string; receipts?: string; report?: string } = {};
+      if (matR.status === "fulfilled") {
+        if (matR.value) setMaterials(matR.value.materials ?? []);
+      } else if (!isAbortError(matR.reason, signal)) {
+        setMaterials([]);
+        errors.materials = errorMessage(matR.reason, "Material master");
+      }
 
-    if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
-    else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
+      if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
+      else if (!isAbortError(recR.reason, signal)) { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
 
-    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
-    else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
+      if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
+      else if (!isAbortError(repR.reason, signal)) { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
 
-    setLoadErrors(errors);
-    setLoading(false);
-  }
+      setLoadErrors(errors);
+      setLoading(false);
+    },
+    [projectId]
+  );
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
@@ -160,7 +197,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.materials ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={() => load()} /></div>
             ) : materials.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
             ) : (
@@ -192,7 +229,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.receipts ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={() => load()} /></div>
             ) : receipts.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
             ) : (
@@ -220,7 +257,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.report ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={load} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={() => load()} /></div>
             ) : report.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
             ) : (

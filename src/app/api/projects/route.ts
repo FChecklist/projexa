@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { revalidateTag } from "next/cache";
 
 // Feeds the ProjectSwitcher dropdown in AppSidebar with the org's real
 // project list (id/name only -- the VERIDIAN API key itself never leaves
@@ -26,6 +27,9 @@ export async function POST(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
+    // R67 F-18: the cached list must be cleared or the new row is
+    // invisible until the 30 s window expires, which reads as a failed save.
+    revalidateTag("projects", "max");
     const data = await callVeridian("/projects", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {

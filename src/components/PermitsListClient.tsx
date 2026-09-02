@@ -11,11 +11,22 @@
 // call errors -- kept, per r43_queue seq2's own instruction, until the
 // registry path is verified live, then removable in a follow-up PR once
 // every screen using this pattern has a seeded row.
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the rows now normally arrive as props, fetched by permits/page.tsx
+// on the server inside its Suspense boundary, so this list paints filled on
+// first render instead of mounting empty and then fetching. useModuleList
+// keeps the client fetch for the cases the server did not cover (a
+// ?withinDays= arrival, a project switch) and gives it an AbortController.
+// The old effect also read `.then(r => r.json())` with no status check, so an
+// /api/permits failure rendered as "No permits yet for this project." -- that
+// is R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01 and it is fixed here too.
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { PERMITS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 
-type Permit = {
+// Exported so permits/page.tsx can type the rows it fetches server-side.
+export type Permit = {
   id: string;
   name: string;
   permitNumber: string | null;
@@ -30,14 +41,8 @@ type Permit = {
 // passed straight to ListScreen with no reshaping.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Permit no.", field: "permitNumber", type: "text", importance: "High" },
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Authority", field: "permitAuthority", type: "text", importance: "High" },
-  { label: "Issue date", field: "issueDate", type: "date", importance: "High" },
-  { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
-  { label: "Days left", field: "daysToExpiry", type: "number", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 function daysLeftTone(days: number | null): StatusTone {
   if (days === null) return "neutral";
@@ -50,25 +55,26 @@ export default function PermitsListClient({
   projectId,
   withinDays,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
   withinDays?: string;
   registryColumns?: RegistryColumn[] | null;
+  initial?: ModuleListInitial<Permit>;
 }) {
   const router = useRouter();
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : PERMITS_LIST_COLUMNS;
 
-  useEffect(() => {
-    const params = new URLSearchParams({ projectId });
-    if (withinDays) params.set("withinDays", withinDays);
-    else params.set("all", "true");
-    fetch(`/api/permits?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => setPermits(data.permits ?? []))
-      .finally(() => setLoading(false));
-  }, [projectId, withinDays]);
+  const params = new URLSearchParams({ projectId });
+  if (withinDays) params.set("withinDays", withinDays);
+  else params.set("all", "true");
+
+  const { rows: permits, error, loading } = useModuleList<Permit>({
+    initial,
+    url: `/api/permits?${params.toString()}`,
+    pick: (d) => d.permits as Permit[] | undefined,
+    context: "permits",
+  });
 
   return (
     <ScreenFrame
@@ -86,6 +92,12 @@ export default function PermitsListClient({
     >
       {loading ? (
         <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
+      ) : error ? (
+        // Never an empty table in place of a failed read: the user must be
+        // able to tell "no permits" from "we could not find out".
+        <p role="alert" className="px-4 py-6 text-[13px] text-px-error">
+          {error}
+        </p>
       ) : (
         <ListScreen
           functionId="permits.list"

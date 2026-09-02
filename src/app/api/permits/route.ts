@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
+import { MODULE_TAGS } from "@/lib/module-list-source";
+import { revalidateTag } from "next/cache";
 
 // Priority 13 (Permits as a first-class module): VERIDIAN's
 // /api/v1/projexa/permits -- the Bearer-key-reachable twin of VERIDIAN's own
@@ -38,6 +40,10 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const data = await callVeridianUpload("/permits", formData, { organizationId: ctx.organizationId! });
+    // R67 F-18: the module list is cached for 30 s on the server, so a
+    // create must clear it or the new row is invisible until the window
+    // expires -- which reads exactly like a failed save.
+    revalidateTag(MODULE_TAGS.permits, "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create permit");

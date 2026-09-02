@@ -4,10 +4,13 @@
 // files/links, per project -- same Card/Table/Dialog primitives as
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
 // (category='drawing'|'drawing_3d').
-import { useEffect, useState } from "react";
+//
+// R67 F-18: the drawings now normally arrive as props, fetched by
+// drawings/page.tsx on the server inside its Suspense boundary, so this list
+// paints filled on first render. useModuleList keeps the client fetch for a
+// project switch and gives it an AbortController.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 
-type Drawing = {
+// Exported so drawings/page.tsx can type the rows it fetches server-side.
+export type Drawing = {
   id: string;
   name: string;
   kind: "dwg" | "3d_walkthrough";
@@ -38,12 +43,8 @@ export type RegistryColumn = ScreenColumn;
 // compliance.screen_definitions row for drawings.list doesn't exist yet
 // (404) or the call errors -- the "Open" action column is intentionally
 // NOT part of it and is always rendered separately below.
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Kind", field: "kind", type: "text", importance: "High" },
-  { label: "Discipline", field: "discipline", type: "text", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
+// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
+// this screen's loading skeleton draws the same column heads this table does.
 
 function renderDrawingCell(column: ScreenColumn, d: Drawing) {
   switch (column.field) {
@@ -75,28 +76,21 @@ function renderDrawingCell(column: ScreenColumn, d: Drawing) {
 export default function DrawingsClient({
   projectId,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
+  initial?: ModuleListInitial<Drawing>;
 }) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [loading, setLoading] = useState(true);
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchJson(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
-      setDrawings(data.drawings ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load drawings"));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, [projectId]);
+  const { rows: drawings, error, loading } = useModuleList<Drawing>({
+    initial,
+    url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
+    pick: (d) => d.drawings as Drawing[] | undefined,
+    context: "drawings",
+  });
 
   return (
     <div className="space-y-4">
@@ -116,6 +110,9 @@ export default function DrawingsClient({
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : error ? (
+            // Never an empty table over a failed read.
+            <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
           ) : drawings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No drawings or 3D walkthroughs yet.</p>
           ) : (
