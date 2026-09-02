@@ -80,6 +80,23 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
 };
 
+// R66 visual QA (2026-09-02): reproduced live on a real project's BOQ list --
+// the loading spinner never resolved to either real rows or the empty state
+// below, across multiple reloads. Root cause: every fetch() in load() had NO
+// timeout of its own. The Next.js routes it calls ARE already bounded
+// (veridian-client.ts's fetchWithTimeout: 20s x up to 2 attempts server-side),
+// but this component had no way to enforce that assumption -- if it ever
+// breaks (a network-layer hang between browser and the server, a slow edge
+// hop), `loading` had no way back to `false` and the UI spun forever with no
+// retry affordance. Set comfortably above the server's own worst case (40s)
+// so this never fires under normal slow-but-succeeding conditions, and only
+// catches a genuine hang.
+const LOAD_TIMEOUT_MS = 50_000;
+
+function isTimeoutError(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
 function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
   return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -114,14 +131,16 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
+      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
+        signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
+      });
       const loaded: Boq[] = data.boqs ?? [];
       setBoqs(loaded);
 
       const revisions = loaded.filter((b) => b.parentBoqId);
       const entries = await Promise.all(
         revisions.map(async (b) => {
-          const cmpRes = await fetch(`/api/scope/${b.id}/compare`);
+          const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: AbortSignal.timeout(LOAD_TIMEOUT_MS) });
           if (!cmpRes.ok) return null;
           const cmp: BoqComparison = await cmpRes.json();
           return [b.id, cmp.totalVariation] as const;
@@ -129,7 +148,14 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
       );
       setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
     } catch (err) {
-      const msg = errorMessage(err, "Couldn't load scope of work");
+      // A timed-out AbortSignal surfaces as a bare "TimeoutError"/"AbortError"
+      // with no useful .message -- errorMessage() would render something like
+      // "Couldn't load scope of work: signal timed out". Give the timeout case
+      // its own honest, actionable copy instead; every other failure keeps
+      // the real backend reason via errorMessage() (C19 ERROR_TRUTHFUL).
+      const msg = isTimeoutError(err)
+        ? "Couldn't load scope of work: the construction data service is taking too long to respond. Retry."
+        : errorMessage(err, "Couldn't load scope of work");
       setLoadError(msg);
       toast.error(msg);
     } finally {
