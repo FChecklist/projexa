@@ -48,3 +48,41 @@ export function meetingShareSummary(title: string, formattedDate: string, action
   const actions = `${actionCount} ${actionCount === 1 ? "action" : "actions"}`;
   return `MoM - ${title.trim()} - ${formattedDate} - ${actions}`;
 }
+
+// ─── R67 lane D22 (item D-75, rec R-287): Publish & Lock, demoted and honest ─
+//
+// WHAT WAS WRONG: "Publish & Lock" was the only saffron button on a meeting
+// that had just been opened -- so the loudest control on the screen was the
+// irreversible one, sitting above minutes that were still empty. Publishing
+// locks the minutes AND the share link server-side (veri-meeting-service's
+// assertEditable), and there is no unpublish anywhere in the codebase.
+//
+// It is now a secondary control that says why it cannot be pressed while there
+// is nothing to publish, and asks before it fires. The strings live here, next
+// to the other MoM copy, so the screen and its test read the same sentence.
+
+/** The publish control's label when it is ready to be pressed. */
+export const PUBLISH_LOCK_LABEL = "Publish & Lock";
+
+/**
+ * The label AND the reason, in one string, when there are no minutes.
+ *
+ * One string rather than a label plus a tooltip: a disabled control's reason
+ * has to be readable without hovering (and on a phone there is no hover at
+ * all), which is the same disabled-with-reason convention correction C-11
+ * named as this app's good pattern.
+ */
+export const PUBLISH_LOCK_NO_MINUTES_LABEL = "Publish & Lock (no minutes yet)";
+
+/** The inline confirm sentence -- inline, never a modal (the global no-dialogs rule). */
+export const PUBLISH_LOCK_CONFIRM = "Locks the minutes and share link; cannot be undone";
+
+/** Pure: what the publish control reads, given the minutes as they stand. */
+export function publishLockLabel(minutes: string | null | undefined): string {
+  return (minutes ?? "").trim() ? PUBLISH_LOCK_LABEL : PUBLISH_LOCK_NO_MINUTES_LABEL;
+}
+
+/** Pure: may this meeting be published yet? Whitespace is not minutes. */
+export function canPublishMeeting(minutes: string | null | undefined): boolean {
+  return (minutes ?? "").trim().length > 0;
+}
