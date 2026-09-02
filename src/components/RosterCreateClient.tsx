@@ -18,16 +18,24 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { useLookup } from "@/lib/use-lookup";
+import { getShellVendors } from "@/lib/shell-store";
 import { LookupFieldError } from "@/components/LookupFieldError";
 
 type Vendor = { id: string; vendorName: string };
 
 export default function RosterCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  // R67 F-25 (R-241): when the user reached this form from /labour, the shell
+  // bootstrap already holds the subcontractor list -- so this form makes NO
+  // request for it. getShellVendors() is a passive read of the session store:
+  // it never subscribes and never triggers a fetch, so F-19's rule that the
+  // bootstrap stays off a create route's critical path is untouched. On a cold
+  // arrival the seed is null and the lookup fetches exactly as before.
   const vendorLookup = useLookup<Vendor>({
     url: "/api/vendors",
     pick: (d) => d.vendors as Vendor[] | undefined,
     label: "subcontractors",
+    seed: getShellVendors(),
   });
   const [name, setName] = useState("");
   const [employeeCode, setEmployeeCode] = useState("");

@@ -9,7 +9,7 @@
 // Retry") has a unit-level twin that runs in CI.
 
 import { describe, expect, test } from "bun:test";
-import { lookupPlaceholder, requiredLookupFailure, type Lookup } from "./use-lookup";
+import { lookupPlaceholder, requiredLookupFailure, seedIsUsable, type Lookup } from "./use-lookup";
 
 function lookup(status: Lookup<unknown>["status"], label = "tasks"): Lookup<unknown> {
   return { options: [], status, placeholder: lookupPlaceholder(status, label), retry: () => {}, label };
@@ -39,5 +39,22 @@ describe("requiredLookupFailure", () => {
   test("a lookup that is still loading or has answered blocks nothing", () => {
     expect(requiredLookupFailure(lookup("loading"), "Task list")).toBeNull();
     expect(requiredLookupFailure(lookup("ready"), "Task list")).toBeNull();
+  });
+});
+
+// R67 F-25 (R-241): a create form reached from a screen that already loaded the
+// same list must not ask for it again.
+describe("seedIsUsable -- when the session store already has the answer", () => {
+  test("a populated seed is the answer, so no request is made", () => {
+    expect(seedIsUsable([{ id: "v1" }])).toBe(true);
+  });
+
+  test("an EMPTY array is not an answer -- 'this org has no subcontractors' and 'the store has not loaded' look identical from here, and rendering the second as the first would state a fact about the user's data that nobody established", () => {
+    expect(seedIsUsable([])).toBe(false);
+  });
+
+  test("null and undefined mean the store has nothing -- the lookup fetches exactly as before", () => {
+    expect(seedIsUsable(null)).toBe(false);
+    expect(seedIsUsable(undefined)).toBe(false);
   });
 });

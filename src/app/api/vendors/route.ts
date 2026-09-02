@@ -8,7 +8,12 @@ export async function GET() {
   if (ctx.response) return ctx.response;
   try {
     const data = await callVeridian("/vendors", { organizationId: ctx.organizationId! });
-    return NextResponse.json(data);
+    // R67 F-25 (R-241): the vendor list is a slowly-changing, session-scoped
+    // lookup that three screens ask for (/labour, /labour/new,
+    // /labour/attendance/new). Ten minutes in the browser's own cache, and
+    // PRIVATE -- the rows are resolved with the caller's own org key, so a
+    // shared cache must never hold them.
+    return NextResponse.json(data, { headers: { "Cache-Control": "private, max-age=600" } });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load vendors");
   }

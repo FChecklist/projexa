@@ -10,40 +10,34 @@
 // for the full history). Only the Material Master table (4 real data
 // columns: Name/Spec/Unit/Unit Cost) is registry-driven -- Inbound Receipts
 // has no registry equivalent (it's a movements ledger against the master,
-// not a second list screen) and stays exactly as it was, same "one table
-// only" contract Documents/ChangeOrders used for their own non-registry
-// pieces. MASTER_COLUMNS is now the fallback used when materials/page.tsx's
-// server-side resolve of the material.list screen_definitions row returns
-// null (404/error), same "keep the hardcoded version behind a flag until
-// verified" contract as permits/documents/change-orders.
+// not a second list screen) and stays exactly as it was. MASTER_COLUMNS is
+// the fallback used when materials/page.tsx's server-side resolve of the
+// material.list screen_definitions row returns null (404/error).
 //
 // Real-screen conversion (2026-08-30): the "Add Material"/"Record Receipt"
 // Dialog popups are gone -- Add Material routes to a real create screen
 // (MaterialCreateClient.tsx), master rows route to a real Object Page
-// (MaterialObjectClient.tsx, which gained real Edit/Deactivate this
-// conversion -- updateMaterial() didn't exist before). Record Receipt
-// routes to a real create screen (MaterialReceiptCreateClient.tsx) -- no
-// Object Page for receipt rows, a write-once transaction log. Also fixes
-// the same uncontrolled-Tabs-no-URL-sync bug found and fixed repeatedly
-// this session.
+// (MaterialObjectClient.tsx). Record Receipt routes to a real create screen
+// (MaterialReceiptCreateClient.tsx). Same conversion folded in module #31
+// (Site Materials): /site-materials redirects here, and this file gained Cost
+// Report, backed by a real getMaterialCostReport() aggregation.
 //
-// Same conversion also folds in module #31 (Site Materials, the duplicate
-// module found at /site-materials): its Catalog tab was this same
-// constructionMaterials table under a different label, and its Inbound tab
-// called a VERIDIAN path (/construction/materials/inbound) that never
-// existed -- always a dead request. Rather than duplicate the real Materials
-// screen, /site-materials now redirects here (see site-materials/page.tsx)
-// and this file gains its one genuinely new capability, Cost Report, backed
-// by a real getMaterialCostReport() aggregation added this same conversion
-// (construction-materials-service.ts) -- the proxy it calls
-// (api/construction-materials/cost-report/route.ts) had been calling a
-// VERIDIAN path that 502'd for the same reason as Inbound: nothing
-// implemented it on the other side either, until now.
+// R67 F-18: the MATERIAL MASTER arrives as a prop, fetched by
+// materials/page.tsx on the server inside its Suspense boundary.
 //
-// R67 F-18: the MATERIAL MASTER now normally arrives as a prop, fetched by
-// materials/page.tsx on the server inside its Suspense boundary, so the tab
-// this screen opens on paints filled on first render. Receipts and the cost
-// report are still fetched here; moving them onto their own tabs is F-25.
+// R67 F-25 (audit recommendation R-241) -- ONE TAB, ONE LOAD. This screen used
+// to fire all THREE reads on landing -- master, inbound receipts and the cost
+// report -- under ONE shared `loading` flag, although only Material Master is
+// open and the other two answer questions nobody has asked yet. Two of those
+// three were pure waste on every landing, and one shared flag meant a failure
+// in any of them looked like a failure in all of them.
+//
+// Now each tab is its own pane (src/lib/pane-state.ts) with its own status,
+// rows, as-of time and error. The tab the user LANDS ON loads -- which, on a
+// ?tab= deep link, is that tab and no other. The remaining panes are then
+// prefetched on the first idle callback, so switching still feels instant
+// without putting their cost on the first paint. A tab that has already
+// answered is never re-fetched by a click.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -52,6 +46,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { MATERIAL_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
+import {
+  errorPane,
+  idlePane,
+  loadingPane,
+  needsLoad,
+  paneAsOf,
+  paneIsBusy,
+  readyPane,
+  seededPane,
+  type Pane,
+} from "@/lib/pane-state";
+import { AsOfStamp } from "@/components/AsOfStamp";
 import DataLoadError from "@/components/DataLoadError";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
@@ -69,10 +75,9 @@ type CostReportRow = { materialId: string; name: string; spec: string | null; un
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
-// this screen's loading skeleton draws the same column heads this table does.
-
-const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
+const TAB_IDS = ["master", "receipts", "cost-report"] as const;
+type TabId = (typeof TAB_IDS)[number];
+const VALID_TABS = new Set<string>(TAB_IDS);
 
 // Per-field cell renderer for the Material Master table -- same reasoning
 // as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
@@ -101,6 +106,21 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
   }
 }
 
+/** Each tab's own endpoint, in one place, so a pane can never be loaded from
+ *  another tab's URL. */
+function paneUrl(tab: TabId, projectId: string): string {
+  const p = encodeURIComponent(projectId);
+  if (tab === "master") return `/api/materials/master?projectId=${p}`;
+  if (tab === "receipts") return `/api/materials?projectId=${p}`;
+  return `/api/construction-materials/cost-report?projectId=${p}`;
+}
+
+const PANE_LABEL: Record<TabId, string> = {
+  master: "Material master",
+  receipts: "Inbound receipts",
+  "cost-report": "Cost report",
+};
+
 export default function MaterialsClient({
   projectId,
   registryColumns,
@@ -115,67 +135,127 @@ export default function MaterialsClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MATERIAL_LIST_COLUMNS;
   const currencies = useCurrencies();
-  const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
-  const [materials, setMaterials] = useState<Material[]>(initialMaster?.rows ?? []);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [report, setReport] = useState<CostReportRow[]>([]);
-  const [loading, setLoading] = useState(initialMaster === null);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>(
-    initialMaster?.errorMessage ? { materials: initialMaster.errorMessage } : {}
+  const [activeTab, setActiveTab] = useState<TabId>(
+    initialTab && VALID_TABS.has(initialTab) ? (initialTab as TabId) : "master"
   );
-  // The master the server sent answers THIS project; a project switch still
-  // goes to the network.
-  const masterFromServerFor = useRef(initialMaster ? projectId : null);
 
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      const masterAlreadyLoaded = masterFromServerFor.current === projectId;
-      setLoading(true);
-      const [matR, recR, repR] = await Promise.allSettled([
-        masterAlreadyLoaded
-          ? Promise.resolve(null)
-          : fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`, { signal }),
-        fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`, { signal }),
-        fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`, { signal }),
-      ]);
-      // A cancelled read is not a failure and must not reach a screen the user
-      // has already left.
-      if (signal?.aborted) return;
-      masterFromServerFor.current = null;
+  const [master, setMaster] = useState<Pane<Material>>(() =>
+    initialMaster ? seededPane(initialMaster.rows, initialMaster.errorMessage, Date.now()) : idlePane<Material>()
+  );
+  const [receipts, setReceipts] = useState<Pane<Receipt>>(idlePane<Receipt>);
+  const [report, setReport] = useState<Pane<CostReportRow>>(idlePane<CostReportRow>);
 
-      const errors: { materials?: string; receipts?: string; report?: string } = {};
-      if (matR.status === "fulfilled") {
-        if (matR.value) setMaterials(matR.value.materials ?? []);
-      } else if (!isAbortError(matR.reason, signal)) {
-        setMaterials([]);
-        errors.materials = errorMessage(matR.reason, "Material master");
+  const panes: Record<TabId, Pane<unknown>> = { master, receipts, "cost-report": report };
+  const panesRef = useRef(panes);
+  panesRef.current = panes;
+
+  // One update path for all three panes, so loadPane() below is one function
+  // rather than three near-identical ones. The casts are safe because each
+  // branch only ever receives the transition applied to its own pane.
+  const applyPane = useCallback((tab: TabId, update: (prev: Pane<unknown>) => Pane<unknown>) => {
+    if (tab === "master") setMaster((prev) => update(prev) as Pane<Material>);
+    else if (tab === "receipts") setReceipts((prev) => update(prev) as Pane<Receipt>);
+    else setReport((prev) => update(prev) as Pane<CostReportRow>);
+  }, []);
+
+  // One controller for the whole component: every in-flight pane is dropped on
+  // unmount and on a project switch, and a cancellation is never an error.
+  const abortRef = useRef<AbortController | null>(null);
+
+  const loadPane = useCallback(
+    async (tab: TabId, force = false) => {
+      // A tab that has already answered is never re-read by a click. `force` is
+      // the Retry beside a failed pane, which is the user asking explicitly.
+      if (!force && !needsLoad(panesRef.current[tab])) return;
+      const controller = abortRef.current;
+      applyPane(tab, loadingPane);
+      try {
+        const payload = await fetchJson<Record<string, unknown>>(paneUrl(tab, projectId), {
+          signal: controller?.signal,
+        });
+        if (controller?.signal.aborted) return;
+        const key = tab === "master" ? "materials" : tab === "receipts" ? "receipts" : "report";
+        applyPane(tab, () => readyPane((payload[key] as unknown[]) ?? [], Date.now()));
+      } catch (err) {
+        if (isAbortError(err, controller?.signal)) return;
+        applyPane(tab, (prev) => errorPane(prev, errorMessage(err, PANE_LABEL[tab])));
       }
-
-      if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
-      else if (!isAbortError(recR.reason, signal)) { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
-
-      if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
-      else if (!isAbortError(repR.reason, signal)) { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
-
-      setLoadErrors(errors);
-      setLoading(false);
     },
-    [projectId]
+    [projectId, applyPane]
   );
 
+  // Landing: only the tab the user is actually on. A ?tab=receipts deep link
+  // therefore costs one request, not three.
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    abortRef.current = controller;
+    void loadPane(activeTab);
+    return () => {
+      controller.abort();
+      abortRef.current = null;
+    };
+    // activeTab is handled by goToTab (which loads on demand); re-running this
+    // on every tab change would abort the pane that is already in flight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadPane]);
 
-  const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
+  // A project switch invalidates every pane -- the rows on screen belong to the
+  // project the user just left.
+  const projectRef = useRef(projectId);
+  useEffect(() => {
+    if (projectRef.current === projectId) return;
+    projectRef.current = projectId;
+    setMaster(idlePane<Material>());
+    setReceipts(idlePane<Receipt>());
+    setReport(idlePane<CostReportRow>());
+  }, [projectId]);
+
+  // Once the landing tab has answered, fill the others on the first IDLE
+  // callback, so switching feels instant without any of it landing on the
+  // first paint. requestIdleCallback is not in Safari, hence the timeout
+  // fallback -- which still yields a frame, which is the point.
+  const activePaneStatus = panes[activeTab].status;
+  useEffect(() => {
+    if (activePaneStatus !== "ready") return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const prefetch = () => {
+      for (const tab of TAB_IDS) if (tab !== activeTab) void loadPane(tab);
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(prefetch, { timeout: 3000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(prefetch, 300);
+    return () => clearTimeout(timer);
+  }, [activePaneStatus, activeTab, loadPane]);
+
+  const materialName = (id: string) => master.rows.find((m) => m.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
-    setActiveTab(tab);
+    if (!VALID_TABS.has(tab)) return;
+    setActiveTab(tab as TabId);
+    void loadPane(tab as TabId);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
+  /** One tab's body: spinner ONLY when there is genuinely nothing to show,
+   *  then the backend's own reason, then the rows. */
+  function PaneBody<T>({ pane, tab, empty, children }: { pane: Pane<T>; tab: TabId; empty: string; children: React.ReactNode }) {
+    if (paneIsBusy(pane)) {
+      return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
+    }
+    if (pane.error) {
+      return <div className="p-4"><DataLoadError messages={[pane.error]} onRetry={() => loadPane(tab, true)} /></div>;
+    }
+    if (pane.rows.length === 0) {
+      return <p className="py-10 text-center text-sm text-px-muted">{empty}</p>;
+    }
+    return <>{children}</>;
   }
 
   return (
@@ -187,56 +267,46 @@ export default function MaterialsClient({
       </TabsList>
 
       <TabsContent value="master" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          <AsOfStamp at={paneAsOf(master, Date.now())} />
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
               Material" Dialog popup with a real create route. */}
           <Button onClick={() => router.push(`/materials/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Material</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.materials ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.materials]} onRetry={() => load()} /></div>
-            ) : materials.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
-            ) : (
+            <PaneBody pane={master} tab="master" empty="No materials in the master yet.">
               <Table>
                 <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
                 <TableBody>
                   {/* Real screen navigation (2026-08-30) -- rows open the
                       real Object Page, where Edit/Deactivate now live. */}
-                  {materials.map((m) => (
+                  {master.rows.map((m) => (
                     <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
                       {columns.map((col) => <TableCell key={col.field}>{renderMaterialCell(col.field, m, currencies)}</TableCell>)}
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            )}
+            </PaneBody>
           </CardContent>
         </Card>
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          <AsOfStamp at={paneAsOf(receipts, Date.now())} />
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Record Receipt" Dialog popup with a real create route. */}
-          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
+          <Button disabled={master.rows.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.receipts ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.receipts]} onRetry={() => load()} /></div>
-            ) : receipts.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
-            ) : (
+            <PaneBody pane={receipts} tab="receipts" empty="No material movements recorded yet.">
               <Table>
                 <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Quantity</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {receipts.map((r) => (
+                  {receipts.rows.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
                       <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
@@ -246,25 +316,22 @@ export default function MaterialsClient({
                   ))}
                 </TableBody>
               </Table>
-            )}
+            </PaneBody>
           </CardContent>
         </Card>
       </TabsContent>
 
       <TabsContent value="cost-report" className="space-y-4">
+        <div className="flex items-center justify-end gap-3">
+          <AsOfStamp at={paneAsOf(report, Date.now())} />
+        </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.report ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={() => load()} /></div>
-            ) : report.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
-            ) : (
+            <PaneBody pane={report} tab="cost-report" empty="No receipts to report yet.">
               <Table>
                 <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {report.map((r) => (
+                  {report.rows.map((r) => (
                     <TableRow key={r.materialId}>
                       <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
                       <TableCell>{r.unit}</TableCell>
@@ -275,7 +342,7 @@ export default function MaterialsClient({
                   ))}
                 </TableBody>
               </Table>
-            )}
+            </PaneBody>
           </CardContent>
         </Card>
       </TabsContent>

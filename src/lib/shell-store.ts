@@ -35,7 +35,8 @@ export type ShellKey =
   | "notifications"
   | "pillUsage"
   | "capabilityTree"
-  | "currencies";
+  | "currencies"
+  | "vendors";
 
 export const SHELL_FRESHNESS_MS: Record<ShellKey, number> = {
   organization: 5 * 60_000,
@@ -44,6 +45,10 @@ export const SHELL_FRESHNESS_MS: Record<ShellKey, number> = {
   pillUsage: 5 * 60_000,
   capabilityTree: 24 * 60 * 60_000,
   currencies: 24 * 60 * 60_000,
+  // R67 F-25 (R-241): the subcontractor list changes when someone adds a
+  // vendor, which is rare but not never -- ten minutes, matching the
+  // Cache-Control: private, max-age=600 on /api/vendors itself.
+  vendors: 10 * 60_000,
 };
 
 export type ShellSnapshot = {
@@ -113,6 +118,18 @@ export function getShellSnapshot(): ShellSnapshot {
 }
 
 /**
+ * The subcontractor list IF the bootstrap has already answered, otherwise null.
+ *
+ * A PASSIVE read: it never subscribes and never triggers a fetch, so a create
+ * form can seed its own lookup from a warm session store without undoing F-19's
+ * rule that the shell bootstrap stays off a create route's critical path.
+ */
+export function getShellVendors(): { id: string; vendorName: string }[] | null {
+  const vendors = snapshot.data?.vendors;
+  return vendors && vendors.length > 0 ? vendors : null;
+}
+
+/**
  * Mark keys as needing a refresh after a write. The next read revalidates in
  * the background; nothing is cleared, so the screen keeps showing the last
  * known-good answer rather than flashing empty.
@@ -153,6 +170,7 @@ async function fetchBootstrap(): Promise<void> {
         isNewUser: false,
         capabilityTree: [],
         currencies: [],
+        vendors: [],
         fetchedAt: Date.now(),
         errors: { shell: message },
       },

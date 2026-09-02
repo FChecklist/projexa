@@ -46,6 +46,17 @@ export function lookupPlaceholder(status: LookupStatus, label: string): string {
   return `Select ${label}`;
 }
 
+/**
+ * R67 F-25: the decision "does this lookup already have its answer?", pure so
+ * it is testable. An EMPTY seed is not an answer -- an org with no
+ * subcontractors and a store that has not loaded yet look identical from here,
+ * and treating the second as the first would render "there are none" over a
+ * lookup nobody has run.
+ */
+export function seedIsUsable<T>(seed: T[] | null | undefined): seed is T[] {
+  return Array.isArray(seed) && seed.length > 0;
+}
+
 export type Lookup<T> = {
   options: T[];
   status: LookupStatus;
@@ -61,14 +72,25 @@ export function useLookup<T>({
   url,
   pick,
   label,
+  seed,
 }: {
   url: string;
   pick: (payload: Record<string, unknown>) => T[] | undefined;
   /** What the user calls this list: "subcontractors", "tasks", "task types". */
   label: string;
+  /**
+   * R67 F-25 (R-241): options the session store ALREADY has (see
+   * getShellVendors()). When present the lookup starts `ready` and makes no
+   * request at all -- the same answer is already in memory, and asking for it
+   * again on a create form is one of the duplicate calls the audit counted.
+   * Retry still goes to the network. Read once, on mount: a seed that arrives
+   * later must not race the request this form already made.
+   */
+  seed?: T[] | null;
 }): Lookup<T> {
-  const [options, setOptions] = useState<T[]>([]);
-  const [status, setStatus] = useState<LookupStatus>("loading");
+  const [initialSeed] = useState<T[] | null>(() => (seedIsUsable(seed) ? seed : null));
+  const [options, setOptions] = useState<T[]>(initialSeed ?? []);
+  const [status, setStatus] = useState<LookupStatus>(initialSeed ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
 
   // Synced in an effect, never during render (react-hooks/refs). Declared
@@ -79,6 +101,9 @@ export function useLookup<T>({
   });
 
   useEffect(() => {
+    // A seeded lookup on its FIRST pass already has the answer. Retry
+    // (attempt > 0) always goes to the network.
+    if (initialSeed && attempt === 0) return;
     const controller = new AbortController();
     setStatus("loading");
     void (async () => {
@@ -96,7 +121,7 @@ export function useLookup<T>({
       }
     })();
     return () => controller.abort();
-  }, [url, label, attempt]);
+  }, [url, label, attempt, initialSeed]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 

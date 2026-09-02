@@ -38,6 +38,11 @@ export type ShellBootstrapPayload = {
   isNewUser: boolean;
   capabilityTree: unknown[];
   currencies: unknown[];
+  // R67 F-25 (R-241): the subcontractor list. It is a session-scoped lookup --
+  // the same answer on /labour, on /labour/new and on /labour/attendance/new --
+  // and LabourClient used to re-fetch it on every landing purely to turn a
+  // vendorId into a company name in one column.
+  vendors: { id: string; vendorName: string }[];
   fetchedAt: number;
   /** Per-key failures, in the backend's own words. Absent keys succeeded. */
   errors: Record<string, string>;
@@ -51,7 +56,7 @@ export async function GET() {
   const supabase = await createClient();
   const organizationId = ctx.organizationId!;
 
-  const [orgRow, notifs, unread, projects, pillUsage, capabilityTree, currencies] = await Promise.allSettled([
+  const [orgRow, notifs, unread, projects, pillUsage, capabilityTree, currencies, vendors] = await Promise.allSettled([
     supabase.from("organizations").select("id, name, slug, created_at, country").eq("id", organizationId).single(),
     ctx.user
       ? supabase
@@ -71,6 +76,7 @@ export async function GET() {
     ),
     callVeridianResult<{ nodes?: unknown[] }>("/capability-tree", { organizationId }),
     callVeridianResult<{ currencies?: unknown[] }>("/currencies", { organizationId }),
+    callVeridianResult<{ vendors?: { id: string; vendorName: string }[] }>("/vendors", { organizationId }),
   ]);
 
   const errors: Record<string, string> = {};
@@ -97,6 +103,9 @@ export async function GET() {
   const currencyValue = currencies.status === "fulfilled" ? currencies.value : null;
   if (!currencyValue?.ok) errors.currencies = currencyValue?.message ?? "Couldn't load currencies";
 
+  const vendorValue = vendors.status === "fulfilled" ? vendors.value : null;
+  if (!vendorValue?.ok) errors.vendors = vendorValue?.message ?? "Couldn't load subcontractors";
+
   const payload: ShellBootstrapPayload = {
     organization: orgValue?.data
       ? {
@@ -116,6 +125,7 @@ export async function GET() {
     isNewUser: pillValue?.ok ? Boolean(pillValue.data.isNewUser) : false,
     capabilityTree: treeValue?.ok ? (treeValue.data.nodes ?? []) : [],
     currencies: currencyValue?.ok ? (currencyValue.data.currencies ?? []) : [],
+    vendors: vendorValue?.ok ? (vendorValue.data.vendors ?? []) : [],
     fetchedAt: Date.now(),
     errors,
   };
@@ -126,7 +136,8 @@ export async function GET() {
     projectsValue?.durationMs ?? 0,
     pillValue?.durationMs ?? 0,
     treeValue?.durationMs ?? 0,
-    currencyValue?.durationMs ?? 0
+    currencyValue?.durationMs ?? 0,
+    vendorValue?.durationMs ?? 0
   );
 
   return NextResponse.json(payload, {

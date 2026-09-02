@@ -1,37 +1,43 @@
 "use client";
 
 // R46 P8 seq132: registry-driven LIST archetype, same pattern R43 seq2
-// established for permits.list and R46 P8 seq128/seq134/seq127 established
-// for documents.list/variations.list/drawings.list (see DocumentsClient.tsx's
-// header comment for the full history). This screen never adopted the
-// kit's ListScreen component -- it's a plain shadcn Table -- so only the
-// Roster tab's 6 real data columns (ID/Name/Trade/Company/Daily Rate/
-// Status) are registry-driven: COLUMNS is now the fallback used when
-// labour/page.tsx's server-side resolve of the manpower.list
-// screen_definitions row returns null (404/error), same "keep the
-// hardcoded version behind a flag until verified" contract as permits,
-// documents, drawings and change-orders. The Attendance tab is a separate
-// transactional log (not the "manpower list" itself) and stays fully
-// hardcoded, same as Documents' category filter or ChangeOrders' Actions
-// column staying outside their registry-driven columns. The row-index
-// (S.No) column is likewise not real data and stays hardcoded, always
-// rendered first.
+// established for permits.list (see DocumentsClient.tsx's header comment for
+// the full history). This screen never adopted the kit's ListScreen -- it's a
+// plain shadcn Table -- so only the Roster tab's 6 real data columns
+// (ID/Name/Trade/Company/Daily Rate/Status) are registry-driven: COLUMNS is the
+// fallback used when labour/page.tsx's server-side resolve of the
+// manpower.list screen_definitions row returns null. The Attendance tab is a
+// separate transactional log and stays hardcoded, as does the row-index (S.No)
+// column, which is not real data.
 //
 // Real-screen conversion (2026-08-30): the "Add Worker"/"Mark Attendance"
 // Dialog popups are gone -- Add Worker routes to a real create screen
 // (RosterCreateClient.tsx), roster rows route to a real Object Page
-// (RosterObjectClient.tsx, which gained real Edit/Deactivate this
-// conversion -- updateRosterEntry() didn't exist before). Mark Attendance
-// routes to a real create screen (AttendanceCreateClient.tsx) -- no Object
-// Page for attendance rows, a write-once daily transaction log same as
-// Expenses/Stock Entries. Also fixes the same uncontrolled-Tabs-no-URL-sync
-// bug found and fixed repeatedly this session.
+// (RosterObjectClient.tsx). Mark Attendance routes to a real create screen
+// (AttendanceCreateClient.tsx) -- no Object Page for attendance rows, a
+// write-once daily transaction log.
 //
-// R67 F-18: the ROSTER now normally arrives as a prop, fetched by
-// labour/page.tsx on the server inside its Suspense boundary, so the Roster
-// tab -- the one this screen opens on -- paints filled on first render
-// instead of after a client round trip. Attendance and the vendor lookup are
-// still fetched here; splitting those onto their own tabs is F-25.
+// R67 F-18: the ROSTER arrives as a prop, fetched by labour/page.tsx on the
+// server inside its Suspense boundary, so the tab this screen opens on paints
+// filled on first render.
+//
+// R67 F-25 (audit recommendation R-241) -- THE ATTENDANCE LOG IS NOT FETCHED
+// UNTIL SOMEONE ASKS FOR IT, AND THEN ONLY FOR A DAY.
+//
+// This screen used to Promise.allSettled the roster, THE WHOLE UNDATED
+// ATTENDANCE LOG and the vendor list on every landing, although it opens on
+// Roster and shows not one attendance row until the user switches tab. A site
+// with 40 workers produces 40 rows a day, so that payload grows without bound
+// for a table nobody asked to see.
+//
+//   - Attendance is its own pane (src/lib/pane-state.ts), loaded when the
+//     Attendance tab is actually opened, and scoped to ONE DAY -- today by
+//     default -- with a real date picker and a "Show earlier days" control for
+//     the week behind it.
+//   - Vendors come from the session store the shell already filled (R67 F-21),
+//     so this screen makes no request for them at all, and neither does
+//     /labour/new (RosterCreateClient seeds its own lookup from the same
+//     store).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
@@ -46,6 +52,9 @@ import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
+import { errorPane, idlePane, loadingPane, needsLoad, paneIsBusy, readyPane, seededPane, type Pane } from "@/lib/pane-state";
+import { useShell } from "@/lib/shell-store";
+import { EARLIER_DAYS, attendanceQuery, localDay } from "@/lib/attendance-query";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
@@ -58,9 +67,6 @@ type Vendor = { id: string; vendorName: string };
 // same convention as DocumentsClient.tsx's / ChangeOrdersClient.tsx's
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
-
-// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
-// this screen's loading skeleton draws the same column heads this table does.
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   present: "default", half_day: "secondary", absent: "destructive",
@@ -107,77 +113,110 @@ export default function LabourClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
-  const [roster, setRoster] = useState<RosterEntry[]>(initialRoster?.rows ?? []);
-  const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
   const currencies = useCurrencies();
   // dailyRate has no per-row currencyId (roster entries are always in the
   // org's base currency) -- same undefined-id "org base currency" lookup
   // QuotationsClient.tsx etc. use for currencyLabel().
   const rosterCurrencyLabel = currencyLabel(undefined, currencies);
-  // Not loading when the server already handed us the roster: the tab the
-  // screen opens on has its data, so a spinner over it would be a lie.
-  const [loading, setLoading] = useState(initialRoster === null);
-  const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>(
-    initialRoster?.errorMessage ? { roster: initialRoster.errorMessage } : {}
+
+  // R67 F-25: the vendor list is a session-scoped lookup the shell bootstrap
+  // already holds. This screen makes no request for it. A failed bootstrap
+  // degrades the Company column to an em-dash, exactly as a failed fetch did --
+  // it was always a display-only lookup, never an alert.
+  const shell = useShell();
+  const vendors = (shell.vendors ?? []) as Vendor[];
+
+  const [roster, setRoster] = useState<Pane<RosterEntry>>(() =>
+    initialRoster ? seededPane(initialRoster.rows, initialRoster.errorMessage, Date.now()) : idlePane<RosterEntry>()
   );
-  // The roster the server sent answers THIS project; a project switch must
-  // still go to the network.
-  const rosterFromServerFor = useRef(initialRoster ? projectId : null);
+  const [attendance, setAttendance] = useState<Pane<AttendanceEntry>>(idlePane<AttendanceEntry>);
+  const [attendanceDay, setAttendanceDay] = useState(() => localDay());
+  const [showEarlier, setShowEarlier] = useState(false);
 
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      const rosterAlreadyLoaded = rosterFromServerFor.current === projectId;
-      setLoading(true);
-      // allSettled: a failing vendors lookup must not blank the roster, and a
-      // failing roster must not be reported to the user as "no workers".
-      const [rosterR, attR, vendorsR] = await Promise.allSettled([
-        rosterAlreadyLoaded
-          ? Promise.resolve(null)
-          : fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`, { signal }),
-        fetchJson<{ attendance?: AttendanceEntry[] }>(`/api/attendance?projectId=${encodeURIComponent(projectId)}`, { signal }),
-        fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`, { signal }),
-      ]);
-      // A cancelled read is not a failure and must not reach the screen the
-      // user has already left.
-      if (signal?.aborted) return;
-      rosterFromServerFor.current = null;
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return () => {
+      controller.abort();
+      abortRef.current = null;
+    };
+  }, [projectId]);
 
-      const errors: { roster?: string; attendance?: string } = {};
-      if (rosterR.status === "fulfilled") {
-        if (rosterR.value) setRoster(rosterR.value.roster ?? []);
-      } else if (!isAbortError(rosterR.reason, signal)) {
-        setRoster([]);
-        errors.roster = errorMessage(rosterR.reason, "Roster");
+  const loadRoster = useCallback(
+    async (force = false) => {
+      if (!force && !needsLoad(roster)) return;
+      const controller = abortRef.current;
+      setRoster((prev) => loadingPane(prev));
+      try {
+        const data = await fetchJson<{ roster?: RosterEntry[] }>(
+          `/api/labour-roster?projectId=${encodeURIComponent(projectId)}`,
+          { signal: controller?.signal }
+        );
+        if (controller?.signal.aborted) return;
+        setRoster(readyPane(data.roster ?? [], Date.now()));
+      } catch (err) {
+        if (isAbortError(err, controller?.signal)) return;
+        setRoster((prev) => errorPane(prev, errorMessage(err, "Roster")));
       }
+    },
+    [projectId, roster]
+  );
 
-      if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
-      else if (!isAbortError(attR.reason, signal)) { setAttendance([]); errors.attendance = errorMessage(attR.reason, "Attendance"); }
-
-      // Vendors is a display-only lookup (company name); its failure degrades to
-      // an em-dash rather than to an alert.
-      setVendors(vendorsR.status === "fulfilled" ? (vendorsR.value.vendors ?? []) : []);
-
-      setLoadErrors(errors);
-      setLoading(false);
+  // Attendance is ALWAYS re-read when the day or the range changes -- that is
+  // the user asking a different question, not a cache hit.
+  const loadAttendance = useCallback(
+    async (day: string, earlier: boolean) => {
+      const controller = abortRef.current;
+      setAttendance((prev) => loadingPane(prev));
+      try {
+        const data = await fetchJson<{ attendance?: AttendanceEntry[] }>(attendanceQuery(projectId, day, earlier), {
+          signal: controller?.signal,
+        });
+        if (controller?.signal.aborted) return;
+        setAttendance(readyPane(data.attendance ?? [], Date.now()));
+      } catch (err) {
+        if (isAbortError(err, controller?.signal)) return;
+        setAttendance((prev) => errorPane(prev, errorMessage(err, "Attendance")));
+      }
     },
     [projectId]
   );
 
+  // Landing: the roster only, and only when the server did not already send it.
+  // Attendance stays untouched until its own tab is opened -- unless the user
+  // deep-linked straight to it with ?tab=attendance.
+  const rosterPaneRef = useRef(roster);
+  rosterPaneRef.current = roster;
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    if (needsLoad(rosterPaneRef.current)) void loadRoster();
+    if (activeTab === "attendance") void loadAttendance(attendanceDay, showEarlier);
+    // Deliberately mount-only per project: the tab handler below owns every
+    // later load, and re-running this on a tab change would double-fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
-  const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
+  const workerName = (id: string) => roster.rows.find((r) => r.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
     setActiveTab(tab);
+    if (tab === "attendance" && needsLoad(attendance)) void loadAttendance(attendanceDay, showEarlier);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
+  function pickDay(day: string) {
+    if (!day) return;
+    setAttendanceDay(day);
+    void loadAttendance(day, showEarlier);
+  }
+
+  function toggleEarlier() {
+    const next = !showEarlier;
+    setShowEarlier(next);
+    void loadAttendance(attendanceDay, next);
   }
 
   return (
@@ -195,11 +234,11 @@ export default function LabourClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
+            {paneIsBusy(roster) ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.roster ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.roster]} onRetry={() => load()} /></div>
-            ) : roster.length === 0 ? (
+            ) : roster.error ? (
+              <div className="p-4"><DataLoadError messages={[roster.error]} onRetry={() => loadRoster(true)} /></div>
+            ) : roster.rows.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
             ) : (
               <Table>
@@ -212,7 +251,7 @@ export default function LabourClient({
                 <TableBody>
                   {/* Real screen navigation (2026-08-30) -- rows open the
                       real Object Page, where Edit/Deactivate now live. */}
-                  {roster.map((r, i) => (
+                  {roster.rows.map((r, i) => (
                     <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
@@ -228,24 +267,44 @@ export default function LabourClient({
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* R67 F-25: the day is a real, visible control, so "which day am I
+              looking at?" is answered on screen rather than assumed. */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="attendance-day" className="text-sm text-px-muted">Day</label>
+            <input
+              id="attendance-day"
+              type="date"
+              value={attendanceDay}
+              max={localDay()}
+              onChange={(e) => pickDay(e.target.value)}
+              className="h-9 rounded-md border border-px-border bg-transparent px-2 text-sm"
+            />
+            <Button variant="ghost" size="sm" onClick={toggleEarlier}>
+              {showEarlier ? `Show only ${formatDate(attendanceDay)}` : "Show earlier days"}
+            </Button>
+          </div>
           {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
               Attendance" Dialog popup with a real create route. */}
-          <Button disabled={roster.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
+          <Button disabled={roster.rows.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {loading ? (
+            {paneIsBusy(attendance) ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : loadErrors.attendance ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.attendance]} onRetry={() => load()} /></div>
-            ) : attendance.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No attendance recorded yet.</p>
+            ) : attendance.error ? (
+              <div className="p-4"><DataLoadError messages={[attendance.error]} onRetry={() => loadAttendance(attendanceDay, showEarlier)} /></div>
+            ) : attendance.rows.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted">
+                {showEarlier
+                  ? `No attendance recorded in the ${EARLIER_DAYS} days to ${formatDate(attendanceDay)}.`
+                  : `No attendance recorded on ${formatDate(attendanceDay)}.`}
+              </p>
             ) : (
               <Table>
                 <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Worker</TableHead><TableHead>Status</TableHead><TableHead>Hours</TableHead><TableHead>Cost</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {attendance.map((a) => (
+                  {attendance.rows.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
                       <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
