@@ -3,39 +3,86 @@
 // Real-screen conversion (2026-08-30): roster entries never had a detail
 // view or any way to edit/deactivate a worker short of re-creating them --
 // updateRosterEntry() didn't exist in construction-labour-service.ts at all
-// before this conversion. Real Object Page on the kit's ObjectScreen. Real
-// Delete = real Deactivate (isActive: false, a real pre-existing column
-// nothing ever set outside its insert-time default), matching Budget's
-// Cancel-as-Delete / Documents' Dispose-as-Delete convention. No Object
-// Page for Attendance -- it's a write-once daily transaction log (dailyCost
-// computed at write time), same class as Expenses/Stock Entries.
-import { useEffect, useState } from "react";
+// before this conversion.
+//
+// R67 D-33 (audit R-093). Three real defects on this page:
+//
+//  1. THE DESTRUCTIVE WORD WAS WRONG. The kit's ObjectScreen hard-codes
+//     "Delete" on its destructive action, and this page used it for an
+//     action that sets isActive=false and keeps every attendance row and
+//     every cost. A foreman reading "Delete" reasonably believes the
+//     worker's recorded history goes with him. The kit source is not on this
+//     machine, so per programme decision D-09 ObjectScreen is FORKED into
+//     src/components/screens/ObjectScreen.tsx with a deleteLabel prop; every
+//     other kit screens export is still imported from the kit.
+//  2. DEACTIVATION WAS ONE-WAY. Nothing in the UI could set isActive back to
+//     true, even though the route has always accepted it. An inactive worker
+//     now gets Reactivate where Edit would be.
+//  3. DISPLAY MODE SHOWED ALMOST NOTHING -- four facets and an empty body.
+//     It now carries a read-only Details section and the worker's own
+//     attendance history, which is the question this page exists to answer
+//     ("how many days has he worked, and what has he cost?").
+//
+// The confirm before deactivating is INLINE, not a dialog: this product's one
+// remaining popup is the home's Create Project, and a blast-radius statement
+// is exactly the kind of thing that must stay readable while the user decides.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { formatDayMonthYear } from "@/lib/format-date";
+import { formatMoney } from "@/lib/format-money";
+import { ATTENDANCE_STATUS_LABEL, loadFailureSentence, type AttendanceStatus } from "@/lib/attendance-sheet";
 
 type RosterEntry = { id: string; projectId: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type Vendor = { id: string; vendorName: string };
+type AttendanceRow = { id: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
+
+// Month presets, newest first. Computed from today rather than hard-coded so
+// the page is never offering a window that has not happened yet.
+function monthPresets(today = new Date()): { label: string; from: string; to: string }[] {
+  const presets: { label: string; from: string; to: string }[] = [];
+  for (let back = 0; back < 6; back++) {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - back, 1));
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+    presets.push({
+      label: `${start.toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${start.getUTCFullYear()}`,
+      from: start.toISOString().slice(0, 10),
+      to: end.toISOString().slice(0, 10),
+    });
+  }
+  return presets;
+}
 
 export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   const router = useRouter();
   const currencies = useCurrencies();
-  const label = currencyLabel(undefined, currencies);
   const [entry, setEntry] = useState<RosterEntry | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [draft, setDraft] = useState({ name: "", employeeCode: "", trade: "", skillLevel: "", vendorId: "", dailyRate: "" });
   const [saving, setSaving] = useState(false);
-  const [deactivating, setDeactivating] = useState(false);
+  const [statusChanging, setStatusChanging] = useState(false);
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
-  async function load() {
+  const presets = useMemo(() => monthPresets(), []);
+  const [monthWindow, setMonthWindow] = useState(() => presets[0]);
+  const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  // Counted over the worker's WHOLE history, not the visible month -- the
+  // deactivate confirmation has to state what is really being kept.
+  const [lifetimeRows, setLifetimeRows] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
     try {
       const [data, vendorData] = await Promise.all([
         fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`),
@@ -48,8 +95,28 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       setEntry(null);
       setLoadError(errorMessage(err, "Couldn't load this worker"));
     }
-  }
-  useEffect(() => { load(); }, [rosterId]);
+  }, [rosterId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const loadAttendance = useCallback(async () => {
+    setAttendanceLoading(true);
+    const [windowed, lifetime] = await Promise.allSettled([
+      fetchJson<{ attendance?: AttendanceRow[] }>(
+        `/api/attendance?rosterId=${encodeURIComponent(rosterId)}&from=${monthWindow.from}&to=${monthWindow.to}`
+      ),
+      fetchJson<{ attendance?: AttendanceRow[] }>(`/api/attendance?rosterId=${encodeURIComponent(rosterId)}`),
+    ]);
+    if (windowed.status === "fulfilled") {
+      setAttendance(windowed.value.attendance ?? []);
+      setAttendanceError(null);
+    } else {
+      setAttendance([]);
+      setAttendanceError(loadFailureSentence(windowed.reason, "attendance for this worker"));
+    }
+    setLifetimeRows(lifetime.status === "fulfilled" ? (lifetime.value.attendance ?? []).length : null);
+    setAttendanceLoading(false);
+  }, [rosterId, monthWindow.from, monthWindow.to]);
+  useEffect(() => { void loadAttendance(); }, [loadAttendance]);
 
   function startEdit() {
     if (!entry) return;
@@ -61,40 +128,37 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
     if (!draft.name.trim() || !draft.dailyRate) { toast.error("Name and daily rate are required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/labour-roster/${rosterId}`, {
+      const data = await fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: draft.name.trim(), employeeCode: draft.employeeCode || null, trade: draft.trade || null,
           skillLevel: draft.skillLevel || null, vendorId: draft.vendorId || null, dailyRate: Number(draft.dailyRate),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save worker");
       toast.success("Worker saved");
       setMode("display");
       setEntry(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save worker");
+      toast.error(errorMessage(err, "Couldn't save worker"));
     } finally {
       setSaving(false);
     }
   }
 
-  async function deactivate() {
-    setDeactivating(true);
+  async function setActive(isActive: boolean) {
+    setStatusChanging(true);
     try {
-      const res = await fetch(`/api/labour-roster/${rosterId}`, {
+      const data = await fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: false }),
+        body: JSON.stringify({ isActive }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to deactivate worker");
-      toast.success("Worker deactivated");
+      toast.success(isActive ? "Worker reactivated" : "Worker deactivated");
       setEntry(data);
+      setConfirmingDeactivate(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't deactivate worker");
+      toast.error(errorMessage(err, isActive ? "Couldn't reactivate worker" : "Couldn't deactivate worker"));
     } finally {
-      setDeactivating(false);
+      setStatusChanging(false);
     }
   }
 
@@ -102,13 +166,15 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
     return (
       <div className="space-y-3 p-6">
         <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
       </div>
     );
   }
   if (!entry) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
   const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
+  const windowCost = attendance.reduce((sum, row) => sum + Number(row.dailyCost || 0), 0);
+  const keptRows = lifetimeRows ?? attendance.length;
 
   return (
     <ObjectScreen
@@ -121,13 +187,21 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         { label: "ID", value: entry.employeeCode ?? "—" },
         { label: "Trade", value: entry.trade ?? "—" },
         { label: "Company", value: vendorName },
-        { label: "Daily Rate", value: `${label}${entry.dailyRate}` },
+        { label: "Daily Rate", value: formatMoney(entry.dailyRate, currencies) },
       ]}
       onEdit={entry.isActive && mode === "display" ? startEdit : undefined}
+      // Deactivation is no longer one-way: an inactive worker gets Reactivate
+      // where Edit would be.
+      secondaryAction={
+        !entry.isActive && mode === "display"
+          ? { label: "Reactivate", onClick: () => void setActive(true), disabledReason: statusChanging ? "Working…" : undefined }
+          : undefined
+      }
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={entry.isActive && mode === "display" ? deactivate : undefined}
-      deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
+      onDelete={entry.isActive && mode === "display" ? () => setConfirmingDeactivate(true) : undefined}
+      deleteLabel="Deactivate"
+      deleteDisabledReason={statusChanging ? "Working…" : undefined}
       onBack={() => router.push(`/labour?projectId=${entry.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.dailyRate}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.dailyRate ? "Name and daily rate are required" : undefined}
@@ -147,6 +221,97 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
           </div>
           <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={draft.dailyRate} onChange={(e) => setDraft((d) => ({ ...d, dailyRate: e.target.value }))} /></div>
         </div>
+      )}
+
+      {mode === "display" && (
+        <>
+          {confirmingDeactivate && (
+            // The blast radius, stated before the PATCH rather than after it.
+            // "They/Their" rather than the pronoun a name cannot tell us --
+            // this roster carries Ali Hassan and Bina Rao alike.
+            <div role="alertdialog" aria-label="Confirm deactivation" className="border-t border-ct-border bg-px-error-light px-4 py-3">
+              <p className="text-[13px] text-px-error">
+                Deactivate {entry.name}? They will no longer appear in Mark Attendance. Their {keptRows} attendance {keptRows === 1 ? "row" : "rows"} and costs are kept.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" variant="destructive" disabled={statusChanging} onClick={() => void setActive(false)}>
+                  {statusChanging ? "Deactivating…" : "Deactivate"}
+                </Button>
+                <Button size="sm" variant="outline" disabled={statusChanging} onClick={() => setConfirmingDeactivate(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+
+          <section className="border-t border-ct-border px-4 py-3">
+            <h2 className="mb-2 text-[13px] font-medium text-ct-slate">Details</h2>
+            <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              {[
+                { label: "ID", value: entry.employeeCode ?? "—" },
+                { label: "Trade", value: entry.trade ?? "—" },
+                { label: "Company", value: vendorName },
+                { label: "Daily Rate", value: formatMoney(entry.dailyRate, currencies) },
+                { label: "Status", value: entry.isActive ? "Active" : "Inactive" },
+              ].map((field) => (
+                <div key={field.label} className="text-[12.5px]">
+                  <dt className="inline text-ct-muted">{field.label}: </dt>
+                  <dd className="inline font-medium text-ct-navy">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="border-t border-ct-border px-4 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-[13px] font-medium text-ct-slate">Attendance</h2>
+              <select
+                aria-label="Attendance month"
+                className="h-8 rounded-md border border-ct-border2 bg-background px-2 text-[13px]"
+                value={monthWindow.from}
+                onChange={(event) => setMonthWindow(presets.find((p) => p.from === event.target.value) ?? presets[0])}
+              >
+                {presets.map((preset) => <option key={preset.from} value={preset.from}>{preset.label}</option>)}
+              </select>
+            </div>
+
+            {attendanceLoading ? (
+              <p className="py-4 text-[13px] text-ct-muted" role="status">Loading attendance…</p>
+            ) : attendanceError ? (
+              <div className="space-y-2 py-2">
+                <p role="alert" className="text-[13px] text-px-error">{attendanceError}</p>
+                <Button size="sm" variant="outline" onClick={() => void loadAttendance()}>Retry</Button>
+              </div>
+            ) : attendance.length === 0 ? (
+              <p className="py-4 text-[13px] text-ct-muted">No attendance recorded for this worker yet</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Hours</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attendance.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{formatDayMonthYear(row.attendanceDate)}</TableCell>
+                      <TableCell>{ATTENDANCE_STATUS_LABEL[row.status as AttendanceStatus] ?? row.status}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.hoursWorked ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(row.dailyCost, currencies)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={3} className="font-semibold">Total cost</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">{formatMoney(windowCost, currencies)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            )}
+          </section>
+        </>
       )}
     </ObjectScreen>
   );
