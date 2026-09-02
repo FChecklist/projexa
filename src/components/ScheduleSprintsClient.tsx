@@ -113,9 +113,16 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">{newSprintButton}</div>
       {sprints.length === 0 ? (
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No sprints yet.</CardContent></Card>
+        // R67 D-79: the module header carries "+ New" on every tab now, so
+        // this button is no longer duplicated in a header row -- it stays
+        // where it is the only way forward.
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+            No sprints yet.
+            {newSprintButton}
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-3">
           {sprints.map((sprint) => (

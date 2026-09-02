@@ -61,6 +61,7 @@ import { ApiError, fetchJson } from "@/lib/fetch-json";
 import { PaneState } from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 import { useProjectScope } from "@/components/shell/project-context";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
 import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -210,17 +211,29 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
 
   return (
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="roster">Roster</TabsTrigger>
-        <TabsTrigger value="attendance">Attendance</TabsTrigger>
-      </TabsList>
+      {/* R67 D-79: the header trio, once, ABOVE the tabs. Each tab used to
+          carry exactly one create button -- its own -- so marking attendance
+          from the Roster meant finding the Attendance tab first. This is
+          tab-aware, so it appears on every tab and offers that tab's own
+          object first while still listing the whole module. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="roster">Roster</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="labour"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering the roster is not built yet"
+          exportDisabledReason="Exporting the roster is not built yet"
+          // Attendance is written against a roster entry, so it stays in the
+          // menu and says why rather than disappearing on an empty project.
+          createDisabledReasons={roster.length === 0 ? { Attendance: "Add a worker to the roster first" } : {}}
+        />
+      </div>
 
       <TabsContent value="roster" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Worker" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
-        </div>
         <Card className="shadow-card">
           <CardContent className="p-2">
             <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(rosterStatus, roster.length)}</p>
@@ -273,11 +286,6 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
-              Attendance" Dialog popup with a real create route. */}
-          <Button disabled={roster.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
-        </div>
         <Card className="shadow-card">
           <CardContent className="p-2">
             <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(attendanceStatus, attendance.length)}</p>

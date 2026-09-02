@@ -67,12 +67,18 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
   // second module; that link is also what makes /design-studio reachable by
   // clicking (nav-routes.test.ts's C01 REACHABLE guard).
   const logTimeButton = (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" onClick={() => router.push(`/design-studio?projectId=${projectId}`)}>
-        Open in Design Studio
-      </Button>
-      <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
-    </div>
+    <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}>
+      <Plus className="size-4" /> Log Time
+    </Button>
+  );
+
+  // R67 D-79: "Log Time" left this row -- the module header carries it on
+  // every tab now, and the same control twice on one screen is the
+  // duplicate-control fault. The view switch is a DIFFERENT action and stays.
+  const designStudioButton = (
+    <Button variant="outline" onClick={() => router.push(`/design-studio?projectId=${projectId}`)}>
+      Open in Design Studio
+    </Button>
   );
 
   // R67 D-46: five table rows shaped like the real grid, not a wordless
@@ -103,10 +109,15 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
         <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
           {mineOnly ? "Showing my entries" : "Show my entries only"}
         </Button>
-        {logTimeButton}
+        {designStudioButton}
       </div>
       {entries.length === 0 ? (
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No time logged yet.</CardContent></Card>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+            No time logged yet.
+            {logTimeButton}
+          </CardContent>
+        </Card>
       ) : (
         <Card className="shadow-card">
           <CardContent className="p-0">

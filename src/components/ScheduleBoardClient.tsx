@@ -105,6 +105,12 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
 
   // Real screen navigation (2026-08-30) -- replaces the old "New Task"
   // Dialog popup with a real create route.
+  //
+  // R67 D-79: this no longer sits in a header row of its own. The module's
+  // header now carries Filter | Export | + New on EVERY tab, and two controls
+  // that create the same object on one screen is the duplicate-control fault
+  // the audit records elsewhere. It stays where it is the only way forward --
+  // inside the empty state.
   const newTaskButton = (
     <Button onClick={() => router.push(`/schedule/tasks/new?projectId=${projectId}`)}><Plus className="size-4" /> New Task</Button>
   );
@@ -132,16 +138,17 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   }
   if (columns.length === 0 || columns.every((c) => c.issues.length === 0)) {
     return (
-      <div className="space-y-4">
-        <div className="flex justify-end">{newTaskButton}</div>
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
-      </div>
+      <Card>
+        <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+          No issues yet.
+          {newTaskButton}
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">{newTaskButton}</div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
           <div

@@ -49,6 +49,7 @@ import PaneState from "@/components/PaneState";
 import type { PaneStatus } from "@/lib/pane-state";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate, formatMoney } from "@/lib/format";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
@@ -177,18 +178,29 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
 
   return (
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="master">Material Master</TabsTrigger>
-        <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
-        <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
-      </TabsList>
+      {/* R67 D-79: the header trio, once, ABOVE the tabs. The Cost Report tab
+          had NO create action at all, and the other two each offered only
+          their own object. This is tab-aware, so every tab now reaches every
+          create route of the module. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="master">Material Master</TabsTrigger>
+          <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
+          <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="materials"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering materials is not built yet"
+          exportDisabledReason="Exporting materials is not built yet"
+          // A receipt is written against a material master row, so the entry
+          // states the precondition rather than vanishing.
+          createDisabledReasons={materials.length === 0 ? { Receipt: "Add a material to the master first" } : {}}
+        />
+      </div>
 
       <TabsContent value="master" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Material" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/materials/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Material</Button>
-        </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
             <PaneState
@@ -241,11 +253,6 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old
-              "Record Receipt" Dialog popup with a real create route. */}
-          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
-        </div>
         <Card className="shadow-card">
           <CardContent className="p-4">
             <PaneState
