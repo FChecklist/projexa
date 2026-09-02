@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -95,6 +96,17 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
     }
   }
 
+  // R67 D-67: disposal removes the stored file, not just the row, and the
+  // kit fired it from a single click. Declared before the early returns
+  // below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Document",
+    identifier: doc?.name ?? null,
+    extra: "and its stored file",
+    verb: "Dispose",
+    run: handleDispose,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -131,13 +143,14 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
       onEdit={!doc.isDisposed && mode === "display" ? () => { setCategory(doc.category ?? "other"); setExpiryDate(doc.expiryDate ?? ""); setMode("edit"); } : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={!doc.isDisposed ? handleDispose : undefined}
+      onDelete={!doc.isDisposed ? removal.request : undefined}
       deleteDisabledReason={disposeDisabledReason}
       onBack={() => router.push("/documents")}
       saveDisabled={saving}
       saveDisabledReason={saving ? "Saving…" : undefined}
       messages={[]}
     >
+      {removal.card}
       <div className="space-y-3 px-4 py-3">
         {doc.signedUrl && !doc.isDisposed && (
           <a

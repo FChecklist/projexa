@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -60,6 +61,18 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     }
   }
 
+  // R67 D-67. Declared before the early returns below, because a hook must
+  // be. The blast radius is spelled out: removing a drawing disposes the
+  // uploaded file with it, and the sentence has to say so before the click,
+  // not after.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Drawing",
+    identifier: d?.name ?? null,
+    extra: "and its uploaded file",
+    verb: "Remove",
+    run: handleDispose,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -92,11 +105,16 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         { label: "Discipline", value: d.metadata?.discipline ?? "—" },
         { label: "Added", value: d.createdAt.slice(0, 10) },
       ]}
-      onDelete={!d.isDisposed ? handleDispose : undefined}
+      // R67 D-67: the kit renders the Delete button itself and calls
+      // onDelete() straight from onClick, so this used to dispose the
+      // drawing AND its file on ONE click, with no confirmation anywhere.
+      // It now arms the confirm card rendered below.
+      onDelete={!d.isDisposed ? removal.request : undefined}
       deleteDisabledReason={disposeDisabledReason}
       onBack={() => router.push(`/drawings?projectId=${projectId}`)}
       messages={[]}
     >
+      {removal.card}
       <div className="px-4 py-3">
         {d.signedUrl && !d.isDisposed ? (
           <a href={d.signedUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[13px] underline underline-offset-2">

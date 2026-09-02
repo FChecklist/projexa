@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -110,6 +111,16 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
     }
   }
 
+  // R67 D-67: deleting a BOQ takes its line items with it, and a QS may
+  // have spent an afternoon building them. The kit fired this from a single
+  // click. Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "BOQ",
+    identifier: boq ? `${boq.title} (v${boq.version})` : null,
+    extra: rows.length > 0 ? `and its ${rows.length} line item${rows.length === 1 ? "" : "s"}` : null,
+    run: () => runAction("delete"),
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -137,7 +148,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
       // never a fake-enabled button that fails after the click.
-      onDelete={isDraft ? () => runAction("delete") : undefined}
+      onDelete={isDraft ? removal.request : undefined}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
       // Real Back, preserving ?projectId= — derived from the loaded BOQ
       // itself (same pattern as PermitObjectClient's permit.projectId), not
@@ -152,6 +163,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
           Edit/Delete/Save/Cancel. Every button here maps to a real endpoint
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
+      {removal.card}
       <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
         {isDraft && (
           <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("submit")}>
