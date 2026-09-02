@@ -8,7 +8,7 @@
 // output so that regression is a visible, failing test, not a silent
 // runtime-dependent flake.
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateTime, formatDayMonthYear, formatTime } from "./format-date";
+import { formatDate, formatDateTime, formatDayMonthYear, formatDayMonthYearNumeric, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -56,5 +56,23 @@ describe("formatDateTime", () => {
 describe("formatTime", () => {
   test("pins en-US/UTC output for time-only", () => {
     expect(formatTime("2026-08-25T14:30:00.000Z")).toBe("2:30:00 PM");
+  });
+});
+
+describe("formatDayMonthYearNumeric (R67 D-28)", () => {
+  test("renders Work Progress's numeric day-first form", () => {
+    expect(formatDayMonthYearNumeric("2026-08-25T00:00:00.000Z")).toBe("25-08-2026");
+  });
+
+  test("zero-pads both day and month, so a column of dates stays aligned", () => {
+    expect(formatDayMonthYearNumeric("2026-01-05T00:00:00.000Z")).toBe("05-01-2026");
+  });
+
+  test("accepts a plain date-only string, which is what entryDate actually is", () => {
+    expect(formatDayMonthYearNumeric("2026-12-31")).toBe("31-12-2026");
+  });
+
+  test("uses hyphens, never a locale's own separator -- the string is fixed, not formatted by the runtime", () => {
+    expect(formatDayMonthYearNumeric("2026-08-25")).not.toContain("/");
   });
 });

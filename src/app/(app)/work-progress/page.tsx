@@ -7,8 +7,11 @@ import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
 
-export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; deleted?: string }> }) {
+  // R67 D-28: `deleted` is the confirmation the entry's own object page hands
+  // over when it deletes itself -- that page unmounts with the navigation, so
+  // its own message band cannot carry it.
+  const { projectId, tab, deleted } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
@@ -36,7 +39,7 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="report">Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
+            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} notice={deleted ?? null} /></TabsContent>
             <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
             <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
           </Tabs>
