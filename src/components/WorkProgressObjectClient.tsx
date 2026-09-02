@@ -27,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDayMonthYearNumeric } from "@/lib/format-date";
 import {
-  describeProgressDeleteImpact, progressDeleteConfirmSentence,
+  boqLineLabel, describeProgressDeleteImpact, progressDeleteConfirmSentence,
   type BoqLineItem as ReportBoqLine, type ProgressEntry as ReportEntry,
 } from "@/lib/work-progress-report";
 
@@ -61,14 +61,6 @@ const ENTRY_BASIS_OPTIONS = [
 ];
 
 const REQUIRED_FIELDS = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"] as const;
-
-/** "R60SK-A - R60 skiphop sub", or an en-dash when the entry names no BOQ line. Exported so the list and this page render the cell identically. */
-export function boqLineLabel(itemCode: string | null | undefined, description: string | null | undefined): string {
-  if (!itemCode && !description) return "–";
-  if (!itemCode) return description!;
-  if (!description) return itemCode;
-  return `${itemCode} - ${description}`;
-}
 
 export default function WorkProgressObjectClient({ entryId, justLogged }: { entryId: string; justLogged?: boolean }) {
   const router = useRouter();

@@ -699,3 +699,17 @@ export function progressDeleteConfirmSentence(impact: ProgressDeleteImpact, fall
   if (impact.percentBefore === null || impact.percentAfter === null) return `${head}. This cannot be undone.`;
   return `${head}; the running total drops from ${impact.percentBefore}% to ${impact.percentAfter}%.`;
 }
+
+/**
+ * R67 D-28: "R60SK-A - R60 skiphop sub", or an en-dash when the entry names no
+ * BOQ line. One function, so the list cell, the object page's facet and its
+ * subtitle cannot render the same entry three ways -- and so neither of them
+ * ever falls back to printing a raw id, which is what the list used to do for
+ * any entry recorded against a revision the screen had not fetched.
+ */
+export function boqLineLabel(itemCode: string | null | undefined, description: string | null | undefined): string {
+  if (!itemCode && !description) return "–";
+  if (!itemCode) return description!;
+  if (!description) return itemCode;
+  return `${itemCode} - ${description}`;
+}
