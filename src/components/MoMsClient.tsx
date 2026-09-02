@@ -35,12 +35,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, NotebookText, Plus } from "lucide-react";
+import { NotebookText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
 import { MOMS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 import { AsOfStamp } from "@/components/AsOfStamp";
+import ListScreenFrame from "@/components/ListScreenFrame";
 
 // Exported so moms/page.tsx can type the rows it fetches server-side.
 export type Meeting = {
@@ -95,7 +96,7 @@ export default function MoMsClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MOMS_LIST_COLUMNS;
 
-  const { rows: meetings, error, loading, asOf } = useModuleList<Meeting>({
+  const { rows: meetings, error, loading, asOf, reload } = useModuleList<Meeting>({
     initial,
     url: `/api/moms?projectId=${encodeURIComponent(projectId)}`,
     pick: (d) => d.meetings as Meeting[] | undefined,
@@ -115,9 +116,11 @@ export default function MoMsClient({
 
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : error ? (
+          {/* R67 F-31: data-state / aria-busy on the list region, and after 3 s
+              the wait says "Still loading minutes… <n> s" instead of spinning
+              in silence. */}
+          <ListScreenFrame label="minutes" loading={loading} error={error} rowCount={meetings.length} onRetry={reload}>
+          {error ? (
             // Never an empty table over a failed read -- the user must be able
             // to tell "no meetings" from "we could not find out".
             <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
@@ -144,6 +147,7 @@ export default function MoMsClient({
               </TableBody>
             </Table>
           )}
+          </ListScreenFrame>
         </CardContent>
       </Card>
     </div>

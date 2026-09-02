@@ -11,11 +11,12 @@
 // the leave-approval and quotation-approval buttons. The dialog is real and
 // wired; the POST will surface that 400 until the identity bridge exists.
 import { useState, useEffect, useCallback } from "react";
+import { ListLoadingRegion, ListStateRegion } from "@/components/ListScreenFrame";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
@@ -54,17 +55,22 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
     <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
   );
 
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+  // R67 F-31: every list region on these tabs carries data-state /
+  // aria-busy, and a wait past 3 s says what it is waiting for instead of
+  // spinning in silence. The 8 s Retry re-issues this tab's own read.
+  if (loading) return <ListLoadingRegion label="the timesheet" onRetry={() => void load()} />;
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load timesheet: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error">Could not load timesheet: {error}</CardContent>
+        </Card>
+      </ListStateRegion>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={entries.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex items-center justify-between">
         <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
           {mineOnly ? "Showing my entries" : "Show my entries only"}
@@ -112,6 +118,6 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
           </CardContent>
         </Card>
       )}
-    </div>
+    </ListStateRegion>
   );
 }

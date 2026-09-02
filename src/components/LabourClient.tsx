@@ -48,7 +48,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchJson } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import { Loader2, Plus } from "lucide-react";
+import ListScreenFrame from "@/components/ListScreenFrame";
+import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
@@ -237,9 +238,17 @@ export default function LabourClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {paneIsBusy(roster) ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : roster.error ? (
+            {/* R67 F-31: the roster region carries data-state / aria-busy, and
+                a wait past 3 s says "Still loading roster… <n> s" instead of
+                spinning silently. */}
+            <ListScreenFrame
+              label="roster"
+              loading={paneIsBusy(roster)}
+              error={roster.error}
+              rowCount={roster.rows.length}
+              onRetry={() => void loadRoster(true)}
+            >
+            {roster.error ? (
               <div className="p-4"><DataLoadError messages={[roster.error]} onRetry={() => loadRoster(true)} /></div>
             ) : roster.rows.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
@@ -265,6 +274,7 @@ export default function LabourClient({
                 </TableBody>
               </Table>
             )}
+            </ListScreenFrame>
           </CardContent>
         </Card>
       </TabsContent>
@@ -293,9 +303,14 @@ export default function LabourClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            {paneIsBusy(attendance) ? (
-              <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-            ) : attendance.error ? (
+            <ListScreenFrame
+              label="attendance"
+              loading={paneIsBusy(attendance)}
+              error={attendance.error}
+              rowCount={attendance.rows.length}
+              onRetry={() => void loadAttendance(attendanceDay, showEarlier)}
+            >
+            {attendance.error ? (
               <div className="p-4"><DataLoadError messages={[attendance.error]} onRetry={() => loadAttendance(attendanceDay, showEarlier)} /></div>
             ) : attendance.rows.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">
@@ -319,6 +334,7 @@ export default function LabourClient({
                 </TableBody>
               </Table>
             )}
+            </ListScreenFrame>
           </CardContent>
         </Card>
       </TabsContent>

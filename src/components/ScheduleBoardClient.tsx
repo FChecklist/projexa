@@ -14,12 +14,13 @@
 // (Board/Kanban view) rather than the Gantt/Timeline tab, which stays
 // read-only -- drag-to-reschedule there is a separate, larger feature.
 import { useState, useEffect, useCallback } from "react";
+import { ListLoadingRegion, ListStateRegion } from "@/components/ListScreenFrame";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -100,27 +101,32 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
     <Button onClick={() => router.push(`/schedule/tasks/new?projectId=${projectId}`)}><Plus className="size-4" /> New Task</Button>
   );
 
-  if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
-  }
+  // R67 F-31: every list region on these tabs carries data-state /
+  // aria-busy, and a wait past 3 s says what it is waiting for instead of
+  // spinning in silence. The 8 s Retry re-issues this tab's own read.
+  if (loading) return <ListLoadingRegion label="the board" onRetry={() => void load()} />;
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load board: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error">Could not load board: {error}</CardContent>
+        </Card>
+      </ListStateRegion>
     );
   }
   if (columns.length === 0 || columns.every((c) => c.issues.length === 0)) {
+    // "There are no issues" is an ANSWER, so the region reports `empty` -- a
+    // latency measurement counts this screen as usable here, and correctly.
     return (
-      <div className="space-y-4">
+      <ListStateRegion state="empty" className="space-y-4">
         <div className="flex justify-end">{newTaskButton}</div>
         <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
-      </div>
+      </ListStateRegion>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state="ready" className="space-y-4">
       <div className="flex justify-end">{newTaskButton}</div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
@@ -191,6 +197,6 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
           </div>
         ))}
       </div>
-    </div>
+    </ListStateRegion>
   );
 }

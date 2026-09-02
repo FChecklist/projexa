@@ -23,6 +23,7 @@
 // missing or the resolve call errors -- identical text, so there is no
 // visible difference between "resolved from the DB" and this default.
 import { useEffect, useState } from "react";
+import { ListLoadingRegion, ListStateRegion } from "@/components/ListScreenFrame";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -112,14 +113,17 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
     }
   }
 
-  if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
-  }
+  // R67 F-31: every list region on these tabs carries data-state /
+  // aria-busy, and a wait past 3 s says what it is waiting for instead of
+  // spinning in silence. The 8 s Retry re-issues this tab's own read.
+  if (loading) return <ListLoadingRegion label="the schedule" onRetry={() => void loadGantt()} />;
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load schedule: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error">Could not load schedule: {error}</CardContent>
+        </Card>
+      </ListStateRegion>
     );
   }
 
@@ -190,7 +194,7 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   ];
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={tasks.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "taskCount", "Tasks")}</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p><p className="text-2xl font-heading text-px-error">{criticalCount}</p></CardContent></Card>
@@ -278,6 +282,6 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
           </Table>
         </CardContent>
       </Card>
-    </div>
+    </ListStateRegion>
   );
 }

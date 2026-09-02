@@ -15,12 +15,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
+import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
 import { AsOfStamp } from "@/components/AsOfStamp";
+import ListScreenFrame from "@/components/ListScreenFrame";
 
 // Exported so drawings/page.tsx can type the rows it fetches server-side.
 export type Drawing = {
@@ -86,7 +87,7 @@ export default function DrawingsClient({
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
 
-  const { rows: drawings, error, loading, asOf } = useModuleList<Drawing>({
+  const { rows: drawings, error, loading, asOf, reload } = useModuleList<Drawing>({
     initial,
     url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
     pick: (d) => d.drawings as Drawing[] | undefined,
@@ -111,9 +112,10 @@ export default function DrawingsClient({
 
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : error ? (
+          {/* R67 F-31: data-state / aria-busy, and "Still loading drawings…
+              <n> s" once the wait stops being ordinary. */}
+          <ListScreenFrame label="drawings" loading={loading} error={error} rowCount={drawings.length} onRetry={reload}>
+          {error ? (
             // Never an empty table over a failed read.
             <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
           ) : drawings.length === 0 ? (
@@ -145,6 +147,7 @@ export default function DrawingsClient({
               </TableBody>
             </Table>
           )}
+          </ListScreenFrame>
         </CardContent>
       </Card>
     </div>

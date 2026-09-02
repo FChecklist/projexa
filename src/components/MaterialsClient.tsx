@@ -59,8 +59,9 @@ import {
 } from "@/lib/pane-state";
 import { AsOfStamp } from "@/components/AsOfStamp";
 import DataLoadError from "@/components/DataLoadError";
+import ListScreenFrame from "@/components/ListScreenFrame";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
@@ -248,18 +249,29 @@ export default function MaterialsClient({
   }
 
   /** One tab's body: spinner ONLY when there is genuinely nothing to show,
-   *  then the backend's own reason, then the rows. */
-  function PaneBody<T>({ pane, tab, empty, children }: { pane: Pane<T>; tab: TabId; empty: string; children: React.ReactNode }) {
-    if (paneIsBusy(pane)) {
-      return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
-    }
-    if (pane.error) {
-      return <div className="p-4"><DataLoadError messages={[pane.error]} onRetry={() => loadPane(tab, true)} /></div>;
-    }
-    if (pane.rows.length === 0) {
-      return <p className="py-10 text-center text-sm text-px-muted">{empty}</p>;
-    }
-    return <>{children}</>;
+   *  then the backend's own reason, then the rows.
+   *
+   *  R67 F-31: each tab is its own list region -- data-state / aria-busy, and
+   *  a wait that acquires words at 3 s and a Retry at 8 s. `label` is that
+   *  tab's own noun, so the sentence names what the user actually clicked. */
+  function PaneBody<T>({ pane, tab, empty, label, children }: { pane: Pane<T>; tab: TabId; empty: string; label: string; children: React.ReactNode }) {
+    return (
+      <ListScreenFrame
+        label={label}
+        loading={paneIsBusy(pane)}
+        error={pane.error}
+        rowCount={pane.rows.length}
+        onRetry={() => void loadPane(tab, true)}
+      >
+        {pane.error ? (
+          <div className="p-4"><DataLoadError messages={[pane.error]} onRetry={() => loadPane(tab, true)} /></div>
+        ) : pane.rows.length === 0 ? (
+          <p className="py-10 text-center text-sm text-px-muted">{empty}</p>
+        ) : (
+          children
+        )}
+      </ListScreenFrame>
+    );
   }
 
   return (
@@ -279,7 +291,7 @@ export default function MaterialsClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            <PaneBody pane={master} tab="master" empty="No materials in the master yet.">
+            <PaneBody pane={master} tab="master" label="materials" empty="No materials in the master yet.">
               <Table>
                 <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}</TableRow></TableHeader>
                 <TableBody>
@@ -306,7 +318,7 @@ export default function MaterialsClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            <PaneBody pane={receipts} tab="receipts" empty="No material movements recorded yet.">
+            <PaneBody pane={receipts} tab="receipts" label="inbound receipts" empty="No material movements recorded yet.">
               <Table>
                 <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Quantity</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
                 <TableBody>
@@ -331,7 +343,7 @@ export default function MaterialsClient({
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">
-            <PaneBody pane={report} tab="cost-report" empty="No receipts to report yet.">
+            <PaneBody pane={report} tab="cost-report" label="the cost report" empty="No receipts to report yet.">
               <Table>
                 <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead>Total Qty Received</TableHead><TableHead>Total Cost</TableHead><TableHead>Avg Unit Cost</TableHead></TableRow></TableHeader>
                 <TableBody>

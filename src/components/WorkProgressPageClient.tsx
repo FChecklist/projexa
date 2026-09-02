@@ -93,7 +93,15 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressListClient entries={entries} loading={entriesLoading} loadError={entriesError} />
+        {/* R67 F-31: the list's own 8 s "taking longer than usual [Retry]"
+            re-issues THIS page's read, so the retry the user is offered is the
+            one that actually refills the table. */}
+        <WorkProgressListClient
+          entries={entries}
+          loading={entriesLoading}
+          loadError={entriesError}
+          onRetry={() => void load()}
+        />
       </div>
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         {/* The form no longer fetches activities of its own -- this page

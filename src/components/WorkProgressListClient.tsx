@@ -12,6 +12,7 @@
 // and sends activityName / boqItemCode / boqDescription with each entry, so the
 // cell reads "R60SK — R60 skiphop root" and can never fall back to an id.
 import { EMPTY_VALUE_DISPLAY, ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import ListScreenFrame from "@/components/ListScreenFrame";
 
 export type Entry = {
   id: string;
@@ -64,12 +65,15 @@ export default function WorkProgressListClient({
   entries,
   loading,
   loadError,
+  onRetry,
 }: {
   entries: Entry[];
   loading: boolean;
   /** The backend's own words when the entries could not be read. Never an
    *  empty table over a failed read. */
   loadError?: string | null;
+  /** Re-issues the read behind the 8 s "taking longer than usual" Retry. */
+  onRetry?: () => void;
 }) {
   const rows = entries.map((e) => ({
     ...e,
@@ -92,9 +96,17 @@ export default function WorkProgressListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={loadError ? [{ level: "error", text: loadError }] : []}
     >
-      {loadError ? null : loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading progress entries…</p>
-      ) : (
+      {/* R67 F-31: data-state / aria-busy on the region, and a wait that names
+          itself at 3 s ("Still loading progress entries… <n> s") rather than
+          the static line this used to show for as long as the read took. */}
+      <ListScreenFrame
+        label="progress entries"
+        loading={loading}
+        error={loadError}
+        rowCount={entries.length}
+        onRetry={onRetry}
+      >
+      {loadError ? null : (
         <ListScreen
           functionId="work-progress.list"
           columns={COLUMNS}
@@ -109,6 +121,7 @@ export default function WorkProgressListClient({
           }}
         />
       )}
+      </ListScreenFrame>
     </ScreenFrame>
   );
 }

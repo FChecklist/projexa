@@ -16,11 +16,16 @@
 // HIDDEN, NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it." An
 // action that vanishes and reappears is its own kind of layout jump, and a
 // live-looking button over a screen with no data yet is a fail-after-click.
+// R67 F-31: the same 3 s / 8 s words a CLIENT-side load shows. A <Suspense>
+// fallback is a wait like any other -- the row above it is being fetched on the
+// server, and the user cannot tell the difference -- so it must not be the one
+// place in the app that still answers a long wait with a silent skeleton.
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ListLoadingWords } from "@/components/ListScreenFrame";
 
 export const SKELETON_ROWS = 5;
 export const LOADING_REASON = "Loading…";
@@ -31,6 +36,13 @@ export type ModuleListSkeletonProps = {
   actions?: string[];
   /** The screen's real tab labels, so a tabbed module keeps its own shape. */
   tabs?: string[];
+  /**
+   * What the user asked for, in their words ("minutes", "roster", "permits").
+   * Given, the skeleton says "Still loading <label>… <n> s" after 3 s and
+   * "This is taking longer than usual" at 8 s. Omitted only where the caller
+   * genuinely has no single noun for what is in flight.
+   */
+  label?: string;
 };
 
 /**
@@ -38,7 +50,7 @@ export type ModuleListSkeletonProps = {
  * boundary, where page.tsx has already streamed the heading -- rendering the
  * title again there would draw it twice for the length of the fetch.
  */
-export function ModuleListSkeletonBody({ columns, actions = [], tabs = [] }: ModuleListSkeletonProps) {
+export function ModuleListSkeletonBody({ columns, actions = [], tabs = [], label }: ModuleListSkeletonProps) {
   return (
     <div className="space-y-6" data-state="loading" aria-busy="true">
       {tabs.length > 0 && (
@@ -107,6 +119,8 @@ export function ModuleListSkeletonBody({ columns, actions = [], tabs = [] }: Mod
           )}
         </CardContent>
       </Card>
+
+      {label ? <ListLoadingWords label={label} /> : null}
     </div>
   );
 }

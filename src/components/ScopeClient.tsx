@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, GitCompare, GitBranchPlus } from "lucide-react";
+import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -29,6 +29,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import DataLoadError from "@/components/DataLoadError";
+import ListScreenFrame from "@/components/ListScreenFrame";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -187,9 +188,18 @@ export default function ScopeClient({
 
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
+          {/* R67 F-31: data-state / aria-busy on the region, and after 3 s the
+              wait says "Still loading BOQ revisions… <n> s" -- this is the
+              screen R66 caught spinning forever with nothing to read and no
+              way to retry. */}
+          <ListScreenFrame
+            label="BOQ revisions"
+            loading={loading}
+            error={loadError}
+            rowCount={boqs.length}
+            onRetry={() => void load()}
+          >
+          {loadError ? (
             <DataLoadError messages={[loadError]} onRetry={load} />
           ) : boqs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
@@ -240,6 +250,7 @@ export default function ScopeClient({
               </TableBody>
             </Table>
           )}
+          </ListScreenFrame>
         </CardContent>
       </Card>
     </div>

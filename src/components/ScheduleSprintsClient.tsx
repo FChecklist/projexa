@@ -7,6 +7,7 @@
 // shared API key with no known identity-bridge gap -- pms_sprints carries
 // no per-user attribution column, unlike wiki/timesheets.
 import { useState, useEffect, useCallback } from "react";
+import { ListLoadingRegion, ListStateRegion } from "@/components/ListScreenFrame";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,17 +85,22 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     <Button onClick={() => router.push(`/schedule/sprints/new?projectId=${projectId}`)}><Plus className="size-4" /> New Sprint</Button>
   );
 
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+  // R67 F-31: every list region on these tabs carries data-state /
+  // aria-busy, and a wait past 3 s says what it is waiting for instead of
+  // spinning in silence. The 8 s Retry re-issues this tab's own read.
+  if (loading) return <ListLoadingRegion label="sprints" onRetry={() => void load()} />;
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load sprints: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error">Could not load sprints: {error}</CardContent>
+        </Card>
+      </ListStateRegion>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={sprints.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex justify-end">{newSprintButton}</div>
       {sprints.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-sm text-px-muted">No sprints yet.</CardContent></Card>
@@ -154,6 +160,6 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
           ))}
         </div>
       )}
-    </div>
+    </ListStateRegion>
   );
 }
