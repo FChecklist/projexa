@@ -55,16 +55,31 @@ export class VeridianApiError extends Error {
    * src/lib/task-errors.ts. Before this, that body reached `errorBody.error`
    * as `undefined` and every coded refusal degraded to the generic "VERIDIAN
    * API request failed (400)" -- the code was thrown away one line before it
-   * would have been useful. Both are optional, so nothing that still returns
-   * `{error}` changes shape.
+   * would have been useful.
+   *
+   * R67 D-27 keeps the WHOLE body alongside them, because some errors carry
+   * structured data a screen needs beyond the sentence: the scope-reduction
+   * 409's `conflicts[]` is the first, and the revise screen renders the
+   * violating lines as a table above the override, which it cannot do from a
+   * prose message.
+   *
+   * ONE constructor parameter feeds all three, so a call site cannot hand the
+   * code and the body two different objects. It is DATA FOR A PROXY TO FORWARD
+   * DELIBERATELY, never something to spill into a user-facing string:
+   * `message` stays the only thing safe to render, and `detail` stays
+   * server-side-only. Every field is optional, so nothing that still returns a
+   * plain `{error}` changes shape.
    */
   readonly code?: string;
   readonly missing?: string[];
-  constructor(message: string, public status: number, detail?: string, coded?: { code?: unknown; missing?: unknown }) {
+  readonly body?: unknown;
+  constructor(message: string, public status: number, detail?: string, body?: unknown) {
     super(message);
     this.detail = detail;
-    this.code = typeof coded?.code === "string" ? coded.code : undefined;
-    this.missing = Array.isArray(coded?.missing) ? coded.missing.filter((m): m is string => typeof m === "string") : undefined;
+    this.body = body;
+    const coded = (body ?? {}) as { code?: unknown; missing?: unknown };
+    this.code = typeof coded.code === "string" ? coded.code : undefined;
+    this.missing = Array.isArray(coded.missing) ? coded.missing.filter((m): m is string => typeof m === "string") : undefined;
   }
 }
 
