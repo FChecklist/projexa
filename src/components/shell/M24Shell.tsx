@@ -49,6 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { cachedShellJson, invalidateShellCache } from "@/lib/shell-cache";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -221,14 +222,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // it was this component's `info` state going stale relative to the
   // session that now owns the tab. Extracted to a stable callback so it can
   // be re-run below on any Supabase auth-state change, not just on mount.
-  const loadOrgInfo = useCallback(async () => {
+  //
+  // R67 F-01 (R-006/R-011): this shell remounts on EVERY navigation, and it
+  // re-fetched /api/organization each time -- from here, from the auth-state
+  // effect, and from the focus/visibility effect below, all three of which
+  // could fire within the same second. An organisation's name does not change
+  // between two clicks. Reads now go through the tab-lifetime SWR store in
+  // src/lib/shell-cache.ts (60 s), which also collapses concurrent callers
+  // onto ONE request.
+  //
+  // `force` is what keeps F_025 intact: the two paths that exist BECAUSE the
+  // identity may have changed under this tab (an auth-state event, and a human
+  // returning to a long-idle tab) bypass the window entirely. Only the
+  // per-navigation mount reads the cache -- which is precisely the call this
+  // item set out to stop repeating.
+  const loadOrgInfo = useCallback(async (options: { force?: boolean } = {}) => {
     try {
-      const res = await fetch("/api/organization");
-      const d = (await res.json().catch(() => null)) as (OrgInfo & { error?: string }) | null;
-      if (!res.ok) {
-        noteFailure("your organisation", d?.error || `HTTP ${res.status}`);
-        return;
-      }
+      const d = await cachedShellJson<OrgInfo>("shell:organization", "/api/organization", { force: options.force });
       if (d?.organization?.name) setInfo(d);
     } catch (err) {
       noteFailure("your organisation", err instanceof Error ? err.message : "the request did not complete");
@@ -240,12 +250,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     void loadOrgInfo();
     (async () => {
       try {
-        const res = await fetch("/api/projects");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your projects", d?.error || `HTTP ${res.status}`);
-          return;
-        }
+        const d = await cachedShellJson<Project[] | { projects?: Project[] }>("shell:projects", "/api/projects");
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
         if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
       } catch (err) {
@@ -265,8 +270,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
-        void loadOrgInfo();
+        // force: this event exists because the identity may have changed --
+        // reading a cached answer here would be reading the PREVIOUS user.
+        invalidateShellCache();
+        void loadOrgInfo({ force: true });
       } else if (event === "SIGNED_OUT") {
+        // Nothing cached may outlive the session it belongs to.
+        invalidateShellCache();
         setInfo(null);
       }
     });
@@ -290,7 +300,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // actually looks at it again.
   useEffect(() => {
     const onFocusOrVisible = () => {
-      if (document.visibilityState === "visible") void loadOrgInfo();
+      // force, for the same reason as the auth-state path above: this handler
+      // exists precisely to catch a change this tab was never told about.
+      if (document.visibilityState === "visible") void loadOrgInfo({ force: true });
     };
     window.addEventListener("focus", onFocusOrVisible);
     document.addEventListener("visibilitychange", onFocusOrVisible);

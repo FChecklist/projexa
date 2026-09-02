@@ -8,6 +8,8 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+import { formatTime } from "@/lib/format-date";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -103,6 +105,14 @@ export default function DashboardHomeView({
   registryColumns?: RegistryColumn[] | null;
 }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
+  // R67 F-01: an "as of" line under the KPI band. These figures are computed
+  // at request time, so without it a reader has no way to tell a fresh number
+  // from one their browser restored from the back/forward cache. Rendered with
+  // format-date.ts's pinned en-US/UTC formatter so the server's HTML and the
+  // client's hydration produce the same string -- a locale-dependent time here
+  // would be a guaranteed hydration mismatch on every request outside UTC --
+  // and labelled UTC rather than pretending to be the reader's local clock.
+  const updatedAt = formatTime(new Date());
 
   // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
   // mockup): /dashboard is PROJEXA's designated home route (see
@@ -160,6 +170,8 @@ export default function DashboardHomeView({
               <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatCurrency(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
               <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatCurrency(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>
+
+            <p className="text-[12.5px] text-px-muted">Updated {updatedAt} UTC</p>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
@@ -245,6 +257,39 @@ export default function DashboardHomeView({
             </Card>
           </>
         )}
+      </div>
+    </>
+  );
+}
+
+
+// R67 F-01 (R-006/R-011). The home route used to send NO HTML at all until the
+// VERIDIAN org dashboard, the currencies list and the registry row had every
+// one of them resolved -- a blank page for the duration of the slowest.
+//
+// This is what the first flush paints instead, as dashboard/page.tsx's
+// <Suspense> fallback: the SAME HomeGreeting, with the same userName, so the
+// heading never moves or changes when the data lands (only its summary line
+// goes from "Loading your projects…" to the real sentence), above four card
+// skeletons in the exact grid the real KPI band uses. No number, not even a
+// zero, appears before the real one -- a placeholder digit on a financial
+// dashboard is a figure the reader may act on.
+export function DashboardKpiSkeleton({ userName }: { userName: string }) {
+  return (
+    <>
+      <HomeGreeting userName={userName} summary="Loading your projects…" stats={[]} />
+      <div className="flex-1 space-y-6 p-6" aria-busy="true">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {DEFAULT_COLUMNS.slice(0, 4).map((column) => (
+            <div key={column.field} className="rounded-lg border border-px-border p-4">
+              {/* The real title, from the first frame -- the reader can see
+                  WHICH number is coming, not just that something is. */}
+              <p className="text-[12.5px] text-px-muted">{column.label}</p>
+              <Skeleton className="mt-2 h-7 w-28" />
+            </div>
+          ))}
+        </div>
+        <p role="status" className="text-[12.5px] text-px-muted">Loading your dashboard…</p>
       </div>
     </>
   );
