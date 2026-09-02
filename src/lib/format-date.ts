@@ -45,6 +45,28 @@ export function formatDate(value: Date | string | number): string {
   return new Date(value).toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
 
+/**
+ * R67 D-23: e.g. "28 Aug 2026" -- the unambiguous day-month-year form the BOQ
+ * list uses, because "8/25/2026" reads as 8 May to half of this product's
+ * users (a UAE contractor's site team) and as 25 August to the other half.
+ * Same pinned locale/time zone as every other helper here, so it is equally
+ * hydration-safe.
+ */
+export function formatDayMonthYear(value: Date | string | number): string {
+  // "en-GB", not the FIXED_LOCALE above, is deliberate and is the ONE
+  // exception in this file: en-US orders these parts month-first ("Aug 28,
+  // 2026"), and the required reading is day-first. It is still a HARDCODED
+  // locale -- pinned exactly like the others, so the string is byte-identical
+  // on the server and in every visitor's browser. It is never the runtime
+  // default.
+  return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 /** e.g. "8/25/2026, 2:30 PM" -- identical on server and client, any visitor. */
 export function formatDateTime(value: Date | string | number): string {
   return new Date(value).toLocaleString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
