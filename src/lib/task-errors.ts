@@ -47,6 +47,9 @@ export const TASK_ERROR_CODES = [
   "BOQ_LINE_IS_PARENT",
   "PROJECT_NOT_REACHABLE",
   "VALUE_OUT_OF_RANGE",
+  "RECORD_NOT_FOUND",
+  "ALREADY_RECORDED",
+  "REQUEST_REJECTED",
   "FUNCTION_NOT_AVAILABLE",
   "NOT_PERMITTED",
   "READ_AS_QUESTION",
@@ -99,6 +102,28 @@ function tidy(sentence: string): string {
   return sentence.replace(/\s{2,}/g, " ").trim();
 }
 
+/**
+ * R67 FIX PASS -- "on Cedar Heights Villa - Phase 1 v2", or NOTHING AT ALL.
+ *
+ * D-03's template is "There is no line {code} on {project} {version} - pick a
+ * line", and interpolating an absent {project} used to leave the word "on"
+ * dangling: the executor's own copy of this failure carried {itemCode,
+ * version} and no project, so the row read "There is no line EX-01 on
+ * - pick a line", and once a BOQ existed it read "... on 1 - pick a line",
+ * with the bare version number standing exactly where the project's name
+ * belongs. tidy() could not see that, because collapsing double spaces is not
+ * the same as removing a clause.
+ *
+ * So the clause is BUILT, not interpolated: present only when there is
+ * something real to put in it, in the project-then-version order the sentence
+ * reads in. (The server half now supplies both, but a sentence must be true
+ * for the context it is actually given, not only for the best case.)
+ */
+function onClause(p: TaskErrorParams): string {
+  const parts = [text(p, "project"), text(p, "version")].filter((s) => s.length > 0);
+  return parts.length > 0 ? ` on ${parts.join(" ")}` : "";
+}
+
 function text(p: TaskErrorParams, ...keys: string[]): string {
   for (const key of keys) {
     const v = p[key];
@@ -129,8 +154,7 @@ const DICTIONARY: Readonly<Record<TaskErrorCode, Entry>> = {
   // the server could not resolve them -- a project with no BOQ at all and a
   // project whose BOQ lacks the line are the same fact to the person typing.
   BOQ_LINE_NOT_FOUND: {
-    message: (p) =>
-      tidy(`There is no line ${text(p, "code", "itemCode")} on ${text(p, "project")} ${text(p, "version")} - pick a line`),
+    message: (p) => tidy(`There is no line ${text(p, "code", "itemCode")}${onClause(p)} - pick a line`),
     nextStep: pick("Pick a BOQ line", "boqLine"),
   },
   // B-06 quotes this as "EX-00 is a parent line - pick one of its child
@@ -151,6 +175,36 @@ const DICTIONARY: Readonly<Record<TaskErrorCode, Entry>> = {
   VALUE_OUT_OF_RANGE: {
     message: () => "Type a number between 0 and 100",
     nextStep: pick("Type quantity or %", "value"),
+  },
+
+  // ---- R67 FIX PASS: what a SERVICE refused, in its own 4xx vocabulary ---
+  //
+  // These three exist because compliance-tracker's executor used to send every
+  // service-level 4xx through its TRANSPORT normaliser, so a duplicate the
+  // user can never fix by retrying arrived here as INTERNAL_ERROR and this
+  // dictionary honestly rendered "Something went wrong on our side - nothing
+  // was saved [Retry]". The service's own answer was both truer and safer.
+  // None of them is a Retry: sending the same request again cannot change a
+  // 4xx.
+  RECORD_NOT_FOUND: {
+    message: () => "That record is not on this project - pick another",
+    nextStep: OPEN_HOME,
+  },
+  ALREADY_RECORDED: {
+    // The one code, two real conditions. `functionId` travels in the failure
+    // CONTEXT purely so this branch can pick the true sentence -- it is never
+    // printed, which the three-rules test asserts over every entry here.
+    message: (p) => {
+      const fn = text(p, "functionId");
+      if (fn === "record_attendance") return "Attendance is already recorded for that worker on that date";
+      if (fn === "create_boq_revision") return "That BOQ has already been revised - open the latest revision";
+      return "That is already recorded - nothing new was saved";
+    },
+    nextStep: OPEN_HOME,
+  },
+  REQUEST_REJECTED: {
+    message: () => "That was not accepted as entered - check the values and try again",
+    nextStep: OPEN_HOME,
   },
 
   // ---- what this workspace or this role may not do -----------------------
@@ -294,9 +348,22 @@ const LEGACY_PATTERNS: ReadonlyArray<{ match: RegExp; code: TaskErrorCode }> = [
   { match: /not found in this project|no BOQ found|BOQ line item not found/i, code: "BOQ_LINE_NOT_FOUND" },
   { match: /item ?code is required|boq ?line ?item ?id is required|pick a BOQ line/i, code: "BOQ_LINE_REQUIRED" },
   { match: /no project resolved|project ?id is required|Project not found/i, code: "PROJECT_REQUIRED" },
-  { match: /percent|quantity/i, code: "VALUE_REQUIRED" },
+  // R67 FIX PASS -- both of these were too broad, and both had a real stored
+  // string that they claimed wrongly.
+  //
+  // `/percent|quantity/i` claimed ANY legacy string containing either word,
+  // whatever had actually failed, and it sat ahead of the date pattern -- so
+  // "percentComplete recorded, but entryDate is required" came out as "Type
+  // quantity or %". Narrowed to the required-shape only.
+  { match: /percent(\s*complete)? is required|quantity(\s*done)? is required/i, code: "VALUE_REQUIRED" },
   { match: /date is required/i, code: "DATE_REQUIRED" },
-  { match: /activity/i, code: "ACTIVITY_REQUIRED" },
+  // `/activity/i` claimed the pipeline's own "no construction activity exists
+  // yet for project "X" -- create one before recording progress", which
+  // rendered "Pick an activity" and a Fix chain into /schedule -- where there
+  // is nothing to pick, because the activity has to be CREATED first. An
+  // affordance that leads nowhere is worse than none, so that string now
+  // falls through to LEGACY_FALLBACK_MESSAGE and its generic [Fix].
+  { match: /activity ?id is required|activity is required/i, code: "ACTIVITY_REQUIRED" },
   { match: /not available for this account|not registered|no executor/i, code: "FUNCTION_NOT_AVAILABLE" },
   { match: /permission|not permitted|forbidden/i, code: "NOT_PERMITTED" },
 ];
