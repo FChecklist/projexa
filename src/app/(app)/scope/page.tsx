@@ -5,7 +5,7 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
-import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
+import BudgetAnalyticalClient from "@/components/BudgetAnalyticalClient";
 
 // R44 seq3 (M28 registry-model proof, same pattern as permits/page.tsx's
 // resolvePermitsListColumns): resolved server-side so ScopeClient never
@@ -52,18 +52,22 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
         {project && (
-          // R42 seq24: "variance" tab added -- DASHBOARD.PROJECT's own
-          // "Budget vs Actual" KPI destination (?tab=variance from
-          // DashboardProjectClient). The BOQ tab (ScopeClient) stays the
-          // CUSTOM weighted-tree screen for editing/hierarchy; variance is
-          // a different, flat "which line is worst" question.
-          <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+          // R42 seq24 added a second tab here as DASHBOARD.PROJECT's own
+          // "Budget vs Actual" KPI destination. The BOQ tab (ScopeClient) stays
+          // the CUSTOM weighted-tree screen for editing/hierarchy.
+          //
+          // R67 D-62: that tab was called "Cost Variance" and was read-only. It
+          // is PROJEXA's project budget -- the thing Sumeet's own budget sheet
+          // is -- so it is named Budget and is editable in place. ?tab=variance
+          // is still honoured: it is the URL DASHBOARD.PROJECT shipped with and
+          // the one every bookmark and every older screenshot carries.
+          <Tabs defaultValue={tab === "budget" || tab === "variance" ? "budget" : "boq"} className="space-y-4">
             <TabsList>
               <TabsTrigger value="boq">BOQ</TabsTrigger>
-              <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+              <TabsTrigger value="budget">Budget</TabsTrigger>
             </TabsList>
             <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
-            <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
+            <TabsContent value="budget" className="h-[calc(100vh-14rem)] min-h-[560px]"><BudgetAnalyticalClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
       </div>

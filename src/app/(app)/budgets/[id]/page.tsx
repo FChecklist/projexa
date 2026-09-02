@@ -1,13 +1,8 @@
-import BudgetObjectClient from "@/components/BudgetObjectClient";
+import { redirect } from "next/navigation";
 
-// Real-screen conversion (2026-08-30): the Budgets module's first Object
-// Page — previously there was no detail/edit/submit/cancel screen for a
-// single budget at all. Thin pass-through, same pattern as permits/[id]/page.tsx.
-export default async function BudgetDetailPage({ params }: { params: Promise<{ id: string }> }) {
+// R67 D-62: the ERP budget object page moved to /finance/budgets/[id]. Old links
+// to a specific budget keep working.
+export default async function BudgetDetailRedirectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return (
-    <div className="flex-1">
-      <BudgetObjectClient budgetId={id} />
-    </div>
-  );
+  redirect(`/finance/budgets/${encodeURIComponent(id)}`);
 }

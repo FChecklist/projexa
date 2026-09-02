@@ -29,8 +29,10 @@ const DATA = {
   totalRevenue: 847300,
   totalExpenses: 1250000,
   projects: [
-    { id: "p1", name: "Cedar Heights Villa - Phase 1", revenue: 500000, expenses: 750000, taskCount: 10, delayedTaskCount: 1, value: 4000000, earnedValue: 1000000, percentByValue: 25 },
-    { id: "p2", name: "Riverside Business Park", revenue: 347300, expenses: 500000, taskCount: 4, delayedTaskCount: 0, value: null, earnedValue: null, percentByValue: null },
+    // R67 D-62: the row carries BOTH money facts under their real names now.
+    // p1 has a value somebody typed; p2 has neither, which must read "Not set".
+    { id: "p1", name: "Cedar Heights Villa - Phase 1", revenue: 500000, expenses: 750000, taskCount: 10, delayedTaskCount: 1, contractValue: 4000000, projectValue: 4200000, projectValueSource: "entered" as const, earnedValue: 1000000, percentByValue: 25 },
+    { id: "p2", name: "Riverside Business Park", revenue: 347300, expenses: 500000, taskCount: 4, delayedTaskCount: 0, contractValue: null, projectValue: null, projectValueSource: null, earnedValue: null, percentByValue: null },
   ],
 };
 
@@ -96,7 +98,7 @@ describe("DashboardHomeView KPI band", () => {
 
   test("with no BOQ anywhere the primary card says so and offers the next step", () => {
     const view = renderHome({
-      data: { ...DATA, projects: DATA.projects.map((p) => ({ ...p, value: null, earnedValue: null, percentByValue: null })) },
+      data: { ...DATA, projects: DATA.projects.map((p) => ({ ...p, contractValue: null, earnedValue: null, percentByValue: null })) },
     });
     expect(view.getByText("No BOQ yet")).toBeTruthy();
     expect(view.getByText("Import a BOQ")).toBeTruthy();
@@ -133,5 +135,30 @@ describe("DashboardHomeView projects table (D-01)", () => {
     const link = view.getByRole("link", { name: "+ New" }) as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/projects/new");
     expect(view.queryByRole("dialog")).toBeNull();
+  });
+});
+
+// ─── R67 D-62: one project-money model ───────────────────────────────────────
+describe("R67 D-62: the home names both money facts and says where each came from", () => {
+  test("the two columns are headed for what they are, not both called 'Value'", () => {
+    const view = renderHome();
+    expect(view.getByText("Contract value")).toBeTruthy();
+    expect(view.getByText("Project value")).toBeTruthy();
+  });
+
+  test("a project value somebody typed is shown with its source named", () => {
+    const view = renderHome();
+    const row = view.getByRole("row", { name: /Open Cedar Heights Villa/ });
+    expect(row.textContent).toContain("AED 4,200,000.00");
+    expect(row.textContent).toContain("(entered)");
+    // ...and its contract value, the OTHER fact, is still its own figure.
+    expect(row.textContent).toContain("AED 4,000,000.00");
+  });
+
+  test("a project with neither source reads 'Not set', never a zero", () => {
+    const view = renderHome();
+    const row = view.getByRole("row", { name: /Open Riverside Business Park/ });
+    expect(row.textContent).toContain("Not set");
+    expect(row.textContent).not.toContain("AED 0.00");
   });
 });

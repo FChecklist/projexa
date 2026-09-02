@@ -11,9 +11,20 @@
 // must not force a currency decision of its own.
 
 export type PortfolioProject = {
-  value: number | null;
+  /**
+   * R67 D-62: renamed from `value`. The field was always the active BOQ's
+   * root-line total -- the CONTRACT value -- but "value" is also the word the
+   * project dashboard used for a completely different figure (the entered / PO
+   * project value), which is how one project came to tell three money stories.
+   * compliance-tracker's getOrgDashboard now returns this under its real name;
+   * `value` survives there only as a deprecated alias.
+   */
+  contractValue: number | null;
   earnedValue: number | null;
 };
+
+/** R67 D-62: which source a project's commercial value came from, mirrored from getOrgDashboard. */
+export type ProjectValueSource = "entered" | "purchase_orders" | null;
 
 export type PortfolioTotals = {
   /** Sum of every non-null earnedValue. null when no project has one. */
@@ -31,7 +42,7 @@ export type PortfolioTotals = {
  * come back as null so the card can say so in words.
  */
 export function portfolioTotals(projects: readonly PortfolioProject[]): PortfolioTotals {
-  const values = projects.map((p) => p.value).filter((v): v is number => v !== null);
+  const values = projects.map((p) => p.contractValue).filter((v): v is number => v !== null);
   const earnedValues = projects.map((p) => p.earnedValue).filter((v): v is number => v !== null);
   const contract = values.length > 0 ? values.reduce((s, v) => s + v, 0) : null;
   const earned = earnedValues.length > 0 ? earnedValues.reduce((s, v) => s + v, 0) : null;
@@ -54,6 +65,27 @@ export function budgetBaseline(budget: number | null, money: (n: number) => stri
  */
 export function formatBudgetValue(budget: number | null, money: (n: number) => string): string {
   return budget === null ? "Not set" : money(budget);
+}
+
+/**
+ * R67 D-62. The project's COMMERCIAL value, in the one wording every screen
+ * uses. Same rule as the budget: a value nobody has set reads "Not set", never
+ * "AED 0.00" -- and never the BOQ total borrowed from the next column along,
+ * which is the substitution this item exists to stop.
+ */
+export function formatProjectValue(projectValue: number | null, money: (n: number) => string): string {
+  return projectValue === null ? "Not set" : money(projectValue);
+}
+
+/**
+ * R67 D-62. Where that figure came from, said in the user's words, so a derived
+ * number is never presented as one somebody typed. Returned as a caption, not
+ * baked into the value, so a table cell stays a number.
+ */
+export function projectValueCaption(source: ProjectValueSource): string {
+  if (source === "entered") return "entered";
+  if (source === "purchase_orders") return "from purchase orders";
+  return "no value set";
 }
 
 /**

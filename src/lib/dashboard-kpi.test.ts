@@ -3,7 +3,14 @@
 // the live home screen: a figure nobody set was rendered as "AED 0", which a
 // reader takes for a real, approved zero.
 import { describe, expect, test } from "bun:test";
-import { budgetBaseline, formatBudgetValue, portfolioTotals, spendTone } from "./dashboard-kpi";
+import {
+  budgetBaseline,
+  formatBudgetValue,
+  formatProjectValue,
+  portfolioTotals,
+  projectValueCaption,
+  spendTone,
+} from "./dashboard-kpi";
 
 const money = (n: number) => `AED ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
@@ -54,15 +61,15 @@ describe("portfolioTotals", () => {
   test("skips nulls instead of counting them as zero", () => {
     expect(
       portfolioTotals([
-        { value: 1000, earnedValue: 250 },
-        { value: null, earnedValue: null },
-        { value: 3000, earnedValue: 750 },
+        { contractValue: 1000, earnedValue: 250 },
+        { contractValue: null, earnedValue: null },
+        { contractValue: 3000, earnedValue: 750 },
       ])
     ).toEqual({ earned: 1000, contract: 4000, percent: 25 });
   });
 
   test("returns null contract and null percent when no project has a BOQ", () => {
-    expect(portfolioTotals([{ value: null, earnedValue: null }, { value: null, earnedValue: null }])).toEqual({
+    expect(portfolioTotals([{ contractValue: null, earnedValue: null }, { contractValue: null, earnedValue: null }])).toEqual({
       earned: null,
       contract: null,
       percent: null,
@@ -74,14 +81,35 @@ describe("portfolioTotals", () => {
   });
 
   test("no percent is claimed when the contract total is zero (no division by zero, no 0%)", () => {
-    expect(portfolioTotals([{ value: 0, earnedValue: 0 }]).percent).toBeNull();
+    expect(portfolioTotals([{ contractValue: 0, earnedValue: 0 }]).percent).toBeNull();
   });
 
   test("a project with a BOQ but no progress logged yet reports contract without earned value", () => {
-    expect(portfolioTotals([{ value: 5000, earnedValue: null }])).toEqual({
+    expect(portfolioTotals([{ contractValue: 5000, earnedValue: null }])).toEqual({
       earned: null,
       contract: 5000,
       percent: null,
     });
+  });
+});
+
+// ─── R67 D-62: the project-value wording, shared by both dashboards ──────────
+describe("formatProjectValue / projectValueCaption", () => {
+  test("a value nobody set is the words 'Not set', never a currency-prefixed zero", () => {
+    expect(formatProjectValue(null, money)).toBe("Not set");
+  });
+
+  test("a real zero is a real figure and is rendered as money", () => {
+    expect(formatProjectValue(0, money)).toBe("AED 0");
+  });
+
+  test("a real value is rendered through the caller's own formatter", () => {
+    expect(formatProjectValue(4200000, money)).toBe("AED 4,200,000");
+  });
+
+  test("the caption names THIS project's source, not the rule behind it", () => {
+    expect(projectValueCaption("entered")).toBe("entered");
+    expect(projectValueCaption("purchase_orders")).toBe("from purchase orders");
+    expect(projectValueCaption(null)).toBe("no value set");
   });
 });

@@ -17,7 +17,14 @@ import { BulletChart, type ScreenColumn } from "@fchecklist/veridian-ui-kit/scre
 // real 30-day delta behind it to render no arrow and no status colour
 // instead of an invented one. Everything else here still comes from the kit.
 import { KpiCard } from "@/components/screens/KpiCard";
-import { budgetBaseline, portfolioTotals, spendTone } from "@/lib/dashboard-kpi";
+import {
+  budgetBaseline,
+  formatProjectValue,
+  portfolioTotals,
+  projectValueCaption,
+  spendTone,
+  type ProjectValueSource,
+} from "@/lib/dashboard-kpi";
 // R67 G-05 / D-61: one money format for the whole product. Imported from the
 // server-safe module, not from @/lib/currency ("use client"), so the same
 // helper serves this view and the Server Components around it. D-61 shipped a
@@ -45,13 +52,33 @@ export type OrgDashboard = {
   totalBudget: number | null;
   totalRevenue: number;
   totalExpenses: number;
-  // R38 (R-50/TC-40): value is the project's active BOQ root-total, null
-  // (not 0) when the project has no BOQ at all yet -- see
+  // R38 (R-50/TC-40): contractValue is the project's active BOQ root-total,
+  // null (not 0) when the project has no BOQ at all yet -- see
   // construction-dashboard-service.ts#getOrgDashboard's own comment.
   // R39 (R-51): earnedValue/percentByValue reuse that SAME service's
   // earnedValueReport() (D-3, single source of truth with the WPR report) --
   // null (not 0) when construction isn't enabled or there's no BOQ yet.
-  projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number; value: number | null; earnedValue: number | null; percentByValue: number | null }[];
+  //
+  // R67 D-62 (audit R-202): the row now carries BOTH money facts under their
+  // real names, from getOrgDashboard's resolveProjectMoney() -- the same helper
+  // /dashboard/project reads. Before this, the home showed the BOQ total in a
+  // column headed "Value" while the project dashboard showed the entered/PO
+  // figure under the same word, so one project told two different money stories
+  // one click apart. `value` is the backend's own deprecated alias of
+  // contractValue and is deliberately not read here any more.
+  projects: {
+    id: string;
+    name: string;
+    revenue: number;
+    expenses: number;
+    taskCount: number;
+    delayedTaskCount: number;
+    contractValue: number | null;
+    projectValue: number | null;
+    projectValueSource: ProjectValueSource;
+    earnedValue: number | null;
+    percentByValue: number | null;
+  }[];
 };
 // The currencies list this screen is handed. Still resolved server-side in
 // dashboard/page.tsx via callVeridian (same backing call as /api/currencies),
@@ -117,7 +144,11 @@ const DEFAULT_COLUMNS: ScreenColumn[] = [
   { field: "totalRevenue", label: "Revenue", type: "number", importance: "High" },
   { field: "totalExpenses", label: "Spend", type: "number", importance: "High" },
   { field: "project", label: "Project", type: "text", importance: "High" },
-  { field: "value", label: "Value", type: "number", importance: "High" },
+  // R67 D-62: "Value" named neither of the two money facts it might have been.
+  // The registry field key is unchanged (an org that has renamed this column
+  // keeps its label); only the fallback wording now says which figure it is.
+  { field: "value", label: "Contract value", type: "number", importance: "High" },
+  { field: "projectValue", label: "Project value", type: "number", importance: "High" },
   { field: "earnedValue", label: "Earned Value", type: "number", importance: "High" },
   { field: "revenue", label: "Revenue", type: "number", importance: "High" },
   { field: "expenses", label: "Expenses", type: "number", importance: "High" },
@@ -326,8 +357,11 @@ export default function DashboardHomeView({
                     <TableHeader>
                       <TableRow>
                         <TableHead>{columnLabel(columns, "project", "Project")}</TableHead>
-                        {/* R67 G-05: the unit is stated once, in the header. */}
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "value", "Value")}{unitSuffix}</TableHead>
+                        {/* R67 G-05: the unit is stated once, in the header.
+                            R67 D-62 splits the old single "Value" column into
+                            the two money facts the backend really returns. */}
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "value", "Contract value")}{unitSuffix}</TableHead>
+                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "projectValue", "Project value")}{unitSuffix}</TableHead>
                         <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "earnedValue", "Earned Value")}{unitSuffix}</TableHead>
                         <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "revenue", "Revenue")}{unitSuffix}</TableHead>
                         <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "expenses", "Expenses")}{unitSuffix}</TableHead>
@@ -371,7 +405,21 @@ export default function DashboardHomeView({
                           {/* R67 G-05 / D-61: every money column is right-aligned
                               and tabular (MONEY_CELL_CLASS), so the decimal
                               points form a column the eye can scan down. */}
-                          <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
+                          <TableCell className={MONEY_CELL_CLASS}>{p.contractValue === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.contractValue, currencies)}</TableCell>
+                          {/* R67 D-62: the OTHER money fact, under its own name
+                              and with its source stated, so a figure derived
+                              from purchase orders is never read as one somebody
+                              typed. null is the words "Not set", never 0. */}
+                          <TableCell className={MONEY_CELL_CLASS}>
+                            {p.projectValue === null ? (
+                              <span className="text-px-muted">Not set</span>
+                            ) : (
+                              <>
+                                {formatProjectValue(p.projectValue, (n) => formatCurrency(n, currencies))}
+                                <span className="text-px-muted"> ({projectValueCaption(p.projectValueSource)})</span>
+                              </>
+                            )}
+                          </TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>
                             {p.earnedValue === null ? (
                               <span className="text-px-muted">No progress yet</span>

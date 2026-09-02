@@ -52,7 +52,10 @@ export const NOT_YET_SWEPT = [
   "src/components/CategoryDistributionCharts.tsx",
   "src/components/ChangeOrderObjectClient.tsx",
   "src/components/ChangeOrdersClient.tsx",
-  "src/components/CostVarianceAnalyticalClient.tsx",
+  // src/components/CostVarianceAnalyticalClient.tsx -- DELETED by R67 D-62.
+  // Its replacement, BudgetAnalyticalClient.tsx, is swept: every figure on it
+  // goes through formatMoney/formatNumber, so it is not listed here. The list
+  // shrinking is the mechanism working, not a suppression.
   "src/components/CreditNoteObjectClient.tsx",
   "src/components/CustomerOverviewClient.tsx",
   "src/components/CustomersClient.tsx",

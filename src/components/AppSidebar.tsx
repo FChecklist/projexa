@@ -110,7 +110,16 @@ const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.finance",
     items: [
-      { labelKey: "items.budgets", href: "/budgets", icon: Wallet },
+      // R67 D-62 (audit R-202): "Budgets" in a project manager's sidebar has to
+      // mean the PROJECT's budget -- a percent and a vendor amount per BOQ line,
+      // which is what Sumeet's own budget sheet is. It used to open the ERP's
+      // fiscal-year budget, a screen that cannot save anything until a finance
+      // team has created a fiscal year and a chart of accounts, so the one door
+      // marked Budgets was a dead end for the person most likely to open it.
+      // The ERP budget still exists, at /finance/budgets, reached from the
+      // project dashboard's own "Budget vs Actual" tile (and from VERIDIAN's ERP
+      // module, where it belongs) -- see nav-routes.test.ts's allowlist entry.
+      { labelKey: "items.budgets", href: "/scope?tab=budget", icon: Wallet },
       { labelKey: "items.expenses", href: "/expenses", icon: Receipt },
       { labelKey: "items.accounting", href: "/accounting", icon: Calculator },
       { labelKey: "items.invoices", href: "/invoices", icon: ReceiptText },

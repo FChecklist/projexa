@@ -25,6 +25,9 @@ import {
 import { KpiCard } from "@/components/screens/KpiCard";
 // R67 D-61: one money format for the whole product.
 import { formatMoney } from "@/lib/format-money";
+// R67 D-62: one project-money model. The same wording the home dashboard uses
+// for the same two facts, so a project reads the same on both screens.
+import { formatProjectValue, projectValueCaption, type ProjectValueSource } from "@/lib/dashboard-kpi";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -71,6 +74,13 @@ type ProjectDashboard = {
   delayedTaskCount: number;
   taskCount: number;
   projectValue: number | null;
+  /**
+   * R67 D-62: which of the two sources projectValue came from. The card used to
+   * state "manual entry, or linked POs" for every project, which is a
+   * description of the RULE, not of this project -- so a figure summed from
+   * purchase orders and a figure a director typed were indistinguishable.
+   */
+  projectValueSource: ProjectValueSource;
   earnedValue: number | null;
   percentByValue: number | null;
   contractValue: number | null;
@@ -195,8 +205,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               yet" state, matching every other null-safe KPI on this screen. */}
           <KpiCard
             label={labelFor(dashboardLabels, "projectValue", "Project Value")}
-            value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
-            trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
+            value={formatProjectValue(dashboard.projectValue, (n) => money(n, currency))}
+            // R67 D-62: THIS project's source, not a restatement of the rule.
+            trend={{ direction: "flat", tone: "context", label: projectValueCaption(dashboard.projectValueSource) }}
             baseline="overridable per project"
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
@@ -224,8 +235,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             onClick={() =>
               router.push(
                 dashboard.budget === null
-                  ? `/budgets/new?projectId=${projectId}`
-                  : `/scope?projectId=${projectId}&tab=variance`
+                  ? `/finance/budgets/new?projectId=${projectId}`
+                  // R67 D-62: the Cost Variance tab is the Budget module now.
+                  : `/scope?projectId=${projectId}&tab=budget`
               )
             }
           />

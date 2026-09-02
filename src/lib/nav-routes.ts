@@ -30,6 +30,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/accounting/journal-entries/[id]",
   "/accounting/journal-entries/new",
   "/auth/callback",
+  // R67 D-62: these three are now redirects onto /finance/budgets*, kept so
+  // every existing link, bookmark and screenshot still lands on the screen it
+  // was pointing at rather than a 404.
   "/budgets",
   "/budgets/[id]",
   "/budgets/new",
@@ -61,6 +64,11 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/ffe",
   "/ffe/[id]",
   "/ffe/new",
+  // R67 D-62: the ERP's fiscal-year budget, moved out of /budgets so the word
+  // "Budgets" in the sidebar can mean the PROJECT's budget (/scope?tab=budget).
+  "/finance/budgets",
+  "/finance/budgets/[id]",
+  "/finance/budgets/new",
   "/floor-plans",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
