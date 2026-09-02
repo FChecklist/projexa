@@ -79,7 +79,21 @@ function renderMeetingCell(field: string, m: Meeting) {
   }
 }
 
-export default function MoMsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function MoMsClient({
+  projectId,
+  registryColumns,
+  deletedTitle = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 D-17: the confirmation for a delete that happened on the object page,
+   * carried here in ?deleted= because the screen that performed it unmounts.
+   * A persistent notice, not a toast -- the object page's own message band
+   * would have vanished with the navigation.
+   */
+  deletedTitle?: string | null;
+}) {
   const router = useRouter();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,6 +115,11 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
 
   return (
     <div className="space-y-4">
+      {deletedTitle && (
+        <Card className="border-px-border bg-px-cloud">
+          <CardContent className="p-3 text-sm text-px-ink" role="status">Deleted meeting &ldquo;{deletedTitle}&rdquo;</CardContent>
+        </Card>
+      )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">Minutes of Meeting for this project — live notes, AI summary, PDF export.</p>
         {/* Real screen navigation (2026-08-30) -- replaces the old "New

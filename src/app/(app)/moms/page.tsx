@@ -28,8 +28,8 @@ async function resolveMoMsListColumns(organizationId: string | null): Promise<Re
   }
 }
 
-export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; deleted?: string }> }) {
+  const { projectId, deleted } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMoMsListColumns(organizationId);
@@ -50,7 +50,7 @@ export default async function MoMsPage({ searchParams }: { searchParams: Promise
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <MoMsClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && <MoMsClient projectId={project.id} registryColumns={registryColumns} deletedTitle={deleted ?? null} />}
       </div>
     </>
   );
