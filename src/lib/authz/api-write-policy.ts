@@ -239,6 +239,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/schedule/sprints/[id]/issues": "PM_OR_ABOVE",
   "/schedule/tasks": "FIELD",
   "/schedule/tasks/[id]": "FIELD",
+  // R67 lane D22 (item D-49): overruling a completion percentage derived from
+  // the site's own records is a PM judgement, not a field entry -- the site
+  // engineer's route into this number is /work-progress, which stays FIELD.
+  "/schedule/tasks/[id]/completion": "PM_OR_ABOVE",
   "/schedule/workload": "PM_OR_ABOVE",
   "/scope": "PM_OR_ABOVE",
   "/scope/[id]": "PM_OR_ABOVE",
