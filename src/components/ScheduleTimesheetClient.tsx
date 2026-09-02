@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus } from "lucide-react";
+import { loadSchedule } from "@/lib/schedule-cache";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
@@ -29,13 +30,15 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
   const [error, setError] = useState<string | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
 
-  const load = useCallback(async () => {
+  // R67 F-09 (R-122): reads through the shared 60 s schedule session cache, so
+  // returning to this tab -- or hovering it first -- costs no request. The
+  // "mine only" view is a separate cache key, not a parameter, so toggling can
+  // never serve the other view's rows.
+  const load = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/timesheets?projectId=${encodeURIComponent(projectId)}${mineOnly ? "&mine=true" : ""}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load timesheet");
+      const data = await loadSchedule<{ entries?: Entry[] }>(mineOnly ? "timesheetsMine" : "timesheets", projectId, options);
       setEntries(data.entries ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load timesheet");

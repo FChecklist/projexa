@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { invalidateScheduleProject, loadSchedule } from "@/lib/schedule-cache";
 
 type Sprint = {
   id: string; name: string; goal: string | null; startDate: string | null; endDate: string | null;
@@ -33,13 +34,13 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sprintIssues, setSprintIssues] = useState<Record<string, SprintIssue[]>>({});
 
-  const load = useCallback(async () => {
+  // R67 F-09 (R-122): reads through the shared 60 s schedule session cache, so
+  // returning to this tab -- or hovering it first -- costs no request.
+  const load = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load sprints");
+      const data = await loadSchedule<{ sprints?: Sprint[] }>("sprints", projectId, options);
       setSprints(data.sprints ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sprints");
@@ -72,7 +73,10 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to close sprint");
       toast.success("Sprint closed");
-      load();
+      // Closing a sprint moves its issues, so every schedule read for this
+      // project is now stale -- not just this panel's.
+      invalidateScheduleProject(projectId);
+      load({ force: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't close sprint");
     }

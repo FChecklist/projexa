@@ -50,6 +50,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
 import { cachedShellJson, invalidateShellCache } from "@/lib/shell-cache";
+import { afterFirstPaint } from "@/lib/after-paint";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -363,46 +364,58 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // R67 F-09 (R-122). These two reads used to run from a mount effect, i.e.
+  // BEFORE the browser had painted, competing for connections with the page's
+  // own data call during the exact window the user is waiting to see anything.
+  // Neither is needed for the first frame: the Task Master renders its own
+  // frame with an empty list, and the pill strip renders its locally ordered
+  // set until the server's ranking arrives. So they are scheduled AFTER the
+  // first paint -- see src/lib/after-paint.ts for why that takes two
+  // requestAnimationFrame hops and not one.
   useEffect(() => {
     let live = true;
-    void loadTasks();
+    const cancelAfterPaint = afterFirstPaint(() => {
+      if (!live) return;
+      void loadTasks();
 
-    // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-    // order, never re-sorted here. isNewUser true means "nothing earned yet",
-    // which must not look like a failed call.
-    //
-    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-    // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-    // org/projects effect above was fixed for in the first PR, just never
-    // applied here. Same noteFailure() pattern, same shape: status read
-    // before the body is treated as data, the backend's own message kept.
-    (async () => {
-      try {
-        const res = await fetch("/api/pill-usage?limit=6");
-        const d = await res.json().catch(() => null);
-        if (!res.ok) {
-          if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
-          return;
+      // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
+      // order, never re-sorted here. isNewUser true means "nothing earned yet",
+      // which must not look like a failed call.
+      //
+      // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
+      // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
+      // org/projects effect above was fixed for in the first PR, just never
+      // applied here. Same noteFailure() pattern, same shape: status read
+      // before the body is treated as data, the backend's own message kept.
+      void (async () => {
+        try {
+          const res = await fetch("/api/pill-usage?limit=6");
+          const d = await res.json().catch(() => null);
+          if (!res.ok) {
+            if (live) noteFailure("your ranked modules", d?.error || `HTTP ${res.status}`);
+            return;
+          }
+          if (live && Array.isArray(d?.pills)) {
+            setRankedPills(d.pills as RankedPill[]);
+            // R53's payload carries functionId per pill. Held in a ref so the
+            // submit handler can read it without re-rendering the strip.
+            pillFnRef.current = Object.fromEntries(
+              (d.pills as { pillKey: string; functionId?: string }[])
+                .filter((x) => x.functionId)
+                .map((x) => [x.pillKey, x.functionId as string])
+            );
+          }
+        } catch (err) {
+          if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
         }
-        if (live && Array.isArray(d?.pills)) {
-          setRankedPills(d.pills as RankedPill[]);
-          // R53's payload carries functionId per pill. Held in a ref so the
-          // submit handler can read it without re-rendering the strip.
-          pillFnRef.current = Object.fromEntries(
-            (d.pills as { pillKey: string; functionId?: string }[])
-              .filter((x) => x.functionId)
-              .map((x) => [x.pillKey, x.functionId as string])
-          );
-        }
-      } catch (err) {
-        if (live) noteFailure("your ranked modules", err instanceof Error ? err.message : "the request did not complete");
-      }
-    })();
+      })();
+    });
 
     return () => {
       live = false;
+      cancelAfterPaint();
     };
-  }, [noteFailure]);
+  }, [noteFailure, loadTasks]);
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 

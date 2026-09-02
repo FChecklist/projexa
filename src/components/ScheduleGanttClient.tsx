@@ -22,7 +22,16 @@
 // `registryColumns`. DEFAULT_COLUMNS is the fallback when the row is
 // missing or the resolve call errors -- identical text, so there is no
 // visible difference between "resolved from the DB" and this default.
-import { useEffect, useState } from "react";
+//
+// R67 F-09 (R-122): the gantt is now fetched SERVER-SIDE in schedule/page.tsx
+// and handed in as `initialGantt`, so the stat tiles and the All-tasks table
+// are present on the FIRST render instead of behind a client-side spinner that
+// only started after hydration. The client fetch below remains for exactly two
+// cases: the server prefetch failed (initialGantt is null -- the panel then
+// shows the real error and a Retry), and the user pressing Retry. It goes
+// through the shared schedule session cache, so a Timeline -> Board ->
+// Timeline round trip does not re-fetch anything.
+import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -31,6 +40,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertTriangle, Loader2 } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
+import { invalidateScheduleProject, loadSchedule } from "@/lib/schedule-cache";
 import "@svar-ui/react-gantt/all.css";
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -63,22 +73,38 @@ type GanttTask = {
 type GanttDependency = { predecessorId: string; successorId: string; lagDays: number };
 type Milestone = { id: string; name: string; targetDate: string | null };
 
-export default function ScheduleGanttClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+// The shape schedule/page.tsx prefetches server-side and hands down. Exported
+// so the page can type its own call without redeclaring it.
+export type GanttPayload = {
+  tasks?: GanttTask[];
+  dependencies?: GanttDependency[];
+  milestones?: Milestone[];
+};
+
+export default function ScheduleGanttClient({
+  projectId,
+  registryColumns,
+  initialGantt = null,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initialGantt?: GanttPayload | null;
+}) {
   const labelColumns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
-  const [tasks, setTasks] = useState<GanttTask[]>([]);
-  const [dependencies, setDependencies] = useState<GanttDependency[]>([]);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<GanttTask[]>(initialGantt?.tasks ?? []);
+  const [dependencies, setDependencies] = useState<GanttDependency[]>(initialGantt?.dependencies ?? []);
+  const [milestones, setMilestones] = useState<Milestone[]>(initialGantt?.milestones ?? []);
+  // The server already answered, so there is nothing to wait for. Only the
+  // "server prefetch failed" path starts in a loading state.
+  const [loading, setLoading] = useState(initialGantt === null);
   const [error, setError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
 
-  async function loadGantt() {
+  const loadGantt = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load schedule");
+      const data = await loadSchedule<GanttPayload>("gantt", projectId, options);
       setTasks(data.tasks ?? []);
       setDependencies(data.dependencies ?? []);
       setMilestones(data.milestones ?? []);
@@ -87,11 +113,13 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
 
   useEffect(() => {
-    loadGantt();
-  }, [projectId]);
+    // Only when the server could not supply it. With initialGantt present this
+    // component makes NO request on mount -- the point of the whole change.
+    if (initialGantt === null) void loadGantt();
+  }, [initialGantt, loadGantt]);
 
   async function captureBaseline() {
     const name = window.prompt("Name this baseline (e.g. \"Original Plan\"):", "Baseline " + new Date().toLocaleDateString());
@@ -104,6 +132,9 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
         body: JSON.stringify({ projectId, name }),
       });
       if (!res.ok) throw new Error();
+      // A write invalidates this project's cached schedule reads, so no tab
+      // can show a user their own change as not-yet-happened.
+      invalidateScheduleProject(projectId);
       toast.success(`Baseline "${name}" captured`);
     } catch {
       toast.error("Couldn't capture baseline — try again");
@@ -118,7 +149,13 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   if (error) {
     return (
       <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load schedule: {error}</CardContent>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-px-error">
+          <span>Could not load schedule: {error}</span>
+          {/* An inert error card names the failure and leaves the reader with
+              nothing to do about it. force: the whole point of Retry is to go
+              past the cache. */}
+          <Button variant="outline" size="sm" onClick={() => loadGantt({ force: true })}>Retry</Button>
+        </CardContent>
       </Card>
     );
   }

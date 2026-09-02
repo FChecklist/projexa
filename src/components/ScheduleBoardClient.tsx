@@ -23,6 +23,7 @@ import { Loader2, Plus } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { invalidateScheduleProject, loadSchedule } from "@/lib/schedule-cache";
 
 type BoardIssue = {
   id: string; number: number; title: string; priority: string; statusId: string; completionPercentage: number;
@@ -42,13 +43,14 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   const [error, setError] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // R67 F-09 (R-122): reads through the shared 60 s schedule session cache, so
+  // a tab the user has already opened -- or hovered -- comes back with no
+  // request at all. `force` is for Retry and for a re-read after a write.
+  const load = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/board?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load board");
+      const data = await loadSchedule<{ columns?: BoardColumn[] }>("board", projectId, options);
       setColumns(data.columns ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load board");
@@ -80,9 +82,15 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      // A write invalidates this project's cached schedule reads: the Gantt and
+      // the sprints panels must not be able to show a user their own move as
+      // not-yet-happened when they switch tab.
+      invalidateScheduleProject(projectId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't move issue");
-      load();
+      // force: this reload exists precisely to replace the optimistic state
+      // with the server's truth, so it must go past the cache.
+      load({ force: true });
     } finally {
       setMovingId(null);
     }

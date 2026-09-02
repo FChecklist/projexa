@@ -5,32 +5,29 @@
 // from the Task Object Page's own inline "Log Time" action (ScheduleTaskObjectClient.tsx)
 // because this one's real job is picking WHICH task to log against, when
 // the user hasn't navigated to a specific task first.
-import { useEffect, useState } from "react";
+//
+// R67 F-09 (R-122), D-04: the project's task list is resolved in this screen's
+// server component and handed in as `tasks`, so the Task select is populated
+// on the FIRST render. It used to be fetched after hydration -- an empty
+// dropdown on the one field the whole screen exists to pick.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { invalidateScheduleProject } from "@/lib/schedule-cache";
+import type { ScheduleTask } from "@/lib/schedule-reference";
 
-type Task = { id: string; number: number; title: string };
-
-export default function ScheduleLogTimeClient({ projectId }: { projectId: string }) {
+export default function ScheduleLogTimeClient({ projectId, tasks = [] }: { projectId: string; tasks?: ScheduleTask[] }) {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [issueId, setIssueId] = useState("");
   const [hours, setHours] = useState("");
   const [spentOn, setSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [activityType, setActivityType] = useState("");
   const [comments, setComments] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => res.json())
-      .then((data) => setTasks(data.tasks ?? []))
-      .catch(() => { /* task dropdown is a convenience */ });
-  }, [projectId]);
 
   async function logTime() {
     if (!issueId || !hours || !spentOn) {
@@ -45,6 +42,9 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to log time");
+      // The Timesheet tab is where this navigates: it must not be able to show
+      // a cached list without the entry that was just written.
+      invalidateScheduleProject(projectId);
       toast.success("Time logged");
       router.push(`/schedule?projectId=${projectId}&tab=timesheet`);
     } catch (err) {
@@ -71,7 +71,12 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
         <div className="space-y-1.5">
           <Label>Task</Label>
           <Select value={issueId} onValueChange={setIssueId}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
+            {/* The list is resolved server-side, so an empty one means this
+                project genuinely has no tasks yet -- said plainly rather than
+                left as an empty dropdown the user can only guess about. */}
+            <SelectTrigger className="w-full" disabled={tasks.length === 0}>
+              <SelectValue placeholder={tasks.length ? "Select a task" : "No tasks on this project yet"} />
+            </SelectTrigger>
             <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
           </Select>
         </div>
