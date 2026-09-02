@@ -1,7 +1,7 @@
 import PermitCreateClient from "@/components/PermitCreateClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { Card, CardContent } from "@/components/ui/card";
 
 // R42 seq21: PERMITS.OBJECT create mode. Deliberate scope note (evidence,
 // not silent deviation): creation goes through the EXISTING multipart
@@ -15,10 +15,22 @@ export default async function NewPermitPage({ searchParams }: { searchParams: Pr
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(qsProjectId, organizationId);
 
+  // R67 D-70 (audit R-262): this used to `return` a bare Card holding
+  // resolveSelectedProject's raw message, so an upstream failure replaced the
+  // whole right pane with a bare HTTP status phrase -- no title, no Back, no
+  // Retry, and no statement of what had failed. The screen's own frame is
+  // rendered in every case now, with the failure reported inside it and a
+  // Retry that re-runs the server fetch.
   if (errorMessage || !project) {
     return (
-      <div className="flex-1 p-6">
-        <Card><CardContent className="p-8 text-center text-sm text-px-muted">{errorMessage ?? "No active project selected."}</CardContent></Card>
+      <div className="flex-1">
+        <CreateScreenUnavailable
+          breadcrumb="Permits / New Permit"
+          title="New Permit"
+          backHref="/permits"
+          backLabel="Back to Permits"
+          message={errorMessage}
+        />
       </div>
     );
   }

@@ -25,7 +25,8 @@ import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/scr
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import DataLoadError from "@/components/DataLoadError";
+import Link from "next/link";
+import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection";
 import { setScreenMessage } from "@/lib/screen-message";
 import { fileSizeError, fileTypeError } from "@/lib/file-limits";
 import { CREATE_STATUS_OPTIONS, DEFAULT_DRAWING_STATUS, type DrawingStatus } from "@/lib/drawing-status";
@@ -100,7 +101,10 @@ export function drawingSaveReason(input: {
   missing: string[];
   attention: number;
 }): string | undefined {
-  if (!input.projectLoaded) return "Project not loaded";
+  // R67 D-70: was "Project not loaded". Every create route in the app now
+  // states this same reason for this same condition, from one constant, so the
+  // user meets one sentence rather than twenty-three near-misses.
+  if (!input.projectLoaded) return PROJECT_LIST_UNAVAILABLE_REASON;
   if (input.submitting) return "Adding…";
   if (input.attention > 0) {
     return `${input.attention} field${input.attention === 1 ? "" : "s"} need${input.attention === 1 ? "s" : ""} attention`;
@@ -109,21 +113,13 @@ export function drawingSaveReason(input: {
   return undefined;
 }
 
-/**
- * R67 D-08. The standing rule in this codebase is to show the backend's OWN
- * words (see DataLoadError's header), and this keeps them -- with one
- * exception, which is the whole point of the item: a bare "Internal Server
- * Error" is not the backend's words about anything. It is the HTTP status
- * phrase, it names no subject, and it is precisely the card that used to
- * replace this entire screen. A message that says nothing is replaced by one
- * that says which call failed and who answered; every other message, including
- * every real VERIDIAN message, passes through untouched.
- */
-export function describeProjectLoadFailure(raw: string): string {
-  return /^(internal server error|internal error|error|500)\.?$/i.test(raw.trim())
-    ? "The project list did not load — VERIDIAN answered with an internal error."
-    : raw;
-}
+// R67 D-08 introduced describeProjectLoadFailure() here -- replace a bare HTTP
+// status phrase with a sentence that names the failed call, pass every real
+// backend message through untouched. R67 D-70 gives that SAME failure the same
+// words on all 23 create routes, so the rule moved to
+// src/lib/project-selection.ts (describeProjectListFailure / the banner built
+// from it) and this copy is gone rather than left as a second definition: two
+// copies is how two screens start disagreeing about what a 500 sounds like.
 
 export default function DrawingCreateClient({
   projectId,
@@ -284,8 +280,36 @@ export default function DrawingCreateClient({
         {/* The failure is reported here, inside the screen, with the
             backend's own words and a way out -- never as a replacement for
             the screen. */}
+        {/* R67 D-70: the same banner, Retry and Back-to-module every other
+            create route now shows for this same failure. Retry here re-fetches
+            /api/projects in the browser (this screen holds its own project
+            state), which is a truer retry than a page refresh. */}
         {loadError && (
-          <DataLoadError messages={[describeProjectLoadFailure(loadError)]} onRetry={() => void loadProjects()} />
+          <div
+            role="alert"
+            className="space-y-2 rounded-md border border-[color:var(--color-veri-status-late)] bg-[color:var(--color-veri-status-late)]/5 p-3 text-[13px]"
+          >
+            <p>{projectListFailureBanner(loadError)}</p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void loadProjects()}
+                disabled={retrying}
+                aria-busy={retrying}
+                className="font-medium underline disabled:opacity-50"
+              >
+                {/* The LABEL never changes. A control whose name is different
+                    while it is working is a different control to a screen
+                    reader, and to anyone looking for the word they were told
+                    to click. Its busy state is aria-busy and the disabled
+                    attribute, not a rename. */}
+                Retry
+              </button>
+              <Link href="/drawings" className="font-medium underline">
+                Back to Drawings
+              </Link>
+            </div>
+          </div>
         )}
         {!loadError && !resolvedId && (
           <p role="status" className="text-[12.5px] text-ct-muted">

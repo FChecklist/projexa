@@ -18,7 +18,6 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 const mod = await import("./DrawingCreateClient");
 const DrawingCreateClient = mod.default;
 const {
-  describeProjectLoadFailure,
   missingDrawingFields,
   drawingSaveReason,
   walkthroughUrlError,
@@ -40,25 +39,9 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-describe("describeProjectLoadFailure", () => {
-  test("a bare HTTP status phrase is replaced by a sentence that names what failed", () => {
-    expect(describeProjectLoadFailure("Internal Server Error")).toBe(
-      "The project list did not load — VERIDIAN answered with an internal error."
-    );
-    expect(describeProjectLoadFailure("internal server error.")).toBe(
-      "The project list did not load — VERIDIAN answered with an internal error."
-    );
-  });
-
-  test("a real backend message is kept verbatim -- this is not a message filter", () => {
-    expect(describeProjectLoadFailure("VERIDIAN did not respond in time, on two attempts")).toBe(
-      "VERIDIAN did not respond in time, on two attempts"
-    );
-    expect(describeProjectLoadFailure("No veridian_credentials row for this organisation")).toBe(
-      "No veridian_credentials row for this organisation"
-    );
-  });
-});
+// R67 D-70: describeProjectLoadFailure() moved to src/lib/project-selection.ts
+// (as describeProjectListFailure) so all 23 create routes give this same failure
+// the same words. Its own tests moved with it, to project-selection.test.ts.
 
 describe("DrawingCreateClient with a failed project resolution", () => {
   test("still renders its own screen: title, Back and Retry, and never the bare status phrase", () => {
@@ -68,15 +51,16 @@ describe("DrawingCreateClient with a failed project resolution", () => {
     expect(view.getByText("Drawings & 3D / New Drawing")).toBeTruthy();
     expect(view.getByRole("button", { name: /Back/ })).toBeTruthy();
     expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(view.getByRole("link", { name: "Back to Drawings" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("Internal Server Error");
     expect(view.getByRole("alert").textContent).toContain(
-      "The project list did not load — VERIDIAN answered with an internal error."
+      "Couldn't load your project list: VERIDIAN answered with an internal error."
     );
   });
 
   test("Save is disabled for the one reason that outranks every field", () => {
     const view = render(<DrawingCreateClient projectId={null} projectError="Internal Server Error" />);
-    const save = view.getByRole("button", { name: "Save (Project not loaded)" }) as HTMLButtonElement;
+    const save = view.getByRole("button", { name: "Save (project list unavailable)" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
   });
 
@@ -177,7 +161,7 @@ describe("drawingSaveReason", () => {
     expect(drawingSaveReason({ ...BASE, submitting: true, missing: ["Name", "File"] })).toBe("Adding…");
     expect(
       drawingSaveReason({ projectLoaded: false, submitting: true, missing: ["Name"], attention: 1 })
-    ).toBe("Project not loaded");
+    ).toBe("project list unavailable");
   });
 });
 

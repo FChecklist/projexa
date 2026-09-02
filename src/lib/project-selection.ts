@@ -22,7 +22,48 @@ export type ProjectSelection = {
    * user made. null when there is no project at all.
    */
   source: ProjectSource | null;
+  /**
+   * R67 D-70: the upstream HTTP status when the read failed, or null. Returned
+   * for the CALLER's logging and branching only -- it is never rendered; see
+   * describeProjectListFailure() below for what a user is shown instead.
+   */
+  status: number | null;
 };
+
+/**
+ * R67 D-70 (audit R-262). What a user is told when the project list does not
+ * load.
+ *
+ * THE DEFECT. Every create page in this app returned early with this outcome's
+ * raw `errorMessage` in a bare Card, so a failing VERIDIAN /dashboard replaced
+ * the entire right pane with the words "Internal Server Error" -- no title, no
+ * Back, no Retry, and no statement of what had failed. That string is not the
+ * backend's words about anything: it is the HTTP status phrase, it names no
+ * subject, and it is what an upstream 500 with no JSON body degrades into.
+ *
+ * The standing rule in this codebase is to show the backend's OWN words (see
+ * DataLoadError's header), and this keeps them -- with that one exception. A
+ * message that says nothing is replaced by one that says which call failed and
+ * who answered; every real VERIDIAN message, including its timeout wording,
+ * passes through untouched.
+ */
+export function describeProjectListFailure(raw: string): string {
+  return /^(internal server error|internal error|error|500|bad gateway|502|service unavailable|503)\.?$/i.test(raw.trim())
+    ? "VERIDIAN answered with an internal error."
+    : raw;
+}
+
+/** The one sentence every create screen leads its failure banner with. */
+export function projectListFailureBanner(raw: string): string {
+  return `Couldn't load your project list: ${describeProjectListFailure(raw)}`;
+}
+
+/**
+ * The one reason a create screen's Save states while there is no project list to
+ * write against. It outranks every field-level reason: there is nothing to write
+ * to, whatever the form says.
+ */
+export const PROJECT_LIST_UNAVAILABLE_REASON = "project list unavailable";
 
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
 // so they don't each re-implement the same "/dashboard" fetch + fallback.
@@ -61,13 +102,27 @@ export async function resolveSelectedProject(
     const projects = data.projects ?? [];
     const preferred = await readPreferredProjectId();
     const { project, source } = pickProject({ requested: requestedProjectId, preferred, projects });
-    return { project, projects, errorMessage: null, source };
+    return { project, projects, errorMessage: null, source, status: null };
   } catch (err) {
+    // R67 D-70: the RAW error, with the upstream status, is logged here and only
+    // here. Callers render describeProjectListFailure(errorMessage) -- never the
+    // exception, never a stack, never the internal URL (VeridianApiError already
+    // keeps that in `detail`, which is logged by veridian-client and never
+    // returned). Without this line a create-route failure left nothing at all in
+    // the server log: the page swallowed it into a card and moved on, which is
+    // why correction C-06 records that the cause of the /drawings/new failure
+    // was never established.
+    const status = err instanceof VeridianApiError ? err.status : null;
+    console.error(
+      `[project-selection] resolveSelectedProject failed (upstream status ${status ?? "none"}):`,
+      err instanceof Error ? err.message : err
+    );
     return {
       project: null,
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      status,
     };
   }
 }

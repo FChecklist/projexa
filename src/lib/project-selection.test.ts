@@ -77,3 +77,64 @@ describe("resolveSelectedProject", () => {
     expect(result.source).not.toBe("auto");
   });
 });
+
+// ─── R67 D-70 (audit R-262): what a create route says when this fails ────────
+//
+// These are pure functions, so unlike the block above they need no module stub.
+describe("describeProjectListFailure", () => {
+  test("a bare HTTP status phrase is replaced -- it is not the backend's words about anything", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    for (const raw of ["Internal Server Error", "internal server error.", "500", "Bad Gateway", "503"]) {
+      expect(describeProjectListFailure(raw)).toBe("VERIDIAN answered with an internal error.");
+    }
+  });
+
+  test("a real backend message is kept verbatim -- this is not a message filter", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    expect(
+      describeProjectListFailure("The construction data service did not respond in time, on two attempts. Please retry.")
+    ).toBe("The construction data service did not respond in time, on two attempts. Please retry.");
+    expect(describeProjectListFailure("No veridian_credentials row for this organisation")).toBe(
+      "No veridian_credentials row for this organisation"
+    );
+  });
+
+  test("a message that merely CONTAINS the status phrase is not rewritten", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    expect(describeProjectListFailure("Project sync failed: Internal Server Error from the ERP")).toBe(
+      "Project sync failed: Internal Server Error from the ERP"
+    );
+  });
+});
+
+describe("projectListFailureBanner", () => {
+  test("leads with the item's own sentence, then the described cause", async () => {
+    const { projectListFailureBanner } = await import("./project-selection");
+    expect(projectListFailureBanner("Internal Server Error")).toBe(
+      "Couldn't load your project list: VERIDIAN answered with an internal error."
+    );
+    expect(projectListFailureBanner("No veridian_credentials row for this organisation")).toBe(
+      "Couldn't load your project list: No veridian_credentials row for this organisation"
+    );
+  });
+});
+
+describe("the outcome shape D-70 asks for", () => {
+  test("a failure carries the upstream status for the caller's log, and never throws", async () => {
+    class FakeApiError extends realClient.VeridianApiError {}
+    const mod = await loadWith(async () => {
+      throw new FakeApiError("Internal Server Error", 500);
+    });
+    const result = await mod.resolveSelectedProject(undefined, "org_1");
+    expect(result.status).toBe(500);
+    expect(result.project).toBeNull();
+    expect(result.errorMessage).toBe("Internal Server Error");
+  });
+
+  test("a successful read reports no status at all", async () => {
+    const mod = await loadWith(async () => ({ projects: [{ id: "p1", name: "Cedar Heights Villa - Phase 1" }] }));
+    const result = await mod.resolveSelectedProject("p1", "org_1");
+    expect(result.status).toBeNull();
+    expect(result.project?.id).toBe("p1");
+  });
+});

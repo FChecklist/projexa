@@ -35,7 +35,11 @@ async function resolveDocumentsListColumns(organizationId: string | null): Promi
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, projects, errorMessage, fellBack } = await resolveSelectedProject(projectId, organizationId);
+  // R67 D-07's `fellBack` boolean was folded into lane A's richer `source` at
+  // the lane A merge: "auto" is exactly the case D-07 asks about -- the page
+  // chose the project because nothing else did.
+  const { project, projects, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
+  const fellBack = source === "auto";
   const registryColumns = await resolveDocumentsListColumns(organizationId);
 
   return (
