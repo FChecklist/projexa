@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useCurrencies } from "@/lib/currency";
+import { revisionLabel, variationCell } from "@/lib/boq-lineage";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
@@ -40,9 +41,13 @@ const STATUS_TONE: Record<string, "needs-you" | "running" | "waiting" | "done" |
   draft: "neutral", submitted: "needs-you", approved: "done", superseded: "neutral",
 };
 
+/** R67 D-27: the Architect/Site Instruction record that authorises a revision (compliance.construction_site_instructions). */
+type SiteInstruction = { id: string; siNumber: number; boqId: string | null; issueDate: string };
+
 export default function ScopeObjectClient({
   boqId,
   importedNotice = null,
+  attachedFileName = null,
 }: {
   boqId: string;
   /**
@@ -51,6 +56,8 @@ export default function ScopeObjectClient({
    * the navigation. A persistent notice in the message band, never a toast.
    */
   importedNotice?: string | null;
+  /** R67 D-27: "Attached: SI-2026-014.pdf", carried here in ?attached= by the revise screen for the same reason. */
+  attachedFileName?: string | null;
 }) {
   const router = useRouter();
   const [boq, setBoq] = useState<Boq | null>(null);
@@ -60,6 +67,13 @@ export default function ScopeObjectClient({
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R67 D-27: the revision's own context -- who superseded it, what it
+  // supersedes, and the instruction that authorised the change.
+  const [successor, setSuccessor] = useState<Boq | null>(null);
+  const [predecessor, setPredecessor] = useState<Boq | null>(null);
+  const [variationVsParent, setVariationVsParent] = useState<number | null>(null);
+  const [siteInstruction, setSiteInstruction] = useState<SiteInstruction | null>(null);
+  const [siteInstructionFile, setSiteInstructionFile] = useState<string | null>(null);
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
@@ -78,12 +92,44 @@ export default function ScopeObjectClient({
       setRows(data.lineItems ?? []);
       setVendors(vendorsData.vendors ?? []);
       setLoadError(null);
+      void loadRevisionContext(data);
     } catch (err) {
       setBoq(null);
       setLoadError(errorMessage(err, "Couldn't load this BOQ"));
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * R67 D-27: everything a revision needs to explain itself -- which revision
+   * superseded this one, what this one supersedes and by how much, and whether
+   * a site instruction authorises it.
+   *
+   * Deliberately fired AFTER the BOQ itself has rendered and never awaited by
+   * load(): none of it is required to read the scope, so a slow or failing
+   * lookup must degrade to a missing banner, never to a blocked page.
+   */
+  async function loadRevisionContext(data: Boq) {
+    const [siblings, instructions, comparison] = await Promise.all([
+      fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ boqs: [] })),
+      fetchJson<{ siteInstructions?: SiteInstruction[] }>(`/api/site-instructions?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ siteInstructions: [] })),
+      data.parentBoqId
+        ? fetchJson<{ totalVariation?: number }>(`/api/scope/${data.id}/compare`).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    setSuccessor((siblings.boqs ?? []).find((b) => b.parentBoqId === data.id) ?? null);
+    setPredecessor((siblings.boqs ?? []).find((b) => b.id === data.parentBoqId) ?? null);
+    setVariationVsParent(typeof comparison?.totalVariation === "number" ? comparison.totalVariation : null);
+
+    const instruction = (instructions.siteInstructions ?? []).find((si) => si.boqId === data.id) ?? null;
+    setSiteInstruction(instruction);
+    if (!instruction) return;
+    const docs = await fetchJson<{ documents?: { name?: string }[] }>(
+      `/api/documents?linkedEntityType=construction_site_instruction&linkedEntityId=${encodeURIComponent(instruction.id)}`
+    ).catch(() => ({ documents: [] }));
+    setSiteInstructionFile(docs.documents?.[0]?.name ?? null);
   }
 
   useEffect(() => { load(); }, [boqId]);
@@ -187,6 +233,18 @@ export default function ScopeObjectClient({
       facets={[
         { label: "Total (root lines only)", value: withCurrency(currencyCode, total) },
         { label: "Line items", value: String(rows.length) },
+        // R67 D-27: always present. An en dash says "no instruction is on file
+        // for this revision", which is a real and useful answer -- the facet
+        // disappearing entirely was not. (It names the attachment rather than
+        // linking it: this product has no document-download endpoint to link to
+        // -- projexa's /api/documents/[id] proxies a VERIDIAN route that does
+        // not exist -- and a link to nowhere is worse than an honest name.)
+        {
+          label: "Site instruction",
+          value: siteInstruction
+            ? `SI-${siteInstruction.siNumber}${siteInstructionFile ? ` · ${siteInstructionFile}` : ""}`
+            : "–",
+        },
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
       // never a fake-enabled button that fails after the click. R67 D-22:
@@ -210,8 +268,39 @@ export default function ScopeObjectClient({
       // /scope/{id} URL with no ?projectId= at all. router.back() alone has
       // no history entry to return to after a full reload.
       onBack={() => router.push(`/scope?projectId=${boq.projectId}`)}
-      messages={importedNotice ? [{ level: "success", text: importedNotice }] : []}
+      messages={[
+        ...(importedNotice ? [{ level: "success" as const, text: importedNotice }] : []),
+        ...(attachedFileName ? [{ level: "success" as const, text: `Attached: ${attachedFileName}` }] : []),
+      ]}
     >
+      {/* R67 D-27: a superseded BOQ used to say only "superseded" -- true, and
+          useless. It never named the revision that replaced it, so a user
+          reading last month's rates had no way to reach the current ones, and
+          no way to know which revision the Work Progress Report is priced off. */}
+      {successor && (
+        <div className="border-b border-ct-border bg-px-cloud px-4 py-2 text-[12.5px] text-px-ink">
+          Superseded by {revisionLabel(successor.version)} - the WPR now reads {revisionLabel(successor.version)}.{" "}
+          <button type="button" className="underline" onClick={() => router.push(`/scope/${successor.id}`)}>
+            Open {revisionLabel(successor.version)}
+          </button>
+        </div>
+      )}
+      {predecessor && (
+        <div className="border-b border-ct-border px-4 py-2 text-[12.5px] text-px-ink">
+          Supersedes {revisionLabel(predecessor.version)} · variation{" "}
+          {(() => {
+            const cell = variationCell(variationVsParent, currencyCode);
+            return (
+              <span className={cell.kind === "up" ? "text-px-success" : cell.kind === "down" ? "text-px-error" : "text-px-muted"} title={cell.title}>
+                <span aria-hidden="true">{cell.glyph}</span>{cell.text ? ` ${cell.text}` : ""}
+              </span>
+            );
+          })()}{" "}
+          <button type="button" className="underline" onClick={() => router.push(`/scope/${boqId}/compare`)}>
+            Compare
+          </button>
+        </div>
+      )}
       {/* Real, object-specific workflow toolbar — BOQ's own actions, since
           ObjectScreen's fixed footer has no slot for anything beyond
           Edit/Delete/Save/Cancel. Every button here maps to a real endpoint
