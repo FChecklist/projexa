@@ -39,11 +39,24 @@ export default async function DashboardPage() {
   // off here too (before the awaited allSettled block) so it runs
   // concurrently with both, not as a third serial round-trip.
   const columnsPromise = resolveDashboardColumns(organizationId); // never rejects
-  const [dashboardResult, currencyResult] = await Promise.allSettled([
+  // R67 D-02: the "Permits expiring" KPI's own count, org-wide, read
+  // concurrently with the other two. VERIDIAN's /permits treats projectId as
+  // optional, so omitting it is the org-wide list -- the same withinDays=30
+  // window the card's own destination (/permits?withinDays=30) then applies,
+  // so the number and the screen it opens can never disagree.
+  const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
     callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
+    callVeridian<{ permits: unknown[] }>("/permits?withinDays=30", { organizationId: organizationId ?? undefined }),
   ]);
   const registryColumns = await columnsPromise;
+
+  // null, not 0, when that read failed -- "no permits are expiring" and "we
+  // could not find out" must not render the same.
+  const permitsExpiring =
+    permitsResult.status === "fulfilled" && Array.isArray(permitsResult.value.permits)
+      ? permitsResult.value.permits.length
+      : null;
 
   if (dashboardResult.status === "fulfilled") {
     data = dashboardResult.value;
@@ -69,7 +82,7 @@ export default async function DashboardPage() {
   // every module the product has, grouped by domain.
   return (
     <div className="space-y-8 pb-4">
-      <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} />
+      <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} permitsExpiring={permitsExpiring} />
       <div className="px-6">
         <ModuleDirectory />
       </div>

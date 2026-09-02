@@ -51,7 +51,13 @@ function labelFor(labels: ScreenColumn[], field: string, fallback: string): stri
 type ProjectDashboard = {
   projectId: string;
   projectName: string;
-  budget: number;
+  // R67 D-02: widened to match compliance-tracker's getProjectDashboard(),
+  // which now returns null (never 0) when this project's scope has no
+  // erp_budget_line_items row at all. "No budget set" and "a budget of zero"
+  // are different facts, and this tile used to render the first as the
+  // second -- which made it claim "over budget" on the project's very first
+  // expense, against a budget nobody had ever set.
+  budget: number | null;
   revenue: number;
   expenses: number;
   progressPercent: number;
@@ -182,18 +188,34 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             baseline="overridable per project"
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
+          {/* R67 D-02: with no budget set there is nothing to be over, so the
+              card states the spend, says the budget is missing, drops the
+              bullet chart (a target of 0 rendered a full red bar) and sends
+              the user to the one screen that fixes it -- the budget create
+              screen for THIS project -- instead of to a variance view with
+              nothing to vary against. */}
           <KpiCard
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
             value={money(dashboard.expenses, currency)}
-            trend={{
-              direction: dashboard.expenses > dashboard.budget ? "up" : "down",
-              tone: dashboard.expenses > dashboard.budget ? "late" : "done",
-              label: dashboard.expenses > dashboard.budget ? "over budget" : "within budget",
-            }}
-            baseline={`budget ${money(dashboard.budget, currency)}`}
-            visual={<BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
+            trend={
+              dashboard.budget === null
+                ? { direction: "flat", tone: "context", label: "no budget set" }
+                : {
+                    direction: dashboard.expenses > dashboard.budget ? "up" : "down",
+                    tone: dashboard.expenses > dashboard.budget ? "late" : "done",
+                    label: dashboard.expenses > dashboard.budget ? "over budget" : "within budget",
+                  }
+            }
+            baseline={dashboard.budget === null ? "spend to date" : `budget ${money(dashboard.budget, currency)}`}
+            visual={dashboard.budget === null ? undefined : <BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
             // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
-            onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
+            onClick={() =>
+              router.push(
+                dashboard.budget === null
+                  ? `/budgets/new?projectId=${projectId}`
+                  : `/scope?projectId=${projectId}&tab=variance`
+              )
+            }
           />
           <KpiCard
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}

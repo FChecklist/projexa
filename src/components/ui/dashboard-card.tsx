@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,16 @@ type DashboardCardProps = {
   icon: LucideIcon;
   variant: DashboardCardVariant;
   className?: string;
+  /**
+   * R67 D-02 (audit R-009, "EVERY NUMBER IS A DOOR"): where this KPI leads.
+   * When set, the whole card becomes a link and a visible arrow appears
+   * beside the value so the card ADVERTISES that it navigates -- a
+   * hover-only shadow does not. When absent, the hover affordance is dropped
+   * too: a card that lifts under the cursor and then does nothing is the
+   * dead end this rule exists to stop shipping.
+   */
+  href?: string;
+  onClick?: () => void;
 };
 
 // R67 WS-G (R-227). Two changes, both about what a KPI tile is allowed to say
@@ -72,12 +83,22 @@ export function DashboardCard({
   icon: Icon,
   variant,
   className,
+  href,
+  onClick,
 }: DashboardCardProps) {
   const styles = variantStyles[variant];
+  const hasDestination = Boolean(href || onClick);
 
-  return (
+  const card = (
     <Card
-      className={cn("border-l-4 shadow-card transition-shadow hover:shadow-md", className)}
+      // R67 D-02: the hover lift is an affordance, so it is drawn only when
+      // the card actually goes somewhere. A card that lifts under the cursor
+      // and then does nothing on click is the defect this removes.
+      className={cn(
+        "border-l-4 shadow-card",
+        hasDestination && "transition-shadow hover:shadow-md",
+        className
+      )}
       style={{ borderLeftColor: styles.borderColor }}
     >
       <CardContent className="flex items-center gap-4 p-4">
@@ -91,9 +112,12 @@ export function DashboardCard({
           <p className="text-xs font-medium text-ct-muted uppercase tracking-wide">
             {title}
           </p>
-          {/* R67 WS-G: navy, always. KPI figures are never colour-coded. */}
-          <p className="text-2xl font-bold leading-tight mt-0.5 text-ct-navy tabular-nums">
+          {/* R67 WS-G: navy, always. KPI figures are never colour-coded.
+              R67 D-02 adds only the flex row, so the destination arrow sits
+              beside the value instead of inheriting its font weight. */}
+          <p className="text-2xl font-bold leading-tight mt-0.5 text-ct-navy tabular-nums flex items-center gap-2">
             {value}
+            {hasDestination && <span aria-hidden className="text-base text-ct-muted">→</span>}
           </p>
           {subtitle && (
             <p className="text-xs text-ct-muted mt-1 truncate">{subtitle}</p>
@@ -102,4 +126,20 @@ export function DashboardCard({
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return (
+      <Link href={href} role="link" aria-label={`${title}: ${value}`} className="block">
+        {card}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} aria-label={`${title}: ${value}`} className="block w-full text-left">
+        {card}
+      </button>
+    );
+  }
+  return card;
 }

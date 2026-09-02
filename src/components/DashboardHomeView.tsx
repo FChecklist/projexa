@@ -6,13 +6,18 @@
 // in dashboard/page.tsx -- no data fetching moved into the browser.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
-import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { BulletChart, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+// R67 D-02: the FORKED KpiCard (src/components/screens/KpiCard.tsx, per
+// decision D-09), not the kit's -- the fork is what allows a card with no
+// real 30-day delta behind it to render no arrow and no status colour
+// instead of an invented one. Everything else here still comes from the kit.
+import { KpiCard } from "@/components/screens/KpiCard";
+import { budgetBaseline, portfolioTotals, spendTone } from "@/lib/dashboard-kpi";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
 import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 
@@ -27,7 +32,11 @@ import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 // structure moved here changed -- this is a 1:1 lift of the original JSX.
 export type OrgDashboard = {
   totalProjects: number;
-  totalBudget: number;
+  // R67 D-02: widened to match compliance-tracker's getOrgDashboard(), which
+  // now returns null (never 0) when NO erp_budget_line_items row exists for
+  // any project in scope. "Nobody has set a budget" and "the budget is zero"
+  // are different facts and this screen was rendering both as "AED 0".
+  totalBudget: number | null;
   totalRevenue: number;
   totalExpenses: number;
   // R38 (R-50/TC-40): value is the project's active BOQ root-total, null
@@ -90,15 +99,20 @@ export type RegistryColumn = ScreenColumn;
 // registry-driven here: the KPI cards and Projects table below stay the
 // fully hand-built layout that already shipped (not the kit's generic
 // DashboardScreen composition -- this is PROJEXA's HOME_ROUTE with its own
-// HomeGreeting hero and a real 4-card + full project-table layout; swapping
-// to DashboardScreen's oneNumber/trend/breakdown shape would be a much
-// larger visual rewrite of a live production landing page for label-only
-// registry gain, same minimal-risk call R46 P8 seq121 made for boq.custom).
+// HomeGreeting hero and a real KPI-band + full project-table layout;
+// swapping to DashboardScreen's oneNumber/trend/breakdown shape would be a
+// much larger visual rewrite of a live production landing page for
+// label-only registry gain, same minimal-risk call R46 P8 seq121 made for
+// boq.custom).
+//
+// R67 D-02: totalProjects and totalBudget no longer have a card of their own
+// (the project count is in the greeting; the budget is now the Spend card's
+// baseline), so their fallback labels are gone with them. The two that
+// remain keep the registry mechanism, with this item's own wording as the
+// fallback.
 const DEFAULT_COLUMNS: ScreenColumn[] = [
-  { field: "totalProjects", label: "Active Projects", type: "number", importance: "High" },
-  { field: "totalBudget", label: "Total Budget", type: "number", importance: "High" },
-  { field: "totalRevenue", label: "Total Revenue", type: "number", importance: "High" },
-  { field: "totalExpenses", label: "Total Expenses", type: "number", importance: "High" },
+  { field: "totalRevenue", label: "Revenue", type: "number", importance: "High" },
+  { field: "totalExpenses", label: "Spend", type: "number", importance: "High" },
   { field: "project", label: "Project", type: "text", importance: "High" },
   { field: "value", label: "Value", type: "number", importance: "High" },
   { field: "earnedValue", label: "Earned Value", type: "number", importance: "High" },
@@ -118,12 +132,20 @@ export default function DashboardHomeView({
   currencies,
   errorMessage,
   registryColumns,
+  permitsExpiring,
 }: {
   userName: string;
   data: OrgDashboard | null;
   currencies: CurrencyRow[];
   errorMessage: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 D-02: count of permits expiring in the next 30 days across the org,
+   * resolved server-side in dashboard/page.tsx. null means THAT read failed --
+   * rendered as words, never as a zero, because "no permits are expiring" and
+   * "we could not find out" must not look the same.
+   */
+  permitsExpiring: number | null;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
@@ -137,6 +159,12 @@ export default function DashboardHomeView({
   // above, never a fabricated number.
   const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
   const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
+
+  // R67 D-02: the portfolio's own earned-value figures, summed from the SAME
+  // per-project rows the table below renders (so the band and the table can
+  // never disagree), with nulls skipped rather than counted as zero.
+  const portfolio = portfolioTotals(data?.projects ?? []);
+  const money = (n: number) => formatCurrency(n, currencies);
 
   return (
     <>
@@ -186,11 +214,70 @@ export default function DashboardHomeView({
 
         {data && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+            {/* R67 D-02 (audit R-004/R-009). Was four flat DashboardCards --
+                a bare number each, no baseline, no destination, and an
+                "Active Projects" count whose registry label carried the
+                literal string "(HARD-STOP TEST)" onto the live home. That
+                count is dropped here: it is already stated in the greeting
+                above, and its polluted registry label is C01-22's to fix.
+                What replaces them is one primary KPI plus three supporting
+                ones, each with a real baseline and a real destination.
+                No card emits an arrow or a status colour it cannot measure --
+                the backend returns no 30-day delta, so the only tone shown is
+                "over budget", and only when a budget actually exists. */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)]">
+              <KpiCard
+                size="primary"
+                label="Portfolio earned value"
+                value={
+                  portfolio.contract === null
+                    ? "No BOQ yet"
+                    : portfolio.earned !== null
+                      ? money(portfolio.earned)
+                      : "No progress yet"
+                }
+                // The only trend on this band: the empty state's own next
+                // step. With a BOQ in place the comparison is the bullet
+                // chart and the baseline, both measured -- not an arrow.
+                trend={portfolio.contract === null ? { direction: "flat", tone: "context", label: "Import a BOQ" } : undefined}
+                baseline={
+                  portfolio.contract === null
+                    ? ""
+                    : `of ${money(portfolio.contract)} contract${portfolio.percent !== null ? ` (${portfolio.percent} %)` : ""}`
+                }
+                visual={
+                  portfolio.contract !== null && portfolio.earned !== null ? (
+                    <BulletChart value={portfolio.earned} target={portfolio.contract} unit="" />
+                  ) : undefined
+                }
+                onClick={() => router.push("/scope")}
+              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <KpiCard
+                  label={columnLabel(columns, "totalRevenue", "Revenue")}
+                  value={money(data.totalRevenue)}
+                  baseline="invoiced to date"
+                  onClick={() => router.push("/invoices")}
+                />
+                <KpiCard
+                  label={columnLabel(columns, "totalExpenses", "Spend")}
+                  value={money(data.totalExpenses)}
+                  trend={
+                    spendTone(data.totalBudget, data.totalExpenses) === "late"
+                      ? { direction: "up", tone: "late", label: "over budget" }
+                      : undefined
+                  }
+                  baseline={budgetBaseline(data.totalBudget, money)}
+                  onClick={() => router.push("/expenses")}
+                />
+                <KpiCard
+                  label="Permits expiring"
+                  value={permitsExpiring === null ? "Not loaded" : String(permitsExpiring)}
+                  trend={permitsExpiring === null ? { direction: "flat", tone: "context", label: "the permits read failed" } : undefined}
+                  baseline="next 30 days"
+                  onClick={() => router.push("/permits?withinDays=30")}
+                />
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
