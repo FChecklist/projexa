@@ -5,12 +5,34 @@
 // PermitsListClient.tsx (seq21). Activity/BOQ-line names are resolved
 // client-side against the same lookups the form already fetches, passed in
 // as props rather than re-fetched here.
+//
+// R67 lane D22 (item D-64, rec R-230): the "BOQ line" column used to print a
+// 25-character cuid. It printed one because nothing joined the entry to the
+// line it names -- this screen's own fallback was a client-side lookup against
+// whichever BOQ the FORM beside it happened to have loaded, so an entry
+// recorded against any other revision fell through to `?? e.boqLineItemId` and
+// rendered the raw id. VERIDIAN now joins the line server-side
+// (listProgressEntries -> attachBoqLines), so the cell reads
+// "R60SK-A — R60 skiphop sub" and links to the line on its own BOQ page.
+import Link from "next/link";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { boqLineHref, boqLineLabel } from "@/lib/boq-line-options";
+
+export type EntryBoqLine = {
+  boqLineId: string;
+  code: string | null;
+  description: string;
+  unit: string;
+  qtyTotal: number;
+  qtyDone: number;
+  boqId: string;
+};
 
 type Entry = {
   id: string;
   activityId: string;
   boqLineItemId: string | null;
+  boqLine?: EntryBoqLine | null;
   entryDate: string;
   quantityDone: string;
   percentComplete: string;
@@ -37,18 +59,20 @@ function progressTone(pct: number): StatusTone {
 export default function WorkProgressListClient({
   entries,
   activityNameById,
-  boqLineDescriptionById,
   loading,
 }: {
   entries: Entry[];
   activityNameById: Map<string, string>;
-  boqLineDescriptionById: Map<string, string>;
   loading: boolean;
 }) {
   const rows = entries.map((e) => ({
     ...e,
     activityName: activityNameById.get(e.activityId) ?? e.activityId,
-    boqLineDescription: e.boqLineItemId ? (boqLineDescriptionById.get(e.boqLineItemId) ?? e.boqLineItemId) : null,
+    // No `?? e.boqLineItemId` fallback any more, deliberately: an unresolvable
+    // line renders as the en-dash the kit uses for every empty value. A cell
+    // that quietly falls back to an id is how the id got here in the first
+    // place.
+    boqLineDescription: e.boqLine ? boqLineLabel(e.boqLine) : null,
   }));
 
   return (
@@ -77,6 +101,18 @@ export default function WorkProgressListClient({
             percentComplete: (row) => {
               const pct = Number((row as unknown as Entry).percentComplete);
               return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
+            },
+            // The line is a link to itself on its own BOQ page -- the question
+            // "which line is this and how much of it is left" is one click away
+            // instead of a copy-paste of an id into a search box.
+            boqLineDescription: (row) => {
+              const line = (row as unknown as Entry).boqLine;
+              if (!line) return <span className="text-ct-muted">–</span>;
+              return (
+                <Link href={boqLineHref(line.boqId, line.boqLineId)} className="underline underline-offset-2">
+                  {boqLineLabel(line)}
+                </Link>
+              );
             },
           }}
         />

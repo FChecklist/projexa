@@ -6,18 +6,21 @@
 // -- no per-module UI logic lives here.
 import { useCallback, useEffect, useState } from "react";
 import WorkProgressFormClient from "./WorkProgressFormClient";
-import WorkProgressListClient from "./WorkProgressListClient";
+import WorkProgressListClient, { type EntryBoqLine } from "./WorkProgressListClient";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
+type Entry = { id: string; activityId: string; boqLineItemId: string | null; boqLine?: EntryBoqLine | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
 type Activity = { id: string; name: string };
-type LineItem = { id: string; itemCode: string | null; description: string };
 
 export default function WorkProgressPageClient({ projectId }: { projectId: string }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // R67 lane D22 (item D-64): the two extra round trips that used to happen
+  // here -- fetch every BOQ, then fetch the whole current one -- existed only
+  // to turn each entry's boq_line_item_id into words, and got it wrong for any
+  // entry recorded against a different revision. VERIDIAN now joins the line
+  // onto the entry, so this loads exactly what the screen shows.
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -27,14 +30,6 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
       ]);
       setEntries(entriesRes.entries ?? []);
       setActivities(activitiesRes.activities ?? []);
-
-      const boqsRes = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json());
-      const boqs: { id: string; version: number; status: string }[] = boqsRes.boqs ?? [];
-      if (boqs.length > 0) {
-        const current = boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boq = await fetch(`/api/scope/${current.id}`).then((r) => r.json());
-        setLineItems(boq.lineItems ?? []);
-      }
     } finally {
       setLoading(false);
     }
@@ -43,12 +38,11 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
   useEffect(() => { load(); }, [load]);
 
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressListClient entries={entries} activityNameById={activityNameById} boqLineDescriptionById={boqLineDescriptionById} loading={loading} />
+        <WorkProgressListClient entries={entries} activityNameById={activityNameById} loading={loading} />
       </div>
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         <WorkProgressFormClient projectId={projectId} onLogged={load} />

@@ -11,12 +11,11 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
-import WorkProgressListClient from "./WorkProgressListClient";
+import WorkProgressListClient, { type EntryBoqLine } from "./WorkProgressListClient";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
+type Entry = { id: string; activityId: string; boqLineItemId: string | null; boqLine?: EntryBoqLine | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
 type Activity = { id: string; name: string; categoryId: string | null };
 type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
-type LineItem = { id: string; itemCode: string | null; description: string };
 
 export default function WorkProgressAnalyticalClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -26,7 +25,6 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
   const [entries, setEntries] = useState<Entry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,13 +39,11 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       setActivities(activitiesRes.activities ?? []);
       setCategories(catRes.categories ?? []);
 
-      const boqsRes = await fetch(`/api/scope?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ boqs: [] }));
-      const boqs: { id: string; version: number; status: string }[] = boqsRes.boqs ?? [];
-      if (boqs.length > 0) {
-        const current = boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-        const boq = await fetch(`/api/scope/${current.id}`).then((r) => r.json());
-        setLineItems(boq.lineItems ?? []);
-      }
+      // R67 lane D22 (item D-64): the two extra round trips that used to sit
+      // here -- every BOQ, then the whole current one -- existed only to turn
+      // each entry's boq_line_item_id into words, and resolved nothing for an
+      // entry recorded against a different revision. VERIDIAN joins the line
+      // onto the entry now.
       setLoading(false);
     }
     load();
@@ -55,7 +51,6 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
@@ -95,7 +90,6 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
         <WorkProgressListClient
           entries={filteredEntries}
           activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
           loading={loading}
         />
       }

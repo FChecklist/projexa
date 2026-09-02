@@ -16,9 +16,17 @@
 // Photo: uses the FILE control (new in this seq) + the now-exported
 // uploadQueuedPhoto() from the offline queue -- see that function's own
 // updated comment for the real online-path gap this closes.
+//
+// R67 lane D22 (item D-64, rec R-230): the BOQ line field is no longer a flat
+// native <select> of every line in the BOQ, labelled by description alone, in
+// insertion order. It is a searchable picker over /api/scope/lines showing
+// code, description, unit and remaining quantity, with parent lines disabled
+// and the reason said out loud. See the note beside it for why this is the BOQ
+// line field and not the Activity one.
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FormScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import BoqLinePicker from "@/components/BoqLinePicker";
 import { createClient } from "@/lib/supabase/client";
 import {
   enqueueWorkProgressEntry,
@@ -29,7 +37,6 @@ import {
 } from "@/lib/offline/work-progress-queue";
 
 type Activity = { id: string; name: string; unit: string | null };
-type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
 type Boq = { id: string; version: number; status: string; title: string };
 
 const ENTRY_BASIS_OPTIONS = [
@@ -43,7 +50,6 @@ function todayIso() {
 
 export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
   // currently selected. Before this, the form resolved exactly ONE "current"
   // BOQ and offered no way to reach any other.
@@ -113,21 +119,11 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       .catch(() => { /* optional context -- a missing BOQ link is not a form-blocking error */ });
   }, [projectId]);
 
-  // Loads the selected BOQ's line items. Split out of the effect above so
-  // changing the BOQ re-populates the picker, which is the whole point of the
-  // selector. Org and project scoping are unchanged: this only ever fetches a
-  // BOQ id that /api/scope?projectId= already returned for this project, and
-  // that route is org-scoped server-side -- so widening the CHOICE here does
-  // not widen ACCESS.
-  useEffect(() => {
-    if (!selectedBoqId) return;
-    let cancelled = false;
-    fetch(`/api/scope/${selectedBoqId}`)
-      .then((r) => r.json())
-      .then((boq) => { if (!cancelled) setLineItems(boq.lineItems ?? []); })
-      .catch(() => { if (!cancelled) setLineItems([]); });
-    return () => { cancelled = true; };
-  }, [selectedBoqId]);
+  // R67 D-64: the whole selected BOQ used to be fetched here just to populate a
+  // native <select> of its lines. BoqLinePicker asks /api/scope/lines for the
+  // handful of lines that match what was typed instead, so a 900-line BOQ is
+  // no longer downloaded to render ten options -- and the same lookup now
+  // answers the form, the chat's record step and the reports.
 
   const columns: ScreenColumn[] = [
     { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },
@@ -142,7 +138,10 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
             .map((b) => ({ value: b.id, label: `${b.title} (v${b.version}, ${b.status})` })),
         } as ScreenColumn]
       : []),
-    { label: "BOQ line item", field: "boqLineItemId", control: "SELECT", type: "text", required: false, fieldStatus: "OPTIONAL", options: lineItems.map((l) => ({ value: l.id, label: l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description })) },
+    // R67 D-64: the BOQ line is chosen in the searchable picker rendered above
+    // this section, not by a SELECT column here -- the kit's FieldRenderer has
+    // no combobox control and forking it for one field would be a far larger
+    // change than the item asks for.
     { label: "Line item description", field: "description", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
     { label: "Unit", field: "unit", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
     { label: "Rate", field: "rate", control: "DERIVED", type: "number", fieldStatus: "OPTIONAL" },
@@ -161,11 +160,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
       // place would post progress against a line the user can no longer see.
       setSelectedBoqId(value as string);
       setValues((v) => ({ ...v, boqId: value, boqLineItemId: undefined, description: null, unit: null, rate: null }));
-      return;
-    }
-    if (field === "boqLineItemId") {
-      const line = lineItems.find((l) => l.id === value);
-      setValues((v) => ({ ...v, boqLineItemId: value, description: line?.description ?? null, unit: line?.unit ?? null, rate: line?.rate ?? null }));
       return;
     }
     setValues((v) => ({ ...v, [field]: value }));
@@ -275,6 +269,34 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
         </div>
       ) : undefined}
     >
+      {/* R67 D-64. WHY THIS IS THE BOQ LINE FIELD AND NOT "Activity": the item
+          names the Daily Entry's Activity select, but the endpoint it specifies
+          (/api/scope/lines) returns BOQ lines, and "parent lines disabled" is a
+          BOQ-line property -- construction_activities has no hierarchy. In this
+          schema activity_id is a separate NOT NULL FK to
+          construction_activities, so replacing the Activity control with a
+          BOQ-line picker would make every submission fail. The searchable
+          picker is therefore on the BOQ line field, which is the control the
+          item actually describes; the Activity select is unchanged. */}
+      <div className="space-y-1.5 px-4 pt-3">
+        <span className="block text-[12.5px] text-ct-muted">BOQ line item</span>
+        <BoqLinePicker
+          projectId={projectId}
+          boqId={selectedBoqId}
+          value={(values.boqLineItemId as string) ?? null}
+          onChange={(lineId, line) =>
+            setValues((v) => ({
+              ...v,
+              boqLineItemId: lineId ?? undefined,
+              // The derived fields follow the chosen line, exactly as they did
+              // when this was a SELECT -- inherited, never retyped.
+              description: line?.description ?? null,
+              unit: line?.unit ?? null,
+              rate: line?.rate ?? null,
+            }))
+          }
+        />
+      </div>
       <FormSection title="Progress entry" columns={columns} values={values} mode="edit" onFieldChange={handleFieldChange} />
     </FormScreen>
   );
