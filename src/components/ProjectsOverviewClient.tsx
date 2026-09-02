@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageHeading } from "@/components/PageHeading";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -82,10 +81,13 @@ export default function ProjectsOverviewClient({
           ) : bars.length === 0 ? (
             <div className="space-y-3 py-8 text-center">
               <p className="text-sm text-px-muted">{label(columns, "emptyState", "No active projects yet.")}</p>
-              {/* The real dialog, not a link to the page that has it -- R46S11_02
-                  recorded /dashboard offering a Create Project button here and
-                  this screen offering nothing. */}
-              <div className="flex justify-center"><CreateProjectDialog /></div>
+              {/* R46S11_02 recorded /dashboard offering a Create Project
+                  button here and this screen offering nothing. R67 D-01: the
+                  dialog it used to open is gone -- creating a project is a
+                  real route now, so this is a link to it. */}
+              <div className="flex justify-center">
+                <Button size="sm" asChild><Link href="/projects/new">+ New Project</Link></Button>
+              </div>
             </div>
           ) : (
             // Real screen navigation (2026-08-30): cross-linking fix (module

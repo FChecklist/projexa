@@ -1,10 +1,16 @@
+"use client";
+
+// R67 D-01: this view became a client component when the Projects table's
+// rows became real, clickable rows (a server component cannot carry an
+// onClick). Every prop it receives is still plain JSON resolved server-side
+// in dashboard/page.tsx -- no data fetching moved into the browser.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
@@ -119,6 +125,7 @@ export default function DashboardHomeView({
   errorMessage: string | null;
   registryColumns?: RegistryColumn[] | null;
 }) {
+  const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
   const currencySet = hasCurrency({ currency: orgCurrency(currencies) });
   const unitSuffix = currencyUnitSuffix({ currency: orgCurrency(currencies) }) ?? "";
@@ -167,8 +174,14 @@ export default function DashboardHomeView({
           </Card>
         )}
 
+        {/* R67 D-01 / correction C-01: was <CreateProjectDialog />, the one
+            [role=dialog] left in PROJEXA. It is now a real route, so this is
+            a plain link in the right-pane header position -- the same "+ New"
+            the framed list screens carry. */}
         <div className="flex justify-end">
-          <CreateProjectDialog />
+          <Button size="sm" asChild>
+            <Link href="/projects/new">+ New</Link>
+          </Button>
         </div>
 
         {data && (
@@ -234,10 +247,36 @@ export default function DashboardHomeView({
                     </TableHeader>
                     <TableBody>
                       {data.projects.map((p) => (
-                        <TableRow key={p.id}>
+                        // R67 D-01: the WHOLE row opens the project, not just
+                        // the six characters of its name -- a row that
+                        // navigates must advertise it (cursor) and be
+                        // reachable from the keyboard (Enter), which a bare
+                        // <tr> is not. The inner name Link stays so
+                        // middle-click/ctrl-click still opens a tab, and stops
+                        // the click propagating so the row handler does not
+                        // fire a second navigation on top of it.
+                        <TableRow
+                          key={p.id}
+                          tabIndex={0}
+                          aria-label={`Open ${p.name}`}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/dashboard/project?projectId=${p.id}`)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              router.push(`/dashboard/project?projectId=${p.id}`);
+                            }
+                          }}
+                        >
                           {/* R42 seq24: the real per-project DASHBOARD.PROJECT screen this org table had no link to before -- was a dead end otherwise. */}
                           <TableCell className="font-medium">
-                            <Link href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink hover:underline">{p.name}</Link>
+                            <Link
+                              href={`/dashboard/project?projectId=${p.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-px-ink hover:underline"
+                            >
+                              {p.name}
+                            </Link>
                           </TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>

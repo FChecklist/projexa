@@ -20,7 +20,8 @@ export async function GET() {
   }
 }
 
-// Backs CreateProjectDialog -- the one entity in PROJEXA's full CRUD
+// Backs /projects/new (ProjectCreateClient.tsx, which replaced
+// CreateProjectDialog in R67 D-01) -- the one entity in PROJEXA's full CRUD
 // surface that previously had no create path at all (2026-07-18
 // production-readiness pass).
 export async function POST(request: NextRequest) {

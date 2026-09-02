@@ -232,6 +232,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01: reached from the home's "+ New" and from /dashboard/overview's
+  // empty state -- the create screen that replaced CreateProjectDialog. Same
+  // class as every other .../new above: a create screen opened from its own
+  // parent screen, never a standalone sidebar item.
+  "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",
   "/purchase-orders/new",
