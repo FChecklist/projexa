@@ -313,28 +313,33 @@ export default function WorkProgressReportClient({
     async (options: { boqId?: string; from?: string; to?: string } = {}) => {
       const rangeFrom = options.from ?? from;
       const rangeTo = options.to ?? to;
-      const boqId = options.boqId ?? selectedBoqId;
+      let boqId = options.boqId ?? selectedBoqId;
       setLoading(true);
       setReportError(null);
       try {
-        const params = new URLSearchParams({ projectId, from: rangeFrom, to: rangeTo });
-        if (boqId) params.set("boqId", boqId);
-        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error);
-        setReport(data);
-        if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
-        // Honour a ?boqVersion= from the URL once, now that the version->id
-        // mapping is known. Cleared first, so this can never loop.
-        const wanted = wantedBoqVersion.current;
-        wantedBoqVersion.current = null;
-        if (wanted !== null) {
+        // At most two passes, and the second only when the URL named a BOQ
+        // version the server's own auto-pick did not land on. A bounded loop
+        // rather than a recursive call: a self-referencing useCallback cannot
+        // see its own latest value, which is exactly the stale-closure class
+        // this repo's lint rules refuse.
+        for (let pass = 0; pass < 2; pass++) {
+          const params = new URLSearchParams({ projectId, from: rangeFrom, to: rangeTo });
+          if (boqId) params.set("boqId", boqId);
+          const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error);
+          setReport(data);
+          if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+
+          // Honour a ?boqVersion= from the URL once, now that the version->id
+          // mapping is known. Cleared before it is used, so it can never loop.
+          const wanted = wantedBoqVersion.current;
+          wantedBoqVersion.current = null;
+          if (wanted === null) break;
           const match = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.version === wanted);
-          if (match && match.id !== data.boqId) {
-            setSelectedBoqId(match.id);
-            await runReport({ boqId: match.id, from: rangeFrom, to: rangeTo });
-            return;
-          }
+          if (!match || match.id === data.boqId) break;
+          setSelectedBoqId(match.id);
+          boqId = match.id;
         }
       } catch (err) {
         const message = err instanceof Error && err.message ? err.message : "Couldn't generate the report";
@@ -345,9 +350,6 @@ export default function WorkProgressReportClient({
         setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- self-recursive by
-    // design for the one-shot boqVersion resolution above; the recursive call
-    // passes every value it needs explicitly.
     [projectId, from, to, selectedBoqId]
   );
 
