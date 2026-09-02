@@ -52,18 +52,24 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
         {project && (
-          // R42 seq24: "variance" tab added -- DASHBOARD.PROJECT's own
-          // "Budget vs Actual" KPI destination (?tab=variance from
-          // DashboardProjectClient). The BOQ tab (ScopeClient) stays the
-          // CUSTOM weighted-tree screen for editing/hierarchy; variance is
-          // a different, flat "which line is worst" question.
-          <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+          // R42 seq24: a second tab -- DASHBOARD.PROJECT's own "Budget vs
+          // Actual" KPI destination. The BOQ tab (ScopeClient) stays the
+          // CUSTOM weighted-tree screen for editing/hierarchy; this one is
+          // the money view of the same lines.
+          //
+          // R67 lane D22 (item D-54, rec R-183): renamed from "Cost Variance"
+          // to "Budget" -- it now prints Sumeet's full budget sheet and is
+          // editable in place, not a read-only variance list. ?tab=variance is
+          // still honoured because links to it are already out there (the
+          // dashboard KPI tile, bookmarks, chat chains); new links use
+          // ?tab=budget.
+          <Tabs defaultValue={tab === "budget" || tab === "variance" ? "budget" : "boq"} className="space-y-4">
             <TabsList>
               <TabsTrigger value="boq">BOQ</TabsTrigger>
-              <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+              <TabsTrigger value="budget">Budget</TabsTrigger>
             </TabsList>
             <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
-            <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
+            <TabsContent value="budget" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
       </div>

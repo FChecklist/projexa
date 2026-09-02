@@ -26,15 +26,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
-import { Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { CellFeedback, useLineItemSaver, type BudgetFieldKey } from "@/components/BudgetLineCells";
 import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { withMoney } from "@/lib/money";
-import { groupBudgetLinesByCategory, isOverBudget, type BudgetLine } from "@/lib/budget-lines";
+import { applyLineItemPatch, groupBudgetLinesByCategory, isOverBudget, type BudgetLine } from "@/lib/budget-lines";
 import type { Vendor } from "@/lib/boq-helpers";
 
 type BudgetVarianceReport = {
@@ -48,27 +48,7 @@ type BudgetVarianceReport = {
   totalManpowerAmount: number;
 };
 
-type FieldKey = "budgetPercentage" | "vendorId" | "vendorAmount" | "materialAmount" | "manpowerAmount";
-type CellState = { status: "saving" | "saved" | "error"; message?: string };
-
-// The three real outcomes of an inline save, spelled out beside the cell that
-// caused them -- never a corner toast the eye has already left, and never a
-// silent revert. "Saved" clears itself after 3 s; an error stays until the
-// next attempt, because a message you have to act on must not time out.
-const SAVED_VISIBLE_MS = 3000;
-
-function CellFeedback({ state }: { state: CellState | undefined }) {
-  if (!state) return null;
-  if (state.status === "saving") return <span className="block text-[10px] text-px-muted">Saving…</span>;
-  if (state.status === "saved") {
-    return (
-      <span className="flex items-center justify-end gap-0.5 text-[10px] text-px-success">
-        <Check className="size-3" aria-hidden="true" />Saved
-      </span>
-    );
-  }
-  return <span role="alert" className="block text-[10px] text-px-error">{state.message}</span>;
-}
+type FieldKey = BudgetFieldKey;
 
 export default function BudgetProjectClient({ projectId, projectName }: { projectId: string; projectName: string }) {
   const router = useRouter();
@@ -76,7 +56,6 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cells, setCells] = useState<Record<string, CellState>>({});
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
@@ -100,62 +79,36 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
 
   useEffect(() => { load(); }, [load]);
 
-  // The PATCH the whole screen writes through. The edited value is applied to
-  // the row from the SERVER's response, never from the typed string, so the
-  // recomputed budget (amount x % / 100, computed server-side) is what the
-  // Budget column and the totals below then show -- the row and the Grand
-  // Total move together or not at all.
-  async function saveField(lineItemId: string, field: FieldKey, value: number | string | null) {
-    const key = `${lineItemId}:${field}`;
-    setCells((prev) => ({ ...prev, [key]: { status: "saving" } }));
-    try {
-      const res = await fetch(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't save");
-      setReport((prev) => {
-        if (!prev) return prev;
-        const lines = prev.lines.map((l) =>
-          l.lineItemId === lineItemId
-            ? {
-                ...l,
-                budgetPercentage: data.budgetPercentage !== undefined ? Number(data.budgetPercentage) : l.budgetPercentage,
-                budget: data.budgetPercentage !== undefined
-                  ? Math.round(l.amount * (Number(data.budgetPercentage) / 100) * 100) / 100
-                  : l.budget,
-                vendorId: data.vendorId !== undefined ? data.vendorId : l.vendorId,
-                vendorName: data.vendorId !== undefined
-                  ? (vendors.find((v) => v.id === data.vendorId)?.vendorName ?? null)
-                  : l.vendorName,
-                vendorAmount: data.vendorAmount !== undefined ? (data.vendorAmount === null ? null : Number(data.vendorAmount)) : l.vendorAmount,
-                materialAmount: data.materialAmount !== undefined ? (data.materialAmount === null ? null : Number(data.materialAmount)) : l.materialAmount,
-                manpowerAmount: data.manpowerAmount !== undefined ? (data.manpowerAmount === null ? null : Number(data.manpowerAmount)) : l.manpowerAmount,
-              }
-            : l
-        );
-        return { ...prev, lines };
-      });
-      setCells((prev) => ({ ...prev, [key]: { status: "saved" } }));
-      setTimeout(() => setCells((prev) => {
-        if (prev[key]?.status !== "saved") return prev;
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }), SAVED_VISIBLE_MS);
-    } catch (err) {
-      // The BACKEND's own sentence, at the field that caused it -- not a
-      // generic "Couldn't save". The previous value is still on the row
-      // because nothing was applied optimistically.
-      setCells((prev) => ({ ...prev, [key]: { status: "error", message: errorMessage(err, "Couldn't save") } }));
-    }
-  }
+  // The PATCH the whole screen writes through -- shared with Scope of Work /
+  // Budget (item D-54) so the two screens can never disagree about what an
+  // inline edit does. The edited value is applied to the row from the SERVER's
+  // response, never from the typed string, so the recomputed budget (amount x
+  // % / 100) is what the Budget column and the totals below then show: the row
+  // and the Grand Total move together or not at all.
+  const vendorNameById = useCallback(
+    (vendorId: string | null) => (vendorId ? (vendors.find((v) => v.id === vendorId)?.vendorName ?? null) : null),
+    [vendors]
+  );
+  const { cells, saveField } = useLineItemSaver(
+    useCallback((lineItemId: string, patched: Record<string, unknown>) => {
+      setReport((prev) => prev
+        ? { ...prev, lines: prev.lines.map((l) => (l.lineItemId === lineItemId ? applyLineItemPatch(l, patched, vendorNameById) : l)) }
+        : prev);
+    }, [vendorNameById])
+  );
 
   const lines = useMemo(() => report?.lines ?? [], [report]);
   const { groups, grandTotal } = useMemo(() => groupBudgetLinesByCategory(lines), [lines]);
   const linesOverBudget = useMemo(() => lines.filter(isOverBudget).length, [lines]);
+  // S.No is the row's position in the order the table actually prints, worked
+  // out ONCE from the grouped order. A counter incremented inside the row map
+  // would be a render-time mutation (react-hooks/immutability): correct on the
+  // first pass, quietly wrong the moment React re-renders part of the list.
+  const serialByLineItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    groups.flatMap((g) => g.lines).forEach((line, index) => map.set(line.lineItemId, index + 1));
+    return map;
+  }, [groups]);
   const bars: BarChartDatum[] = useMemo(
     () => groups.map((g) => ({ label: g.category, value: g.subtotal.budget, tone: g.subtotal.actual > g.subtotal.budget ? "late" : "done" })),
     [groups]
@@ -169,8 +122,6 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
       </div>
     );
   }
-
-  let serial = 0;
 
   return (
     <AnalyticalScreen
@@ -217,13 +168,12 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
               {groups.map((group) => (
                 <Fragment key={group.category}>
                   {group.lines.map((line) => {
-                    serial += 1;
                     const isChild = !!line.parentLineItemId;
                     const cell = (field: FieldKey) => cells[`${line.lineItemId}:${field}`];
                     const busy = (field: FieldKey) => cell(field)?.status === "saving";
                     return (
                       <TableRow key={line.lineItemId} id={`line-${line.lineItemId}`}>
-                        <TableCell className="text-right text-px-muted">{serial}</TableCell>
+                        <TableCell className="text-right text-px-muted">{serialByLineItemId.get(line.lineItemId)}</TableCell>
                         <TableCell className="text-px-muted">{line.category ?? "—"}</TableCell>
                         <TableCell className="font-mono text-[11px]">
                           {/* The BOQ object page stays the source of truth for

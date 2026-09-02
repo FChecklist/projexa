@@ -2,7 +2,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   UNCATEGORIZED_LABEL,
+  applyLineItemPatch,
   budgetCategoryOptions,
+  budgetVariance,
+  budgetVendorOptions,
+  grandTotalTies,
   groupBudgetLinesByCategory,
   isOverBudget,
   lineActual,
@@ -14,7 +18,7 @@ function line(over: Partial<BudgetLine> & Pick<BudgetLine, "lineItemId">): Budge
     code: null, description: "line", category: null, quantity: 1, unit: "no", rate: 0,
     parentLineItemId: null, amount: 0, budgetPercentage: 25, budget: 0,
     materialAmount: null, manpowerAmount: null, vendorId: null, vendorName: null,
-    vendorAmount: null, variance: null,
+    vendorAmount: null, variance: null, actual: null, revenue: null,
     ...over,
   };
 }
@@ -22,9 +26,9 @@ function line(over: Partial<BudgetLine> & Pick<BudgetLine, "lineItemId">): Budge
 // Two categories, one vendor amount, one material tag and one manpower tag --
 // the exact fixture shape item D-54's acceptance describes.
 const LINES: BudgetLine[] = [
-  line({ lineItemId: "l1", code: "R60SK", description: "R60 skiphop sub", category: "Civil", quantity: 10, unit: "m2", rate: 650, amount: 6500, budget: 1625, vendorId: "v1", vendorName: "Skiphop", vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200 }),
+  line({ lineItemId: "l1", code: "R60SK", description: "R60 skiphop sub", category: "Civil", quantity: 10, unit: "m2", rate: 650, amount: 6500, budget: 1625, vendorId: "v1", vendorName: "Skiphop", vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200, revenue: 2000 }),
   line({ lineItemId: "l2", code: "CIV-2", description: "Plaster", category: "Civil", amount: 500, budget: 125 }),
-  line({ lineItemId: "l3", code: "GYP-1", description: "Ceiling grid", category: "Gypsum", amount: 400, budget: 100, vendorId: "v2", vendorName: "Gyproc", vendorAmount: 90 }),
+  line({ lineItemId: "l3", code: "GYP-1", description: "Ceiling grid", category: "Gypsum", amount: 400, budget: 100, vendorId: "v2", vendorName: "Gyproc", vendorAmount: 90, revenue: 50 }),
   line({ lineItemId: "l4", code: "MISC", description: "Odd job", category: null, amount: 100, budget: 25 }),
   // A weighted sub-task of l1: 40% of l1's amount, listed but never added on top.
   line({ lineItemId: "l1a", code: "R60SK.1", description: "Frame", category: "Civil", amount: 2600, budget: 650, parentLineItemId: "l1" }),
@@ -125,7 +129,86 @@ describe("groupBudgetLinesByCategory", () => {
   test("no lines at all is an empty grouping with zero totals, never NaN", () => {
     const { groups, grandTotal } = groupBudgetLinesByCategory([]);
     expect(groups).toEqual([]);
-    expect(grandTotal).toEqual({ amount: 0, budget: 0, vendorAmount: 0, materialAmount: 0, manpowerAmount: 0, actual: 0 });
+    expect(grandTotal).toEqual({ amount: 0, budget: 0, vendorAmount: 0, materialAmount: 0, manpowerAmount: 0, actual: 0, revenue: 0 });
+  });
+
+  // R67 lane D22 (item D-54): Revenue joins the same subtotal arithmetic.
+  test("revenue subtotals per category and ties to the Grand Total", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory(LINES);
+    expect(groups.map((g) => g.subtotal.revenue)).toEqual([2000, 50, 0]);
+    expect(groups.reduce((s, g) => s + g.subtotal.revenue, 0)).toBe(grandTotal.revenue);
+    expect(grandTotal.revenue).toBe(2050);
+  });
+});
+
+// R67 lane D22 (item D-54).
+describe("budgetVariance", () => {
+  test("Budget minus Actual -- negative means the line is over", () => {
+    expect(budgetVariance(line({ lineItemId: "x", budget: 1625, vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200 }))).toBe(-575);
+  });
+
+  test("under budget is positive", () => {
+    expect(budgetVariance(line({ lineItemId: "x", budget: 1625, vendorAmount: 1000 }))).toBe(625);
+  });
+
+  test("a line nobody has costed has no variance at all, not a whole-budget saving", () => {
+    expect(budgetVariance(line({ lineItemId: "x", budget: 1625 }))).toBeNull();
+  });
+});
+
+describe("budgetVendorOptions", () => {
+  test("offers only vendors actually named on a line of this BOQ, in first-appearance order", () => {
+    expect(budgetVendorOptions(LINES)).toEqual([
+      { id: "v1", name: "Skiphop" },
+      { id: "v2", name: "Gyproc" },
+    ]);
+  });
+
+  test("a BOQ with no vendors offers none, rather than an empty-labelled row", () => {
+    expect(budgetVendorOptions([line({ lineItemId: "x" })])).toEqual([]);
+  });
+});
+
+describe("grandTotalTies", () => {
+  test("a sub-cent difference between the two independent totals is arithmetic, not a disagreement", () => {
+    expect(grandTotalTies(7500, 7500.004)).toBe(true);
+  });
+  test("a real disagreement does not tie", () => {
+    expect(grandTotalTies(7500, 7600)).toBe(false);
+  });
+});
+
+describe("applyLineItemPatch", () => {
+  const vendorName = (id: string | null) => (id === "v9" ? "New Vendor" : null);
+
+  test("a new Budget % recomputes Budget from Amount, not from the typed string", () => {
+    const patched = applyLineItemPatch(line({ lineItemId: "l1", amount: 6500, budgetPercentage: 25, budget: 1625 }), { budgetPercentage: "30" }, vendorName);
+    expect(patched.budgetPercentage).toBe(30);
+    expect(patched.budget).toBe(1950);
+  });
+
+  test("a new vendor id brings its name with it, so the cell never shows a raw id", () => {
+    const patched = applyLineItemPatch(line({ lineItemId: "l1" }), { vendorId: "v9" }, vendorName);
+    expect(patched.vendorId).toBe("v9");
+    expect(patched.vendorName).toBe("New Vendor");
+  });
+
+  test("editing Material moves Actual with it -- the two columns can never disagree", () => {
+    const before = line({ lineItemId: "l1", vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200, actual: 2200 });
+    expect(applyLineItemPatch(before, { materialAmount: "500" }, vendorName).actual).toBe(2400);
+  });
+
+  test("clearing the last costed field returns Actual to null, never to 0", () => {
+    const before = line({ lineItemId: "l1", materialAmount: 300, actual: 300 });
+    expect(applyLineItemPatch(before, { materialAmount: null }, vendorName).actual).toBeNull();
+  });
+
+  test("fields the server did not answer with are left exactly as they were", () => {
+    const before = line({ lineItemId: "l1", amount: 6500, budget: 1625, vendorAmount: 1700, revenue: 2000 });
+    const patched = applyLineItemPatch(before, { materialAmount: "100" }, vendorName);
+    expect(patched.budget).toBe(1625);
+    expect(patched.vendorAmount).toBe(1700);
+    expect(patched.revenue).toBe(2000);
   });
 });
 

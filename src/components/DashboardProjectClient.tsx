@@ -192,8 +192,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             }}
             baseline={`budget ${money(dashboard.budget, currency)}`}
             visual={<BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
-            // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
-            onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
+            // Budget vs actual -> the Scope of Work / Budget tab, the money
+            // view of the same BOQ lines (DASHBOARD.PROJECT's own row). R67
+            // lane D22 (item D-54) renamed that tab from "Cost Variance" to
+            // "Budget"; ?tab=variance still resolves there for old links.
+            onClick={() => router.push(`/scope?projectId=${projectId}&tab=budget`)}
           />
           <KpiCard
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
