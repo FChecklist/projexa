@@ -52,6 +52,7 @@ import AccountMenu from "@/components/shell/AccountMenu";
 // one click at a time. Per D-09 the component is forked into projexa rather
 // than released in the kit; everything else here still comes from the kit.
 import { TopRail } from "@/components/shell/TopRail";
+import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
 import { describeReadError, taskRowDetail } from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
@@ -201,6 +202,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [segments, setSegments] = useState<Chain["segments"]>([]);
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
@@ -318,7 +320,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           return;
         }
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+        if (live && Array.isArray(list)) {
+          setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+          // R67 D-66: "the list is empty" and "the list has not answered" are
+          // different facts, and the chooser card says different things for
+          // each. Only a 2xx sets this.
+          setProjectsLoaded(true);
+        }
       } catch (err) {
         if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
       }
@@ -534,6 +542,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   );
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
+
+  // R67 D-66 -- ONE ProjectContext. The rail, the breadcrumb, the composer
+  // root and every page read the project from here and from nothing else, so
+  // the disagreement R-253 recorded ("All projects" in the rail over
+  // "Dashboard / Cedar Heights Villa" in the breadcrumb) has no second source
+  // left to come from. `mode` is derived inside the provider, never stored.
+  //
+  // openSwitcher is a monotonic counter rather than a boolean: a breadcrumb
+  // clicked twice must open the rail's list twice, and a boolean that is
+  // already true is a no-op the second time.
+  const [switcherOpenSignal, setSwitcherOpenSignal] = useState(0);
+  const openSwitcher = useCallback(() => setSwitcherOpenSignal((n) => n + 1), []);
+  const projectScope = useMemo(
+    () => ({ projects, project, projectId, projectsLoaded, selectProject, openSwitcher }),
+    [projects, project, projectId, projectsLoaded, selectProject, openSwitcher]
+  );
 
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
   // cutChainFrom() protection meaningful: it refuses to cut into a "root"
@@ -751,6 +775,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // new id instead of the rail and the page disagreeing.
           projects={projects}
           onSelectProject={selectProject}
+          // R67 D-66: the breadcrumb's project name and the "pick a project"
+          // chooser card both open THIS list rather than each growing a
+          // switcher of their own.
+          openSignal={switcherOpenSignal}
           search={<SearchTrigger />}
           alerts={<NotificationBell />}
           account={<AccountMenu email={info?.email} />}
@@ -889,7 +917,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {children}
+      {/* R67 D-66: everything under the shell -- every module page, every
+          breadcrumb, every chooser card -- reads the project from here.
+          Nothing below this line derives its own. */}
+      <ProjectScopeProvider value={projectScope}>{children}</ProjectScopeProvider>
     </AppShell>
   );
 }

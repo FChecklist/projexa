@@ -46,6 +46,14 @@ export type TopRailProps = {
   /** null means "All projects". */
   onSelectProject: (project: TopRailProject | null) => void;
   onSwitchOrganisation?: () => void;
+  /**
+   * R67 D-66: a monotonic counter the shell increments when something ELSE
+   * asks for the switcher -- the breadcrumb's project name, the "pick a
+   * project" chooser card. A counter rather than a boolean because a second
+   * request has to open the list a second time, and a boolean that is already
+   * true does nothing.
+   */
+  openSignal?: number;
   search?: ReactNode;
   alerts?: ReactNode;
   account?: ReactNode;
@@ -61,12 +69,22 @@ export function TopRail({
   projects,
   onSelectProject,
   onSwitchOrganisation,
+  openSignal,
   search,
   alerts,
   account,
 }: TopRailProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Opened from elsewhere. The first render is skipped so the list is not
+  // hanging open on every page load.
+  const seenSignal = useRef(openSignal);
+  useEffect(() => {
+    if (openSignal === undefined || openSignal === seenSignal.current) return;
+    seenSignal.current = openSignal;
+    setOpen(true);
+  }, [openSignal]);
 
   // Close on Escape and on a click anywhere else. Without both, the list
   // covers the screen the user was trying to get back to -- which is the
