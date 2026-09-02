@@ -9,12 +9,14 @@
 // runtime-dependent flake.
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_ORG_DATE_FORMAT,
   DEFAULT_ORG_LOCALE,
   DEFAULT_ORG_TIME_ZONE,
   formatDate,
   formatDateOrg,
   formatDateTime,
   formatDateTimeOrg,
+  formatOrgDate,
   formatTime,
 } from "./format-date";
 
@@ -94,6 +96,42 @@ describe("formatDateTimeOrg", () => {
     const iso = "2026-01-01T12:00:00.000Z";
     expect(formatDateTimeOrg(new Date(iso))).toBe(formatDateTimeOrg(iso));
     expect(formatDateTimeOrg(new Date(iso).getTime())).toBe(formatDateTimeOrg(iso));
+  });
+});
+
+// R67 D-46's own acceptance criterion, plus the guarantee it attaches to it:
+// "the existing en-US assertions still hold" -- which they do, above,
+// untouched. Two rules coexist here: the pinned pair keeps every render
+// hydration-safe, and the org pattern is what a UAE or Indian org actually
+// reads.
+describe("formatOrgDate", () => {
+  test("formatOrgDate('2026-10-15', 'dd-MM-yyyy') === '15-10-2026'", () => {
+    expect(formatOrgDate("2026-10-15", "dd-MM-yyyy")).toBe("15-10-2026");
+  });
+
+  test("the default pattern is the org's, so a caller with no setting yet still gets the right form", () => {
+    expect(DEFAULT_ORG_DATE_FORMAT).toBe("dd-MM-yyyy");
+    expect(formatOrgDate("2026-10-15")).toBe("15-10-2026");
+  });
+
+  test("the other supported patterns render the same day", () => {
+    expect(formatOrgDate("2026-10-15", "dd/MM/yyyy")).toBe("15/10/2026");
+    expect(formatOrgDate("2026-10-15", "yyyy-MM-dd")).toBe("2026-10-15");
+    expect(formatOrgDate("2026-10-15", "MM/dd/yyyy")).toBe("10/15/2026");
+  });
+
+  test("an unrecognised pattern falls back to the default -- it never prints the pattern itself", () => {
+    expect(formatOrgDate("2026-10-15", "the fifteenth")).toBe("15-10-2026");
+  });
+
+  test("a timestamp resolves to the calendar day in the ORG's zone, so a date-only value and a stored instant agree", () => {
+    expect(formatOrgDate("2026-10-15T21:00:00.000Z", "dd-MM-yyyy")).toBe("16-10-2026");
+    expect(formatOrgDate("2026-10-15T21:00:00.000Z", "dd-MM-yyyy", "UTC")).toBe("15-10-2026");
+  });
+
+  test("an absent or unparseable value renders an en-dash", () => {
+    expect(formatOrgDate(null)).toBe("—");
+    expect(formatOrgDate("not a date")).toBe("—");
   });
 });
 

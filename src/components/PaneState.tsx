@@ -58,6 +58,75 @@ function useElapsed(startedAt: number | null | undefined, active: boolean): numb
   return elapsed;
 }
 
+/**
+ * R67 D-46: the waiting caption on its own, for a pane whose skeleton is not
+ * a table -- a kanban board, a card list, a Gantt timeline. Same timeline,
+ * same words, same Retry threshold as the table version; only the shape
+ * underneath differs, which is exactly the part a shared component should
+ * NOT be guessing at.
+ */
+export function PaneWaitingCaption({
+  startedAt,
+  entity,
+  projectName,
+  onRetry,
+}: {
+  startedAt?: number | null;
+  entity: string;
+  projectName?: string | null;
+  onRetry?: () => void;
+}) {
+  const elapsed = useElapsed(startedAt, true);
+  const caption = loadingCaption(elapsed, entity, projectName);
+  if (!caption.primary && !caption.secondary) return null;
+  return (
+    <div role="status" className="px-1 text-[12px] text-px-muted">
+      {caption.primary && <p>{caption.primary}</p>}
+      {caption.secondary && <p>{caption.secondary}</p>}
+      {caption.showRetry && onRetry && (
+        <Button size="sm" variant="outline" className="mt-2" onClick={onRetry}>
+          <RefreshCw className="mr-2 size-4" aria-hidden />
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The failed-pane card on its own, for the same reason. One sentence from
+ * the one dictionary, the backend's safe words underneath, Retry only where
+ * retrying could help.
+ */
+export function PaneErrorCard({
+  entity,
+  error,
+  onRetry,
+}: {
+  entity: string;
+  error: { status?: number | null; message?: string | null } | null | undefined;
+  onRetry?: () => void;
+}) {
+  const described = paneError(entity, error ?? {});
+  return (
+    <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-4 text-sm">
+      <p className="flex items-start gap-2 font-medium text-px-error">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+        {described.sentence}
+      </p>
+      {described.detail && <p className="mt-1 pl-6 text-px-error/90">{described.detail}</p>}
+      {described.retryable && onRetry && (
+        <div className="mt-3 pl-6">
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RefreshCw className="mr-2 size-4" aria-hidden />
+            Retry
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export type PaneStateProps = {
   status: PaneStatus;
   /** The plural noun the user would use: "permits", "drawings", "your tasks". */

@@ -115,6 +115,48 @@ export function formatDateOrg(
   return new Intl.DateTimeFormat(locale, { timeZone, day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
+// ─── R67 D-46: the ORG's date PATTERN ────────────────────────────────────
+//
+// formatDateOrg above takes a locale; this takes a pattern, because that is
+// what the org-level setting actually is ("dd-MM-yyyy" for the UAE and
+// Indian orgs this product serves). The Schedule module used two date forms
+// on one screen -- the Gantt grid's en-US strings beside date inputs the
+// browser renders in its own locale -- and neither was the org's.
+//
+// Only three tokens are supported, and an unrecognised pattern falls back to
+// the default rather than printing the pattern itself. Inventing a general
+// date-pattern engine here would be a second Intl, badly.
+export const DEFAULT_ORG_DATE_FORMAT = "dd-MM-yyyy";
+
+const SUPPORTED_ORG_DATE_FORMATS = new Set(["dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy"]);
+
+/**
+ * e.g. formatOrgDate("2026-10-15", "dd-MM-yyyy") === "15-10-2026".
+ *
+ * The calendar day is resolved in the org's time zone, so a stored timestamp
+ * and a date-only value agree about which day they are on.
+ */
+export function formatOrgDate(
+  value: Date | string | number | null | undefined,
+  dateFormat: string = DEFAULT_ORG_DATE_FORMAT,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return "—";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const pattern = SUPPORTED_ORG_DATE_FORMATS.has(dateFormat) ? dateFormat : DEFAULT_ORG_DATE_FORMAT;
+  // One pass, so a substituted value can never be re-matched by a later token.
+  return pattern.replace(/yyyy|MM|dd/g, (token) =>
+    token === "yyyy" ? get("year") : token === "MM" ? get("month") : get("day")
+  );
+}
+
 function toValidDate(value: Date | string | number | null | undefined): Date | null {
   if (value === null || value === undefined || value === "") return null;
   const date = new Date(value);

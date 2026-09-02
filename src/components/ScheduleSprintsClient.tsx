@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Sprint = {
@@ -29,20 +31,25 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
   const router = useRouter();
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sprintIssues, setSprintIssues] = useState<Record<string, SprintIssue[]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
       const res = await fetch(`/api/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load sprints");
-      setSprints(data.sprints ?? []);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setSprints(Array.isArray(data?.sprints) ? data.sprints : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sprints");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -84,13 +91,24 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     <Button onClick={() => router.push(`/schedule/sprints/new?projectId=${projectId}`)}><Plus className="size-4" /> New Sprint</Button>
   );
 
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
-  if (error) {
+  // R67 D-46: three phase cards in the real shape.
+  if (loading) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load sprints: {error}</CardContent>
-      </Card>
+      <div className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the phases" onRetry={() => void load()} />
+        {[0, 1, 2].map((i) => (
+          <Card key={i}>
+            <CardContent className="space-y-2 p-4">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-3 w-72" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     );
+  }
+  if (error) {
+    return <PaneErrorCard entity="the phases" error={error} onRetry={() => void load()} />;
   }
 
   return (

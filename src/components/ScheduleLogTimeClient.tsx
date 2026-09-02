@@ -5,7 +5,7 @@
 // from the Task Object Page's own inline "Log Time" action (ScheduleTaskObjectClient.tsx)
 // because this one's real job is picking WHICH task to log against, when
 // the user hasn't navigated to a specific task first.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -24,13 +24,26 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
   const [activityType, setActivityType] = useState("");
   const [comments, setComments] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // R67 D-46: THE DEFECT. The task fetch was swallowed --
+  // `.catch(() => { /* task dropdown is a convenience */ })` -- so when the
+  // activities read failed the dropdown was simply empty, Save stayed
+  // disabled, and its reason read "Task, hours, and date are required": the
+  // form blamed the user for a backend failure and gave them no way to fix
+  // it, because there was no task to pick.
+  const [tasksError, setTasksError] = useState(false);
 
-  useEffect(() => {
+  const loadTasks = useCallback(() => {
+    setTasksError(false);
     fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => res.json())
-      .then((data) => setTasks(data.tasks ?? []))
-      .catch(() => { /* task dropdown is a convenience */ });
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+        setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
+      })
+      .catch(() => setTasksError(true));
   }, [projectId]);
+
+  useEffect(() => { loadTasks(); }, [loadTasks]);
 
   async function logTime() {
     if (!issueId || !hours || !spentOn) {
@@ -63,17 +76,37 @@ export default function ScheduleLogTimeClient({ projectId }: { projectId: string
       onSave={logTime}
       onCancel={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
       onBack={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
-      saveDisabled={submitting || !issueId || !hours || !spentOn}
-      saveDisabledReason={submitting ? "Logging…" : !issueId || !hours || !spentOn ? "Task, hours, and date are required" : undefined}
+      saveDisabled={submitting || tasksError || !issueId || !hours || !spentOn}
+      // The reason names the REAL blocker. A backend failure is not a
+      // missing field, and telling the user it is one sends them looking for
+      // a field they cannot fill.
+      saveDisabledReason={
+        submitting
+          ? "Logging…"
+          : tasksError
+            ? "Activities could not be loaded"
+            : !issueId || !hours || !spentOn
+              ? "Task, hours, and date are required"
+              : undefined
+      }
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
           <Label>Task</Label>
-          <Select value={issueId} onValueChange={setIssueId}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
-            <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
-          </Select>
+          {tasksError ? (
+            <p role="alert" className="text-[12px] text-px-error">
+              Could not load this project&apos;s activities: the construction data service did not respond in time.{" "}
+              <button type="button" onClick={loadTasks} className="underline underline-offset-2">
+                Retry
+              </button>
+            </p>
+          ) : (
+            <Select value={issueId} onValueChange={setIssueId}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
+              <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
