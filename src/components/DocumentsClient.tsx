@@ -20,10 +20,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
 
 type Doc = {
   id: string;
@@ -49,6 +50,11 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Expiry", field: "expiryDate", type: "date", importance: "High" },
   { label: "Added", field: "createdAt", type: "date", importance: "High" },
 ];
+
+// R67 F-03: the same labels documents/page.tsx paints in its Suspense
+// fallback, so the header row on screen while loading is the header row that
+// stays there when the rows arrive -- no reflow, no second set of words.
+export const DOCUMENTS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
@@ -125,15 +131,27 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
           </Select>
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Upload Document" Dialog popup with a real create route. */}
-          <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}><Plus className="size-4" /> Upload</Button>
+          {/* R67 F-03: warm the create route's chunk on hover/focus so the
+              click itself is instant instead of starting the download. */}
+          <Button
+            size="sm"
+            onMouseEnter={() => router.prefetch(`/documents/upload?projectId=${projectId}`)}
+            onFocus={() => router.prefetch(`/documents/upload?projectId=${projectId}`)}
+            onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}
+          >
+            <Plus className="size-4" /> Upload
+          </Button>
         </div>
       </div>
 
+      {/* R67 F-03: a centred spinner told the reader nothing and made the page
+          reflow when rows landed. The real headers are on screen instead. */}
+      {loading ? (
+        <TableLoadingRows headers={columns.map((c) => c.label)} rows={3} caption="Loading documents..." />
+      ) : (
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : docs.length === 0 ? (
+          {docs.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
           ) : (
             <Table>
@@ -147,7 +165,12 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of nothing (no way to view/
                   // download an uploaded file again existed before this).
-                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/documents/${d.id}`)}>
+                  <TableRow
+                    key={d.id}
+                    className="cursor-pointer hover:bg-px-cloud/40"
+                    onMouseEnter={() => router.prefetch(`/documents/${d.id}`)}
+                    onClick={() => router.push(`/documents/${d.id}`)}
+                  >
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderDocumentCell(col.field, d)}</TableCell>
                     ))}
@@ -158,6 +181,7 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

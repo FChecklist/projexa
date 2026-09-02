@@ -31,10 +31,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, NotebookText, Plus } from "lucide-react";
+import { NotebookText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
 
 type Meeting = {
   id: string;
@@ -55,6 +56,11 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Date", field: "scheduledAt", type: "date", importance: "High" },
   { label: "Status", field: "status", type: "text", importance: "High" },
 ];
+
+// R67 F-03: the same labels moms/page.tsx paints in its Suspense fallback, so
+// the header row on screen while loading is the header row that stays there
+// when the rows arrive -- no reflow, no second set of words.
+export const MOMS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
 
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike PermitsListClient there's no generic
@@ -105,14 +111,25 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
         <p className="text-sm text-px-muted">Minutes of Meeting for this project — live notes, AI summary, PDF export.</p>
         {/* Real screen navigation (2026-08-30) -- replaces the old "New
             Meeting" Dialog popup with a real create route. */}
-        <Button size="sm" onClick={() => router.push(`/moms/new?projectId=${projectId}`)}><Plus className="size-4" /> New Meeting</Button>
+        {/* R67 F-03: warm the create route's chunk on hover/focus so the
+            click is instant instead of starting the download. */}
+        <Button
+          size="sm"
+          onMouseEnter={() => router.prefetch(`/moms/new?projectId=${projectId}`)}
+          onFocus={() => router.prefetch(`/moms/new?projectId=${projectId}`)}
+          onClick={() => router.push(`/moms/new?projectId=${projectId}`)}
+        >
+          <Plus className="size-4" /> New Meeting
+        </Button>
       </div>
 
+      {/* R67 F-03: the real column headers while loading, not a bare spinner. */}
+      {loading ? (
+        <TableLoadingRows headers={columns.map((c) => c.label)} rows={3} caption="Loading meetings..." />
+      ) : (
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : meetings.length === 0 ? (
+          {meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings recorded yet.</p>
           ) : (
             <Table>
@@ -126,7 +143,12 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
                     Object Page, where Minutes/PDF/WhatsApp/Publish/Action
                     Items now all live. */}
                 {meetings.map((m) => (
-                  <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/moms/${m.id}`)}>
+                  <TableRow
+                    key={m.id}
+                    className="cursor-pointer hover:bg-px-cloud/40"
+                    onMouseEnter={() => router.prefetch(`/moms/${m.id}`)}
+                    onClick={() => router.push(`/moms/${m.id}`)}
+                  >
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderMeetingCell(col.field, m)}</TableCell>
                     ))}
@@ -137,6 +159,7 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

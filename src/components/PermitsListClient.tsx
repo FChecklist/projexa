@@ -11,9 +11,12 @@
 // call errors -- kept, per r43_queue seq2's own instruction, until the
 // registry path is verified live, then removable in a follow-up PR once
 // every screen using this pattern has a seeded row.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
 
 type Permit = {
   id: string;
@@ -23,6 +26,10 @@ type Permit = {
   issueDate: string | null;
   endDate: string | null;
   daysToExpiry: number | null;
+  // R67 F-02: the register no longer mints a Supabase Storage signed URL per
+  // row. It says whether the permit has a file; the URL is minted on click,
+  // by the object screen the row already opens.
+  hasDocument: boolean;
 };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -38,6 +45,10 @@ const COLUMNS: ScreenColumn[] = [
   { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
   { label: "Days left", field: "daysToExpiry", type: "number", importance: "High" },
 ];
+
+// R67 F-02: the labels permits/page.tsx paints in its Suspense fallback, so
+// the header row on screen while loading is the header row that stays.
+export const PERMITS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
 
 function daysLeftTone(days: number | null): StatusTone {
   if (days === null) return "neutral";
@@ -58,17 +69,41 @@ export default function PermitsListClient({
   const router = useRouter();
   const [permits, setPermits] = useState<Permit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
-  useEffect(() => {
-    const params = new URLSearchParams({ projectId });
-    if (withinDays) params.set("withinDays", withinDays);
-    else params.set("all", "true");
-    fetch(`/api/permits?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => setPermits(data.permits ?? []))
-      .finally(() => setLoading(false));
+  // R67 F-02: this used to be a bare fetch().then().then() with no status
+  // check, so an error body parsed fine, `data.permits` came back undefined
+  // and `?? []` reported a FAILED request as "no permits yet" -- the exact
+  // R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01 defect fetchJson() exists to
+  // kill (see src/lib/fetch-json.ts). A failure now shows the backend's own
+  // words, with Retry.
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const params = new URLSearchParams({ projectId });
+      if (withinDays) params.set("withinDays", withinDays);
+      else params.set("all", "true");
+      const data = await fetchJson(`/api/permits?${params.toString()}`);
+      setPermits(data.permits ?? []);
+    } catch (err) {
+      setLoadError(errorMessage(err, "Couldn't load permits"));
+    } finally {
+      setLoading(false);
+    }
   }, [projectId, withinDays]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // R67 F-02: warm the create route's chunk so "+ New" opens instantly rather
+  // than starting the download on click. Deliberately on MOUNT, not on hover:
+  // the header button is the kit's ScreenFrame HeaderActionState, whose type
+  // is { label, onClick, disabledReason } with no hover hook, and D-09 rules
+  // out both editing @fchecklist/veridian-ui-kit in node_modules and forking
+  // ScreenFrame for something this small. One idle prefetch of a route the
+  // user is on the list page for is the honest trade.
+  useEffect(() => { router.prefetch(`/permits/new?projectId=${projectId}`); }, [router, projectId]);
 
   return (
     <ScreenFrame
@@ -84,14 +119,21 @@ export default function PermitsListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
+      {/* R67 F-02: the real column headers while loading, not the word
+          "Loading…" over an empty pane. */}
       {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
+        <TableLoadingRows headers={columns.map((c) => c.label)} rows={3} caption="Loading permits..." />
+      ) : loadError ? (
+        <DataLoadError messages={[loadError]} onRetry={load} />
       ) : (
         <ListScreen
           functionId="permits.list"
           columns={columns}
           rows={permits as unknown as Record<string, unknown>[]}
           getRowId={(row) => row.id as string}
+          // The permit's own document link is minted here, once, by the
+          // object screen -- see the register's DTO comment in
+          // compliance-tracker's v1/projexa/permits/route.ts.
           onRowClick={(row) => router.push(`/permits/${row.id}`)}
           emptyStateLabel="No permits yet for this project."
           renderCell={{

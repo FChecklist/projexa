@@ -1,52 +1,62 @@
+import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import MoMsClient, { type RegistryColumn } from "@/components/MoMsClient";
+import { resolveRegistryColumns } from "@/lib/screen-definitions";
+import { TableLoadingRows } from "@/components/TableLoadingRows";
+import MoMsClient, { MOMS_FALLBACK_COLUMN_LABELS, type RegistryColumn } from "@/components/MoMsClient";
 
-// R46 P8 seq129 (registry-model proof, same shape as R43 seq2's
-// resolvePermitsListColumns in permits/page.tsx, R46 P8 seq134's
-// resolveVariationsListColumns in change-orders/page.tsx, and R46 P8
-// seq128's resolveDocumentsListColumns in documents/page.tsx): resolved
-// server-side, same place organizationId/project already are, so
-// MoMsClient (a client component) never needs its own
-// Bearer-key-authenticated fetch. A missing or errored registry row is NOT
-// fatal -- MoMsClient falls back to its own hardcoded COLUMNS when this is
-// null.
-async function resolveMoMsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/moms.list", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[moms/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
-    return null;
-  }
-}
+// R67 F-03 (R-041/R-046/R-052/R-057). Measured TTFB 1983 ms for a three-column
+// meeting list, none of it the list: this page awaited resolveSelectedProject()
+// -- VERIDIAN's 1.4-4.0 s /dashboard aggregate -- and THEN the screen-
+// definitions lookup, serially, before any HTML was sent. See
+// documents/page.tsx's header for the full shape of the fix; this is the same
+// one. The only difference is the cache window: moms.list is a settled
+// registry row, so an hour, where documents.list takes ten minutes.
+const MOMS_COLUMNS_TTL_SECONDS = 3600;
 
 export default async function MoMsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
-  const registryColumns = await resolveMoMsListColumns(organizationId);
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Minutes of Meeting" />
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && <MoMsClient projectId={project.id} registryColumns={registryColumns} />}
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Minutes of Meeting" />
+      <Suspense
+        fallback={
+          <TableLoadingRows
+            headers={MOMS_FALLBACK_COLUMN_LABELS}
+            rows={3}
+            caption="Loading meetings..."
+            // 0, not 150: this only shows while a server component is still
+            // fetching, so there is nothing to debounce.
+            delayMs={0}
+          />
+        }
+      >
+        <MoMsSection projectId={projectId} />
+      </Suspense>
+    </div>
   );
+}
+
+async function MoMsSection({ projectId }: { projectId?: string }) {
+  const organizationId = await getServerOrganizationId();
+  // Parallel, not serial -- neither lookup depends on the other.
+  const [{ project, errorMessage }, registryColumns] = await Promise.all([
+    resolveSelectedProject(projectId, organizationId),
+    resolveRegistryColumns("moms.list", organizationId, MOMS_COLUMNS_TTL_SECONDS) as Promise<RegistryColumn[] | null>,
+  ]);
+
+  if (errorMessage) {
+    return (
+      <Card className="border-px-error-border bg-px-error-light">
+        <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
+      </Card>
+    );
+  }
+  if (!project) {
+    return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
+  }
+  return <MoMsClient projectId={project.id} registryColumns={registryColumns} />;
 }
