@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
-import { Loader2, Plus } from "lucide-react";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+import { Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // Priority 17 remaining gap (2026-07-15): erp_budgets.companyId has existed
 // since Wave 70 (createBudget already accepted it) -- this wires the UI
@@ -68,8 +69,10 @@ function renderBudgetCell(field: string, b: Budget) {
 export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
   const router = useRouter();
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [readError, setReadError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
   // Priority 17 remaining gap: companies list + list-level filter scope,
@@ -78,19 +81,26 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
 
   async function load(companyId: string | null = null) {
-    setLoading(true);
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setReadError(null);
     try {
       const qs = companyId ? `?companyId=${companyId}` : "";
       // Status before body: the old `await res.json()` + `?? []` rendered a
       // failing upstream as "No budgets found."
       const data = await fetchJson<{ projectBudgets?: Budget[] }>(`/api/project-budgets${qs}`);
       setBudgets(data.projectBudgets ?? []);
-      setLoadError(null);
+      setLoadedAt(new Date());
+      setStatus("ready");
     } catch (err) {
-      setLoadError(errorMessage(err, "Couldn't load budgets"));
-      setBudgets([]);
-    } finally {
-      setLoading(false);
+      // R67 D-65: the rows are NOT cleared. Blanking the table on a failed
+      // refresh throws away figures the user already had, and an empty table
+      // beside an error is easy to read as "the budgets are gone".
+      setReadError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
+      setStatus("error");
     }
   }
 
@@ -119,15 +129,26 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
             Budget" Dialog popup with a real create route. */}
         <Button className="shrink-0" onClick={() => router.push("/budgets/new")}><Plus className="size-4" /> New Budget</Button>
       </div>
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, budgets.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
-            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={() => load(scope.companyId)} /></div>
-          ) : budgets.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No budgets found.</p>
-          ) : (
+        <CardContent className="p-4">
+          <PaneState
+            status={status}
+            entity="budgets"
+            startedAt={startedAt}
+            error={readError}
+            rowCount={budgets.length}
+            skeletonColumns={columns.map((col) => col.label)}
+            emptyMessage="No budgets found."
+            emptyAction={
+              <Button size="sm" onClick={() => router.push("/budgets/new")}>
+                <Plus className="size-4" /> New Budget
+              </Button>
+            }
+            lastLoadedAt={loadedAt}
+            onRetry={() => load(scope.companyId)}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -147,7 +168,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
     </div>

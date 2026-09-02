@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, GitCompare, GitBranchPlus } from "lucide-react";
+import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -110,12 +110,26 @@ function formatVariation(amount: number): string {
 // to live in this file are gone, replaced by real routes. This List Report
 // only needs the list-row shape and the per-row variation figure.
 
-export default function ScopeClient({ projectId, listColumns }: { projectId: string; listColumns?: RegistryColumn[] | null }) {
+export default function ScopeClient({
+  projectId,
+  projectName,
+  listColumns,
+}: {
+  projectId: string;
+  projectName?: string | null;
+  listColumns?: RegistryColumn[] | null;
+}) {
   const router = useRouter();
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // R67 D-65: a boolean plus a message string could not express "the rows on
+  // screen are from an earlier read", which is the state this pane is in
+  // most often -- /scope is the slowest read in the product (the N+1
+  // transactions the repo map records).
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [readError, setReadError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   // Variation vs. immediate parent, per revision -- the "running total
   // variation value" the Owner asked for, fetched from VERIDIAN's compareBoq
@@ -128,8 +142,9 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
   async function load() {
-    setLoading(true);
-    setLoadError(null);
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setReadError(null);
     try {
       const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
         signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
@@ -147,19 +162,24 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
         })
       );
       setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
+      setLoadedAt(new Date());
+      setStatus("ready");
     } catch (err) {
       // A timed-out AbortSignal surfaces as a bare "TimeoutError"/"AbortError"
-      // with no useful .message -- errorMessage() would render something like
-      // "Couldn't load scope of work: signal timed out". Give the timeout case
-      // its own honest, actionable copy instead; every other failure keeps
-      // the real backend reason via errorMessage() (C19 ERROR_TRUTHFUL).
-      const msg = isTimeoutError(err)
-        ? "Couldn't load scope of work: the construction data service is taking too long to respond. Retry."
-        : errorMessage(err, "Couldn't load scope of work");
-      setLoadError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
+      // with no useful .message. The shared dictionary
+      // (src/lib/task-errors.ts) classifies that as UPSTREAM_TIMEOUT and
+      // writes the sentence, so the special case here is only about handing
+      // it words it can classify -- the copy itself is no longer this
+      // screen's to invent (C19 ERROR_TRUTHFUL, one vocabulary per D-65).
+      setReadError({
+        status: err instanceof ApiError ? err.status : null,
+        message: isTimeoutError(err)
+          ? "The construction data service timed out."
+          : err instanceof Error && err.message
+            ? err.message
+            : null,
+      });
+      setStatus("error");
     }
   }
 
@@ -173,15 +193,27 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
         <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
       </div>
 
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, boqs.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
-            <DataLoadError messages={[loadError]} onRetry={load} />
-          ) : boqs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
-          ) : (
+        <CardContent className="p-4">
+          <PaneState
+            status={status}
+            entity="the scope of work"
+            projectName={projectName}
+            startedAt={startedAt}
+            error={readError}
+            rowCount={boqs.length}
+            skeletonColumns={[...boqListColumns.map((c) => c.label), "Actions"]}
+            emptyMessage={`No BOQs yet for ${projectName ?? "this project"}.`}
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
+                <Plus className="size-4" /> New BOQ
+              </Button>
+            }
+            lastLoadedAt={loadedAt}
+            onRetry={load}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -224,7 +256,7 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                 })}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
     </div>

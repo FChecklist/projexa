@@ -50,7 +50,9 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
+        {/* R67 D-65: the name goes with the id so each of the three panes can
+            say what it is waiting for, and for which project. */}
+        {project && <MaterialsClient projectId={project.id} projectName={project.name} registryColumns={registryColumns} initialTab={tab} />}
       </div>
     </>
   );

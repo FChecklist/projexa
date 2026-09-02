@@ -71,7 +71,10 @@ async function ScopeBody({ projectId, tab }: { projectId?: string; tab?: string 
             <TabsTrigger value="boq">BOQ</TabsTrigger>
             <TabsTrigger value="variance">Cost Variance</TabsTrigger>
           </TabsList>
-          <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
+          {/* R67 D-65: the project's name travels with its id so the pane can
+              name what it is waiting for, and the empty sentence can name the
+              project it is empty FOR. */}
+          <TabsContent value="boq"><ScopeClient projectId={project.id} projectName={project.name} listColumns={boqListColumns} /></TabsContent>
           <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
         </Tabs>
       )}

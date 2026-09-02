@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,6 +136,8 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [ranOnce, setRanOnce] = useState(false);
+  const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const currencies = useCurrencies();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
@@ -153,18 +155,34 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   async function runReport() {
     const myGeneration = ++requestGeneration.current;
     setLoading(true);
+    setRunError(null);
+    setStartedAt(Date.now());
     try {
       const params = new URLSearchParams({ projectId });
       if (reportName === "weekly-project") params.set("weekStart", weekStart);
       const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const reason = typeof data?.error === "string" ? data.error : null;
+        const failure = new Error(reason ?? `Request failed (HTTP ${res.status})`);
+        (failure as Error & { httpStatus?: number }).httpStatus = res.status;
+        throw failure;
+      }
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
       setRanOnce(true);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      toast.error(err instanceof Error && err.message ? err.message : "Could not generate report");
+      // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
+      // so the panel below settled on the flat sentence "Could not generate
+      // this report." while the backend's own reason -- the only thing that
+      // says WHICH report failed and why -- faded with the notification. The
+      // failure is now stated in the panel, through the same dictionary
+      // every other pane uses, with a Retry that re-runs it.
+      setRunError({
+        status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
       setResult(null);
     } finally {
       if (myGeneration === requestGeneration.current) setLoading(false);
@@ -212,12 +230,22 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
               The Work Progress Report opens in the Work Progress module, where the date range, the view and the
               BOQ version live in the URL and the report runs as soon as it opens.
             </p>
+          ) : runError ? (
+            <PaneErrorCard
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              error={runError}
+              onRetry={runReport}
+            />
+          ) : loading ? (
+            <PaneWaitingCaption
+              startedAt={startedAt}
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              onRetry={runReport}
+            />
           ) : !ranOnce ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
-          ) : loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : result === null ? (
-            <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
+            <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
           ) : (
             <ReportOutput
               data={result}
