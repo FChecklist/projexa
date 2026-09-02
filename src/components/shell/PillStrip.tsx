@@ -32,12 +32,13 @@
 //     The ranked six answer "what do you do most"; the expanded list answers
 //     "where is everything", and a list that moves is a list you must re-read.
 //
-//  5. NO FLICKER. The strip paints from a cached ranking or the role's own
-//     cold-start order; three skeleton cards appear only when there is
-//     genuinely neither. The caller decides WHEN a newly arrived ranking may
-//     replace what is on screen -- see M24Shell's five-second rule -- because
-//     a strip that re-orders under a moving finger is how a user records
-//     progress against the wrong thing.
+//  5. NO FLICKER, AND THIS COMPONENT NEVER RE-SORTS. It renders `cards` in the
+//     order it was given, every time; the order is decided entirely by the
+//     caller. The strip paints from a cached ranking or the role's own
+//     cold-start order, and three skeleton cards appear only when there is
+//     genuinely neither. A-14: a newly arrived ranking is applied only at the
+//     next navigation (src/lib/pill-ranking.ts), never under a moving finger,
+//     which is how a user reaching for "Run WPR" pressed "Record progress".
 //
 // *** CLASSIFICATION NEVER AUTHORIZES *** is unchanged and load-bearing, and
 // is now stronger than the kit's: the outward callback carries a card ID, a
@@ -105,8 +106,6 @@ export type PillStripProps = {
    * key like "work-progress.entry" on a strip is worse than a shorter strip.
    */
   unknownKeys?: readonly string[];
-  /** Fires on hover or click, so the caller can hold a re-rank back. */
-  onInteract?: () => void;
   /** One muted line under the cards -- a degraded read, or a first-run hint. */
   footnote?: React.ReactNode;
 };
@@ -139,7 +138,6 @@ export function PillStrip({
   allModules,
   onSelectModule,
   unknownKeys,
-  onInteract,
   footnote,
 }: PillStripProps) {
   // Warned once per distinct set, in the console only. A key the server ranks
@@ -156,7 +154,7 @@ export function PillStrip({
   }, [unknownKeys]);
 
   return (
-    <div onMouseEnter={onInteract} onFocusCapture={onInteract}>
+    <div>
       <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Things you can do">
         {loading ? (
           <>
@@ -179,10 +177,7 @@ export function PillStrip({
               <button
                 key={chain.fullChain}
                 type="button"
-                onClick={() => {
-                  onInteract?.();
-                  onSelectRecent?.(chain);
-                }}
+                onClick={() => onSelectRecent?.(chain)}
                 aria-label={`Do again: ${chain.label}${chain.outcome === "failed" ? " (failed last time)" : ""}`}
                 title={chain.fullChain}
                 className="veri-mode-pill"
@@ -207,10 +202,7 @@ export function PillStrip({
               <span key={card.id} className="inline-flex items-center">
                 <button
                   type="button"
-                  onClick={() => {
-                    onInteract?.();
-                    onSelect(card.id);
-                  }}
+                  onClick={() => onSelect(card.id)}
                   disabled={blocked}
                   // NO FAIL-AFTER-CLICK: the reason is the accessible name and
                   // the tooltip, so it is available before the click, not after.
@@ -254,10 +246,7 @@ export function PillStrip({
 
         <button
           type="button"
-          onClick={() => {
-            onInteract?.();
-            onToggleExpanded();
-          }}
+          onClick={onToggleExpanded}
           aria-expanded={expanded}
           className="veri-mode-pill"
           style={{ color: "var(--color-ct-muted)" }}

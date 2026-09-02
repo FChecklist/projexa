@@ -83,6 +83,7 @@ import {
   type ComposerState,
 } from "@/lib/chain-status";
 import { deriveMode } from "@/lib/chain-mode";
+import { isStripPainted, rankingArrival } from "@/lib/pill-ranking";
 import { navigationOutcome } from "@/lib/chain-navigation";
 import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
 import { useScreenModule } from "./use-screen-module";
@@ -104,23 +105,30 @@ import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
 
-// Ranking input, per user, per browser. localStorage rather than
-// sessionStorage on purpose: this is the OFFLINE fallback ordering for when
-// the server's own ranking does not answer, and a fallback that forgot itself
-// every session would be no fallback at all.
-const PILL_USAGE_KEY = "veri.pill.usage";
+// R67 A-14 -- THE PINS, AND ONLY THE PINS.
+//
+// This key used to hold a LOCAL usage order: the last card clicked was pulled
+// to the front and that order persisted across routes, so the same control sat
+// somewhere different on every screen and the user had to re-read the whole row
+// every time. That is deleted (A-07 moved usage to the server, where the
+// ranking is actually computed; A-14 deletes the local ordering outright), and
+// what remains in the browser is the user's own PINS -- which are a decision
+// they made, not a guess about them.
+//
+// The key was renamed with it, because a key called "usage" holding pins is how
+// the next reader concludes the local ordering is still there. The old key is
+// read once so nobody loses the pins they had.
+const PINNED_CARDS_KEY = "veri.pill.pinned";
+const LEGACY_PILL_USAGE_KEY = "veri.pill.usage";
 
 // R67 A-07 -- the last ranking the SERVER gave this browser, painted on the
 // next first render so the strip never shows one set of cards and then swaps
 // it for another. It is a cache of a server answer, never an input to one.
 const RANKED_CARDS_KEY = "veri.pill.ranked";
 
-// R67 A-07 -- how long a newly arrived ranking waits after the user last
-// touched the band. Re-ordering cards under a moving finger is how a person
-// clicks "Run WPR" and gets "Record progress"; five seconds is long enough
-// that a deliberate reach is never overtaken, and short enough that the next
-// navigation always applies the fresh order anyway.
-const RANK_SETTLE_MS = 5000;
+// R67 A-14 supersedes A-07's five-second settle window: a newly arrived ranking
+// is never applied while the user is looking at the strip, only on the next
+// navigation. The rule itself is pure and lives in src/lib/pill-ranking.ts.
 
 // R67 A-05. MODE_KEY ("veri.chain.mode") is GONE. It backed a row of three
 // tabs -- Projects | Customers | Vendors -- that changed nothing on PROJEXA
@@ -365,7 +373,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const p = localStorage.getItem(PILL_USAGE_KEY);
+      // A-14: the pins, under their own name, falling back once to the key they
+      // used to share with the deleted local usage order.
+      const p = localStorage.getItem(PINNED_CARDS_KEY) ?? localStorage.getItem(LEGACY_PILL_USAGE_KEY);
       const parsed = p ? JSON.parse(p) : null;
       if (Array.isArray(parsed)) setPinnedCards(parsed.filter((x): x is string => typeof x === "string"));
     } catch {
@@ -415,24 +425,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
-  // R67 A-07 -- WHEN A NEW RANKING MAY REPLACE WHAT IS ON SCREEN.
+  // R67 A-14 -- WHEN A NEW RANKING MAY REPLACE WHAT IS ON SCREEN: NEVER, WHILE
+  // THE USER IS LOOKING AT IT.
   //
-  // The ranking arrives asynchronously and can legitimately differ from the
-  // cached one. Applying it the instant it lands re-orders the cards under
-  // whatever the user is currently reaching for, which is how a person aiming
-  // at "Run WPR" presses "Record progress" instead. So: apply it immediately
-  // when the band has been untouched for five seconds, otherwise hold it and
-  // let the next navigation -- when the user has already looked away -- put it
-  // in place. Nothing is lost either way; only the moment changes.
-  const lastInteractionRef = useRef<number>(0);
+  // The rule and its one exception are pure and written down in
+  // src/lib/pill-ranking.ts; this is only the wiring. `paintedRef` is
+  // maintained by an effect rather than read from state directly, because the
+  // decision is taken inside an async fetch callback that has no render of its
+  // own to read fresh state from.
   const deferredRankingRef = useRef<RankedEntry[] | null>(null);
-
-  const noteBandInteraction = useCallback(() => {
-    lastInteractionRef.current = Date.now();
-  }, []);
+  const paintedRef = useRef(false);
 
   const applyRanking = useCallback((entries: RankedEntry[]) => {
-    if (Date.now() - lastInteractionRef.current < RANK_SETTLE_MS) {
+    if (rankingArrival({ painted: paintedRef.current }) === "defer") {
       deferredRankingRef.current = entries;
       return;
     }
@@ -1138,7 +1143,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setPinnedCards((prev) => {
       const next = prev.includes(cardId) ? prev.filter((k) => k !== cardId) : [...prev, cardId];
       try {
-        localStorage.setItem(PILL_USAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(PINNED_CARDS_KEY, JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -1268,9 +1273,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setProjectPrompt(null);
     setSubmitError(null);
     setShowAllPills(false);
-    // A-07: a ranking that arrived while the user was working the band was
-    // held back rather than re-ordering cards under their finger. A navigation
-    // is the moment they have already looked away, so it lands here.
+    // A-14: a ranking that arrived while a strip was already on screen was held
+    // back rather than re-ordering cards under the user's finger. A navigation
+    // is the one moment they have already looked away, so it lands here -- and
+    // this is the ONLY place the visible order ever changes.
     if (deferredRankingRef.current) {
       setRankedPills(deferredRankingRef.current);
       deferredRankingRef.current = null;
@@ -1381,6 +1387,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // catalogue by. Painting the default order and then swapping it for the
   // role's order would be the same flicker in a different costume.
   const cardsLoading = rankedPills === null && !roleKnown;
+
+  // A-14: keep the "is anything real on screen" answer where the async ranking
+  // callback can read it. It is the ONLY input to whether a fresh ranking is
+  // painted now or held until the next navigation.
+  useEffect(() => {
+    paintedRef.current = isStripPainted({ cachedRanking: rankedPills, roleKnown });
+  }, [rankedPills, roleKnown]);
 
   // R67 A-01/A-10 -- ONE STATE, and every composer string is a function of it.
   // The strings themselves live in src/lib/chain-status.ts, where each state
@@ -1684,7 +1697,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 allModules={allModules}
                 onSelectModule={onModuleEntrySelect}
                 unknownKeys={unknownKeys}
-                onInteract={noteBandInteraction}
                 // A-08: a failed ranking read must not look like a considered
                 // answer. The role cards still stand; one muted line says why
                 // the recent ones are missing. A-10: otherwise, an account with
