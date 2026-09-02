@@ -273,12 +273,14 @@ export const fetchMaterialMasterList = createModuleList(
   { root: true }
 );
 
-// R67 F-23 (R-239): `include=variation` makes VERIDIAN return each revision's
-// variation-vs-prior with the list, so ScopeClient no longer fires one
-// /api/scope/{id}/compare request per row to fill the "Variation vs. prior"
-// cell -- the single biggest contributor to /scope's 22 calls.
+// R67 F-23 (R-239) + F-29 (R-273): `include=variation,compare` makes VERIDIAN
+// return each revision's variation-vs-prior AND its compare summary (line
+// count, total, delta amount and percent) with the list, so ScopeClient no
+// longer fires one /api/scope/{id}/compare request per row to fill those cells
+// -- the single biggest contributor to /scope's 22 calls. Both come out of ONE
+// statement upstream, so asking for both costs what asking for either costs.
 export const fetchScopeList = createModuleList(
   MODULE_TAGS.scope,
-  (projectId) => `/scope?projectId=${q(projectId)}&include=variation`,
+  (projectId) => `/scope?projectId=${q(projectId)}&include=variation,compare`,
   (p) => p.boqs as unknown[] | undefined
 );

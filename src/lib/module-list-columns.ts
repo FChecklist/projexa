@@ -69,6 +69,10 @@ export const BOQ_LIST_COLUMNS: ScreenColumn[] = [
   { field: "title", label: "Title", type: "text", importance: "High" },
   { field: "version", label: "Version", type: "text", importance: "High" },
   { field: "status", label: "Status", type: "text", importance: "High" },
+  // R67 F-29 (R-273): the compare summary rides on the list payload, so these
+  // two are real columns now rather than a per-row /compare request.
+  { field: "lineCount", label: "Lines", type: "number", importance: "Medium" },
+  { field: "total", label: "Total", type: "number", importance: "High" },
   { field: "variation", label: "Variation vs. prior", type: "text", importance: "High" },
   { field: "createdAt", label: "Created", type: "date", importance: "High" },
 ];

@@ -66,6 +66,17 @@ export type Boq = {
   variationVsPrior?: number | null;
   /** line-item count difference vs the parent revision; null on a baseline. */
   lineDelta?: number | null;
+  // R67 F-29: the compare summary, from the same upstream statement. Absent
+  // only if an older backend answered without ?include=compare, which renders
+  // exactly as "we don't know" rather than as a zero.
+  compare?: {
+    lineCount: number;
+    total: number;
+    /** total(this) - total(parent); null on a baseline. */
+    deltaAmount: number | null;
+    /** That delta as a percent of the parent's total; null on a baseline or a zero-total parent. */
+    deltaPct: number | null;
+  };
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -96,6 +107,21 @@ function isTimeoutError(err: unknown): boolean {
 function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
   return `${sign}${Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+// R67 F-29: a total is a magnitude, not a change -- no sign, same grouping.
+function formatMoney(amount: number): string {
+  return amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+// R67 F-29: "+1,005" alone says nothing about whether that is a rounding error
+// or a doubling of the contract, so the percentage rides beside it. null is
+// rendered by the caller as an en-dash -- never as "0%", which would state
+// that nothing changed when in fact nothing is KNOWN to have changed.
+export function formatDeltaPct(pct: number | null | undefined): string | null {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
+  const sign = pct > 0 ? "+" : pct < 0 ? "-" : "";
+  return `${sign}${Math.abs(pct).toFixed(1)}%`;
 }
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level
@@ -210,6 +236,9 @@ export default function ScopeClient({
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
+                  {/* R67 F-29: both of these arrive on the list row now. */}
+                  <TableHead className="text-right">{columnLabel(boqListColumns, "lineCount", "Lines")}</TableHead>
+                  <TableHead className="text-right">{columnLabel(boqListColumns, "total", "Total")}</TableHead>
                   <TableHead className="text-right">{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -217,12 +246,22 @@ export default function ScopeClient({
               </TableHeader>
               <TableBody>
                 {boqs.map((b) => {
-                  const variation = b.variationVsPrior;
+                  // R67 F-29: deltaAmount and variationVsPrior are the same
+                  // number from the same upstream aggregate; prefer the
+                  // compare object and fall back for an older payload.
+                  const variation = b.compare?.deltaAmount ?? b.variationVsPrior;
+                  const deltaPct = formatDeltaPct(b.compare?.deltaPct);
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
+                      <TableCell className="text-right tabular-nums text-px-muted">
+                        {b.compare ? b.compare.lineCount : <span className="text-px-muted">–</span>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {b.compare ? `${currencyCode ? `${currencyCode} ` : ""}${formatMoney(b.compare.total)}` : <span className="text-px-muted">–</span>}
+                      </TableCell>
                       {/* R67 F-23: right-aligned (it is money), signed, in the
                           org's own currency; an en-dash for a revision with no
                           prior to vary from. */}
@@ -232,7 +271,13 @@ export default function ScopeClient({
                         ) : variation === undefined || variation === null ? (
                           <span className="text-px-muted">–</span>
                         ) : (
-                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
+                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>
+                            {currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}
+                            {/* R67 F-29: the percentage beside the amount. An
+                                unknowable percentage (a parent that totalled
+                                nothing) is simply absent, never "0%". */}
+                            {deltaPct ? <span className="ml-1 text-px-muted">({deltaPct})</span> : null}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-px-muted">{formatDate(b.createdAt)}</TableCell>

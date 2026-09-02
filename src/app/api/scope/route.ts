@@ -11,12 +11,16 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
-  // R67 F-23 (R-239): `?include=variation` asks VERIDIAN to compute each
-  // revision's variation-vs-prior in the SAME query as the list, replacing the
-  // one /api/scope/{id}/compare request PER ROW the /scope screen used to make
-  // just to fill one cell. Only the recognised value is forwarded, so this
-  // proxy can never pass an arbitrary string through to the upstream URL.
-  const include = request.nextUrl.searchParams.get("include") === "variation" ? "&include=variation" : "";
+  // R67 F-23 (R-239) / F-29 (R-273): `?include=` asks VERIDIAN to compute each
+  // revision's variation-vs-prior AND its compare summary (line count, total,
+  // delta amount and percent) in the SAME query as the list, replacing the one
+  // /api/scope/{id}/compare request PER ROW the /scope screen used to make just
+  // to fill a cell. Only RECOGNISED values are forwarded, rebuilt from a closed
+  // set rather than passed through, so this proxy can never put an arbitrary
+  // string into the upstream URL.
+  const requested = new Set((request.nextUrl.searchParams.get("include") ?? "").split(",").map((s) => s.trim()));
+  const allowed = ["variation", "compare"].filter((value) => requested.has(value));
+  const include = allowed.length > 0 ? `&include=${allowed.join(",")}` : "";
   try {
     const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}${include}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
