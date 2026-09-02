@@ -56,12 +56,24 @@ describe("documentSaveReason", () => {
     expect(documentSaveReason(true, undefined, false)).toBeUndefined();
   });
 
-  test("a file that is too big is a field that needs attention, not a missing file", () => {
-    expect(documentSaveReason(true, "This file is 31 MB; the limit is 25 MB", false)).toBe("1 field needs attention");
+  test("a bad file names the FIELD, not a count -- R67 D-78", () => {
+    // Was "1 field needs attention", which told the reader there was a problem
+    // and not where. "File" is the only field this can ever be about.
+    expect(documentSaveReason(true, "This file is 31 MB; the limit is 25 MB", false)).toBe("File");
+    expect(documentSaveReason(true, "Choose a PDF, image, email or Office file — this is a .zip", false)).toBe("File");
   });
 
-  test("saving outranks everything", () => {
+  test("saving outranks everything below it", () => {
     expect(documentSaveReason(false, undefined, true)).toBe("Saving…");
+  });
+
+  test("R67 D-78: storage outranks even that -- it is the one thing no correction here clears", () => {
+    expect(documentSaveReason(false, undefined, true, true)).toBe("file storage not configured");
+    expect(documentSaveReason(true, undefined, false, true)).toBe("file storage not configured");
+  });
+
+  test("the storage guard defaults off, so it can only ever ADD a block", () => {
+    expect(documentSaveReason(true, undefined, false)).toBeUndefined();
   });
 });
 
@@ -179,5 +191,16 @@ describe("DocumentUploadClient", () => {
     expect(body.get("projectId")).toBe("p1");
     expect(body.get("category")).toBe("permit");
     expect(body.get("name")).toBe("DEWA_permit_2026");
+  });
+});
+
+describe("DocumentUploadClient with storage unconfigured", () => {
+  test("says so above the drop zone, and disables Save with that reason", () => {
+    const view = render(<DocumentUploadClient projectId="p1" projectName="Cedar Heights" storageConfigured={false} />);
+    expect(view.getByRole("alert").textContent).toBe(
+      "File storage is not configured on this server — uploads will fail"
+    );
+    const save = view.getByRole("button", { name: "Save (file storage not configured)" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
   });
 });

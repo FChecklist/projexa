@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchJson } from "@/lib/fetch-json";
 import { setScreenMessage } from "@/lib/screen-message";
+import { STORAGE_UNAVAILABLE_BANNER, STORAGE_UNAVAILABLE_REASON } from "@/lib/file-limits";
 import {
   DOCUMENT_ACCEPT,
   DOCUMENT_CATEGORIES,
@@ -32,6 +33,7 @@ import {
   defaultCategory,
   describeFileSize,
   documentSizeError,
+  documentTypeError,
   fileStem,
   parseEmailHeaders,
   readLastCategory,
@@ -61,14 +63,32 @@ export function decodeRelatesTo(value: string): { type: string; id: string } | n
  * /labour/new set ("Save (Name, Daily Rate)"). A file is the one thing this
  * screen cannot do without -- everything else has a defensible default.
  */
-export function documentSaveReason(hasFile: boolean, sizeError: string | undefined, saving: boolean): string | undefined {
+export function documentSaveReason(
+  hasFile: boolean,
+  fileError: string | undefined,
+  saving: boolean,
+  storageUnavailable = false
+): string | undefined {
+  // R67 D-78: first, because it is the only one of these the user cannot clear.
+  if (storageUnavailable) return STORAGE_UNAVAILABLE_REASON;
   if (saving) return "Saving…";
   if (!hasFile) return "A file is required";
-  if (sizeError) return "1 field needs attention";
+  // R67 D-78: names the field, not a count -- "File" is the only field this can
+  // ever be about, and "1 field needs attention" made the reader look for it.
+  if (fileError) return "File";
   return undefined;
 }
 
-export default function DocumentUploadClient({ projectId, projectName }: { projectId: string; projectName?: string }) {
+export default function DocumentUploadClient({
+  projectId,
+  projectName,
+  storageConfigured = true,
+}: {
+  projectId: string;
+  projectName?: string;
+  /** R67 D-78: from VERIDIAN's own storage probe, resolved server-side. Defaults to true. */
+  storageConfigured?: boolean;
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -82,6 +102,12 @@ export default function DocumentUploadClient({ projectId, projectName }: { proje
   const [messages, setMessages] = useState<FieldMessage[]>([]);
 
   const sizeError = documentSizeError(file?.size ?? null);
+  // R67 D-78: the drop zone accepts anything dropped on it -- the accept
+  // attribute filters the PICKER and nothing else -- so a .zip landed here,
+  // uploaded, and came back as VERIDIAN's flat "Failed to upload document".
+  // Type before size: a .zip is not "too big", it is the wrong thing.
+  const typeError = documentTypeError(file?.name ?? null);
+  const fileError = typeError ?? sizeError;
 
   // "Relates to" is a real list of this project's own records. Each read is
   // allowed to fail on its own: a permits list that does not answer costs one
@@ -142,8 +168,8 @@ export default function DocumentUploadClient({ projectId, projectName }: { proje
 
   async function handleSave() {
     if (!file) return;
-    if (sizeError) {
-      setMessages([{ level: "error", text: sizeError }]);
+    if (fileError) {
+      setMessages([{ level: "error", text: fileError }]);
       return;
     }
     const relation = decodeRelatesTo(relatesTo);
@@ -180,7 +206,7 @@ export default function DocumentUploadClient({ projectId, projectName }: { proje
     }
   }
 
-  const saveReason = documentSaveReason(!!file, sizeError, saving);
+  const saveReason = documentSaveReason(!!file, fileError, saving, !storageConfigured);
 
   return (
     <ObjectScreen
@@ -200,6 +226,14 @@ export default function DocumentUploadClient({ projectId, projectName }: { proje
       messages={messages}
     >
       <div className="space-y-4 px-4 py-3">
+        {!storageConfigured && (
+          <p
+            role="alert"
+            className="rounded-md border border-[color:var(--color-veri-status-late)] bg-[color:var(--color-veri-status-late)]/5 p-3 text-[13px]"
+          >
+            {STORAGE_UNAVAILABLE_BANNER}
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="document-file">File</Label>
           <div
@@ -232,7 +266,7 @@ export default function DocumentUploadClient({ projectId, projectName }: { proje
           )}
           {/* The refusal is at the field, before the upload, in the same units
               as the limit -- never a toast after a failed round trip. */}
-          {sizeError && <p className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{sizeError}</p>}
+          {fileError && <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{fileError}</p>}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

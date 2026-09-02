@@ -10,6 +10,7 @@ import {
   defaultCategory,
   describeFileSize,
   documentSizeError,
+  documentTypeError,
   fileStem,
   inferCategory,
   parseEmailHeaders,
@@ -141,5 +142,37 @@ describe("relatesToWord", () => {
     expect(relatesToWord(null)).toBe("—");
     // An unknown discriminator still reads as words rather than as snake_case.
     expect(relatesToWord("boq_line")).toBe("boq line");
+  });
+});
+
+// ─── R67 D-78: what the drop zone will actually accept ───────────────────────
+//
+// `accept` filters the PICKER and nothing else, and a file dragged onto the drop
+// zone never passes through a picker at all -- which is why this check exists at
+// all and why it is the drop zone, not the input, that made it necessary.
+describe("documentTypeError", () => {
+  test("the formats this module is for pass", () => {
+    for (const name of ["DEWA_permit_2026.pdf", "thread.eml", "note.msg", "contract.docx", "boq.xlsx"]) {
+      expect(documentTypeError(name)).toBeUndefined();
+    }
+  });
+
+  test("a photo from any device passes -- the picker's `image/*` half, spelled out", () => {
+    for (const name of ["site.jpg", "site.JPEG", "IMG_0042.heic", "scan.tiff", "shot.png"]) {
+      expect(documentTypeError(name)).toBeUndefined();
+    }
+  });
+
+  test("anything else is refused at the field, and is told what it is", () => {
+    expect(documentTypeError("drawings.zip")).toBe("Choose a PDF, image, email or Office file — this is a .zip");
+    expect(documentTypeError("model.dwg")).toBe("Choose a PDF, image, email or Office file — this is a .dwg");
+  });
+
+  test("a file with no extension is refused, and is not accused of having one", () => {
+    expect(documentTypeError("scan")).toBe("Choose a PDF, image, email or Office file");
+  });
+
+  test("no file chosen is not a type error -- that is the counter's job", () => {
+    expect(documentTypeError(null)).toBeUndefined();
   });
 });

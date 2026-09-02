@@ -16,10 +16,30 @@ import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/scr
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
-import { describeFileSize as describeSize, fileSizeError as sizeError } from "@/lib/file-limits";
+import {
+  STORAGE_UNAVAILABLE_BANNER,
+  STORAGE_UNAVAILABLE_REASON,
+  describeFileSize as describeSize,
+  fileSizeError as sizeError,
+  fileTypeError,
+} from "@/lib/file-limits";
 
 /** The permit PDF limit, stated to the user and enforced before the upload. */
 export const MAX_PDF_MB = 10;
+
+/**
+ * R67 D-78. The field says "Permit PDF" and its picker is filtered to
+ * application/pdf, but a picker filter is not a guarantee -- every OS file
+ * dialog lets a user switch it off. Nothing checked, so a .docx reached the
+ * upload and came back as VERIDIAN's flat "Failed to upload file". The user was
+ * told the permit did not save; they were not told which of the things they did
+ * was the problem.
+ */
+export const PERMIT_EXTENSIONS = [".pdf"] as const;
+
+export function permitFileTypeError(fileName: string | null): string | undefined {
+  return fileTypeError(fileName, PERMIT_EXTENSIONS);
+}
 
 /**
  * The required fields still missing, in FIELD ORDER, in the module's one word
@@ -75,7 +95,16 @@ function attentionReason(count: number): string | undefined {
   return `${count} field${count === 1 ? "" : "s"} need${count === 1 ? "s" : ""} attention`;
 }
 
-export default function PermitCreateClient({ projectId, projectName }: { projectId: string; projectName?: string }) {
+export default function PermitCreateClient({
+  projectId,
+  projectName,
+  storageConfigured = true,
+}: {
+  projectId: string;
+  projectName?: string;
+  /** R67 D-78: from VERIDIAN's own storage probe, resolved server-side. Defaults to true. */
+  storageConfigured?: boolean;
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
@@ -94,13 +123,19 @@ export default function PermitCreateClient({ projectId, projectName }: { project
   const missing = missingPermitFields({ name, issueDate, endDate, hasFile: file !== null });
   const dateError = touchedDates ? endDateError(issueDate, endDate) : undefined;
   const sizeError = fileSizeError(file ? file.size : null);
-  const attentionCount = (dateError ? 1 : 0) + (sizeError ? 1 : 0);
+  // R67 D-78: checked the moment a file is chosen -- choosing IS the
+  // interaction, so waiting for a blur that may never come would hide the
+  // problem until Save. Type before size: a .docx is not "too big", it is the
+  // wrong thing entirely.
+  const typeError = permitFileTypeError(file ? file.name : null);
+  const fileError = typeError ?? sizeError;
+  const attentionCount = (dateError ? 1 : 0) + (fileError ? 1 : 0);
   // Attention wins over the counter: a field that is filled but wrong is a
   // more specific thing to say than "still needed".
   const disabledReason = saving
     ? "Saving…"
     : attentionReason(attentionCount) ?? missingPermitFieldsReason(missing);
-  const saveDisabled = saving || missing.length > 0 || attentionCount > 0;
+  const saveDisabled = saving || missing.length > 0 || attentionCount > 0 || !storageConfigured;
 
   async function createPermit() {
     if (saveDisabled) return;
@@ -151,13 +186,27 @@ export default function PermitCreateClient({ projectId, projectName }: { project
       onCancel={backToList}
       onBack={backToList}
       saveDisabled={saveDisabled}
-      // Deliberately NOT passed to ObjectScreen: it appends the reason INSIDE
-      // the button ("Save (4 required fields still needed - ...)"), and
-      // correction C-15's rule is that a sentence never sits inside a button
-      // again. The same words are rendered beside the button instead, below.
+      // The FIELD counter is deliberately NOT passed to ObjectScreen: it appends
+      // the reason INSIDE the button ("Save (4 required fields still needed -
+      // ...)"), and correction C-15's rule is that a sentence never sits inside
+      // a button again. Those words are rendered beside the button instead.
+      //
+      // R67 D-78's storage reason IS passed, because it is four words, not a
+      // sentence, and because it is a fact about the server rather than about
+      // this form -- a user scanning for why Save is dead should find it on the
+      // control itself.
+      saveDisabledReason={!storageConfigured ? STORAGE_UNAVAILABLE_REASON : undefined}
       messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
+        {!storageConfigured && (
+          <p
+            role="alert"
+            className="rounded-md border border-[color:var(--color-veri-status-late)] bg-[color:var(--color-veri-status-late)]/5 p-3 text-[13px]"
+          >
+            {STORAGE_UNAVAILABLE_BANNER}
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="name">Permit name</Label>
           {/* autoFocus: the first field of a create screen the user navigated
@@ -193,8 +242,8 @@ export default function PermitCreateClient({ projectId, projectName }: { project
             onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
           />
           <p className="text-[12.5px] text-ct-muted">PDF only, up to {MAX_PDF_MB} MB</p>
-          {sizeError && (
-            <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{sizeError}</p>
+          {fileError && (
+            <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{fileError}</p>
           )}
         </div>
         {/* The reason the primary action is disabled, beside it rather than

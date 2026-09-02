@@ -17,7 +17,7 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const mod = await import("./PermitCreateClient");
 const PermitCreateClient = mod.default;
-const { missingPermitFields, missingPermitFieldsReason, endDateError, fileSizeError, describeFileSize, MAX_PDF_MB } = mod;
+const { missingPermitFields, missingPermitFieldsReason, endDateError, fileSizeError, describeFileSize, permitFileTypeError, MAX_PDF_MB } = mod;
 
 afterEach(() => {
   cleanup();
@@ -129,5 +129,41 @@ describe("PermitCreateClient", () => {
     expect(view.getByLabelText("Issuing authority (optional)")).toBeTruthy();
     expect(view.getByLabelText("Permit PDF")).toBeTruthy();
     expect(view.getByText("PDF only, up to 10 MB")).toBeTruthy();
+  });
+});
+
+// ─── R67 D-78: the permit PDF is checked, and storage is checked first ───────
+describe("permitFileTypeError", () => {
+  test("D-78's own message shape: what is wanted, and what was actually chosen", () => {
+    expect(permitFileTypeError("approval.docx")).toBe("Choose a .pdf file — this is a .docx");
+    expect(permitFileTypeError("scan.PNG")).toBe("Choose a .pdf file — this is a .png");
+  });
+
+  test("a PDF passes, whatever the case of its extension", () => {
+    expect(permitFileTypeError("BP-2026-0142.pdf")).toBeUndefined();
+    expect(permitFileTypeError("BP-2026-0142.PDF")).toBeUndefined();
+  });
+
+  test("no file chosen is not a type error -- that is the counter's job", () => {
+    expect(permitFileTypeError(null)).toBeUndefined();
+  });
+});
+
+describe("PermitCreateClient with storage unconfigured", () => {
+  test("says so at the top of the form and puts the reason on the button itself", () => {
+    const view = render(<PermitCreateClient projectId="p1" projectName="Cedar Heights" storageConfigured={false} />);
+    expect(view.getByRole("alert").textContent).toBe(
+      "File storage is not configured on this server — uploads will fail"
+    );
+    const save = view.getByRole("button", { name: "Save (file storage not configured)" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
+
+  test("with storage available the button keeps C-15's short label and the counter stays beside it", () => {
+    const view = render(<PermitCreateClient projectId="p1" projectName="Cedar Heights" />);
+    expect(view.getByRole("button", { name: "Save" })).toBeTruthy();
+    expect(view.getByRole("status").textContent).toBe(
+      "4 required fields still needed - permit name, issue date, end date, permit PDF"
+    );
   });
 });

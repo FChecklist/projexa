@@ -1,5 +1,6 @@
 import DocumentUploadClient from "@/components/DocumentUploadClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { getStorageStatus } from "@/lib/storage-status";
 import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
@@ -8,7 +9,13 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 export default async function DocumentUploadPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  // R67 D-78: both reads at once -- the storage probe is answered from
+  // VERIDIAN's own 60 s cache, so it costs nothing and lets the screen say that
+  // no upload can succeed BEFORE the user drops a 30 MB file on the zone.
+  const [{ project, errorMessage }, storageConfigured] = await Promise.all([
+    resolveSelectedProject(projectId, organizationId),
+    getStorageStatus(organizationId),
+  ]);
 
   // R67 D-70 (audit R-262): this used to `return` a bare Card holding
   // resolveSelectedProject's raw message, so an upstream failure replaced the
@@ -35,7 +42,7 @@ export default async function DocumentUploadPage({ searchParams }: { searchParam
   // file is chosen rather than after it is filed.
   return (
     <div className="flex-1">
-      <DocumentUploadClient projectId={project.id} projectName={project.name} />
+      <DocumentUploadClient projectId={project.id} projectName={project.name} storageConfigured={storageConfigured} />
     </div>
   );
 }

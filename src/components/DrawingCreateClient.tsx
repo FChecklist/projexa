@@ -28,13 +28,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Link from "next/link";
 import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection";
 import { setScreenMessage } from "@/lib/screen-message";
-import { fileSizeError, fileTypeError } from "@/lib/file-limits";
+import {
+  STORAGE_UNAVAILABLE_BANNER,
+  STORAGE_UNAVAILABLE_REASON,
+  fileSizeError,
+  fileTypeError,
+} from "@/lib/file-limits";
 import { CREATE_STATUS_OPTIONS, DEFAULT_DRAWING_STATUS, type DrawingStatus } from "@/lib/drawing-status";
 
 export type DrawingKind = "dwg" | "3d_walkthrough";
 
-/** The bucket's own cap is 25 MB for documents; drawings are the large ones. */
-export const MAX_DRAWING_MB = 50;
+/**
+ * R67 D-78 CORRECTION. This was 50, and the hint under the file input said
+ * "Max 50 MB" -- but createDrawingRecord() shares prepareDocumentStorage() with
+ * every other upload in VERIDIAN, whose MAX_SIZE_BYTES is 25 MB and whose own
+ * comment says that number matches the bucket's file_size_limit. So a 40 MB
+ * drawing passed every client-side check this screen makes and was then refused
+ * server-side with "File exceeds 25 MB limit" -- the exact fail-after-click R67
+ * D-09 set out to remove from this form, still live because the client's number
+ * and the server's number were written in different files on different days.
+ */
+export const MAX_DRAWING_MB = 25;
 
 /**
  * What each Kind's file field takes. A DWG drawing is a CAD file or the PDF
@@ -100,13 +114,27 @@ export function drawingSaveReason(input: {
   submitting: boolean;
   missing: string[];
   attention: number;
+  /**
+   * R67 D-78: the LABELS of the fields needing attention, in field order. When
+   * they are known the button names them -- "Save (File (DWG))" -- because
+   * "1 field needs attention" tells a user there is a problem and not where.
+   * The count remains the fallback for a caller that cannot name them.
+   */
+  attentionFields?: string[];
+  /**
+   * R67 D-78: the server cannot accept a file at all. First, because it is the
+   * only one of these no retry and no correction on this form can clear.
+   */
+  storageUnavailable?: boolean;
 }): string | undefined {
+  if (input.storageUnavailable) return STORAGE_UNAVAILABLE_REASON;
   // R67 D-70: was "Project not loaded". Every create route in the app now
   // states this same reason for this same condition, from one constant, so the
   // user meets one sentence rather than twenty-three near-misses.
   if (!input.projectLoaded) return PROJECT_LIST_UNAVAILABLE_REASON;
   if (input.submitting) return "Adding…";
   if (input.attention > 0) {
+    if (input.attentionFields && input.attentionFields.length > 0) return input.attentionFields.join(", ");
     return `${input.attention} field${input.attention === 1 ? "" : "s"} need${input.attention === 1 ? "s" : ""} attention`;
   }
   if (input.missing.length > 0) return input.missing.join(", ");
@@ -125,12 +153,19 @@ export default function DrawingCreateClient({
   projectId,
   projectName,
   projectError,
+  storageConfigured = true,
 }: {
   /** From ?projectId= first, the resolved project second, null when neither is available. */
   projectId?: string | null;
   projectName?: string;
   /** resolveSelectedProject's own backend message, or null. Never replaces this screen. */
   projectError?: string | null;
+  /**
+   * R67 D-78: resolved server-side from VERIDIAN's own storage probe. Defaults
+   * to true so the guard can only ever be an ADDITIONAL block, never a new way
+   * for this screen to refuse work it could have done.
+   */
+  storageConfigured?: boolean;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,12 +197,18 @@ export default function DrawingCreateClient({
   const fileError = file ? fileTypeError(file.name, extensions) ?? fileSizeError(file.size, MAX_DRAWING_MB) : undefined;
   const urlError = urlTouched && usingLink ? walkthroughUrlError(externalUrl) : undefined;
   const missing = missingDrawingFields({ name, drawingNo, rev, usingLink, externalUrl, hasFile: !usingLink && file !== null });
-  const attention = (fileError ? 1 : 0) + (urlError ? 1 : 0);
+  // R67 D-78: the field's OWN label, so the button can name it -- "Save (File
+  // (DWG))" rather than "Save (1 field needs attention)".
+  const fileFieldLabel = `File${kind === "dwg" ? " (DWG)" : ""}`;
+  const attentionFields = [...(fileError ? [fileFieldLabel] : []), ...(urlError ? ["Walkthrough URL"] : [])];
+  const attention = attentionFields.length;
   const saveDisabledReason = drawingSaveReason({
+    storageUnavailable: !storageConfigured,
     projectLoaded: !!resolvedId,
     submitting,
     missing,
     attention,
+    attentionFields,
   });
 
   // The name is resolved in the BACKGROUND -- it is a label, never a
@@ -277,6 +318,16 @@ export default function DrawingCreateClient({
       messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
+        {/* R67 D-78: stated BEFORE the file field, because it is the one thing
+            on this screen that makes filling the form in pointless. */}
+        {!storageConfigured && (
+          <p
+            role="alert"
+            className="rounded-md border border-[color:var(--color-veri-status-late)] bg-[color:var(--color-veri-status-late)]/5 p-3 text-[13px]"
+          >
+            {STORAGE_UNAVAILABLE_BANNER}
+          </p>
+        )}
         {/* The failure is reported here, inside the screen, with the
             backend's own words and a way out -- never as a replacement for
             the screen. */}
@@ -412,7 +463,7 @@ export default function DrawingCreateClient({
           </div>
         ) : (
           <div className="space-y-1.5">
-            <Label htmlFor="file">File{kind === "dwg" ? " (DWG)" : ""}</Label>
+            <Label htmlFor="file">{fileFieldLabel}</Label>
             <Input
               id="file"
               ref={fileInputRef}

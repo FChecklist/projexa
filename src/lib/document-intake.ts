@@ -11,7 +11,7 @@
 // Deliberately NOT "use client": these are pure functions over strings, and the
 // 25 MB cap is a fact a server component should be able to state too.
 
-import { fileSizeError } from "@/lib/file-limits";
+import { fileExtension, fileSizeError } from "@/lib/file-limits";
 
 /** The bucket's own file_size_limit, and compliance-tracker's MAX_SIZE_BYTES. */
 export const DOCUMENT_MAX_MB = 25;
@@ -60,6 +60,36 @@ export function describeFileSize(bytes: number): string {
 /** "This file is 31 MB; the limit is 25 MB", or undefined when it fits. */
 export function documentSizeError(bytes: number | null): string | undefined {
   return fileSizeError(bytes, DOCUMENT_MAX_MB);
+}
+
+/**
+ * R67 D-78. The extensions this module actually takes, spelled out.
+ *
+ * DOCUMENT_ACCEPT above carries `image/*`, which is right for the picker (a
+ * phone camera roll's extensions vary by device) and useless as a check, so the
+ * image half is handled by its own rule below rather than by listing every
+ * format a camera might produce.
+ */
+export const DOCUMENT_EXTENSIONS = [".pdf", ".eml", ".msg", ".docx", ".xlsx"] as const;
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff"] as const;
+
+/**
+ * "Choose a PDF, image, email or Office file — this is a .zip", or undefined
+ * when the file is one of those.
+ *
+ * The drop zone is why this exists: `accept` filters the PICKER and nothing
+ * else, and a file dragged onto the zone never passes through a picker at all.
+ * Before this, a .zip was uploaded and came back as VERIDIAN's flat "Failed to
+ * upload document".
+ */
+export function documentTypeError(fileName: string | null): string | undefined {
+  if (!fileName) return undefined;
+  const ext = fileExtension(fileName);
+  const allowed: readonly string[] = [...DOCUMENT_EXTENSIONS, ...IMAGE_EXTENSIONS];
+  if (allowed.includes(ext)) return undefined;
+  const wanted = "Choose a PDF, image, email or Office file";
+  return ext ? `${wanted} — this is a ${ext}` : wanted;
 }
 
 /**

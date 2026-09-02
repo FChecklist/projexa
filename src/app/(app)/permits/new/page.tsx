@@ -1,5 +1,6 @@
 import PermitCreateClient from "@/components/PermitCreateClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { getStorageStatus } from "@/lib/storage-status";
 import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
@@ -13,7 +14,13 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 export default async function NewPermitPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId: qsProjectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(qsProjectId, organizationId);
+  // R67 D-78: both reads at once -- the storage probe is answered from
+  // VERIDIAN's own 60 s cache, so it costs nothing and lets the screen say that
+  // no upload can succeed BEFORE the user picks a file.
+  const [{ project, errorMessage }, storageConfigured] = await Promise.all([
+    resolveSelectedProject(qsProjectId, organizationId),
+    getStorageStatus(organizationId),
+  ]);
 
   // R67 D-70 (audit R-262): this used to `return` a bare Card holding
   // resolveSelectedProject's raw message, so an upstream failure replaced the
@@ -40,7 +47,7 @@ export default async function NewPermitPage({ searchParams }: { searchParams: Pr
       {/* R67 D-06: the name goes down with the id so the screen can state
           "For project: <name>" under its title -- a create screen must say
           where the record it is about to write will land. */}
-      <PermitCreateClient projectId={project.id} projectName={project.name} />
+      <PermitCreateClient projectId={project.id} projectName={project.name} storageConfigured={storageConfigured} />
     </div>
   );
 }

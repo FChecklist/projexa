@@ -216,3 +216,47 @@ describe("DrawingCreateClient's create form", () => {
     expect(view.queryByLabelText("Upload a file")).toBeNull();
   });
 });
+
+// ─── R67 D-78: the storage guard and the field-named refusal ─────────────────
+describe("R67 D-78 drawingSaveReason", () => {
+  const BASE78 = { projectLoaded: true, submitting: false, missing: [] as string[], attention: 0 };
+
+  test("storage outranks everything, including a project that never loaded", () => {
+    expect(
+      drawingSaveReason({ ...BASE78, storageUnavailable: true, projectLoaded: false, missing: ["Name"], attention: 1 })
+    ).toBe("file storage not configured");
+  });
+
+  test("a wrong-type file names the FIELD, in the field's own label", () => {
+    expect(
+      drawingSaveReason({ ...BASE78, attention: 1, attentionFields: ["File (DWG)"] })
+    ).toBe("File (DWG)");
+  });
+
+  test("the count remains the fallback when the fields cannot be named", () => {
+    expect(drawingSaveReason({ ...BASE78, attention: 2 })).toBe("2 fields need attention");
+    expect(drawingSaveReason({ ...BASE78, attention: 1, attentionFields: [] })).toBe("1 field needs attention");
+  });
+});
+
+describe("DrawingCreateClient with storage unconfigured", () => {
+  test("says so before the file field, and disables Save with that reason", () => {
+    const view = render(<DrawingCreateClient projectId="p1" projectName="Cedar Heights" storageConfigured={false} />);
+    expect(view.getByRole("alert").textContent).toBe(
+      "File storage is not configured on this server — uploads will fail"
+    );
+    const save = view.getByRole("button", { name: "Save (file storage not configured)" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
+
+  test("the guard defaults to available, so it can only ever ADD a block", () => {
+    const view = render(<DrawingCreateClient projectId="p1" projectName="Cedar Heights" />);
+    expect(view.queryByText("File storage is not configured on this server — uploads will fail")).toBeNull();
+  });
+});
+
+describe("R67 D-78: the client's size limit matches the server's", () => {
+  test("25 MB -- prepareDocumentStorage's own MAX_SIZE_BYTES, not the 50 this form used to claim", () => {
+    expect(MAX_DRAWING_MB).toBe(25);
+  });
+});
