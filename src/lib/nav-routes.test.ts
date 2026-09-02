@@ -151,6 +151,12 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/design-studio",
   "/permits/[id]",
   "/permits/new",
+  // R67 D-67: a logged progress entry's own page, reached by clicking its row
+  // on Work Progress > Daily Entry. It is where the site photo attached to
+  // that entry lives -- which was reachable from nowhere in the UI before --
+  // and it needs the entry id and the project, so a sidebar href for it could
+  // not be written.
+  "/work-progress/[id]",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",

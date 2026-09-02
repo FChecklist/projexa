@@ -5,6 +5,7 @@
 // PermitsListClient.tsx (seq21). Activity/BOQ-line names are resolved
 // client-side against the same lookups the form already fetches, passed in
 // as props rather than re-fetched here.
+import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 
 type Entry = {
@@ -34,17 +35,24 @@ function progressTone(pct: number): StatusTone {
   return "waiting";
 }
 
+// R67 D-67: `projectId` is what makes a row clickable. /work-progress/[id]
+// selects the entry out of the project's own list (there is no per-entry
+// endpoint in either repo), so the destination has to carry the project --
+// which is also what makes the object page bookmarkable.
 export default function WorkProgressListClient({
   entries,
   activityNameById,
   boqLineDescriptionById,
   loading,
+  projectId,
 }: {
   entries: Entry[];
   activityNameById: Map<string, string>;
   boqLineDescriptionById: Map<string, string>;
   loading: boolean;
+  projectId?: string;
 }) {
+  const router = useRouter();
   const rows = entries.map((e) => ({
     ...e,
     activityName: activityNameById.get(e.activityId) ?? e.activityId,
@@ -72,6 +80,16 @@ export default function WorkProgressListClient({
           columns={COLUMNS}
           rows={rows as unknown as Record<string, unknown>[]}
           getRowId={(row) => row.id as string}
+          // R67 D-67: a Daily Entry row used to do nothing at all when
+          // clicked. It now opens the entry, where the site photo lives.
+          onRowClick={
+            projectId
+              ? (row) =>
+                  router.push(
+                    `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
+                  )
+              : undefined
+          }
           emptyStateLabel="No progress entries logged yet."
           renderCell={{
             percentComplete: (row) => {

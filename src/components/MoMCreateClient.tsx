@@ -2,65 +2,75 @@
 
 // Real-screen conversion (2026-08-30): replaces MoMsClient.tsx's old "New
 // Meeting" Dialog popup with a real create screen.
+//
+// R67 D-20: `projectName` is required, not decorative -- the screen states
+// which project it is about to write into, so a user can never save minutes
+// into a project they did not knowingly pick. The route above this refuses to
+// render the form at all without one.
+//
+// R67 D-67: onto the one create archetype. What changes: the breadcrumb now
+// names the project (it read "Minutes of Meeting / New Meeting" with no
+// project in it, on the one screen D-20 exists because of), the required
+// fields are named in the primary's own label rather than only in a hover
+// reason, and a save that lands leaves a receipt on the meeting page instead
+// of a toast that fades. The POST contract is unchanged.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import { fetchJson } from "@/lib/fetch-json";
+import type { CreateField } from "@/lib/create-screen";
 
-// R67 D-20: `projectName` is required, not decorative -- the screen states
-// which project it is about to write into ("Project: Cedar Heights Villa -
-// Phase 1"), in the same context tint the rail and the breadcrumb use, so a
-// user can never save minutes into a project they did not knowingly pick.
-// The route above this refuses to render the form at all without one.
+const FIELDS: CreateField[] = [
+  { name: "title", label: "Title", kind: "text", required: true, placeholder: "e.g. Weekly site review", wide: true },
+  { name: "scheduledAt", label: "Date & time", kind: "datetime-local", required: true },
+];
+
 export default function MoMCreateClient({ projectId, projectName }: { projectId: string; projectName: string }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const missing = [...(title.trim() ? [] : ["Title"]), ...(scheduledAt ? [] : ["Date & time"])];
-
-  async function createMeeting() {
-    if (missing.length) return;
-    setSubmitting(true);
+  async function save() {
+    setSaving(true);
+    setError(null);
     try {
       const meeting = await fetchJson<{ id: string }>("/api/moms", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), scheduledAt, projectId }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: (values.title ?? "").trim(),
+          scheduledAt: values.scheduledAt,
+          projectId,
+        }),
       });
-      toast.success("Meeting created");
-      router.push(`/moms/${meeting.id}`);
+      router.replace(createdHref("/moms", meeting.id, (values.title ?? "").trim()));
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't create meeting"));
-    } finally {
-      setSubmitting(false);
+      setError(err instanceof Error ? err.message : "The request did not complete.");
+      setSaving(false);
     }
   }
 
   return (
-    <ObjectScreen
-      breadcrumb="Minutes of Meeting / New Meeting"
-      title="New Meeting"
-      mode="create"
-      hasDraft={false}
-      onSave={createMeeting}
-      onCancel={() => router.push(`/moms?projectId=${projectId}`)}
-      onBack={() => router.push(`/moms?projectId=${projectId}`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Creating…" : missing.length ? missing.join(", ") : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
+    <CreateScreen
+      module="Minutes of Meeting"
+      moduleHref={`/moms?projectId=${encodeURIComponent(projectId)}`}
+      objectLabel="Meeting"
+      fields={FIELDS}
+      values={values}
+      onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
+      error={error}
+      saving={saving}
+      onSubmit={() => void save()}
+      onCancel={() => router.push(`/moms?projectId=${encodeURIComponent(projectId)}`)}
+      banner={
+        // The one fact this screen exists to keep in front of the user: which
+        // project the minutes are about to be written into.
         <p className="text-[12px] text-px-muted">
-          Project:{" "}
-          <span style={{ color: "var(--color-veri-status-context)" }}>{projectName}</span>
+          Project: <span style={{ color: "var(--color-veri-status-context)" }}>{projectName}</span>
         </p>
-        <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      }
+    />
   );
 }

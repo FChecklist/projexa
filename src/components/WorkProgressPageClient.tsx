@@ -48,7 +48,7 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressListClient entries={entries} activityNameById={activityNameById} boqLineDescriptionById={boqLineDescriptionById} loading={loading} />
+        <WorkProgressListClient projectId={projectId} entries={entries} activityNameById={activityNameById} boqLineDescriptionById={boqLineDescriptionById} loading={loading} />
       </div>
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         <WorkProgressFormClient projectId={projectId} onLogged={load} />
