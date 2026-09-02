@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   AA_TEXT,
   AA_UI,
@@ -6,6 +8,7 @@ import {
   CHART_SERIES,
   PAIRINGS,
   TOKENS,
+  TOKEN_CSS_VARS,
   contrast,
   contrastRatio,
   parseHex,
@@ -158,6 +161,96 @@ describe("the muted CVD-checked chart set (R-227)", () => {
       expect(ratio).toBeCloseTo(entry.measured, 1);
       expect(ratio).toBeGreaterThanOrEqual(entry.floor);
       expect(entry.reason.length).toBeGreaterThan(40);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TOKENS vs globals.css. Everything above measures the hexes in contrast.ts.
+// Nothing above proves those hexes are what the app actually ships -- and the
+// module's own header says the two "must be kept in step". This block is what
+// keeps them in step. Without it, re-valuing --primary-foreground to #FFFFFF
+// would ship a 2.60:1 button with every assertion above still green, which is
+// exactly how the failure came back the first time.
+// ---------------------------------------------------------------------------
+
+const GLOBALS_CSS = join(process.cwd(), "src", "app", "globals.css");
+
+/**
+ * Pulls the custom properties out of one top-level declaration block. The file
+ * has exactly one `:root {` and one `.dark {` at column 0 (the `@theme inline`
+ * block above them declares only var() aliases, no hexes), so a line-based
+ * scan from the selector to the closing brace at column 0 is exact -- and it
+ * fails loudly rather than silently returning {} if the selector moves.
+ */
+function declaredVars(css: string, selector: string): Record<string, string> {
+  const lines = css.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trimEnd() === `${selector} {`);
+  if (start === -1) throw new Error(`No top-level "${selector} {" block in ${GLOBALS_CSS}`);
+  const out: Record<string, string> = {};
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (lines[i] === "}") return out;
+    const m = /^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/i.exec(lines[i]);
+    if (m) out[m[1]] = m[2].trim();
+  }
+  throw new Error(`Unterminated "${selector} {" block in ${GLOBALS_CSS}`);
+}
+
+const CSS = readFileSync(GLOBALS_CSS, "utf8");
+const ROOT_VARS = declaredVars(CSS, ":root");
+const DARK_VARS = declaredVars(CSS, ".dark");
+
+describe("TOKENS agrees with src/app/globals.css", () => {
+  test("the stylesheet is actually being parsed", () => {
+    // Guards against declaredVars() returning an empty map and every
+    // assertion below passing vacuously.
+    expect(Object.keys(ROOT_VARS).length).toBeGreaterThan(20);
+    expect(Object.keys(DARK_VARS).length).toBeGreaterThan(15);
+    expect(TOKEN_CSS_VARS.length).toBeGreaterThan(25);
+  });
+
+  test("the parser reads a value this test can name by hand", () => {
+    // A second guard on the parser itself: if the regex silently stopped
+    // matching, every row below would fail rather than pass, but this says
+    // outright what a correct parse looks like.
+    expect(ROOT_VARS["--primary"]).toBe("#F5820A");
+    expect(DARK_VARS["--card"]).toBe("#182430");
+  });
+
+  for (const { token, cssVar, scope } of TOKEN_CSS_VARS) {
+    test(`TOKENS.${token} === ${cssVar} in ${scope === "root" ? ":root" : ".dark"}`, () => {
+      const declared = (scope === "root" ? ROOT_VARS : DARK_VARS)[cssVar];
+      expect({ cssVar, declared }).toEqual({ cssVar, declared: expect.any(String) });
+      // Hex comparison is case-insensitive: globals.css writes the chart set
+      // lower-case and the brand colours upper-case, and both are the colour.
+      expect(declared.toUpperCase()).toBe(TOKENS[token].toUpperCase());
+    });
+  }
+
+  test("the primary button's own pair is read from the stylesheet, not from TOKENS", () => {
+    // The one assertion that would have caught the original regression on its
+    // own: it never touches TOKENS at all.
+    expect(contrastRatio(ROOT_VARS["--primary-foreground"], ROOT_VARS["--primary"])).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(contrastRatio(DARK_VARS["--primary-foreground"], DARK_VARS["--primary"])).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  test("no status text tone is missing from either block", () => {
+    // A tone declared in :root but not in .dark inherits the light value onto
+    // the dark card, where it fails AA -- a silent failure the pairing list
+    // above cannot see, because it asserts the value it was handed.
+    for (const name of [
+      "--status-needs-you-text",
+      "--status-running-text",
+      "--status-done-text",
+      "--status-late-text",
+      "--status-neutral-text",
+      "--brand-text",
+    ]) {
+      expect({ name, inRoot: name in ROOT_VARS, inDark: name in DARK_VARS }).toEqual({
+        name,
+        inRoot: true,
+        inDark: true,
+      });
     }
   });
 });

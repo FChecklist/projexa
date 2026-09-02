@@ -14,9 +14,10 @@
 // D-09: these values are PROJEXA's own. @fchecklist/veridian-ui-kit's token
 // file is not edited and no kit release is cut -- src/app/globals.css
 // re-declares the ones that needed changing, after importing the kit's, and
-// this module is the machine-readable copy of that override block. The two
-// must be kept in step; TOKENS' own doc comment names the globals.css line
-// each value backs.
+// this module is the machine-readable copy of that override block. The two are
+// kept in step MECHANICALLY: TOKEN_CSS_VARS below maps each token to the
+// custom property it copies, and contrast.test.ts parses globals.css and
+// asserts every row. Editing one file without the other fails the suite.
 
 /** One channel of an sRGB colour, linearised per WCAG 2.x. */
 function channelLuminance(srgb8Bit: number): number {
@@ -73,7 +74,7 @@ export const AA_UI = 3;
 export const TOKENS = {
   // Surfaces.
   /** --background (light) */ cream: "#FFFDF9",
-  /** --card / popover white */ white: "#FFFFFF",
+  /** --popover (light): the white surface a dropdown/dialog paints on. */ white: "#FFFFFF",
   /** --secondary / --muted fill */ cloud: "#F0F4F8",
   /** .dark --background */ darkSurface: "#10181F",
   /** .dark --card */ darkCard: "#182430",
@@ -147,6 +148,72 @@ export const TOKENS = {
 } as const;
 
 export type TokenName = keyof typeof TOKENS;
+
+/** Which declaration block of src/app/globals.css a value is declared in. */
+export type TokenScope = "root" | "dark";
+
+/**
+ * THE BRIDGE BETWEEN THIS FILE AND src/app/globals.css.
+ *
+ * Every value in TOKENS above is a hand-copy of a custom property declared in
+ * globals.css, and until this list existed nothing checked that the copy was
+ * still true. That is precisely the drift this module says it exists to stop:
+ * re-valuing --primary-foreground back to #FFFFFF in globals.css would ship a
+ * 2.60:1 button with all thirty-odd contrast assertions still green, because
+ * they would all be measuring TOKENS.primaryText, which nobody had touched.
+ *
+ * contrast.test.ts reads globals.css, parses the `:root` and `.dark` blocks,
+ * and asserts each row below matches. A token that this app does NOT declare
+ * itself -- the kit's four status TINTS, which are imported from
+ * @fchecklist/veridian-ui-kit/tokens/globals.css and not overridden here -- is
+ * deliberately absent rather than pointed at a property projexa does not own.
+ */
+export const TOKEN_CSS_VARS: { token: TokenName; cssVar: string; scope: TokenScope }[] = [
+  // Surfaces.
+  { token: "cream", cssVar: "--background", scope: "root" },
+  { token: "white", cssVar: "--popover", scope: "root" },
+  { token: "cloud", cssVar: "--secondary", scope: "root" },
+  { token: "cloud", cssVar: "--muted", scope: "root" },
+  { token: "darkSurface", cssVar: "--background", scope: "dark" },
+  { token: "darkCard", cssVar: "--card", scope: "dark" },
+
+  // Brand. The first row is the whole R-197/R-260 button fix.
+  { token: "saffron", cssVar: "--primary", scope: "root" },
+  { token: "primaryText", cssVar: "--primary-foreground", scope: "root" },
+  { token: "primaryTextDark", cssVar: "--primary-foreground", scope: "dark" },
+  { token: "navy", cssVar: "--foreground", scope: "root" },
+  { token: "saffronDeep", cssVar: "--brand-fill-deep", scope: "root" },
+  { token: "brandText", cssVar: "--brand-text", scope: "root" },
+  { token: "brandTextDark", cssVar: "--brand-text", scope: "dark" },
+
+  // Status text tones, light.
+  { token: "statusNeedsYouText", cssVar: "--status-needs-you-text", scope: "root" },
+  { token: "statusRunningText", cssVar: "--status-running-text", scope: "root" },
+  { token: "statusDoneText", cssVar: "--status-done-text", scope: "root" },
+  { token: "statusLateText", cssVar: "--status-late-text", scope: "root" },
+  { token: "statusNeutralText", cssVar: "--status-neutral-text", scope: "root" },
+  { token: "mutedHint", cssVar: "--muted-foreground", scope: "root" },
+
+  // Status text tones, dark.
+  { token: "statusNeedsYouTextDark", cssVar: "--status-needs-you-text", scope: "dark" },
+  { token: "statusRunningTextDark", cssVar: "--status-running-text", scope: "dark" },
+  { token: "statusDoneTextDark", cssVar: "--status-done-text", scope: "dark" },
+  { token: "statusLateTextDark", cssVar: "--status-late-text", scope: "dark" },
+  { token: "statusNeutralTextDark", cssVar: "--status-neutral-text", scope: "dark" },
+  { token: "neutralTextDark", cssVar: "--muted-foreground", scope: "dark" },
+
+  // Charts -- the same five values in both blocks, which is itself the claim.
+  { token: "chart1", cssVar: "--chart-1", scope: "root" },
+  { token: "chart2", cssVar: "--chart-2", scope: "root" },
+  { token: "chart3", cssVar: "--chart-3", scope: "root" },
+  { token: "chart4", cssVar: "--chart-4", scope: "root" },
+  { token: "chart5", cssVar: "--chart-5", scope: "root" },
+  { token: "chart1", cssVar: "--chart-1", scope: "dark" },
+  { token: "chart2", cssVar: "--chart-2", scope: "dark" },
+  { token: "chart3", cssVar: "--chart-3", scope: "dark" },
+  { token: "chart4", cssVar: "--chart-4", scope: "dark" },
+  { token: "chart5", cssVar: "--chart-5", scope: "dark" },
+];
 
 /**
  * The pairings this app actually renders, each with the floor it must clear.
