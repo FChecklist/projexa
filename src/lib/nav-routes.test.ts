@@ -275,6 +275,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/vendors/new",
   "/wiki/[id]",
   "/wiki/new",
+  // R67 D-28: one work-progress entry, opened by clicking its row on
+  // /work-progress. Same class as "/permits/[id]" -- an href with no id in it
+  // would be meaningless in the sidebar.
+  "/work-progress/[id]",
 ]);
 
 describe("every module route is reachable by clicking (C01 REACHABLE)", () => {
