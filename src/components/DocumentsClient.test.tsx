@@ -204,6 +204,28 @@ describe("DocumentsClient -- the four branches", () => {
   });
 });
 
+describe("DocumentsClient -- R67 D-15 the word View", () => {
+  test("every row's LAST cell is a View link to the object page", async () => {
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
+
+    const link = view.getByRole("link", { name: "View" });
+    expect(link.getAttribute("href")).toBe("/documents/doc-1");
+    // Last cell of the row, not somewhere in the middle of the data columns.
+    const cells = [...view.container.querySelectorAll("tbody tr td")];
+    expect(cells[cells.length - 1].contains(link)).toBe(true);
+  });
+
+  test("an empty value is an en dash on every column -- a null category never reads 'other'", async () => {
+    stubDocuments([{ ...DOC, category: null, fileType: null, linkedEntityType: null, linkedEntityId: null }]);
+    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+
+    await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
+    expect(view.queryByText("other")).toBeNull();
+    expect(view.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe("DocumentsClient -- R67 D-14 header trio", () => {
   test("the header controls are Filter | Export | + New Document, in that DOM order", async () => {
     const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);

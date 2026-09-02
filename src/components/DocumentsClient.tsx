@@ -82,6 +82,14 @@ const COLUMNS: ScreenColumn[] = [
  */
 const RELATES_TO_COLUMN: ScreenColumn = { label: "Relates to", field: "__relatesTo", type: "text", importance: "Medium" };
 
+/**
+ * R67 D-15 (audit R-036). The row's only affordance was `cursor: pointer` -- a
+ * shape the mouse takes, which is not a word and is invisible to anyone reading
+ * the screen rather than hovering it. The rule in this product is that every
+ * action is a word. The whole-row click stays as the fast path.
+ */
+const VIEW_COLUMN: ScreenColumn = { label: "View", field: "__view", type: "text", importance: "Medium" };
+
 /** "all" plus the shared list, so the filter and the create screen cannot drift. */
 const FILTER_CATEGORIES = ["all", ...DOCUMENT_CATEGORIES];
 
@@ -206,7 +214,12 @@ export default function DocumentsClient({
 
   const base = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const columns = useMemo(
-    () => [...base, ...(base.some((c) => c.field === RELATES_TO_COLUMN.field) ? [] : [RELATES_TO_COLUMN])],
+    () => [
+      ...base,
+      ...(base.some((c) => c.field === RELATES_TO_COLUMN.field) ? [] : [RELATES_TO_COLUMN]),
+      // Always last: "View" is the row's own affordance, not data about it.
+      ...(base.some((c) => c.field === VIEW_COLUMN.field) ? [] : [VIEW_COLUMN]),
+    ],
     [base]
   );
   const scopeName = projectName ?? "this project";
@@ -306,8 +319,23 @@ export default function DocumentsClient({
         return <span className="text-px-muted">{formatDate(d.createdAt)}</span>;
       case "__relatesTo":
         return <span className="text-px-muted">{relatesToText(d)}</span>;
-      default:
-        return String((d as unknown as Record<string, unknown>)[field] ?? "—");
+      case "__view":
+        // stopPropagation so the word and the row are one navigation, not two.
+        return (
+          <Link
+            href={`/documents/${d.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="underline underline-offset-2"
+          >
+            View
+          </Link>
+        );
+      default: {
+        // R67 D-15: an empty value is an en dash on every column, never the
+        // literal "null" and never a default that looks like real data.
+        const value = (d as unknown as Record<string, unknown>)[field];
+        return value === null || value === undefined || value === "" ? "—" : String(value);
+      }
     }
   }
 
