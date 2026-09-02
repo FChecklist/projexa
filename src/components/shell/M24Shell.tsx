@@ -61,8 +61,7 @@ import AccountMenu from "@/components/shell/AccountMenu";
 // one click at a time. Per D-09 the component is forked into projexa rather
 // than released in the kit; everything else here still comes from the kit.
 import { TopRail } from "@/components/shell/TopRail";
-import { ProjectScopeProvider } from "@/components/shell/project-context";
-import { PROJECT_COOKIE } from "@/lib/project-selection";
+import { ProjectScopeProvider, useUrlProjectId, writeProjectCookie, PROJECT_PARAM } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
 import { describeReadError, taskRowDetail } from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
@@ -95,28 +94,13 @@ const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "hist
 // list's own filter survives a project switch -- which is what makes the
 // page re-query with the new id. The cookie is only a memory of the last
 // choice, consulted when the URL says nothing at all.
-const PROJECT_PARAM = "projectId";
-// R67 D-66: the name lives in src/lib/project-selection.ts, which the SERVER
-// components that read this cookie also import -- the writer and the readers
-// cannot drift apart on a string literal.
-const PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-
-function readProjectCookie(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.split("; ").find((c) => c.startsWith(`${PROJECT_COOKIE}=`));
-  if (!match) return null;
-  const value = decodeURIComponent(match.slice(PROJECT_COOKIE.length + 1));
-  return value || null;
-}
-
-function writeProjectCookie(projectId: string | null) {
-  if (typeof document === "undefined") return;
-  // A project id the user picked themselves -- not a credential, not
-  // personal data. Lax so it is not sent on cross-site requests at all.
-  document.cookie = projectId
-    ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE}; SameSite=Lax`
-    : `${PROJECT_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
-}
+// R67 D-66: the cookie NAME lives in src/lib/project-selection.ts, which the
+// SERVER components that read it also import; the URL-wins rule, the cookie
+// read/write and the resolution effect live in shell/project-context.tsx,
+// where they are unit-tested (project-context.test.tsx). They stood inline
+// here, inside a component that also fetches the org, the project list, the
+// task list and the screen registry -- so the one rule D-04's and D-66's
+// acceptances turn on could not be exercised without standing all of that up.
 
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
@@ -215,7 +199,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  // THE URL WINS -- read on mount, on every route change and on back/forward.
+  // See shell/project-context.tsx for the rule and its tests.
+  const [projectId, setProjectId] = useUrlProjectId(pathname);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
@@ -503,38 +489,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       live = false;
     };
   }, [noteFailure]);
-
-  // R67 D-20, the reading half of the contract: THE URL WINS. Read on mount,
-  // on every route change, and on back/forward -- the same three triggers the
-  // Task Master tab param below already uses, and for the same reason
-  // (`window.location.search` rather than useSearchParams, so this shell,
-  // which wraps all 53 routes, does not put every one of them behind a
-  // Suspense boundary it does not otherwise need).
-  //
-  // With no ?projectId= in the URL the cookie is consulted ONCE, as a memory
-  // of the user's last choice. It never overrides the URL, and it never
-  // supplies a project to a screen that has opted into the all-projects mode
-  // -- that screen reads the URL server-side, not this state.
-  const adoptedCookie = useRef(false);
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const fromUrl = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
-      if (fromUrl) {
-        adoptedCookie.current = true;
-        setProjectId(fromUrl);
-        writeProjectCookie(fromUrl);
-        return;
-      }
-      if (!adoptedCookie.current) {
-        adoptedCookie.current = true;
-        const remembered = readProjectCookie();
-        if (remembered) setProjectId(remembered);
-      }
-    };
-    syncFromUrl();
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
-  }, [pathname]);
 
   // The writing half: switching project navigates, carrying every OTHER
   // search parameter through untouched so a list's filter (D-16's status /
