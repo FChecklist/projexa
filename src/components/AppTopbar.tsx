@@ -74,7 +74,7 @@ export function AppTopbar({
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="gap-2 px-2 text-ct-navy hover:bg-ct-cloud">
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-ct-saffron text-white text-xs font-bold">{initials}</AvatarFallback>
+            <AvatarFallback className="bg-ct-saffron text-ct-navy text-xs font-bold">{initials}</AvatarFallback>
           </Avatar>
           <span className="hidden max-w-40 truncate md:inline text-sm font-medium">{info?.email || "Account"}</span>
           <ChevronDown className="size-3 text-ct-muted" />

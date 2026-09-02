@@ -7,6 +7,7 @@
 // and reintroduce the hydration mismatch". These assertions pin the actual
 // output so that regression is a visible, failing test, not a silent
 // runtime-dependent flake.
+import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
 import { formatDate, formatDateTime, formatTime } from "./format-date";
 
@@ -42,5 +43,24 @@ describe("formatDateTime", () => {
 describe("formatTime", () => {
   test("pins en-US/UTC output for time-only", () => {
     expect(formatTime("2026-08-25T14:30:00.000Z")).toBe("2:30:00 PM");
+  });
+});
+
+describe("formatDateTimeMedium (the meeting / MoM shape)", () => {
+  test("pins BOTH the locale and the time zone", () => {
+    expect(formatDateTimeMedium("2026-08-25T14:30:00.000Z")).toBe("Aug 25, 2026, 2:30 PM");
+  });
+
+  test("a timestamp near midnight UTC keeps ONE calendar day, whatever the runtime's zone", () => {
+    // This is the half of the bug that pinning the locale alone left behind:
+    // 23:30 UTC is the next day in Asia/Dubai, so an unpinned formatter would
+    // render a different DATE on the server pass than in the browser.
+    expect(formatDateTimeMedium("2026-08-25T23:30:00.000Z")).toBe("Aug 25, 2026, 11:30 PM");
+  });
+
+  test("accepts a Date and a numeric timestamp, like its siblings", () => {
+    const iso = "2026-08-25T14:30:00.000Z";
+    expect(formatDateTimeMedium(new Date(iso))).toBe(formatDateTimeMedium(iso));
+    expect(formatDateTimeMedium(new Date(iso).getTime())).toBe(formatDateTimeMedium(iso));
   });
 });

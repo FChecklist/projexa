@@ -63,8 +63,8 @@ export default function SalesDashboardClient() {
               {data.overdueLeadFollowUps} lead(s) and {data.overdueOpportunityFollowUps} opportunity(ies) have a follow-up date in the past.
             </span>
             <div className="flex gap-3">
-              <Link href="/sales/leads" className="text-px-orange hover:underline">Review leads</Link>
-              <Link href="/sales/opportunities" className="text-px-orange hover:underline">Review opportunities</Link>
+              <Link href="/sales/leads" className="text-brand-text hover:underline">Review leads</Link>
+              <Link href="/sales/opportunities" className="text-brand-text hover:underline">Review opportunities</Link>
             </div>
           </CardContent>
         </Card>
@@ -102,11 +102,11 @@ export default function SalesDashboardClient() {
       </Card>
 
       <div className="flex flex-wrap gap-3 text-sm">
-        <Link href="/sales/leads" className="text-px-orange hover:underline">View all leads →</Link>
-        <Link href="/sales/opportunities" className="text-px-orange hover:underline">View all opportunities →</Link>
-        <Link href="/quotations" className="text-px-orange hover:underline">View quotations →</Link>
-        <Link href="/sales-orders" className="text-px-orange hover:underline">View sales orders →</Link>
-        <Link href="/customers" className="text-px-orange hover:underline">View customers →</Link>
+        <Link href="/sales/leads" className="text-brand-text hover:underline">View all leads →</Link>
+        <Link href="/sales/opportunities" className="text-brand-text hover:underline">View all opportunities →</Link>
+        <Link href="/quotations" className="text-brand-text hover:underline">View quotations →</Link>
+        <Link href="/sales-orders" className="text-brand-text hover:underline">View sales orders →</Link>
+        <Link href="/customers" className="text-brand-text hover:underline">View customers →</Link>
       </div>
     </div>
   );

@@ -115,7 +115,7 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
           return (
             <Card key={tool.codeReference} className="shadow-card">
               <CardContent className="space-y-2 p-4">
-                <div className="flex items-center gap-2 font-medium text-px-ink"><Icon className="size-4 text-px-orange" />{tool.label}</div>
+                <div className="flex items-center gap-2 font-medium text-px-ink"><Icon className="size-4 text-brand-text" />{tool.label}</div>
                 <p className="text-xs text-px-muted">{tool.description}</p>
                 <Button size="sm" variant="outline" className="w-full" onClick={() => runTool(tool)} disabled={running !== null}>
                   {isRunning ? <Loader2 className="size-4 animate-spin" /> : "Run"}

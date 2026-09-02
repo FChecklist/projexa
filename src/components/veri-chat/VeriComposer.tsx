@@ -296,7 +296,7 @@ export default function VeriComposer() {
           <div className="rounded-xl border border-px-border bg-px-cloud/50 px-3 py-2 mb-2">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-semibold text-px-slate">Queued</span>
-              <button type="button" onClick={sendAllQueued} disabled={sending} className="text-[11px] font-semibold text-px-orange disabled:opacity-40">
+              <button type="button" onClick={sendAllQueued} disabled={sending} className="text-[11px] font-semibold text-brand-text disabled:opacity-40">
                 Send all ({queue.length})
               </button>
             </div>
@@ -357,7 +357,7 @@ export default function VeriComposer() {
                   sending ||
                   (composerMode === "discuss" ? !value.trim() : !(isChainMode && chainComplete && isDispatchableChain))
                 }
-                className="grid size-9 place-items-center rounded-lg bg-px-orange text-white hover:bg-px-orange-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="grid size-9 place-items-center rounded-lg bg-px-orange text-ct-navy hover:bg-px-orange-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-[18px]" />}
               </button>
@@ -381,7 +381,7 @@ export default function VeriComposer() {
         </p>
 
         {isThreadOpen && (
-          <button type="button" onClick={closeThread} className="text-[11.5px] font-semibold text-px-orange mt-1">
+          <button type="button" onClick={closeThread} className="text-[11.5px] font-semibold text-brand-text mt-1">
             Back
           </button>
         )}
