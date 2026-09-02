@@ -29,7 +29,6 @@ import {
   COMPOSER_PILLS_BAND_RESERVE,
   PillStrip,
   TaskMaster,
-  TopRail,
   cutChainFrom,
   resetChain,
   DEFAULT_CHAIN_MODE,
@@ -48,6 +47,11 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+// R67 D-66/D-04: the kit's TopRail exposes no picker slot -- onSwitchProject
+// is a bare callback, which is why this shell was CYCLING through projects
+// one click at a time. Per D-09 the component is forked into projexa rather
+// than released in the kit; everything else here still comes from the kit.
+import { TopRail } from "@/components/shell/TopRail";
 import { createClient } from "@/lib/supabase/client";
 import { describeReadError, taskRowDetail } from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
@@ -739,22 +743,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
           organisationName={info?.organization?.name ?? "—"}
           project={project}
-          onSwitchProject={() => {
-            // Cycles through real projects and back through the null state.
-            // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects') so
-            // CRM, pipeline and org-level work are reachable."
-            //
-            // R67 D-20: what changed here is not the cycling -- replacing it
-            // with a real picker list means forking the kit's TopRail, which
-            // is D-04/D-66's own scope and would collide with them -- it is
-            // that the choice is now WRITTEN TO THE URL through
-            // selectProject(), so the page under the rail actually re-queries
-            // with the new id instead of the rail and the page disagreeing.
-            if (projects.length === 0) return;
-            const i = projects.findIndex((p) => p.id === projectId);
-            const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-            selectProject(next);
-          }}
+          // R67 D-66/D-04: a real list, not a cycle. "All projects" on top
+          // (M24: "THE PROJECT SELECTOR NEEDS A NULL STATE so CRM, pipeline
+          // and org-level work are reachable"), then every project, the
+          // current one marked. R67 D-20: choosing one writes the URL through
+          // selectProject(), so the page under the rail re-queries with the
+          // new id instead of the rail and the page disagreeing.
+          projects={projects}
+          onSelectProject={selectProject}
           search={<SearchTrigger />}
           alerts={<NotificationBell />}
           account={<AccountMenu email={info?.email} />}
@@ -881,7 +877,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           onSubmit={onSubmit}
           disabledReason={
             submitError ??
-            (submitting ? "Sending…" : projectId || pendingFunctionId ? undefined : "Pick a project or a module first")
+            // R67 D-66: the rail is where a project is chosen, so the reason
+            // names that control rather than leaving the user to find it.
+            (submitting ? "Sending…" : projectId || pendingFunctionId ? undefined : "Pick a project in the top bar")
           }
           placeholder={
             pendingFunctionId
