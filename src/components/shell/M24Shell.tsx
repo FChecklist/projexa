@@ -49,6 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { readRailProject, writeRailProject } from "@/lib/rail-project";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -173,6 +174,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     } catch {
       // A blocked or unavailable storage must not take the shell down.
     }
+    // R67 D-38: the rail's project selection used to die on every navigation,
+    // so the rail said "All projects" while the page beneath it was showing one
+    // project's rows. It is restored here and written on every switch below;
+    // src/lib/rail-project.ts owns the storage and its failure modes.
+    setProjectId(readRailProject());
   }, []);
 
   useEffect(() => {
@@ -247,7 +253,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           return;
         }
         const list: Project[] = Array.isArray(d) ? d : (d?.projects ?? []);
-        if (live && Array.isArray(list)) setProjects(list.map((p) => ({ id: p.id, name: p.name })));
+        if (live && Array.isArray(list)) {
+          const loaded = list.map((p) => ({ id: p.id, name: p.name }));
+          setProjects(loaded);
+          // R67 D-38: an org with exactly ONE project has nothing to choose
+          // between, so the rail showing "All projects" was never information --
+          // it was the shell declining to say the only thing it knew. Select it.
+          if (loaded.length === 1) {
+            setProjectId((current) => current ?? loaded[0].id);
+            if (readRailProject() === null) writeRailProject(loaded[0].id);
+          }
+        }
       } catch (err) {
         if (live) noteFailure("your projects", err instanceof Error ? err.message : "the request did not complete");
       }
@@ -606,6 +622,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             const i = projects.findIndex((p) => p.id === projectId);
             const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
             setProjectId(next ? next.id : null);
+            // R67 D-38: persist it, so the page beneath this rail can read the
+            // same answer instead of guessing projects[0].
+            writeRailProject(next ? next.id : null);
           }}
           search={<SearchTrigger />}
           alerts={<NotificationBell />}

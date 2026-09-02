@@ -136,6 +136,7 @@ export default function MaterialsClient({
   registryColumns,
   initialTab,
   initialMaterialId,
+  readOnlyReason,
 }: {
   projectId: string;
   projectName: string;
@@ -143,6 +144,13 @@ export default function MaterialsClient({
   initialTab?: string;
   /** From ?materialId= -- set when the Cost Report drills into one material's receipts. */
   initialMaterialId?: string;
+  /**
+   * R67 D-38: set when this project can be READ but not written -- today, a
+   * project that is no longer active. Every write on the screen is disabled
+   * with this exact sentence beside it, and it is stated once at the top in the
+   * rose tone, so the user is told before they try rather than after.
+   */
+  readOnlyReason?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -377,7 +385,7 @@ export default function MaterialsClient({
       // never silent while the route resolves.
       label: openingNew ? "Opening…" : "+ New Material",
       variant: "default",
-      disabledReason: loadingMaterials ? "Loading…" : undefined,
+      disabledReason: readOnlyReason ?? (loadingMaterials ? "Loading…" : undefined),
       disabled: openingNew,
       onClick: openNewMaterial,
       testId: "materials-new",
@@ -392,6 +400,19 @@ export default function MaterialsClient({
         project={projectName}
         actions={headerActions}
       />
+
+      {/* R67 D-38: rose is this product's only loud colour and it is used here
+          for the one thing the user must know before they try to type: this
+          project's ledger is history now. */}
+      {readOnlyReason && (
+        <p
+          role="status"
+          className="rounded-md border px-3 py-2 text-[13px]"
+          style={{ borderColor: "var(--color-veri-status-late)", color: "var(--color-veri-status-late)" }}
+        >
+          {readOnlyReason}
+        </p>
+      )}
 
       {filterOpen && (
         <Card className="shadow-card">
@@ -429,7 +450,14 @@ export default function MaterialsClient({
               // carries its own next step.
               <p className="flex flex-wrap items-center justify-center gap-1 py-10 text-center text-sm text-px-muted">
                 <span>No materials in the master yet —</span>
-                <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0"
+                  disabled={!!readOnlyReason}
+                  title={readOnlyReason}
+                  onClick={openNewMaterial}
+                >
                   {openingNew ? "Opening…" : "+ New Material"}
                 </Button>
               </p>
@@ -460,7 +488,9 @@ export default function MaterialsClient({
                     >
                       {columns.map((col) => {
                         const isEditing = editing?.id === m.id && editing.field === col.field;
-                        const editable = INLINE_EDITABLE_FIELDS.has(col.field);
+                        // R67 D-38: inline editing is a write, so it is off on a
+                        // read-only project like every other write here.
+                        const editable = !readOnlyReason && INLINE_EDITABLE_FIELDS.has(col.field);
                         return (
                           <TableCell
                             key={col.field}
@@ -563,12 +593,13 @@ export default function MaterialsClient({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               data-testid="materials-record-receipt"
-              disabled={loadingMaterials || materials.length === 0}
+              disabled={!!readOnlyReason || loadingMaterials || materials.length === 0}
+              title={readOnlyReason}
               onClick={() => { setFooterMessage(null); navigate(`/materials/receipts/new?projectId=${projectId}`); }}
             >
-              <Plus className="size-4" /> Record Receipt
+              <Plus className="size-4" /> {readOnlyReason ? `Record Receipt (${readOnlyReason})` : "Record Receipt"}
             </Button>
-            {!loadingMaterials && materials.length === 0 && (
+            {!readOnlyReason && !loadingMaterials && materials.length === 0 && (
               <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>
                 Add a material first
               </Button>
