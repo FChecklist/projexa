@@ -32,18 +32,22 @@ export function createdHref(moduleHref: string, id: string, identifier?: string 
  * was not arrived at from a save, so an object page opened normally shows
  * nothing extra.
  */
-export function useCreatedMessage(objectLabel: string): string | null {
+export function useCreatedMessage(objectLabel: string, search?: string): string | null {
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    // `search` is an override, not a second source: production never passes
+    // it, and it exists because happy-dom's history.replaceState does not
+    // update window.location.search, so a render test could not otherwise
+    // put the page in the state this component exists to handle.
+    const params = new URLSearchParams(search ?? window.location.search);
     if (!params.has(CREATED_PARAM)) return;
     setMessage(createdMessage(objectLabel, params.get(CREATED_PARAM)));
-  }, [objectLabel]);
+  }, [objectLabel, search]);
   return message;
 }
 
-export function CreatedReceipt({ objectLabel }: { objectLabel: string }) {
-  const message = useCreatedMessage(objectLabel);
+export function CreatedReceipt({ objectLabel, search }: { objectLabel: string; search?: string }) {
+  const message = useCreatedMessage(objectLabel, search);
   if (!message) return null;
   return (
     <div
