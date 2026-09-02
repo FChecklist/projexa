@@ -213,6 +213,9 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/labour/new",
   "/materials/[id]",
   "/materials/new",
+  // R67 D-36: one inbound receipt. Reached by clicking a row in the Materials
+  // module's Inbound Receipts tab, never from the sidebar.
+  "/materials/receipts/[id]",
   "/materials/receipts/new",
   "/meetings/[id]",
   "/meetings/new",

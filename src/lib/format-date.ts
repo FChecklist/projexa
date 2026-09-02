@@ -70,3 +70,17 @@ export function formatDayMonthYear(value: Date | string | number): string {
   if (Number.isNaN(date.getTime())) return "—";
   return `${String(date.getUTCDate()).padStart(2, "0")} ${SHORT_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
+
+// R67: the all-numeric day-first form ("28-08-2026") the product's own
+// breadcrumbs and identifiers use. formatDate() above is en-US month-first
+// ("8/28/2026"), which an AED/INR organisation reads as the wrong day for
+// the first twelve days of every month. This is the day-first counterpart;
+// making the choice org-configurable is R67 item D-39's own job, and this
+// helper is where that switch will land.
+export function formatDateNumeric(value: Date | string | number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}-${month}-${date.getUTCFullYear()}`;
+}

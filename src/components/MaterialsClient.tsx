@@ -49,11 +49,20 @@ import DataLoadError from "@/components/DataLoadError";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Loader2, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
+import { formatDateNumeric } from "@/lib/format-date";
+import { formatMoney, formatQty } from "@/lib/format-money";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
-type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
+type Receipt = {
+  id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null;
+  vendorId: string | null;
+  // R67 D-36
+  reference: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+};
+type Vendor = { id: string; vendorName: string };
 type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -104,16 +113,18 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [report, setReport] = useState<CostReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
 
   async function load() {
     setLoading(true);
-    const [matR, recR, repR] = await Promise.allSettled([
+    const [matR, recR, repR, venR] = await Promise.allSettled([
       fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
       fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
       fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ vendors?: Vendor[] }>(`/api/vendors`),
     ]);
 
     const errors: { materials?: string; receipts?: string; report?: string } = {};
@@ -126,6 +137,11 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
     if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
     else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
 
+    // R67 D-36: the vendor list is a display-only lookup for the Inbound
+    // tab's new Vendor column -- its failure degrades to an en-dash, never to
+    // an alert, the same posture LabourClient takes.
+    setVendors(venR.status === "fulfilled" ? venR.value.vendors ?? [] : []);
+
     setLoadErrors(errors);
     setLoading(false);
   }
@@ -133,6 +149,7 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
   useEffect(() => { load(); }, [projectId]);
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
+  const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
 
   function goToTab(tab: string) {
     setActiveTab(tab);
@@ -197,16 +214,38 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
               <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
             ) : (
               <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead>Quantity</TableHead><TableHead>Unit Cost</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Unit Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
-                  {receipts.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
-                      <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
-                      <TableCell>{r.quantity}</TableCell>
-                      <TableCell>{r.unitCost ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
+                  {receipts.map((r) => {
+                    const voided = !!r.voidedAt;
+                    return (
+                      <TableRow
+                        key={r.id}
+                        // R67 D-36: a voided receipt stays in the list, struck
+                        // through, with its reason on hover -- it is excluded
+                        // from the totals, not from the record.
+                        className={`cursor-pointer hover:bg-px-cloud/40 ${voided ? "line-through opacity-70" : ""}`}
+                        title={voided ? `Voided — ${r.voidReason ?? "no reason recorded"}` : undefined}
+                        onClick={() => router.push(`/materials/receipts/${r.id}`)}
+                      >
+                        <TableCell className="text-px-muted">{formatDateNumeric(r.receivedDate)}</TableCell>
+                        <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
+                        <TableCell className="text-px-muted">{vendorName(r.vendorId)}</TableCell>
+                        <TableCell className="text-px-muted">{r.reference ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatQty(r.quantity)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMoney(r.unitCost, currencies)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}

@@ -137,6 +137,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/leave/requests": "ANY_MEMBER",
   "/leave/requests/[id]/decision": "PM_OR_ABOVE",
   "/materials": "FIELD",
+  // R67 D-36: the receipt's soft void. Same tier as recording the receipt --
+  // correcting a mis-keyed delivery is the same site work as entering it,
+  // and the void keeps the row rather than destroying it.
+  "/materials/[id]": "FIELD",
   "/materials/master": "FIELD",
   "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",

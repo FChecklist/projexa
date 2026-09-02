@@ -104,6 +104,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/materials",
   "/materials/[id]",
   "/materials/new",
+  "/materials/receipts/[id]",
   "/materials/receipts/new",
   "/meetings",
   "/meetings/[id]",

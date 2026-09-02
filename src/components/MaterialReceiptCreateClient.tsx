@@ -1,26 +1,44 @@
 "use client";
 
 // Real-screen conversion (2026-08-30): replaces MaterialsClient.tsx's old
-// "Record Receipt" Dialog popup with a real create screen. No Object Page
-// -- a write-once inbound-receipt transaction, same class as Attendance.
+// "Record Receipt" Dialog popup with a real create screen.
+//
+// R67 D-36 (audit R-105). Two fields were missing and the omission had a
+// real cost: without a VENDOR a delivery cannot be matched to the invoice
+// that arrives for it a month later, and without a REFERENCE (the delivery
+// note or PO number written on the paper the driver hands over) there is
+// nothing to match it BY. Both are now on the form and both reach the
+// receipts table. Vendor stays optional -- site staff genuinely record
+// deliveries before the vendor is set up -- but says what it is for instead
+// of being silently skippable, and the Save label keeps counting only the
+// true mandatories.
+//
+// A receipt is no longer write-once either: /materials/receipts/[id] can void
+// it with a reason (C03-09/D-36), so a mis-keyed quantity is recoverable.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Material = { id: string; name: string; isActive: boolean };
+type Vendor = { id: string; vendorName: string };
 
 export default function MaterialReceiptCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [vendorsFailed, setVendorsFailed] = useState(false);
   const [materialId, setMaterialId] = useState("");
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
+  const [vendorId, setVendorId] = useState("");
+  const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -29,6 +47,14 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
       .catch((err) => toast.error(errorMessage(err, "Couldn't load material master")));
   }, [projectId]);
 
+  useEffect(() => {
+    fetchJson<{ vendors?: Vendor[] }>("/api/vendors")
+      .then((d) => { setVendors(d.vendors ?? []); setVendorsFailed(false); })
+      .catch(() => setVendorsFailed(true));
+  }, []);
+
+  // Only the true mandatories are counted -- Vendor and Reference are
+  // deliberately absent from this list.
   const missing = [...(materialId ? [] : ["Material"]), ...(receivedDate ? [] : ["Received Date"]), ...(quantity ? [] : ["Quantity"])];
 
   async function createReceipt() {
@@ -37,7 +63,12 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     try {
       await fetchJson("/api/materials", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, materialId, receivedDate, quantity: Number(quantity), unitCost: unitCost ? Number(unitCost) : undefined }),
+        body: JSON.stringify({
+          projectId, materialId, receivedDate, quantity: Number(quantity),
+          unitCost: unitCost ? Number(unitCost) : undefined,
+          vendorId: vendorId || undefined,
+          reference: reference.trim() || undefined,
+        }),
       });
       toast.success("Receipt recorded");
       router.push(`/materials?projectId=${projectId}&tab=receipts`);
@@ -72,6 +103,28 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
         <div className="space-y-1.5"><Label>Received Date</Label><Input type="date" value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Unit Cost (optional — defaults to the master cost)</Label><Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} /></div>
+        <div className="space-y-1.5">
+          <Label htmlFor="receipt-vendor">Vendor</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={vendorId} onValueChange={setVendorId}>
+              <SelectTrigger id="receipt-vendor" className="min-w-56"><SelectValue placeholder="Select vendor" /></SelectTrigger>
+              <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button type="button" variant="link" size="sm" className="px-0" onClick={() => router.push("/vendors/new")}>
+              Add vendor…
+            </Button>
+          </div>
+          <p className="text-[12px] text-px-muted">Needed to match this delivery to an invoice</p>
+          {vendorsFailed && (
+            <p role="alert" className="text-[12px] text-px-error">
+              The vendor list could not be loaded — the receipt still saves without one.
+            </p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="receipt-reference">Reference (delivery note / PO no.)</Label>
+          <Input id="receipt-reference" value={reference} onChange={(e) => setReference(e.target.value)} />
+        </div>
       </div>
     </ObjectScreen>
   );
