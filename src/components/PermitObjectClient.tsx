@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
 
 type Permit = {
   id: string;
@@ -27,14 +28,24 @@ type Permit = {
   documentUrl?: string | null;
 };
 
+// R67 D-05: ONE required set across create and edit. permitNumber and
+// permitAuthority were required here but optional on /permits/new, so a permit
+// created with the legal minimum (name + dates + PDF) could be opened, could
+// be edited, and could never be saved again -- the edit trapped the record it
+// was meant to fix. The required set is now the create form's: name, issue
+// date, end date (the PDF is fixed at create time and is not editable here).
+// The labels are the module's one word set -- "Permit name", "Permit number",
+// "Issuing authority", "Issue date", "End date" -- matching the list.
 const REQUIRED_COLUMNS: ScreenColumn[] = [
   { label: "Permit name", field: "name", type: "text", control: "TEXT", required: true, fieldStatus: "REQUIRED" },
-  { label: "Permit number", field: "permitNumber", type: "text", control: "TEXT", required: true, fieldStatus: "REQUIRED" },
-  { label: "Authority", field: "permitAuthority", type: "text", control: "TEXT", required: true, fieldStatus: "REQUIRED" },
   { label: "Issue date", field: "issueDate", type: "date", control: "DATE", required: true, fieldStatus: "REQUIRED" },
-  { label: "Expiry date", field: "endDate", type: "date", control: "DATE", required: true, fieldStatus: "REQUIRED" },
+  { label: "End date", field: "endDate", type: "date", control: "DATE", required: true, fieldStatus: "REQUIRED" },
 ];
-const OPTIONAL_COLUMNS: ScreenColumn[] = [{ label: "Notes", field: "notes", type: "text", control: "TEXT", fieldStatus: "OPTIONAL", required: false }];
+const OPTIONAL_COLUMNS: ScreenColumn[] = [
+  { label: "Permit number", field: "permitNumber", type: "text", control: "TEXT", fieldStatus: "OPTIONAL", required: false },
+  { label: "Issuing authority", field: "permitAuthority", type: "text", control: "TEXT", fieldStatus: "OPTIONAL", required: false },
+  { label: "Notes", field: "notes", type: "text", control: "TEXT", fieldStatus: "OPTIONAL", required: false },
+];
 
 export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const router = useRouter();
@@ -45,6 +56,11 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
+  // R67 D-05: the confirm step for Delete is rendered INSIDE the screen, not
+  // in a dialog -- PROJEXA's one popup was removed by D-01 and none is coming
+  // back. `deleting` keeps the destructive action from being fired twice.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const valuesRef = useRef(values);
   useEffect(() => {
     valuesRef.current = values;
@@ -98,6 +114,14 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     load();
   }, [permitId]);
 
+  // R67 D-06: the receipt the create screen handed over ("Permit <number or
+  // name> created"), rendered in this screen's persistent message band rather
+  // than a toast that is gone before the page finishes painting.
+  useEffect(() => {
+    const handed = takeScreenMessage("permits.object");
+    if (handed) setMessages([handed]);
+  }, []);
+
   async function handleEdit() {
     const res = await fetch("/api/screen-drafts", {
       method: "POST",
@@ -146,6 +170,35 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     await load();
   }
 
+  // R67 D-05. The permit and its PDF are one record: deleting the row deletes
+  // the file with it, so the confirm names both and says it is irreversible.
+  // The name in the sentence is the permit NUMBER when there is one (that is
+  // what a user recognises a permit by) and the permit name otherwise.
+  const permitLabel = permit ? permit.permitNumber || permit.name : "";
+
+  async function handleDelete() {
+    if (!permit || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/permits/${permitId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setMessages([{ level: "error", text: body.error ?? "Failed to delete permit" }]);
+        setConfirmingDelete(false);
+        setDeleting(false);
+        return;
+      }
+      // The receipt has to outlive this screen, which is about to be replaced
+      // by the list -- see screen-message.ts.
+      setScreenMessage("permits.list", { level: "success", text: `Permit ${permitLabel} deleted` });
+      router.push(`/permits?projectId=${permit.projectId}`);
+    } catch (err) {
+      setMessages([{ level: "error", text: errorMessage(err, "Couldn't delete this permit") }]);
+      setConfirmingDelete(false);
+      setDeleting(false);
+    }
+  }
+
   async function handleCancel() {
     if (draftId) await fetch(`/api/screen-drafts/${draftId}`, { method: "DELETE" });
     setDraftId(null);
@@ -190,6 +243,12 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       onEdit={mode === "display" ? handleEdit : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
       onCancel={mode === "edit" ? handleCancel : undefined}
+      // R67 D-05: display mode only (ObjectScreen renders footer actions per
+      // mode, and puts Delete behind a spacer at the far end of the bar, away
+      // from Edit -- destructive actions are never adjacent to common ones).
+      // Clicking it arms the in-screen confirm below rather than deleting.
+      onDelete={mode === "display" ? () => setConfirmingDelete(true) : undefined}
+      deleteDisabledReason={hasDraft ? "Finish or cancel editing first" : undefined}
       // R42 seq23 live-user finding: Back dropped ?projectId= entirely,
       // landing on a different (or empty) project's list -- the GLOBAL "Back
       // restores filters/sort/scroll/page" rule can't hold if the list
@@ -223,6 +282,33 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
           The absent case is stated rather than left blank -- same rule as
           everywhere else in this pass: a missing document and a document
           the page failed to surface must not look identical. */}
+      {/* R67 D-05: the confirm, with its blast radius stated -- what goes,
+          and that it cannot be undone. In the screen, not in a dialog. */}
+      {confirmingDelete && mode === "display" && (
+        <section role="alertdialog" aria-label="Confirm delete" className="mx-4 mt-3 rounded-md border border-[color:var(--color-veri-status-late)] p-3">
+          <p className="text-[13px] text-px-ink">
+            Delete permit {permitLabel} and its PDF? This cannot be undone.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+              className="rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50"
+            >
+              {deleting ? "Deleting…" : "Delete permit"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+              className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy disabled:opacity-50"
+            >
+              Keep permit
+            </button>
+          </div>
+        </section>
+      )}
       {mode === "display" && (
         <section className="mb-4 rounded-md border border-px-border p-3">
           <h3 className="text-[13px] font-semibold text-px-ink">Permit document</h3>
