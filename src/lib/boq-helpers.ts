@@ -210,6 +210,161 @@ export function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; 
   return { valid, error: null };
 }
 
+// ─── R67 lane D22 (item D-60, recs R-196/R-225) ───────────────────────────
+// THE NEW-BOQ GRID, REBUILT FOR A QS. The create screen was a wall of
+// placeholder-only inputs with no column headers, no Amount, no total, and a
+// Save button that was always enabled and failed afterwards. A quantity
+// surveyor building a BOQ needs to see the arithmetic as they type it and be
+// told what a field is for BEFORE they get it wrong.
+//
+// All of it is pure and lives here, next to collectLines()'s own submission
+// rules, so the grid and the save path can never disagree about what a
+// complete line is.
+
+const trimmed = (s: string | undefined) => (s ?? "").trim();
+
+/**
+ * The root ancestor of a draft row, following parentItemCode up the chain.
+ *
+ * The canonical child-rate rule (schema.ts, settled R45 seq7 / E-127) prices a
+ * sub-task off the ROOT, not the immediate parent, and derivedSubQtyRate()
+ * already implements that for PERSISTED rows. This is the same walk over
+ * unsaved drafts, which are keyed by itemCode rather than by row id.
+ * Returns null on a broken or circular chain rather than guessing.
+ */
+export function draftRootAncestor(line: LineItemDraft, lines: LineItemDraft[]): LineItemDraft | null {
+  let current = line;
+  const visited = new Set<string>();
+  while (trimmed(current.parentItemCode)) {
+    const code = trimmed(current.parentItemCode);
+    if (visited.has(code)) return null; // circular: A parents B parents A
+    visited.add(code);
+    const parent = lines.find((l) => trimmed(l.itemCode) === code);
+    if (!parent) return null; // dangling parent code -- the field message says so
+    current = parent;
+  }
+  return current === line ? line : current;
+}
+
+/**
+ * A draft row's Amount, or null when it cannot be computed yet.
+ *
+ * Root:  amount = qty x rate.
+ * Child: amount = rootQty x (rootRate x breakdown%/100) -- identical to F4 in
+ * schema.ts, so what the grid shows is what the server will store.
+ */
+export function draftLineAmount(line: LineItemDraft, lines: LineItemDraft[]): number | null {
+  const root = draftRootAncestor(line, lines);
+  if (!root) return null;
+  const rootQty = Number(trimmed(root.quantity));
+  const rootRate = Number(trimmed(root.rate));
+  if (!trimmed(root.quantity) || !trimmed(root.rate) || !Number.isFinite(rootQty) || !Number.isFinite(rootRate)) return null;
+  if (root === line) return rootQty * rootRate;
+  const pct = Number(trimmed(line.breakdownPercentage));
+  if (!trimmed(line.breakdownPercentage) || !Number.isFinite(pct)) return null;
+  return rootQty * ((rootRate * pct) / 100);
+}
+
+/**
+ * The running BOQ total: root lines only.
+ *
+ * A weighted sub-task's amount is contained in its parent's, so summing every
+ * row flat double-counts the BOQ -- the same rule boqTotal() applies to saved
+ * rows.
+ */
+export function draftBoqTotal(lines: LineItemDraft[]): number {
+  return lines
+    .filter((l) => !trimmed(l.parentItemCode))
+    .reduce((sum, l) => sum + (draftLineAmount(l, lines) ?? 0), 0);
+}
+
+/** True when the row has content of any kind -- the same "untouched" test collectLines() uses. */
+export function draftLineTouched(line: LineItemDraft): boolean {
+  return !!(
+    trimmed(line.description) || trimmed(line.unit) || trimmed(line.quantity) || trimmed(line.rate) ||
+    trimmed(line.itemCode) || trimmed(line.parentItemCode) || trimmed(line.breakdownPercentage) || trimmed(line.category)
+  );
+}
+
+/** The fields still missing from one draft row, in Sumeet's own column order. */
+export function draftLineMissingFields(line: LineItemDraft, lines: LineItemDraft[]): string[] {
+  const missing: string[] = [];
+  if (!trimmed(line.description)) missing.push("Description");
+  const isChild = !!trimmed(line.parentItemCode);
+  // A sub-task inherits its unit from its parent, exactly as collectLines does.
+  const unit = trimmed(line.unit) || (isChild ? trimmed(lines.find((l) => trimmed(l.itemCode) === trimmed(line.parentItemCode))?.unit) : "");
+  if (!unit) missing.push("Unit");
+  if (isChild) {
+    if (!trimmed(line.breakdownPercentage)) missing.push("Breakdown %");
+  } else {
+    if (!trimmed(line.quantity)) missing.push("Qty");
+    if (!trimmed(line.rate)) missing.push("Rate");
+  }
+  return missing;
+}
+
+/**
+ * The reason the primary button is disabled, or null when it is not.
+ *
+ * On an untouched form this is exactly "Title, 1 line with Description, Qty,
+ * Rate" -- the promise of the minimum a BOQ needs. Once a line HAS been
+ * touched the sentence narrows to what that line is actually still missing, so
+ * a QS who typed everything but the unit is told "1 line with Unit" rather
+ * than being read the whole rule again.
+ */
+export function createBoqSaveDisabledReason(title: string, lines: LineItemDraft[]): string | null {
+  const parts: string[] = [];
+  if (!trimmed(title)) parts.push("Title");
+
+  const touched = lines.filter(draftLineTouched);
+  const anyComplete = touched.some((l) => draftLineMissingFields(l, lines).length === 0);
+  if (!anyComplete) {
+    if (touched.length === 0) {
+      parts.push("1 line with Description, Qty, Rate");
+    } else {
+      // The row closest to being usable is the one worth naming.
+      const closest = touched
+        .map((l) => draftLineMissingFields(l, lines))
+        .sort((a, b) => a.length - b.length)[0]!;
+      parts.push(`1 line with ${closest.join(", ")}`);
+    }
+  }
+  return parts.length ? parts.join(", ") : null;
+}
+
+/**
+ * What to say at a field once the user leaves it.
+ *
+ * Only ever about THIS row's own hierarchy fields, and only once they have
+ * been filled in -- an empty Parent code is not an error, it is the normal
+ * case for a root line.
+ */
+export function draftLineFieldMessages(line: LineItemDraft, lines: LineItemDraft[]): { field: "parentItemCode" | "breakdownPercentage"; text: string }[] {
+  const messages: { field: "parentItemCode" | "breakdownPercentage"; text: string }[] = [];
+  const parentCode = trimmed(line.parentItemCode);
+  if (!parentCode) return messages;
+
+  if (parentCode === trimmed(line.itemCode)) {
+    messages.push({ field: "parentItemCode", text: "A line cannot be its own parent" });
+  } else if (!lines.some((l) => trimmed(l.itemCode) === parentCode)) {
+    messages.push({ field: "parentItemCode", text: `No line has Item Code ${parentCode}` });
+  } else if (!draftRootAncestor(line, lines)) {
+    messages.push({ field: "parentItemCode", text: `Item Code ${parentCode} is part of a loop of parents` });
+  }
+
+  if (!trimmed(line.breakdownPercentage)) {
+    messages.push({ field: "breakdownPercentage", text: "Enter the % of the parent this sub-task carries" });
+  }
+  return messages;
+}
+
+/** "children total 75% of 100%", or null when this line has no children. */
+export function childPercentNote(lines: LineItemDraft[], itemCode: string | undefined): string | null {
+  const sum = childPercentSum(lines, itemCode);
+  if (sum === null) return null;
+  return `children total ${Number(sum.toFixed(2))}% of 100%`;
+}
+
 export function toPayloadLineItems(validLines: LineItemDraft[]) {
   return validLines.map((l) => ({
     description: l.description, unit: l.unit, quantity: Number(l.quantity), rate: Number(l.rate),
