@@ -122,3 +122,100 @@ describe("D-03's five named codes read exactly as the decision words them", () =
     );
   });
 });
+
+// ── R67 B-10: rows written before the pipeline returned codes ─────────────
+import { LEGACY_FALLBACK_MESSAGE, legacyToCode } from "./task-errors";
+
+describe("B-10 -- legacyToCode maps the strings the R66 walkthrough photographed", () => {
+  test("the acceptance mapping", () => {
+    expect(legacyToCode("itemCode is required")).toBe("BOQ_LINE_REQUIRED");
+  });
+
+  test("a driver message never renders as itself", () => {
+    for (const raw of [
+      "write CONNECT_TIMEOUT 3.109.171.244:6543",
+      "connect ECONNREFUSED 127.0.0.1:5432",
+      "getaddrinfo ENOTFOUND db.example.supabase.co",
+    ]) {
+      const code = legacyToCode(raw);
+      expect(code).toBe("BACKEND_UNAVAILABLE");
+      const rendered = messageFor(code!);
+      expect(rendered).not.toMatch(HOST_PORT);
+      expect(rendered).toBe("The construction data service didn't answer - nothing was saved [Retry]");
+    }
+  });
+
+  test("the other three real R66 strings", () => {
+    expect(legacyToCode("no project resolved for this task")).toBe("PROJECT_REQUIRED");
+    expect(legacyToCode('item code "1" not found in this project\'s BOQ')).toBe("BOQ_LINE_NOT_FOUND");
+    expect(legacyToCode("Progress cannot be recorded directly against a parent BOQ line item")).toBe(
+      "BOQ_LINE_IS_PARENT"
+    );
+  });
+
+  test("a statement timeout is told apart from a connection failure", () => {
+    expect(legacyToCode("canceling statement due to statement timeout")).toBe("UPSTREAM_TIMEOUT");
+  });
+
+  test("anything unmatched falls back without leaking the original text", () => {
+    expect(legacyToCode("something nobody anticipated")).toBeNull();
+    expect(legacyToCode("")).toBeNull();
+    expect(legacyToCode(null)).toBeNull();
+    expect(LEGACY_FALLBACK_MESSAGE).toBe("This task needs your input - [Fix]");
+    expect(LEGACY_FALLBACK_MESSAGE).not.toMatch(CAMEL_CASE);
+  });
+});
+
+// ── R67 B-10: the Fix chain, and the row's own affordance ─────────────────
+import { fixChainFor, rowDetailFor } from "./task-errors";
+
+describe("B-10 -- a sentence that names the problem also carries the way out", () => {
+  test("BOQ_LINE_REQUIRED loads the work-progress record chain, stopped at the line", () => {
+    expect(fixChainFor("BOQ_LINE_REQUIRED")).toEqual({
+      module: "work-progress",
+      verb: "record",
+      missing: "boqLine",
+      route: "/work-progress",
+    });
+  });
+
+  test("every pickable code has a chain; nothing pickable is left without one", () => {
+    for (const code of TASK_ERROR_CODES) {
+      const step = nextStepFor(code);
+      if (step.kind === "pick-param") expect(fixChainFor(code)).not.toBeNull();
+    }
+  });
+
+  test("a transport failure has no chain -- there is nothing to pick, only Retry", () => {
+    expect(fixChainFor("BACKEND_UNAVAILABLE")).toBeNull();
+    expect(fixChainFor("UPSTREAM_TIMEOUT")).toBeNull();
+    expect(fixChainFor("SOMETHING_NEW")).toBeNull();
+  });
+
+  test("the row shows the sentence AND a word-button", () => {
+    expect(rowDetailFor("BOQ_LINE_REQUIRED")).toBe("Pick a BOQ line [Fix]");
+    expect(rowDetailFor("PROJECT_REQUIRED")).toBe("Pick a project [Fix]");
+    expect(rowDetailFor("BOQ_LINE_NOT_FOUND", { code: "1", project: "Cedar Heights Villa - Phase 1", version: "Rev0" })).toBe(
+      "There is no line 1 on Cedar Heights Villa - Phase 1 Rev0 - pick a line [Fix]"
+    );
+  });
+
+  test("a retry sentence is not given a second button -- it already carries [Retry]", () => {
+    expect(rowDetailFor("BACKEND_UNAVAILABLE")).toBe(
+      "The construction data service didn't answer - nothing was saved [Retry]"
+    );
+    expect(rowDetailFor("BACKEND_UNAVAILABLE")).not.toContain("[Fix]");
+  });
+
+  test("no row detail can ever print a parameter, an id or an address", () => {
+    for (const code of TASK_ERROR_CODES) {
+      const detail = rowDetailFor(code, SAMPLE);
+      expect(detail).not.toMatch(CAMEL_CASE);
+      expect(detail).not.toMatch(HOST_PORT);
+      expect(detail).not.toContain("_");
+    }
+    // and the same holds for the R66 rows that started all of this
+    expect(rowDetailFor(legacyToCode("write CONNECT_TIMEOUT 3.109.171.244:6543"))).not.toMatch(HOST_PORT);
+    expect(rowDetailFor(legacyToCode("itemCode is required"))).toBe("Pick a BOQ line [Fix]");
+  });
+});

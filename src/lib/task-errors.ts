@@ -209,6 +209,115 @@ export function nextStepFor(code: string | null | undefined): NextStep {
   return DICTIONARY[code].nextStep;
 }
 
+// ─── R67 B-10: THE FIX CHAIN ──────────────────────────────────────────────
+//
+// A sentence that names what is wrong and offers no way to put it right is
+// half an answer. Every code whose nextStep is `pick-param` therefore also
+// carries the CHAIN to load in the composer -- the module and verb the user
+// was already doing, stopped at the level that is missing -- so one click
+// puts them in front of the choices instead of back at an empty box.
+//
+// The route is the screen that can also answer it, for the case where the
+// user would rather use the form than the composer. M24's rule, applied:
+// THE SAME NAME MUST REACH THE SAME DESTINATION whichever path you took.
+
+export type FixChain = {
+  /** the module segment, as the composer's chain spells it */
+  module: string;
+  /** the verb segment */
+  verb: string;
+  /** the D-03 field the chain stops at */
+  missing: FixParam;
+  /** the screen that answers the same question with a form */
+  route: string;
+};
+
+const FIX_CHAIN_BY_PARAM: Readonly<Record<FixParam, Omit<FixChain, "missing">>> = {
+  project: { module: "dashboard", verb: "open", route: "/dashboard" },
+  boqLine: { module: "work-progress", verb: "record", route: "/work-progress" },
+  boqVersion: { module: "scope", verb: "revise", route: "/scope" },
+  value: { module: "work-progress", verb: "record", route: "/work-progress" },
+  date: { module: "work-progress", verb: "record", route: "/work-progress" },
+  worker: { module: "manpower", verb: "mark", route: "/labour" },
+  material: { module: "materials", verb: "record", route: "/materials" },
+  task: { module: "schedule", verb: "log", route: "/schedule" },
+};
+
+/**
+ * The chain to load for a code, or null when there is nothing to pick --
+ * a transport failure is a Retry, and a capability that is not wired is a
+ * destination, neither of which is a chain.
+ */
+export function fixChainFor(code: string | null | undefined): FixChain | null {
+  const step = nextStepFor(code);
+  if (step.kind !== "pick-param" || !step.param) return null;
+  const chain = FIX_CHAIN_BY_PARAM[step.param as FixParam];
+  if (!chain) return null;
+  return { ...chain, missing: step.param as FixParam };
+}
+
+/**
+ * Line 2 of a Task Master row: the sentence, plus the word-button that acts
+ * on it. BACKEND_UNAVAILABLE already ends in "[Retry]" because D-03 words it
+ * that way; everything a user can actually pick gets "[Fix]", so the row
+ * shows an affordance rather than only a complaint.
+ */
+export function rowDetailFor(code: string | null | undefined, params: TaskErrorParams = {}): string {
+  const sentence = messageFor(code, params);
+  const step = nextStepFor(code);
+  if (step.kind === "pick-param") return `${sentence} [Fix]`;
+  if (step.kind === "route") return `${sentence} [${step.label}]`;
+  // `retry` sentences already carry their own [Retry] from the dictionary.
+  return sentence;
+}
+
+// ─── R67 B-10: THE LEGACY ROWS ────────────────────────────────────────────
+//
+// compliance.pipeline_tasks holds rows written long before the pipeline
+// returned codes, and their `error` column holds the exact English the R66
+// walkthrough photographed. Those rows are still in Task Master, so mapping
+// them here is the difference between the dictionary covering the product
+// and covering only what is written from today onwards.
+//
+// The alternative -- a one-off UPDATE over the production table -- is an
+// owner-gated data change, and it would still leave any row written by a
+// not-yet-deployed server unmapped. This does the job at render time, for
+// every row, with nothing to run against a live database.
+//
+// ORDER MATTERS: the transport patterns are checked FIRST, because a driver
+// message is the one legacy string that must never be shown under any
+// circumstances, and some of them also contain the word "required".
+const LEGACY_PATTERNS: ReadonlyArray<{ match: RegExp; code: TaskErrorCode }> = [
+  { match: /CONNECT_TIMEOUT|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE/i, code: "BACKEND_UNAVAILABLE" },
+  { match: /canceling statement due to|statement timeout/i, code: "UPSTREAM_TIMEOUT" },
+  { match: /parent (BOQ )?line/i, code: "BOQ_LINE_IS_PARENT" },
+  { match: /not found in this project|no BOQ found|BOQ line item not found/i, code: "BOQ_LINE_NOT_FOUND" },
+  { match: /item ?code is required|boq ?line ?item ?id is required|pick a BOQ line/i, code: "BOQ_LINE_REQUIRED" },
+  { match: /no project resolved|project ?id is required|Project not found/i, code: "PROJECT_REQUIRED" },
+  { match: /percent|quantity/i, code: "VALUE_REQUIRED" },
+  { match: /date is required/i, code: "DATE_REQUIRED" },
+  { match: /activity/i, code: "ACTIVITY_REQUIRED" },
+  { match: /not available for this account|not registered|no executor/i, code: "FUNCTION_NOT_AVAILABLE" },
+  { match: /permission|not permitted|forbidden/i, code: "NOT_PERMITTED" },
+];
+
+/** Everything else. HONEST, and it still offers a way forward. */
+export const LEGACY_FALLBACK_MESSAGE = "This task needs your input - [Fix]";
+
+/**
+ * Maps a stored English failure back into the closed vocabulary, so an old
+ * row renders through the same dictionary as a new one. Returns null when
+ * nothing matches -- the caller shows LEGACY_FALLBACK_MESSAGE rather than
+ * the original text.
+ */
+export function legacyToCode(stored: string | null | undefined): TaskErrorCode | null {
+  if (!stored || stored.trim().length === 0) return null;
+  for (const { match, code } of LEGACY_PATTERNS) {
+    if (match.test(stored)) return code;
+  }
+  return null;
+}
+
 /** Every code with its sentence, for the test that proves the three rules. */
 export function allMessages(sample: TaskErrorParams = {}): { code: TaskErrorCode; message: string }[] {
   return TASK_ERROR_CODES.map((code) => ({ code, message: DICTIONARY[code].message(sample) }));
