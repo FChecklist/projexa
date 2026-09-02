@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridianRaw } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Point 117: byte-for-byte PDF relay for the Work Progress Report. Same
 // pattern as src/app/api/moms/[id]/pdf/route.ts -- PROJEXA has no PDF library
@@ -35,9 +36,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report PDF" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to generate work progress report PDF");
   }
 }

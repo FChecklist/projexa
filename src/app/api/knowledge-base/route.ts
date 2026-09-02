@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 17 Wave 1: proxies to VERIDIAN /api/v1/projexa/knowledge-base
 // (org-wide pages via knowledge-base-service.ts). No projectId -- this is
@@ -12,7 +13,7 @@ export async function GET() {
     const data = await callVeridian("/knowledge-base", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load knowledge base pages" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load knowledge base pages");
   }
 }
 
@@ -25,6 +26,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/knowledge-base", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create knowledge base page" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create knowledge base page");
   }
 }

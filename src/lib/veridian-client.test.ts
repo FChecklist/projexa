@@ -1,0 +1,199 @@
+/// <reference types="bun-types" />
+// R67 F-20 (audit recommendation R-238) -- the abort budget, the retry policy
+// and the typed error codes.
+//
+// WHAT THESE ASSERTIONS PROTECT. The measured defect: veridian-client waited
+// 20 s per attempt AND retried a timed-out GET, so a hung upstream cost the
+// user 40 s of spinner before the error card appeared -- the dev-server line
+// `GET /api/tasks?limit=50 504 in 56s` is that pair. Two rules fix it and both
+// are easy to lose again: the per-attempt budget is 8 s, and a TIMEOUT is
+// never retried (a connection failure still is, because it costs milliseconds
+// and lands on a different socket).
+//
+// The stub below is what a real fetch does with an AbortSignal: it never
+// answers, and rejects when the signal fires. A stub that ignored the signal
+// would hang this file instead of failing it, which is why it listens.
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { callVeridian, callVeridianResult, VeridianApiError } from "./veridian-client";
+
+const realFetch = globalThis.fetch;
+
+type FetchCall = { url: string; method: string };
+let calls: FetchCall[] = [];
+
+function record(input: RequestInfo | URL, init?: RequestInit): FetchCall {
+  const call = { url: String(input), method: (init?.method ?? "GET").toUpperCase() };
+  calls.push(call);
+  return call;
+}
+
+/** Never answers. Rejects exactly when the caller's signal aborts, as fetch does. */
+function stubNeverResolves() {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    record(input, init);
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      const fail = () => {
+        const err = new Error("The operation timed out.");
+        err.name = "TimeoutError";
+        reject(err);
+      };
+      if (signal?.aborted) return fail();
+      signal?.addEventListener("abort", fail, { once: true });
+    });
+  }) as typeof fetch;
+}
+
+/** Fails the connection the way undici does: TypeError with a coded `cause`. */
+function stubConnectionFailure(code: string) {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    record(input, init);
+    const err = new TypeError("fetch failed");
+    (err as { cause?: unknown }).cause = Object.assign(new Error(code), { code });
+    return Promise.reject(err);
+  }) as typeof fetch;
+}
+
+function stubJson(status: number, body: unknown) {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    record(input, init);
+    return Promise.resolve(
+      new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+    );
+  }) as typeof fetch;
+}
+
+beforeEach(() => {
+  calls = [];
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+// An explicit apiKey short-circuits resolveApiKey(), so none of these tests
+// need a database or a VERIDIAN_API_KEY in the environment.
+const KEY = { apiKey: "test-key" } as const;
+
+describe("the 8 s abort budget", () => {
+  test(
+    "a hung upstream settles inside 8.5 s as UPSTREAM_TIMEOUT, and is called exactly once",
+    async () => {
+      stubNeverResolves();
+      const startedAt = Date.now();
+      const result = await callVeridianResult("/scope", KEY);
+      const elapsed = Date.now() - startedAt;
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe("UPSTREAM_TIMEOUT");
+      expect(elapsed).toBeLessThan(8_500);
+      // The 40 s regression: a second attempt here is the whole defect.
+      expect(calls.length).toBe(1);
+    },
+    20_000
+  );
+
+  test(
+    "the throwing form carries the same code and a real duration",
+    async () => {
+      stubNeverResolves();
+      let caught: unknown;
+      try {
+        await callVeridian("/scope", KEY);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(VeridianApiError);
+      const err = caught as VeridianApiError;
+      expect(err.code).toBe("UPSTREAM_TIMEOUT");
+      expect(err.status).toBe(504);
+      expect(err.durationMs).toBeGreaterThan(7_000);
+      // The internal URL and the exact budget stay in `detail` (R46S11_03).
+      expect(err.message).not.toContain("http");
+      expect(calls.length).toBe(1);
+    },
+    20_000
+  );
+});
+
+describe("the retry policy", () => {
+  test("a GET whose connection fails is retried exactly once", async () => {
+    stubConnectionFailure("ECONNREFUSED");
+    const result = await callVeridianResult("/scope", KEY);
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe("NETWORK");
+    expect(calls.length).toBe(2);
+  });
+
+  test("ECONNRESET and ENOTFOUND are the same class", async () => {
+    stubConnectionFailure("ECONNRESET");
+    expect((await callVeridianResult("/scope", KEY)).code).toBe("NETWORK");
+    expect(calls.length).toBe(2);
+
+    calls = [];
+    stubConnectionFailure("ENOTFOUND");
+    expect((await callVeridianResult("/scope", KEY)).code).toBe("NETWORK");
+    expect(calls.length).toBe(2);
+  });
+
+  test("a POST is never retried, even on a connection failure", async () => {
+    stubConnectionFailure("ECONNRESET");
+    const result = await callVeridianResult("/scope", { ...KEY, method: "POST", body: { a: 1 } });
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe("NETWORK");
+    // A retried POST is a duplicated BOQ, permit or task.
+    expect(calls.length).toBe(1);
+  });
+});
+
+describe("the closed code set", () => {
+  test("a 500 from the upstream is UPSTREAM_500 and keeps its own words", async () => {
+    stubJson(500, { error: "boq rollup failed" });
+    const result = await callVeridianResult("/scope", KEY);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.code).toBe("UPSTREAM_500");
+    expect(result.message).toBe("boq rollup failed");
+  });
+
+  test("'supabaseKey is required' is STORAGE_UNAVAILABLE, never a generic error", async () => {
+    stubJson(500, { error: "supabaseKey is required." });
+    const result = await callVeridianResult("/documents", KEY);
+    expect(result.code).toBe("STORAGE_UNAVAILABLE");
+    expect(result.message).toContain("file storage is not configured");
+  });
+
+  test("a 404 carries no infrastructure code -- it is a real answer", async () => {
+    stubJson(404, { error: "no screen definition seeded" });
+    const result = await callVeridianResult("/screen-definitions/moms.list", KEY);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(result.code).toBeNull();
+    expect(result.message).toBe("no screen definition seeded");
+  });
+
+  test("a success carries the data, a null code and a measured duration", async () => {
+    stubJson(200, { meetings: [{ id: "m1" }] });
+    const result = await callVeridianResult<{ meetings: { id: string }[] }>("/veri-meetings", KEY);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.meetings[0].id).toBe("m1");
+    expect(result.code).toBeNull();
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("caller cancellation", () => {
+  test("an aborted caller is not reported as an upstream timeout", async () => {
+    stubNeverResolves();
+    const controller = new AbortController();
+    const pending = callVeridianResult("/scope", { ...KEY, signal: controller.signal });
+    controller.abort();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(499);
+    expect(result.code).toBeNull();
+    expect(calls.length).toBe(1);
+  });
+});

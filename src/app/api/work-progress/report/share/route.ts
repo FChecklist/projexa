@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Point 118: creates a tokenised, expiring, read-only share link for the
 // Work Progress Report -- NOT the WhatsApp Business API (explicitly ruled
@@ -26,9 +27,6 @@ export async function POST(request: NextRequest) {
     const url = `${request.nextUrl.origin}/share/report/${data.token}`;
     return NextResponse.json({ url, expiresAt: data.expiresAt }, { status: 201 });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to create share link" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to create share link");
   }
 }

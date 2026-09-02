@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/audit-findings/[id] -- advances
 // the CAPA remediation status one step (open -> in_progress -> closed).
@@ -12,6 +13,6 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     const data = await callVeridian(`/audit-findings/${id}`, { organizationId: ctx.organizationId!, method: "PATCH" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update audit finding" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to update audit finding");
   }
 }

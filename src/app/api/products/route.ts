@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Feeds the Product picker in CreateProjectDialog -- a Project row requires
 // a productId (VERIDIAN's schema), so the dialog needs the org's real
@@ -14,9 +15,6 @@ export async function GET() {
     const data = await callVeridian<{ products: { id: string; name: string }[] }>("/products", { organizationId: ctx.organizationId! });
     return NextResponse.json({ products: data.products ?? [] });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to load products" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to load products");
   }
 }

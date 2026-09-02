@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 export type HierarchyDashboard = {
   totalProjects: number;
@@ -28,6 +29,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const data = await callVeridian<HierarchyDashboard>(path, { organizationId: scope.companyId });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load dashboard" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load dashboard");
   }
 }

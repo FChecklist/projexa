@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Wave 143 (Minutes of Meeting module): proxies VERIDIAN's
 // /api/v1/projexa/veri-meetings -- the real VERI Meeting Intelligence
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/veri-meetings${params}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load meetings" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load meetings");
   }
 }
 
@@ -27,6 +28,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/veri-meetings", { method: "POST", body, organizationId: ctx.organizationId! });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create meeting" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create meeting");
   }
 }

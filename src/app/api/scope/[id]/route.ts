@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
@@ -10,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const data = await callVeridian(`/scope/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load BOQ" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load BOQ");
   }
 }
 
@@ -27,6 +28,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const data = await callVeridian(`/scope/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to delete BOQ" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to delete BOQ");
   }
 }

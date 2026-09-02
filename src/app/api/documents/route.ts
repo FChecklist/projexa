@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Wave 143 (Documents real upload): VERIDIAN's /api/v1/documents gained a
 // real POST (createDocumentRecord, Bearer-key-callable) -- this is no
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/documents?${params.toString()}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load documents" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load documents");
   }
 }
 
@@ -34,6 +35,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridianUpload("/documents", formData, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to upload document" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to upload document");
   }
 }

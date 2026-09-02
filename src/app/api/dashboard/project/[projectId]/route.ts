@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // R42 seq24 (DASHBOARD.PROJECT): thin proxy to VERIDIAN's existing
 // /api/v1/projexa/dashboard/[projectId] -- the getProjectDashboard() data
@@ -15,6 +16,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const data = await callVeridian(`/dashboard/${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load project dashboard" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load project dashboard");
   }
 }

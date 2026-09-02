@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Dispatches through VERIDIAN's /api/v1/projexa/assistant (Wave 129) and
 // keeps a local history row -- dispatchTool() is synchronous, so this table
@@ -45,7 +46,7 @@ async function postPipeline(ctx: Awaited<ReturnType<typeof requireAuth>>, body: 
     });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to run submission pipeline" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to run submission pipeline");
   }
 }
 
@@ -91,8 +92,11 @@ export async function POST(request: NextRequest) {
       .single();
     return NextResponse.json(updated ?? row, { status: 201 });
   } catch (err) {
+    // R67 F-20: the row still records the backend's own words, and the
+    // response is built by the shared classifier so this route reports the
+    // same typed code / Retry-After as every other proxy.
     const message = err instanceof VeridianApiError ? err.message : "Failed to dispatch to VERIDIAN";
     await supabase.from("assistant_queries").update({ status: "error", error_message: message }).eq("id", row.id);
-    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to dispatch to VERIDIAN");
   }
 }

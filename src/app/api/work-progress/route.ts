@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 export async function GET(request: NextRequest) {
   const ctx = await requireAuth();
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/work-progress?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load work progress" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load work progress");
   }
 }
 
@@ -27,6 +28,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/work-progress", { organizationId: ctx.organizationId!, method: "POST", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log progress" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to log progress");
   }
 }

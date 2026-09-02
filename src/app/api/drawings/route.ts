@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Wave 143 (Drawings & 3D module): proxy to VERIDIAN's
 // /api/v1/projexa/drawings -- DWG file uploads and 3D walkthrough
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/drawings?${forward.toString()}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load drawings" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load drawings");
   }
 }
 
@@ -30,6 +31,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridianUpload("/drawings", formData, { organizationId: ctx.organizationId! });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create drawing" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create drawing");
   }
 }

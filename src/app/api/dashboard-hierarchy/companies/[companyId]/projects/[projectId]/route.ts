@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 type ProjectDashboard = {
   projectId: string;
@@ -121,6 +122,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       toDate: toDate ?? null,
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load project details" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load project details");
   }
 }

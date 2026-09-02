@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 16 Part 2 (PROJEXA-SCHEDULE-NO-CREATE-UI): proxies to the new
 // VERIDIAN /api/v1/projexa/schedule route (POST -> createIssue()). Board
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/schedule?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load tasks" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load tasks");
   }
 }
 
@@ -30,6 +31,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/schedule", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create task" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create task");
   }
 }

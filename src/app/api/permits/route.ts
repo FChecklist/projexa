@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, callVeridianUpload } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 13 (Permits as a first-class module): VERIDIAN's
 // /api/v1/projexa/permits -- the Bearer-key-reachable twin of VERIDIAN's own
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/permits${qs ? `?${qs}` : ""}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load permits" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load permits");
   }
 }
 
@@ -39,6 +40,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridianUpload("/permits", formData, { organizationId: ctx.organizationId! });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create permit" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create permit");
   }
 }

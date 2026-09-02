@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): thin proxy over
 // VERIDIAN's new /api/v1/projexa/purchase-orders -- did not exist before
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/purchase-orders${qs}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load purchase orders" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load purchase orders");
   }
 }
 
@@ -28,6 +29,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/purchase-orders", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create purchase order" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create purchase order");
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Roster (workers) lives at VERIDIAN's /api/v1/construction/labour-roster --
 // it was never re-exported under /api/v1/projexa/*, unlike attendance
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/construction/labour-roster?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load labour roster" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load labour roster");
   }
 }
 
@@ -28,6 +29,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/construction/labour-roster", { organizationId: ctx.organizationId!, method: "POST", body, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to add worker" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to add worker");
   }
 }

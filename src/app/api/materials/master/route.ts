@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Point 33: the material master (name/spec/unit/unitCost). Lives at VERIDIAN's
 // /api/v1/construction/materials -- root:true because it was never
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/construction/materials?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load material master" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load material master");
   }
 }
 
@@ -26,6 +27,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/construction/materials", { organizationId: ctx.organizationId!, method: "POST", body, root: true });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create material" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create material");
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // R42 seq21/22: the Bearer-key-reachable twin of VERIDIAN's new
 // /api/v1/projexa/permits/[id] -- no detail route existed at all until now
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/permits/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load permit" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load permit");
   }
 }
 
@@ -31,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/permits/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update permit" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to update permit");
   }
 }
 
@@ -43,6 +44,6 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/permits/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to delete permit" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to delete permit");
   }
 }

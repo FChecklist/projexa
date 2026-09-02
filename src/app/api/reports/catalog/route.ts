@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // PROJEXA Reports & Analysis catalog UI (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16): thin proxy over VERIDIAN's
@@ -15,6 +16,6 @@ export async function GET() {
     const data = await callVeridian("/reports/catalog", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load report catalog" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load report catalog");
   }
 }

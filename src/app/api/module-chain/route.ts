@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Thin proxy, same shape/reasoning as /api/capability-tree: the browser-side
 // Chain Selector needs this tree, but the VERIDIAN Bearer key must never
@@ -20,7 +21,6 @@ export async function GET() {
     const data = await callVeridian<{ nodes: unknown[] }>("/module-chain", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof VeridianApiError ? err.message : "Failed to load the VERIDIAN module chain";
-    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load the VERIDIAN module chain");
   }
 }

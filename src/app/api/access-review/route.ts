@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/access-review -- periodic
 // access-certification cycles over org members' roles.
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/access-review${request.nextUrl.search}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load access review data" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load access review data");
   }
 }
 
@@ -23,6 +24,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/access-review", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to open access review cycle" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to open access review cycle");
   }
 }

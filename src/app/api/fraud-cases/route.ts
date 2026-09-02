@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/fraud-cases -- incident/fraud
 // case register with a status lifecycle (reported -> investigating ->
@@ -12,7 +13,7 @@ export async function GET() {
     const data = await callVeridian("/fraud-cases", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load fraud cases" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load fraud cases");
   }
 }
 
@@ -24,6 +25,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/fraud-cases", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create fraud case" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create fraud case");
   }
 }

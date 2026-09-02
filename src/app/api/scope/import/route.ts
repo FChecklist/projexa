@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridianUpload } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 // RUN R10-21AUG point 1: proxies to VERIDIAN's /scope/import (compliance-
 // tracker's src/app/api/v1/projexa/scope/import/route.ts, point 2) using
@@ -16,6 +17,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridianUpload("/scope/import", formData, { organizationId: ctx.organizationId! });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to import BOQ" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to import BOQ");
   }
 }

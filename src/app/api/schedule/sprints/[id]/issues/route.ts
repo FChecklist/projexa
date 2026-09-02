@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -14,7 +15,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/schedule/sprints/${encodeURIComponent(id)}/issues`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load sprint issues" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load sprint issues");
   }
 }
 
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/schedule/sprints/${encodeURIComponent(id)}/issues`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to add issue to sprint" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to add issue to sprint");
   }
 }
 
@@ -42,6 +43,6 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/schedule/sprints/${encodeURIComponent(id)}/issues?issueId=${encodeURIComponent(issueId)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove issue from sprint" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to remove issue from sprint");
   }
 }
