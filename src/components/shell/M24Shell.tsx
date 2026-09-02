@@ -201,7 +201,16 @@ type ApiTask = {
   derivedChain?: { full?: string; mode?: string; root?: string; steps?: string[] } | null;
   functionId?: string | null;
   status?: string | null;
-  error?: string | null;
+  /**
+   * R67 FIX PASS -- the row's stored English, for rows written before the
+   * pipeline returned codes. It replaces the old `error` field: GET
+   * /api/v1/projexa/tasks no longer returns pipeline_tasks.error verbatim,
+   * because a legacy row could hold the R66 driver string with its internal
+   * host:port and shipping that to a browser is the leak B-01 exists to
+   * close. The server now converts any such string into a real failure code
+   * itself, and only prose that discloses nothing arrives here.
+   */
+  legacyError?: string | null;
   rawInput?: string | null;
   mode?: string | null;
   /** Real column on compliance.pipeline_tasks, selected by the route's own
@@ -265,7 +274,7 @@ function verbFor(functionId?: string | null): TaskRow["verb"] {
 export function detailFor(t: ApiTask): string | undefined {
   const code = codeFor(t);
   if (code) return rowDetailFor(code, (t.failure?.context ?? {}) as Record<string, string | number | null>);
-  if (t.error) return LEGACY_FALLBACK_MESSAGE;
+  if (t.legacyError) return LEGACY_FALLBACK_MESSAGE;
   return t.rawInput ?? undefined;
 }
 
@@ -276,7 +285,7 @@ export function detailFor(t: ApiTask): string | undefined {
  */
 export function codeFor(t: ApiTask): string | null {
   if (t.failure?.code) return t.failure.code;
-  if (t.error) return legacyToCode(t.error);
+  if (t.legacyError) return legacyToCode(t.legacyError);
   return null;
 }
 

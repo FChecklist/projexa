@@ -50,11 +50,35 @@ describe("B-09 acceptance -- the Save button names the BOQ line when it is what 
     expect(submitLabelFor(missing)).toBe("Log Entry");
   });
 
-  test("several missing fields are all named, in form order", () => {
+  // R67 FIX PASS -- the button names ONE field, not four.
+  //
+  // A freshly-opened Daily Entry form prefills only entryDate and entryBasis,
+  // so naming every missing field made the primary control read "Log Entry
+  // (Activity, BOQ line, Quantity done, % complete)" -- a worse label than
+  // the "Log Entry" + "4 required fields" it replaced, and not the two-word
+  // case the item quotes. The full list still lives in the disabled reason,
+  // which is where a list belongs.
+  test("several missing fields collapse to the plain label", () => {
     const missing = missingProgressFields({ entryBasis: "DELTA" }, true);
-    expect(submitLabelFor(missing)).toBe(
-      "Log Entry (Activity, BOQ line, Date, Quantity done, % complete)"
-    );
+    expect(missing.length).toBeGreaterThan(1);
+    expect(submitLabelFor(missing)).toBe("Log Entry");
+  });
+
+  test("the form as it actually opens does not produce a four-item parenthetical", () => {
+    // Exactly the initial values: a date and a basis, nothing else.
+    const missing = missingProgressFields({ entryDate: "2026-09-02", entryBasis: "DELTA" }, true);
+    expect(missing).toEqual(["activityId", "boqLineItemId", "quantityDone", "percentComplete"]);
+    expect(submitLabelFor(missing)).toBe("Log Entry");
+    // ...and the reason beside it still names all four, in form order.
+    expect(missingFieldNames(missing)).toBe("Activity, BOQ line, Quantity done, % complete");
+  });
+
+  test("the label never grows past one named field", () => {
+    for (const values of [{}, { entryBasis: "DELTA" }, { ...FILLED, boqLineItemId: undefined }]) {
+      const label = submitLabelFor(missingProgressFields(values, true));
+      expect(label.split(",").length).toBe(1);
+      expect(label.startsWith("Log Entry")).toBe(true);
+    }
   });
 
   test("a field left as an empty string counts as missing, not as answered", () => {

@@ -51,10 +51,22 @@ export function missingProgressFields(values: Record<string, unknown>, projectHa
   return requiredProgressFields(projectHasBoq).filter((f) => isBlank(values[f]));
 }
 
-/** "Log Entry" when nothing is missing; "Log Entry (BOQ line)" when it is. */
+/**
+ * "Log Entry" when nothing is missing; "Log Entry (BOQ line)" when exactly
+ * one field is.
+ *
+ * R67 FIX PASS -- IT NAMES ONE FIELD, NOT FOUR. Naming every missing field
+ * meant a freshly-opened Daily Entry form (only entryDate and entryBasis are
+ * prefilled) read "Log Entry (Activity, BOQ line, Quantity done, % complete)"
+ * -- a four-item parenthetical is a worse control label than the "Log Entry"
+ * + "4 required fields" it replaced, and it is not the two-word case the item
+ * asks for. One missing field is the case where naming it actually saves the
+ * user a hunt; the full list still travels in the disabled-reason beside the
+ * button, which is where a list belongs.
+ */
 export function submitLabelFor(missing: string[]): string {
-  if (missing.length === 0) return "Log Entry";
-  return `Log Entry (${missing.map((f) => REQUIRED_FIELD_LABELS[f] ?? f).join(", ")})`;
+  if (missing.length !== 1) return "Log Entry";
+  return `Log Entry (${REQUIRED_FIELD_LABELS[missing[0]] ?? missing[0]})`;
 }
 
 /** The same names, for the disabled-reason and the after-click message. */
