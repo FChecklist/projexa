@@ -1630,6 +1630,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             return;
           }
           setNotice({ chain: verdict.chain ?? null, text: null });
+        } else if (verdict.status === "ready" && verdict.links?.[0]?.route) {
+          // A COMMAND verb ("Run the Work Progress Report") does not execute
+          // anything server-side -- it opens the screen that already does the
+          // thing, with its parameters attached. Navigating IS the action, so
+          // there is nothing to confirm.
+          setNotice({ chain: verdict.chain ?? null, text: null });
+          router.push(verdict.links[0].route);
         }
       }
 
@@ -1645,7 +1652,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks]);
+  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks, router]);
 
   // A-07: pinning is how a user defeats the 7-day decay for work they know is
   // periodic (a month-end report used heavily on the 30th and invisible from
