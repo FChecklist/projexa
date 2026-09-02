@@ -45,6 +45,14 @@
 //     on the next navigation unless they pin it. The strip is where that fact
 //     belongs, because the strip is what would otherwise be lying.
 //
+//  6. EVERY CONTROL CARRIES A WORD AND A 44 PX TARGET (A-18). "×" became
+//     "Remove", "↺" became "Reset", and the loaded-chain star became
+//     "Pin"/"Pinned". All three were glyphs under 24 px whose meaning had to be
+//     guessed or discovered by pressing them -- on controls that DESTROY what
+//     the user has built. The glyphs are kept beside the words as decoration
+//     and the hover titles are kept as supplementary text; neither is the only
+//     label any more, and the accessible names are unchanged.
+//
 // UNCHANGED AND DELIBERATELY SO: the (x) still routes through cutChainFrom()
 // via the caller, canCutAt() still refuses to offer one on the root, and the
 // grammar is still ENTITY > ACTION > STEP read as one sentence.
@@ -92,7 +100,9 @@ export function ControlStrip({
   const empty = chain.segments.length === 0;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 text-[12px]">
+    // A-18: the row's own padding comes down as the controls in it grow to
+    // their 44 px minimum, so the strip stays one band rather than becoming two.
+    <div className="flex items-center gap-2 px-3 py-1 text-[12px]">
       {/* THE CHAIN, as one sentence. */}
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
         {empty ? (
@@ -134,15 +144,24 @@ export function ControlStrip({
                     // Shown on the thing being removed, per M24. Rendered only
                     // where canCutAt() allows -- the root never gets one, so the
                     // project cannot be removed even by a misdirected click.
+                    //
+                    // R67 A-18 -- THE WORD, NOT THE GLYPH. It was an 18 x 18
+                    // "×". A multiplication sign is not a verb; it is read as
+                    // "close" by some people and "delete this one item" by
+                    // others, when what it actually does is cut the sentence
+                    // from here to the end. And 18 px is under half the 44 px a
+                    // finger needs, on a control that DESTROYS part of what the
+                    // user has built. The accessible name still says exactly
+                    // what will happen -- the visible word is its first word.
                     <button
                       type="button"
                       onClick={() => onCutFrom(i)}
                       aria-label={`Remove ${seg.label} and everything after it`}
                       title={`Remove ${seg.label} and everything after it`}
-                      className="veri-icon-btn"
-                      style={{ width: 18, height: 18, fontSize: 11 }}
+                      className="veri-view-tab"
+                      style={{ minWidth: 44, minHeight: 44 }}
                     >
-                      ×
+                      Remove
                     </button>
                   )}
                 </span>
@@ -170,40 +189,60 @@ export function ControlStrip({
       {loaded && (
         <span className="flex shrink-0 items-center gap-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
           <span>{loaded.pinned && loaded.from ? `from ${loaded.from}` : "Loaded from history"}</span>
+          {/* A-18: the same pin, the same word. Two stars differing only by
+              fill were the whole of the affordance here too. */}
           <button
             type="button"
             onClick={loaded.onTogglePin}
             aria-label={
               loaded.pinned
-                ? "Unpin this loaded chain so it clears when you navigate"
+                ? "Pinned: this loaded chain is kept when you navigate"
                 : "Pin this loaded chain so it survives navigation"
             }
             aria-pressed={loaded.pinned}
             title={loaded.pinned ? "Pinned — kept across screens" : "Pin — keep across screens"}
-            className="veri-icon-btn"
-            style={{ width: 20, height: 20, fontSize: 11 }}
+            className="veri-view-tab"
+            style={{ minWidth: 44, minHeight: 44 }}
           >
-            {loaded.pinned ? "★" : "☆"}
+            <span aria-hidden style={{ color: "var(--color-ct-saffron)" }}>
+              {loaded.pinned ? "★" : "☆"}
+            </span>
+            {loaded.pinned ? "Pinned" : "Pin"}
           </button>
         </span>
       )}
 
-      {/* WORDS, not icons. HISTORY is deliberately absent -- see the header. */}
-      <button type="button" onClick={onHome} className="veri-view-tab shrink-0" style={{ letterSpacing: "0.02em" }}>
+      {/* WORDS, not icons. HISTORY is deliberately absent -- see the header.
+          A-18: sized with the row, so the three controls at this end are one
+          band rather than a 44 px button beside a 22 px one. */}
+      <button
+        type="button"
+        onClick={onHome}
+        className="veri-view-tab shrink-0"
+        style={{ letterSpacing: "0.02em", minWidth: 44, minHeight: 44 }}
+      >
         HOME
       </button>
 
-      {/* (reset): the quiet glyph, at the FAR END. Labelled for assistive tech
-          even though it is drawn quiet. */}
+      {/* R67 A-18 -- RESET IS A WORD NOW. It was "↺", a 22 x 22 glyph whose
+          meaning had to be guessed at or discovered by pressing it -- and what
+          it does is throw away everything the user has built in the strip and
+          in the box (A-09 widened it to exactly that), which is the last
+          control in this composer that should be discoverable only by trying
+          it. The hover title is kept, but as supplementary text: it is no
+          longer the only label. */}
       <button
         type="button"
         onClick={onReset}
         aria-label="Reset the chain"
         title="Reset the chain"
-        className="veri-icon-btn shrink-0"
-        style={{ width: 22, height: 22 }}
+        className="veri-view-tab shrink-0"
+        style={{ minWidth: 44, minHeight: 44 }}
       >
-        ↺
+        <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+          ↺
+        </span>
+        Reset
       </button>
     </div>
   );

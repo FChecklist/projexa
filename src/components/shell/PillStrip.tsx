@@ -32,7 +32,13 @@
 //     The ranked six answer "what do you do most"; the expanded list answers
 //     "where is everything", and a list that moves is a list you must re-read.
 //
-//  5. NO FLICKER, AND THIS COMPONENT NEVER RE-SORTS. It renders `cards` in the
+//  5. EVERY CONTROL CARRIES A WORD AND A 44 PX TARGET (A-18). The pin was a
+//     20 x 20 star whose two states differed only by fill. It is a text button
+//     reading "Pin" / "Pinned" now, with the star kept beside the word as
+//     decoration, at the minimum size a finger can actually hit -- it sits
+//     immediately beside controls that write.
+//
+//  6. NO FLICKER, AND THIS COMPONENT NEVER RE-SORTS. It renders `cards` in the
 //     order it was given, every time; the order is decided entirely by the
 //     caller. The strip paints from a cached ranking or the role's own
 //     cold-start order, and three skeleton cards appear only when there is
@@ -227,17 +233,36 @@ export function PillStrip({
                   )}
                 </button>
                 {onTogglePin && (
+                  // R67 A-18 -- THE PIN CARRIES ITS OWN WORD.
+                  //
+                  // It was a 20 x 20 star. Three things were wrong with that
+                  // and all three are the same mistake: a glyph is not a label.
+                  // A user who has never seen this product cannot know that ☆
+                  // defeats the seven-day decay; ☆ and ★ differ only by fill,
+                  // which is the smallest distinction the eye can be asked to
+                  // make and disappears entirely in sunlight on a phone; and 20
+                  // x 20 is under half the 44 px minimum for a finger, sitting
+                  // immediately beside a control that WRITES.
+                  //
+                  // The word is now the label, the star is decoration beside
+                  // it, and the accessible name keeps the card's own name --
+                  // six buttons all announcing "Pin" would tell a screen-reader
+                  // user which control it is and nothing about what it pins.
+                  // The visible word is the first word of that name, which is
+                  // the "label in name" rule rather than an exception to it.
                   <button
                     type="button"
                     onClick={() => onTogglePin(card.id)}
-                    // Pinning is how a user defeats the 7-day decay for work
-                    // they know is periodic. It needs a real label, not a star.
-                    aria-label={card.pinned ? `Unpin ${card.label}` : `Pin ${card.label} so it never drops off`}
-                    title={card.pinned ? "Unpin" : "Pin — never drops off"}
-                    className="veri-icon-btn"
-                    style={{ width: 20, height: 20, fontSize: 11 }}
+                    aria-pressed={card.pinned}
+                    aria-label={card.pinned ? `Pinned: ${card.label}` : `Pin ${card.label} so it never drops off`}
+                    title={card.pinned ? "Pinned — never drops off" : "Pin — never drops off"}
+                    className="veri-view-tab"
+                    style={{ minWidth: 44, minHeight: 44 }}
                   >
-                    {card.pinned ? "★" : "☆"}
+                    <span aria-hidden style={{ color: "var(--color-ct-saffron)" }}>
+                      {card.pinned ? "★" : "☆"}
+                    </span>
+                    {card.pinned ? "Pinned" : "Pin"}
                   </button>
                 )}
               </span>
