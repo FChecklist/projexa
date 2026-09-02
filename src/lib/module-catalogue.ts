@@ -60,6 +60,20 @@ export type ModuleDef = {
   examples: readonly [string, string];
   /** The module's leaf actions, in the order the strip offers them. */
   leaves: readonly ModuleLeaf[];
+  /**
+   * A-02. FALSE for a screen that is not a module you build a task in --
+   * today only the Dashboard, which IS the grouped module directory rather
+   * than a module of its own. Such a screen still matches pills (so
+   * "Dashboard" is not offered on /dashboard) but never becomes a fixed
+   * segment in the strip, because "Dashboard >" is not the start of a
+   * sentence anyone finishes.
+   */
+  chainModule?: boolean;
+  /**
+   * The words used when a leaf needs a project and none is resolved (A-02,
+   * A-03). Defaults to "Choose a project for <label>" when absent.
+   */
+  noProjectPrompt?: string;
 };
 
 export const MODULE_CATALOGUE: readonly ModuleDef[] = [
@@ -68,6 +82,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     label: "Dashboard",
     route: "/dashboard",
     prefixes: ["/dashboard"],
+    chainModule: false,
     pillKeys: ["dashboard"],
     placeholder: "Ask about this project, or type what you need.",
     examples: ["how much of the BOQ is complete", "which permits expire this month"],
@@ -122,6 +137,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     route: "/moms",
     prefixes: ["/moms", "/meetings"],
     pillKeys: ["minutes_of_meeting", "moms", "mom"],
+    noProjectPrompt: "Choose a project for these minutes",
     placeholder: "Ask about this project's meetings, or type minutes to file…",
     examples: ["file the minutes of today's site meeting", "what was decided about the lift shaft"],
     leaves: [
@@ -296,6 +312,22 @@ export function moduleHref(
 /** The module's own list route, with the project carried. */
 export function moduleRoute(mod: ModuleDef, projectId: string | null): string {
   return moduleHref({ path: mod.route }, projectId);
+}
+
+/**
+ * A-02. The module the composer's strip should ALREADY be describing on this
+ * pathname -- the screen's own module, unless the screen is not a module you
+ * build a task in (the Dashboard). Distinct from moduleForPathname(), which
+ * answers the pill question and must still match the Dashboard.
+ */
+export function chainModuleForPathname(pathname: string): ModuleDef | null {
+  const mod = moduleForPathname(pathname);
+  return mod && mod.chainModule !== false ? mod : null;
+}
+
+/** The words shown when a leaf needs a project and none is resolved. */
+export function noProjectPromptFor(mod: ModuleDef): string {
+  return mod.noProjectPrompt ?? `Choose a project for ${mod.label}`;
 }
 
 /** Every distinct route the catalogue can navigate to (used by its test). */

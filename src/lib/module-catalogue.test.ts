@@ -8,10 +8,12 @@ import { describe, test, expect } from "bun:test";
 import {
   MODULE_CATALOGUE,
   catalogueRoutes,
+  chainModuleForPathname,
   moduleForPathname,
   moduleForPill,
   moduleHref,
   moduleRoute,
+  noProjectPromptFor,
   normalisePillKey,
   pillPointsAtCurrentScreen,
 } from "./module-catalogue";
@@ -65,6 +67,36 @@ describe("moduleForPathname", () => {
   test("returns null for a route no module owns", () => {
     expect(moduleForPathname("/settings")).toBeNull();
     expect(moduleForPathname("/")).toBeNull();
+  });
+});
+
+describe("chainModuleForPathname (A-02: what the strip already says)", () => {
+  test("a module route puts its module in the strip", () => {
+    expect(chainModuleForPathname("/permits")?.label).toBe("Permits");
+    expect(chainModuleForPathname("/moms/new")?.label).toBe("Minutes of Meeting");
+  });
+
+  test("the Dashboard is a module directory, not a strip segment", () => {
+    // It still matches pills -- "Dashboard" must not be offered on /dashboard
+    // -- but "Dashboard >" is not the start of a sentence anyone finishes.
+    expect(moduleForPathname("/dashboard")?.id).toBe("dashboard");
+    expect(chainModuleForPathname("/dashboard")).toBeNull();
+  });
+
+  test("a route no module owns puts nothing in the strip", () => {
+    expect(chainModuleForPathname("/settings")).toBeNull();
+  });
+});
+
+describe("noProjectPromptFor (A-02/A-03)", () => {
+  test("uses the module's own words where it has them", () => {
+    const moms = MODULE_CATALOGUE.find((m) => m.id === "moms")!;
+    expect(noProjectPromptFor(moms)).toBe("Choose a project for these minutes");
+  });
+
+  test("names the module by default rather than saying 'pick something'", () => {
+    const permits = MODULE_CATALOGUE.find((m) => m.id === "permits")!;
+    expect(noProjectPromptFor(permits)).toBe("Choose a project for Permits");
   });
 });
 

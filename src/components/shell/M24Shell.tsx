@@ -58,7 +58,16 @@ import {
 import { Composer } from "./Composer";
 import { PillStrip } from "./PillStrip";
 import { canSend as canSendFrom, composerInstruction } from "@/lib/composer-instruction";
-import { moduleForPathname, moduleForPill, moduleHref, pillPointsAtCurrentScreen } from "@/lib/module-catalogue";
+import {
+  chainModuleForPathname,
+  moduleForPathname,
+  moduleForPill,
+  moduleHref,
+  noProjectPromptFor,
+  pillPointsAtCurrentScreen,
+  type ModuleDef,
+  type ModuleLeaf,
+} from "@/lib/module-catalogue";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -210,6 +219,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [pendingFunctionId, setPendingFunctionId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // R67 A-02: a leaf that needs a project and has none says so, in the
+  // module's own words, instead of navigating to a screen that would then have
+  // to explain itself.
+  const [projectPrompt, setProjectPrompt] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
@@ -457,13 +470,33 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
 
+  // R67 A-01/A-02 -- THE SCREEN THE COMPOSER IS SERVING.
+  //   screenModule    answers "which module do these pills belong to", and so
+  //                   also "which pill would only point back at this screen".
+  //   chainModule     answers "what does the strip already say" -- the same
+  //                   module, except on the Dashboard, which IS the module
+  //                   directory rather than a module ("Dashboard >" is not the
+  //                   start of a sentence anyone finishes).
+  const screenModule = useMemo(() => moduleForPathname(pathname ?? ""), [pathname]);
+  const chainModule = useMemo(() => chainModuleForPathname(pathname ?? ""), [pathname]);
+
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
   // cutChainFrom() protection meaningful: it refuses to cut into a "root"
   // segment, so (x) can never leave the user without a project.
+  //
+  // R67 A-02: the screen's own module is a FIXED part of the sentence, not
+  // something the user chose and can therefore remove -- you are standing in
+  // it. It is carried as a second "root" segment, which gets the two
+  // behaviours it needs for free: canCutAt() refuses to offer it an ×, and
+  // cutChainFrom()'s floor moves past it, so removing a later step can never
+  // strip the screen's own context out of the strip.
   const chain: Chain = useMemo(() => {
     const root = project ? [{ id: project.id, label: project.name, kind: "root" as const }] : [];
-    return { mode, segments: [...root, ...segments] };
-  }, [mode, project, segments]);
+    const mod = chainModule
+      ? [{ id: `screen:${chainModule.id}`, label: chainModule.label, kind: "root" as const }]
+      : [];
+    return { mode, segments: [...root, ...mod, ...segments] };
+  }, [mode, project, chainModule, segments]);
 
   // Every (x) goes through the kit's clamp. This component never slices the
   // segment array itself -- the whole point of the rule living in chain.ts.
@@ -490,56 +523,81 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [router]
   );
 
-  // A pill click records usage (so MP-RULE-3 can rank it) and appends the
-  // module to the chain. It does NOT execute: PillSelection carries
-  // authorizes:false and has no callable member.
-  const onPillSelect = useCallback((sel: PillSelection) => {
+  // Usage is recorded on every pill and leaf click, so MP-RULE-3 can rank the
+  // strip from what this user actually does. It is deliberately separate from
+  // what the click DOES -- ranking must not depend on whether the click
+  // navigated, and navigating must not depend on whether ranking worked.
+  const bumpUsage = useCallback((pillKey: string) => {
     setPillUsage((prev) => {
       const now = Date.now();
-      const existing = prev.find((r) => r.pillKey === sel.pillKey);
+      const existing = prev.find((r) => r.pillKey === pillKey);
       const next = existing
-        ? prev.map((r) =>
-            r.pillKey === sel.pillKey ? { ...r, useCount: r.useCount + 1, lastUsedAt: now } : r
-          )
-        : [...prev, { pillKey: sel.pillKey, useCount: 1, lastUsedAt: now, pinned: false }];
+        ? prev.map((r) => (r.pillKey === pillKey ? { ...r, useCount: r.useCount + 1, lastUsedAt: now } : r))
+        : [...prev, { pillKey: pillKey as PillUsage["pillKey"], useCount: 1, lastUsedAt: now, pinned: false }];
       try {
         localStorage.setItem(PILL_USAGE_KEY, JSON.stringify(next));
       } catch {}
       return next;
     });
-    setSegments((prev) =>
-      prev.some((s) => s.id === sel.pillKey) ? prev : [...prev, { id: sel.pillKey, label: sel.label, kind: "action" as const }]
-    );
-    // Arm the pill path. R53: picking the function means the server does NOT
-    // need to classify, so this submission costs no model call at all.
-    // Looked up from the server's own pill payload rather than carried on
-    // PillSelection. PillSelection is deliberately inert -- readonly
-    // authorizes:false, no callable member -- and bolting a field onto it
-    // for this would blur exactly what that type exists to guarantee.
-    const knownFunctionId = pillFnRef.current[sel.pillKey] ?? null;
-    setPendingFunctionId(knownFunctionId);
-    // Sumeet audit fix (2026-08-30): the 14 universal pills (Customers,
-    // Analysis, Reports, ...) are CATEGORY entry points, not single
-    // zero-param functions -- pillFnRef is only ever populated from
-    // /api/pill-usage's response, which returns a user's PAST usage
-    // history (compliance.pill_usage rows), never a static catalog. The
-    // FIRST time anyone clicks a given pill, knownFunctionId is genuinely
-    // null. Before this fix, onSubmit's own guard
-    // (`if (!typed && !pendingFunctionId) return`) made Send a SILENT
-    // no-op in exactly that case -- reproduced by tracing pillConfig.ts ->
-    // the real pill-usage route -> this handler, not guessed. M24's own
-    // rule ("THE SAME NAME MUST REACH THE SAME DESTINATION... WHICHEVER
-    // PATH YOU TOOK") means clicking "Customers" should behave the same as
-    // TYPING "customers" and sending -- so a first-time pill click now
-    // seeds the draft with the pill's own label (only when the draft is
-    // still empty, so it never clobbers something the user already typed),
-    // making the existing typed-path classifier the real destination
-    // instead of a dead end. The "add detail first" placeholder text below
-    // was already promising this was possible; it just never happened.
-    if (!knownFunctionId) {
-      setDraft((prev) => (prev.trim() ? prev : sel.label));
-    }
   }, []);
+
+  // A pill click records usage and OPENS THE MODULE. It does NOT execute:
+  // PillSelection carries authorizes:false and has no callable member.
+  //
+  // R67 A-02 -- THE TEXT SEEDING IS DELETED. A first-time pill click used to
+  // type its own label into the box ("Permits", "Reports") and leave it there
+  // for the classifier to interpret. It was a real fix for a real dead end --
+  // Send did nothing at all before it -- but it makes the composer write words
+  // the user did not, and it sends a module NAME to a classifier when the
+  // module already has a real screen. A pill now goes where its name goes:
+  // the module's own route, carrying the current project, which is the same
+  // URL the screen's own header button produces. The same name reaches the
+  // same destination whichever path you took, and the box stays the user's.
+  const onPillSelect = useCallback(
+    (sel: PillSelection) => {
+      bumpUsage(sel.pillKey);
+      // Arm the pill path when -- and only when -- the server told us this
+      // pill maps to a real executable function. R53: picking the function
+      // means the server does NOT need to classify, so the submission costs no
+      // model call at all. pillFnRef is populated from /api/pill-usage's own
+      // payload; a pill it does not name is a category entry point, not a
+      // zero-parameter function, and is opened rather than armed.
+      const knownFunctionId = pillFnRef.current[sel.pillKey] ?? null;
+      setPendingFunctionId(knownFunctionId);
+      setSegments((prev) =>
+        prev.some((s) => s.id === sel.pillKey)
+          ? prev
+          : [...prev, { id: sel.pillKey, label: sel.label, kind: "action" as const }]
+      );
+      if (knownFunctionId) return;
+      const mod = moduleForPill(sel.pillKey, sel.label);
+      if (!mod) return; // a pill with no PROJEXA screen: nothing to open, nothing typed.
+      setProjectPrompt(null);
+      router.push(moduleHref({ path: mod.route }, projectId));
+    },
+    [bumpUsage, projectId, router]
+  );
+
+  // R67 A-02 -- THE SECOND LEVEL, as real routes. A leaf is the module's own
+  // verb ("New", "Expiring soon", "Open") and it navigates to exactly the URL
+  // the screen's own control produces. It never executes and never types.
+  const onLeafSelect = useCallback(
+    (mod: ModuleDef, leaf: ModuleLeaf) => {
+      bumpUsage(leaf.id);
+      if (leaf.needsProject !== false && !projectId) {
+        // No fail-after-click and no silent no-op: say which decision is
+        // missing, in the module's own words, and leave the click undone.
+        setProjectPrompt(noProjectPromptFor(mod));
+        return;
+      }
+      setProjectPrompt(null);
+      setSegments((prev) =>
+        prev.some((s) => s.id === leaf.id) ? prev : [...prev, { id: leaf.id, label: leaf.label, kind: "step" as const }]
+      );
+      router.push(moduleHref(leaf, projectId));
+    },
+    [bumpUsage, projectId, router]
+  );
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.
@@ -695,9 +753,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, [activeTab, taskGroups, projectId]);
 
-  // R67 A-01 -- THE SCREEN THE COMPOSER IS SERVING. A pill whose destination is
-  // the screen already on show is a dead end, so it is not offered at all.
-  const screenModule = useMemo(() => moduleForPathname(pathname ?? ""), [pathname]);
+  // R67 A-02 -- NO STALE CHAIN ACROSS A MODULE CHANGE.
+  //
+  // The strip used to carry whatever the user had built on the LAST screen: a
+  // chain reading "Work Progress x > New entry x" sat under the Permits
+  // heading, describing a task that belonged to another module, with the (x)
+  // controls still offering to edit it. When the module the user is standing
+  // in changes, the segments and the draft belonged to the old sentence and
+  // are cleared; the new screen's own module is then already in the strip,
+  // because it is derived from the pathname rather than clicked into place.
+  const lastModuleRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const id = screenModule?.id ?? null;
+    if (lastModuleRef.current === id) return;
+    lastModuleRef.current = id;
+    setSegments([]);
+    setPendingFunctionId(null);
+    setDraft("");
+    setProjectPrompt(null);
+    setSubmitError(null);
+  }, [screenModule]);
+
+  // R67 A-01: a pill whose destination is the screen already on show is a dead
+  // end, so it is not offered at all.
   const hidePill = useCallback(
     (pill: { key: string; label: string }) => pillPointsAtCurrentScreen(pill.key, pill.label, pathname ?? ""),
     [pathname]
@@ -827,6 +905,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // from here, which is a dead end, and M24 forbids dead ends.
           pills={
             <div className="flex flex-wrap items-center gap-1">
+              {/* R67 A-02 -- THE SCREEN'S OWN VERBS COME FIRST. On a module
+                  route the composer already knows the module, so band 3 leads
+                  with that module's real leaf actions -- each one navigating
+                  to exactly the URL the screen's own header control produces
+                  -- and the ranked pills that follow are the ways OUT of this
+                  screen. The module's own pill is not among them (A-01): it
+                  would only point back here. */}
+              {chainModule?.leaves.map((leaf) => (
+                <button
+                  key={leaf.id}
+                  type="button"
+                  onClick={() => onLeafSelect(chainModule, leaf)}
+                  className="veri-mode-pill active"
+                >
+                  {leaf.label}
+                </button>
+              ))}
               <PillStrip
                 usage={pillUsage}
                 now={Date.now()}
@@ -872,11 +967,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           instruction={instruction}
           canSend={sendEnabled}
           busy={submitting}
-          errorMessage={submitError}
+          errorMessage={submitError ?? projectPrompt}
           placeholder={
             screenModule
               ? screenModule.placeholder
               : "Type a task, a question or a record — e.g. 'excavation 50%'"
+          }
+          // R67 A-02: two worked examples in the module's own vocabulary, so a
+          // site engineer sees what a sentence this box accepts looks like
+          // before typing one.
+          examples={
+            screenModule ? (
+              <span>
+                e.g. “{screenModule.examples[0]}” · “{screenModule.examples[1]}”
+              </span>
+            ) : undefined
           }
         />
       }
