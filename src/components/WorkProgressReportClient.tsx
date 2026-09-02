@@ -50,7 +50,14 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 // R36/P5 (B5 decision): additive fields so an existing consumer that
 // doesn't know about them still works exactly as before.
 type BoqOption = { id: string; title: string; status: string; version: number };
-type ReportResponse = { boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[]; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
+// R67 I-05: availableCategories/categoryFilter are additive -- an older
+// response without them still renders, the multi-select just has nothing to
+// offer until the first run comes back.
+type ReportResponse = {
+  boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
+  rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
+  availableCategories?: string[]; categoryFilter?: string[];
+};
 
 // R67 G-05 (R-260). This passed `undefined` as the locale, which is the
 // hydration bug src/lib/format-date.ts exists to prevent: with no locale
@@ -282,21 +289,36 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // R67 lane I (WS-I item I-05, R-177): the Category multi-select. Held here,
+  // sent to the server, and APPLIED THERE -- never filtered client-side, or the
+  // Grand Total would keep describing rows the table is no longer showing.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  // The option list comes from the last run (every category present BEFORE the
+  // filter), so selecting one never removes the others from the control.
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  async function runReport(boqId = selectedBoqId) {
+  async function runReport(boqId = selectedBoqId, categories = selectedCategories) {
     setLoading(true);
     try {
       const params = new URLSearchParams({ projectId, from, to });
       if (boqId) params.set("boqId", boqId);
+      // Repeatable, not comma-joined: a real category name may contain a comma.
+      for (const c of categories) params.append("category", c);
       const res = await fetch(`/api/work-progress/report?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       setReport(data);
       if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+      // R67 I-05: only ever GROWS the option list. A filtered run legitimately
+      // reports fewer categories present, and shrinking the control to match
+      // would make it impossible to widen the filter again.
+      if (Array.isArray(data.availableCategories)) {
+        setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+      }
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
       setReport(null);
@@ -388,6 +410,51 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+          {/* R67 I-05 (R-177): Category multi-select. Checkboxes, not a
+              shadcn Select -- Select is single-value, and a fake "multi" built
+              on it would silently drop every choice but the last. Nothing is
+              filtered until Apply: re-running on every checkbox click would
+              fire a report request per keystroke-equivalent. "All categories"
+              is the empty selection, stated in words so an empty control never
+              reads as "nothing matches". */}
+          {availableCategories.length > 0 && (
+            <div className="space-y-1.5">
+              <Label id="wpr-category-filter-label">Category</Label>
+              <div
+                role="group"
+                aria-labelledby="wpr-category-filter-label"
+                data-testid="wpr-category-filter"
+                className="flex max-w-[420px] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-px-border px-2 py-1.5"
+              >
+                {availableCategories.map((c) => (
+                  <label key={c} className="flex items-center gap-1 text-xs text-px-ink">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.includes(c)}
+                      onChange={(e) =>
+                        setSelectedCategories((prev) =>
+                          e.target.checked ? [...prev, c] : prev.filter((x) => x !== c)
+                        )
+                      }
+                    />
+                    {c}
+                  </label>
+                ))}
+                <span className="text-xs text-px-muted">
+                  {selectedCategories.length === 0 ? "All categories" : `${selectedCategories.length} selected`}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={loading}
+                  data-testid="wpr-category-apply"
+                  onClick={() => runReport(selectedBoqId, selectedCategories)}
+                >
+                  Apply
+                </Button>
+              </div>
             </div>
           )}
           {report && (

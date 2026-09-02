@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
+import BoqCategoriesCard from "@/components/BoqCategoriesCard";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
@@ -186,6 +187,14 @@ export default function SettingsClient() {
           API plus RLS in drizzle/0015_org_invites.sql. */}
       {info && <WorkspaceConnectionCard canRepair={CAN_ASSIGN_ROLES.has(info.role)} />}
       {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
+
+      {/* R67 lane I (WS-I item I-05, R-177): the org-level BOQ category list.
+          Rendered for everyone -- a site engineer picking a category on a BOQ
+          line has a real reason to see what the list contains -- but only
+          owner/admin get the edit controls, the same UX-affordance-not-security
+          split the role Select above already uses (the real gate is
+          requireRoleOrScope on VERIDIAN's own /scope/categories routes). */}
+      {info && <BoqCategoriesCard canEdit={CAN_ASSIGN_ROLES.has(info.role)} />}
 
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>

@@ -14,6 +14,9 @@ import {
   type Vendor,
 } from "@/lib/work-progress-report";
 
+// lineItems carry `category` as of R67 I-05 (drizzle/0532) -- BoqLineItem
+// already declares it optional, so an older VERIDIAN that does not send it
+// still parses, and those rows fall back to the activity -> category path.
 type BoqResponse = { id: string; status: string; version: number; title: string; lineItems: BoqLineItem[] };
 type VeridianVendor = { id: string; vendorName: string };
 
@@ -40,6 +43,14 @@ export async function GET(request: NextRequest) {
   // non-superseded, deterministic since PR #1325's createdAt DESC
   // tiebreaker) so every existing caller/test is unaffected.
   const requestedBoqId = searchParams.get("boqId");
+  // R67 lane I (WS-I item I-05, R-177): the Category multi-select on the WPR
+  // parameter bar. Repeatable `category` params (?category=Civil&category=Paint)
+  // rather than one comma-joined value -- a real category name may legitimately
+  // contain a comma, and splitting on it would silently filter for a category
+  // nobody has. Applied server-side, inside buildWorkProgressReport, before the
+  // roll-up, so the subtotals AND the Grand Total both describe the filtered
+  // set and still tie to each other.
+  const categoryFilter = searchParams.getAll("category").filter((c) => c.trim() !== "");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   if (!from || !to) return NextResponse.json({ error: "from and to (YYYY-MM-DD) query params are required" }, { status: 400 });
 
@@ -77,6 +88,7 @@ export async function GET(request: NextRequest) {
       categories: workProgressData.categories ?? [],
       from,
       to,
+      categoryFilter,
     });
     const byManpower = buildManpowerBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], from, to });
     const byVendor = buildVendorBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], vendors, from, to });
@@ -91,6 +103,13 @@ export async function GET(request: NextRequest) {
       availableBoqs: boqs.map((b) => ({ id: b.id, title: b.title, status: b.status, version: b.version })),
       rows: report.rows, // scope-wise: one row per BoQ line item
       byCategory: report.byCategory,
+      // R67 I-05: every category present BEFORE the filter, so the multi-select
+      // still offers the ones currently filtered out (otherwise selecting
+      // "Civil" would remove every other option from the control that filtered
+      // them) -- plus the filter actually applied, so the UI can render the
+      // parameters it really ran with rather than what it thinks it sent.
+      availableCategories: report.availableCategories,
+      categoryFilter,
       byManpower,
       byVendor,
     });
