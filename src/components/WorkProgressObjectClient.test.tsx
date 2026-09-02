@@ -23,7 +23,8 @@ mock.module("next/navigation", () => ({
 }));
 
 const WorkProgressObjectClient = (await import("./WorkProgressObjectClient")).default;
-const { NO_PHOTO_LABEL, boqLineLabel } = await import("./WorkProgressObjectClient");
+const { NO_PHOTO_LABEL } = await import("./WorkProgressObjectClient");
+const { boqLineLabel } = await import("@/lib/work-progress-report");
 
 afterEach(() => {
   cleanup();
