@@ -3,8 +3,17 @@
 //
 // R67 F-18: the revision list now normally arrives as a prop, fetched by
 // scope/page.tsx on the server inside its Suspense boundary, so the table
-// paints filled on first render. The per-revision compare fan-out below is
-// still a client loop -- collapsing it into the list payload is F-23/F-29.
+// paints filled on first render.
+//
+// R67 F-23 (audit recommendation R-239): the per-revision compare fan-out that
+// used to live here is GONE. This screen made one `/api/scope/{id}/compare`
+// request per revision -- each of which opened its own tenant transaction
+// upstream -- purely to fill the "Variation vs. prior" cell, and /scope reached
+// idle at 7.6 s over 22 calls as a result. VERIDIAN now returns
+// `variationVsPrior` (and `lineDelta`) with the list itself, computed in one
+// grouped statement over construction_boq_line_items. The Compare BUTTON still
+// fetches the full diff on demand -- that is the detail view, and it is one
+// deliberate click, not a page-load cost.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -49,34 +58,13 @@ export type Boq = {
   status: string;
   parentBoqId: string | null;
   createdAt: string;
-};
-
-type BoqLineItemRow = {
-  id: string; itemCode: string | null; description: string; unit: string;
-  quantity: string; rate: string; amount: string; activityId: string | null;
-  parentLineItemId?: string | null; breakdownPercentage?: string | null;
-  // R39/R-C09: Point 154's budget overlay -- computedBudget is derived
-  // server-side (amount * budgetPercentage / 100, construction-boq-
-  // service.ts#computedBudget), never sent back independently editable.
-  budgetPercentage?: string | null;
-  computedBudget?: number | null;
-  vendorId?: string | null;
-  vendorAmount?: string | null;
-};
-
-type ChangedLineItem = {
-  key: string; previous: BoqLineItemRow; current: BoqLineItemRow;
-  // Sumeet audit fix (2026-08-30, requirement #18: "Percentage-only change
-  // detected as a variation"). The real backend (construction-boq-
-  // service.ts's compareBoq) has always sent this field on every changed
-  // row -- this type just never declared it, so toCompareResult() below
-  // could never read it even though it was already on the wire.
-  quantityChange: number; rateChange: number; breakdownPercentageChange: number; netVariation: number;
-};
-
-type BoqComparison = {
-  added: BoqLineItemRow[]; removed: BoqLineItemRow[]; changed: ChangedLineItem[];
-  warnings: string[]; totalVariation: number;
+  // R67 F-23: sum(quantity x rate) on this revision minus the same on its
+  // parent, computed by VERIDIAN in the list query. null on a baseline (there
+  // is no prior to vary from); undefined only if an older backend answered
+  // without ?include=variation, which renders exactly as null does.
+  variationVsPrior?: number | null;
+  /** line-item count difference vs the parent revision; null on a baseline. */
+  lineDelta?: number | null;
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -100,9 +88,13 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
+// R67 F-23: an explicit sign on both directions -- a variation is a change, and
+// "1,005" beside "-1,005" reads as a total unless the increase says so too.
+// Grouped with the same "en-US" plain-thousands convention every other money
+// cell in this app uses (TC-90: no lakh/crore grouping, no hardcoded symbol).
 function formatVariation(amount: number): string {
-  const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
+  return `${sign}${Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level
@@ -130,12 +122,11 @@ export default function ScopeClient({
   // The list the server sent answers THIS project; a switch still fetches.
   const listFromServerFor = useRef(initial ? projectId : null);
 
-  // Variation vs. immediate parent, per revision -- the "running total
-  // variation value" the Owner asked for, fetched from VERIDIAN's compareBoq
-  // rather than stored (this codebase computes diffs at read time, never
-  // denormalizes them).
-  const [variationByBoqId, setVariationByBoqId] = useState<Record<string, number>>({});
-
+  // R67 F-23: variation vs. the immediate parent is no longer a piece of
+  // per-row client state at all -- it arrives on the row (b.variationVsPrior),
+  // computed at read time by VERIDIAN in the same statement that grouped the
+  // line items. Still derived, never denormalized: this codebase computes
+  // diffs at read time, and that has not changed -- only WHERE.
 
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
@@ -147,32 +138,17 @@ export default function ScopeClient({
       setLoadError(null);
     }
     try {
-      let loaded: Boq[];
       if (listAlreadyLoaded) {
-        // The server already fetched this exact list; only the compare
-        // figures below are still missing.
-        loaded = initial?.rows ?? [];
+        // The server already fetched this exact list, variation included --
+        // there is nothing left to go to the network for.
         listFromServerFor.current = null;
-      } else {
-        const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}`, {
-          signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
-        });
-        loaded = data.boqs ?? [];
-        if (signal?.aborted) return;
-        setBoqs(loaded);
+        return;
       }
-
-      const revisions = loaded.filter((b) => b.parentBoqId);
-      const entries = await Promise.all(
-        revisions.map(async (b) => {
-          const cmpRes = await fetch(`/api/scope/${b.id}/compare`, { signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS) });
-          if (!cmpRes.ok) return null;
-          const cmp: BoqComparison = await cmpRes.json();
-          return [b.id, cmp.totalVariation] as const;
-        })
-      );
+      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}&include=variation`, {
+        signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
+      });
       if (signal?.aborted) return;
-      setVariationByBoqId(Object.fromEntries(entries.filter((e): e is readonly [string, number] => e !== null)));
+      setBoqs(data.boqs ?? []);
     } catch (err) {
       // A cancelled read is not a failure and must not reach a screen the
       // user has already left.
@@ -224,24 +200,27 @@ export default function ScopeClient({
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
-                  <TableHead>{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
+                  <TableHead className="text-right">{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {boqs.map((b) => {
-                  const variation = variationByBoqId[b.id];
+                  const variation = b.variationVsPrior;
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
                       <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
-                      <TableCell>
+                      {/* R67 F-23: right-aligned (it is money), signed, in the
+                          org's own currency; an en-dash for a revision with no
+                          prior to vary from. */}
+                      <TableCell className="text-right tabular-nums">
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
-                        ) : variation === undefined ? (
-                          <span className="text-px-muted">—</span>
+                        ) : variation === undefined || variation === null ? (
+                          <span className="text-px-muted">–</span>
                         ) : (
                           <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
                         )}

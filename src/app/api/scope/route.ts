@@ -10,8 +10,14 @@ export async function GET(request: NextRequest) {
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
+  // R67 F-23 (R-239): `?include=variation` asks VERIDIAN to compute each
+  // revision's variation-vs-prior in the SAME query as the list, replacing the
+  // one /api/scope/{id}/compare request PER ROW the /scope screen used to make
+  // just to fill one cell. Only the recognised value is forwarded, so this
+  // proxy can never pass an arbitrary string through to the upstream URL.
+  const include = request.nextUrl.searchParams.get("include") === "variation" ? "&include=variation" : "";
   try {
-    const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}${include}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load scope of work");

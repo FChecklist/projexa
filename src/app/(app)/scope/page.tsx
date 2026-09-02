@@ -5,8 +5,9 @@
 // and only then did ScopeClient start fetching. The frame now streams first
 // and the revision list is fetched here on the server.
 //
-// The per-revision compare fan-out inside ScopeClient is NOT addressed here;
-// folding those figures into the list payload is F-23/F-29.
+// R67 F-23: the list this page fetches now asks for `include=variation`, so the
+// "Variation vs. prior" column arrives with the rows and ScopeClient's
+// one-request-per-revision compare fan-out is gone (see fetchScopeList).
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
