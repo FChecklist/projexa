@@ -24,17 +24,23 @@
 // real Edit/Publish/Action-Items/Share-link-management -- see that
 // component's own header comment for the full list of previously-hidden
 // backend capability this closes.
+//
+// R67 lane D22 (item D-58, rec R-187): every row carries its own Open, Export
+// PDF and Share actions. Before this, the only way to send a client the
+// minutes of last Tuesday's meeting was to open it first -- so the list, which
+// is where someone actually looks for "that meeting", could do nothing with
+// one. Status is a glyph PLUS the word (never colour alone).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, NotebookText, Plus } from "lucide-react";
+import { CheckCircle2, CircleDashed, Loader2, NotebookText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateTime } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import ShareSheet, { type ShareLinkResult } from "@/components/ShareSheet";
 
 type Meeting = {
   id: string;
@@ -44,6 +50,13 @@ type Meeting = {
   minutes: string | null;
   aiSummary: string | null;
 };
+
+async function createShareLinkFor(meetingId: string): Promise<ShareLinkResult> {
+  const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Couldn't create a share link");
+  return { shareUrl: data.shareUrl as string, whatsappHref: data.whatsappHref as string };
+}
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / DocumentsClient.tsx's
@@ -73,7 +86,17 @@ function renderMeetingCell(field: string, m: Meeting) {
     case "scheduledAt":
       return <span className="text-px-muted">{formatDateTime(m.scheduledAt)}</span>;
     case "status":
-      return <Badge variant={m.status === "published" ? "default" : "outline"}>{m.status}</Badge>;
+      // Glyph + the word, never colour alone -- a published MoM is locked, and
+      // that is exactly the fact a reader must be able to see at a glance.
+      return m.status === "published" ? (
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-px-success">
+          <CheckCircle2 className="size-3.5" aria-hidden="true" /> published
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] text-px-muted">
+          <CircleDashed className="size-3.5" aria-hidden="true" /> draft
+        </span>
+      );
     default:
       return String((m as unknown as Record<string, unknown>)[field] ?? "—");
   }
@@ -119,6 +142,7 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
               <TableHeader>
                 <TableRow>
                   {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -130,6 +154,21 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderMeetingCell(col.field, m)}</TableCell>
                     ))}
+                    {/* The row is still the primary way in (clicking anywhere
+                        opens the meeting); these are the two things people
+                        want to do WITHOUT opening it. stopPropagation so a
+                        Share click never also navigates away from the sheet
+                        it just opened. */}
+                    <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="sm" onClick={() => router.push(`/moms/${m.id}`)}>Open</Button>
+                      <ShareSheet
+                        variant="menu"
+                        pdfHref={`/api/moms/${m.id}/pdf`}
+                        createShareLink={() => createShareLinkFor(m.id)}
+                        shareDisabledReason={m.status === "published" ? null : "Publish the meeting first"}
+                        onMessage={(msg) => (msg.level === "error" ? toast.error(msg.text) : toast.success(msg.text))}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

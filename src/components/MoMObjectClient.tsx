@@ -20,20 +20,30 @@
 // Once published, meeting-level fields AND minutes lock server-side
 // (assertEditable) -- the UI mirrors that by hiding Edit/Save-Minutes
 // rather than letting a click 409.
+//
+// R67 lane D22 (item D-58, rec R-187): the icon-only PDF glyph and the
+// "Create Share Link & Send via WhatsApp" sentence-in-a-button are replaced by
+// the shared ShareSheet (Export PDF / Share on WhatsApp / Share link), and the
+// action-item Assignee free-text box -- which asked a human to paste a
+// VERIDIAN user id and hinted `usr_abc123` -- is now a real people picker over
+// the org directory. No screen in this module prints a user id any more.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Download, Sparkles, Send, Link2, Ban } from "lucide-react";
+import { Loader2, Sparkles, Link2, Ban } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateTime } from "@/lib/format-date";
+import ShareSheet, { type ShareLinkResult } from "@/components/ShareSheet";
+import OrgUserPicker from "@/components/OrgUserPicker";
+import { takeFooterMessage } from "@/lib/footer-message";
 
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
@@ -43,7 +53,10 @@ type Meeting = {
   publishedAt: string | null; aiSummary: string | null; aiKeyDecisions: string[]; aiSuggestedActionItems: SuggestedActionItem[];
   actionItems: ActionItem[];
 };
-type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: string | null; createdAt: string };
+// shareUrl is resolved by this repo's own /api/moms/[id]/share-links proxy
+// (R67 D-63) so the Share controls are real links on arrival, not buttons that
+// have to round-trip before they know where they point.
+type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: string | null; createdAt: string; shareUrl?: string };
 
 const STATUS_TONE: Record<string, StatusTone> = { draft: "neutral", published: "done" };
 
@@ -60,8 +73,18 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const [minutesDraft, setMinutesDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionTitle, setActionTitle] = useState("");
-  const [actionAssignee, setActionAssignee] = useState("");
+  const [actionAssignee, setActionAssignee] = useState<string | null>(null);
+  const [actionAssigneeName, setActionAssigneeName] = useState<string | null>(null);
   const [actionDueDate, setActionDueDate] = useState("");
+  // The create screen's receipt, and anything the share controls need to say
+  // (a blocked popup, a copied link) -- both land in the footer message area
+  // the kit's ObjectScreen already owns, never in a toast that vanishes.
+  const [screenMessages, setScreenMessages] = useState<FieldMessage[]>([]);
+
+  useEffect(() => {
+    const receipt = takeFooterMessage(`/moms/${meetingId}`);
+    if (receipt) setScreenMessages([{ level: receipt.level, text: receipt.text }]);
+  }, [meetingId]);
 
   async function load() {
     try {
@@ -172,21 +195,23 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
 
   function promoteSuggestion(s: SuggestedActionItem) {
     setActionTitle(s.title);
-    setActionAssignee(s.assignee ?? "");
+    // The AI's `assignee` is a NAME it read out of the minutes, not a user id,
+    // so it cannot be used to pre-select an owner -- the owner is still chosen
+    // deliberately from the directory.
   }
 
   async function addActionItem() {
-    if (!actionTitle.trim() || !actionAssignee.trim()) { toast.error("Title and assignee (user id) are required"); return; }
+    if (!actionTitle.trim() || !actionAssignee) { toast.error("A description and an owner are required"); return; }
     setBusy("action");
     try {
       const res = await fetch(`/api/moms/${meetingId}/action-items`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: actionTitle.trim(), assigneeUserId: actionAssignee.trim(), dueDate: actionDueDate || undefined }),
+        body: JSON.stringify({ title: actionTitle.trim(), assigneeUserId: actionAssignee, dueDate: actionDueDate || undefined }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to add action item");
       toast.success("Action item added");
-      setActionTitle(""); setActionAssignee(""); setActionDueDate("");
+      setActionTitle(""); setActionAssignee(null); setActionAssigneeName(null); setActionDueDate("");
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't add action item");
@@ -195,19 +220,15 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     }
   }
 
-  async function createShareLink() {
-    setBusy("share");
-    try {
-      const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.whatsappHref) throw new Error(data?.error ?? "Failed to create a share link");
-      window.open(data.whatsappHref, "_blank", "noopener,noreferrer");
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to share to WhatsApp");
-    } finally {
-      setBusy(null);
-    }
+  // Handed to ShareSheet, which owns the WhatsApp/copy-link behaviour and the
+  // blocked-popup fallback. It only ever asks for a link it does not already
+  // have, so a second share reuses the first link rather than minting one.
+  async function createShareLink(): Promise<ShareLinkResult> {
+    const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Couldn't create a share link");
+    await load();
+    return { shareUrl: data.shareUrl as string, whatsappHref: data.whatsappHref as string };
   }
 
   async function revokeLink(linkId: string) {
@@ -236,6 +257,19 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   if (!meeting) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
   const isPublished = meeting.status === "published";
+  const activeShareUrl = links.find((l) => !l.revokedAt && new Date(l.expiresAt) > new Date() && l.shareUrl)?.shareUrl ?? null;
+  // The backend refuses to share a draft (createMeetingShareLink, 409). Say so
+  // on the control rather than letting the click fail.
+  const shareDisabledReason = isPublished ? null : "Publish the meeting first";
+  const shareSheet = (
+    <ShareSheet
+      pdfHref={`/api/moms/${meeting.id}/pdf`}
+      createShareLink={createShareLink}
+      shareUrl={activeShareUrl}
+      shareDisabledReason={shareDisabledReason}
+      onMessage={(m) => setScreenMessages([{ level: m.level, text: m.text }])}
+    />
+  );
 
   return (
     <ObjectScreen
@@ -256,11 +290,17 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       onBack={() => router.push(meeting.projectId ? `/moms?projectId=${meeting.projectId}` : "/moms")}
       saveDisabled={saving || !draft.title.trim() || !draft.scheduledAt}
       saveDisabledReason={saving ? "Saving…" : !draft.title.trim() || !draft.scheduledAt ? "Title and date/time are required" : undefined}
-      messages={isPublished ? [{ level: "info", text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []}
+      messages={[
+        ...screenMessages,
+        ...(isPublished ? [{ level: "info" as const, text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []),
+      ]}
     >
-      {!isPublished && mode === "display" && (
-        <div className="flex items-center gap-2 border-b border-ct-border px-4 py-3">
-          <Button size="sm" disabled={publishing} onClick={publish}>{publishing ? "Publishing…" : "Publish & Lock"}</Button>
+      {mode === "display" && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
+          {!isPublished && (
+            <Button size="sm" disabled={publishing} onClick={publish}>{publishing ? "Publishing…" : "Publish & Lock"}</Button>
+          )}
+          {shareSheet}
         </div>
       )}
 
@@ -315,9 +355,6 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
               <Button size="sm" variant="outline" onClick={generateSummary} disabled={busy === "ai"}>
                 {busy === "ai" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Summary
               </Button>
-              <Button size="sm" variant="ghost" asChild>
-                <a href={`/api/moms/${meeting.id}/pdf`} target="_blank" rel="noopener noreferrer"><Download className="size-3.5" /> PDF</a>
-              </Button>
             </div>
             {meeting.aiSummary && (
               <div className="mt-3 space-y-2 rounded-md border border-ct-border bg-ct-cloud/30 p-3 text-sm">
@@ -360,15 +397,29 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
               </ul>
             )}
             <div className="flex flex-wrap items-end gap-2">
-              <div className="space-y-1.5"><Label>Title</Label><Input className="w-52" value={actionTitle} onChange={(e) => setActionTitle(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label>Description</Label><Input className="w-52" value={actionTitle} onChange={(e) => setActionTitle(e.target.value)} /></div>
               <div className="space-y-1.5">
-                <Label>Assignee (user id)</Label>
-                <Input className="w-40" value={actionAssignee} onChange={(e) => setActionAssignee(e.target.value)} placeholder="usr_abc123" />
+                <Label>Owner</Label>
+                <OrgUserPicker
+                  ariaLabel="Action item owner"
+                  className="w-56"
+                  value={actionAssignee}
+                  onChange={(userId, user) => { setActionAssignee(userId); setActionAssigneeName(user?.name ?? null); }}
+                />
               </div>
               <div className="space-y-1.5"><Label>Due Date (optional)</Label><Input type="date" className="w-40" value={actionDueDate} onChange={(e) => setActionDueDate(e.target.value)} /></div>
-              <Button size="sm" disabled={busy === "action"} onClick={addActionItem}>{busy === "action" ? "Adding…" : "Add"}</Button>
+              <Button
+                size="sm"
+                disabled={busy === "action" || !actionTitle.trim() || !actionAssignee}
+                title={!actionTitle.trim() || !actionAssignee ? "Description, Owner" : undefined}
+                onClick={addActionItem}
+              >
+                {busy === "action" ? "Adding…" : "Add"}
+              </Button>
             </div>
-            <p className="mt-1 text-xs text-ct-muted">No org directory/picker yet -- paste a known VERIDIAN user ID.</p>
+            <p className="mt-1 text-xs text-ct-muted">
+              {actionAssigneeName ? `Owner: ${actionAssigneeName}. ` : ""}The owner gets a real task -- it shows up in their &quot;Needs you&quot; list.
+            </p>
           </div>
 
           <div>
@@ -396,9 +447,10 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 })}
               </ul>
             )}
-            <Button size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
-              {busy === "share" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Create Share Link &amp; Send via WhatsApp
-            </Button>
+            {/* Creating and sending a link is the Share control at the top of
+                this screen; what stays here is the audit view of the links
+                that exist and the ability to revoke one. */}
+            <p className="text-xs text-ct-muted">Use Share on WhatsApp or Share link above to create one.</p>
           </div>
         </div>
       )}
