@@ -1,7 +1,7 @@
 import ScheduleLogTimeClient from "@/components/ScheduleLogTimeClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { resolveScheduleTasks } from "@/lib/schedule-reference";
+import { resolveScheduleTaskLookup } from "@/lib/schedule-reference";
 import { Card, CardContent } from "@/components/ui/card";
 
 // Real-screen conversion (2026-08-30): replaces the old Timesheet "Log Time"
@@ -26,11 +26,15 @@ export default async function ScheduleLogTimePage({ searchParams }: { searchPara
     );
   }
 
-  const tasks = await resolveScheduleTasks(project.id, organizationId);
+  // R67 F-11 (R-146): the form is told WHICH empty list it got. An empty list
+  // after a successful lookup means the project has no tasks; an empty list
+  // after a failed one means the form should say so (and may fall back to the
+  // list the Board already loaded) rather than claim the project is empty.
+  const { tasks, unavailable } = await resolveScheduleTaskLookup(project.id, organizationId);
 
   return (
     <div className="flex-1">
-      <ScheduleLogTimeClient projectId={project.id} tasks={tasks} />
+      <ScheduleLogTimeClient projectId={project.id} tasks={tasks} tasksUnavailable={unavailable} />
     </div>
   );
 }

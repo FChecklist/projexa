@@ -24,12 +24,29 @@
 // in src/lib/reference-lookups.ts (vendors today), which have exactly the same
 // shape -- session-stable data that several screens each re-fetched on every
 // mount. The mechanism is general; only the keys differ.
+//
+// R67 F-11 (R-146): the store also has to be WRITABLE, not only readable.
+// Logging time acknowledges the write immediately by appending a pending row
+// to the timesheet the user is being sent to, before the 201 comes back, and
+// then replacing it with the server's own answer. That needs three things a
+// read-through cache does not have: peek (what is cached right now), write
+// (put this value in), and subscribe (tell the mounted panel it changed). They
+// are here rather than in schedule-cache.ts because they are properties of the
+// store, not of the schedule.
 export const SHELL_CACHE_TTL_MS = 60_000;
 
 type Entry = { at: number; value: unknown };
 
 const values = new Map<string, Entry>();
 const inFlight = new Map<string, Promise<unknown>>();
+const listeners = new Map<string, Set<() => void>>();
+
+function notify(key: string): void {
+  const set = listeners.get(key);
+  if (!set) return;
+  // Copied before iterating: a listener is allowed to unsubscribe itself.
+  for (const listener of Array.from(set)) listener();
+}
 
 export class ShellFetchError extends Error {
   readonly status: number;
@@ -73,6 +90,7 @@ export async function cachedShellJson<T>(
       throw new ShellFetchError(fromBody || `HTTP ${res.status}`, res.status);
     }
     values.set(key, { at: Date.now(), value: body });
+    notify(key);
     return body;
   })();
 
@@ -84,13 +102,54 @@ export async function cachedShellJson<T>(
   }
 }
 
+/**
+ * What is cached for `key` right now, or undefined if nothing fresh is.
+ *
+ * TTL-aware on purpose: a caller that wants to show cached content instantly
+ * must be shown the same value a read would have resolved to, never a stale one
+ * the read itself would have discarded.
+ */
+export function peekShellCache<T>(key: string, ttlMs: number = SHELL_CACHE_TTL_MS): T | undefined {
+  const hit = values.get(key);
+  if (!hit || Date.now() - hit.at >= ttlMs) return undefined;
+  return hit.value as T;
+}
+
+/**
+ * Puts a value in directly, without a request, and tells subscribers.
+ *
+ * This is how an optimistic write reaches a panel that is already mounted. It
+ * deliberately does NOT clear `inFlight`: a request that is already running is
+ * still the truth in progress, and its result must be allowed to land on top.
+ */
+export function writeShellCache(key: string, value: unknown): void {
+  values.set(key, { at: Date.now(), value });
+  notify(key);
+}
+
+/** Subscribes to changes of one key. Returns the unsubscribe function. */
+export function subscribeShellCache(key: string, listener: () => void): () => void {
+  const set = listeners.get(key) ?? new Set<() => void>();
+  set.add(listener);
+  listeners.set(key, set);
+  return () => {
+    const current = listeners.get(key);
+    if (!current) return;
+    current.delete(listener);
+    if (current.size === 0) listeners.delete(key);
+  };
+}
+
 /** Drops one key (or everything) -- used on sign-out, and by tests. */
 export function invalidateShellCache(key?: string): void {
   if (key) {
     values.delete(key);
     inFlight.delete(key);
+    notify(key);
     return;
   }
+  const known = Array.from(values.keys());
   values.clear();
   inFlight.clear();
+  for (const k of known) notify(k);
 }

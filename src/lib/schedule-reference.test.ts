@@ -33,7 +33,7 @@ mock.module("@/lib/veridian-client", () => ({
   },
 }));
 
-const { resolveIssueTypes, resolveScheduleTasks } = await import("./schedule-reference");
+const { resolveIssueTypes, resolveScheduleTasks, resolveScheduleTaskLookup } = await import("./schedule-reference");
 
 beforeEach(() => {
   requestedPaths = [];
@@ -89,5 +89,33 @@ describe("resolveScheduleTasks", () => {
     };
 
     await expect(resolveScheduleTasks("p1", "org-1")).resolves.toEqual([]);
+  });
+});
+
+// R67 F-11 (R-146): "the lookup failed" and "this project has no tasks" are
+// different facts, and Log Time says different things about them -- so the
+// resolver has to be able to tell them apart. It still never throws.
+describe("resolveScheduleTaskLookup", () => {
+  test("a successful empty response is NOT reported as unavailable", async () => {
+    respond = async () => ({ tasks: [] });
+
+    expect(await resolveScheduleTaskLookup("p1", "org-1")).toEqual({ tasks: [], unavailable: false });
+  });
+
+  test("a failure is reported as unavailable, with an empty list and no rejection", async () => {
+    respond = async () => {
+      throw new FakeVeridianApiError("upstream down", 502);
+    };
+
+    expect(await resolveScheduleTaskLookup("p1", "org-1")).toEqual({ tasks: [], unavailable: true });
+  });
+
+  test("a successful response carries its tasks through unchanged", async () => {
+    respond = async () => ({ tasks: [{ id: "i1", number: 3, title: "Pour slab" }] });
+
+    expect(await resolveScheduleTaskLookup("p1", "org-1")).toEqual({
+      tasks: [{ id: "i1", number: 3, title: "Pour slab" }],
+      unavailable: false,
+    });
   });
 });

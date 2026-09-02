@@ -23,7 +23,7 @@ import { Loader2, Plus } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { invalidateScheduleProject, loadSchedule } from "@/lib/schedule-cache";
+import { invalidateScheduleProject, loadSchedule, seedScheduleTasks } from "@/lib/schedule-cache";
 
 type BoardIssue = {
   id: string; number: number; title: string; priority: string; statusId: string; completionPercentage: number;
@@ -52,6 +52,14 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
     try {
       const data = await loadSchedule<{ columns?: BoardColumn[] }>("board", projectId, options);
       setColumns(data.columns ?? []);
+      // R67 F-11 (R-146): the board's cards already ARE the project's task list
+      // in exactly the shape /schedule/log-time's Task select needs, so seeding
+      // it here costs nothing and means arriving at Log Time from the Board has
+      // a filled select even if that screen's own lookup fails.
+      seedScheduleTasks(
+        projectId,
+        (data.columns ?? []).flatMap((c) => c.issues.map((i) => ({ id: i.id, number: i.number, title: i.title })))
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load board");
     } finally {

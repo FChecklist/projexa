@@ -32,15 +32,25 @@ export async function resolveIssueTypes(organizationId: string | null): Promise<
   }
 }
 
-export async function resolveScheduleTasks(projectId: string, organizationId: string | null): Promise<ScheduleTask[]> {
+// R67 F-11 (R-146): "the lookup failed" and "this project has no tasks" are
+// different facts and the form says different things about them, so the
+// resolver has to tell them apart. It still never throws.
+export type ScheduleTaskLookup = { tasks: ScheduleTask[]; unavailable: boolean };
+
+export async function resolveScheduleTaskLookup(projectId: string, organizationId: string | null): Promise<ScheduleTaskLookup> {
   try {
     const data = await callVeridian<{ tasks?: ScheduleTask[] }>(`/schedule?projectId=${encodeURIComponent(projectId)}`, {
       organizationId: organizationId ?? undefined,
       timeoutMs: VERIDIAN_PAGE_BUDGET_MS,
     });
-    return data.tasks ?? [];
+    return { tasks: data.tasks ?? [], unavailable: false };
   } catch (err) {
     console.error("[schedule-reference] task list lookup failed:", err instanceof Error ? err.message : err);
-    return [];
+    return { tasks: [], unavailable: true };
   }
+}
+
+/** The list alone, for callers that have nothing different to say about a failure. */
+export async function resolveScheduleTasks(projectId: string, organizationId: string | null): Promise<ScheduleTask[]> {
+  return (await resolveScheduleTaskLookup(projectId, organizationId)).tasks;
 }
