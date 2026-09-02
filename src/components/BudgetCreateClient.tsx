@@ -86,7 +86,7 @@ export default function BudgetCreateClient() {
         }),
       });
       toast.success("Budget created");
-      router.push(`/budgets/${data.id}`);
+      router.push(`/accounting/annual-budgets/${data.id}`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't create budget"));
     } finally {
@@ -96,13 +96,13 @@ export default function BudgetCreateClient() {
 
   return (
     <ObjectScreen
-      breadcrumb="Budgets / New Budget"
-      title="New Budget"
+      breadcrumb="Accounting / Annual Budgets / New Annual Budget"
+      title="New Annual Budget"
       mode="create"
       hasDraft={false}
       onSave={createBudget}
-      onCancel={() => router.push("/budgets")}
-      onBack={() => router.push("/budgets")}
+      onCancel={() => router.push("/accounting/annual-budgets")}
+      onBack={() => router.push("/accounting/annual-budgets")}
       saveDisabled={submitting || lookupsLoading || blockedReason !== null}
       saveDisabledReason={submitting ? "Creating…" : blockedReason ?? undefined}
       messages={[]}

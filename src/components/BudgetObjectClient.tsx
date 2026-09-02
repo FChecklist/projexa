@@ -110,7 +110,7 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
 
   return (
     <ObjectScreen
-      breadcrumb="Budgets / Budget"
+      breadcrumb="Accounting / Annual Budgets / Annual Budget"
       title={budget.name}
       mode={mode}
       hasDraft={false}
@@ -124,7 +124,7 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
       onCancel={mode === "edit" ? () => { setDraftLines(budget.lineItems); setMode("display"); } : undefined}
       onDelete={budget.status !== "cancelled" ? () => runAction("cancel") : undefined}
       deleteDisabledReason={budget.status === "cancelled" ? "Already cancelled" : actionBusy ? "Working…" : undefined}
-      onBack={() => router.push("/budgets")}
+      onBack={() => router.push("/accounting/annual-budgets")}
       saveDisabled={actionBusy !== null}
       messages={[]}
     >

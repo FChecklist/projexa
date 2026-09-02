@@ -162,11 +162,15 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // fresh routesOnDisk() walk against the pre-existing SHIPPED_ROUTES/nav
   // entries, not assumed. See nav-routes.ts's own comment for the same
   // 161-route re-measurement.
+  // R67 lane D22 (item D-41): the ERP fiscal-year ledger's own create/object
+  // screens, moved here with the list they belong to when /budgets became the
+  // project's BOQ budget screen. Same class as every other row in this block --
+  // reached from the "Finance Budgets (ERP)" list, never from the sidebar.
+  "/accounting/annual-budgets/[id]",
+  "/accounting/annual-budgets/new",
   "/accounting/companies/new",
   "/accounting/journal-entries/[id]",
   "/accounting/journal-entries/new",
-  "/budgets/[id]",
-  "/budgets/new",
   "/change-orders/[id]",
   "/change-orders/new",
   "/documents/[id]",

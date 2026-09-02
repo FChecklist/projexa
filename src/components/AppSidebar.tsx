@@ -42,6 +42,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.schedule", href: "/schedule", icon: GanttChartSquare },
       { labelKey: "items.meetings", href: "/meetings", icon: CalendarClock },
       { labelKey: "items.scope", href: "/scope", icon: FileText },
+      // R67 lane D22 (item D-41): the PROJECT's BOQ budget (Sumeet 6.png II),
+      // which belongs beside Scope in Execution -- not the org-wide ERP
+      // fiscal-year ledger, which is now "Finance Budgets (ERP)" under Finance.
+      { labelKey: "items.budget", href: "/budgets", icon: Wallet },
       { labelKey: "items.workProgress", href: "/work-progress", icon: ClipboardList },
       { labelKey: "items.siteDiary", href: "/site-diary", icon: BookOpen },
       { labelKey: "items.documents", href: "/documents", icon: FolderOpen },
@@ -110,7 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.finance",
     items: [
-      { labelKey: "items.budgets", href: "/budgets", icon: Wallet },
+      { labelKey: "items.financeBudgetsErp", href: "/accounting/annual-budgets", icon: Wallet },
       { labelKey: "items.expenses", href: "/expenses", icon: Receipt },
       { labelKey: "items.accounting", href: "/accounting", icon: Calculator },
       { labelKey: "items.invoices", href: "/invoices", icon: ReceiptText },

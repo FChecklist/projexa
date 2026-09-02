@@ -117,7 +117,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
         </p>
         {/* Real screen navigation (2026-08-30) -- replaces the old "New
             Budget" Dialog popup with a real create route. */}
-        <Button className="shrink-0" onClick={() => router.push("/budgets/new")}><Plus className="size-4" /> New Budget</Button>
+        <Button className="shrink-0" onClick={() => router.push("/accounting/annual-budgets/new")}><Plus className="size-4" /> New Budget</Button>
       </div>
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -139,7 +139,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of nothing (no detail view
                   // existed for a single budget before this).
-                  <TableRow key={b.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/budgets/${b.id}`)}>
+                  <TableRow key={b.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/accounting/annual-budgets/${b.id}`)}>
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderBudgetCell(col.field, b)}</TableCell>
                     ))}

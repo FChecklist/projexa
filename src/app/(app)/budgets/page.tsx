@@ -1,39 +1,41 @@
 import { PageHeading } from "@/components/PageHeading";
+import { Card, CardContent } from "@/components/ui/card";
+import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import BudgetsClient, { type RegistryColumn } from "@/components/BudgetsClient";
+import BudgetProjectClient from "@/components/BudgetProjectClient";
+import PickProjectPrompt from "@/components/PickProjectPrompt";
 
-// R46 P8 seq133 (registry-model proof, same shape as R43 seq2's
-// resolvePermitsListColumns, R46 P8 seq134's resolveVariationsListColumns,
-// and R46 P8 seq128's resolveDocumentsListColumns): resolved server-side so
-// BudgetsClient (a client component) never needs its own
-// Bearer-key-authenticated fetch. A missing or errored registry row is NOT
-// fatal -- BudgetsClient falls back to its own hardcoded COLUMNS when this
-// is null. Unlike documents/change-orders/drawings, Budgets is org-wide
-// rather than project-scoped (no resolveSelectedProject here) -- only
-// organizationId is needed to resolve the row.
-async function resolveBudgetsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/budget.list", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[budgets/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
-export default async function BudgetsPage() {
+// R67 lane D22 (item D-41, recs R-107/R-113): /budgets is now THE PROJECT'S
+// BOQ BUDGET, not the org-wide ERP fiscal-year ledger (that moved intact to
+// /accounting/annual-budgets). Project resolution is the same rule
+// scope/page.tsx uses -- a ?projectId= in the URL wins over the rail's own
+// selection, so a shared/bookmarked link opens the budget it names -- via the
+// one shared resolveSelectedProject() helper rather than a second copy of the
+// same /dashboard fetch.
+export default async function ProjectBudgetPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+  const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const registryColumns = await resolveBudgetsListColumns(organizationId);
+  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Budgets" />
-        <BudgetsClient registryColumns={registryColumns} />
+        <PageHeading title="Budget" />
+        {errorMessage && (
+          <Card className="border-px-error-border bg-px-error-light">
+            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
+          </Card>
+        )}
+        {/* NEVER "No budgets found." -- that sentence was the whole defect
+            R-107 reported: an empty ledger where a project budget belonged.
+            When nothing is selected the screen says what to do next and puts
+            the cursor in the control that does it. */}
+        {!errorMessage && !project && <PickProjectPrompt message="Pick a project in the top rail to see its budget" />}
+        {project && (
+          <div className="h-[calc(100vh-12rem)] min-h-[560px]">
+            <BudgetProjectClient projectId={project.id} projectName={project.name} />
+          </div>
+        )}
       </div>
     </>
   );
