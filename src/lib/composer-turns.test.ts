@@ -175,3 +175,31 @@ describe("answerRowsFrom -- rows first, but only when the rows are real", () => 
     expect(answerRowsFrom(many, 3)).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// R67 C-12 -- would submitting this write anything, and can it run at all?
+// ---------------------------------------------------------------------------
+
+describe("the preview carries the pipeline's own write/executable facts", () => {
+  test("both flags are read from the response", () => {
+    const [seg] = readPreviewSegments({
+      segments: [{ verdict: "task", functionId: "record_work_progress", writes: true, executable: true }],
+    });
+    expect(seg.writes).toBe(true);
+    expect(seg.executable).toBe(true);
+  });
+
+  test("a response that predates them defaults to false -- no Record button offered", () => {
+    const [seg] = readPreviewSegments({ segments: [{ verdict: "task", functionId: "record_work_progress" }] });
+    expect(seg.writes).toBe(false);
+    expect(seg.executable).toBe(false);
+  });
+
+  test("a non-boolean is not truthy by accident", () => {
+    const [seg] = readPreviewSegments({
+      segments: [{ verdict: "chat", functionId: "list_leads", writes: "yes", executable: 1 }],
+    });
+    expect(seg.writes).toBe(false);
+    expect(seg.executable).toBe(false);
+  });
+});

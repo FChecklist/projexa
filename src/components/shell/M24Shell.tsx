@@ -60,9 +60,11 @@ import { TaskMaster, type TaskTab } from "@/components/shell/TaskMaster";
 import {
   countedTabLabel,
   mergeTabCounts,
+  objectFor,
   pageNote,
   tabView,
   toTaskRow,
+  verbFor,
   TAB_STATUS_QUERY,
   TASK_TAB_IDS,
   type ApiTask,
@@ -140,6 +142,7 @@ import {
   doorById,
   doorRoute,
   doorSegments,
+  nearestScreen,
   periodLabel,
   periodOptionsLevel,
   reportLeafById,
@@ -155,6 +158,9 @@ import {
   type PeriodId,
   type ProjectTask,
 } from "@/lib/card-catalogue";
+// R67 C-12: the echo card's sentence, the shortlist rule and the honest
+// refusal -- all pure, all asserted in src/lib/gap-card.test.ts.
+import { answersNeededLabel, echoFields, echoLine, looksLikeCreate, refusalFor } from "@/lib/gap-card";
 import { maskTechnical, resolveTaskError } from "@/lib/task-errors";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
@@ -374,6 +380,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     missingParams: string[];
     verdict: "task" | "chat" | "gap";
     message: string | null;
+    /**
+     * R67 C-12: straight from VERIDIAN's own executor registries. `writes`
+     * decides whether this card is allowed to offer a Record button at all --
+     * C-12: "Save is offered only for registered writes and every other leaf
+     * loads the chain and stops" -- and `executable` decides whether the card
+     * is a proposal or a refusal.
+     */
+    writes: boolean;
+    executable: boolean;
   } | null>(null);
   const [answer, setAnswer] = useState<{ heading: string; rows: AnswerRowDto[] } | null>(null);
   // R67 C-09: the conversation so far. Hydrated from sessionStorage below, so
@@ -1729,6 +1744,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             missingParams: seg.missingParams,
             verdict: seg.verdict,
             message: seg.message ? maskTechnical(seg.message) : null,
+            writes: seg.writes,
+            executable: seg.executable,
           });
           setAnswer(null);
           // A WRITE THAT IS SHORT A SLOT GETS A PICKER, NOT A BLOCKED ROW.
@@ -2038,6 +2055,33 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   // NO FAIL-AFTER-CLICK: the card's primary button carries its own reason,
   // in its own label, derived from the same values that disable it.
+  // R67 C-12 -- the echo card's own two derived strings.
+  //
+  // The TITLE is the chain title plus every value the pipeline resolved, so
+  // the user checks facts rather than trusting a verdict. The REFUSAL is
+  // computed from the server's own `executable` flag, never from a hard-coded
+  // list of what PROJEXA can do -- a copy of that list would go stale the day
+  // a function is registered, and a wrong refusal is worse than none.
+  const proposalEcho = useMemo(() => {
+    if (!proposal) return "";
+    const title = proposal.functionId
+      ? `${verbFor(proposal.functionId)} ${objectFor({ functionId: proposal.functionId, derivedChain: null })}`
+      : proposal.steps[proposal.steps.length - 1] ?? "This entry";
+    return echoLine(title, echoFields(proposal.params));
+  }, [proposal]);
+
+  const proposalRefusal = useMemo(() => {
+    if (!proposal || proposal.executable) return null;
+    return refusalFor({
+      mode,
+      verdict: proposal.verdict,
+      executable: proposal.executable,
+      message: proposal.message,
+      creating: looksLikeCreate(proposal.typed),
+      nearestScreen: nearestScreen(proposal.steps),
+    });
+  }, [proposal, mode]);
+
   const timesheetBlockedReason = !timesheetDraft
     ? undefined
     : !projectId
@@ -2319,6 +2363,26 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                         {missingFieldLabel(proposal.missingParams[0])}
                       </p>
                     )}
+                    {/* R67 C-12: THE HONEST REFUSAL. The pipeline has no
+                        executor for this at all, so the card does not pretend
+                        a button would work -- it says what cannot be done and
+                        names the screen that can. */}
+                    {proposalRefusal && (
+                      <p className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                        <span role="status" style={{ color: "var(--color-ct-navy)" }}>
+                          {proposalRefusal.sentence}
+                        </span>
+                        {proposalRefusal.href && proposalRefusal.linkLabel && (
+                          <button
+                            type="button"
+                            className="veri-view-tab"
+                            onClick={() => router.push(proposalRefusal.href!)}
+                          >
+                            {proposalRefusal.linkLabel}
+                          </button>
+                        )}
+                      </p>
+                    )}
                     {proposalError && (
                       <p className="flex flex-wrap items-center gap-2 text-[11.5px]">
                         <span role="alert" style={{ color: "var(--color-veri-status-late)" }}>
@@ -2342,14 +2406,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                       </p>
                     )}
                     <ConfirmCard
-                      title={proposal.steps[0] ?? "This entry"}
+                      // R67 C-12: THE ECHO, FIELD BY FIELD. The line above
+                      // says which chain the sentence was read as; this says
+                      // which VALUES -- "Understood: Record Work Progress >
+                      // New entry — Project: … · Category: excavation · 50 %
+                      // · Date: 02-09-2026" -- which is the half a person has
+                      // to check before pressing Record. (The item writes the
+                      // separator as "›"; the product's own chain grammar,
+                      // already on every Task Master row, is ">", and one
+                      // grammar beats two.)
+                      title={proposalEcho}
                       error={proposalError?.sentence ?? null}
                       busy={submitting}
-                      primaryLabel={recordLabel(proposal.missingParams.length)}
+                      // R67 C-12: a Record button ONLY for a registered write.
+                      // A read still runs -- that is how the answer card gets
+                      // its numbers -- but it says so, because "Record" on
+                      // something that records nothing is the wrong word.
+                      primaryLabel={
+                        proposal.writes ? recordLabel(proposal.missingParams.length) : "Show me"
+                      }
                       primaryDisabledReason={
-                        proposal.missingParams.length > 0
-                          ? missingFieldLabel(proposal.missingParams[0])
-                          : undefined
+                        !proposal.executable
+                          ? "not available here yet"
+                          : answersNeededLabel(proposal.missingParams.length) ?? undefined
                       }
                       onPrimary={() => void onConfirmProposal()}
                       secondaryLabel={editInFormRoute(proposal.functionId, projectId) ? "Edit in form" : undefined}
@@ -2524,6 +2603,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                     onRetry={() => setLevelReload((n) => n + 1)}
                     onAdvance={onLevelAdvance}
                     onEmptyAction={(route) => router.push(route)}
+                    // R67 C-12: "the two best fuzzy matches first then 'Show
+                    // all 28 lines'". The query is what the user actually
+                    // typed, so "record 50% on excavation" puts the excavation
+                    // lines where the eye lands instead of at position 19 of
+                    // 28. The roster level is excluded -- it has trade
+                    // headings and its own search, and reordering it would
+                    // move a name out from under its trade.
+                    bestFirstQuery={onAttendanceLevel ? undefined : proposal?.typed ?? draft}
+                    previewLimit={onAttendanceLevel ? undefined : 2}
+                    previewNoun={levelPath[0] === "work_progress" ? "lines" : "options"}
                     // R67 C-08: the multi-select state lives out here because
                     // the Save button's own label is computed from it.
                     selectedIds={onAttendanceLevel ? attendanceTicked : undefined}

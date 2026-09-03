@@ -125,6 +125,15 @@ export type PreviewSegment = {
   chainRoot: string | null;
   /** The pipeline's own sentence for a gap or a partial. */
   message: string | null;
+  /**
+   * R67 C-12: would submitting this WRITE anything, and can the pipeline run
+   * it at all? Both come straight from VERIDIAN's executor registries
+   * (classify-only.ts). Defaulted to false for a response that predates them,
+   * which is the safe direction: the composer then offers no Record button
+   * rather than offering one for something that cannot run.
+   */
+  writes: boolean;
+  executable: boolean;
 };
 
 /**
@@ -154,6 +163,8 @@ export function readPreviewSegments(raw: unknown): PreviewSegment[] {
       chainSteps: Array.isArray(chain?.steps) ? chain!.steps.filter((x): x is string => typeof x === "string") : [],
       chainRoot: typeof chain?.root === "string" ? chain.root : null,
       message: typeof seg.message === "string" ? seg.message : null,
+      writes: seg.writes === true,
+      executable: seg.executable === true,
     });
   }
   return out;

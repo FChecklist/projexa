@@ -46,6 +46,9 @@ import type { ChainSegment, SegmentKind } from "@fchecklist/veridian-ui-kit/shel
 // never survives its own group" should not be asserted only through a
 // synthetic DOM event.
 import { filterOptions, groupOptions } from "@/lib/option-grid";
+// R67 C-12: the shortlist rule -- the two best matches for what the user
+// typed, then "Show all 28 lines". Pure, and tested in gap-card.test.ts.
+import { rankOptions, showAllLabel } from "@/lib/gap-card";
 
 export type ChainOption = {
   id: string;
@@ -85,6 +88,23 @@ export type OptionChainProps = {
   searchBy?: string;
   /** The live tally, in words: "12 of 12 present". */
   countLine?: string;
+
+  // --- R67 C-12 ------------------------------------------------------------
+  /**
+   * What the user actually typed. The options that match it are promoted to
+   * the front, so "record 50% on excavation" puts the excavation lines where
+   * the eye lands first instead of hiding them at position 19 of 28.
+   */
+  bestFirstQuery?: string;
+  /**
+   * How many chips to show before "Show all 28 lines". A twenty-eight-chip
+   * wall is not a question, it is a search problem the user did not ask for.
+   * Ignored for grouped and multi-select levels, which have their own
+   * headings and their own search box.
+   */
+  previewLimit?: number;
+  /** The noun in that button: "lines", "workers", "reports". */
+  previewNoun?: string;
 };
 
 export function OptionChain({
@@ -101,15 +121,41 @@ export function OptionChain({
   secondary,
   searchBy,
   countLine,
+  bestFirstQuery,
+  previewLimit,
+  previewNoun = "options",
 }: OptionChainProps) {
   const [query, setQuery] = useState("");
+  // R67 C-12: collapsed until the user asks for the rest. Keyed off nothing,
+  // deliberately -- reopening the same level should not remember that the user
+  // once expanded it, because the two best matches are the answer most of the
+  // time and that is the point of the shortlist.
+  const [expanded, setExpanded] = useState(false);
 
   const visible = useMemo(() => filterOptions(options, query), [options, query]);
+
+  // R67 C-12: the two best matches for what the user typed, first. Only for a
+  // flat single-select level: a grouped or multi-select level (the attendance
+  // roster) has its own headings and its own search, and reordering it would
+  // move a name out from under its trade.
+  const shortlistable = !multi && !groups && typeof previewLimit === "number" && previewLimit > 0;
+  const ordered = useMemo(() => {
+    if (!shortlistable || !bestFirstQuery) return visible;
+    const { best, rest } = rankOptions(visible, bestFirstQuery, previewLimit);
+    return [...best, ...rest];
+  }, [visible, shortlistable, bestFirstQuery, previewLimit]);
+
+  // The chips actually drawn, and whether anything is being held back. A
+  // search the user typed here always shows everything it matched -- hiding
+  // results behind "Show all" after an explicit search would be absurd.
+  const collapsed = shortlistable && !expanded && !query.trim() && ordered.length > previewLimit!;
+  const shown = collapsed ? ordered.slice(0, previewLimit!) : ordered;
+  const hiddenCount = ordered.length - shown.length;
 
   // Groups are rendered over the VISIBLE options, so a search that empties a
   // trade removes that trade's heading too -- a heading with nothing under it
   // reads as "everyone in this trade is gone", which is not what a filter did.
-  const rendered = useMemo(() => groupOptions(visible, groups), [visible, groups]);
+  const rendered = useMemo(() => groupOptions(shown, groups), [shown, groups]);
 
   if (options.length === 0) {
     // EMPTY STATES MUST PROMPT, NEVER LOOK BROKEN (M24).
@@ -222,16 +268,39 @@ export function OptionChain({
           Nothing matches “{query}”.
         </p>
       ) : (
-        rendered.map((group) => (
-          <div key={group.label ?? "__all"} className="flex flex-wrap items-center gap-1.5">
-            {group.label && (
-              <span className="mr-1 text-[10.5px] font-semibold" style={{ color: "var(--color-ct-muted)" }}>
-                {group.label}
-              </span>
-            )}
-            {group.options.map(renderChip)}
-          </div>
-        ))
+        <>
+          {rendered.map((group) => (
+            <div key={group.label ?? "__all"} className="flex flex-wrap items-center gap-1.5">
+              {group.label && (
+                <span className="mr-1 text-[10.5px] font-semibold" style={{ color: "var(--color-ct-muted)" }}>
+                  {group.label}
+                </span>
+              )}
+              {group.options.map(renderChip)}
+            </div>
+          ))}
+          {/* R67 C-12: the rest of the list is a WORD, not a scroll. It says
+              how many there are, so the user knows the shortlist is a
+              shortlist rather than the whole bill. */}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="veri-view-tab self-start"
+              onClick={() => setExpanded(true)}
+            >
+              {showAllLabel(ordered.length, previewNoun)}
+            </button>
+          )}
+          {expanded && shortlistable && ordered.length > previewLimit! && (
+            <button
+              type="button"
+              className="veri-view-tab self-start"
+              onClick={() => setExpanded(false)}
+            >
+              Show fewer
+            </button>
+          )}
+        </>
       )}
     </fieldset>
   );

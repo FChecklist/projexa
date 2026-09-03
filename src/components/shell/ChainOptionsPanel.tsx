@@ -49,6 +49,13 @@ export type ChainOptionsPanelProps = {
   uncheckedWord?: string;
   secondary?: { label: string; activeIds: readonly string[]; onToggle: (id: string) => void };
   countLine?: string;
+  /**
+   * R67 C-12: what the user typed, so the options that match it are the two
+   * the eye lands on first, and the rest sit behind "Show all 28 lines".
+   */
+  bestFirstQuery?: string;
+  previewLimit?: number;
+  previewNoun?: string;
 };
 
 /** Three chips, so the shape of the answer arrives before the answer does. */
@@ -80,6 +87,9 @@ export function ChainOptionsPanel({
   uncheckedWord,
   secondary,
   countLine,
+  bestFirstQuery,
+  previewLimit,
+  previewNoun,
 }: ChainOptionsPanelProps) {
   // ERROR FIRST. A stale level rendered under a failed refetch is a list of
   // options that may no longer exist -- and a chip the user can click into a
@@ -145,6 +155,9 @@ export function ChainOptionsPanel({
       uncheckedWord={uncheckedWord}
       secondary={secondary}
       countLine={countLine}
+      bestFirstQuery={bestFirstQuery}
+      previewLimit={previewLimit}
+      previewNoun={previewNoun}
     />
   );
 }

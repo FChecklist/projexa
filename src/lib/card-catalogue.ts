@@ -716,6 +716,30 @@ export function doorById(id: string): DoorDef | null {
   return DOORS.find((d) => d.id === id) ?? null;
 }
 
+/**
+ * R67 C-12 -- THE SCREEN NEAREST TO SOMETHING THE COMPOSER CANNOT RUN.
+ *
+ * Every refusal C-12 specifies ends in a destination ("here is the Budget
+ * screen →"), and the destinations are already written down once, in DOORS.
+ * Matching the chain's own step labels against them means a refusal can never
+ * point somewhere the product does not have -- and never needs a second table
+ * of module-to-route mappings to drift from this one.
+ *
+ * Searched from the MOST SPECIFIC end of the chain backwards, so
+ * "Cedar Heights > Budget > Variance" finds Budget rather than the project.
+ */
+export function nearestScreen(steps: readonly string[]): { label: string; route: string } | null {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const key = steps[i]?.trim().toLowerCase();
+    if (!key) continue;
+    const door = DOORS.find((d) => d.steps.some((s) => s.label.toLowerCase() === key));
+    // The MODULE is what the sentence names ("the Budget screen"), which is
+    // the door's first step -- not the leaf, which is a filter on it.
+    if (door) return { label: door.steps[0].label, route: door.route };
+  }
+  return null;
+}
+
 /** The URL a door opens, with the project and the door's own filters carried. */
 export function doorRoute(door: DoorDef, projectId: string | null): string {
   const qs = new URLSearchParams();

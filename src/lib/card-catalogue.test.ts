@@ -28,6 +28,7 @@ import {
   doorRoute,
   doorSegments,
   doorSentence,
+  nearestScreen,
 } from "./card-catalogue";
 
 const CEDAR = "Cedar Heights Villa - Phase 1";
@@ -341,6 +342,39 @@ describe("doorSegments", () => {
     for (const door of DOORS) {
       const ids = doorSegments(door).map((s) => s.id);
       expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-12 -- the screen a refusal points at
+// ---------------------------------------------------------------------------
+
+describe("nearestScreen -- a refusal never points nowhere", () => {
+  test("the chain's own module names the screen", () => {
+    expect(nearestScreen(["Cedar Heights Villa - Phase 1", "Budget", "Budget vs actual"])).toEqual({
+      label: "Budget",
+      route: "/budgets",
+    });
+  });
+
+  test("it reads from the most specific end of the chain backwards", () => {
+    // "Permits" is later in the sentence than the project, so it wins.
+    expect(nearestScreen(["Cedar Heights", "Permits", "Expiring soon"])?.route).toBe("/permits");
+  });
+
+  test("a chain that names no module we have gets no destination invented for it", () => {
+    expect(nearestScreen(["Cedar Heights", "Payroll", "Run"])).toBeNull();
+    expect(nearestScreen([])).toBeNull();
+    expect(nearestScreen(["", "   "])).toBeNull();
+  });
+
+  test("every route it can return is a route a door already opens", () => {
+    const routes = new Set(DOORS.map((d) => d.route));
+    for (const door of DOORS) {
+      const found = nearestScreen([door.steps[door.steps.length - 1].label]);
+      expect(found).not.toBeNull();
+      expect(routes.has(found!.route)).toBe(true);
     }
   });
 });

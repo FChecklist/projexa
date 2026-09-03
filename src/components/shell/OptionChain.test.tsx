@@ -214,3 +214,76 @@ describe("the single-select path the kit already had", () => {
     expect(view.getByText("Nothing to choose here yet.")).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// R67 C-12 -- the shortlist: the two best matches, then "Show all 28 lines".
+// ---------------------------------------------------------------------------
+
+const LINES = Array.from({ length: 28 }, (_, i) => ({
+  id: `l${i + 1}`,
+  label: i === 4 ? "R60SK-A Excavation and earth works" : i === 9 ? "R60SK-C Excavation to reduced level" : `Line ${i + 1}`,
+}));
+
+describe("the chip row is a shortlist, not a wall", () => {
+  test("only the two best matches are drawn, and the rest are a word", () => {
+    const { container, getByText } = render(
+      <OptionChain
+        legend="Which BOQ line?"
+        options={LINES}
+        kind="step"
+        onAdvance={() => {}}
+        bestFirstQuery="excavation"
+        previewLimit={2}
+        previewNoun="lines"
+      />
+    );
+    const chips = container.querySelectorAll("button.veri-rchip");
+    expect(chips).toHaveLength(2);
+    expect([...chips].map((c) => c.textContent)).toEqual([
+      "R60SK-A Excavation and earth works",
+      "R60SK-C Excavation to reduced level",
+    ]);
+    expect(getByText("Show all 28 lines")).toBeTruthy();
+  });
+
+  test("the rest are one click away, and the count is the whole list", () => {
+    const { container, getByText } = render(
+      <OptionChain
+        legend="Which BOQ line?"
+        options={LINES}
+        kind="step"
+        onAdvance={() => {}}
+        bestFirstQuery="excavation"
+        previewLimit={2}
+        previewNoun="lines"
+      />
+    );
+    fireEvent.click(getByText("Show all 28 lines"));
+    expect(container.querySelectorAll("button.veri-rchip")).toHaveLength(28);
+    expect(getByText("Show fewer")).toBeTruthy();
+  });
+
+  test("without a previewLimit nothing is held back", () => {
+    const { container, queryByText } = render(
+      <OptionChain legend="Which BOQ line?" options={LINES} kind="step" onAdvance={() => {}} />
+    );
+    expect(container.querySelectorAll("button.veri-rchip")).toHaveLength(28);
+    expect(queryByText(/Show all/)).toBeNull();
+  });
+
+  test("a shortlisted chip still only ADVANCES -- it never executes", () => {
+    const advanced: unknown[] = [];
+    const { container } = render(
+      <OptionChain
+        legend="Which BOQ line?"
+        options={LINES}
+        kind="step"
+        onAdvance={(s) => advanced.push(s)}
+        bestFirstQuery="excavation"
+        previewLimit={2}
+      />
+    );
+    fireEvent.click(container.querySelectorAll("button.veri-rchip")[0]);
+    expect(advanced).toEqual([{ id: "l5", label: "R60SK-A Excavation and earth works", kind: "step" }]);
+  });
+});
