@@ -58,12 +58,18 @@ import { Composer } from "@/components/shell/Composer";
 // contract -- is still imported from the kit inside that fork.
 import { TaskMaster, type TaskTab } from "@/components/shell/TaskMaster";
 import {
+  countedTabLabel,
+  mergeTabCounts,
+  pageNote,
   tabView,
   toTaskRow,
+  TAB_STATUS_QUERY,
+  TASK_TAB_IDS,
   type ApiTask,
   type GroupedRows,
   type ProjexaTaskRow,
   type RowAction,
+  type ServerTabCounts,
   type TaskTabId,
 } from "@/components/shell/task-row";
 // R67 C-02: band 2 of the composer, where the chain is built. The kit's
@@ -171,7 +177,6 @@ const PILL_USAGE_KEY = "veri.pill.usage";
 // live in this ONE shell that wraps all 53 app routes, so the URL param
 // lives here too rather than in any one page.
 const TASK_TAB_PARAM = "taskTab";
-const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
 
 // R67 C-01: a blocked row the user dismissed. Per user-agent, not per server:
 // dismissing is a reading decision ("I have seen this and it is not my next
@@ -182,7 +187,17 @@ const DISMISSED_KEY = "veri.tasks.dismissed";
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
 type ApiTasks = {
-  counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
+  counts?: {
+    needsYou?: number;
+    running?: number;
+    done?: number;
+    blocked?: number;
+    total?: number;
+    /** R67 C-11: one number per TAB, counted over the whole scope. */
+    tabs?: ServerTabCounts;
+  };
+  /** R67 C-11: whether the rows returned are the whole list or one page of it. */
+  page?: { limit?: number; returned?: number; truncated?: boolean; status?: string | null };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
   tasks?: ApiTask[];
 };
@@ -243,9 +258,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // or filtered row still counted. `loadedAt` travels with the rows so
   // "older than 24 h" and "before today" are measured against the read that
   // produced them, not against whenever a re-render happened.
-  const [taskData, setTaskData] = useState<{ groups: GroupedRows; loadedAt: number }>({
+  const [taskData, setTaskData] = useState<{
+    groups: GroupedRows;
+    loadedAt: number;
+    /** R67 C-11: the server's per-tab numbers, over the whole scope. */
+    serverTabs: ServerTabCounts | null;
+    serverTotal: number | null;
+    /** True when the rows in hand are one page of a longer list. */
+    truncated: boolean;
+    returned: number;
+  }>({
     groups: EMPTY_GROUPS,
     loadedAt: Date.now(),
+    serverTabs: null,
+    serverTotal: null,
+    truncated: false,
+    returned: 0,
   });
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   // R67 C-01: which blocked row's "Fix" was pressed, and which picker the
@@ -374,6 +402,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Held in a ref, not read from state inside loadTasks, so switching project
   // does not re-enter the task read.
   const projectNameRef = useRef<string | null>(null);
+  // R67 C-11: which tab's rows the next read should ask for. A ref, not the
+  // state itself, so loadTasks keeps a stable identity -- it is a dependency
+  // of six other callbacks, and rebuilding it on every tab click would
+  // rebuild all of them.
+  const activeTabRef = useRef<TaskTabId>("home");
   // R67 C-07: declared here, above onReset and openDoor, because both of
   // them clear the tray and a useCallback dependency array is evaluated at
   // RENDER time -- a later const would be a temporal-dead-zone crash, not a
@@ -539,10 +572,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
+  //
+  // R67 C-11: it now asks for ONE TAB'S ROWS. The tab click already wrote
+  // ?taskTab and drove the highlight; it drives the query too, so navigating
+  // to Completed no longer pulls fifty rows of everything and throws four
+  // fifths of them away in the browser. The per-tab NUMBERS come from the
+  // response's own `counts.tabs`, which VERIDIAN computes with a grouped count
+  // over the whole scope -- so a tab whose rows are not loaded still shows a
+  // true number, and the tab you are looking at still counts what is in front
+  // of you (see task-row.ts's mergeTabCounts for that rule).
   const loadTasks = useCallback(async () => {
     {
       try {
-        const res = await fetch("/api/tasks?limit=50");
+        const status = TAB_STATUS_QUERY[activeTabRef.current];
+        const res = await fetch(`/api/tasks?limit=50${status ? `&status=${encodeURIComponent(status)}` : ""}`);
         // Status before body: an error body parses perfectly well as JSON, and
         // treating it as data is how a failed request becomes a confident
         // empty list.
@@ -556,11 +599,12 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         const data = (d ?? {}) as ApiTasks;
         setTasksError(null);
         const g = data.groups ?? {};
-        // R67 C-01: the rows are built ONCE, here, and every tab's list and
-        // every tab's count are then derived from these same four arrays --
-        // which is why a badge can no longer disagree with the list under it.
-        // The API's own `counts` object is deliberately not read: it counts
-        // rows this pane may have filtered or dismissed.
+        // R67 C-01: the rows are built ONCE, here, and the list under the tab
+        // you are looking at is derived from these same four arrays -- which
+        // is why a badge can no longer disagree with the list under it. The
+        // API's `counts` object is used only for the tabs whose rows are NOT
+        // loaded (C-11): it cannot know about a locally dismissed row, so it
+        // never overrides the count of the tab actually on screen.
         const loadedAt = Date.now();
         const ctx = { now: loadedAt, projectName: projectNameRef.current };
         setTaskData({
@@ -571,6 +615,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             running: (g.running ?? []).map((t) => toTaskRow(t, "running", ctx)),
             done: (g.done ?? []).map((t) => toTaskRow(t, "done", ctx)),
           },
+          serverTabs: data.counts?.tabs ?? null,
+          serverTotal: typeof data.counts?.total === "number" ? data.counts.total : null,
+          truncated: data.page?.truncated === true,
+          returned: typeof data.page?.returned === "number" ? data.page.returned : (data.tasks?.length ?? 0),
         });
       } catch {
         setTasksError("Couldn't reach the task service.");
@@ -580,7 +628,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let live = true;
-    void loadTasks();
+    // R67 C-11: the task read is NOT started here any more. It is started by
+    // the tab effect below, which runs on mount too (activeTab has a value
+    // from the first render) -- keeping it in both places issued two
+    // identical reads on every load.
 
     // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
     // order, never re-sorted here. isNewUser true means "nothing earned yet",
@@ -1838,13 +1889,38 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   const activeView = views[activeTab];
 
+  // R67 C-11: the number is IN the label, and it comes from the rows in front
+  // of you for the tab you are on, from the server for every other tab, and
+  // from nowhere at all for a tab whose count nothing can compute yet
+  // (History's 7-day rule is client-side) -- in which case no number is
+  // printed rather than a wrong one.
+  const tabCounts = useMemo(
+    () =>
+      mergeTabCounts({
+        views,
+        serverTabs: taskData.serverTabs,
+        serverTotal: taskData.serverTotal,
+        activeTab,
+        truncated: taskData.truncated,
+      }),
+    [views, taskData.serverTabs, taskData.serverTotal, taskData.truncated, activeTab]
+  );
+
   const tabs: TaskTab[] = [
-    { id: "home", label: "Home", count: views.home.count },
-    { id: "approval-pending", label: "Approval Pending", count: views["approval-pending"].count },
-    { id: "in-queue", label: "In Queue", count: views["in-queue"].count },
-    { id: "completed", label: "Completed", count: views.completed.count },
-    { id: "history", label: "History", count: views.history.count },
+    { id: "home", label: countedTabLabel("Home", tabCounts.home) },
+    { id: "approval-pending", label: countedTabLabel("Approval Pending", tabCounts["approval-pending"]) },
+    { id: "in-queue", label: countedTabLabel("In Queue", tabCounts["in-queue"]) },
+    { id: "completed", label: countedTabLabel("Completed", tabCounts.completed) },
+    { id: "history", label: countedTabLabel("History", tabCounts.history) },
   ];
+
+  // "Showing the newest 50 of 120." A page and a list are different things and
+  // the difference is said in words rather than left for the user to notice.
+  const listNote = pageNote(
+    taskData.returned,
+    activeTab === "completed" ? taskData.serverTabs?.done ?? null : taskData.serverTotal,
+    taskData.truncated
+  );
 
   // *** RETRY IS THE ONLY ROW ACTION THAT TOUCHES THE SERVER. *** It re-posts
   // the IDENTICAL body, and only for a transport failure -- BACKEND_UNAVAILABLE
@@ -1887,8 +1963,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [submitting, loadTasks]
   );
 
+  // R67 C-11: the tab drives the QUERY, not only the highlight. The ref is
+  // what loadTasks reads, so it is set before the read is asked for.
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+    void loadTasks();
+  }, [activeTab, loadTasks]);
+
   const onRowAction = useCallback(
     (row: ProjexaTaskRow, action: RowAction) => {
+      if (action.kind === "open") {
+        // R67 C-11: a done row's own object. A read, and only a read.
+        if (action.href) router.push(action.href);
+        return;
+      }
       if (action.kind === "dismiss") {
         setDismissedIds((prev) => {
           const next = prev.includes(row.id) ? prev : [...prev, row.id];
@@ -1912,7 +2000,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setSubmitError(null);
       setFixTarget({ taskId: row.id, functionId: row.functionId, missingStep: action.missingStep });
     },
-    [retryTask]
+    [retryTask, router]
   );
 
   // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
@@ -2056,7 +2144,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // The active tab's OWN rows, with its OWN heading and its OWN empty
           // sentence -- all three from task-row.ts's tabView, so the tab that
           // is highlighted is the tab that is rendered.
-          primary={{ label: activeView.primaryLabel, empty: activeView.primaryEmpty, rows: activeView.primary }}
+          primary={{
+            label: activeView.primaryLabel,
+            empty: activeView.primaryEmpty,
+            rows: activeView.primary,
+            // R67 C-11: History, by day.
+            dayGroups: activeView.dayGroups,
+            note: listNote,
+          }}
           secondary={
             activeView.secondary
               ? {

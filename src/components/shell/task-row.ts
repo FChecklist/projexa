@@ -53,6 +53,8 @@ export type ApiTask = {
   /** The slots the server says are missing, most important first. */
   missing?: string[] | null;
   params?: Record<string, unknown> | null;
+  /** R67 C-11: what the function actually returned, so a done row can link to it. */
+  result?: Record<string, unknown> | null;
   rawInput?: string | null;
   mode?: string | null;
   createdAt?: string | null;
@@ -60,14 +62,16 @@ export type ApiTask = {
 };
 
 /** What a row's button does when pressed. */
-export type RowActionKind = TaskErrorAction | "dismiss";
+export type RowActionKind = TaskErrorAction | "dismiss" | "open";
 
 export type RowAction = {
   kind: RowActionKind;
   /** A word, never an icon: "Pick line", "Choose project", "Retry", "Dismiss". */
   label: string;
   /** For a "fix": which picker the loaded chain should open. */
-  missingStep: "boqLine" | "project" | "value" | null;
+  missingStep: "boqLine" | "project" | "value" | "task" | null;
+  /** For an "open": where the row's object actually is. */
+  href?: string;
 };
 
 export type ProjexaTaskRow = {
@@ -104,6 +108,9 @@ export type ProjexaTaskRow = {
   createdAtMs: number | null;
   actions: RowAction[];
 };
+
+/** GET /api/tasks now returns the task's `result` too (R67 C-11). */
+export type ApiTaskResult = Record<string, unknown> | null | undefined;
 
 // ---------------------------------------------------------------------------
 // THE DISPLAY REGISTRY
@@ -176,6 +183,56 @@ export function objectFor(t: Pick<ApiTask, "functionId" | "derivedChain">): stri
   if (steps.length > 0) return steps.join(" > ");
   if (fid) return humaniseFunctionId(fid);
   return "Task";
+}
+
+// ---------------------------------------------------------------------------
+// WHERE A ROW'S OBJECT ACTUALLY IS
+// ---------------------------------------------------------------------------
+
+// R67 C-11: "Done rows ... show their object id as a link." A finished task
+// with nowhere to go is a receipt for something the user cannot look at. One
+// entry per function that produces a row somebody can open; a function absent
+// from this table gets no link rather than a guessed one.
+const OBJECT_ROUTES: Readonly<Record<string, string>> = {
+  record_work_progress: "/work-progress",
+  record_timesheet: "/schedule/timesheet",
+  "reports.report": "/reports",
+  get_construction_project_dashboard: "/dashboard/project",
+  get_construction_budget_status: "/budgets",
+  list_delayed_activities: "/schedule",
+  list_over_budget_projects: "/budgets",
+  list_customers: "/customers",
+  list_leads: "/leads",
+  list_opportunities: "/opportunities",
+};
+
+/** The screen a finished task's object lives on, with the project carried. */
+export function objectRouteFor(functionId: string | null | undefined, projectId: string | null): string | null {
+  const base = functionId ? OBJECT_ROUTES[functionId] : undefined;
+  if (!base) return null;
+  return projectId ? `${base}?projectId=${encodeURIComponent(projectId)}` : base;
+}
+
+/**
+ * The id printed on a done row's link -- ONLY when it is one a person can read.
+ *
+ * compliance keys its progress and timesheet rows with cuids, and "View
+ * cm3x8k2p90001qz7h3f2l9d4e" is not an id a foreman recognises; it is noise
+ * that pushes the useful word off the button. Same rule the C-09 receipt
+ * follows: print a short human id, never a 25-character key, and never invent
+ * one the row does not carry.
+ */
+export function objectIdLabel(result: ApiTaskResult): string | null {
+  if (!result || typeof result !== "object") return null;
+  const number = (result as Record<string, unknown>).number;
+  if (typeof number === "number" && Number.isFinite(number)) return `#${number}`;
+  for (const key of ["code", "reference", "entryNumber", "documentNumber"]) {
+    const value = (result as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim() && value.trim().length <= 16) return value.trim();
+  }
+  const id = (result as Record<string, unknown>).id;
+  if (typeof id === "string" && id.trim().length > 0 && id.trim().length <= 12) return id.trim();
+  return null;
 }
 
 /**
@@ -253,6 +310,20 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
     actions.push({ kind: "dismiss", label: "Dismiss", missingStep: null });
   }
 
+  // R67 C-11: a done row's own object, reachable. The word carries the id when
+  // the row has a readable one, so the link IS the id rather than a bare
+  // "View" beside an id printed somewhere else.
+  const objectRoute = objectRouteFor(t.functionId, t.projectId ?? null);
+  if (group === "done" && objectRoute) {
+    const idLabel = objectIdLabel(t.result);
+    actions.push({
+      kind: "open",
+      label: idLabel ? `View ${idLabel}` : "View",
+      missingStep: null,
+      href: objectRoute,
+    });
+  }
+
   const verb = verbFor(t.functionId);
   const object = assertNoUnderscore(maskTechnical(objectFor(t)));
 
@@ -265,6 +336,10 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
     detail,
     urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
     urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
+    // R67 C-11: a done row's click opens the object it produced. On every
+    // other row it stays undefined, so a click still only LOADS the chain --
+    // the load-never-execute rule is untouched either way.
+    route: group === "done" && objectRoute ? objectRoute : undefined,
     chain: {
       mode: (t.mode?.toLowerCase() as ChainMode) ?? "projects",
       segments: [
@@ -309,10 +384,117 @@ export type GroupedRows = {
   blocked: ProjexaTaskRow[];
 };
 
+/**
+ * R67 C-11 -- WHAT EACH TAB ASKS THE SERVER FOR.
+ *
+ * The tab click already wrote ?taskTab; it drove the highlight and nothing
+ * else, so every navigation pulled fifty rows of everything and filtered them
+ * in the browser. These are VERIDIAN's own tab vocabulary
+ * (src/lib/pipeline/task-tabs.ts): null means "no status filter", which is
+ * what Home needs because Home shows both groups at once.
+ */
+export const TAB_STATUS_QUERY: Readonly<Record<TaskTabId, string | null>> = {
+  home: null,
+  "approval-pending": "approval",
+  "in-queue": "queued",
+  completed: "done",
+  // History is Completed filtered by a DATE rule the server does not carry, so
+  // it asks for the same rows and narrows them here.
+  history: "done",
+};
+
+/** VERIDIAN's `counts.tabs` payload, keyed by its own vocabulary. */
+export type ServerTabCounts = Partial<Record<"needs_you" | "waiting" | "approval" | "queued" | "done", number>>;
+
+/**
+ * The number printed on each tab.
+ *
+ * TWO SOURCES, AND THE RULE FOR CHOOSING BETWEEN THEM IS THE POINT:
+ *
+ *  - The tab you are LOOKING AT counts the rows in front of you. A badge that
+ *    disagrees with the list under it is the defect C-01 was raised for, and
+ *    local facts the server cannot know (a dismissed row, the system-failure
+ *    split from C-10) only apply to the rows actually loaded.
+ *  - Every OTHER tab takes the server's count, because its rows are not in
+ *    memory at all -- that is the whole saving C-11 asks for.
+ *  - When the page was truncated by `limit`, the rendered count is a page and
+ *    the server's is the truth, so the server's wins even for the active tab
+ *    and the caller says "showing the newest N of M" beneath the list.
+ *  - History has NO server number (its 7-day rule is client-side), so it
+ *    prints one only while the done rows it is derived from are loaded.
+ *    An unknown count is left undefined and no number is printed -- inventing
+ *    one is worse than omitting it.
+ */
+export function mergeTabCounts(input: {
+  views: Record<TaskTabId, { count: number }>;
+  serverTabs: ServerTabCounts | null;
+  serverTotal: number | null;
+  activeTab: TaskTabId;
+  truncated: boolean;
+}): Record<TaskTabId, number | undefined> {
+  const { views, serverTabs, serverTotal, activeTab, truncated } = input;
+  const server: Record<TaskTabId, number | undefined> = {
+    home: serverTotal ?? undefined,
+    "approval-pending": serverTabs?.approval,
+    "in-queue": serverTabs?.queued,
+    completed: serverTabs?.done,
+    history: undefined,
+  };
+
+  const doneRowsLoaded = TAB_STATUS_QUERY[activeTab] === null || TAB_STATUS_QUERY[activeTab] === "done";
+
+  const out = {} as Record<TaskTabId, number | undefined>;
+  for (const tab of TASK_TAB_IDS) {
+    const rendered = views[tab]?.count;
+    if (tab === "history") {
+      out[tab] = doneRowsLoaded ? rendered : undefined;
+      continue;
+    }
+    if (tab === activeTab && !truncated) {
+      out[tab] = rendered;
+      continue;
+    }
+    out[tab] = server[tab] ?? (tab === activeTab ? rendered : undefined);
+  }
+  return out;
+}
+
+/** Every tab id, in the order the strip renders them. */
+export const TASK_TAB_IDS: readonly TaskTabId[] = [
+  "home",
+  "approval-pending",
+  "in-queue",
+  "completed",
+  "history",
+];
+
+/**
+ * C-11: "print each tab's count in its label". One string, so the label and
+ * its number can never be rendered from two different places -- which is how
+ * a badge and a list stopped agreeing in the first place.
+ */
+export function countedTabLabel(label: string, count: number | undefined): string {
+  return typeof count === "number" && Number.isFinite(count) ? `${label} (${count})` : label;
+}
+
+/** "Showing the newest 50 of 120." -- said in words when a page is not the whole list. */
+export function pageNote(returned: number, total: number | null | undefined, truncated: boolean): string | null {
+  if (!truncated) return null;
+  if (typeof total !== "number" || !Number.isFinite(total) || total <= returned) {
+    return `Showing the newest ${returned}.`;
+  }
+  return `Showing the newest ${returned} of ${total}.`;
+}
+
 export type TabView = {
   primaryLabel: string;
   primaryEmpty: string;
   primary: ProjexaTaskRow[];
+  /**
+   * R67 C-11: "The History tab lists past tasks ... grouped by day." Present
+   * only on History; every other tab renders one flat list.
+   */
+  dayGroups?: { key: string; label: string; rows: ProjexaTaskRow[] }[];
   secondaryLabel?: string;
   secondaryEmpty?: string;
   secondary?: ProjexaTaskRow[];
@@ -340,6 +522,54 @@ export function startOfDay(now: number): number {
 }
 
 /**
+ * R67 C-13: "History = done older than 7 days". C-01 built this tab as
+ * "anything completed before today"; C-13 is the later and more specific rule
+ * and it wins, because with the earlier one History and Completed showed
+ * almost the same rows the day after any work happened. Nothing disappears
+ * either way -- Completed still lists every done row; History is a subset of
+ * it.
+ */
+const HISTORY_AGE_DAYS = 7;
+
+/**
+ * R67 C-11: History, grouped by day, newest day first.
+ *
+ * The label is the day in this product's own pinned format (en-GB, UTC, the
+ * same choice src/lib/format-date.ts makes) rather than a locale-dependent
+ * string that renders differently for the reader and the tester.
+ */
+export function groupRowsByDay(rows: readonly ProjexaTaskRow[]): { key: string; label: string; rows: ProjexaTaskRow[] }[] {
+  const byKey = new Map<string, { key: string; label: string; rows: ProjexaTaskRow[]; sortAt: number }>();
+  for (const row of rows) {
+    const at = row.createdAtMs;
+    const key = at === null ? "unknown" : new Date(at).toISOString().slice(0, 10);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.rows.push(row);
+      existing.sortAt = Math.max(existing.sortAt, at ?? 0);
+      continue;
+    }
+    byKey.set(key, {
+      key,
+      // A row with no usable timestamp is still shown, under a heading that
+      // says so -- dropping it would lose a real finished task over a missing
+      // field.
+      label: at === null ? "Date not recorded" : formatDayLabel(at),
+      rows: [row],
+      sortAt: at ?? 0,
+    });
+  }
+  return [...byKey.values()].sort((a, b) => b.sortAt - a.sortAt).map(({ key, label, rows: r }) => ({ key, label, rows: r }));
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatDayLabel(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getUTCDate()).padStart(2, "0")} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/**
  * Which rows a tab shows, what its heading says, and what it says when it is
  * empty. C-01: "each empty tab states its own purpose."
  */
@@ -353,8 +583,8 @@ export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabVi
   const all = [...groups.blocked, ...groups.needsYou];
   const needsYou = all.filter((r) => !r.isSystemFailure);
   const system = all.filter((r) => r.isSystemFailure);
-  const midnight = startOfDay(now);
-  const isOlderThanToday = (r: ProjexaTaskRow) => r.createdAtMs !== null && r.createdAtMs < midnight;
+  const historyBefore = startOfDay(now) - HISTORY_AGE_DAYS * DAY_MS;
+  const isHistory = (r: ProjexaTaskRow) => r.createdAtMs !== null && r.createdAtMs < historyBefore;
 
   switch (tab) {
     case "approval-pending":
@@ -382,11 +612,12 @@ export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabVi
         count: groups.done.length,
       };
     case "history": {
-      const past = groups.done.filter(isOlderThanToday);
+      const past = groups.done.filter(isHistory);
       return {
         primaryLabel: "History",
-        primaryEmpty: "Nothing finished before today",
+        primaryEmpty: "Nothing finished more than a week ago",
         primary: past,
+        dayGroups: groupRowsByDay(past),
         count: past.length,
       };
     }

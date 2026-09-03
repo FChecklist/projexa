@@ -69,8 +69,15 @@ const URGENCY: Record<ProjexaTaskRow["urgency"], { bg: string; fg: string; loud:
 
 export type TaskTab = {
   id: TaskTabId;
+  /**
+   * R67 C-11: the label ALREADY CARRIES THE COUNT ("Completed (3)"), built by
+   * task-row.ts's countedTabLabel from the same numbers the list is rendered
+   * from. It used to be a separate badge element, which meant the word and the
+   * number were assembled in two different places and could disagree; and a
+   * tab whose count is genuinely unknown (History, whose 7-day rule the server
+   * does not compute) now prints no number rather than a wrong one.
+   */
   label: string;
-  count?: number;
 };
 
 export type TaskGroupView = {
@@ -79,6 +86,13 @@ export type TaskGroupView = {
   rows: ProjexaTaskRow[];
   /** Two-line rows for the group that matters; one line for the rest (M24). */
   twoLine?: boolean;
+  /**
+   * R67 C-11: History is "grouped by day". When present these are rendered in
+   * place of the flat list, newest day first, each under its own date heading.
+   */
+  dayGroups?: { key: string; label: string; rows: ProjexaTaskRow[] }[];
+  /** "Showing the newest 50 of 120." -- only when the page is not the whole list. */
+  note?: string | null;
 };
 
 export type TaskMasterProps = {
@@ -198,6 +212,7 @@ function Group({
   limit?: number;
 }) {
   const rows = typeof limit === "number" ? group.rows.slice(0, limit) : group.rows;
+  const twoLine = group.twoLine ?? true;
   return (
     <>
       <p className="px-2 pb-1 text-[11px] font-semibold" style={{ color: "var(--color-ct-navy)" }}>
@@ -209,12 +224,38 @@ function Group({
         <p className="px-2 pb-2 text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
           {group.empty}
         </p>
+      ) : group.dayGroups ? (
+        // R67 C-11: History, by day. The heading is the day, so "when did we
+        // finish that" is read off the list instead of worked out from five
+        // identical-looking rows.
+        <div className="space-y-2">
+          {group.dayGroups.map((day) => (
+            <div key={day.key}>
+              <p className="px-2 pb-0.5 text-[10.5px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
+                {day.label}
+              </p>
+              <ul className="space-y-0.5">
+                {day.rows.map((r) => (
+                  <Row key={r.id} row={r} twoLine={twoLine} onLoad={onLoad} onRowAction={onRowAction} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       ) : (
         <ul className="space-y-0.5">
           {rows.map((r) => (
-            <Row key={r.id} row={r} twoLine={group.twoLine ?? true} onLoad={onLoad} onRowAction={onRowAction} />
+            <Row key={r.id} row={r} twoLine={twoLine} onLoad={onLoad} onRowAction={onRowAction} />
           ))}
         </ul>
+      )}
+      {/* A PAGE IS NOT A LIST, AND THE DIFFERENCE IS SAID IN WORDS. Without
+          this the count on the tab and the rows beneath it look like they
+          disagree, when in fact one is a total and the other is a page. */}
+      {group.note && (
+        <p className="px-2 pb-1 pt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+          {group.note}
+        </p>
       )}
     </>
   );
@@ -241,7 +282,6 @@ export function TaskMaster({ tabs, activeTab, onTabChange, primary, secondary, s
             className={`veri-view-tab shrink-0 whitespace-nowrap${activeTab === t.id ? " active" : ""}`}
           >
             {t.label}
-            {typeof t.count === "number" && t.count > 0 && <span className="veri-view-badge">{t.count}</span>}
           </button>
         ))}
       </div>

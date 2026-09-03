@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   FUNCTION_DISPLAY_NAMES,
+  TAB_STATUS_QUERY,
+  TASK_TAB_IDS,
   assertNoUnderscore,
+  countedTabLabel,
   humaniseFunctionId,
+  mergeTabCounts,
   objectFor,
+  objectIdLabel,
+  objectRouteFor,
+  pageNote,
   startOfDay,
   tabView,
   toTaskRow,
@@ -11,6 +18,7 @@ import {
   type ApiTask,
   type GroupedRows,
   type ProjexaTaskRow,
+  type TaskTabId,
 } from "./task-row";
 
 const NOW = Date.parse("2026-09-02T14:00:00.000Z");
@@ -105,7 +113,10 @@ describe("line 2 is a D-03 sentence, never the backend's own words", () => {
     });
     expect(row.detail).toBe("PP1 is 50% done");
     expect(row.errorCode).toBeNull();
-    expect(row.actions).toEqual([]);
+    // R67 C-11: a done row carries exactly ONE action, and it is a read --
+    // "View", opening the object it produced. No fix, no retry: there is
+    // nothing wrong with it.
+    expect(row.actions.map((a) => a.kind)).toEqual(["open"]);
   });
 
   test("a pasted stack trace in the user's own words is masked too", () => {
@@ -174,10 +185,31 @@ describe("the tabs actually filter, and each count comes from its own array", ()
     expect(view.count).toBe(2);
   });
 
-  test("History is what finished before today", () => {
+  // R67 C-13 narrowed this from C-01's "before today" to "older than 7 days":
+  // with the earlier rule History and Completed showed nearly the same rows
+  // the day after any work happened. d-today (2 Sep) and d-old (20 Aug) sit
+  // either side of the new boundary.
+  test("History is what finished more than a week ago", () => {
     const view = tabView(groups, "history", NOW);
     expect(view.primary.map((r) => r.id)).toEqual(["d-old"]);
     expect(view.count).toBe(1);
+  });
+
+  test("History is grouped by day, newest day first", () => {
+    const view = tabView(groups, "history", NOW);
+    expect(view.dayGroups).toHaveLength(1);
+    expect(view.dayGroups?.[0].label).toBe("20 Aug 2026");
+    expect(view.dayGroups?.[0].rows.map((r) => r.id)).toEqual(["d-old"]);
+    // Every row in the flat list is in exactly one day group -- a grouping
+    // that quietly drops a row is worse than no grouping.
+    const grouped = (view.dayGroups ?? []).flatMap((d) => d.rows.map((r) => r.id));
+    expect(grouped.sort()).toEqual(view.primary.map((r) => r.id).sort());
+  });
+
+  test("only History is grouped by day", () => {
+    for (const tab of ["home", "approval-pending", "in-queue", "completed"] as const) {
+      expect(tabView(groups, tab, NOW).dayGroups).toBeUndefined();
+    }
   });
 
   test("Home keeps M24's two groups and counts both", () => {
@@ -192,7 +224,7 @@ describe("the tabs actually filter, and each count comes from its own array", ()
     expect(tabView(empty, "approval-pending", NOW).primaryEmpty).toBe("Nothing waiting for your approval");
     expect(tabView(empty, "in-queue", NOW).primaryEmpty).toBe("Nothing is running right now");
     expect(tabView(empty, "completed", NOW).primaryEmpty).toBe("Nothing has finished yet");
-    expect(tabView(empty, "history", NOW).primaryEmpty).toBe("Nothing finished before today");
+    expect(tabView(empty, "history", NOW).primaryEmpty).toBe("Nothing finished more than a week ago");
     expect(tabView(empty, "home", NOW).primaryEmpty).toBe("Nothing is waiting on you.");
     const messages = new Set(
       (["approval-pending", "in-queue", "completed", "history", "home"] as const).map(
@@ -318,5 +350,151 @@ describe("a failure nobody on site can fix leaves the needs-you list", () => {
     const groups: GroupedRows = { blocked: [], needsYou: [], running: [], done: [] };
     expect(tabView(groups, "home", NOW).system).toBeUndefined();
     expect(tabView(groups, "home", NOW).systemLabel).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-11 -- the tabs ask the server for their own rows, and the number on a
+// tab says where it came from.
+// ---------------------------------------------------------------------------
+
+describe("TAB_STATUS_QUERY -- what each tab asks for", () => {
+  test("Home asks for everything; every other tab names a filter", () => {
+    expect(TAB_STATUS_QUERY.home).toBeNull();
+    expect(TAB_STATUS_QUERY["approval-pending"]).toBe("approval");
+    expect(TAB_STATUS_QUERY["in-queue"]).toBe("queued");
+    expect(TAB_STATUS_QUERY.completed).toBe("done");
+  });
+
+  test("History asks for the same rows as Completed -- its 7-day rule is local", () => {
+    expect(TAB_STATUS_QUERY.history).toBe(TAB_STATUS_QUERY.completed);
+  });
+
+  test("every tab id has an entry, so a new tab cannot silently fetch nothing", () => {
+    for (const id of TASK_TAB_IDS) expect(id in TAB_STATUS_QUERY).toBe(true);
+  });
+});
+
+describe("countedTabLabel -- the count is IN the label", () => {
+  test("prints the number the acceptance looks for", () => {
+    expect(countedTabLabel("Completed", 3)).toBe("Completed (3)");
+    expect(countedTabLabel("Completed", 3)).toMatch(/^Completed \(\d+\)$/);
+  });
+
+  test("zero is a real answer and is printed", () => {
+    expect(countedTabLabel("In Queue", 0)).toBe("In Queue (0)");
+  });
+
+  test("an unknown count prints no number rather than a wrong one", () => {
+    expect(countedTabLabel("History", undefined)).toBe("History");
+    expect(countedTabLabel("History", Number.NaN)).toBe("History");
+  });
+});
+
+describe("mergeTabCounts -- which source each tab's number comes from", () => {
+  const views = {
+    home: { count: 6 },
+    "approval-pending": { count: 2 },
+    "in-queue": { count: 1 },
+    completed: { count: 3 },
+    history: { count: 1 },
+  } as Record<TaskTabId, { count: number }>;
+  const serverTabs = { needs_you: 40, waiting: 0, approval: 40, queued: 9, done: 120 };
+
+  test("the tab you are looking at counts the rows in front of you", () => {
+    const counts = mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "completed", truncated: false });
+    expect(counts.completed).toBe(3);
+  });
+
+  test("a tab whose rows are not loaded takes the server's number", () => {
+    const counts = mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "completed", truncated: false });
+    expect(counts["approval-pending"]).toBe(40);
+    expect(counts["in-queue"]).toBe(9);
+    expect(counts.home).toBe(169);
+  });
+
+  test("a truncated page hands the active tab back to the server's total", () => {
+    const counts = mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "completed", truncated: true });
+    expect(counts.completed).toBe(120);
+  });
+
+  test("History prints a number only while the done rows it is derived from are loaded", () => {
+    expect(
+      mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "completed", truncated: false }).history
+    ).toBe(1);
+    expect(
+      mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "home", truncated: false }).history
+    ).toBe(1);
+    expect(
+      mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "in-queue", truncated: false }).history
+    ).toBeUndefined();
+  });
+
+  test("with no server payload at all the active tab still has its own number", () => {
+    const counts = mergeTabCounts({ views, serverTabs: null, serverTotal: null, activeTab: "in-queue", truncated: false });
+    expect(counts["in-queue"]).toBe(1);
+    expect(counts.completed).toBeUndefined();
+  });
+});
+
+describe("pageNote -- a page is not a list, and it says so", () => {
+  test("nothing is said when the page IS the list", () => {
+    expect(pageNote(12, 12, false)).toBeNull();
+  });
+
+  test("the sentence names both numbers", () => {
+    expect(pageNote(50, 120, true)).toBe("Showing the newest 50 of 120.");
+  });
+
+  test("an unknown total still admits the list is partial", () => {
+    expect(pageNote(50, null, true)).toBe("Showing the newest 50.");
+  });
+});
+
+describe("a done row can be opened", () => {
+  test("the object route carries the project", () => {
+    expect(objectRouteFor("record_work_progress", "p1")).toBe("/work-progress?projectId=p1");
+    expect(objectRouteFor("record_work_progress", null)).toBe("/work-progress");
+  });
+
+  test("a function with nowhere to go gets no link rather than a guessed one", () => {
+    expect(objectRouteFor("list_notices", "p1")).toBeNull();
+    expect(objectRouteFor(null, "p1")).toBeNull();
+  });
+
+  test("a done row carries a View action and a route", () => {
+    const row = toTaskRow(
+      task({ id: "d1", functionId: "record_work_progress", projectId: "p1", result: { number: 412 } }),
+      "done",
+      { now: NOW }
+    );
+    expect(row.route).toBe("/work-progress?projectId=p1");
+    const open = row.actions.find((a) => a.kind === "open");
+    expect(open?.label).toBe("View #412");
+    expect(open?.href).toBe("/work-progress?projectId=p1");
+  });
+
+  test("a 25-character cuid is never printed on the button", () => {
+    const row = toTaskRow(
+      task({ id: "d2", functionId: "record_work_progress", projectId: "p1", result: { id: "cm3x8k2p90001qz7h3f2l9d4e" } }),
+      "done",
+      { now: NOW }
+    );
+    expect(row.actions.find((a) => a.kind === "open")?.label).toBe("View");
+  });
+
+  test("a pending row is not openable -- there is nothing there yet", () => {
+    const row = toTaskRow(task({ id: "n9", functionId: "record_work_progress", projectId: "p1" }), "needsYou", {
+      now: NOW,
+    });
+    expect(row.route).toBeUndefined();
+    expect(row.actions.some((a) => a.kind === "open")).toBe(false);
+  });
+
+  test("objectIdLabel prefers a human code over a key", () => {
+    expect(objectIdLabel({ number: 12 })).toBe("#12");
+    expect(objectIdLabel({ code: "WP-0412" })).toBe("WP-0412");
+    expect(objectIdLabel({})).toBeNull();
+    expect(objectIdLabel(null)).toBeNull();
   });
 });
