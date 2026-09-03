@@ -22,9 +22,23 @@ type ParamEntry = { key: string; value: string };
  * re-runs the report against the API, this never filters a static result
  * set client-side.
  */
-export function ReportFilters({ onChange }: { onChange: (params: Record<string, string>) => void }) {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+export function ReportFilters({
+  onChange,
+  initialStartDate = "",
+  initialEndDate = "",
+}: {
+  onChange: (params: Record<string, string>) => void;
+  /**
+   * R67 E-31 (R-264): the range the card ALREADY ran with, so the reader opening
+   * the parameters sees the dates behind the numbers on screen rather than two
+   * empty fields that imply nothing was filtered. The caller owns the default
+   * (month to date) -- this component only has to show it.
+   */
+  initialStartDate?: string;
+  initialEndDate?: string;
+}) {
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [endDate, setEndDate] = useState(initialEndDate);
   const [extra, setExtra] = useState<ParamEntry[]>([]);
 
   function buildParams(nextStart: string, nextEnd: string, nextExtra: ParamEntry[]): Record<string, string> {

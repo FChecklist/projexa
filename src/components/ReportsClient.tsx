@@ -481,7 +481,10 @@ export default function ReportsClient({
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection />
+        {/* R67 E-31: the catalog inherits the project this screen is on, so a
+            card's link and its in-place runner both start from the project the
+            reader is looking at rather than from nothing. */}
+        <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>
   );

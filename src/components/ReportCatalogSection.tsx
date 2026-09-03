@@ -29,7 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileBarChart, Search } from "lucide-react";
-import { placeCatalogEntry } from "@/lib/report-registry";
+import { monthToDateRange, placeCatalogEntry, reportSubject } from "@/lib/report-registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -106,9 +106,24 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
 // src/lib/report-registry.ts: "Runs here" with an Open action,
 // "Runs in VERIDIAN - open there" with the link, or "Not built - data gap"
 // with the reason. No card is a dead end and none of them overstates.
-function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies: Company[] }) {
+//
+// R67 E-31 (R-264): the card now carries the reader's CONTEXT into whatever it
+// opens -- the project the shell is on and the current month to date -- so a
+// link arrives at a report that has run rather than at an empty form, and the
+// in-place runner starts with the same defaults filled in.
+function CatalogCard({
+  entry,
+  companies,
+  projectId,
+  range,
+}: {
+  entry: FullCatalogEntry;
+  companies: Company[];
+  projectId: string | null;
+  range: { from: string; to: string };
+}) {
   const [expanded, setExpanded] = useState(false);
-  const placement = placeCatalogEntry(entry);
+  const placement = placeCatalogEntry(entry, { projectId, from: range.from, to: range.to });
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -140,6 +155,8 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
               definitionId={entry.definitionId}
               supportsCompanyScope={Boolean(entry.supportsCompanyScope)}
               companies={companies}
+              projectId={projectId}
+              subject={reportSubject(entry.name)}
             />
           )}
         </>
@@ -160,7 +177,12 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
   );
 }
 
-export function ReportCatalogSection() {
+export function ReportCatalogSection({ projectId = null }: { projectId?: string | null } = {}) {
+  // R67 E-31: computed once for the whole section, so every card's link and
+  // every card's runner describe the SAME window -- two cards quoting two
+  // ranges because they mounted a millisecond apart is exactly the kind of
+  // disagreement that makes a reader distrust a report.
+  const [range] = useState(() => monthToDateRange());
   const [catalog, setCatalog] = useState<FullCatalogEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -320,7 +342,13 @@ export function ReportCatalogSection() {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {byDomain[domain].map((entry) => (
-                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} />
+                <CatalogCard
+                  key={`${entry.source}-${entry.id}`}
+                  entry={entry}
+                  companies={companies}
+                  projectId={projectId}
+                  range={range}
+                />
               ))}
             </div>
           </div>
