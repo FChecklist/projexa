@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   budgetCardModel,
   cumulativeProgressSeries,
+  oneDayAxis,
   oneDayCaption,
   primaryTrendLabel,
 } from "./project-dashboard-charts";
@@ -69,8 +70,14 @@ describe("cumulativeProgressSeries", () => {
     ]);
   });
 
-  test("the one-day caption is the item's exact sentence", () => {
-    expect(oneDayCaption("2026-08-25")).toBe("Only one day logged (25 Aug) - a trend needs two or more days");
+  // R67 E-40 (R-272 / R-297) settles a sentence three items wrote differently
+  // -- E-25's "Only one day logged (25 Aug)", E-29's "Progress will chart
+  // after the second entry", and this one, which E-40 specifies explicitly as
+  // the merge of the two source recommendations. This is the final wording.
+  test("the one-day caption is E-40's exact sentence, with a dd-mm-yyyy date", () => {
+    expect(oneDayCaption("2026-08-25")).toBe(
+      "Only one day of progress logged (25-08-2026) — not enough to draw a trend"
+    );
   });
 });
 
@@ -154,5 +161,29 @@ describe("primaryTrendLabel", () => {
 
   test("an unknown BOQ percentage says nothing about linking", () => {
     expect(primaryTrendLabel(null, 60, "Import a BOQ to see this").label).toBe("Import a BOQ to see this");
+  });
+});
+describe("oneDayAxis (R67 E-40: a single point on an axis that runs to today)", () => {
+  test("the left end is the logged day and the right end is the WORD today", () => {
+    const axis = oneDayAxis("2026-08-25", "2026-09-03");
+    expect(axis.leftLabel).toBe("25-08-2026");
+    expect(axis.rightLabel).toBe("today");
+    // The point anchors the left end; the empty span to its right is the
+    // thing worth seeing -- nine days with nothing logged.
+    expect(axis.pointFraction).toBe(0);
+  });
+
+  test("when the only logged day IS today, the two ends still never read the same date", () => {
+    const axis = oneDayAxis("2026-09-03", "2026-09-03");
+    expect(axis.leftLabel).toBe("03-09-2026");
+    expect(axis.rightLabel).toBe("today");
+    expect(axis.leftLabel).not.toBe(axis.rightLabel);
+    // No span to spread across, so the point sits under the word that names it.
+    expect(axis.pointFraction).toBe(1);
+  });
+
+  test("an unparseable date does not produce NaN geometry", () => {
+    const axis = oneDayAxis("not-a-date", "2026-09-03");
+    expect(Number.isFinite(axis.pointFraction)).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 // cards, fixed where they can be tested: the trend series, the budget card's
 // verdict, and the primary KPI's trend label. Pure -- no React, no fetch.
 
-import { formatDayMonth } from "./format-date";
+import { formatDateDMY, formatDayMonth } from "./format-date";
 
 export type ProgressEntryLike = { entryDate?: string | null; quantityDone?: string | number | null };
 
@@ -45,15 +45,54 @@ export function cumulativeProgressSeries(entries: ProgressEntryLike[]): Progress
 }
 
 /**
- * The sentence that replaces the chart frame when there is only one day. An
- * empty axis with the same date at both ends is not a trend and should not
- * pretend to be one.
+ * The caption under a one-point series.
+ *
+ * R67 E-40 (R-272 / R-297) settles a sentence three items wrote differently.
+ * E-25 shipped "Only one day logged (25 Aug) - a trend needs two or more days";
+ * E-29 asked for "Progress will chart after the second entry"; E-40 specifies
+ * this one EXPLICITLY as the merge of R-272 and R-297, so this is the final
+ * wording and the other two are retired. The date is dd-mm-yyyy (formatDateDMY,
+ * DE-23) rather than "25 Aug", because E-40 quotes it that way and because a
+ * caption that is the only thing on screen should carry the year.
+ *
+ * E-40 also changes what is DRAWN: E-25 replaced the frame with this sentence,
+ * E-40 keeps the single point and puts the sentence under it (see
+ * oneDayAxis below).
  */
 export function oneDayCaption(day: string): string {
-  return `Only one day logged (${formatDayMonth(day)}) - a trend needs two or more days`;
+  return `Only one day of progress logged (${formatDateDMY(day)}) — not enough to draw a trend`;
 }
 
 export const NO_PROGRESS_CAPTION = "No progress logged yet";
+
+export type OneDayAxis = { leftLabel: string; rightLabel: string; pointFraction: number };
+
+/**
+ * R67 E-40 (R-272): "draw the single labelled point on an x-axis extended to
+ * today".
+ *
+ * The axis runs from the one logged day to today, so the reader sees BOTH the
+ * point and how much time has passed with nothing logged since -- which the
+ * bare sentence E-25 rendered instead did not show.
+ *
+ * The right-hand end is the WORD "today", never today's date. E-40's own rule
+ * is that no chart may render "empty axes with the same date at both ends", and
+ * when the single logged day IS today, printing the date twice is exactly that.
+ * The word is also more useful: it says what the far end of the axis means.
+ */
+export function oneDayAxis(day: string, today: string): OneDayAxis {
+  const dayMs = Date.parse(`${day}T00:00:00.000Z`);
+  const todayMs = Date.parse(`${today}T00:00:00.000Z`);
+  // The point anchors the LEFT end whenever there is any span at all; with no
+  // span (the logged day is today) it sits at the right, under the word that
+  // names it.
+  const hasSpan = Number.isFinite(dayMs) && Number.isFinite(todayMs) && todayMs > dayMs;
+  return {
+    leftLabel: formatDateDMY(day),
+    rightLabel: "today",
+    pointFraction: hasSpan ? 0 : 1,
+  };
+}
 
 export type BudgetCardModel = {
   /** The figure on the card. Always the spend -- that is the number that exists. */

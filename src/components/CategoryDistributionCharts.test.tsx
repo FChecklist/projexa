@@ -145,3 +145,43 @@ describe("CategoryDistributionCharts", () => {
     expect(await findByRole("group", { name: "Budget vs completed by category" })).toBeTruthy();
   });
 });
+// R67 E-40 (R-272 / R-297). ONE BAR IS NOT A DISTRIBUTION.
+//
+// A lone "Uncategorized" bar and a project that genuinely has one trade looked
+// identical, and only the first has a fix. The bar still renders -- that money
+// is real -- but the reason is stated and the fix is linked.
+describe("R67 E-40: every BOQ line uncategorised", () => {
+  test("says so, and links to where categories are assigned", async () => {
+    stubFetch({ categories: [
+      { categoryId: "uncategorized", name: "Uncategorized", totalAmount: 4000, sharePercent: 100, percentComplete: 0, completedAmount: 0 },
+    ] });
+    const { container } = render(<CategoryDistributionCharts projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("All BOQ lines are uncategorised"));
+
+    const link = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.textContent === "Assign categories in Scope"
+    );
+    expect(link?.getAttribute("href")).toBe("/scope?projectId=p1");
+    // The bar is still there -- this is a note, not an empty state.
+    expect(container.textContent).toContain("Uncategorized");
+  });
+
+  test("a real single category is NOT called uncategorised", async () => {
+    stubFetch({ categories: [
+      { categoryId: "c1", name: "Civil", totalAmount: 4000, sharePercent: 100, percentComplete: 40, completedAmount: 1600 },
+    ] });
+    const { container } = render(<CategoryDistributionCharts projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Civil"));
+    expect(container.textContent).not.toContain("All BOQ lines are uncategorised");
+  });
+
+  test("an Uncategorized bucket ALONGSIDE real categories is not the all-uncategorised case", async () => {
+    stubFetch({ categories: [
+      { categoryId: "c1", name: "Civil", totalAmount: 4000, sharePercent: 50, percentComplete: 40, completedAmount: 1600 },
+      { categoryId: "uncategorized", name: "Uncategorized", totalAmount: 4000, sharePercent: 50, percentComplete: 0, completedAmount: 0 },
+    ] });
+    const { container } = render(<CategoryDistributionCharts projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Civil"));
+    expect(container.textContent).not.toContain("All BOQ lines are uncategorised");
+  });
+});

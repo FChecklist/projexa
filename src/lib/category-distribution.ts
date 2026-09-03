@@ -86,3 +86,20 @@ export function buildCategoryDistribution(
 
   return { categories, totalAmount: total };
 }
+
+/**
+ * R67 E-40 (R-272 / R-297): is EVERY BOQ line uncategorised?
+ *
+ * A single bar labelled "Uncategorized" is not a distribution -- it is a chart
+ * of one thing, and the reader has no way to tell "this project has one trade"
+ * from "nobody has assigned categories yet". Those are different situations and
+ * only the second has a fix, which is why the screen names it and links to the
+ * place it is done.
+ *
+ * Pure and here rather than in the component, beside the rule that CREATED the
+ * bucket (buildCategoryDistribution above), so the two cannot drift: the
+ * detection and the construction share one id.
+ */
+export function isAllUncategorized(categories: { categoryId: string }[]): boolean {
+  return categories.length === 1 && categories[0].categoryId === "uncategorized";
+}

@@ -45,6 +45,7 @@
 // projectId, except the Permits tile in its FAILED state, whose job is to
 // retry its own read rather than to navigate.
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
@@ -55,7 +56,9 @@ import {
 } from "@fchecklist/veridian-ui-kit/screens";
 import { ProjectKpiTile } from "@/components/screens/ProjectKpiTile";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
+import { OneDayProgressChart } from "@/components/OneDayProgressChart";
 import { formatDateTimeDMY } from "@/lib/format-date";
+import { formatNumber } from "@/lib/format-number";
 import {
   NO_PROGRESS_CAPTION,
   budgetCardModel,
@@ -128,6 +131,11 @@ type Permit = { id: string; daysToExpiry: number | null };
 // "en-IN" (lakh grouping) and never a hardcoded "₹" fallback.
 function money(n: number, currency: Currency | undefined) {
   return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+/** Today, in the ISO form the progress entries and the axis below both use. */
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
@@ -434,12 +442,30 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               panel says so rather than drawing an axis with the same date at
               both ends. The branch is here, in the client, because D-09
               forbids adding a prop to the kit's LineChart. */}
+          {/* R67 E-40 (R-272 / R-297): one logged day is still worth drawing.
+              The point goes on an axis that runs to today -- so the reader sees
+              the entry AND how long nothing has been logged since -- with the
+              sentence under it. Zero days is a different fact and gets the
+              action that fixes it. */}
           {progress.distinctDays >= 2 ? (
             <LineChart series={progress.points} />
           ) : progress.onlyDay ? (
-            <p className="text-[12.5px] text-ct-muted">{oneDayCaption(progress.onlyDay)}</p>
+            <div className="space-y-1">
+              <OneDayProgressChart
+                day={progress.onlyDay}
+                today={todayIso()}
+                value={progress.points[0]?.value ?? 0}
+                valueLabel={formatNumber(progress.points[0]?.value ?? 0)}
+              />
+              <p className="text-[12.5px] text-ct-muted">{oneDayCaption(progress.onlyDay)}</p>
+            </div>
           ) : (
-            <p className="text-[12.5px] text-ct-muted">{NO_PROGRESS_CAPTION}</p>
+            <p className="text-[12.5px] text-ct-muted">
+              {NO_PROGRESS_CAPTION} —{" "}
+              <Link href={`/work-progress?projectId=${projectId}&tab=entry&focus=1`} className="text-ct-teal underline">
+                Record progress
+              </Link>
+            </p>
           )}
         </>
       }

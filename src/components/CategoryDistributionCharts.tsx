@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { isAllUncategorized } from "@/lib/category-distribution";
 import { MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
@@ -147,6 +148,19 @@ export function CategoryDistributionCharts({
     <div className="space-y-4" role={ariaLabel ? "group" : undefined} aria-label={ariaLabel}>
       <div>
         <h4 className="mb-1 text-sm font-medium text-px-fg">Budget and completed value by category</h4>
+        {/* R67 E-40 (R-272): one bar labelled "Uncategorized" is not a
+            distribution. The bar still renders -- that money is real -- but the
+            reader is told why there is only one and where the fix is, so
+            "this project has one trade" and "nobody has assigned categories
+            yet" stop looking identical. */}
+        {isAllUncategorized(sorted) && (
+          <p className="mb-2 text-[11.5px] text-px-muted" data-testid="all-uncategorised">
+            All BOQ lines are uncategorised —{" "}
+            <Link href={`/scope?projectId=${encodeURIComponent(projectId)}`} className="underline">
+              Assign categories in Scope
+            </Link>
+          </p>
+        )}
         <p className="mb-3 text-[11.5px] text-px-muted">
           The full bar is the category&apos;s BOQ amount; the darker bar over it is the value completed. Click a bar to
           {drillTo === "report" ? " open the Work Progress Report for that category." : " see its progress entries."}

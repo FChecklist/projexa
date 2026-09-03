@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import {
   UNCATEGORIZED_LABEL,
   buildCategoryDistribution,
+  isAllUncategorized,
   type CategoryBoqAmounts,
   type CategoryProgress,
 } from "./category-distribution";
@@ -72,5 +73,34 @@ describe("buildCategoryDistribution", () => {
     );
     expect(categories).toEqual([]);
     expect(totalAmount).toBe(0);
+  });
+});
+describe("isAllUncategorized (R67 E-40: one bar is not a distribution)", () => {
+  test("true only when the single bucket is THE uncategorised one", () => {
+    expect(isAllUncategorized([{ categoryId: "uncategorized" }])).toBe(true);
+  });
+
+  test("a project with one real trade is not 'nobody assigned categories'", () => {
+    // These look identical on the chart -- one bar -- and only one of them has
+    // a fix, which is the whole reason this helper exists.
+    expect(isAllUncategorized([{ categoryId: "c1" }])).toBe(false);
+  });
+
+  test("an uncategorised bucket ALONGSIDE real categories is not the case either", () => {
+    expect(isAllUncategorized([{ categoryId: "c1" }, { categoryId: "uncategorized" }])).toBe(false);
+  });
+
+  test("no categories at all is the empty state, not this one", () => {
+    expect(isAllUncategorized([])).toBe(false);
+  });
+
+  test("it matches the id buildCategoryDistribution really creates", () => {
+    // The detection and the construction share one id by construction, not by
+    // a string typed twice.
+    const built = buildCategoryDistribution(
+      { categories: [], uncategorizedAmount: 4000, totalAmount: 4000 },
+      { categories: [] }
+    );
+    expect(isAllUncategorized(built.categories)).toBe(true);
   });
 });

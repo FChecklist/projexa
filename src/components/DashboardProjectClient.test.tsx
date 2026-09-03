@@ -136,12 +136,34 @@ describe("DashboardProjectClient", () => {
     expect(container.textContent).toContain("within budget");
   });
 
-  test("one logged day says so instead of drawing an empty chart frame", async () => {
+  // R67 E-40 (R-272 / R-297) replaces E-25's behaviour here: the single point
+  // is DRAWN, on an axis extended to today, with the sentence under it. E-25
+  // showed the sentence alone.
+  test("one logged day draws the point AND says why there is no line", async () => {
     stubFetch();
     const { container } = render(<DashboardProjectClient projectId="p1" />);
     await waitFor(() =>
-      expect(container.textContent).toContain("Only one day logged (25 Aug) - a trend needs two or more days")
+      expect(container.textContent).toContain(
+        "Only one day of progress logged (25-08-2026) — not enough to draw a trend"
+      )
     );
+    // The point itself -- an empty frame is what this item exists to remove.
+    expect(container.querySelector('[data-testid="one-day-point"]')).not.toBeNull();
+    // The axis runs from that day to TODAY, and never prints one date twice.
+    expect(container.textContent).toContain("25-08-2026");
+    expect(container.textContent).toContain("today");
+  });
+
+  test("no logged days at all offers the action that fixes it", async () => {
+    stubFetch({ entries: [] });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("No progress logged yet"));
+
+    const link = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Record progress");
+    expect(link?.getAttribute("href")).toBe("/work-progress?projectId=p1&tab=entry&focus=1");
+    // Not the one-day chart, and not an empty frame either.
+    expect(container.querySelector('[data-testid="one-day-point"]')).toBeNull();
+    expect(container.textContent).not.toContain("not enough to draw a trend");
   });
 
   test("two logged days draw the line", async () => {
