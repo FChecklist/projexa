@@ -3,10 +3,14 @@ import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, TrendingUp, Receipt, Building2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+// R67 F-xx: the home screen speculates the next navigation, so opening a
+// project is instant. Kept from main -- it is orthogonal to what E-01/E-19
+// changed about what this screen SAYS.
+import { DashboardSpeculation } from "@/components/DashboardSpeculation";
 import { currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { ProjectRowList, ProjectRowSkeleton } from "@/components/dashboard/ProjectRow";
@@ -250,6 +254,11 @@ export default function DashboardHomeView({
 
   return (
     <>
+      {/* R67 F-22: renders nothing. It spends the seconds the user spends
+          READING this screen prefetching the two lists they are most likely
+          to open next (Scope, Work Progress), so that click lands on data
+          instead of on a spinner. Every guard lives in prefetch-store.ts. */}
+      <DashboardSpeculation fallbackProjectId={data?.projects?.[0]?.id ?? null} />
       {/* No PageHeading here -- this is PROJEXA's designated home route
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
           already renders a real "Good morning, {name}." heading. */}
@@ -306,6 +315,17 @@ export default function DashboardHomeView({
             </CardContent>
           </Card>
         )}
+        {/* R67 D-01 / correction C-01: this was the one popup left in
+            PROJEXA (CreateProjectDialog). It is now a real route --
+            /projects/new -- with its own breadcrumb, Back control and a
+            Save that names the fields still missing, the same create
+            archetype /labour/new already uses. The dialog component is
+            deleted rather than left behind, so the two forms cannot drift. */}
+        <div className="flex justify-end">
+          <Button size="sm" asChild>
+            <Link href="/projects/new"><Plus className="size-4" /> Create Project</Link>
+          </Button>
+        </div>
 
         {data && (
           <>
@@ -345,7 +365,12 @@ export default function DashboardHomeView({
             <Card className="shadow-card">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="font-heading text-base">Projects</CardTitle>
-                <CreateProjectDialog />
+                {/* R67 D-01 / correction C-01: the last popup in PROJEXA
+                    became a real route, so this header links to it rather
+                    than opening a dialog the product no longer has. */}
+                <Button size="sm" asChild>
+                  <Link href="/projects/new"><Plus className="size-4" /> New project</Link>
+                </Button>
               </CardHeader>
               <CardContent className="space-y-3">
                 {rangeCaption && <p className="text-[11.5px] text-px-muted">{rangeCaption}</p>}

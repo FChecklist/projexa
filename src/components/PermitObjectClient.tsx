@@ -7,7 +7,12 @@
 import { useEffect, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): ObjectScreen comes from the FORK (it gains the `loading`
+// variant); FormSection and the screen types are still the kit's.
+import { FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { PERMIT_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Permit = {
@@ -162,7 +167,18 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       </div>
     );
   }
-  if (!permit) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!permit) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={PERMIT_OBJECT_BREADCRUMB.breadcrumb}
+      label={PERMIT_OBJECT_BREADCRUMB.label}
+      actions={PERMIT_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   // R42 seq23 live-user finding: Save was clickable with required fields
   // still empty -- a real fail-after-click, against GLOBAL's own idiot-proof
@@ -173,8 +189,15 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const missingCount = mode === "edit" ? REQUIRED_COLUMNS.filter((c) => !values[c.field]).length : 0;
 
   return (
-    <ObjectScreen
-      breadcrumb="Permits / Permit"
+    <>
+    {/* R67 A-21: "<project> › Permit Building permit - Villa 21". The name is
+        published as it stands: a permit with no name yet publishes an empty
+        label, and objectSegmentFor() then leaves the module segment in place
+        rather than rendering the bare word "Permit", which would name a screen
+        that does not exist. */}
+    <ObjectContext moduleId="permits" label={permit.name} projectId={permit.projectId} />
+    <KitObjectScreen
+      breadcrumb={PERMIT_OBJECT_BREADCRUMB.breadcrumb}
       title={permit.name || "New Permit"}
       subtitle={permit.permitNumber ?? undefined}
       mode={mode}
@@ -245,6 +268,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
         onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))}
       />
       <FormSection title="More details" columns={OPTIONAL_COLUMNS} values={values} mode={mode} onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} defaultOptionalCollapsed />
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

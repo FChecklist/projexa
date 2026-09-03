@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
     const data = await callVeridian("/vendors", { organizationId: ctx.organizationId! });
-    return NextResponse.json(data);
+    // R67 F-25 (R-241): the vendor list is a slowly-changing, session-scoped
+    // lookup that three screens ask for (/labour, /labour/new,
+    // /labour/attendance/new). Ten minutes in the browser's own cache, and
+    // PRIVATE -- the rows are resolved with the caller's own org key, so a
+    // shared cache must never hold them.
+    return NextResponse.json(data, { headers: { "Cache-Control": "private, max-age=600" } });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load vendors" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load vendors");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -21,6 +28,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/vendors", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create vendor" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create vendor");
   }
-}
+});

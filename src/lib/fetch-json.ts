@@ -55,19 +55,28 @@ export async function fetchJson<T = any>(
   // (a proxy 502, an HTML error page). A parse failure must not mask the status.
   const body: unknown = await res.json().catch(() => null);
 
-  if (!res.ok) {
-    const fromBody =
-      body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
-        ? ((body as { error: string }).error).trim()
-        : "";
-    throw new ApiError(
-      fromBody || `Request failed (HTTP ${res.status})`,
-      res.status,
-      body
-    );
-  }
+  if (!res.ok) throw new ApiError(backendMessage(body, res.status), res.status, body);
 
   return body as T;
+}
+
+/**
+ * The backend's own words for a non-2xx body, falling back to a plain
+ * statement of the status when the body carried no `error` string (an HTML
+ * proxy page, an empty 502).
+ *
+ * R67 D-72: extracted so the READ path (fetchJson above) and the WRITE path
+ * (src/lib/use-submit.ts, which needs the raw Response and therefore cannot
+ * call fetchJson) cannot end up quoting the same failure two different ways.
+ * The returned string is the reason ALONE -- never a whole sentence -- so the
+ * surface that shows it decides how it is framed.
+ */
+export function backendMessage(body: unknown, status: number): string {
+  const fromBody =
+    body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+      ? ((body as { error: string }).error).trim()
+      : "";
+  return fromBody || `Request failed (HTTP ${status})`;
 }
 
 /**

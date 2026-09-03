@@ -20,6 +20,9 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, prefetch: () => {}, refresh: () => {} }),
   useSearchParams: () => new URLSearchParams(),
+  // The merged MaterialsClient reads the pathname to keep the open tab in the
+  // URL, so the mock has to answer it or the module fails to load at all.
+  usePathname: () => "/materials",
 }));
 
 // Dynamically imported so the @radix-ui/react-tabs chain is evaluated AFTER
@@ -83,12 +86,18 @@ describe("Materials > Cost Report (R67 E-05 / R-103)", () => {
     const calls: string[] = [];
     stubFetch(calls);
 
-    const { findByTestId, getByText } = render(<MaterialsClient projectId="p-1" initialTab="cost-report" />);
+    const { findByTestId, getByText, getAllByText } = render(<MaterialsClient projectId="p-1" initialTab="cost-report" />);
     await findByTestId("cost-report-grand-total");
 
     expect(getByText("Alpha Trading LLC")).toBeDefined();
-    expect(getByText("Vendor")).toBeDefined();
-    expect(getByText("Variance (AED)")).toBeDefined();
+    // "Vendor" is on screen twice now, and both are wanted: the COLUMN, and
+    // E-05's Material|Vendor group-by control beside the period.
+    expect(getAllByText("Vendor").length).toBeGreaterThan(0);
+    expect(getAllByText("Material").length).toBeGreaterThan(0);
+    // MERGE (2026-09-03): the shipped header is D-57's "Variance vs master",
+    // which names WHAT the variance is against -- the column E-05 asked for,
+    // under the wording already on screen.
+    expect(getByText("Variance vs master")).toBeDefined();
   });
 
   test("a figure that does not exist renders the en dash, never a fabricated zero", async () => {
@@ -97,8 +106,10 @@ describe("Materials > Cost Report (R67 E-05 / R-103)", () => {
 
     const { findByTestId, getAllByText } = render(<MaterialsClient projectId="p-1" initialTab="cost-report" />);
     await findByTestId("cost-report-grand-total");
-    // TMT Steel has no master unit cost, so no variance can be computed.
-    expect(getAllByText("–").length).toBeGreaterThan(0);
+    // TMT Steel has no master unit cost, so no variance can be computed. The
+    // merged table renders an absent figure as the em dash this screen already
+    // used for every other one, rather than introducing a second dash.
+    expect(getAllByText("—").length).toBeGreaterThan(0);
   });
 
   test("the period and the grouping really reach the request", async () => {
@@ -135,7 +146,7 @@ describe("Materials > Cost Report (R67 E-05 / R-103)", () => {
     // shared control, so "every format is blocked" is one assertion rather
     // than three -- and the reason is still readable beside it.
     expect((getByTestId("export-menu-button") as HTMLButtonElement).disabled).toBe(true);
-    expect(getByTestId("cost-report-export-reason").textContent).toContain("Export is disabled until this is fixed.");
+    expect(getByTestId("export-share-reason").textContent).toContain("Export is disabled until this is fixed.");
     // The table is STILL rendered -- a reader needs the rows to find the
     // discrepancy the banner is about.
     expect(getByTestId("cost-report-grand-total")).toBeDefined();

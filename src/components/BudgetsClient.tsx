@@ -3,33 +3,71 @@
 // R46 P8 seq133: registry-driven LIST archetype, same pattern R43 seq2
 // established for permits.list and R46 P8 seq127/seq128/seq134 established
 // for drawings.list/documents.list/variations.list (see those Client
-// components' header comments for the full history). Only the 3 real data
-// columns (Name/Status/Action if Exceeded) are registry-driven: COLUMNS is
-// now the fallback used when budgets/page.tsx's server-side resolve of the
-// budget.list screen_definitions row returns null (404/error), same "keep
-// the hardcoded version behind a flag until verified" contract as the
-// other three conversions. The CompanySelector, New Budget dialog, and its
-// VERIDIAN lookups (fiscal years/cost centers/accounts) are unrelated to
-// the list's own columns and are kept exactly as-is. Real-screen conversion
-// (2026-08-30): the "New Budget" Dialog is gone, replaced by a real
-// /budgets/new route + a real /budgets/[id] Object Page (BudgetObjectClient.tsx)
-// that never existed before.
-import { useEffect, useState } from "react";
+// components' header comments for the full history). COLUMNS is the fallback
+// used when budgets/page.tsx's server-side resolve of the budget.list
+// screen_definitions row returns null (404/error), same "keep the hardcoded
+// version behind a flag until verified" contract as the other three
+// conversions. Real-screen conversion (2026-08-30): the "New Budget" Dialog is
+// gone, replaced by a real /budgets/new route + a real /budgets/[id] Object
+// Page (BudgetObjectClient.tsx) that never existed before.
+//
+// R67 D-43 (audit R-110). Three defects, all of them the screen talking to
+// itself rather than to the user:
+//
+//   * The sub-copy sold a CHANGELOG entry -- "Fiscal year, cost center, and the
+//     line item's account are all looked up live from VERIDIAN's ERP module --
+//     no more guessing an opaque ID". That sentence is addressed to whoever
+//     shipped the previous version. A user needs to know what this list IS and
+//     where the OTHER kind of budget lives.
+//   * The empty state was the words "No budgets found." and nothing else -- a
+//     dead end on the one screen where a new org always starts.
+//   * Filter and Export did not exist here at all, so this module's header did
+//     not match any other module's. They exist now, in the fixed order, and
+//     say why they cannot be used yet.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
-import { Loader2, Plus } from "lucide-react";
-import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import SkeletonTable from "@/components/SkeletonTable";
+import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+
+import { useOrgMoney } from "@/lib/use-org-money";
+import { readStoredProjectId } from "@/lib/project-preference";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 // Priority 17 remaining gap (2026-07-15): erp_budgets.companyId has existed
 // since Wave 70 (createBudget already accepted it) -- this wires the UI
 // selector, reusing AccountingClient.tsx's exact component.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 
-type Budget = { id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null; status: string; actionIfExceeded: string | null };
+type Budget = {
+  id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null;
+  status: string; actionIfExceeded: string | null;
+  /**
+   * R67 D-43 x F-08. D-43 added this column against a LIST DTO that carried no
+   * amount, and said so honestly: an en-dash with a title, never a zero that
+   * would read as a real figure. Lane F1 then made the DTO carry it --
+   * listBudgets resolves the total inside the transaction it already holds
+   * (erp-budget-service.ts's BudgetListExtras), and the route projects it
+   * (toProjectBudgetListShape). So the column now populates for real, and the
+   * en-dash branch below survives as the honest answer for a VERIDIAN that
+   * predates it, NOT as the normal case.
+   *
+   * Still optional, and still not sent on CREATE: a freshly created budget has
+   * no line items yet, and inventing a 0 there is the defect this avoids.
+   */
+  annualAmount?: string | number | null;
+  /**
+   * R67 F-08. The year's NAME, resolved upstream in the same read. This screen
+   * used to fetch the whole /api/fiscal-years list purely to turn one id into
+   * one string, per navigation -- the id-to-label round trip the lane removes.
+   */
+  fiscalYearName?: string | null;
+};
+type FiscalYear = { id: string; yearName: string };
+type Project = { id: string; name: string };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", submitted: "secondary", approved: "default",
@@ -42,42 +80,70 @@ export type RegistryColumn = ScreenColumn;
 
 const COLUMNS: ScreenColumn[] = [
   { label: "Name", field: "name", type: "text", importance: "High" },
+  { label: "Fiscal Year", field: "fiscalYearName", type: "text", importance: "High" },
+  { label: "Annual Amount", field: "annualAmount", type: "number", importance: "High" },
   { label: "Status", field: "status", type: "text", importance: "High" },
   { label: "Action if Exceeded", field: "actionIfExceeded", type: "text", importance: "Medium" },
 ];
 
-// Per-field cell renderer -- this screen isn't built on the kit's
-// ListScreen, so unlike PermitsListClient there's no generic
-// column-type-driven renderer to hand columns to. A registry row can still
-// reorder/relabel these 3 columns live (the hard-stop test); the actual
-// cell value for each known field is still this project's own formatting
-// logic, looked up by field name so reordering doesn't change what renders.
-function renderBudgetCell(field: string, b: Budget) {
-  switch (field) {
-    case "name":
-      return <span className="font-medium">{b.name}</span>;
-    case "status":
-      return <Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge>;
-    case "actionIfExceeded":
-      return <span className="text-px-muted">{b.actionIfExceeded ?? "—"}</span>;
-    default:
-      return String((b as unknown as Record<string, unknown>)[field] ?? "—");
-  }
-}
+// The two quantity/identity columns D-43 adds, appended when a registry row
+// predates them -- same reasoning as MaterialsClient's QUANTITY_COLUMNS.
+const ADDED_COLUMNS = COLUMNS.filter((c) => c.field === "fiscalYearName" || c.field === "annualAmount");
 
-export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
+// The user sentence. The line it replaces read "Fiscal year, cost center, and
+// the line item's account are all looked up live from VERIDIAN's ERP module --
+// no more guessing an opaque ID", which is a note to the previous implementer,
+// not information for the person reading the screen. It is kept here, as a
+// comment, so the history is not lost.
+export const SUB_COPY =
+  "Annual budgets by account and fiscal year. For the budget against each BOQ line, open Scope of Work › Cost Variance.";
+
+/** The empty state's own copy. `orgName` is the org the user is actually in. */
+export const EMPTY_COPY = (orgName: string | null) => `No budgets yet for ${orgName ?? "this organisation"}`;
+
+// R67 F-08: exported so budgets/page.tsx's <Suspense> frame carries the REAL
+// column headers before any data has arrived -- the same array this client
+// falls back to, so the frame and the table cannot drift apart.
+export const BUDGETS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
+
+export const NO_PROJECT_REASON = "Pick a project first";
+export const BOQ_BUDGET_LABEL = "Open BOQ budget →";
+
+export default function BudgetsClient({
+  registryColumns,
+  companies: initialCompanies,
+}: {
+  registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-08: the companies list, read in the server component alongside
+   * everything else it already reads. Supplied, the client-side /api/companies
+   * round trip below does not happen at all. Optional so any caller that does
+   * not prefetch keeps the original self-loading behaviour.
+   */
+  companies?: Company[];
+}) {
   const router = useRouter();
+  const orgMoney = useOrgMoney();
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [railProjectId, setRailProjectId] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+
+  const columns = useMemo(() => {
+    const resolved = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+    const present = new Set(resolved.map((col) => col.field));
+    return [...resolved, ...ADDED_COLUMNS.filter((col) => !present.has(col.field))];
+  }, [registryColumns]);
 
   // Priority 17 remaining gap: companies list + list-level filter scope,
   // same pattern as AccountingClient.tsx/LeadsClient.tsx.
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<Company[]>(initialCompanies ?? []);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
 
-  async function load(companyId: string | null = null) {
+  const load = useCallback(async (companyId: string | null = null) => {
     setLoading(true);
     try {
       const qs = companyId ? `?companyId=${companyId}` : "";
@@ -87,69 +153,166 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
       setBudgets(data.projectBudgets ?? []);
       setLoadError(null);
     } catch (err) {
+      // R67 D-65 merge: the rows are NOT cleared. Blanking the table on a
+      // failed refresh throws away figures the user already had, and an empty
+      // table beside an error is easy to read as "the budgets are gone".
       setLoadError(errorMessage(err, "Couldn't load budgets"));
-      setBudgets([]);
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => { load(scope.companyId); }, [scope.companyId]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await fetchJson<{ companies?: Company[] }>("/api/companies");
-        setCompanies(data.companies ?? []);
-      } catch (err) {
-        // Non-fatal -- CompanySelector renders nothing when companies is empty.
-      }
-    })();
   }, []);
 
+  useEffect(() => { void load(scope.companyId); }, [scope.companyId, load]);
+
+  useEffect(() => {
+    // Every one of these is a display-only lookup: a failure degrades one cell
+    // or one label, never the list.
+    // R67 F-08: skipped entirely when the server component already supplied it.
+    if (!initialCompanies) {
+      fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
+    }
+    fetchJson<{ projects?: Project[] }>("/api/projects").then((d) => setProjects(d.projects ?? [])).catch(() => {});
+    fetchJson<{ organization?: { name?: string } }>("/api/organization")
+      .then((d) => setOrgName(d.organization?.name ?? null))
+      .catch(() => {});
+  }, [initialCompanies]);
+
+  // R67 F-08. The fiscal-year list is NO LONGER fetched to translate one id per
+  // row: listBudgets resolves the name upstream and every row carries it, which
+  // is the id-to-label round trip this item removes. It is fetched ONLY if a
+  // loaded row turns out to have no name -- a VERIDIAN older than that change
+  // -- so the normal path costs nothing and the old one still degrades to a
+  // real year rather than an em-dash.
+  useEffect(() => {
+    if (budgets.length === 0 || fiscalYears.length > 0) return;
+    if (budgets.every((b) => b.fiscalYearName)) return;
+    fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years")
+      .then((d) => setFiscalYears(d.fiscalYears ?? []))
+      .catch(() => {});
+  }, [budgets, fiscalYears.length]);
+
+  // R67 D-38's rail selection: the BOQ budget lives on ONE project, so this
+  // screen has to know whether one is selected before it can offer that link.
+  useEffect(() => {
+    // R67 D-38/A-05 merge: the rail's choice is read from the ONE module that
+    // owns it (localStorage + a cookie the server reads). There is no
+    // subscription: the shell's own chooseProject() calls router.refresh()
+    // after it writes, so this screen re-renders with the new answer rather
+    // than listening for it -- one writer, one reader.
+    setRailProjectId(readStoredProjectId());
+  }, []);
+
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id === railProjectId) ?? null,
+    [projects, railProjectId]
+  );
+
+  // R67 F-08: the row's own resolved name first; the id lookup only when the
+  // payload did not carry one. An unresolvable year is an em-dash, never the
+  // raw id -- an opaque id where a year name belongs reads as data.
+  const fiscalYearName = useCallback(
+    (b: Pick<Budget, "fiscalYearId" | "fiscalYearName">) =>
+      b.fiscalYearName ?? fiscalYears.find((fy) => fy.id === b.fiscalYearId)?.yearName ?? "—",
+    [fiscalYears]
+  );
+
+  function exportBudgets() {
+    const rows = budgets.map((b, i) => [
+      i + 1, b.name, fiscalYearName(b), b.annualAmount ?? "", b.status, b.actionIfExceeded ?? "",
+    ]);
+    const csv = toCsv(["S.No", "Name", "Fiscal Year", "Annual Amount", "Status", "Action if Exceeded"], rows);
+    downloadCsv(csvFilename("budgets", orgName ?? "org", new Date().toISOString().slice(0, 10)), csv);
+  }
+
+  const noRowsYet = !loading && !loadError && budgets.length === 0;
+
   return (
-    <div className="space-y-4">
-      <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-px-muted">
-          Fiscal year, cost center, and the line item&apos;s account are all looked up live from VERIDIAN&apos;s ERP
-          module — no more guessing an opaque ID.
-        </p>
-        {/* Real screen navigation (2026-08-30) -- replaces the old "New
-            Budget" Dialog popup with a real create route. */}
-        <Button className="shrink-0" onClick={() => router.push("/budgets/new")}><Plus className="size-4" /> New Budget</Button>
+    <ScreenFrame
+      breadcrumb="Annual Budgets"
+      // The fixed trio, in the fixed order, from ONE component -- the same
+      // header every other module now renders.
+      filterAction={{
+        label: "Filter",
+        disabledReason: loading ? "Loading…" : budgets.length === 0 ? "No budgets to filter" : undefined,
+        onClick: () => setScope({ companyId: null, consolidate: false }),
+      }}
+      exportAction={{
+        label: "Export",
+        disabledReason: loading ? "Loading…" : budgets.length === 0 ? "No budgets to export" : undefined,
+        onClick: exportBudgets,
+      }}
+      newAction={{ label: "+ New", onClick: () => router.push("/budgets/new") }}
+      messages={[]}
+    >
+      <div className="space-y-4 px-4 py-3">
+        <p className="text-sm text-px-muted">{SUB_COPY}</p>
+
+        <CompanySelector companies={companies} scope={scope} onChange={setScope} showConsolidateToggle={false} />
+
+        {loading ? (
+          <SkeletonTable headers={columns.map((c) => c.label)} rows={3} caption="Loading budgets…" />
+        ) : loadError ? (
+          <DataLoadError messages={[loadError]} onRetry={() => load(scope.companyId)} />
+        ) : noRowsYet ? (
+          // Two real next steps, because there are two kinds of budget in this
+          // product and a new org has neither.
+          <Card className="shadow-card">
+            <CardContent className="space-y-3 p-6 text-center">
+              <p className="text-sm text-ct-navy">{EMPTY_COPY(orgName)}</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button size="sm" data-testid="budgets-new" onClick={() => router.push("/budgets/new")}>
+                  + New Budget
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="budgets-boq"
+                  disabled={!selectedProject}
+                  title={selectedProject ? undefined : NO_PROJECT_REASON}
+                  onClick={() =>
+                    selectedProject &&
+                    router.push(`/scope?tab=cost-variance&projectId=${encodeURIComponent(selectedProject.id)}`)
+                  }
+                >
+                  {selectedProject ? BOQ_BUDGET_LABEL : `${BOQ_BUDGET_LABEL} (${NO_PROJECT_REASON})`}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <ListScreen
+            functionId="budget.list"
+            columns={columns}
+            rows={budgets as unknown as Record<string, unknown>[]}
+            getRowId={(row) => row.id as string}
+            // Real screen navigation (2026-08-30) -- rows open the real Object
+            // Page instead of nothing.
+            onRowClick={(row) => router.push(`/budgets/${row.id}`)}
+            emptyStateLabel={EMPTY_COPY(orgName)}
+            renderCell={{
+              name: (row) => <span className="font-medium">{String(row.name)}</span>,
+              status: (row) => (
+                <Badge variant={STATUS_VARIANT[String(row.status)] ?? "outline"}>{String(row.status)}</Badge>
+              ),
+              actionIfExceeded: (row) => (
+                <span className="text-px-muted">{(row.actionIfExceeded as string | null) ?? "—"}</span>
+              ),
+              fiscalYearName: (row) => fiscalYearName(row as unknown as Budget),
+              annualAmount: (row) => {
+                const amount = (row as unknown as Budget).annualAmount;
+                if (amount === undefined || amount === null || amount === "") {
+                  return (
+                    <span className="text-px-muted" title="The budgets list does not return a total yet — open the budget to see its line items">
+                      —
+                    </span>
+                  );
+                }
+                return <span className="text-right tabular-nums">{orgMoney.money(amount)}</span>;
+              },
+            }}
+          />
+        )}
       </div>
-      <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
-            <div className="p-4"><DataLoadError messages={[loadError]} onRetry={() => load(scope.companyId)} /></div>
-          ) : budgets.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No budgets found.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {columns.map((col) => <TableHead key={col.field}>{col.label}</TableHead>)}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {budgets.map((b) => (
-                  // Real screen navigation (2026-08-30) -- rows now open the
-                  // real Object Page instead of nothing (no detail view
-                  // existed for a single budget before this).
-                  <TableRow key={b.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/budgets/${b.id}`)}>
-                    {columns.map((col) => (
-                      <TableCell key={col.field}>{renderBudgetCell(col.field, b)}</TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    </ScreenFrame>
   );
 }

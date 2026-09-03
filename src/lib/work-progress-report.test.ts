@@ -5,11 +5,16 @@ import {
   buildVendorBreakdown,
   buildWorkProgressReport,
   computeLineItemProgress,
+  describeProgressDeleteImpact,
+  progressDeleteConfirmSentence,
   formatParentOnlyPercent,
   formatProgressCell,
   resolveCategoryName,
   sumRootAmtTotal,
   UNCATEGORIZED_LABEL,
+  vendorsFromRoster,
+  countUnlinkedEntries,
+  unlinkedEntriesNote,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -645,6 +650,62 @@ describe("applyWeightedParentRollup (via buildWorkProgressReport) -- R12 point 1
   });
 });
 
+// R67 F-13 (R-193/R-217). The Work Progress Report assembled itself from SIX
+// VERIDIAN calls, one of which existed only to turn a handful of vendorIds into
+// names: it fetched the org's ENTIRE vendor master. VERIDIAN's roster rows now
+// carry vendorName (resolved in the transaction listRoster already holds), so
+// the set of vendors this report can attribute cost to comes from the roster
+// itself -- and that set is complete by construction, because a vendor nobody
+// on the roster belongs to cannot have labour cost.
+describe("vendorsFromRoster (R67 F-13: the sixth call, removed)", () => {
+  test("collects each named vendor once, however many workers belong to it", () => {
+    const vendors = vendorsFromRoster([
+      { id: "r1", trade: "Mason", vendorId: "v1", name: "Ramesh", vendorName: "ABC Contractors" },
+      { id: "r2", trade: "Mason", vendorId: "v1", name: "Suresh", vendorName: "ABC Contractors" },
+      { id: "r3", trade: "Electrician", vendorId: "v2", name: "Imran", vendorName: "XYZ Electricals" },
+    ]);
+    expect(vendors).toEqual([
+      { id: "v1", name: "ABC Contractors" },
+      { id: "v2", name: "XYZ Electricals" },
+    ]);
+  });
+
+  test("direct labour (no vendor) contributes nothing", () => {
+    expect(vendorsFromRoster([{ id: "r1", trade: "Mason", vendorId: null, name: "Ramesh", vendorName: null }])).toEqual([]);
+  });
+
+  test("a vendor whose row is gone is left out, so the breakdown falls back to its id -- as it always did", () => {
+    const roster: LabourRoster[] = [{ id: "r1", trade: "Mason", vendorId: "v-deleted", name: "Ramesh", vendorName: null }];
+    const rows = buildVendorBreakdown({
+      roster,
+      attendance: [{ id: "a1", rosterId: "r1", attendanceDate: "2026-07-12", dailyCost: 500 }],
+      vendors: vendorsFromRoster(roster),
+      from: "2026-07-10",
+      to: "2026-07-20",
+    });
+    expect(rows).toEqual([{ vendorId: "v-deleted", vendorName: "v-deleted", totalCost: 500 }]);
+  });
+
+  test("the roster-derived list produces the SAME breakdown the vendor master did", () => {
+    const roster: LabourRoster[] = [
+      { id: "r1", trade: "Mason", vendorId: "v1", name: "Ramesh", vendorName: "ABC Contractors" },
+      { id: "r2", trade: "Electrician", vendorId: "v2", name: "Suresh", vendorName: "XYZ Electricals" },
+    ];
+    const attendance: Attendance[] = [
+      { id: "a1", rosterId: "r1", attendanceDate: "2026-07-12", dailyCost: 500 },
+      { id: "a2", rosterId: "r2", attendanceDate: "2026-07-13", dailyCost: 800 },
+    ];
+    const fromMaster = buildVendorBreakdown({
+      roster,
+      attendance,
+      vendors: [{ id: "v1", name: "ABC Contractors" }, { id: "v2", name: "XYZ Electricals" }, { id: "v3", name: "Unused Vendor" }],
+      from: "2026-07-10",
+      to: "2026-07-20",
+    });
+    const fromRoster = buildVendorBreakdown({ roster, attendance, vendors: vendorsFromRoster(roster), from: "2026-07-10", to: "2026-07-20" });
+    expect(fromRoster).toEqual(fromMaster);
+  });
+});
 // ---------------------------------------------------------------------------
 // R67 lane I (WS-I item I-05, R-177): the BOQ line's own `category` column
 // (drizzle/0532) is now the primary source of a row's categoryName, and the
@@ -785,5 +846,151 @@ describe("resolveCategoryName (R67 E-15)", () => {
     expect(child.categoryName).toBe("C-01");
     // The root itself has nothing above it, so it stays honestly uncategorised.
     expect(report.rows.find((r) => r.lineItemId === "root")!.categoryName).toBe(UNCATEGORIZED_LABEL);
+  });
+});
+
+// ── R67 B-09: entries no BOQ line can claim are counted, and said out loud ─
+// This report has always silently dropped them -- entryBelongsToLine() claims
+// an entry by boq_line_item_id or, failing that, by activity, and an entry
+// matching neither never appears in any row. On a project with no BOQ at all
+// that is the whole day's work.
+
+describe("countUnlinkedEntries / unlinkedEntriesNote -- R67 B-09", () => {
+  const LINES: BoqLineItem[] = [
+    { id: "line_1", activityId: "act_1", itemCode: "C-101", description: "Excavation", unit: "cum", quantity: 100, rate: 10, amount: 1000 },
+  ];
+
+  test("an entry that resolves to a real line is NOT counted as unlinked", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 10 }];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(0);
+  });
+
+  test("an entry naming a line item id no BOQ line has IS counted", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "line_gone", entryDate: "2026-07-15", quantityDone: 10 },
+    ];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(1);
+  });
+
+  test("a project with NO BOQ at all: every entry in the window is unlinked", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_9", entryDate: "2026-07-15", quantityDone: 10 },
+      { id: "e2", activityId: "act_9", entryDate: "2026-07-16", quantityDone: 4 },
+    ];
+    expect(countUnlinkedEntries({ lineItems: [], entries, from: "2026-07-10", to: "2026-07-20" })).toBe(2);
+  });
+
+  test("entries outside the window are not counted -- the note describes THIS report", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_9", entryDate: "2026-06-01", quantityDone: 10 }];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(0);
+  });
+
+  test("buildWorkProgressReport carries the count, so the screen needs no second pass", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 10 },
+      { id: "e2", activityId: "act_9", entryDate: "2026-07-15", quantityDone: 3 },
+    ];
+    const report = buildWorkProgressReport({
+      lineItems: LINES, entries, activities: ACTIVITIES, categories: CATEGORIES, from: "2026-07-10", to: "2026-07-20",
+    });
+    expect(report.unlinkedEntryCount).toBe(1);
+  });
+
+  test("the note is the exact sentence, and says nothing at all when there is nothing to say", () => {
+    expect(unlinkedEntriesNote(0)).toBeNull();
+    expect(unlinkedEntriesNote(-1)).toBeNull();
+    expect(unlinkedEntriesNote(1)).toBe("1 entry not linked to a BOQ line is not counted");
+    expect(unlinkedEntriesNote(4)).toBe("4 entries not linked to a BOQ line are not counted");
+  });
+});
+
+// R67 D-28: the delete confirmation must state what the running total actually
+// becomes. These pin the arithmetic (which is computeLineItemProgress's, reused
+// rather than re-derived) and, just as importantly, pin the HONEST answer when
+// there is no denominator to compute a percentage against.
+describe("describeProgressDeleteImpact (R67 D-28)", () => {
+  const line: BoqLineItem = {
+    id: "LINE-1",
+    activityId: "ACT-1",
+    itemCode: "R60SK-A",
+    description: "R60 skiphop sub",
+    unit: "m2",
+    quantity: 100,
+    rate: 10,
+    amount: 1000,
+  };
+
+  const kept: ProgressEntry = { id: "e1", activityId: "ACT-1", boqLineItemId: "LINE-1", entryDate: "2026-08-20", quantityDone: 48, entryBasis: "DELTA" };
+  const doomed: ProgressEntry = { id: "e2", activityId: "ACT-1", boqLineItemId: "LINE-1", entryDate: "2026-08-25", quantityDone: 12, entryBasis: "DELTA" };
+
+  test("states the running total before and after, using the report's own percentage rule", () => {
+    const impact = describeProgressDeleteImpact({ entry: doomed, entries: [kept, doomed], line, unit: "m2" });
+    // 60 of 100 m2 at rate 10 against a 1000 contract = 60%; without the 12 it
+    // is 48 of 100 = 48%.
+    expect(impact.percentBefore).toBe(60);
+    expect(impact.percentAfter).toBe(48);
+    expect(impact.quantity).toBe(12);
+    expect(impact.unit).toBe("m2");
+    expect(impact.entryDate).toBe("2026-08-25");
+    expect(impact.lineCode).toBe("R60SK-A");
+  });
+
+  test("an entry with no BOQ line reports NO percentage rather than a fabricated 0%", () => {
+    const activityOnly: ProgressEntry = { id: "e3", activityId: "ACT-1", boqLineItemId: null, entryDate: "2026-08-25", quantityDone: 12, entryBasis: "DELTA" };
+    const impact = describeProgressDeleteImpact({ entry: activityOnly, entries: [activityOnly], line: null, unit: "nos" });
+    expect(impact.percentBefore).toBeNull();
+    expect(impact.percentAfter).toBeNull();
+    expect(impact.lineCode).toBeNull();
+    expect(impact.quantity).toBe(12);
+    expect(impact.unit).toBe("nos");
+  });
+
+  test("a line with no contracted amount reports NO percentage -- 0% would read as a real reading", () => {
+    const worthless: BoqLineItem = { ...line, quantity: 0, rate: 0, amount: 0 };
+    const impact = describeProgressDeleteImpact({ entry: doomed, entries: [kept, doomed], line: worthless, unit: "m2" });
+    expect(impact.percentBefore).toBeNull();
+    expect(impact.percentAfter).toBeNull();
+  });
+
+  test("a SNAPSHOT reading is replaced, not subtracted -- deleting the latest falls back to the previous one", () => {
+    const first: ProgressEntry = { id: "s1", activityId: "ACT-1", boqLineItemId: "LINE-1", entryDate: "2026-08-20", quantityDone: 0, percentComplete: 30, entryBasis: "SNAPSHOT" };
+    const latest: ProgressEntry = { id: "s2", activityId: "ACT-1", boqLineItemId: "LINE-1", entryDate: "2026-08-25", quantityDone: 0, percentComplete: 60, entryBasis: "SNAPSHOT" };
+    const impact = describeProgressDeleteImpact({ entry: latest, entries: [first, latest], line, unit: "m2" });
+    expect(impact.percentBefore).toBe(60);
+    expect(impact.percentAfter).toBe(30);
+  });
+
+  test("entries belonging to a DIFFERENT line never move this line's running total", () => {
+    const other: ProgressEntry = { id: "e9", activityId: "ACT-1", boqLineItemId: "LINE-OTHER", entryDate: "2026-08-25", quantityDone: 500, entryBasis: "DELTA" };
+    const impact = describeProgressDeleteImpact({ entry: doomed, entries: [kept, doomed, other], line, unit: "m2" });
+    expect(impact.percentBefore).toBe(60);
+    expect(impact.percentAfter).toBe(48);
+  });
+});
+
+describe("progressDeleteConfirmSentence (R67 D-28)", () => {
+  test("states the quantity, the unit, the date, the line and the running-total change", () => {
+    const sentence = progressDeleteConfirmSentence(
+      { quantity: 12, unit: "m2", entryDate: "2026-08-25", lineCode: "R60SK-A", percentBefore: 60, percentAfter: 48 },
+      "Blockwork"
+    );
+    expect(sentence).toBe("This removes 12 m2 logged on 25-08-2026 against R60SK-A; the running total drops from 60% to 48%.");
+  });
+
+  test("falls back to the activity's name when the entry names no BOQ line, and never invents a percentage", () => {
+    const sentence = progressDeleteConfirmSentence(
+      { quantity: 3, unit: "nos", entryDate: "2026-08-25", lineCode: null, percentBefore: null, percentAfter: null },
+      "Blockwork"
+    );
+    expect(sentence).toBe("This removes 3 nos logged on 25-08-2026 against Blockwork. This cannot be undone.");
+    expect(sentence).not.toContain("0%");
+  });
+
+  test("omits the unit rather than printing an empty one", () => {
+    const sentence = progressDeleteConfirmSentence(
+      { quantity: 3, unit: null, entryDate: "2026-08-25", lineCode: "R60SK-A", percentBefore: null, percentAfter: null },
+      "Blockwork"
+    );
+    expect(sentence).toBe("This removes 3 logged on 25-08-2026 against R60SK-A. This cannot be undone.");
   });
 });

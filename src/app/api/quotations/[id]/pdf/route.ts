@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridianRaw } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -11,7 +13,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 // a re-render. callVeridian() (the normal helper) always calls res.json(),
 // which would throw on a real binary body -- callVeridianRaw() returns the
 // raw Response so the PDF bytes and headers can be forwarded untouched.
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -26,6 +28,6 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to generate quotation PDF" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to generate quotation PDF");
   }
-}
+});

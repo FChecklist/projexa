@@ -23,26 +23,30 @@ function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
+// R67 D-26 (merged 2026-09-03): `variance` is BUDGET REMAINING -- budget minus
+// actual -- so a line that spent MORE than its budget carries a NEGATIVE
+// figure. Every fixture below is that arithmetic; the assertions are unchanged,
+// because "over budget" and "400 over" are the same facts either way round.
 const SCOPE_ROWS = [
-  { key: "l1", item: "C-01", description: "Blockwork", category: "Civil", revenue: 5400, budget: 1350, actual: 1500, variance: 150, percentUsed: 111.1, lineItemId: "l1", lineCount: 1 },
+  { key: "l1", item: "C-01", description: "Blockwork", category: "Civil", revenue: 5400, budget: 1350, actual: 1500, variance: -150, percentUsed: 111.1, lineItemId: "l1", lineCount: 1 },
   // budget 0: the divide-by-zero row the item calls out by name.
-  { key: "l2", item: "C-02", description: "Provisional sum", category: "Civil", revenue: 1000, budget: 0, actual: 250, variance: 250, percentUsed: null, lineItemId: "l2", lineCount: 1 },
+  { key: "l2", item: "C-02", description: "Provisional sum", category: "Civil", revenue: 1000, budget: 0, actual: 250, variance: -250, percentUsed: null, lineItemId: "l2", lineCount: 1 },
 ];
 
 const CATEGORY_SUBTOTALS = [
-  { key: "Civil", item: "Civil", description: "2 lines", category: "Civil", revenue: 6400, budget: 1350, actual: 1750, variance: 400, percentUsed: 129.6, lineItemId: null, lineCount: 2 },
-  { key: "MEP", item: "MEP", description: "1 line", category: "MEP", revenue: 2000, budget: 500, actual: 300, variance: -200, percentUsed: 60, lineItemId: null, lineCount: 1 },
+  { key: "Civil", item: "Civil", description: "2 lines", category: "Civil", revenue: 6400, budget: 1350, actual: 1750, variance: -400, percentUsed: 129.6, lineItemId: null, lineCount: 2 },
+  { key: "MEP", item: "MEP", description: "1 line", category: "MEP", revenue: 2000, budget: 500, actual: 300, variance: 200, percentUsed: 60, lineItemId: null, lineCount: 1 },
 ];
 
 function payload(rows = SCOPE_ROWS, groupBy: "scope" | "category" = "scope") {
   return {
     boqId: "boq-1", boqTitle: "Main BOQ v2", lines: [], subTaskLineCount: 0,
-    totalBudget: 1350, totalVendorAmount: 1500, totalVariance: 150, totalMaterialAmount: 0, totalManpowerAmount: 0,
+    totalBudget: 1350, totalVendorAmount: 1500, totalVariance: -150, totalMaterialAmount: 0, totalManpowerAmount: 0,
     availableCategories: ["Civil", "MEP"], availableVendors: [],
     filters: { categories: [], vendorId: null, groupBy },
     revenueBudgetActual: {
       groupBy, rows,
-      totals: { revenue: 6400, budget: 1350, actual: 1750, variance: 400, percentUsed: 129.6 },
+      totals: { revenue: 6400, budget: 1350, actual: 1750, variance: -400, percentUsed: 129.6 },
     },
     categorySubtotals: CATEGORY_SUBTOTALS,
   };

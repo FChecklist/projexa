@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
-import { formatProgressCell } from "@/lib/work-progress-report";
+import { formatProgressCell, unlinkedEntriesNote } from "@/lib/work-progress-report";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import {
@@ -28,15 +28,16 @@ import {
   PERIOD_PRESETS,
   PERIOD_PRESET_LABELS,
   reportCaption,
-  resolveReportParams,
+  resolveWprParams,
   THIRD_COLUMN_NOTE,
   whatsappMessage,
   wprRunningLine,
   WPR_STILL_RUNNING_MS,
   WPR_STILL_RUNNING_NOTE,
   type PeriodPreset,
-  type ReportView,
+  type WprView,
   type ThirdColumnMode,
+  type WprParams,
 } from "@/lib/work-progress-report-params";
 import { ExportShareActions } from "@/components/ExportShareActions";
 import { SortedBarList, type SortedBar } from "@/components/reports/SortedBarList";
@@ -71,6 +72,9 @@ type ReportResponse = {
   boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
   rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
   availableCategories?: string[]; categoryFilter?: string[];
+  // R67 B-09: additive, so a server that has not shipped it yet renders the
+  // report rather than a broken note.
+  unlinkedEntryCount?: number;
 };
 
 /**
@@ -420,11 +424,19 @@ export default function WorkProgressReportClient({
   projectId,
   projectName = "this project",
   projectStartDate = null,
+  initialParams,
 }: {
   projectId: string;
   projectName?: string;
   /** Optional: the third step of the From fallback chain. Absent today (the org dashboard payload carries no start date), so an entry-less project falls through to 1 January. */
   projectStartDate?: string | null;
+  /**
+   * R67 D-02: the parameters the SERVER already resolved off the URL. Seeded
+   * from here rather than re-parsed on the client, because the client's own
+   * `today` is the visitor's clock -- resolving the default range twice, once
+   * per side, is exactly the hydration mismatch format-date.ts exists to stop.
+   */
+  initialParams?: WprParams;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -432,19 +444,46 @@ export default function WorkProgressReportClient({
   const money = useCallback((n: number) => orgMoney.money(n), [orgMoney]);
 
   const today = isoDay(new Date());
-  const initial = resolveReportParams(searchParams, { projectStartDate, today });
+  // R67 D-02 + E-03, merged. D-02 owns the URL's shape (from/to/view/
+  // boqVersion, with boqVersion a stable, readable VERSION NUMBER rather than
+  // a cuid); E-03 owns what a MISSING from means -- the project's own earliest
+  // entry rather than the first of this month, because a job whose last
+  // progress was logged in July must not open on an empty September.
+  const initial =
+    initialParams ??
+    resolveWprParams(
+      {
+        from: searchParams.get("from") ?? undefined,
+        to: searchParams.get("to") ?? undefined,
+        view: searchParams.get("view") ?? undefined,
+        boqVersion: searchParams.get("boqVersion") ?? undefined,
+      },
+      { projectStartDate, today }
+    );
 
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
-  const [view, setView] = useState<ReportView>(initial.view);
+  const [view, setView] = useState<WprView>(initial.view);
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  // R67 B-09: the sentence itself is a pure function beside the report's own
+  // maths, so the number the note quotes and the number the tables exclude can
+  // never come from two different definitions of "linked".
+  const unlinkedNote = unlinkedEntriesNote(report?.unlinkedEntryCount ?? 0);
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
   // R36/P5: empty string means "let the server auto-pick the latest,
   // non-superseded BOQ"; a real id means the user chose one explicitly.
-  const [selectedBoqId, setSelectedBoqId] = useState<string>(initial.boqVersion);
+  const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // R67 D-02: the URL carries the BOQ as a VERSION (stable and readable across
+  // revisions, and meaningful to a person reading a pasted link) while the API
+  // takes an id. Held separately from selectedBoqId so changing the dates
+  // afterwards cannot silently drop the chosen BOQ out of a shareable URL.
+  const [selectedBoqVersion, setSelectedBoqVersion] = useState<number | null>(initial.boqVersion);
+  // The first response is what maps one to the other, so a link that names a
+  // version is honoured exactly once, on arrival.
+  const wantedBoqVersion = useRef<number | null>(initial.boqVersion);
   // R67 I-05: the Category multi-select. Sent to the server and APPLIED THERE
   // -- never filtered client-side, or the Grand Total would keep describing
   // rows the table is no longer showing.
@@ -496,6 +535,23 @@ export default function WorkProgressReportClient({
         // would make it impossible to widen the filter again.
         if (Array.isArray(data.availableCategories)) {
           setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+        }
+        // R67 D-02: honour a ?boqVersion= from the URL ONCE, now that the
+        // version -> id mapping is known. Cleared before it is used, so a
+        // shared link can never loop the screen through repeated runs.
+        const wanted = wantedBoqVersion.current;
+        wantedBoqVersion.current = null;
+        if (wanted !== null) {
+          const match = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.version === wanted);
+          if (match && match.id !== data.boqId) {
+            setSelectedBoqId(match.id);
+            void runReport({ boqId: match.id });
+          }
+        } else if (!boqId && data.boqId) {
+          // Reflect the server's auto-pick back into the URL as a version, so
+          // the link a reader copies names the BOQ they are actually looking at.
+          const picked = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.id === data.boqId);
+          if (picked && selectedBoqVersion === null) setSelectedBoqVersion(picked.version);
         }
       } catch (err) {
         // An abort is the reader's own decision (Cancel, or a second run
@@ -570,7 +626,7 @@ export default function WorkProgressReportClient({
       // R67 E-17: the same date the "Since first entry" chip means, so the chip
       // row and the auto-run can never describe different windows.
       setEarliestFrom(resolvedFrom);
-      writeParamsToUrl({ from: resolvedFrom, to, view, boqVersion: selectedBoqId });
+      writeParamsToUrl({ from: resolvedFrom, to, view, boqVersion: selectedBoqVersion });
       await runReport({ from: resolvedFrom });
     })();
     return () => { cancelled = true; };
@@ -587,14 +643,14 @@ export default function WorkProgressReportClient({
    * reader did not navigate, so Back must still leave this screen rather than
    * undoing a parameter they never chose.
    */
-  function writeParamsToUrl(next: { from: string; to: string; view: ReportView; boqVersion: string }, push = false) {
+  function writeParamsToUrl(next: { from: string; to: string; view: WprView; boqVersion: number | null }, push = false) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", "report");
     params.set("projectId", projectId);
     params.set("from", next.from);
     params.set("to", next.to);
     params.set("view", next.view);
-    if (next.boqVersion) params.set("boqVersion", next.boqVersion); else params.delete("boqVersion");
+    if (next.boqVersion !== null) params.set("boqVersion", String(next.boqVersion)); else params.delete("boqVersion");
     const url = `/work-progress?${params.toString()}`;
     if (push) router.push(url); else router.replace(url);
   }
@@ -693,6 +749,26 @@ export default function WorkProgressReportClient({
     return data;
   }
 
+  // R67 A-20. The composer's "Export CSV" card is a verb and the FILE is the
+  // whole point of it, so the card navigates here with ?tab=report&export=csv
+  // and the export happens once the report has actually arrived. Landing the
+  // reader on an empty report with an export button that can do nothing until
+  // they press Run would be the same "card that is really a place" this
+  // programme is removing.
+  //
+  // ONCE, and never over a report that does not add up: the tie check is the
+  // same one that disables the button, and an export of a report that does not
+  // add up is worse than no export. When the check fails the tie-error card is
+  // already on screen saying why.
+  const autoExportRequested = searchParams.get("export") === "csv";
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExportRequested || autoExportedRef.current) return;
+    if (!report || tieError) return;
+    autoExportedRef.current = true;
+    exportCsv();
+  }, [autoExportRequested, report, tieError]);
+
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp Business
   // API (explicitly ruled out). One factory, handed to the shared control, so
   // Copy link and Send via WhatsApp mint the SAME link rather than two.
@@ -742,7 +818,7 @@ export default function WorkProgressReportClient({
                     setCustomPeriod(false);
                     setFrom(range.from);
                     setTo(range.to);
-                    writeParamsToUrl({ from: range.from, to: range.to, view, boqVersion: selectedBoqId });
+                    writeParamsToUrl({ from: range.from, to: range.to, view, boqVersion: selectedBoqVersion });
                     runReport({ from: range.from, to: range.to });
                   }}
                   className={`cursor-pointer rounded-full border px-3 py-1 text-[12px] transition-colors ${
@@ -779,7 +855,7 @@ export default function WorkProgressReportClient({
 
           <div className="flex flex-wrap items-end gap-3">
           <Button
-            onClick={() => { writeParamsToUrl({ from, to, view, boqVersion: selectedBoqId }, true); runReport(); }}
+            onClick={() => { writeParamsToUrl({ from, to, view, boqVersion: selectedBoqVersion }, true); runReport(); }}
             disabled={loading}
             data-testid="work-progress-report-run"
           >
@@ -813,7 +889,15 @@ export default function WorkProgressReportClient({
               <Label>BOQ</Label>
               <Select
                 value={selectedBoqId || report.boqId || ""}
-                onValueChange={(v) => { setSelectedBoqId(v); writeParamsToUrl({ from, to, view, boqVersion: v }); runReport({ boqId: v }); }}
+                onValueChange={(v) => {
+                  setSelectedBoqId(v);
+                  // The control is keyed by id (what the API takes); the URL
+                  // carries that BOQ's version (what a person can read).
+                  const chosen = report?.availableBoqs.find((b) => b.id === v)?.version ?? null;
+                  setSelectedBoqVersion(chosen);
+                  writeParamsToUrl({ from, to, view, boqVersion: chosen });
+                  runReport({ boqId: v });
+                }}
               >
                 {/* R67 E-03: w-80, not w-56 -- a real BOQ title plus its
                     revision did not fit and was silently truncated with no way
@@ -859,6 +943,18 @@ export default function WorkProgressReportClient({
                   printout, on a phone, or by someone who does not know to
                   hover. */}
               <p className="text-[12px] text-px-muted" data-testid="third-column-note">{THIRD_COLUMN_NOTE}</p>
+              {/* R67 B-09: progress can be logged against an ACTIVITY that no
+                  BOQ line can claim. On a project without a BOQ that is the
+                  whole day's work, and the site engineer sees a total they know
+                  is short with nothing to explain it. */}
+              {unlinkedNote && (
+                <p
+                  className="rounded-md border border-px-warning-border bg-px-warning-light px-3 py-2 text-[12.5px] text-px-warning"
+                  data-testid="work-progress-report-unlinked-note"
+                >
+                  {unlinkedNote}
+                </p>
+              )}
             </div>
           )}
           </div>
@@ -923,7 +1019,7 @@ export default function WorkProgressReportClient({
           ) : (
             <Tabs
               value={view}
-              onValueChange={(v) => { const next = v as ReportView; setView(next); writeParamsToUrl({ from, to, view: next, boqVersion: selectedBoqId }); }}
+              onValueChange={(v) => { const next = v as WprView; setView(next); writeParamsToUrl({ from, to, view: next, boqVersion: selectedBoqVersion }); }}
               className="space-y-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">

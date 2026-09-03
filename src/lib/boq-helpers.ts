@@ -5,6 +5,8 @@
 // matches this codebase's own established convention of keeping business
 // logic independently testable from the DB/network layer.
 
+import { formatMoney, formatSignedMoney } from "@/lib/format-money";
+
 export type Boq = {
   id: string;
   projectId: string;
@@ -17,22 +19,25 @@ export type Boq = {
 
 export type LineItemDraft = {
   description: string; unit: string; quantity: string; rate: string;
-  itemCode?: string; activityId?: string; parentItemCode?: string; breakdownPercentage?: string;
-  // R67 lane I (WS-I item I-05, R-177): the line's work category (Civil,
-  // Gypsum, ...). Optional and never required to Save -- a line with no
-  // category gets a "no category" chip, which is the item's explicit rule:
-  // surface the gap, never block on it.
+  // R67 lane I item I-05 (drizzle/0532) created the column; D-24 carries it
+  // through this grid. Optional -- a line without one reads as "Uncategorized"
+  // in the WPR's category-wise view and shows a "no category" chip rather than
+  // blocking Save. The PICKLIST is the org-editable
+  // compliance.construction_boq_categories table, read through
+  // BoqCategorySelect, not a list this module invents.
   category?: string;
+  itemCode?: string; activityId?: string; parentItemCode?: string; breakdownPercentage?: string;
 };
 
 // R67 lane I (WS-I item I-05): the chip shown beside a line that has no
-// category. One constant so the Create and Revise screens can never drift
-// into two different words for the same state.
+// category. One constant so the Create, Revise and Object screens can never
+// drift into three different words for the same state.
 export const NO_CATEGORY_CHIP_LABEL = "no category";
 
 export type BoqLineItemRow = {
   id: string; itemCode: string | null; description: string; unit: string;
   quantity: string; rate: string; amount: string; activityId: string | null;
+  category?: string | null;
   parentLineItemId?: string | null; breakdownPercentage?: string | null;
   // R39/R-C09: Point 154's budget overlay -- computedBudget is derived
   // server-side (amount * budgetPercentage / 100, construction-boq-
@@ -41,10 +46,11 @@ export type BoqLineItemRow = {
   computedBudget?: number | null;
   vendorId?: string | null;
   vendorAmount?: string | null;
-  // R67 lane I (WS-I items I-05 and I-03): the line's category, and the
-  // material/manpower split of its budget. All three are served by VERIDIAN's
-  // BOQ GET and written by the same PATCH /api/scope/line-items/{id}.
-  category?: string | null;
+  // R67 lane I (WS-I item I-03) / D-26: the other two thirds of Sumeet's
+  // budget model, the material/manpower split of this line. Served by
+  // VERIDIAN's BOQ GET and written by the same PATCH /api/scope/line-items/{id}
+  // that carries vendorAmount and category. null means NOT COSTED and renders
+  // as an en dash; "0" is a real, entered zero and renders as "AED 0.00".
   materialAmount?: string | null;
   manpowerAmount?: string | null;
 };
@@ -66,7 +72,7 @@ export const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructi
 };
 
 export const emptyLine = (): LineItemDraft => ({
-  description: "", unit: "", quantity: "", rate: "", itemCode: "", parentItemCode: "", breakdownPercentage: "", category: "",
+  description: "", unit: "", quantity: "", rate: "", category: "", itemCode: "", parentItemCode: "", breakdownPercentage: "",
 });
 
 export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
@@ -85,25 +91,33 @@ export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
     unit: row.unit,
     quantity: String(row.quantity),
     rate: String(row.rate),
+    category: row.category ?? "",
     itemCode: codeById.get(row.id),
     activityId: row.activityId ?? undefined,
     parentItemCode: row.parentLineItemId ? codeById.get(row.parentLineItemId) : undefined,
     breakdownPercentage: row.breakdownPercentage != null ? String(row.breakdownPercentage) : undefined,
-    // R67 lane I (I-05): a revision starts from the existing scope, so it must
-    // start from the existing CATEGORIES too -- dropping them here would
-    // uncategorise the whole BOQ the first time anyone revised it.
-    category: row.category ?? undefined,
   }));
 }
 
+// R67 G-05 / D-74: these three used `toLocaleString(undefined, ...)`, which
+// resolves to the RUNTIME's locale -- the deployment's on the server pass and
+// the visitor's in the browser. Two different strings for one BOQ amount is a
+// hydration mismatch, and neither of them is the organisation's form. They
+// now all route through THE money module, so a BOQ line and a Materials cell
+// on the same screen cannot disagree about how an amount is written.
+//
+// `pending: true` rather than an absent currency: these helpers are called
+// both with a resolved code and without one, and an absent code would print
+// the warning glyph in front of a figure whose currency the CALLER is showing
+// separately (ScopeCompareClient prefixes the code itself). "We were not told
+// here" is the honest state for a helper that takes the code as an argument.
 export function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${sign}${formatMoney(amount, { pending: true })}`;
 }
 
 export function formatAmount(value: string | number | null | undefined): string {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
+  return formatMoney(value ?? 0, { pending: true });
 }
 
 // Deliberately NOT currencyLabel() from the shared helper: that returns a
@@ -111,8 +125,16 @@ export function formatAmount(value: string | number | null | undefined): string 
 // on a UAE contractor's BOQ. Here an unresolved currency degrades to the bare
 // number instead - no label is survivable, the wrong label is not.
 export function withCurrency(code: string, value: string | number | null | undefined): string {
-  const n = formatAmount(value);
-  return code ? `${code} ${n}` : n;
+  return formatMoney(value ?? 0, { currency: code || null, pending: !code });
+}
+
+/**
+ * A BOQ variance with its DIRECTION readable without colour -- "▲ AED +2,025".
+ * The signed form the money module already owns; exported here so a BOQ screen
+ * reaching for it does not write a fourth one.
+ */
+export function formatSignedAmount(code: string, value: number | string | null | undefined): string {
+  return formatSignedMoney(value, { currency: code || null, pending: !code });
 }
 
 export function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {
@@ -157,52 +179,113 @@ export function boqTotal(rows: BoqLineItemRow[]): number {
   return rows.filter((r) => !r.parentLineItemId).reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
 }
 
+const val = (s: string | undefined) => (s ?? "").trim();
+
+/**
+ * R67 D-24. The line fields a human can be told to fix, and the ONE sentence
+ * each one is told with. Rendered under the offending input on blur AND (via
+ * missingBoqFields below) inside the primary's own disabled reason, so the two
+ * can never say different things about the same empty box.
+ */
+export type LineField = "description" | "unit" | "quantity" | "rate" | "breakdownPercentage";
+
+export const LINE_FIELD_MESSAGE: Record<LineField, string> = {
+  description: "Enter a description, e.g. Blockwork - external walls",
+  unit: "Enter the unit, e.g. sqm",
+  quantity: "Enter the quantity",
+  rate: "Enter the rate",
+  breakdownPercentage: "Enter a breakdown % for this sub-task",
+};
+
+/** The short label the same field carries inside a "Line 2 is incomplete — add ..." sentence. */
+export const LINE_FIELD_LABEL: Record<LineField, string> = {
+  description: "Description",
+  unit: "Unit",
+  quantity: "Qty",
+  rate: "Rate",
+  breakdownPercentage: "Breakdown %",
+};
+
+export const TITLE_REQUIRED_MESSAGE = "Enter a title, e.g. Civil Works - Phase 1";
+
+/** A row with NOTHING in it: ignorable. A row with ANY content is something a human meant. */
+export function isUntouchedLine(l: LineItemDraft): boolean {
+  return !val(l.description) && !val(l.unit) && !val(l.quantity) && !val(l.rate) &&
+    !val(l.category) && !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage);
+}
+
+/**
+ * A sub-task may leave Unit blank and inherit its parent's -- the real backend
+ * derives a child's quantity/rate from its root, and the unit follows the same
+ * chain. Returns "" when neither the line nor its named parent supplies one.
+ */
+export function unitForLine(lines: LineItemDraft[], index: number): string {
+  const line = lines[index];
+  const own = val(line?.unit);
+  if (own) return own;
+  const parentCode = val(line?.parentItemCode);
+  if (!parentCode) return "";
+  const parent = lines.find((p) => val(p.itemCode) === parentCode);
+  return parent ? val(parent.unit) : "";
+}
+
+/**
+ * Which fields of ONE line are still missing. A sub-line (one carrying a
+ * Parent Item Code) needs a Breakdown % instead of Qty/Rate, because the
+ * backend DERIVES a child's quantity and rate from its root ancestor
+ * (construction-boq-service.ts's canonical child-rate rule) -- asking for them
+ * would be asking for numbers that are then thrown away.
+ */
+export function lineMissingFields(lines: LineItemDraft[], index: number): LineField[] {
+  const line = lines[index];
+  if (!line) return [];
+  const missing: LineField[] = [];
+  if (!val(line.description)) missing.push("description");
+  if (!unitForLine(lines, index)) missing.push("unit");
+  if (val(line.parentItemCode)) {
+    if (!val(line.breakdownPercentage)) missing.push("breakdownPercentage");
+  } else {
+    if (!val(line.quantity)) missing.push("quantity");
+    if (!val(line.rate)) missing.push("rate");
+  }
+  return missing;
+}
+
+/**
+ * R67 D-24. What the primary's disabled reason names, in the exact
+ * "Save (Title, Line 1)" shape /labour/new already ships -- instead of an
+ * enabled Save on an empty form that fails only after the click.
+ *
+ * Line 1 is always required (a BOQ screen with no usable line is not something
+ * a user meant to save here); every later line is only named once it has been
+ * touched, so "+ Add Line" never immediately disables Save.
+ */
+export function missingBoqFields(title: string, lines: LineItemDraft[]): string[] {
+  const missing: string[] = [];
+  if (!val(title)) missing.push("Title");
+  lines.forEach((line, i) => {
+    if (i > 0 && isUntouchedLine(line)) return;
+    if (lineMissingFields(lines, i).length > 0) missing.push(`Line ${i + 1}`);
+  });
+  return missing;
+}
+
 // R47-003 (fault R47_SILENT_DROP_01): the distinction that matters is
 // UNTOUCHED vs INCOMPLETE. A wholly blank row must stay ignorable; a row
 // with ANY content is something a human meant, and dropping it silently is
 // never the right answer. Returns the rows to submit, or a message naming
 // the offending row.
 export function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: string | null } {
-  const val = (s: string | undefined) => (s ?? "").trim();
-  // R67 lane I (I-05): `category` counts as content. A row where the only
-  // thing the user did was pick a category is a row they MEANT -- dropping it
-  // silently is exactly the R47_SILENT_DROP_01 failure this function exists to
-  // prevent. It is still never REQUIRED (see missingFrom below): a line with
-  // no category saves fine and shows a "no category" chip.
-  const isUntouched = (l: LineItemDraft) =>
-    !val(l.description) && !val(l.unit) && !val(l.quantity) && !val(l.rate) &&
-    !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage) && !val(l.category);
-
-  const unitFor = (l: LineItemDraft): string => {
-    const own = val(l.unit);
-    if (own) return own;
-    const parentCode = val(l.parentItemCode);
-    if (!parentCode) return "";
-    const parent = lines.find((p) => val(p.itemCode) === parentCode);
-    return parent ? val(parent.unit) : "";
-  };
-
-  const missingFrom = (l: LineItemDraft): string[] => {
-    const missing: string[] = [];
-    if (!val(l.description)) missing.push("Description");
-    if (!unitFor(l)) missing.push("Unit");
-    if (val(l.parentItemCode)) {
-      if (!val(l.breakdownPercentage)) missing.push("Breakdown %");
-    } else {
-      if (!val(l.quantity)) missing.push("Qty");
-      if (!val(l.rate)) missing.push("Rate");
-    }
-    return missing;
-  };
-
   const valid: LineItemDraft[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (isUntouched(lines[i])) continue;
-    const missing = missingFrom(lines[i]);
+    if (isUntouchedLine(lines[i])) continue;
+    // R67 D-24: the same lineMissingFields() the on-blur field messages and
+    // the Save button's own reason read, so the three can never disagree.
+    const missing = lineMissingFields(lines, i);
     if (missing.length > 0) {
-      return { valid: [], error: `Line ${i + 1} is incomplete — add ${missing.join(", ")}. Nothing was saved.` };
+      return { valid: [], error: `Line ${i + 1} is incomplete — add ${missing.map((f) => LINE_FIELD_LABEL[f]).join(", ")}. Nothing was saved.` };
     }
-    valid.push({ ...lines[i], unit: unitFor(lines[i]) });
+    valid.push({ ...lines[i], unit: unitForLine(lines, i) });
   }
   // Sumeet audit fix (2026-08-30, requirement #3): a submission where every
   // row is genuinely blank is a legitimate title-only, zero-line BOQ -- the
@@ -213,13 +296,10 @@ export function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; 
 export function toPayloadLineItems(validLines: LineItemDraft[]) {
   return validLines.map((l) => ({
     description: l.description, unit: l.unit, quantity: Number(l.quantity), rate: Number(l.rate),
+    ...(l.category?.trim() ? { category: l.category.trim() } : {}),
     ...(l.itemCode?.trim() ? { itemCode: l.itemCode.trim() } : {}),
     ...(l.activityId ? { activityId: l.activityId } : {}),
     ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
     ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
-    // R67 lane I (I-05): omitted entirely when blank, so the server's own
-    // normalizeCategory stores NULL rather than an empty string -- "" and null
-    // must never become two different "no category" values in one column.
-    ...(l.category?.trim() ? { category: l.category.trim() } : {}),
   }));
 }

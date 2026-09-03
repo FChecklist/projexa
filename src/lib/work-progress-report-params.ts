@@ -1,54 +1,152 @@
-// R67 E-03 (R-072/R-073/R-076/R-077), implementing binding decision D-02:
-// "the one WPR lives at /work-progress?tab=report with from, to, view and
-// boqVersion in the URL and runs on arrival".
+// R67 D-02 -- ONE Work Progress Report.
 //
-// The rules that decide WHICH range it runs on arrival live here, pure, for
-// two reasons. First, correction C-04 records that today's screen shows "Pick
-// a date range and click Run Report." over a range that is already filled --
-// so the defaulting rule is the thing being fixed and it needs assertions, not
-// a re-reading of JSX. Second, defaultFrom() as shipped gives a TWO-DAY window
-// on the 2nd of a month, which looks like an empty report rather than a narrow
-// one; the fallback chain below is what replaces it.
+// DECISION D-02, verbatim: "The WPR is /work-progress?tab=report with
+// parameters in the URL (from, to, view, boqVersion) and it runs on arrival.
+// The Reports module's 'Work Progress' picker entry and the Full Catalog row
+// both navigate to that route."
+//
+// Correction C-04 is what makes "runs on arrival" a fix rather than a
+// preference: today the range is ALREADY filled in when the tab opens, and the
+// screen still says "Pick a date range and click Run Report" -- three clicks to
+// see the current month that the screen could have shown on arrival.
+//
+// Everything here is pure and server-safe: the page reads searchParams through
+// parseWprParams, the client writes them back through wprSearchParams, and the
+// Reports module builds its link through workProgressReportHref. One place, so
+// the picker, the catalog row and the tab itself cannot disagree about what
+// the WPR's URL looks like.
 
-/** The report's own view tabs. Kept in the URL so a shared link opens the tab that was shared. */
-export const REPORT_VIEWS = ["scope", "category", "manpower", "vendor"] as const;
-export type ReportView = (typeof REPORT_VIEWS)[number];
+export const WPR_VIEWS = ["scope", "category", "manpower", "vendor"] as const;
+export type WprView = (typeof WPR_VIEWS)[number];
 
-export type ThirdColumnMode = "total" | "balance";
-
-export type ReportParams = {
+export type WprParams = {
+  /** ISO yyyy-mm-dd, inclusive. */
   from: string;
+  /** ISO yyyy-mm-dd, inclusive. */
   to: string;
-  view: ReportView;
-  /** The BOQ id chosen in the URL. Empty string = let the server auto-pick the latest non-superseded one. */
-  boqVersion: string;
+  view: WprView;
+  /** The BOQ version to report on; null lets the server pick the latest live one. */
+  boqVersion: number | null;
 };
 
-/** YYYY-MM-DD for a Date, in UTC -- never toLocaleDateString, which would shift the day for half the world. */
-export function isoDay(d: Date): string {
-  return d.toISOString().slice(0, 10);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Local-calendar yyyy-mm-dd. Deliberately NOT toISOString(), which shifts to UTC. */
+export function isoDate(date: Date): string {
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** A date input's value is only ever YYYY-MM-DD; anything else in the URL is someone's typo, not a range. */
+/**
+ * The range the report opens with: the first of the current month to today --
+ * the same window the screen already pre-filled before D-02, now actually run
+ * rather than described.
+ */
+export function defaultWprRange(today: Date): { from: string; to: string } {
+  return {
+    from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)),
+    to: isoDate(today),
+  };
+}
+
+function readView(raw: string | undefined): WprView {
+  return (WPR_VIEWS as readonly string[]).includes(raw ?? "") ? (raw as WprView) : "scope";
+}
+
+function readBoqVersion(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Reads the four report parameters off a URL. Anything absent or unusable
+ * falls back to the default rather than blocking the run -- a bad bookmark
+ * still shows the current month, which is the honest behaviour for a report
+ * that has a real default.
+ */
+export function parseWprParams(
+  search: { from?: string; to?: string; view?: string; boqVersion?: string },
+  today: Date
+): WprParams {
+  const fallback = defaultWprRange(today);
+  return {
+    from: search.from && ISO_DATE.test(search.from) ? search.from : fallback.from,
+    to: search.to && ISO_DATE.test(search.to) ? search.to : fallback.to,
+    view: readView(search.view),
+    boqVersion: readBoqVersion(search.boqVersion),
+  };
+}
+
+/**
+ * The report's own parameters as URL search params -- `tab=report` included,
+ * because the report IS a tab of /work-progress and a link that omits it lands
+ * the user on Daily Entry.
+ */
+export function wprSearchParams(params: WprParams, projectId?: string | null): URLSearchParams {
+  const search = new URLSearchParams();
+  if (projectId) search.set("projectId", projectId);
+  search.set("tab", "report");
+  search.set("from", params.from);
+  search.set("to", params.to);
+  search.set("view", params.view);
+  if (params.boqVersion !== null) search.set("boqVersion", String(params.boqVersion));
+  return search;
+}
+
+/**
+ * The one URL every entry point to the Work Progress Report uses: the Report
+ * tab itself, the Reports picker, and the Full Catalog row.
+ */
+export function workProgressReportHref(
+  projectId: string | null,
+  params?: Partial<WprParams>,
+  today: Date = new Date()
+): string {
+  const base = parseWprParams({}, today);
+  const merged: WprParams = { ...base, ...params };
+  return `/work-progress?${wprSearchParams(merged, projectId).toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// MERGE NOTE (2026-09-03). Items D-02 and E-03/E-17/E-20 both landed a module
+// at this path, for the same decision D-02. This file is the union, converged
+// on ONE set of names:
+//
+//   * D-02's WPR_VIEWS / WprParams / parseWprParams / wprSearchParams /
+//     workProgressReportHref above are the canon for what the URL looks like.
+//     They are what the server page reads, so they stay exactly as they are.
+//   * E-03/E-17/E-20's caption, period-chip, WhatsApp and run-state helpers
+//     below are what the SCREEN owes the reader. D-02 has no equivalent.
+//
+// D-02's projexaReportDestination moved OUT of this file to
+// report-destinations.ts. Two modules answering "where does this report name
+// go" is the defect R-079 records; there is now one table, and it is the one
+// the picker, the Full Catalog and the timeout card all resolve through.
+// ---------------------------------------------------------------------------
+
+/** True for a real YYYY-MM-DD. */
 export function isIsoDay(value: string | null | undefined): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-export function isReportView(value: string | null | undefined): value is ReportView {
-  return typeof value === "string" && (REPORT_VIEWS as readonly string[]).includes(value);
-}
+/** D-02's isoDate under E-03's name, so both halves of this file read alike. */
+export const isoDay = isoDate;
 
 /**
- * The From date, when the URL does not carry one.
+ * R67 E-03 (R-024). WHERE THE REPORT STARTS WHEN NOBODY SAID.
  *
- * The chain, in the item's own order: the earliest entry date actually
- * recorded against this project, then the project's start date, then 1 January
- * of the current year. Every step is a real date this project owns; none of
- * them is "the 1st of this month", which is what produced a two-day window on
- * the 2nd of a month and made a busy project look idle.
+ * D-02's defaultWprRange opens on the first of the current month, which is the
+ * window the screen used to pre-fill. E-03 replaces it for the ARRIVAL case
+ * specifically, and the reason is a real one: a fit-out job that logged its
+ * last progress in July shows an EMPTY report on 2 September, and an empty
+ * report reads as "nothing was ever done here" rather than "you are looking at
+ * the wrong fortnight".
  *
- * `today` is passed in rather than read from the clock so this is testable and
- * so the caller's notion of "today" is the same one the To date uses.
+ * So: the earliest entry actually recorded, else the project's start date,
+ * else 1 January of the current year. defaultWprRange is untouched and is
+ * still what a caller with no project context (workProgressReportHref) uses.
  */
 export function resolveDefaultFrom(input: {
   earliestEntryDate?: string | null;
@@ -61,39 +159,33 @@ export function resolveDefaultFrom(input: {
 }
 
 /**
- * Resolves the four parameters from the URL, filling in only what is missing.
- * A value the URL DOES carry is always honoured, including a From later than
- * the To -- narrowing to nothing is a legitimate thing to ask for, and
- * silently "correcting" a shared link would be worse than an empty report,
- * which the screen states in words anyway.
+ * parseWprParams with E-03's arrival default: a value the URL DOES carry is
+ * always honoured (including a From later than the To -- narrowing to nothing
+ * is a legitimate thing to ask for, and silently "correcting" a shared link
+ * would be worse than the empty report the screen states in words anyway).
+ * Only a MISSING From falls back to the project's own history.
  */
-export function resolveReportParams(
-  search: { get(key: string): string | null },
+export function resolveWprParams(
+  search: { from?: string; to?: string; view?: string; boqVersion?: string },
   fallback: { earliestEntryDate?: string | null; projectStartDate?: string | null; today: string }
-): ReportParams {
-  const from = search.get("from");
-  const to = search.get("to");
-  const view = search.get("view");
+): WprParams {
+  const parsed = parseWprParams(search, utcDayFromIso(fallback.today));
   return {
-    from: isIsoDay(from) ? from : resolveDefaultFrom(fallback),
-    to: isIsoDay(to) ? to : fallback.today,
-    view: isReportView(view) ? view : "scope",
-    boqVersion: search.get("boqVersion") ?? "",
+    ...parsed,
+    from: isIsoDay(search.from) ? search.from : resolveDefaultFrom(fallback),
+    to: isIsoDay(search.to) ? search.to : fallback.today,
   };
 }
 
-/**
- * "1 Jan 2026" -- the caption's date shape.
- *
- * Written out rather than via Intl on purpose. `toLocaleDateString("en-GB",
- * { month: "short" })` returns "Sept" for September on a current ICU and "Sep"
- * on an older one, so the caption -- which is also the first line of the CSV
- * and the PDF -- would differ between the browser, the server render and a
- * colleague's machine. A fixed table has one answer everywhere, and the
- * arithmetic is a string slice: no Date object, so no timezone can move the
- * day (a local-time parse of "2026-01-01" renders 31 Dec anywhere west of
- * Greenwich).
- */
+/** A YYYY-MM-DD read as a LOCAL calendar day, so parseWprParams's own local-time defaults line up with it. */
+function utcDayFromIso(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+/** E-03's third-column mode. Not a URL parameter -- a display toggle the caption states. */
+export type ThirdColumnMode = "total" | "balance";
+
 const CAPTION_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
 export function captionDate(iso: string): string {

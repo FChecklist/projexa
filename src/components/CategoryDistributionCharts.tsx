@@ -159,7 +159,20 @@ export function CategoryDistributionChartsView({
   );
 }
 
-export function CategoryDistributionCharts({ projectId }: { projectId: string }) {
+export function CategoryDistributionCharts({
+  projectId,
+  companyId,
+}: {
+  projectId: string;
+  /**
+   * R67 MERGE (2026-09-03): the Company Dashboard renders this panel for a
+   * project inside a company the reader chose, and the read has to be scoped
+   * to that company's org -- otherwise a member of two orgs would see the
+   * wrong org's categories under the right project's name. Omitted everywhere
+   * else, where the caller's own org is the scope.
+   */
+  companyId?: string;
+}) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const orgMoney = useOrgMoney();
@@ -167,14 +180,16 @@ export function CategoryDistributionCharts({ projectId }: { projectId: string })
   useEffect(() => {
     setCategories(null);
     setError(false);
-    fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`)
+    const query = new URLSearchParams({ projectId });
+    if (companyId) query.set("companyId", companyId);
+    fetch(`/api/reports/category-progress?${query.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error(`category-progress fetch failed: ${res.status}`);
         return res.json();
       })
       .then((data) => setCategories(data?.categories ?? []))
       .catch(() => setError(true));
-  }, [projectId]);
+  }, [projectId, companyId]);
 
   // A failed read and a genuinely empty BOQ are DIFFERENT answers and must
   // never render the same way -- the whole reason this component has had a

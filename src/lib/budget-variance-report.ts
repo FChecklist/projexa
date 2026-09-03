@@ -166,14 +166,20 @@ export type VarianceBar = {
  * A row with nothing costed yet carries variance null and is LEFT OUT rather
  * than drawn at zero -- a bar at the origin reads as "on budget", which is a
  * claim nobody made.
+ *
+ * R67 D-26 (merged 2026-09-03): `variance` is BUDGET REMAINING, so a NEGATIVE
+ * figure is the overrun. "Sorted by variance descending" therefore puts the
+ * healthiest rows first, which is the wrong way round for a chart whose job is
+ * "which trade is over" -- so the sort is ASCENDING on the new sign, which is
+ * the same worst-first order R-115 asked for.
  */
 export function varianceBars(rows: RevenueBudgetActualRow[]): VarianceBar[] {
   return rows
     .filter((r): r is RevenueBudgetActualRow & { variance: number } => r.variance !== null)
     .slice()
-    .sort((a, b) => b.variance - a.variance)
+    .sort((a, b) => a.variance - b.variance)
     .map((r) => {
-      const over = r.variance > 0;
+      const over = r.variance < 0;
       return {
         key: r.key,
         label: r.item,

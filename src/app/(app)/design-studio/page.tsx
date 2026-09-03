@@ -1,76 +1,68 @@
-import Link from "next/link";
-import { PageHeading } from "@/components/PageHeading";
+import DesignStudioTimesheetClient from "@/components/DesignStudioTimesheetClient";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ProjectLoadError from "@/components/ProjectLoadError";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import DesignStudioCostAnalysisClient from "@/components/DesignStudioCostAnalysisClient";
+import { todayIso } from "@/lib/design-studio-timesheet";
 
-// R67 E-16 (R-150). DESIGN STUDIO.
+// R67 D-07 -- the Design Studio timesheet, decision D-07: "A day grid, one row
+// per task, in Sumeet's exact columns Date | Project | Category | Task | Hours
+// with status at row level (Draft / Submitted / Approved / Sent back); the week
+// view is a filter over the same rows, not a second grid."
 //
-// compliance-tracker's designerTimesheetReport has computed four Budget-vs-
-// Actual breakdowns since PR #597 -- by category, by designer, by project and
-// by designer status -- and no PROJEXA screen showed a single one of them. Cost
-// Analysis is that screen, and this route is where it lives.
+// The route is new; the DATA is not. It reuses ScheduleTimesheetClient's data
+// layer (GET /api/timesheets, over compliance-tracker's pms-time-service.ts)
+// rather than adding a second read of the same hours. compliance-tracker has a
+// route of the same name; that one is VERIDIAN's floor-plan and mood-board hub,
+// a different screen entirely, and is deliberately not treated as this module
+// having already shipped.
 //
-// WHY THIS ROUTE EXISTS HERE. /design-studio existed only in compliance-tracker
-// (its own src/app/(app)/design-studio/page.tsx); PROJEXA had no such route at
-// all, so a "Cost Analysis tab on /design-studio" had nowhere to mount. The
-// Timesheet tab below is DELIBERATELY a link to the screen that really holds
-// the day grid today -- Schedule > Timesheet -- rather than a second, emptier
-// copy of it: naming a tab and then rendering a placeholder under it is exactly
-// the "not yet viewable here" defect this whole workstream is closing. When the
-// Design Studio timesheet grid of binding decision D-07 lands, it replaces that
-// link in place, and the Cost Analysis tab is untouched.
+// Decision D-04, Option A: the project resolves server-side, so the org's
+// VERIDIAN key never reaches the browser. `today` is resolved here too -- the
+// grid's day must not depend on the visitor's clock, which is the same
+// hydration rule src/lib/format-date.ts pins its locale and time zone for.
+//
+// MERGE NOTE (D-11): lane D0's page is the base -- its server-resolved `today`
+// and its errorMessage / no-project / data states are kept verbatim. Lane H
+// adds the project LIST (the add-row's Project select needs it) and the module's
+// three tabs, which live inside the client.
 export default async function DesignStudioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string }>;
+  searchParams: Promise<{ projectId?: string }>;
 }) {
-  const { projectId, tab } = await searchParams;
+  const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, projects, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+
+  if (errorMessage) {
+    return (
+      <div className="flex-1 p-6">
+        <ProjectLoadError message={`Could not load projects: ${errorMessage}`} />
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex-1 p-6">
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-px-muted">
+            Choose a project in the top bar to see its timesheet.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Design Studio" />
-
-      {errorMessage && (
-        <Card className="border-px-error-border bg-px-error-light">
-          <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-        </Card>
-      )}
-      {!errorMessage && !project && (
-        <Card>
-          <CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent>
-        </Card>
-      )}
-
-      {project && (
-        <Tabs defaultValue={tab === "timesheet" ? "timesheet" : "cost-analysis"} className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="cost-analysis">Cost Analysis</TabsTrigger>
-            <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
-          </TabsList>
-          <TabsContent value="cost-analysis">
-            <DesignStudioCostAnalysisClient projectId={project.id} projectName={project.name} />
-          </TabsContent>
-          <TabsContent value="timesheet">
-            <Card>
-              <CardContent className="space-y-2 p-6 text-sm text-px-muted">
-                <p>Designer time is logged and reviewed on the Schedule screen&apos;s Timesheet tab.</p>
-                <Link
-                  href={`/schedule?tab=timesheet&projectId=${encodeURIComponent(project.id)}`}
-                  className="inline-flex text-px-teal underline"
-                  data-testid="design-studio-timesheet-link"
-                >
-                  Open Schedule &gt; Timesheet
-                </Link>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      )}
+    <div className="min-h-0 flex-1">
+      <DesignStudioTimesheetClient
+        projectId={project.id}
+        projectName={project.name}
+        projects={projects}
+        today={todayIso(new Date())}
+      />
     </div>
   );
 }

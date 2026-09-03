@@ -9,6 +9,7 @@ import {
   catalogSlug,
   isHostedReport,
   monthToDate,
+  projexaReportDestination,
   reportDestination,
 } from "./report-destinations";
 
@@ -97,5 +98,31 @@ describe("monthToDate", () => {
 
   test("on the 1st, from and to are the same day -- a real one-day window, not an empty one", () => {
     expect(monthToDate(new Date("2026-09-01T10:00:00Z"))).toEqual({ from: "2026-09-01", to: "2026-09-01" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 D-02's own assertions, moved here with projexaReportDestination at the
+// merge (2026-09-03). They test the table in this module, so they belong to
+// this module's test -- and they now also prove that lane D's entry point and
+// lane E's reportDestination() read ONE table rather than two.
+// ---------------------------------------------------------------------------
+describe("projexaReportDestination", () => {
+  test("the Reports picker entry navigates to the Work Progress Report tab", () => {
+    const href = projexaReportDestination({ id: "work-progress" }, "proj-1");
+    expect(href).not.toBeNull();
+    expect(href!.startsWith("/work-progress?")).toBe(true);
+    expect(new URLSearchParams(href!.split("?")[1]).get("tab")).toBe("report");
+  });
+
+  test("the Full Catalog row, which carries the human name, resolves to the same route", () => {
+    expect(projexaReportDestination({ id: "static-42", name: "Work Progress Report" }, "proj-1")).toBe(
+      projexaReportDestination({ id: "work-progress" }, "proj-1")
+    );
+  });
+
+  test("every other report runs where it is", () => {
+    expect(projexaReportDestination({ id: "attendance", name: "Attendance" }, "proj-1")).toBeNull();
+    expect(projexaReportDestination({ id: "budget-vs-actual", name: "Budget vs Actual" }, null)).toBeNull();
   });
 });

@@ -129,13 +129,18 @@ describe("the table's rows", () => {
 });
 
 describe("varianceBars (R67 E-08)", () => {
+  // R67 D-26 (merged 2026-09-03): `variance` is BUDGET REMAINING -- budget
+  // minus actual -- so Civil, which spent 90 of 100, is +10 UNDER and MEP,
+  // which spent 140 of 100, is -40 OVER. The figures below are that
+  // arithmetic; the assertions are unchanged, because "worst overrun first"
+  // and "40 over budget" are the same facts either way round.
   const rows: RevenueBudgetActualRow[] = [
-    { key: "a", item: "Civil", description: "", category: "Civil", revenue: 0, budget: 100, actual: 90, variance: -10, percentUsed: 90, lineItemId: null, lineCount: 1 },
-    { key: "b", item: "MEP", description: "", category: "MEP", revenue: 0, budget: 100, actual: 140, variance: 40, percentUsed: 140, lineItemId: null, lineCount: 1 },
+    { key: "a", item: "Civil", description: "", category: "Civil", revenue: 0, budget: 100, actual: 90, variance: 10, percentUsed: 90, lineItemId: null, lineCount: 1 },
+    { key: "b", item: "MEP", description: "", category: "MEP", revenue: 0, budget: 100, actual: 140, variance: -40, percentUsed: 140, lineItemId: null, lineCount: 1 },
     { key: "c", item: "Joinery", description: "", category: "Joinery", revenue: 0, budget: 100, actual: null, variance: null, percentUsed: null, lineItemId: null, lineCount: 1 },
   ];
 
-  test("sorted by variance descending -- the worst overrun first", () => {
+  test("sorted worst-overrun-first -- the row a QS has to act on is at the top", () => {
     expect(varianceBars(rows).map((b) => b.label)).toEqual(["MEP", "Civil"]);
   });
 

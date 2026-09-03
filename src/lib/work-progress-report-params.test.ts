@@ -11,7 +11,7 @@ import {
   periodPresetRange,
   reportCaption,
   resolveDefaultFrom,
-  resolveReportParams,
+  resolveWprParams,
   THIRD_COLUMN_NOTE,
   whatsappHref,
   whatsappMessage,
@@ -20,9 +20,9 @@ import {
   WPR_STILL_RUNNING_NOTE,
 } from "./work-progress-report-params";
 
-/** A stand-in for URLSearchParams that is explicit about what the URL carries. */
+/** What the URL carries, as the merged resolver reads it. */
 function search(entries: Record<string, string> = {}) {
-  return { get: (k: string) => (k in entries ? entries[k] : null) };
+  return entries;
 }
 
 const TODAY = "2026-09-02";
@@ -51,33 +51,35 @@ describe("resolveDefaultFrom", () => {
   });
 });
 
-describe("resolveReportParams", () => {
+describe("resolveWprParams", () => {
   test("with an empty URL, the report still has a real range to run on arrival", () => {
-    const params = resolveReportParams(search(), { earliestEntryDate: "2026-01-15", today: TODAY });
-    expect(params).toEqual({ from: "2026-01-15", to: TODAY, view: "scope", boqVersion: "" });
+    const params = resolveWprParams(search(), { earliestEntryDate: "2026-01-15", today: TODAY });
+    expect(params).toEqual({ from: "2026-01-15", to: TODAY, view: "scope", boqVersion: null });
   });
 
   test("every parameter the URL carries is honoured -- the URL is the state", () => {
-    const params = resolveReportParams(
-      search({ from: "2026-02-01", to: "2026-02-28", view: "category", boqVersion: "boq_7" }),
+    const params = resolveWprParams(
+      search({ from: "2026-02-01", to: "2026-02-28", view: "category", boqVersion: "7" }),
       { today: TODAY }
     );
-    expect(params).toEqual({ from: "2026-02-01", to: "2026-02-28", view: "category", boqVersion: "boq_7" });
+    // R67 D-02: the BOQ rides in the URL as a stable, readable VERSION rather
+    // than a cuid, so a pasted link says which revision it is about.
+    expect(params).toEqual({ from: "2026-02-01", to: "2026-02-28", view: "category", boqVersion: 7 });
   });
 
   test("a junk view falls back to the scope tab rather than rendering nothing", () => {
-    expect(resolveReportParams(search({ view: "nonsense" }), { today: TODAY }).view).toBe("scope");
+    expect(resolveWprParams(search({ view: "nonsense" }), { today: TODAY }).view).toBe("scope");
   });
 
   test("a junk date falls back to the computed default rather than reaching the query", () => {
-    const params = resolveReportParams(search({ from: "01/02/2026" }), { earliestEntryDate: "2026-01-15", today: TODAY });
+    const params = resolveWprParams(search({ from: "01/02/2026" }), { earliestEntryDate: "2026-01-15", today: TODAY });
     expect(params.from).toBe("2026-01-15");
   });
 
   test("a From later than the To is honoured, not silently 'corrected'", () => {
     // Narrowing to nothing is a legitimate request, and the screen states an
     // empty result in words. Rewriting someone's shared link would be worse.
-    const params = resolveReportParams(search({ from: "2026-09-02", to: "2026-01-01" }), { today: TODAY });
+    const params = resolveWprParams(search({ from: "2026-09-02", to: "2026-01-01" }), { today: TODAY });
     expect(params.from).toBe("2026-09-02");
     expect(params.to).toBe("2026-01-01");
   });
@@ -207,5 +209,89 @@ describe("the run's own state, in words (R67 E-17)", () => {
   test("after twenty seconds the screen says what it thinks is happening -- and does NOT abort", () => {
     expect(WPR_STILL_RUNNING_MS).toBe(20_000);
     expect(WPR_STILL_RUNNING_NOTE).toBe("Still running – the data service is slow; you can keep waiting or cancel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MERGE NOTE (2026-09-03): lane D's sibling test for the same module. Both
+// halves are pure static-import tests, so they live in one file. Its
+// projexaReportDestination block moved with the function itself to
+// report-destinations.test.ts -- there is one destination table now, so there
+// is one test for it.
+// ---------------------------------------------------------------------------
+
+// R67 D-02 -- one Work Progress Report, its parameters in the URL, run on
+// arrival (decision D-02, correction C-04).
+import {
+  defaultWprRange,
+  isoDate,
+  parseWprParams,
+  workProgressReportHref,
+  wprSearchParams,
+} from "./work-progress-report-params";
+
+// A fixed local date so every assertion below is deterministic on any machine.
+const TODAY_DATE = new Date(2026, 8, 2); // 2 September 2026, local calendar
+
+describe("defaultWprRange", () => {
+  test("opens on the first of the current month through today", () => {
+    expect(defaultWprRange(TODAY_DATE)).toEqual({ from: "2026-09-01", to: "2026-09-02" });
+  });
+
+  test("uses the local calendar, not UTC -- a date near midnight must not slide a day", () => {
+    expect(isoDate(new Date(2026, 0, 1, 23, 30))).toBe("2026-01-01");
+  });
+});
+
+describe("parseWprParams", () => {
+  test("an empty URL yields the default month-to-date, scope view, server-picked BOQ", () => {
+    expect(parseWprParams({}, TODAY_DATE)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-02",
+      view: "scope",
+      boqVersion: null,
+    });
+  });
+
+  test("real parameters survive a round trip through the URL", () => {
+    const parsed = parseWprParams(
+      { from: "2026-07-01", to: "2026-07-31", view: "manpower", boqVersion: "3" },
+      TODAY_DATE
+    );
+    expect(parsed).toEqual({ from: "2026-07-01", to: "2026-07-31", view: "manpower", boqVersion: 3 });
+  });
+
+  test("a malformed bookmark still shows the current month rather than failing to run", () => {
+    const parsed = parseWprParams(
+      { from: "01/07/2026", to: "not-a-date", view: "nonsense", boqVersion: "-2" },
+      TODAY_DATE
+    );
+    expect(parsed).toEqual({ from: "2026-09-01", to: "2026-09-02", view: "scope", boqVersion: null });
+  });
+});
+
+describe("wprSearchParams", () => {
+  test("always carries tab=report, so a link never lands on Daily Entry", () => {
+    const search = wprSearchParams(parseWprParams({}, TODAY_DATE), "proj-1");
+    expect(search.get("tab")).toBe("report");
+    expect(search.get("projectId")).toBe("proj-1");
+    expect(search.get("from")).toBe("2026-09-01");
+    expect(search.get("view")).toBe("scope");
+  });
+
+  test("omits boqVersion when the server is to pick the BOQ", () => {
+    expect(wprSearchParams(parseWprParams({}, TODAY_DATE), null).has("boqVersion")).toBe(false);
+    expect(wprSearchParams({ ...parseWprParams({}, TODAY_DATE), boqVersion: 2 }, null).get("boqVersion")).toBe("2");
+  });
+});
+
+describe("workProgressReportHref", () => {
+  test("is the /work-progress Report tab, with the parameters in the URL", () => {
+    const href = workProgressReportHref("proj-1", { view: "category" }, TODAY_DATE);
+    expect(href.startsWith("/work-progress?")).toBe(true);
+    const search = new URLSearchParams(href.split("?")[1]);
+    expect(search.get("projectId")).toBe("proj-1");
+    expect(search.get("tab")).toBe("report");
+    expect(search.get("view")).toBe("category");
   });
 });

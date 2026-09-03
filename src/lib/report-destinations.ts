@@ -71,11 +71,15 @@ const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
   // Budget-vs-Actual breakdowns need the four stacked sections and the paired
   // bars that screen draws; rendering them inside the Reports frame would be a
   // second, poorer copy of the same report.
+  // MERGE (2026-09-03): lane H gave Cost Analysis a REAL ROUTE of its own
+  // rather than the ?tab= E-16 first wrote, so a manager can be sent straight
+  // to it. This table now names that route -- one destination, and it is the
+  // one src/lib/nav-routes.ts ships.
   "designer-timesheet": ({ projectId, from, to }) => {
-    const qs = new URLSearchParams({ tab: "cost-analysis", projectId });
+    const qs = new URLSearchParams({ projectId });
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
-    return `/design-studio?${qs.toString()}`;
+    return `/design-studio/cost-analysis?${qs.toString()}`;
   },
   "budget-summary": ({ projectId, category, vendorId }) => {
     const qs = new URLSearchParams({ tab: "variance", projectId });
@@ -85,6 +89,14 @@ const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
     if (vendorId) qs.set("vendorId", vendorId);
     return `/scope?${qs.toString()}`;
   },
+  // R67 D-31 (R-090), folded in at the merge. The Attendance Report and the
+  // Manpower Cost Report both said "Not yet viewable here" while the SAME
+  // numbers were live on the Manpower screen's trade-wise summary -- three
+  // answers to "where is my attendance report". Lane D put these two in its
+  // own override table inside work-progress-report-params.ts; they belong in
+  // THIS table, which exists precisely so there is one of them.
+  "construction-attendance": () => "/labour?tab=attendance",
+  "construction-manpower-cost": () => "/labour?tab=attendance",
 };
 
 /** True when this report has a screen of its own. */
@@ -185,4 +197,43 @@ export function monthToDate(today: Date = new Date()): { from: string; to: strin
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const first = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
   return { from: iso(first), to: iso(today) };
+}
+
+// ---------------------------------------------------------------------------
+// R67 D-02's entry point, moved here at the merge (2026-09-03).
+//
+// Lane D shipped projexaReportDestination inside work-progress-report-params
+// .ts with its own three-entry override table. Keeping both would have left
+// the product with TWO tables answering "where does this report name go" --
+// the exact condition R-079 measured. The table above is now the only one; the
+// function keeps its name and its signature so lane D's callers and its tests
+// are unchanged, and its two labour entries were folded in above.
+//
+// It answers for a CATALOG ENTRY (which carries an id and a human name) rather
+// than a picker slug, which is why it slugifies both and tries each: the
+// picker stores the API path segment ("work-progress"), the catalog stores the
+// name ("Work Progress Report"), and both mean one report.
+// ---------------------------------------------------------------------------
+
+function slugify(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/**
+ * The PROJEXA route a report entry should navigate to instead of being run in
+ * place, or null when the entry runs where it is.
+ */
+export function projexaReportDestination(
+  entry: { id?: string; name?: string },
+  projectId: string | null
+): string | null {
+  const candidates = [entry.id, entry.name].filter((v): v is string => typeof v === "string" && v.length > 0);
+  for (const candidate of candidates) {
+    const slug = slugify(candidate);
+    // The trailing "-report" is dropped before the lookup rather than
+    // duplicating every key in the table above.
+    const hosted = HOSTED_REPORTS[slug] ?? HOSTED_REPORTS[slug.replace(/-report$/, "")];
+    if (hosted) return hosted({ projectId: projectId ?? "" });
+  }
+  return null;
 }

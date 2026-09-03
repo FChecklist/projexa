@@ -118,7 +118,12 @@ function CatalogCard({
   onOpenProjectReport?: (slug: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-
+  // R67 D-02: a catalog row for a report PROJEXA already renders itself is a
+  // link to that screen, not a "not yet viewable here" card. That lookup is
+  // catalogDestination() below -- ONE table (src/lib/report-destinations.ts),
+  // so the picker above and this row can never send the same name to two
+  // different destinations. D-02's own projexaReportDestination now resolves
+  // through that same table.
   // R67 E-04 (R-079): "the Full Catalog says 'Not yet viewable here'" was the
   // third of three contradicting answers to "where is my Work Progress
   // Report?" -- said about a report the reader can run in 2.7 s one tab away.

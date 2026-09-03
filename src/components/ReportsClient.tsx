@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,6 +63,14 @@ import {
   shareDisabledReason,
 } from "@/lib/report-document-actions";
 import { ExportShareActions } from "@/components/ExportShareActions";
+// R67 F-10 (R-134): a run is a full round trip that replaces what is on screen
+// with a spinner -- including when the reader re-runs the SAME report on the
+// SAME project a moment later. The last result for a given (report, project,
+// parameters) is remembered for the session and painted at once while a fresh
+// run replaces it. It is LABELLED as remembered until the live one lands, so
+// nobody mistakes it for a just-computed figure, and nothing here can show a
+// number the server did not send.
+import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
 
 /**
  * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
@@ -232,6 +241,8 @@ function ProjectReportsPanel({
   const [tieMessage, setTieMessage] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+  /** R67 F-10: true while what is on screen came from the session cache rather than this run. */
+  const [fromCache, setFromCache] = useState(false);
   const orgMoney = useOrgMoney();
   const abortRef = useRef<AbortController | null>(null);
 
@@ -376,6 +387,18 @@ function ProjectReportsPanel({
     setStatus("running");
     setErrorText(null);
     setShareUrl(null);
+    // R67 F-10: something to read at once. The live request below still runs
+    // and still replaces this, so the figure the reader ends up with is
+    // current; the banner says which of the two they are looking at.
+    const cacheKey = reportCacheKey(next.report, projectId, {
+      from: next.from ?? "", to: next.to ?? "", weekStart: next.weekStart ?? "",
+      category: next.category ?? "", vendorId: next.vendorId ?? "",
+    });
+    const cached = readCachedReport(cacheKey);
+    if (cached !== null) {
+      setResult(cached);
+      setFromCache(true);
+    }
     try {
       // R67 E-12 (R-136): a report whose own payload does not carry the rows its
       // document prints fetches them ALONGSIDE, in the same run -- Project
@@ -413,6 +436,8 @@ function ProjectReportsPanel({
             }
           : data
       );
+      writeCachedReport(cacheKey, breakup ? { ...data, lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false), totalBudget: breakup.totalBudget } : data);
+      setFromCache(false);
       setRanAt(new Date());
       setStale(false);
       setStatus("success");
@@ -729,6 +754,15 @@ function ProjectReportsPanel({
               <div className="space-y-2" data-testid="reports-skeleton">
                 {[0, 1, 2].map((i) => <Skeleton key={i} className="h-6 w-full" />)}
               </div>
+              {/* R67 F-10: a remembered result is SAID to be remembered. The
+                  figure below is real -- it is what this same run returned
+                  earlier in the session -- but it is not the one this run is
+                  fetching, and a reader must never have to guess which. */}
+              {fromCache && (
+                <p className="text-xs text-px-muted" data-testid="reports-cached-notice">
+                  Showing the last result for this report while it re-runs.
+                </p>
+              )}
               {/* The last good result stays visible, dimmed -- a re-run must
                   not blank the screen the reader is still reading. */}
               {shownResult !== null && (

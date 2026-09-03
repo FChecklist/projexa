@@ -1,3 +1,15 @@
+// R67 E-19 (R-180) + F-18 (decision D-04).
+//
+// F-18's rule is the one both items agree on -- /dashboard is the landing
+// screen and the most-waited-on route, so it paints its own SHAPE immediately
+// rather than leaving the previous route on screen. What that shape is comes
+// from E-19/E-01's page order (one number, chart, rows, then the tiles as
+// secondary), which is what this screen actually renders.
+//
+// No tile LABELS are drawn on purpose: they come from the dashboard registry
+// row, and guessing them would put words on screen that the real render then
+// replaces. A tile-shaped placeholder is honest; a wrong label is not.
+//
 // R67 E-19 (R-180): "Loading renders skeleton rows, never a spinner."
 //
 // /dashboard is an async server component that makes three VERIDIAN calls
@@ -15,7 +27,14 @@ import { ProjectRowSkeleton } from "@/components/dashboard/ProjectRow";
 
 export default function DashboardLoading() {
   return (
-    <div className="flex-1 space-y-6 p-6" data-testid="dashboard-loading">
+    <div
+      className="flex-1 space-y-6 p-6"
+      data-testid="dashboard-loading"
+      // R67 F-18: announced as busy, so a screen reader is told the page is
+      // still arriving rather than being read an empty frame.
+      data-state="loading"
+      aria-busy="true"
+    >
       {/* The one number, then the chart, then the rows, then the tiles -- the
           order the real screen renders them in. */}
       <Card className="shadow-card">

@@ -63,6 +63,15 @@ const NUM = "text-right tabular-nums";
 /** The en dash. "We do not have this figure" is not "this figure is zero". */
 const EMPTY = "–";
 
+// R67 MERGE (2026-09-03): lane D-26 kept its own csvCell/toCsv/money/
+// applyFilters helpers here. They are gone rather than left beside the
+// versions this screen now uses: the CSV, the money format, the filters and
+// the tie check all live in src/lib/budget-variance-report.ts, tested there,
+// and two implementations of "what this report exports" is the drift both
+// items exist to remove. D-26 filtered the rows in the BROWSER; the filters
+// are now applied SERVER-side by the same call that computes the totals, so
+// the total under a filtered table is the total OF that table.
+
 export default function CostVarianceAnalyticalClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -126,7 +135,12 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
 
   const rows = contractLines(report);
   const categoryRows = report?.categorySubtotals ?? [];
-  const overBudget = rows.filter((l) => (l.variance ?? 0) > 0).length;
+  // R67 D-26 (merged 2026-09-03): `variance` is BUDGET REMAINING -- positive is
+  // under budget, NEGATIVE is the overrun. This screen was written against the
+  // older reading where positive meant over, so the test is inverted here and
+  // in the Variance cell below; the two must always agree, or the tile and the
+  // rows it counts would disagree on the same screen.
+  const overBudget = rows.filter((l) => l.variance !== null && l.variance < 0).length;
   const tieError = report ? checkVarianceTies(report, orgMoney.money) : null;
   // Disabled WITH a reason, in words, beside the button -- never a bare
   // "(Not yet available)", which is what this screen used to say about a
@@ -320,8 +334,10 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
                     <TableCell className={NUM}>{orgMoney.money(l.budget)}</TableCell>
                     <TableCell>{l.vendorName ?? EMPTY}</TableCell>
                     <TableCell className={NUM}>{l.vendorAmount === null ? EMPTY : orgMoney.money(l.vendorAmount)}</TableCell>
-                    <TableCell className={NUM} style={l.variance !== null && l.variance > 0 ? { color: "var(--status-late-text)" } : undefined}>
-                      {l.variance === null ? EMPTY : `${l.variance > 0 ? "▲ over " : "▼ under "}${orgMoney.money(Math.abs(l.variance))}`}
+                    {/* D-26's sign: negative variance is the overrun. Never
+                        colour alone -- the glyph AND the word carry it. */}
+                    <TableCell className={NUM} style={l.variance !== null && l.variance < 0 ? { color: "var(--status-late-text)" } : undefined}>
+                      {l.variance === null ? EMPTY : `${l.variance < 0 ? "▲ over " : "▼ under "}${orgMoney.money(Math.abs(l.variance))}`}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -358,3 +374,4 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
     />
   );
 }
+

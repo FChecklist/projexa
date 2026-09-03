@@ -6,23 +6,69 @@
 // is clickable and carries its own filters through (GLOBAL: "EVERY NUMBER
 // IS A DOOR" / "A KPI WITH NO DESTINATION MUST NOT SHIP") -- see each
 // onClick below for exactly where it lands and why that's a real screen.
-import { useEffect, useState } from "react";
+//
+// R67 F-27 (audit recommendation R-243) -- PER-CARD RENDERING, AND TWO FEWER
+// CALLS.
+//
+// WHAT THIS FILE USED TO DO. It held the WHOLE page behind
+// `if (loading || !dashboard) return <p>Loading…</p>` -- a Promise.all over
+// five requests, and then a SIXTH (/api/reports/category-progress) fired
+// SERIALLY after that batch resolved. LCP 5.3 s warm, with the bare word
+// "Loading…" on screen for all of it.
+//
+//   - No shared gate. Each figure is its own pane, and each tile renders the
+//     moment its own answer lands (DashboardKpiTile: skeleton bar, then the
+//     value, then an error that says why). A project whose figure has not
+//     arrived shows a skeleton, NEVER "0%".
+//   - category-progress moved INTO the batch. It was a serial tail purely
+//     because it was written later.
+//   - The permits call is GONE: VERIDIAN's dashboard payload now carries
+//     permitsExpiringCount / permitsExpiredCount, computed in the same
+//     statement as everything else, so one tile no longer costs one request.
+//   - The activities call is GONE: work-progress entries now carry
+//     activityName (R67 F-24), so the "Recent progress entries" list no longer
+//     fetches a second list to translate a column.
+//
+// Six requests, one of them serial, became four independent ones.
+//
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-65) fixed the two faults this
+// screen carried and BOTH fixes are kept:
+//
+//   * A 500 on the dashboard call used to assign the ERROR BODY to
+//     `dashboard`, after which money(dashboard.expenses) called
+//     .toLocaleString on an undefined. There is no error.tsx under
+//     /dashboard/project, so that throw took the whole route down. readJson()
+//     below reads the STATUS before the body, and a failed dashboard read now
+//     renders D0's PaneErrorCard -- one sentence from the shared dictionary,
+//     with the Retry that re-issues the read.
+//   * A failed permits read rendered "Permits Expiring: 0" in the SAGE done
+//     tone with the words "none due soon" -- a confident all-clear on the one
+//     tile whose entire purpose is to warn. That figure no longer comes from a
+//     permits call at all (see below); it comes from the dashboard payload, so
+//     the same rule now holds through the same guard: no number, percentage or
+//     tone is minted from a call that did not answer.
+//
+// What is F2's and stays: the per-card rendering. D0's version still held the
+// whole screen behind one `loading` flag; here only a FAILED dashboard read is
+// a whole-screen state, because there is genuinely nothing to draw without it.
+// Every other figure paints the moment its own answer lands.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
-  KpiCard,
   BulletChart,
   LineChart,
   LinkListCard,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
-// R67 E-02 (R-012), chart 2: the percent-only kit BarChart in breakdownColumn
-// is replaced by the real category-distribution charts. The presentational
-// half is imported so this screen's own already-fetched category-progress
-// response feeds it -- no second request, and the percentage and the money
-// come from one read of one BOQ revision.
+import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
+import { PaneErrorCard } from "@/components/PaneState";
+// R67 E-02 (R-012), chart 2: the percent-only kit BarChart below is replaced by
+// the real category-distribution charts. The PRESENTATIONAL half is imported so
+// this screen's own already-fetched category-progress response feeds it -- no
+// second request, and the percentage and the money come from one read of one
+// BOQ revision.
 import { CategoryDistributionChartsView, type CategoryEntry } from "@/components/CategoryDistributionCharts";
-import { useOrgMoney } from "@/lib/use-org-money";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -66,21 +112,74 @@ type ProjectDashboard = {
   earnedValue: number | null;
   percentByValue: number | null;
   contractValue: number | null;
+  // R67 F-27: computed in the same statement as every other figure, so the
+  // "Permits Expiring" tile no longer costs its own request.
+  permitsExpiringCount: number;
+  permitsExpiredCount: number;
+  // R67 F-14/F-27 (lane F1): the two PANELS this screen used to fetch for
+  // itself, computed in the same statement -- and the same transaction -- as
+  // every figure above. Both optional because a VERIDIAN that predates the
+  // fields simply omits them, and this screen must keep working against one:
+  // see the fallbacks in load().
+  categories?: CategoryRow[];
+  // The five newest progress entries, with each activity's name already
+  // resolved, so the screen no longer reads the whole progress log for five rows.
+  recentEntries?: RecentEntry[];
 };
 type Currency = { code: string; isBaseCurrency: boolean };
-// R67 E-02: the category-progress report now carries the money as well as the
-// percentage (compliance-tracker categoryProgressReport). Older fields are
-// unchanged; totalAmount/completedAmount/sharePercent are additive, so a
-// response from a backend that predates that change still renders -- the
-// figures simply read as zero money until it lands.
+// R67 E-02 (R-012): the category-progress report now carries the MONEY as well
+// as the percentage (compliance-tracker's categoryProgressReport). The extra
+// fields are additive, so a response from a backend that predates that change
+// still renders -- the money simply reads as zero until it lands.
 type CategoryRow = CategoryEntry;
-type RecentEntry = { id: string; activityId: string; entryDate: string; quantityDone: string; percentComplete: string };
-type Activity = { id: string; name: string };
-type Permit = { id: string; daysToExpiry: number | null };
+// R67 F-24: activityName now arrives ON the entry.
+type RecentEntry = {
+  id: string;
+  activityId: string;
+  activityName?: string | null;
+  entryDate: string;
+  quantityDone: string;
+  percentComplete: string;
+};
+
+/** One independently-loaded figure: pending, ready, or failed with a reason. */
+type Pane<T> = { state: KpiTileState; data: T | null; error: string | null };
+const PENDING: Pane<never> = { state: "pending", data: null, error: null };
+
+/** The backend's OWN sentence when it gave one. */
+function reasonText(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+/** Reads a JSON endpoint, treating a non-2xx as a failure rather than as data --
+ *  an error body parses perfectly well, and reading it as data is how a failed
+ *  request becomes a confident 0 on a dashboard. */
+class ReadFailed extends Error {
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ReadFailed";
+    this.status = status;
+  }
+}
+
+async function readJson<T>(url: string, signal: AbortSignal, fallbackMessage: string): Promise<T> {
+  const res = await fetch(url, { signal });
+  const body = await res.json().catch(() => null);
+  // R67 D-65: the STATUS is read before the body. An error body parses
+  // perfectly well, and reading it as data is how a failed request becomes a
+  // confident 0 on a dashboard -- and, on this screen, a thrown TypeError.
+  // The status travels with the message because the shared dictionary uses it
+  // to decide whether a Retry could help at all.
+  if (!res.ok) {
+    throw new ReadFailed((body?.error as string | undefined) ?? `${fallbackMessage} (HTTP ${res.status})`, res.status);
+  }
+  return body as T;
+}
 
 // TC-90: AED with NO rupee sign and NO lakh/crore grouping -- "en-US" gives
 // plain thousands-comma grouping regardless of locale; deliberately not
-// "en-IN" (lakh grouping) and never a hardcoded "₹" fallback.
+// "en-IN" (lakh grouping) and never a hardcoded "â‚¹" fallback.
 function money(n: number, currency: Currency | undefined) {
   return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
@@ -88,72 +187,154 @@ function money(n: number, currency: Currency | undefined) {
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
   const router = useRouter();
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
-  const [dashboard, setDashboard] = useState<ProjectDashboard | null>(null);
+
+  const [dashboard, setDashboard] = useState<Pane<ProjectDashboard>>(PENDING);
+  // The transport's own status for the dashboard read, kept beside the
+  // sentence so PaneErrorCard can decide whether Retry is offered at all.
+  const [dashboardStatus, setDashboardStatus] = useState<number | null>(null);
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const orgMoney = useOrgMoney();
-  const [recent, setRecent] = useState<RecentEntry[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [permitsExpiring, setPermitsExpiring] = useState<Permit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<Pane<CategoryRow[]>>(PENDING);
+  const [recent, setRecent] = useState<Pane<RecentEntry[]>>(PENDING);
+
+  const load = useCallback(
+    (signal: AbortSignal) => {
+      // TWO INDEPENDENT PROMISES, not one Promise.all with a serial tail.
+      // Neither awaits the other: each setState fires on its own answer, so the
+      // fastest tile is on screen while the slower is still in flight. (It was
+      // four until R67 F-14/F-27 folded the two panels into the dashboard
+      // payload; their old reads survive as legacy fallbacks, chained off that
+      // payload rather than raced, so they cost nothing on a current backend.)
+      void readJson<ProjectDashboard>(
+        `/api/dashboard/project/${encodeURIComponent(projectId)}`,
+        signal,
+        "Couldn't load the project dashboard"
+      )
+        .then((data) => {
+          setDashboard({ state: "ready", data, error: null });
+          setDashboardStatus(null);
+          // R67 F-27 (lane F1) -- THE PANEL COMES WITH THE PAYLOAD. The recent
+          // progress entries used to be their own /api/work-progress round
+          // trip, which pulled the project's whole progress log to show five
+          // rows. VERIDIAN now computes those five in the same statement as
+          // every figure above, with each activity's name already resolved, so
+          // in the normal case this screen makes one request fewer.
+          //
+          // The old read survives as a FALLBACK, not as a second opinion: it
+          // fires only when the payload does not carry the field, which is what
+          // a VERIDIAN older than F-27 looks like. Chaining it here rather than
+          // racing it is deliberate -- racing would re-introduce exactly the
+          // request this item removes, on every load, to serve the rare case.
+          if (data.categories) {
+            setCategories({ state: "ready", data: data.categories, error: null });
+          } else {
+            // Legacy VERIDIAN only. The category breakdown is still computed
+            // server-side either way (D-4: never summed in the browser); this
+            // path just asks the already-registered "category-progress" report
+            // for it separately.
+            void readJson<{ categories?: CategoryRow[] }>(
+              `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`,
+              signal,
+              "Couldn't load the category breakdown"
+            )
+              .then((cat) => setCategories({ state: "ready", data: cat.categories ?? [], error: null }))
+              .catch((err) => {
+                if (signal.aborted) return;
+                setCategories({ state: "error", data: null, error: reasonText(err, "Couldn't load the category breakdown.") });
+              });
+          }
+
+          if (data.recentEntries) {
+            setRecent({ state: "ready", data: data.recentEntries.slice(0, 5), error: null });
+          } else {
+            void readJson<{ entries?: RecentEntry[] }>(
+              `/api/work-progress?projectId=${encodeURIComponent(projectId)}`,
+              signal,
+              "Couldn't load recent progress"
+            )
+              .then((wp) => setRecent({ state: "ready", data: (wp.entries ?? []).slice(0, 5), error: null }))
+              .catch((err) => {
+                if (signal.aborted) return;
+                setRecent({ state: "error", data: null, error: reasonText(err, "Couldn't load recent progress.") });
+              });
+          }
+        })
+        .catch((err) => {
+          if (signal.aborted) return;
+          setDashboardStatus(err instanceof ReadFailed ? err.status : null);
+          setDashboard({ state: "error", data: null, error: reasonText(err, "Couldn't load the project dashboard.") });
+          // Neither panel can arrive on a payload that never came, and neither
+          // has an unconditional reader of its own any more, so they say so
+          // rather than spinning for ever.
+          setCategories({ state: "error", data: null, error: reasonText(err, "Couldn't load the category breakdown.") });
+          setRecent({ state: "error", data: null, error: reasonText(err, "Couldn't load recent progress.") });
+        });
+
+      // The currency is a label, not a figure: if it never answers, the money
+      // tiles render unprefixed rather than waiting.
+      void readJson<{ currencies?: Currency[] }>("/api/currencies", signal, "Couldn't load currencies")
+        .then((data) => setCurrency((data.currencies ?? []).find((c) => c.isBaseCurrency)))
+        .catch(() => {});
+
+      // (The category breakdown and the recent-entries read used to be two more
+      // independent promises here. R67 F-14/F-27 moved both PANELS onto the
+      // dashboard payload -- one transaction upstream instead of three -- so on
+      // a current VERIDIAN this screen makes two requests, not four. Each keeps
+      // its old read as a legacy fallback; see the branches above.)
+    },
+    [projectId]
+  );
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const [dashRes, curRes, permitsRes, activitiesRes, entriesRes] = await Promise.all([
-        fetch(`/api/dashboard/project/${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch("/api/currencies").then((r) => r.json()).catch(() => ({ currencies: [] })),
-        fetch(`/api/permits?projectId=${encodeURIComponent(projectId)}&withinDays=30`).then((r) => r.json()).catch(() => ({ permits: [] })),
-        fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ activities: [] })),
-        fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ entries: [] })),
-      ]);
-      setDashboard(dashRes);
-      setCurrency((curRes.currencies ?? []).find((c: Currency) => c.isBaseCurrency));
-      setPermitsExpiring(permitsRes.permits ?? []);
-      setActivities(activitiesRes.activities ?? []);
-      setRecent((entriesRes.entries ?? []).slice(0, 5));
+    setDashboard(PENDING);
+    setCategories(PENDING);
+    setRecent(PENDING);
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
 
-      // Category breakdown (RIGHT COLUMN, sorted horizontal bar) reuses the
-      // ALREADY-REGISTERED "category-progress" report (REPORT_REGISTRY,
-      // construction-reports-service.ts) computed server-side (D-4: never
-      // summed in the browser) -- no projexa consumer of this real, working
-      // report existed before this seq.
-      const catRes = await fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => null);
-      setCategories(
-        (catRes?.categories ?? []).map((c: Partial<CategoryRow> & { categoryId: string; name: string }) => ({
-          categoryId: c.categoryId,
-          name: c.name,
-          percentComplete: Number(c.percentComplete ?? 0),
-          totalAmount: Number(c.totalAmount ?? 0),
-          completedAmount: Number(c.completedAmount ?? 0),
-          sharePercent: Number(c.sharePercent ?? 0),
-        }))
-      );
-      setLoading(false);
-    }
-    load();
-  }, [projectId]);
+  // R67 D-65: the ONE whole-screen state. Every other figure is its own pane
+  // and paints when its own answer lands, but with no dashboard payload there
+  // is no project name, no budget and no permit count to draw -- so this says
+  // what failed, in the shared dictionary's words, with the Retry that
+  // re-issues the read. Four tiles each repeating the same sentence would be
+  // the same information four times.
+  if (dashboard.state === "error") {
+    return (
+      <div className="flex-1 p-6">
+        <PaneErrorCard
+          entity="this project's dashboard"
+          error={{ status: dashboardStatus, message: dashboard.error }}
+          onRetry={() => {
+            const controller = new AbortController();
+            setDashboard(PENDING);
+            load(controller.signal);
+          }}
+        />
+      </div>
+    );
+  }
 
-  if (loading || !dashboard) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
-
-  const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const hasEv = dashboard.earnedValue !== null && dashboard.contractValue !== null;
-  const expiringCount = permitsExpiring.length;
-  const expiredCount = permitsExpiring.filter((p) => (p.daysToExpiry ?? 0) < 0).length;
+  const d = dashboard.data;
+  const hasEv = d !== null && d.earnedValue !== null && d.contractValue !== null;
+  const expiringCount = d?.permitsExpiringCount ?? 0;
+  const expiredCount = d?.permitsExpiredCount ?? 0;
+  const recentEntries = recent.data ?? [];
 
   return (
     <DashboardScreen
-      breadcrumb={`Dashboard / ${dashboard.projectName}`}
+      // The breadcrumb is the frame, and the frame paints first: the project's
+      // name fills in when it arrives rather than holding the page.
+      breadcrumb={d ? `Dashboard / ${d.projectName}` : "Dashboard"}
       // DASHBOARD.PROJECT: "+ New suppressed" -- documented override, this
       // screen answers a question, it doesn't create records.
       newAction={undefined}
-      // R67 E-18 (R-178): both reasons name a real destination. A dashboard is
-      // not a document, so its Export is genuinely elsewhere -- and saying
-      // WHERE is the difference between a limitation and a dead end.
-      filterAction={{ label: "Filter", disabledReason: "This screen is one project — change it in the top rail, or filter the portfolio on the home dashboard" }}
-      exportAction={{ label: "Export", disabledReason: "Export from Reports — run Project Status for this project" }}
+      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
       oneNumber={
-        <KpiCard
+        <DashboardKpiTile
+          state={dashboard.state}
+          error={dashboard.error}
           size="primary"
           // CONS-01 (R46 P4 consistency sweep): relabelled from "% Complete
           // by Value" to spell out "BOQ" -- this KPI's onClick below sends
@@ -164,59 +345,60 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           // following that link sees a second unlabelled "percent complete"
           // number that disagrees with the one they just clicked.
           label={labelFor(dashboardLabels, "percentByValue", "% Complete by BOQ Value")}
-          value={hasEv ? `${dashboard.percentByValue}%` : "No BOQ yet"}
-          trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this" }}
-          baseline={hasEv ? `of ${money(dashboard.contractValue!, currency)} contract value` : ""}
-          visual={hasEv ? <BulletChart value={dashboard.earnedValue!} target={dashboard.contractValue!} unit="" /> : undefined}
+          value={hasEv ? `${d!.percentByValue}%` : "No BOQ yet"}
+          trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(d!.earnedValue!, currency)}` : "Import a BOQ to see this" }}
+          baseline={hasEv ? `of ${money(d!.contractValue!, currency)} contract value` : ""}
+          visual={hasEv ? <BulletChart value={d!.earnedValue!} target={d!.contractValue!} unit="" /> : undefined}
           // % complete -> ANALYTICAL work-progress, filtered to this project (DASHBOARD.PROJECT's own row)
           onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)}
         />
       }
       secondaryKpis={
         <>
-          <KpiCard
+          <DashboardKpiTile
+            state={dashboard.state}
+            error={dashboard.error}
             label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
-            value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
+            value={hasEv ? money(d!.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
             // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
           {/* Sumeet audit fix (2026-08-30, requirement #10: "Project value
-              matches BOQ total"). Real, confirmed gap: this screen already
-              fetches dashboard.projectValue (see the ProjectDashboard type
-              above) but never rendered it anywhere -- the "FIELD ABSENT"
-              defect from the earlier audit round was fixed only in the
-              OTHER dashboard screen (DashboardHierarchyClient.tsx), not
-              here. Distinguished explicitly from Contract Value, since they
-              are two genuinely different figures by design (project value =
-              COALESCE(user-entered, linked-PO-sum); contract value = latest
-              BOQ's parent-lines-only total) -- rendering this does not
-              claim they're equal, it surfaces the real, separate value
-              Point 121's own override mechanism controls. Null (not 0) is
-              the honest "neither a manual value nor any linked PO exists
-              yet" state, matching every other null-safe KPI on this screen. */}
-          <KpiCard
+              matches BOQ total"). Distinguished explicitly from Contract
+              Value, since they are two genuinely different figures by design
+              (project value = COALESCE(user-entered, linked-PO-sum); contract
+              value = latest BOQ's parent-lines-only total). Null (not 0) is
+              the honest "neither a manual value nor any linked PO exists yet"
+              state, matching every other null-safe KPI on this screen. */}
+          <DashboardKpiTile
+            state={dashboard.state}
+            error={dashboard.error}
             label={labelFor(dashboardLabels, "projectValue", "Project Value")}
-            value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
+            value={d && d.projectValue !== null ? money(d.projectValue, currency) : "Not set"}
             trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
             baseline="overridable per project"
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
-          <KpiCard
+          <DashboardKpiTile
+            state={dashboard.state}
+            error={dashboard.error}
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
-            value={money(dashboard.expenses, currency)}
+            value={d ? money(d.expenses, currency) : ""}
             trend={{
-              direction: dashboard.expenses > dashboard.budget ? "up" : "down",
-              tone: dashboard.expenses > dashboard.budget ? "late" : "done",
-              label: dashboard.expenses > dashboard.budget ? "over budget" : "within budget",
+              direction: d && d.expenses > d.budget ? "up" : "down",
+              tone: d && d.expenses > d.budget ? "late" : "done",
+              label: d && d.expenses > d.budget ? "over budget" : "within budget",
             }}
-            baseline={`budget ${money(dashboard.budget, currency)}`}
-            visual={<BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
+            baseline={d ? `budget ${money(d.budget, currency)}` : ""}
+            visual={d ? <BulletChart value={d.expenses} target={d.budget} lowerIsBetter unit="" /> : undefined}
             // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
             onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
           />
-          <KpiCard
+          <DashboardKpiTile
+            state={dashboard.state}
+            error={dashboard.error}
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
             value={String(expiringCount)}
             trend={{
@@ -239,21 +421,39 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               points. This is the real, current cumulative quantity logged per
               day instead (from actual work-progress entries), clearly labelled
               for what it is rather than overclaiming. */}
-          <LineChart series={recent.slice().reverse().map((e, i) => ({ label: e.entryDate, value: recent.slice(0, i + 1).reduce((s, r) => s + Number(r.quantityDone), 0) }))} />
+          {recent.state === "pending" ? (
+            <div className="h-24 animate-pulse rounded bg-ct-cloud" role="presentation" aria-label="Loading progress trend" />
+          ) : recent.state === "error" ? (
+            <p role="alert" className="text-[12.5px]" style={{ color: "var(--color-veri-status-late)" }}>{recent.error}</p>
+          ) : (
+            <LineChart series={recentEntries.slice().reverse().map((e, i) => ({ label: e.entryDate, value: recentEntries.slice(0, i + 1).reduce((s, r) => s + Number(r.quantityDone), 0) }))} />
+          )}
         </>
       }
       breakdownColumn={
         <>
           <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressByCategoryHeading", "Progress by scope category")}</h3>
-          {/* R67 E-02 (R-012): was the kit's percent-only BarChart, which told
-              a reader "Civil 40%" without saying whether Civil is a tenth of
-              the job or nine tenths. This is the real distribution -- share of
-              the BOQ, completed against total in money, a pie only at five
-              categories or fewer, and every category a link into Work Progress
-              > Analytics filtered to it. Its own empty state names the next
-              step ("Import a BOQ"), so the "No category breakdown yet." dead
-              end is gone with it. */}
-          <CategoryDistributionChartsView categories={categories} projectId={projectId} money={orgMoney.money} />
+          {categories.state === "pending" ? (
+            <div className="h-24 animate-pulse rounded bg-ct-cloud" role="presentation" aria-label="Loading category breakdown" />
+          ) : categories.state === "error" ? (
+            <p role="alert" className="text-[12.5px]" style={{ color: "var(--color-veri-status-late)" }}>{categories.error}</p>
+          ) : (categories.data ?? []).length > 0 ? (
+            // R67 E-02: "Completed AED n / Total AED n" beside the percentage.
+            // A bar labelled only "46%" cannot tell a reader whether that is
+            // 46% of a large category or of a trivial one, which is the
+            // question a QS is actually asking of this panel.
+            <CategoryDistributionChartsView
+              categories={categories.data ?? []}
+              projectId={projectId}
+              // R67 E-02 x F-1: the SAME money(n, currency) every KPI tile on
+              // this screen uses, over the currency this component has already
+              // fetched. useOrgMoney() would have been a THIRD request on a
+              // screen whose whole point is that it makes two.
+              money={(v) => (v === null || v === undefined ? "—" : money(Number(v), currency))}
+            />
+          ) : (
+            <p className="text-[12.5px] text-ct-muted">No category breakdown yet.</p>
+          )}
         </>
       }
       linkList={
@@ -270,14 +470,23 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       recentActivity={
         <div className="rounded-md border border-ct-border p-3">
           <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "recentActivityHeading", "Recent progress entries")}</h3>
-          {recent.length === 0 ? (
+          {recent.state === "pending" ? (
+            <div className="space-y-1.5" role="presentation" aria-label="Loading recent progress entries">
+              {[0, 1, 2].map((i) => <div key={i} className="h-3 w-3/4 animate-pulse rounded bg-ct-cloud" />)}
+            </div>
+          ) : recent.state === "error" ? (
+            <p role="alert" className="text-[12.5px]" style={{ color: "var(--color-veri-status-late)" }}>{recent.error}</p>
+          ) : recentEntries.length === 0 ? (
             <p className="text-[12.5px] text-ct-muted">No entries logged yet.</p>
           ) : (
             <ul className="space-y-1.5">
-              {recent.map((e) => (
+              {recentEntries.map((e) => (
                 <li key={e.id}>
                   <button type="button" onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)} className="text-[12.5px] text-ct-teal hover:underline">
-                    {e.entryDate} — {activityNameById.get(e.activityId) ?? e.activityId} ({e.percentComplete}%)
+                    {/* R67 F-24: the activity's NAME comes with the entry -- this
+                        list used to fetch the whole activity list to translate
+                        it, and rendered a raw id when that missed. */}
+                    {e.entryDate} — {e.activityName ?? "—"} ({e.percentComplete}%)
                   </button>
                 </li>
               ))}

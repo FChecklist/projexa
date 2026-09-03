@@ -1,5 +1,6 @@
 import { TrendingUp, Clock, AlertTriangle } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 const REASON_KEYS = [
@@ -8,8 +9,8 @@ const REASON_KEYS = [
   { key: "compound", icon: TrendingUp },
 ] as const;
 
-export async function ROISection() {
-  const t = await getTranslations("Marketing.roi");
+export async function ROISection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.roi" });
 
   return (
     <section id="pays-for-itself" className="border-b border-border bg-muted/40 py-20 sm:py-28">

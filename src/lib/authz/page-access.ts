@@ -40,7 +40,9 @@
 // Exact public page paths (everything NOT under src/app/(app)/).
 const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/", // marketing landing
+  "/hi", // the same landing page, prerendered in Hindi (R67 J-01)
   "/how-it-works",
+  "/hi/how-it-works",
   "/login",
   "/signup",
 ]);
@@ -52,7 +54,12 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
 //   /share/*   unauthenticated public share links (see VERIDIAN_ORIGIN's
 //              comment in veridian-client.ts -- these carry no auth of any
 //              kind, Bearer or session, on purpose)
-const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/"];
+//   /shared/*  the same thing under the path VERIDIAN's own share-link
+//              composer already emits (R67 D-21's /shared/mom/[token] --
+//              note "/shared/" does NOT match the "/share/" prefix above, so
+//              it needs its own entry or the page fails closed and redirects
+//              the recipient of a WhatsApp link to a login screen)
+const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/", "/shared/"];
 
 export function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");

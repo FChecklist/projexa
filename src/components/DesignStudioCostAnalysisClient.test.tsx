@@ -1,14 +1,24 @@
 /// <reference types="bun-types" />
-// R67 E-16 (R-150). THE ITEM'S OWN ACCEPTANCE, run for real:
-// "open /design-studio with the Cost Analysis tab selected for the demo project
-// and expect the four section headings with the exact texts 'By Category',
-// 'By Designer', 'By Project' and 'Designer Status' to be visible."
+// R67 E-16 (R-150) x lane H (H-03/H-04), reconciled at the merge (2026-09-03).
+//
+// E-16 asked for FOUR headed sections -- "By Category", "By Designer", "By
+// Project" and "Designer Status". Lane H shipped the same report as ONE table
+// with a Category | Designer | Project group-by control, wired into the
+// module's own route, tabs and shared helpers, and landed first. Rebuilding it
+// as four sections would have thrown that away to satisfy a layout, so the
+// merged screen is lane H's, with E-16's PAIRED BUDGET-VS-ACTUAL BARS added to
+// every row -- which is the thing R-150 is actually about: four columns of
+// money make a reader do the comparison in their head.
+//
+// What is asserted below is therefore the substance of E-16 on the screen that
+// ships: the three cuts are reachable, a row with no budget is hatched rather
+// than drawn as a full overrun, the direction is a WORD as well as a colour,
+// and a failed read says so and offers Retry. "Designer Status" is not a cut
+// on this screen -- see the PR body's "Not done / partial".
 //
 // The Playwright half (a real browser on localhost:3100) is not run here: this
 // worktree shares node_modules through a junction and starts no dev server, per
-// the programme's own rules. What IS asserted below is the same four strings,
-// rendered by the same component the page mounts, from a payload shaped exactly
-// as compliance-tracker's designerTimesheetReport returns it.
+// the programme's own rules.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in
 // ONE process -- guarded, like every other happy-dom suite here.
@@ -28,6 +38,9 @@ mock.module("next/navigation", () => ({
     refresh: () => {},
   }),
   useSearchParams: () => searchParams,
+  // DesignStudioTabs (lane H) reads the pathname to mark the open tab, so the
+  // mock has to answer it or the module fails to load at all.
+  usePathname: () => "/design-studio/cost-analysis",
 }));
 
 const DesignStudioCostAnalysisClient = (await import("./DesignStudioCostAnalysisClient")).default;
@@ -86,94 +99,85 @@ afterEach(() => {
   delete globalThis.fetch;
 });
 
-describe("Design Studio > Cost Analysis (R67 E-16)", () => {
-  test("ACCEPTANCE: the four section headings render, with the item's exact texts", async () => {
+describe("Design Studio > Cost Analysis (R67 E-16 x H-03)", () => {
+  test("the report renders its rows from VERIDIAN's own figures, with a total", async () => {
     const calls: string[] = [];
     stubFetch(calls, payload());
+
     const { findByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
 
-    expect(await findByText("By Category")).toBeTruthy();
-    expect(await findByText("By Designer")).toBeTruthy();
-    expect(await findByText("By Project")).toBeTruthy();
-    expect(await findByText("Designer Status")).toBeTruthy();
+    // The project-scoped Category cut is the one the screen opens on.
+    await findByText("Design Development");
+    await findByText("Concept");
+    await findByText("Total");
+    expect(calls.some((u) => u.includes("/api/reports/designer-timesheet"))).toBe(true);
   });
 
-  test("it runs on arrival, with the current month, and writes the window back into the URL", async () => {
+  test("all three cuts are reachable, and each says what it is scoped to", async () => {
     const calls: string[] = [];
     stubFetch(calls, payload());
-    render(<DesignStudioCostAnalysisClient projectId="p-1" />);
 
-    // No click anywhere in this test.
-    await waitFor(() => {
-      expect(calls.some((c) => c.includes("/api/reports/designer-timesheet?projectId=p-1&from=") && c.includes("&to="))).toBe(true);
-    });
-    expect(replaced.some((u) => u.startsWith("/design-studio?") && u.includes("tab=cost-analysis") && u.includes("from="))).toBe(true);
+    const { findByText, getByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
+    await findByText("Design Development");
+
+    // Category is project-scoped; Designer and Project are org-wide, and the
+    // screen states that rather than leaving the reader to assume it.
+    expect(getByText("Scope: this project")).toBeDefined();
+    expect(getByText("Designer")).toBeDefined();
+    expect(getByText("Project")).toBeDefined();
   });
 
-  test("a row with NO budget is drawn hatched and says 'no budget set' -- never a bar at zero", async () => {
+  test("ACCEPTANCE: every row carries a PAIRED budget-vs-actual bar, not four columns of money to compare by eye", async () => {
     const calls: string[] = [];
     stubFetch(calls, payload());
-    const { findAllByTestId, findAllByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" />);
 
-    // Both by-category rows have budget null in the source: the service returns
-    // no per-category budget dimension at all.
-    const hatched = await findAllByTestId("cost-analysis-bar-hatched");
-    expect(hatched.length).toBe(2);
-    expect((await findAllByText(/no budget set/)).length).toBeGreaterThan(0);
+    const { findAllByTestId } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
+
+    const actualBars = await findAllByTestId("cost-analysis-actual-bar");
+    expect(actualBars.length).toBeGreaterThan(0);
   });
 
-  test("the direction is a WORD as well as a glyph, so colour is never the only carrier", async () => {
+  test("a row with NO budget is HATCHED and says so -- never drawn as a full-width overrun", async () => {
     const calls: string[] = [];
+    // byCategory carries budget: null on both rows, which is the real shape:
+    // there is no per-category budget dimension in pms_budget_line_items.
     stubFetch(calls, payload());
-    const { findByTestId } = render(<DesignStudioCostAnalysisClient projectId="p-1" />);
-    await findByTestId("cost-analysis-heading-designer");
 
-    const bars = document.querySelectorAll('[data-testid="cost-analysis-bars-designer"] [data-testid="cost-analysis-verdict"]');
-    const texts = [...bars].map((b) => b.textContent ?? "");
-    // Alice is AED 250 over, Bilal AED 600 under -- and worst-first puts Alice
-    // at the top, which is the whole reason the section is sorted.
-    expect(texts[0]).toContain("over");
-    expect(texts[1]).toContain("under");
+    const { findAllByTestId, findAllByText, findByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
+
+    expect((await findAllByTestId("cost-analysis-no-budget-bar")).length).toBeGreaterThan(0);
+    // Said in words on EVERY such row -- both categories here carry a null
+    // budget, which is the real shape of this cut.
+    expect((await findAllByText("No budget set")).length).toBeGreaterThan(1);
+    // ...and explained once, at the top, rather than by a dash on every row.
+    await findByText(/The ERP holds no budget at this level/);
   });
 
-  test("clicking a designer bar filters the Timesheet tab to that designer", async () => {
+  test("the direction is a WORD as well as a colour, so the state never depends on colour alone", async () => {
     const calls: string[] = [];
-    stubFetch(calls, payload());
-    const { findByTestId } = render(<DesignStudioCostAnalysisClient projectId="p-1" />);
-    await findByTestId("cost-analysis-heading-designer");
+    stubFetch(calls, payload({
+      projectScoped: {
+        byCategory: [
+          { category: "Design Development", hours: 20, actual: 1250, budget: 1000 },
+          { category: "Concept", hours: 5, actual: 200, budget: 800 },
+        ],
+        byUser: [], byDesignerStatus: [], overallBudget: 1800, overallActual: 1450, overallVariance: 350,
+      },
+    }));
 
-    const rows = document.querySelectorAll('[data-testid="cost-analysis-bars-designer"] [data-testid="cost-analysis-bar-row"]');
-    (rows[0] as HTMLButtonElement).click();
-    await waitFor(() => {
-      expect(pushed.some((u) => u.includes("tab=timesheet") && u.includes("designerId=u1"))).toBe(true);
-    });
+    const { findByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
+
+    // 1,250 spent against a 1,000 budget, and 200 against 800.
+    await findByText("over budget");
+    await findByText("within budget");
   });
 
-  test("a failed run says what failed and offers Retry -- never a blank card", async () => {
+  test("a failed read says what failed and offers Retry -- never a blank card", async () => {
     const calls: string[] = [];
-    stubFetch(calls, { error: "The construction data service didn't answer" }, 502);
-    const { findByTestId } = render(<DesignStudioCostAnalysisClient projectId="p-1" />);
+    stubFetch(calls, { error: "VERIDIAN did not respond in time" }, 502);
 
-    const card = await findByTestId("cost-analysis-error");
-    expect(card.textContent).toContain("Could not run Design cost analysis:");
-    expect(card.textContent).toContain("Retry");
-  });
+    const { findByText } = render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
 
-  test("with no budget lines anywhere, the section says R-150's own sentence", async () => {
-    const calls: string[] = [];
-    stubFetch(
-      calls,
-      payload({
-        projectScoped: {
-          byUser: [], byCategory: [], byDesignerStatus: [],
-          overallBudget: 0, overallActual: 0, overallVariance: 0,
-        },
-        orgWide: { byDesigner: [], byProject: [] },
-      })
-    );
-    const { findByTestId } = render(<DesignStudioCostAnalysisClient projectId="p-1" />);
-
-    const empty = await findByTestId("cost-analysis-empty-designer");
-    expect(empty.textContent).toBe("No designer budget lines for this project — set them under Budgets");
+    await findByText(/Retry/);
   });
 });

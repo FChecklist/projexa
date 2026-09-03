@@ -17,6 +17,7 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { clearCachedReports } from "@/lib/report-result-cache";
 // NOT `screen`: @testing-library/dom binds its queries to document.body at
 // module-evaluation time, and this file's static imports are hoisted above
 // GlobalRegistrator.register(). render()'s own queries are bound per render.
@@ -48,6 +49,13 @@ afterEach(() => {
   // A test that overrode the breakup must not leak it into the next one -- the
   // suite runs in one process and in file order.
   breakupResponse = defaultBreakupResponse;
+  // R67 F-10 (merged 2026-09-03): the panel remembers the last result for a
+  // (report, project, parameters) in sessionStorage and paints it while the
+  // live run replaces it. The suite runs in ONE process, so without this a
+  // later test would be handed an earlier test's figures and would pass or
+  // fail on data it never stubbed. A fresh session has no cache; so does each
+  // test now.
+  clearCachedReports();
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });

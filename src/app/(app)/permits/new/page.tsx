@@ -1,31 +1,45 @@
+// R67 F-19 (audit recommendation R-245) / decision D-04.
+//
+// This create route awaited getServerOrganizationId() and then a VERIDIAN
+// /dashboard call BEFORE emitting a byte -- 1.5-1.65 s to first byte for a
+// form of three to seven fields, against /budgets/new's 184 ms, which skips
+// the chain. Every navigation that reaches this screen (a "+ New" button, a
+// KPI tile, a pill) already carries ?projectId=, and the projexa_project
+// cookie covers a typed or bookmarked URL, so the project is now resolved
+// with NO network call and the form renders straight away. The /dashboard hop
+// survives only for the case where neither source knows, and it happens inside
+// a Suspense boundary behind the form's own skeleton.
+import { Suspense } from "react";
 import PermitCreateClient from "@/components/PermitCreateClient";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFormSkeleton";
+import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { Card, CardContent } from "@/components/ui/card";
 
-// R42 seq21: PERMITS.OBJECT create mode. Deliberate scope note (evidence,
-// not silent deviation): creation goes through the EXISTING multipart
-// POST /api/permits (Wave 143, already real+working -- a required PDF
-// upload doesn't fit the generic JSON screen_drafts payload M29 defines),
-// not the new draft-lifecycle machinery. The new OBJECT-screen draft
-// lifecycle (Edit -> autosave -> leave/return -> reload -> Save) that seq21
-// actually introduces is proven on the EDIT path in permits/[id] instead.
-export default async function NewPermitPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId: qsProjectId } = await searchParams;
+async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(qsProjectId, organizationId);
+  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
+  if (!projectId) return <CreateProjectMissing message={errorMessage} />;
+  return <PermitCreateClient projectId={projectId} />;
+}
 
-  if (errorMessage || !project) {
+export default async function PermitsNewPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+  const { projectId } = await searchParams;
+  // No network: the query string, else the cookie the top rail wrote.
+  const known = await resolveProjectIdFast(projectId);
+
+  if (known) {
     return (
       <div className="flex-1 p-6">
-        <Card><CardContent className="p-8 text-center text-sm text-px-muted">{errorMessage ?? "No active project selected."}</CardContent></Card>
+        <PermitCreateClient projectId={known} />
       </div>
     );
   }
 
   return (
     <div className="flex-1 p-6">
-      <PermitCreateClient projectId={project.id} />
+      <Suspense fallback={<CreateFormSkeleton fields={5} />}>
+        <ResolvedForm requestedProjectId={projectId} />
+      </Suspense>
     </div>
   );
 }

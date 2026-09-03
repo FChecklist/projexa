@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function PATCH(_request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   if (!ctx.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,4 +25,4 @@ export async function PATCH(_request: NextRequest, { params }: RouteContext) {
   if (!data) return NextResponse.json({ error: "Notification not found" }, { status: 404 });
 
   return NextResponse.json({ success: true });
-}
+});

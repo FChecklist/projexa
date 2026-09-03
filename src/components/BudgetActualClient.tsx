@@ -226,8 +226,8 @@ export default function BudgetActualClient({ projectId }: { projectId: string })
                     <TableCell className={NUM}>{money(r.revenue)}</TableCell>
                     <TableCell className={NUM}>{money(r.budget)}</TableCell>
                     <TableCell className={NUM}>{money(r.actual)}</TableCell>
-                    <TableCell className={NUM} style={r.variance !== null && r.variance > 0 ? { color: "var(--status-late-text)" } : undefined}>
-                      {r.variance === null ? EMPTY : `${r.variance > 0 ? "▲ over " : "▼ under "}${orgMoney.money(Math.abs(r.variance))}`}
+                    <TableCell className={NUM} style={r.variance !== null && r.variance < 0 ? { color: "var(--status-late-text)" } : undefined}>
+                      {r.variance === null ? EMPTY : `${r.variance < 0 ? "▲ over " : "▼ under "}${orgMoney.money(Math.abs(r.variance))}`}
                     </TableCell>
                     {/* budget 0 renders the en dash, never a divide-by-zero 0%. */}
                     <TableCell className={NUM} data-testid={`budget-percent-${r.key}`}>{percent(r.percentUsed)}</TableCell>
