@@ -14,6 +14,11 @@ import { rememberSelectedProject } from "@/lib/project-cookie";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
+import BoqCategoriesCard from "@/components/BoqCategoriesCard";
+// roles.ts deliberately has no imports of its own (it exists so middleware can
+// use the role vocabulary in the Edge runtime), so a client component can
+// import it without dragging in anything server-only.
+import { ROLE_GROUPS } from "@/lib/authz/roles";
 
 type OrgInfo = { organization: { id: string; name: string; slug: string; created_at: string }; role: string; email: string };
 type Member = { user_id: string; role: string; profiles: { email: string; display_name: string | null } | null };
@@ -47,6 +52,12 @@ const ASSIGNABLE_ROLES = ["owner", "admin", "pm", "site_engineer", "member", "cl
 // PATCH /api/org-members/[id]; this is a UX affordance only (hides a
 // control the caller couldn't use), not itself the security boundary.
 const CAN_ASSIGN_ROLES = new Set(["owner", "admin"]);
+
+// R67 lane I (WS-I item I-05): the BOQ category card's edit controls. Built
+// from ROLE_GROUPS.PM_OR_ABOVE itself, not a second hand-written literal, so it
+// cannot drift from API_WRITE_POLICY["/scope/categories"] -- which is the tier
+// middleware actually enforces on these writes.
+const CAN_EDIT_BOQ_CATEGORIES: ReadonlySet<string> = new Set<string>(ROLE_GROUPS.PM_OR_ABOVE);
 
 export default function SettingsClient() {
   const router = useRouter();
@@ -191,6 +202,21 @@ export default function SettingsClient() {
           API plus RLS in drizzle/0015_org_invites.sql. */}
       {info && <WorkspaceConnectionCard canRepair={CAN_ASSIGN_ROLES.has(info.role)} />}
       {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
+
+      {/* R67 lane I (WS-I item I-05, R-177): the org-level BOQ category list.
+          Rendered for everyone -- a site engineer picking a category on a BOQ
+          line has a real reason to see what the list contains -- but only the
+          roles that may actually write it get the edit controls.
+          canEdit MUST mirror API_WRITE_POLICY["/scope/categories"] (and
+          "/scope/categories/[id]"), which this lane registers at PM_OR_ABOVE
+          and which src/middleware.ts enforces. That middleware policy is the
+          REAL gate: PROJEXA calls VERIDIAN with one org-scoped API key carrying
+          no user id or role (see api-write-policy.ts's header), so VERIDIAN is
+          structurally incapable of refusing an individual user here. Gating the
+          card on a narrower set than the policy would show a pm a read-only
+          card for something the pm may legitimately write; a wider one would
+          show controls that 403. */}
+      {info && <BoqCategoriesCard canEdit={CAN_EDIT_BOQ_CATEGORIES.has(info.role)} />}
 
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>

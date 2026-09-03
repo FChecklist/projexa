@@ -2,7 +2,7 @@
 // R67 F-18 FIX -- a cookie is not a session, so the project it names is checked
 // before a module page trusts it.
 //
-// THE DEFECT. resolveProjectIdFast() returned the projexa_project cookie
+// THE DEFECT. resolveProjectIdFast() returned the rail's project cookie
 // unvalidated, and F-18's whole point is that it does so with NO network call.
 // The cookie lives 30 days. A sign-out followed by a different user signing in
 // on the same browser -- or one user switching organisation -- leaves an id
@@ -21,6 +21,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+// The cookie's NAME comes from the one module that owns it, never a literal
+// here. R67 WS-A (A-05) shipped the rail's own veri.rail.project preference and
+// F-18's separate projexa_project cookie was folded into it -- a hardcoded name
+// in this file would have gone on asserting a cookie nothing writes.
+import { PROJECT_COOKIE } from "@/lib/project-cookie";
 
 const ROOT = join(import.meta.dir, "..", "..");
 
@@ -35,7 +40,7 @@ function installMocks() {
   mock.module("next/headers", () => ({
     cookies: async () => ({
       get: (name: string) =>
-        name === "projexa_project" && cookieValue !== null ? { name, value: cookieValue } : undefined,
+        name === PROJECT_COOKIE && cookieValue !== null ? { name, value: cookieValue } : undefined,
     }),
   }));
   // unstable_cache's contract here is "same answer, memoised"; for the decision
@@ -115,7 +120,7 @@ describe("resolveProjectForModule", () => {
   test("a ?projectId= is trusted outright -- no validation round trip", async () => {
     const { resolveProjectForModule } = await loadModule();
     const resolved = await resolveProjectForModule("url-project", "org-1");
-    expect(resolved).toEqual({ projectId: "url-project", errorMessage: null });
+    expect(resolved).toEqual({ projectId: "url-project", errorMessage: null, source: "route" });
     expect(projectsCalls).toBe(0);
     expect(fallbackCalls).toBe(0);
   });

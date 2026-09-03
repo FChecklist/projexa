@@ -18,7 +18,8 @@
 // arrive because the activity and BOQ-line names are already ON those rows, and
 // the Activity select fills in separately behind its own placeholder. The two
 // scope calls are gone from this screen entirely.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { isAbortError } from "@/lib/module-list-state";
 import WorkProgressFormClient from "./WorkProgressFormClient";
 import WorkProgressListClient, { type Entry } from "./WorkProgressListClient";
@@ -90,6 +91,35 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
     return () => controller.abort();
   }, [load]);
 
+  // R67 A-04. The composer's "Record progress" card is a verb, so it must put
+  // the cursor where the work starts -- the form's first field, Activity --
+  // rather than dropping the user on the screen to find it. The card navigates
+  // here with ?focus=activity and this puts focus on the control.
+  //
+  // WHY querySelector AND NOT AN id: the form is the kit's FormScreen, whose
+  // FieldRenderer generates every control id with React's useId(), so there is
+  // no stable id to target from outside. The Activity column is declared first
+  // in WorkProgressFormClient's own columns array and is a SELECT, so the
+  // first <select> inside the form column IS Activity. If that ever stops
+  // being true the focus simply lands elsewhere -- it cannot break the page.
+  const formRef = useRef<HTMLDivElement>(null);
+  const focusRequest = useSearchParams().get("focus");
+  useEffect(() => {
+    if (focusRequest !== "activity") return;
+    const control = formRef.current?.querySelector<HTMLSelectElement>("select");
+    control?.focus();
+    control?.scrollIntoView({ block: "center" });
+    // F-24 renamed the page's single `loading` flag, which this effect used to
+    // depend on, into per-source state. The honest dependency is the one that
+    // decides when the Activity control is actually there to receive focus:
+    // its own lookup status.
+  }, [focusRequest, activities.status]);
+
+  // F-24: the activityNameById / boqLineDescriptionById maps that used to be
+  // built here are gone. The names now arrive ON the entry rows (the backend
+  // resolves them in the same statement), so there is nothing left to translate
+  // in the browser -- and nothing that can fall back to a raw id.
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
@@ -103,7 +133,8 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
           onRetry={() => void load()}
         />
       </div>
-      <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
+      {/* ref: A-04's ?focus=activity lands the cursor on the first field. */}
+      <div ref={formRef} className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         {/* The form no longer fetches activities of its own -- this page
             already has them, and two components asking the same endpoint on
             the same screen is one of the duplicate calls R-240 counted. */}

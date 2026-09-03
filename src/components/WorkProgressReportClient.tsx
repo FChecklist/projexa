@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { formatDecimal } from "@/lib/format-number";
 import { formatProgressCell } from "@/lib/work-progress-report";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
@@ -49,10 +51,30 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 // R36/P5 (B5 decision): additive fields so an existing consumer that
 // doesn't know about them still works exactly as before.
 type BoqOption = { id: string; title: string; status: string; version: number };
-type ReportResponse = { boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[]; rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[] };
+// R67 I-05: availableCategories/categoryFilter are additive -- an older
+// response without them still renders, the multi-select just has nothing to
+// offer until the first run comes back.
+type ReportResponse = {
+  boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
+  rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
+  availableCategories?: string[]; categoryFilter?: string[];
+};
 
+// R67 G-05 (R-260). This passed `undefined` as the locale, which is the
+// hydration bug src/lib/format-date.ts exists to prevent: with no locale
+// argument the runtime picks its OWN default, so the SSR pass formats in the
+// server's locale and the first client pass in the visitor's, and for any
+// non-en-US visitor (this app ships a real "hi" locale, whose digit grouping
+// is the Indian numbering system) the two strings differ and React reports a
+// mismatch. formatDecimal() pins it.
+//
+// Deliberately formatDecimal and NOT formatMoney: this one helper renders
+// both the Quantity band and the Amount band of the same grid, so a quantity
+// of 50 must stay "50" rather than becoming "50.00", and no cell may carry a
+// currency prefix. The currency belongs in the band header -- see the note on
+// ScopeTable, which takes no currency prop today.
 function money(n: number) {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatDecimal(n);
 }
 
 // T-WPR-14-1 (WPR-14, point 111): money() alone renders every Qty/Amt cell
@@ -119,6 +141,65 @@ function checkTies(rows: LineItemRow[], byCategory: CategoryRow[], mode: ThirdCo
     return `Category subtotals (${money(categorySum)}) do not sum to the grand total (${money(grand.amt.third)}) -- a row is missing from a category group. Export is disabled until this is fixed.`;
   }
   return null;
+}
+
+// R67 I-05 (R-177): the Category multi-select on the parameter bar.
+//
+// Checkboxes, not a shadcn Select -- Select is single-value, and a fake "multi"
+// built on it would silently drop every choice but the last. Nothing is
+// filtered until Apply: re-running on every checkbox click would fire a report
+// request per keystroke-equivalent. "All categories" is what the EMPTY
+// selection is called, stated in words, so an empty control never reads as
+// "nothing matches" -- that wording is load-bearing and is pinned by a test.
+//
+// Exported and purely presentational (props in, callbacks out, no state and no
+// fetching of its own) for the same reason ScopeTable above is: it is the only
+// way this file's markup gets a real test in this repo, where the DOM-backed
+// test runner is unavailable and components are asserted through
+// renderToStaticMarkup. Renders nothing at all when the report has surfaced no
+// categories, so a project whose BOQ has none never shows an empty filter box.
+export function CategoryFilterGroup({
+  available,
+  selected,
+  disabled,
+  onToggle,
+  onApply,
+}: {
+  available: string[];
+  selected: string[];
+  disabled: boolean;
+  onToggle: (name: string, checked: boolean) => void;
+  onApply: () => void;
+}) {
+  if (available.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <Label id="wpr-category-filter-label">Category</Label>
+      <div
+        role="group"
+        aria-labelledby="wpr-category-filter-label"
+        data-testid="wpr-category-filter"
+        className="flex max-w-[420px] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-px-border px-2 py-1.5"
+      >
+        {available.map((c) => (
+          <label key={c} className="flex items-center gap-1 text-xs text-px-ink">
+            <input
+              type="checkbox"
+              checked={selected.includes(c)}
+              onChange={(e) => onToggle(c, e.target.checked)}
+            />
+            {c}
+          </label>
+        ))}
+        <span className="text-xs text-px-muted">
+          {selected.length === 0 ? "All categories" : `${selected.length} selected`}
+        </span>
+        <Button size="sm" variant="outline" disabled={disabled} data-testid="wpr-category-apply" onClick={onApply}>
+          Apply
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string }) {
@@ -268,28 +349,72 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // R67 lane I (WS-I item I-05, R-177): the Category multi-select. Held here,
+  // sent to the server, and APPLIED THERE -- never filtered client-side, or the
+  // Grand Total would keep describing rows the table is no longer showing.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  // The option list comes from the last run (every category present BEFORE the
+  // filter), so selecting one never removes the others from the control.
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  async function runReport(boqId = selectedBoqId) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ projectId, from, to });
-      if (boqId) params.set("boqId", boqId);
-      const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
-      setReport(data);
-      if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // REBASE NOTE (r67 lane A onto lane I): both lanes changed this function.
+  // Lane I (I-05) gave it the category filter and the grow-only option list;
+  // lane A (A-04) made it a useCallback so the auto-run effect below can
+  // depend on it honestly rather than reaching past the dependency array.
+  // Both are kept -- I's body, A's wrapper -- and selectedCategories joins the
+  // dependency list, because the default parameter reads it.
+  const runReport = useCallback(
+    async (boqId = selectedBoqId, categories = selectedCategories) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ projectId, from, to });
+        if (boqId) params.set("boqId", boqId);
+        // Repeatable, not comma-joined: a real category name may contain a comma.
+        for (const c of categories) params.append("category", c);
+        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error);
+        setReport(data);
+        if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+        // R67 I-05: only ever GROWS the option list. A filtered run legitimately
+        // reports fewer categories present, and shrinking the control to match
+        // would make it impossible to widen the filter again.
+        if (Array.isArray(data.availableCategories)) {
+          setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+        }
+      } catch (err) {
+        toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
+        setReport(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [projectId, from, to, selectedBoqId, selectedCategories]
+  );
+
+  // R67 A-04. The composer's "Run WPR" card is a verb: it must run the report,
+  // not land the user on a form with the dates already filled in and a Run
+  // Report button still to press. It navigates here with ?run=1 and the report
+  // runs on arrival, over the default range this component already computes
+  // (1st of the month to today).
+  //
+  // ONCE. The ref, not the report state, is the guard: a run that FAILS must
+  // not retry itself on every re-render, and the user must be able to press
+  // Run Report again afterwards without the effect fighting them. The ref also
+  // makes the effect safe now that runReport's identity changes with lane I's
+  // selectedCategories: picking a category cannot silently re-fire the run.
+  const searchParams = useSearchParams();
+  const autoRunRequested = searchParams.get("run") === "1";
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (!autoRunRequested || autoRanRef.current) return;
+    autoRanRef.current = true;
+    void runReport();
+  }, [autoRunRequested, runReport]);
 
   // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
   // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a
@@ -299,7 +424,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // used for BOQ import, not export). Honestly labelled "Export CSV", not
   // claimed as XLSX. Disabled when the tie check fails -- an export of a
   // report that doesn't add up is worse than no export.
-  function exportCsv() {
+  const exportCsv = useCallback(() => {
     if (!report) return;
     const lines = [
       ["S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt", "% Prev", "% Current", `% ${thirdColumnMode === "balance" ? "Balance" : "Total"}`, "Qty Prev", "Qty Current", "Qty Third", "Amt Prev", "Amt Current", "Amt Third"].join(","),
@@ -316,7 +441,27 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
     a.href = url; a.download = `wpr-${projectId}-${from}-to-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
+  }, [report, thirdColumnMode, tieError, projectId, from, to]);
+
+  // R67 A-20. The composer's "Export CSV" card is a verb and the FILE is the
+  // whole point of it, so the card navigates here with ?tab=report&run=1&
+  // export=csv and the export happens once the report the effect above ran has
+  // actually arrived. Landing the user on an empty report with an export button
+  // that can do nothing until they press Run would be the same "card that is
+  // really a place" this programme is removing.
+  //
+  // ONCE, and never over a report that does not add up: the tie check is the
+  // same one that disables the button, and "an export of a report that doesn't
+  // add up is worse than no export" (see exportCsv's own comment above). When
+  // the check fails the tie-error card is already on screen saying why.
+  const autoExportRequested = searchParams.get("export") === "csv";
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExportRequested || autoExportedRef.current) return;
+    if (!report || tieError) return;
+    autoExportedRef.current = true;
+    exportCsv();
+  }, [autoExportRequested, report, tieError, exportCsv]);
 
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
   // Business API (explicitly ruled out). Copies the URL so the user can
@@ -376,6 +521,15 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               </Select>
             </div>
           )}
+          <CategoryFilterGroup
+            available={availableCategories}
+            selected={selectedCategories}
+            disabled={loading}
+            onToggle={(name, checked) =>
+              setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
+            }
+            onApply={() => runReport(selectedBoqId, selectedCategories)}
+          />
           {report && (
             <div className="space-y-1.5">
               <Label>Third column</Label>

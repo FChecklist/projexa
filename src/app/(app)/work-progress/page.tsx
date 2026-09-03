@@ -18,6 +18,10 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
+// R67 A-04: this pane shows ONE project's entries, so the rail and the composer
+// must name that project -- and say when the page picked it rather than the
+// user. Published inside the boundary (see ModuleScreenContext's header).
+import { ModuleScreenContext } from "@/components/ModuleScreenContext";
 
 const SKELETON = (
   <ModuleListSkeletonBody
@@ -28,14 +32,24 @@ const SKELETON = (
 
 async function WorkProgressSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
+  const { projectId, errorMessage, source } = await resolveProjectForModule(
+    requestedProjectId,
+    organizationId
+  );
   if (!projectId) return <ModuleProjectNotice errorMessage={errorMessage} />;
 
   return (
-    // R42 seq24: "analytics" is DASHBOARD.PROJECT's own destination for the
-    // "% Complete by Value" and category-bar KPIs (?tab=analytics), so
-    // defaultValue reads the real ?tab= and a dashboard click lands directly
-    // on it rather than on Daily Entry first.
+    <>
+    <ModuleScreenContext
+      moduleId="work-progress"
+      projectId={projectId}
+      organizationId={organizationId}
+      source={source}
+    />
+    {/* R42 seq24: "analytics" is DASHBOARD.PROJECT's own destination for the
+        "% Complete by Value" and category-bar KPIs (?tab=analytics), so
+        defaultValue reads the real ?tab= and a dashboard click lands directly
+        on it rather than on Daily Entry first. */}
     <Tabs defaultValue={tab === "analytics" || tab === "report" ? tab : "entry"} className="space-y-4">
       <TabsList>
         <TabsTrigger value="entry">Daily Entry</TabsTrigger>
@@ -52,6 +66,7 @@ async function WorkProgressSection({ requestedProjectId, tab }: { requestedProje
         <WorkProgressReportClient projectId={projectId} />
       </TabsContent>
     </Tabs>
+    </>
   );
 }
 

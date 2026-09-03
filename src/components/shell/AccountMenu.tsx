@@ -55,7 +55,7 @@ export default function AccountMenu({ email }: { email?: string }) {
           aria-label={email ? `Account: ${email}` : "Account"}
         >
           <Avatar className="h-5 w-5">
-            <AvatarFallback className="bg-ct-saffron text-white text-[9px] font-bold">{initials}</AvatarFallback>
+            <AvatarFallback className="bg-ct-saffron text-ct-navy text-[9px] font-bold">{initials}</AvatarFallback>
           </Avatar>
           <ChevronDown className="size-3" style={{ color: "var(--color-ct-muted)" }} />
         </button>

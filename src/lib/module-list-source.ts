@@ -35,6 +35,7 @@ import { unstable_cache } from "next/cache";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { PROJECT_COOKIE } from "@/lib/project-cookie";
+import type { ProjectSource } from "@/lib/project-preference";
 import { timeUpstream } from "@/lib/debug-latency";
 
 // Written by the top rail when the user switches project (see
@@ -80,7 +81,19 @@ export async function resolveProjectIdFastWithSource(
   }
 }
 
-export type ResolvedModuleProject = { projectId: string | null; errorMessage: string | null };
+export type ResolvedModuleProject = {
+  projectId: string | null;
+  errorMessage: string | null;
+  /**
+   * R67 WS-A (A-04): HOW the project was chosen, in A-05's own vocabulary, so
+   * the rail can admit to a choice it made for the user rather than presenting
+   * a guess as a decision they took. F-18's fast path maps onto it directly:
+   * the URL is "route", the remembered cookie is "preference", and anything
+   * that fell through to resolveSelectedProject() carries whatever that
+   * returned ("only" or "auto").
+   */
+  source: ProjectSource | null;
+};
 
 /**
  * Is this id one of the caller's OWN projects?
@@ -117,13 +130,17 @@ export async function resolveProjectForModule(
   organizationId: string | null
 ): Promise<ResolvedModuleProject> {
   const { projectId: fast, source } = await resolveProjectIdFastWithSource(requestedProjectId);
-  if (fast && source === "url") return { projectId: fast, errorMessage: null };
+  if (fast && source === "url") return { projectId: fast, errorMessage: null, source: "route" };
   if (fast && (await cookieProjectStillBelongs(fast, organizationId))) {
-    return { projectId: fast, errorMessage: null };
+    return { projectId: fast, errorMessage: null, source: "preference" };
   }
   const { resolveSelectedProject } = await import("@/lib/project-selection");
-  const { project, errorMessage } = await resolveSelectedProject(undefined, organizationId);
-  return { projectId: project?.id ?? null, errorMessage };
+  const {
+    project,
+    errorMessage,
+    source: chosen,
+  } = await resolveSelectedProject(undefined, organizationId);
+  return { projectId: project?.id ?? null, errorMessage, source: project ? chosen : null };
 }
 
 // ---------------------------------------------------------------------------

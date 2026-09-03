@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ShellBootstrapPayload } from "@/app/api/shell/route";
+import { readJsonWithRetry } from "@/lib/shell-resilience";
 
 export type ShellKey =
   | "organization"
@@ -143,15 +144,22 @@ export function invalidateShell(...keys: ShellKey[]): void {
 }
 
 async function fetchBootstrap(): Promise<void> {
-  const res = await fetch("/api/shell");
-  // Status before body: an error body parses perfectly well as JSON, and
-  // treating it as data is how a failed request becomes a confident shell.
-  const body = (await res.json().catch(() => null)) as ShellBootstrapPayload | { error?: string } | null;
-  if (!res.ok || !body || !("fetchedAt" in body)) {
-    const message =
-      body && typeof (body as { error?: unknown }).error === "string"
-        ? (body as { error: string }).error
-        : `Couldn't load the shell (HTTP ${res.status})`;
+  // R67 WS-A (A-16) -- ATTEMPTED TWICE BEFORE ANY FALLBACK.
+  //
+  // A-16 established this for the four shell reads it owned: a single failed
+  // read is usually a dropped request rather than a broken backend, this
+  // product runs on site connections, and the shell's reads all happen in the
+  // same first second of a page load -- exactly when a flaky link drops one.
+  // F-21 replaced those four calls with this one, so the retry belongs here
+  // now; without it, collapsing four reads into one would have made a single
+  // dropped request degrade the WHOLE shell rather than a quarter of it.
+  //
+  // readJsonWithRetry() is A-16's own pure policy (src/lib/shell-resilience.ts),
+  // so "each call is attempted twice" stays asserted rather than described.
+  const read = await readJsonWithRetry<ShellBootstrapPayload>("/api/shell");
+  const body = read.ok ? read.data : null;
+  if (!body || !("fetchedAt" in body)) {
+    const message = read.ok ? "Couldn't load the shell" : read.error;
     lastFailureAt = Date.now();
     // The last known-good data is KEPT: a failed revalidation must not blank a
     // shell that is already correct on screen. When there is none, an empty
@@ -166,6 +174,7 @@ async function fetchBootstrap(): Promise<void> {
         notifications: [],
         unreadCount: 0,
         pillUsage: [],
+        recentChains: [],
         history: [],
         isNewUser: false,
         capabilityTree: [],

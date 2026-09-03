@@ -146,18 +146,24 @@ describe("loadShell", () => {
     }) as typeof fetch;
 
     await loadShell();
-    expect(calls).toBe(1);
+    // TWO attempts, not one: R67 WS-A (A-16) rules that a shell read is retried
+    // once before any fallback, because a single failure on a site connection is
+    // usually a dropped request. F-21 collapsed A-16's four reads into this one,
+    // so the retry moved here with them. What must NOT happen is a retry LOOP,
+    // which is what the cooldown below is for -- the two are different things.
+    expect(calls).toBe(2);
     expect(getShellSnapshot().data?.errors.shell).toBe("No VERIDIAN credentials configured (AR-04)");
 
     // The snapshot is now stale by construction, which is exactly what would
     // drive an unbounded retry loop without the cooldown.
     await loadShell();
     await loadShell();
-    expect(calls).toBe(1);
-
-    // A user-initiated refresh is allowed straight through, because they asked.
-    await loadShell(true);
     expect(calls).toBe(2);
+
+    // A user-initiated refresh is allowed straight through, because they asked
+    // -- and it too is attempted twice.
+    await loadShell(true);
+    expect(calls).toBe(4);
     expect(SHELL_FAILURE_COOLDOWN_MS).toBeGreaterThan(0);
   });
 

@@ -110,7 +110,11 @@ describe("the shared fallback columns", () => {
       "Authority",
       "Issue date",
       "Expiry date",
-      "Days left",
+      // R67 G-01 renamed this: the cell answers a question ("Expires in 12
+      // days", "Expired") rather than promising a number, so the header asks
+      // one. Asserted here because the skeleton and the loaded table both read
+      // this constant, and a silent relabel would make them disagree.
+      "Status",
     ]);
     expect(MOMS_LIST_COLUMNS.map((c) => c.label)).toEqual(["Meeting", "Date", "Status"]);
     expect(MANPOWER_LIST_COLUMNS.map((c) => c.label)).toEqual([

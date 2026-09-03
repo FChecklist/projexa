@@ -1,23 +1,38 @@
 // R67 F-18 -- the name of the cookie that carries the selected project, and
 // the browser-side writer for it.
 //
-// Its own module, with NO server imports, because both halves need it: the
-// server reads it in module-list-source.ts (which imports next/headers and can
-// never be pulled into a client component), and the top rail writes it from
-// the browser when the user switches project.
+// *** MERGE NOTE (R67 F-18 x WS-A A-05). ***
 //
-// WHY A COOKIE AT ALL. Under D-04 a module page must know which project it is
-// about WITHOUT a network call, or the /dashboard hop goes straight back onto
-// the critical path. The `?projectId=` in the URL covers every navigation that
-// came from a "+ New" button, a KPI tile or a pill. It does not cover a
-// typed URL, a bookmark, or a module opened from the directory -- and for
-// those the cookie is the answer the rail already knows.
+// This file used to own its own cookie, `projexa_project`, because when F-18
+// was written NOTHING in the app remembered the rail's project and F-18's whole
+// point is that a module page must know its project WITHOUT a network call.
+// That was flagged at the time as a seam: "if D-65/D-66 redesign the rail, this
+// file is where they meet."
+//
+// WS-A (A-05) has now shipped that rail, in src/lib/project-preference.ts, with
+// its own key `veri.rail.project` written to BOTH localStorage (so the rail can
+// paint before any request) and a cookie (so the SERVER agrees on the first
+// render). Keeping a second cookie beside it would recreate the exact defect
+// A-05's own header describes -- two independent answers to "which project" --
+// and it would do so in the worst possible place: SIGN-OUT. This file's
+// clearing path is the only one in the app, and had it kept clearing only its
+// own cookie it would have left A-05's localStorage and cookie holding the
+// PREVIOUS user's project id for the next person to sign in on this browser.
+//
+// So this module is now a thin delegation to that one owner. The name, the
+// writer and the storage are A-05's; what F-18 keeps is the server-side reader
+// (module-list-source.ts), the sign-out clearing, and the `Secure` attribute.
+import {
+  PROJECT_PREFERENCE_KEY,
+  readStoredProjectId,
+  writeStoredProjectId,
+} from "@/lib/project-preference";
 
-export const PROJECT_COOKIE = "projexa_project";
-
-// Thirty days: long enough that a returning user lands on the project they
-// were last working in, short enough that an abandoned selection expires.
-const PROJECT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+/**
+ * The cookie the server reads to learn the rail's project without a round trip.
+ * ONE name, owned by src/lib/project-preference.ts.
+ */
+export const PROJECT_COOKIE = PROJECT_PREFERENCE_KEY;
 
 /**
  * Records (or clears) the selected project for the server to read on the next
@@ -26,43 +41,34 @@ const PROJECT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
  * *** CLEAR IT ON SIGN-OUT. *** Pass null before signOut() -- every sign-out
  * path in this app does (AccountMenu, AppTopbar, SettingsClient, and M24Shell's
  * own SIGNED_OUT handler for a sign-out that happened in another tab). A
- * 30-day cookie left behind means the NEXT person to sign in on this browser
- * has the previous user's project id resolved for them with no network call.
- * VERIDIAN scopes every read by org, so nothing of the old tenant's leaks --
- * what leaks is worse to read: the new user's /permits, /moms, /drawings and
- * /scope come back with zero rows and NO error, so the screen calmly says
- * there are none. resolveProjectForModule() therefore also validates a
- * cookie-sourced id against the caller's own project list before trusting it.
+ * year-long preference left behind means the NEXT person to sign in on this
+ * browser has the previous user's project id resolved for them with no network
+ * call. VERIDIAN scopes every read by org, so nothing of the old tenant's data
+ * leaks -- what leaks is worse to read: the new user's /permits, /moms,
+ * /drawings and /scope come back with zero rows and NO error, so the screen
+ * calmly says there are none. resolveProjectForModule() therefore also
+ * validates a cookie-sourced id against the caller's own project list before
+ * trusting it.
  *
- * SameSite=Lax so it is sent on ordinary top-level navigations -- which is
- * exactly and only what needs it -- and never on a cross-site subrequest. Not
- * HttpOnly, deliberately: this is a UI preference the client itself writes,
- * and it carries no authority of any kind. Every read is still scoped by the
- * caller's own session and org; a forged value can only ask for a project the
- * caller is already entitled to see, and VERIDIAN answers 403 otherwise.
+ * Delegates to writeStoredProjectId(), so clearing clears BOTH the cookie and
+ * the localStorage copy the rail paints from. Clearing only one would leave the
+ * rail showing the previous user's project name after a sign-out.
  */
 export function rememberSelectedProject(projectId: string | null): void {
-  if (typeof document === "undefined") return;
-  try {
-    // `Secure` on HTTPS so the value cannot be planted over a plaintext
-    // downgrade. Omitted on http:// because a Secure cookie is silently
-    // dropped there, which would break local development rather than protect
-    // it.
-    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; secure" : "";
-    document.cookie = projectId
-      ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE_SECONDS}; samesite=lax${secure}`
-      : `${PROJECT_COOKIE}=; path=/; max-age=0; samesite=lax${secure}`;
-  } catch {
-    // A blocked cookie jar just means the URL stays the only source; it must
-    // never take the shell down.
-  }
+  writeStoredProjectId(projectId);
 }
 
 /**
- * The project the rail last selected, read from the browser's own cookie jar.
- * Null when nothing has been selected in this browser yet.
+ * The project the rail last selected, as the BROWSER sees it. Null when nothing
+ * has been selected in this browser yet.
+ *
+ * localStorage first (it is what the rail itself paints from, so this cannot
+ * disagree with the rail), then the cookie, which is the copy that survives a
+ * browser configured to block script storage but still accept cookies.
  */
 export function readSelectedProjectId(): string | null {
+  const stored = readStoredProjectId();
+  if (stored) return stored;
   if (typeof document === "undefined") return null;
   try {
     for (const part of document.cookie.split(";")) {

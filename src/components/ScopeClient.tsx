@@ -18,13 +18,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+// Loader2 is gone with G-05's spinner: R67 F-31 replaced that bare spinner with
+// ListScreenFrame, which says WHAT is loading and for how long. useCurrencies
+// is gone too -- G-05's useOrgMoney() resolves the org's currency itself, and
+// this file no longer formats any money by hand.
 import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
-import { useCurrencies } from "@/lib/currency";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
@@ -79,8 +85,18 @@ export type Boq = {
   };
 };
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  draft: "secondary", submitted: "default", approved: "outline", superseded: "destructive",
+// R67 G-05 (R-260). This was shadcn Badge variants, and the worst of them was
+// `superseded: "destructive"` -- a BRIGHT RED badge on every superseded BOQ
+// revision. Rose is reserved for late and error; a superseded revision is not
+// a fault, it is history, and painting it red made every project with a
+// revision look like it had a problem. `submitted: "default"` was the saffron
+// primary fill, which made a passive state look like the screen's one action.
+// Both now come from the single status map in ui/status-pill.tsx.
+const BOQ_STATUS: Record<string, SemanticStatus> = {
+  draft: "draft",
+  submitted: "running",
+  approved: "current",
+  superseded: "superseded",
 };
 
 // R66 visual QA (2026-09-02): reproduced live on a real project's BOQ list --
@@ -100,19 +116,18 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-// R67 F-23: an explicit sign on both directions -- a variation is a change, and
-// "1,005" beside "-1,005" reads as a total unless the increase says so too.
-// Grouped with the same "en-US" plain-thousands convention every other money
-// cell in this app uses (TC-90: no lakh/crore grouping, no hardcoded symbol).
-function formatVariation(amount: number): string {
-  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
-  return `${sign}${Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-}
-
-// R67 F-29: a total is a magnitude, not a change -- no sign, same grouping.
-function formatMoney(amount: number): string {
-  return amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
+// R67 G-05: formatVariation() lived here and passed `undefined` as the locale
+// -- the exact hydration bug src/lib/format-date.ts exists to prevent, since
+// the server formats in ITS locale and the browser in the visitor's. It also
+// carried its meaning in colour (green for up, red for down). Both are gone:
+// the figure now comes from the one money formatter, and its DIRECTION is a
+// glyph plus an explicit sign ("▲ AED +2,025"), rendered in ink.
+//
+// F-23's and F-29's own formatVariation()/formatMoney() went the same way and
+// for the same reason -- they hardcoded "en-US" and prepended a bare currency
+// code -- so this file now formats no money by hand at all. What F-29 keeps is
+// the PERCENTAGE, which is not money and which G-05's formatter has no notion
+// of.
 
 // R67 F-29: "+1,005" alone says nothing about whether that is a rounding error
 // or a doubling of the contract, so the percentage rides beside it. null is
@@ -155,8 +170,7 @@ export default function ScopeClient({
   // line items. Still derived, never denormalized: this codebase computes
   // diffs at read time, and that has not changed -- only WHERE.
 
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  const orgMoney = useOrgMoney();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const listAlreadyLoaded = listFromServerFor.current === projectId;
@@ -236,12 +250,24 @@ export default function ScopeClient({
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "version", "Version")}</TableHead>
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
-                  {/* R67 F-29: both of these arrive on the list row now. */}
+                  {/* R67 F-29: both of these arrive on the list row now.
+                      R67 G-05: the unit lives in the column header, not
+                      repeated down every row -- so both money columns carry it
+                      and neither cell does. */}
                   <TableHead className="text-right">{columnLabel(boqListColumns, "lineCount", "Lines")}</TableHead>
-                  <TableHead className="text-right">{columnLabel(boqListColumns, "total", "Total")}</TableHead>
-                  <TableHead className="text-right">{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
+                  <TableHead className="text-right">
+                    {columnLabel(boqListColumns, "total", "Total")}
+                    {orgMoney.unitSuffix}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {columnLabel(boqListColumns, "variation", "Variation vs. prior")}
+                    {orgMoney.unitSuffix}
+                  </TableHead>
                   <TableHead>{columnLabel(boqListColumns, "createdAt", "Created")}</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  {/* R67 G-04: a minimum width, so the three action labels
+                      never truncate to "Ne...". The TABLE scrolls; the
+                      actions do not. */}
+                  <TableHead className="w-[300px] min-w-[300px] whitespace-nowrap text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -255,24 +281,39 @@ export default function ScopeClient({
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
-                      <TableCell><Badge variant={STATUS_VARIANT[b.status] ?? "outline"}>{b.status}</Badge></TableCell>
+                      <TableCell>
+                        {BOQ_STATUS[b.status] ? (
+                          <StatusPill status={BOQ_STATUS[b.status]} label={b.status} />
+                        ) : (
+                          <StatusPillTone tone="neutral" label={b.status} />
+                        )}
+                      </TableCell>
+                      {/* R67 F-29: the line count arrives on the list row now.
+                          Not money, so it gets the plain numeric alignment. */}
                       <TableCell className="text-right tabular-nums text-px-muted">
-                        {b.compare ? b.compare.lineCount : <span className="text-px-muted">–</span>}
+                        {b.compare ? b.compare.lineCount : <span className="text-px-muted">{EMPTY_VALUE}</span>}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {b.compare ? `${currencyCode ? `${currencyCode} ` : ""}${formatMoney(b.compare.total)}` : <span className="text-px-muted">–</span>}
+                      {/* R67 F-29 x G-05: a total is a magnitude, so it uses the
+                          unsigned org formatter -- not the signed one, which
+                          would put a "+" in front of every contract value. */}
+                      <TableCell className={MONEY_CELL_CLASS}>
+                        {b.compare ? orgMoney.money(b.compare.total) : <span className="text-px-muted">{EMPTY_VALUE}</span>}
                       </TableCell>
-                      {/* R67 F-23: right-aligned (it is money), signed, in the
-                          org's own currency; an en-dash for a revision with no
-                          prior to vary from. */}
-                      <TableCell className="text-right tabular-nums">
+                      {/* R67 F-23: right-aligned (it is money) and signed, with
+                          an en-dash for a revision that has no prior to vary
+                          from. R67 G-05 owns the FORMATTING: the org's own
+                          currency and locale, and the direction carried by the
+                          glyph and the sign rather than by colour. */}
+                      <TableCell className={MONEY_CELL_CLASS}>
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
                         ) : variation === undefined || variation === null ? (
-                          <span className="text-px-muted">–</span>
+                          <span className="text-px-muted">{EMPTY_VALUE}</span>
                         ) : (
-                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>
-                            {currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}
+                          // In ink, with the direction in the glyph and the
+                          // sign -- not in the colour.
+                          <span className="text-ct-navy">
+                            {orgMoney.signedMoney(variation)}
                             {/* R67 F-29: the percentage beside the amount. An
                                 unknowable percentage (a parent that totalled
                                 nothing) is simply absent, never "0%". */}
@@ -281,7 +322,7 @@ export default function ScopeClient({
                         )}
                       </TableCell>
                       <TableCell className="text-px-muted">{formatDate(b.createdAt)}</TableCell>
-                      <TableCell className="text-right space-x-1">
+                      <TableCell className="w-[300px] min-w-[300px] whitespace-nowrap text-right space-x-1">
                         {/* Real screen navigation (2026-08-30) -- replaces the old
                             "View" Dialog popup with a real Object Page route,
                             same as PermitObjectClient's proven pattern. */}
@@ -298,6 +339,10 @@ export default function ScopeClient({
           </ListScreenFrame>
         </CardContent>
       </Card>
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

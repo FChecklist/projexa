@@ -181,7 +181,7 @@ export default function VeriChatPanel() {
       ) : loadError ? (
         <div className="grid place-items-center gap-2 h-32 px-4 text-center">
           <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-          <button type="button" onClick={bumpRefresh} className="text-[11.5px] font-semibold text-px-orange">Retry</button>
+          <button type="button" onClick={bumpRefresh} className="text-[11.5px] font-semibold text-brand-text">Retry</button>
         </div>
       ) : activeQuery ? (
         <QueryThread query={activeQuery} onBack={closeThread} />
@@ -241,7 +241,7 @@ function ChatList({
         <div className="px-4 py-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-px-muted mb-1.5">Start a conversation</p>
           {startable.map((m) => (
-            <button key={m.user_id} type="button" onClick={() => onStart(m.user_id)} className="flex items-center gap-2 w-full text-left py-1.5 text-[13px] text-px-ink hover:text-px-orange">
+            <button key={m.user_id} type="button" onClick={() => onStart(m.user_id)} className="flex items-center gap-2 w-full text-left py-1.5 text-[13px] text-px-ink hover:text-brand-text">
               <Plus className="size-3.5" /> {m.profiles?.display_name || m.profiles?.email || "Teammate"}
             </button>
           ))}
@@ -286,7 +286,7 @@ function QueryThread({ query, onBack }: { query: QuerySummary; onBack: () => voi
     <div className="px-4 py-3">
       <div className="mb-3 flex items-center justify-between rounded-lg bg-px-cloud px-3 py-2">
         <span className="font-semibold text-px-ink text-[13px] truncate">{query.breadcrumb}</span>
-        <button type="button" onClick={onBack} className="text-[11.5px] font-semibold text-px-orange shrink-0 ml-2">Back</button>
+        <button type="button" onClick={onBack} className="text-[11.5px] font-semibold text-brand-text shrink-0 ml-2">Back</button>
       </div>
       {query.status === "pending" && <p className="text-center text-[13px] text-px-muted py-6">Working…</p>}
       {query.status === "error" && <p className="text-[13px] text-px-error px-1">{query.error_message}</p>}
@@ -312,7 +312,7 @@ function ConvoThread({
           <span>Chatting with</span>
           <span className="font-semibold text-px-ink">{convo.name}</span>
         </div>
-        <button type="button" onClick={onBack} className="text-[11.5px] font-semibold text-px-orange">Back</button>
+        <button type="button" onClick={onBack} className="text-[11.5px] font-semibold text-brand-text">Back</button>
       </div>
       <div className="space-y-3 mb-3">
         {messages.length === 0 && <p className="text-center text-[11px] text-px-muted">No messages yet.</p>}

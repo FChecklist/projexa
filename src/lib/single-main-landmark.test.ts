@@ -48,8 +48,32 @@ function tsxFilesUnder(dir: string): string[] {
   return out;
 }
 
+// R67 WS-A, review fix -- WHERE THE FILE READS HAPPEN, AND WHAT THE BUDGET IS.
+//
+// The rule below is unchanged; what changed is that both sweeps used to
+// readFileSync every .tsx file in their tree INSIDE the test, against bun's
+// default 5 s per-test budget. That is fine on a quiet machine and not on a
+// loaded one: running the full suite during this fix pass, "no route file under
+// src/app/(app) opens its own <main>" took 9,597 ms and failed with "this test
+// timed out after 5000ms", then passed on the next run -- and CI's own
+// `bun test --isolate` across all 49 files on a shared runner IS the loaded
+// case. The scan now happens once, here, where no per-test timeout applies, and
+// each sweep carries an explicit budget so a slow runner reports the real
+// assertion rather than a timeout.
+const SWEEP_TIMEOUT_MS = 30_000;
+
 describe("single <main> landmark per page (R48_DUAL_MAIN_LANDMARK_01)", () => {
   const files = tsxFilesUnder(APP_DIR);
+  const routeOffenders = files.filter(opensAMainLandmark);
+  // Two client components ARE a page body -- (app)/dashboard/page.tsx and
+  // (app)/dashboard/overview/page.tsx return them directly, so a <main>
+  // there lands inside the shell's landmark exactly like a page's own would.
+  // ui/sidebar.tsx's SidebarInset is the one legitimate <main> in this tree:
+  // an unmounted shadcn primitive (nothing imports SidebarInset), kept as
+  // shipped.
+  const componentOffenders = tsxFilesUnder(join(process.cwd(), "src", "components"))
+    .filter((f) => !f.endsWith(join("ui", "sidebar.tsx")))
+    .filter(opensAMainLandmark);
 
   test("the (app) tree is actually being walked", () => {
     // Guards against the walk silently finding nothing and the assertion
@@ -57,34 +81,19 @@ describe("single <main> landmark per page (R48_DUAL_MAIN_LANDMARK_01)", () => {
     expect(files.length).toBeGreaterThan(40);
   });
 
-  // 30 s, not bun's default 5 s: this reads the CONTENTS of every .tsx in the
-  // tree, and on Windows under `bun test --isolate`'s parallel load that walk
-  // has already exceeded 5 s and failed a branch with no dual landmark in it.
-  // The assertion is unchanged; only the clock allowance is.
   test(
     "no route file under src/app/(app) opens its own <main>",
     () => {
-      const offenders = files.filter(opensAMainLandmark);
-      expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
+      expect(routeOffenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
     },
-    30_000
+    SWEEP_TIMEOUT_MS
   );
 
-  // Two client components ARE a page body -- (app)/dashboard/page.tsx and
-  // (app)/dashboard/overview/page.tsx return them directly, so a <main>
-  // there lands inside the shell's landmark exactly like a page's own would.
-  // ui/sidebar.tsx's SidebarInset is the one legitimate <main> in this tree:
-  // an unmounted shadcn primitive (nothing imports SidebarInset), kept as
-  // shipped.
   test(
     "no page-body client component opens its own <main>",
     () => {
-      const componentFiles = tsxFilesUnder(join(process.cwd(), "src", "components")).filter(
-        (f) => !f.endsWith(join("ui", "sidebar.tsx"))
-      );
-      const offenders = componentFiles.filter(opensAMainLandmark);
-      expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
+      expect(componentOffenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
     },
-    30_000
+    SWEEP_TIMEOUT_MS
   );
 });

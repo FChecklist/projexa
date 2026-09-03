@@ -24,7 +24,11 @@ export const PERMITS_LIST_COLUMNS: ScreenColumn[] = [
   { label: "Authority", field: "permitAuthority", type: "text", importance: "High" },
   { label: "Issue date", field: "issueDate", type: "date", importance: "High" },
   { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
-  { label: "Days left", field: "daysToExpiry", type: "number", importance: "High" },
+  // R67 G-01: was "Days left", which promised a number. The cell now answers a
+  // question ("Expires in 12 days", "Expired"), so the header asks one and the
+  // type is text. Changed HERE rather than in PermitsListClient so the loading
+  // skeleton and the loaded table cannot disagree about the last column.
+  { label: "Status", field: "daysToExpiry", type: "text", importance: "High" },
 ];
 
 export const MOMS_LIST_COLUMNS: ScreenColumn[] = [

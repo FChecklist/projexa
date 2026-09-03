@@ -33,7 +33,19 @@ export type ShellBootstrapPayload = {
   projects: { id: string; name: string }[];
   notifications: unknown[];
   unreadCount: number;
-  pillUsage: { pillKey: string; functionId?: string }[];
+  // R67 WS-A (A-08/A-16): `label` and `pinned` are what the strip RENDERS, and
+  // `recentChains` is the "recent" row beside it. They come from the same
+  // upstream /pill-usage?limit=6 answer this route already asks for -- lane A
+  // read them from its own copy of that call, which F-21 removed, so the
+  // projection here was widened rather than the call being made twice.
+  pillUsage: { pillKey: string; label?: string | null; pinned?: boolean; functionId?: string }[];
+  recentChains: {
+    fullChain: string;
+    label: string;
+    steps?: unknown[];
+    projectId?: string | null;
+    outcome?: string;
+  }[];
   history: unknown[];
   isNewUser: boolean;
   capabilityTree: unknown[];
@@ -69,10 +81,12 @@ export const GET = withTiming("GET", async function GET() {
       ? supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", ctx.user.id).eq("is_read", false)
       : Promise.resolve({ count: 0, error: null }),
     callVeridianResult<{ projects?: { id: string; name: string }[] }>("/dashboard", { organizationId }),
-    callVeridianResult<{ pills?: { pillKey: string; functionId?: string }[]; history?: unknown[]; isNewUser?: boolean }>(
-      "/pill-usage?limit=6",
-      { organizationId }
-    ),
+    callVeridianResult<{
+      pills?: { pillKey: string; label?: string | null; pinned?: boolean; functionId?: string }[];
+      recentChains?: ShellBootstrapPayload["recentChains"];
+      history?: unknown[];
+      isNewUser?: boolean;
+    }>("/pill-usage?limit=6", { organizationId }),
     callVeridianResult<{ nodes?: unknown[] }>("/capability-tree", { organizationId }),
     callVeridianResult<{ currencies?: unknown[] }>("/currencies", { organizationId }),
     callVeridianResult<{ vendors?: { id: string; vendorName: string }[] }>("/vendors", { organizationId }),
@@ -120,6 +134,11 @@ export const GET = withTiming("GET", async function GET() {
     notifications: (notifValue?.data ?? []) as unknown[],
     unreadCount: unreadValue?.count ?? 0,
     pillUsage: pillValue?.ok ? (pillValue.data.pills ?? []) : [],
+    // A-08: no recent chains is a normal first week and renders as "role cards
+    // only". An empty array on a FAILED read is not a claim that there are
+    // none -- errors.pillUsage above carries that fact, and the shell keeps the
+    // last good ranking rather than replacing it with a shorter set.
+    recentChains: pillValue?.ok ? (pillValue.data.recentChains ?? []) : [],
     history: pillValue?.ok ? (pillValue.data.history ?? []) : [],
     isNewUser: pillValue?.ok ? Boolean(pillValue.data.isNewUser) : false,
     capabilityTree: treeValue?.ok ? (treeValue.data.nodes ?? []) : [],

@@ -69,7 +69,14 @@ describe("ScopeClient rows", () => {
     const fetched: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       fetched.push(String(input));
-      return new Response(JSON.stringify({ boqs: [], currencies: [] }), { status: 200 });
+      // A real base-currency row: R67 G-05 formats money from the org's own
+      // currency, and with `currencies: []` these rows would render through the
+      // "no currency set" path (a warning glyph and no code) -- a degraded
+      // state, not the one a user normally sees.
+      return new Response(
+        JSON.stringify({ boqs: [], currencies: [{ id: "c-1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] }),
+        { status: 200 }
+      );
     }) as typeof fetch;
 
     const { getByText, container } = render(
@@ -79,9 +86,11 @@ describe("ScopeClient rows", () => {
     await waitFor(() => expect(getByText("Rev 1")).toBeDefined());
 
     // The compare summary is on screen...
-    expect(getByText("6,025")).toBeDefined();
-    expect(getByText("5,020")).toBeDefined();
-    expect(getByText(/\+1,005/)).toBeDefined();
+    // Two decimals, because G-05 aligns a money column on the point; the code
+    // is carried by the column header (unitSuffix), not repeated in the cell.
+    expect(getByText("AED 6,025.00")).toBeDefined();
+    expect(getByText("AED 5,020.00")).toBeDefined();
+    expect(getByText(/\+1,005\.00/)).toBeDefined();
     expect(getByText("(+20.0%)")).toBeDefined();
 
     // ...and NOT ONE request was made to get it. The server passed the rows
@@ -98,7 +107,11 @@ describe("ScopeClient rows", () => {
   });
 
   test("the baseline shows its own size but no variation -- 'Baseline (Rev0)', never a zero", async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify({ boqs: [] }), { status: 200 })) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ boqs: [], currencies: [{ id: "c-1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] }),
+        { status: 200 }
+      )) as typeof fetch;
 
     const { getByText, queryByText } = render(
       <ScopeClient projectId="p-1" initial={{ rows: [BASELINE], errorMessage: null }} />
@@ -106,7 +119,7 @@ describe("ScopeClient rows", () => {
 
     await waitFor(() => expect(getByText("Baseline")).toBeDefined());
     expect(getByText("Baseline (Rev0)")).toBeDefined();
-    expect(getByText("5,020")).toBeDefined();
+    expect(getByText("AED 5,020.00")).toBeDefined();
     expect(queryByText("(0.0%)")).toBeNull();
   });
 
