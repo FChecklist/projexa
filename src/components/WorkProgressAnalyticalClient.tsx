@@ -109,7 +109,12 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
     const [entriesRes, activitiesRes, catRes] = await Promise.all([
       fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ entries: [] })),
       fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ activities: [] })),
-      fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ categories: [] })),
+      // format=legacy: E-32 made the generic { columns, rows } table the
+      // DEFAULT body of /reports/{name}. This chart reads categoryId, name and
+      // percentComplete off `categories[]`, which the table does not carry --
+      // without the flag `catRes.categories ?? []` would silently be [] and the
+      // bars would vanish with no error anywhere.
+      fetch(`/api/reports/category-progress?format=legacy&projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ categories: [] })),
     ]);
     const loadedEntries: Entry[] = entriesRes.entries ?? [];
     setEntries(loadedEntries);
@@ -234,7 +239,17 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
             <h4 className="text-sm font-medium text-px-fg">Budget vs completed by category</h4>
             {/* The same component the dashboards draw, with its drill pointed at
                 the Work Progress Report (D-02) instead of at this screen, which
-                is the screen the reader is already on. */}
+                is the screen the reader is already on.
+
+                OPEN OWNER QUESTION, NOT AN OVERSIGHT. E-33 asks for a PIE here
+                whenever there are five or fewer segments. E-23 -- already
+                shipped in this same lane, from the same audit -- deliberately
+                REMOVED that pie and recorded why: a pie makes the reader
+                compare angles when the question is a comparison of lengths, and
+                its cap hid categories. E-33's five-segment condition answers the
+                hiding half and not the angle half, so reinstating it would undo
+                a decision this programme made a few commits earlier. Bars kept;
+                the choice between the two items is the owner's to make. */}
             <CategoryDistributionCharts
               projectId={projectId}
               drillTo="report"

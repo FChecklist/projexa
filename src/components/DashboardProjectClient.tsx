@@ -197,7 +197,12 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         fetch("/api/currencies").then((r) => r.json()).catch(() => ({ currencies: [] })),
         fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ activities: [] })),
         fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ entries: [] })),
-        fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        // format=legacy: this tile reads `totalBudget` off the handler's own
+        // payload. E-32 made the generic table the default body, where that
+        // figure lives at totals.budget -- so without the flag the BOQ budget
+        // reads as null and the tile says "No budget set" about a project that
+        // has one.
+        fetch(`/api/reports/budget-variance?format=legacy&projectId=${encodeURIComponent(projectId)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         loadPermits(),
       ]);
       setDashboard(dashRes);

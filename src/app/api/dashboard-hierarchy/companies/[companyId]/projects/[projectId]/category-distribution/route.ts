@@ -25,9 +25,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
   if (scope.response) return scope.response;
 
   try {
+    // `format=legacy`: see the project-scoped twin for the full reason. In
+    // short, E-32 made the generic table the default body and the table has no
+    // categoryId column, so a chart built from category ids has to ask for the
+    // handler's own payload by name.
     const [amounts, progress] = await Promise.all([
-      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?projectId=${encodeURIComponent(projectId)}`, { organizationId: scope.companyId }),
-      callVeridian<CategoryProgress>(`/reports/category-progress?projectId=${encodeURIComponent(projectId)}`, { organizationId: scope.companyId }),
+      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?format=legacy&projectId=${encodeURIComponent(projectId)}`, { organizationId: scope.companyId }),
+      callVeridian<CategoryProgress>(`/reports/category-progress?format=legacy&projectId=${encodeURIComponent(projectId)}`, { organizationId: scope.companyId }),
     ]);
     return NextResponse.json(buildCategoryDistribution(amounts, progress));
   } catch (err) {

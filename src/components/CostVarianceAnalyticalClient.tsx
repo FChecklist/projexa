@@ -149,7 +149,12 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`)
+    // format=legacy, and it MUST stay legacy rather than migrate to E-32's
+    // table: this screen draws E-26's indented child rows, which need
+    // lineItemId, parentLineItemId, budgetIsDerived and percentOfParent --
+    // none of which the flat table carries, by design (a table row is a row,
+    // and hierarchy is not a column).
+    fetch(`/api/reports/budget-variance?format=legacy&projectId=${encodeURIComponent(projectId)}`)
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || `The report service answered ${res.status}`);

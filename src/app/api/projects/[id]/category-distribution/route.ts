@@ -28,11 +28,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const projectId = encodeURIComponent(id);
 
   try {
+    // `format=legacy` IS THE CONTRACT THIS ROUTE READS. R67 E-32 flipped the
+    // DEFAULT body of VERIDIAN's /reports/{name} from the handler's own payload
+    // to the generic { columns, rows, totals, currency } table. This route does
+    // not render a table -- it reads `categories[].categoryId/totalAmount` and
+    // `categories[].percentComplete` and combines them into a chart, and the
+    // table builder does not carry categoryId at all. Asking for the legacy
+    // shape explicitly is the escape hatch E-32 shipped for exactly this; the
+    // sibling route below and the route test beside this file pin it.
     const [amounts, progress] = await Promise.all([
-      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?projectId=${projectId}`, {
+      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?format=legacy&projectId=${projectId}`, {
         organizationId: ctx.organizationId!,
       }),
-      callVeridian<CategoryProgress>(`/reports/category-progress?projectId=${projectId}`, {
+      callVeridian<CategoryProgress>(`/reports/category-progress?format=legacy&projectId=${projectId}`, {
         organizationId: ctx.organizationId!,
       }),
     ]);
