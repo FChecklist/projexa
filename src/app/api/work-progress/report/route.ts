@@ -130,6 +130,11 @@ export async function GET(request: NextRequest) {
       // parameters it really ran with rather than what it thinks it sent.
       availableCategories: report.availableCategories,
       categoryFilter,
+      // R67 B-09: entries this window holds that no BOQ line can claim, and
+      // that are therefore in none of the figures above. Reported so the
+      // screen can say so rather than showing a total the site engineer
+      // knows is short and cannot account for.
+      unlinkedEntryCount: report.unlinkedEntryCount,
       byManpower,
       byVendor,
     });
