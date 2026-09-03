@@ -115,11 +115,21 @@ describe("R67 D-70: every create route that resolves a project renders the frame
     return found;
   }
 
+  // Walked and read ONCE, at describe scope, where no per-test timeout applies.
+  // Both tests below need the same file contents, and doing the walk plus a
+  // readFileSync per page inside each of them took 7,390 ms on a full-suite run
+  // -- past bun's default 5 s budget, so this failed on a cold CI checkout while
+  // passing on a warm local re-run. The lanes merging alongside this one kept
+  // adding create routes, which is what pushed it over.
+  const pageSources = createPages(APP_DIR).map((file) => ({ file, source: readFileSync(file, "utf8") }));
+
+  /** Generous, because a cold CI checkout reads these off a cold disk. */
+  const FILE_SCAN_TIMEOUT_MS = 30_000;
+
   test("no create page returns a bare Card for a failed project resolution", () => {
     expect(existsSync(APP_DIR)).toBe(true);
     const offenders: string[] = [];
-    for (const file of createPages(APP_DIR)) {
-      const source = readFileSync(file, "utf8");
+    for (const { file, source } of pageSources) {
       if (!source.includes("resolveSelectedProject")) continue;
       // drawings/new is the one that never returns early at all (R67 D-08): it
       // always renders DrawingCreateClient, which carries the same banner.
@@ -130,10 +140,10 @@ describe("R67 D-70: every create route that resolves a project renders the frame
       if (!source.includes("CreateScreenUnavailable")) offenders.push(path.relative(APP_DIR, file));
     }
     expect(offenders).toEqual([]);
-  });
+  }, FILE_SCAN_TIMEOUT_MS);
 
   test("the sweep actually covered a real number of routes, so an empty walk cannot pass silently", () => {
-    const withHelper = createPages(APP_DIR).filter((f) => readFileSync(f, "utf8").includes("resolveSelectedProject"));
+    const withHelper = pageSources.filter((p) => p.source.includes("resolveSelectedProject"));
     expect(withHelper.length).toBeGreaterThanOrEqual(20);
-  });
+  }, FILE_SCAN_TIMEOUT_MS);
 });
