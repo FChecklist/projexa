@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Wallet, TrendingUp, Receipt, Building2 } from "lucide-react";
+import { Wallet, TrendingUp, Receipt, Building2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
@@ -9,7 +9,8 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
 import { currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-import { ProjectRowList } from "@/components/dashboard/ProjectRow";
+import { ProjectRowList, ProjectRowSkeleton } from "@/components/dashboard/ProjectRow";
+import { dashboardKpis, type DashboardKpi, type KpiDirection } from "@/lib/dashboard-kpis";
 import { GroupedBarChart, type GroupedBarGroup, type GroupedBarSeries } from "@/components/charts/GroupedBarChart";
 import { DashboardFilterDrawer, dateRangeCaption } from "@/components/dashboard/DashboardFilterDrawer";
 import { needsYouSummary, sortProjectRows, type DashboardProject } from "@/lib/dashboard-rows";
@@ -77,18 +78,45 @@ function formatKpi(n: number | null, currencies: CurrencyRow[]) {
 }
 
 /**
- * R67 E-06 (R-108): the line under the Budget tile's figure. It exists to keep
- * the ERP ANNUAL LEDGER budget on screen under its own name -- the two are
- * different concepts, and the bug was that one silently stood in for the
- * other. Three states, three sentences, never a bare number with no story:
- * redacted, no BOQ, or a real BOQ budget beside the ledger figure.
+ * R67 E-19 (R-180): the line under a KPI tile's figure -- its baseline, with
+ * the DIRECTION as a word and an arrow glyph. Both carriers, always: the word
+ * survives a greyscale print, a projector and a colour-blind reader, and the
+ * glyph is the one that is read at a glance. A tile with nothing real to
+ * compare against carries no arrow at all rather than a decorative one.
+ *
+ * (This replaces E-06's budgetSubtitle, which stated the same thing for one
+ * tile only. The ERP ANNUAL LEDGER budget still keeps its own name inside the
+ * budget baseline -- the bug E-06 fixed was one silently standing in for the
+ * other, and that stays fixed.)
  */
-export function budgetSubtitle(data: OrgDashboard, currencies: CurrencyRow[]): string {
-  if (data.financialsRedacted) return "Needs manager role";
-  if (data.totalBudget === null) return "No BOQ yet";
-  const ledger = data.totalLedgerBudget;
-  if (ledger === null || ledger === undefined) return "From the BOQ";
-  return `Annual ledger budget ${formatKpi(ledger, currencies)}`;
+export const DIRECTION_GLYPH: Record<KpiDirection, string> = { over: "▲", under: "▼", level: "▬" };
+
+export function kpiSubtitle(kpi: DashboardKpi): string {
+  if (!kpi.direction) return kpi.baseline;
+  return `${DIRECTION_GLYPH[kpi.direction]} ${kpi.direction} · ${kpi.baseline}`;
+}
+
+/** Which registry column supplies each tile's label -- the registry owns the WORDS, this module owns the rest. */
+const KPI_REGISTRY_FIELD: Record<DashboardKpi["key"], string> = {
+  projects: "totalProjects",
+  budget: "totalBudget",
+  revenue: "totalRevenue",
+  expenses: "totalExpenses",
+};
+
+const KPI_ICON = { projects: Building2, budget: Wallet, revenue: TrendingUp, expenses: Receipt } as const;
+const KPI_VARIANT = { projects: "total", budget: "total", revenue: "completed", expenses: "pending" } as const;
+
+/**
+ * R67 E-19: the Retry destination -- this same screen, carrying the filter the
+ * reader had applied, so retrying does not silently drop their date range and
+ * hand back a different portfolio.
+ */
+export function retryHref(from: string | null | undefined, to: string | null | undefined): string {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  return qs.size > 0 ? `/dashboard?${qs.toString()}` : "/dashboard";
 }
 
 export type RegistryColumn = ScreenColumn;
@@ -115,9 +143,22 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
   return columns.find((c) => c.field === field)?.label || fallback;
 }
 
-/** R67 E-02 chart 1 -- one group per project, three bars: contract, earned, spend. */
+/**
+ * R67 E-02 chart 1 -- one group per project. E-19 (R-180) adds BUDGET as a
+ * fourth bar, because "Revenue / Budget / ... by project" is what that item
+ * asks the portfolio chart to compare and budget was the one figure missing.
+ *
+ * PROGRESS IS DELIBERATELY NOT A BAR HERE. The item words the chart as
+ * "Revenue / Budget / Progress by project", but progress is a PERCENTAGE and
+ * these are money: drawing 46 % on an axis scaled to AED 2,120,500 renders it
+ * as an invisible sliver, and scaling it separately would put two units under
+ * one axis -- a chart that lies about magnitude, which is the class of defect
+ * this whole workstream is closing. Every project's progress is already a
+ * labelled bar on its own row, which is where a per-project percentage belongs.
+ */
 const PORTFOLIO_SERIES: GroupedBarSeries[] = [
   { key: "contract", label: "Contract value", color: "var(--color-chart-1)" },
+  { key: "budget", label: "Budget", color: "var(--color-chart-4)" },
   { key: "earned", label: "Earned value", color: "var(--color-chart-2)" },
   { key: "spend", label: "Spend", color: "var(--color-chart-3)" },
 ];
@@ -138,7 +179,7 @@ export function portfolioChartGroups(projects: DashboardProject[]): GroupedBarGr
     // null too for a reader whose role had it redacted -- drawing a redacted
     // figure as a zero bar would state a number they were not allowed to see,
     // and state it wrongly.
-    values: { contract: p.value, earned: p.earnedValue, spend: p.expenses },
+    values: { contract: p.value, budget: p.budget ?? null, earned: p.earnedValue, spend: p.expenses },
   }));
 }
 
@@ -150,6 +191,7 @@ export default function DashboardHomeView({
   registryColumns,
   from = null,
   to = null,
+  today,
 }: {
   userName: string;
   data: OrgDashboard | null;
@@ -159,6 +201,15 @@ export default function DashboardHomeView({
   /** The Filter drawer's date range, so the figures it narrowed can be captioned. */
   from?: string | null;
   to?: string | null;
+  /**
+   * R67 E-19 (R-180): today, as YYYY-MM-DD, resolved ONCE here on the server
+   * and passed down. The "no progress in 30 days" signal is a date comparison,
+   * and a component that reads the clock itself renders one answer on the
+   * server pass and a different one on the client's -- the hydration-mismatch
+   * class src/lib/format-date.ts's own header documents at length. Defaulted
+   * rather than required so a test can pin the day.
+   */
+  today?: string;
 }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
   const currency = orgCurrency(currencies);
@@ -166,7 +217,22 @@ export default function DashboardHomeView({
   const unitSuffix = currencyUnitSuffix({ currency }) ?? "";
   const money = (v: number | string | null | undefined) => formatMoney(v, { currency });
 
-  const projects = data ? sortProjectRows(data.projects) : [];
+  const projects = data ? sortProjectRows(data.projects, today) : [];
+  // The four tiles, decided by the tested rules rather than assembled below.
+  const kpis: DashboardKpi[] = data
+    ? dashboardKpis(
+        {
+          totalProjects: data.totalProjects,
+          totalBudget: data.totalBudget,
+          totalLedgerBudget: data.totalLedgerBudget,
+          totalRevenue: data.totalRevenue,
+          totalExpenses: data.totalExpenses,
+          financialsRedacted: data.financialsRedacted,
+        },
+        data.projects,
+        (v) => formatKpi(v, currencies)
+      )
+    : [];
   const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
   const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
 
@@ -179,7 +245,7 @@ export default function DashboardHomeView({
   const totalEarned = scoped.reduce((s, p) => s + (p.earnedValue ?? 0), 0);
   const portfolioPercent = totalContract > 0 ? Math.round((totalEarned / totalContract) * 100) : null;
 
-  const attention = data ? needsYouSummary(data.projects) : null;
+  const attention = data ? needsYouSummary(data.projects, today) : null;
   const rangeCaption = dateRangeCaption(from, to);
 
   return (
@@ -213,6 +279,33 @@ export default function DashboardHomeView({
         {/* R67 E-02: the retired /dashboard/hierarchy screen's Company and
             Department selects live here now, with the date range. */}
         <DashboardFilterDrawer />
+
+        {/* R67 E-19 (R-180): "a failure renders 'Could not load projects —
+            Retry' rather than an empty list." A read that failed used to leave
+            this screen with a red strip at the top and NOTHING where the
+            projects go, which reads exactly like an org that has no projects.
+            The panel is still here, it says what happened, and it offers the
+            one action that can fix it. */}
+        {!data && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-heading text-base">Projects</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p role="alert" className="text-sm text-px-error" data-testid="dashboard-projects-error">
+                Could not load projects
+              </p>
+              {errorMessage && <p className="text-[12.5px] text-px-muted">{errorMessage}</p>}
+              {/* A plain link back to this same URL: a Retry that really
+                  re-runs the server read, with no client state to get stuck in. */}
+              <Button variant="outline" size="sm" asChild>
+                <Link href={retryHref(from, to)} prefetch={false} data-testid="dashboard-projects-retry">
+                  <RotateCcw className="size-4" /> Retry
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {data && (
           <>
@@ -261,34 +354,37 @@ export default function DashboardHomeView({
                   // rule the greeting above follows.
                   <p className="py-8 text-center text-sm text-px-muted">Couldn&apos;t load the project list — see the error above.</p>
                 ) : (
-                  <ProjectRowList projects={projects} money={money} />
+                  <ProjectRowList projects={projects} money={money} today={today} />
                 )}
               </CardContent>
             </Card>
 
             {/* The four original KPI cards, now SECONDARY and below the rows:
                 a portfolio total answers a question you ask after "which
-                project needs me today", not before it. */}
+                project needs me today", not before it.
+
+                R67 E-19 (R-180): each of them now carries the three things
+                R-180 found missing -- a value, a BASELINE it is compared
+                against with the direction as a WORD, and a real destination
+                named in words. What each tile is allowed to say is decided
+                once in src/lib/dashboard-kpis.ts, tested there, rather than
+                assembled here where nothing could assert it. The budget tile
+                in particular can no longer print "AED 0": where nobody has
+                entered a budget it reads an en dash over "Budget — not
+                entered", and says which kind of "not entered" it is. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              {/* R67 E-06 (R-108). THE BUDGET TILE, which used to read
-                  "TOTAL BUDGET AED 0" while Cost Variance read 2,193.75 for
-                  the same org. It now reads the BOQ-derived budget; where
-                  there genuinely is no BOQ it reads an en dash and says "No
-                  BOQ yet", because a fabricated zero is what made a QS stop
-                  trusting the screen. The ledger figure keeps its own name in
-                  the subtitle, so the two concepts are visible AND named. */}
-              <DashboardCard
-                title={`${columnLabel(columns, "totalBudget", "Total Budget")}${unitSuffix}`}
-                value={data.totalBudget === null ? "–" : formatKpi(data.totalBudget, currencies)}
-                subtitle={budgetSubtitle(data, currencies)}
-                icon={Wallet}
-                variant="total"
-                href="/budgets"
-                hrefLabel="Open budget"
-              />
-              <DashboardCard title={`${columnLabel(columns, "totalRevenue", "Total Revenue")}${unitSuffix}`} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title={`${columnLabel(columns, "totalExpenses", "Total Expenses")}${unitSuffix}`} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+              {kpis.map((kpi) => (
+                <DashboardCard
+                  key={kpi.key}
+                  title={`${columnLabel(columns, KPI_REGISTRY_FIELD[kpi.key], kpi.title)}${kpi.key === "projects" ? "" : unitSuffix}`}
+                  value={kpi.value}
+                  subtitle={kpiSubtitle(kpi)}
+                  icon={KPI_ICON[kpi.key]}
+                  variant={KPI_VARIANT[kpi.key]}
+                  href={kpi.href}
+                  hrefLabel={kpi.hrefLabel}
+                />
+              ))}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">

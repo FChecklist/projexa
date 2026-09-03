@@ -111,6 +111,13 @@ export default async function DashboardPage({
         registryColumns={registryColumns}
         from={from}
         to={to}
+        // R67 E-19 (R-180): the day is resolved ONCE, here on the server, and
+        // handed down. The "no progress in 30 days" signal is a date
+        // comparison, and a component that reads the clock during render
+        // produces one answer on the server pass and another on the client's --
+        // the hydration-mismatch class src/lib/format-date.ts documents. UTC
+        // for the same reason every timestamp in this codebase is stored in it.
+        today={new Date().toISOString().slice(0, 10)}
       />
       <div className="px-6">
         <ModuleDirectory />

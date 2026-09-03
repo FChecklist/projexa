@@ -38,11 +38,46 @@ function project(overrides: Partial<DashboardProject> = {}): DashboardProject {
 const noop = () => {};
 
 describe("ProjectRow", () => {
-  test("the whole row is a button -- so it is reachable and operable from the keyboard", () => {
+  // R67 E-19 (R-180) ACCEPTANCE, first clause: "on /dashboard assert every
+  // project row is a link whose href contains /dashboard/project?projectId=".
+  // E-01 shipped the row as a <button> with router.push; a button cannot be
+  // cmd-clicked into a new tab, cannot have its address copied, and shows a
+  // screen reader no destination. It is an anchor now, and the click handler
+  // is an enhancement layered on top of a real href.
+  test("the whole row is a LINK, to that project's dashboard -- and still keyboard-operable", () => {
     const html = renderToStaticMarkup(<ProjectRow project={project()} money={money} onOpen={noop} />);
-    expect(html).toContain('<button');
-    expect(html).toContain('type="button"');
+    expect(html).toContain("<a ");
+    expect(html).toContain('href="/dashboard/project?projectId=prj_cedar"');
     expect(html).toContain("cursor-pointer");
+    // No button anywhere in the row: two nested activatable things is how a
+    // row ends up with a target that does something different from the row.
+    expect(html).not.toContain("<button");
+  });
+
+  test("the href is still there with NO click handler at all -- the row works before the JS lands", () => {
+    const html = renderToStaticMarkup(<ProjectRow project={project()} money={money} />);
+    expect(html).toContain('href="/dashboard/project?projectId=prj_cedar"');
+  });
+
+  // R67 E-19 (R-180): "under it four tabular figures Revenue | Budget |
+  // Expense | Progress".
+  test("the four figures are labelled, in that order, and an absent one is the en dash not a zero", () => {
+    const html = renderToStaticMarkup(
+      <ProjectRow project={project({ budget: null, revenue: 12_000 })} money={money} />
+    );
+    expect(html).toContain('data-testid="project-row-figures"');
+    const labels = [...html.matchAll(/<dt[^>]*>([^<]+)<\/dt>/g)].map((m) => m[1]);
+    expect(labels).toEqual(["Revenue", "Budget", "Expense", "Progress"]);
+    const values = [...html.matchAll(/<dd[^>]*>([^<]+)<\/dd>/g)].map((m) => m[1]);
+    // Revenue real, Budget absent (en dash, never "AED 0.00"), Expense real,
+    // Progress as a percentage rather than money.
+    expect(values).toEqual(["AED 12,000.00", "–", "AED 412,000.00", "46%"]);
+  });
+
+  test("a project with no BOQ shows an en dash for Progress, not 0%", () => {
+    const html = renderToStaticMarkup(<ProjectRow project={project({ percentByValue: null })} money={money} />);
+    const values = [...html.matchAll(/<dd[^>]*>([^<]+)<\/dd>/g)].map((m) => m[1]);
+    expect(values[3]).toBe("–");
   });
 
   test("prints the project name, the contract and the spend on one line", () => {

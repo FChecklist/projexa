@@ -4,6 +4,7 @@
 // -- asserted directly rather than inferred from rendered markup.
 import { describe, expect, test } from "bun:test";
 import {
+  daysBetween,
   needsYouSummary,
   progressBarState,
   projectRowStatus,
@@ -118,9 +119,12 @@ describe("needsYouSummary", () => {
     expect(needsYouSummary([project()])).toBeNull();
   });
 
-  test("one flagged project is NAMED -- never 'a project needs attention'", () => {
+  // R67 E-19 (R-180): the sentence now carries the leading REASON as well as
+  // the name. Being told WHICH project needs you still leaves you opening it to
+  // find out why; being told why lets you decide whether it can wait.
+  test("one flagged project is NAMED, and the sentence says why -- never 'a project needs attention'", () => {
     expect(needsYouSummary([project({ name: "Cedar Heights Villa - Phase 1", spendOverValue: true })]))
-      .toBe("Cedar Heights Villa - Phase 1 needs you.");
+      .toBe("Cedar Heights Villa - Phase 1 needs you — spend over contract value.");
   });
 
   test("several flagged projects still name the first, and count the rest", () => {
@@ -130,7 +134,7 @@ describe("needsYouSummary", () => {
         project({ id: "b", name: "Marina Tower", permitsExpiring30d: 1 }),
         project({ id: "c", name: "Souk Retrofit", permitsExpiring30d: 2 }),
       ])
-    ).toBe("Cedar Heights Villa - Phase 1 and 2 other projects need you.");
+    ).toBe("Cedar Heights Villa - Phase 1 and 2 other projects need you — spend over contract value.");
   });
 
   test("exactly two flagged projects read as one 'other project', singular", () => {
@@ -139,6 +143,74 @@ describe("needsYouSummary", () => {
         project({ id: "a", name: "Cedar Heights Villa - Phase 1", spendOverValue: true }),
         project({ id: "b", name: "Marina Tower", permitsExpiring30d: 1 }),
       ])
-    ).toBe("Cedar Heights Villa - Phase 1 and 1 other project need you.");
+    ).toBe("Cedar Heights Villa - Phase 1 and 1 other project need you — spend over contract value.");
+  });
+
+  test("the stall signal names the project and the number of days", () => {
+    expect(
+      needsYouSummary([project({ name: "Marina Tower", lastProgressAt: "2026-07-15" })], "2026-09-03")
+    ).toBe("Marina Tower needs you — no progress recorded for 50 days.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-19 (R-180): the THIRD signal -- "earned value stalled 30 days"
+// ---------------------------------------------------------------------------
+describe("the stall signal (R67 E-19)", () => {
+  test("thirty days is the threshold, and it is inclusive", () => {
+    // 29 days is not yet a month of silence; 30 is.
+    expect(projectRowStatus(project({ lastProgressAt: "2026-08-05" }), "2026-09-03").reasons).toEqual([]);
+    expect(projectRowStatus(project({ lastProgressAt: "2026-08-04" }), "2026-09-03").reasons).toEqual([
+      "no progress recorded for 30 days",
+    ]);
+  });
+
+  test("NOTHING ever recorded is not 'stalled' -- a project created last week has not stalled", () => {
+    // null is a different fact from an old date, and with no start date on the
+    // payload there is no honest number of days to put in the sentence.
+    expect(projectRowStatus(project({ lastProgressAt: null }), "2026-09-03").reasons).toEqual([]);
+    expect(projectRowStatus(project({ lastProgressAt: undefined }), "2026-09-03").reasons).toEqual([]);
+  });
+
+  test("with no `today` in hand the signal is simply not evaluated, never guessed", () => {
+    expect(projectRowStatus(project({ lastProgressAt: "2020-01-01" })).reasons).toEqual([]);
+  });
+
+  test("daysBetween counts calendar days across a month and a year boundary", () => {
+    expect(daysBetween("2026-08-04", "2026-09-03")).toBe(30);
+    expect(daysBetween("2025-12-25", "2026-01-05")).toBe(11);
+    // A leap February, because 2028 has one and an off-by-one here would be a
+    // day's worth of wrong in every sentence this feeds.
+    expect(daysBetween("2028-02-01", "2028-03-01")).toBe(29);
+    expect(daysBetween(null, "2026-09-03")).toBeNull();
+    expect(daysBetween("not a date", "2026-09-03")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-19 (R-180): spend past the BUDGET, beside spend past the contract value
+// ---------------------------------------------------------------------------
+describe("the budget signal (R67 E-19)", () => {
+  test("spend past the BOQ budget reads 'needs you', and says so in those words", () => {
+    expect(projectRowStatus(project({ expenses: 900, budget: 800 })).reasons).toEqual(["spend over budget"]);
+  });
+
+  test("spend equal to the budget is not over it", () => {
+    expect(projectRowStatus(project({ expenses: 800, budget: 800 })).reasons).toEqual([]);
+  });
+
+  test("a project with no budget is not 'over' it -- absent is not zero", () => {
+    expect(projectRowStatus(project({ expenses: 900, budget: null })).reasons).toEqual([]);
+    expect(projectRowStatus(project({ expenses: 900 })).reasons).toEqual([]);
+  });
+
+  test("a REDACTED reader, whose spend and budget are both null, gets no conclusion either way", () => {
+    expect(projectRowStatus(project({ expenses: null, budget: null, spendOverValue: null })).reasons).toEqual([]);
+  });
+
+  test("delayed tasks are counted and pluralised, and come last -- money first", () => {
+    const status = projectRowStatus(project({ expenses: 900, budget: 800, delayedTaskCount: 2 }));
+    expect(status.reasons).toEqual(["spend over budget", "2 delayed tasks"]);
+    expect(projectRowStatus(project({ delayedTaskCount: 1 })).reasons).toEqual(["1 delayed task"]);
   });
 });

@@ -20,7 +20,7 @@
 
 import { useRouter } from "next/navigation";
 import { AlertCircle, Check } from "lucide-react";
-import { MONEY_CELL_CLASS } from "@/lib/format-money";
+import { EMPTY_VALUE as EN_DASH, MONEY_CELL_CLASS } from "@/lib/format-money";
 import { progressBarState, projectRowStatus, type DashboardProject } from "@/lib/dashboard-rows";
 
 export const PROJECT_HREF_PREFIX = "/dashboard/project?projectId=";
@@ -70,24 +70,87 @@ function ProgressBar({ project }: { project: DashboardProject }) {
   );
 }
 
+/**
+ * R67 E-19 (R-180): the four tabular figures under the bar. TABULAR, in a
+ * fixed order, with the label above the figure -- so reading down a list of
+ * rows compares Budget with Budget rather than hunting for it in a sentence
+ * whose word order changes with the data. An absent figure is the en dash and
+ * never a zero: "we do not have this" and "this is nothing" are different
+ * facts, and only the second is a number.
+ */
+function RowFigures({
+  project,
+  money,
+}: {
+  project: DashboardProject;
+  money: (value: number | string | null | undefined) => string;
+}) {
+  const percent = project.percentByValue;
+  const cells: { label: string; value: string }[] = [
+    { label: "Revenue", value: money(project.revenue) },
+    { label: "Budget", value: money(project.budget) },
+    { label: "Expense", value: money(project.expenses) },
+    { label: "Progress", value: percent === null || percent === undefined ? EN_DASH : `${percent}%` },
+  ];
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4" data-testid="project-row-figures">
+      {cells.map((cell) => (
+        <div key={cell.label} className="min-w-0">
+          <dt className="text-[10.5px] uppercase tracking-wide text-px-muted">{cell.label}</dt>
+          {/* tabular-nums, but NOT MONEY_CELL_CLASS: these sit under their own
+              left-aligned label in a four-column grid, so right-aligning them
+              would part each figure from the word naming it. */}
+          <dd className="whitespace-nowrap tabular-nums text-[12.5px] text-px-ink">{cell.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ProjectRow({
   project,
   money,
   onOpen,
   onPrefetch,
+  today,
 }: {
   project: DashboardProject;
   /** The org money formatter -- passed in so a row can be rendered in a test without a currencies fetch. */
   money: (value: number | string | null | undefined) => string;
-  onOpen: (projectId: string) => void;
+  /**
+   * Client-side navigation for a plain left-click. Optional: the row is a real
+   * anchor first, so it still works with this absent (and with JavaScript off).
+   */
+  onOpen?: (projectId: string) => void;
   onPrefetch?: (projectId: string) => void;
+  /**
+   * Today, as YYYY-MM-DD, resolved ONCE by the server component and passed
+   * down. The stall signal is a date comparison, and computing "now" inside a
+   * component that renders on both the server and the client is how a row ends
+   * up saying 30 days on one pass and 31 on the other.
+   */
+  today?: string;
 }) {
-  const status = projectRowStatus(project);
+  const status = projectRowStatus(project, today);
+  const href = projectHref(project.id);
   return (
-    <button
-      type="button"
+    // R67 E-19 (R-180): a real <a href>, not a button. The item's acceptance
+    // asks for a link, and the reasons behind that are the ones a button
+    // cannot give: middle-click and cmd-click open the project in a new tab,
+    // "copy link address" works, a crawler and a screen reader both see a
+    // destination, and Enter still activates it. The click handler is an
+    // ENHANCEMENT on top -- a plain left-click is intercepted for client-side
+    // navigation, and every modified click falls through to the browser, which
+    // is exactly what would break if this stayed a button with router.push.
+    <a
+      href={href}
       data-testid="project-row"
-      onClick={() => onOpen(project.id)}
+      onClick={(event) => {
+        if (!onOpen) return;
+        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        onOpen(project.id);
+      }}
       onMouseEnter={onPrefetch ? () => onPrefetch(project.id) : undefined}
       onFocus={onPrefetch ? () => onPrefetch(project.id) : undefined}
       className="block w-full cursor-pointer space-y-1.5 rounded-md border border-px-border p-3 text-left transition-colors hover:bg-px-cloud/40"
@@ -102,6 +165,8 @@ export function ProjectRow({
       </div>
 
       <ProgressBar project={project} />
+
+      <RowFigures project={project} money={money} />
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {/* The SECOND percentage, small and grey, because it answers a
@@ -125,7 +190,7 @@ export function ProjectRow({
           {status.reasons.length > 0 && <span className="text-px-muted">— {status.reasons.join(", ")}</span>}
         </span>
       </div>
-    </button>
+    </a>
   );
 }
 
@@ -146,9 +211,12 @@ export function NoProjectsRow() {
 export function ProjectRowList({
   projects,
   money,
+  today,
 }: {
   projects: DashboardProject[];
   money: (value: number | string | null | undefined) => string;
+  /** Resolved once by the server component -- see ProjectRow's own note. */
+  today?: string;
 }) {
   const router = useRouter();
   if (projects.length === 0) return <NoProjectsRow />;
@@ -159,9 +227,37 @@ export function ProjectRowList({
           key={p.id}
           project={p}
           money={money}
+          today={today}
           onOpen={(id) => router.push(projectHref(id))}
           onPrefetch={(id) => router.prefetch(projectHref(id))}
         />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * R67 E-19 (R-180): "Loading renders skeleton rows, never a spinner." A spinner
+ * says only "wait"; row-shaped skeletons say what is coming and how much of it,
+ * so the page does not visibly jump when the data lands. Exported so the route's
+ * loading.tsx and any future caller render the SAME shape.
+ */
+export function ProjectRowSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2" data-testid="project-row-skeleton" aria-busy="true" aria-label="Loading projects">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="space-y-2 rounded-md border border-px-border p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="h-3.5 w-48 rounded bg-px-cloud" />
+            <span className="h-3.5 w-40 rounded bg-px-cloud" />
+          </div>
+          <span className="block h-2 w-full rounded-sm bg-px-cloud" />
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            {["Revenue", "Budget", "Expense", "Progress"].map((label) => (
+              <span key={label} className="block h-6 rounded bg-px-cloud" />
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );
