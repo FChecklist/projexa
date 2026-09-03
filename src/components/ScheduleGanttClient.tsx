@@ -54,10 +54,16 @@ import {
   formatDurationDays,
   formatScheduleProgress,
   formatSlip,
+  formatSlippageTile,
+  isMilestoneWindow,
+  plannedPercentComplete,
   scheduleWindow,
   slipDays,
   summariseScheduleProgress,
+  summariseTaskSlippage,
+  taskSlippage,
   type BaselineWindow,
+  type TaskSlippage,
 } from "@/lib/schedule-progress";
 import "@svar-ui/react-gantt/all.css";
 
@@ -87,6 +93,11 @@ type GanttTask = {
   id: string; title: string; startDate: string | null; dueDate: string | null;
   completionPercentage: number; milestoneId: string | null; parentIssueId: string | null;
   isCritical: boolean; floatDays: number | null;
+  // R67 D-56: which BOQ line owns this activity's progress, if any. Set by
+  // getGanttData()'s attachBoqLinks(). An activity that HAS one takes its
+  // completion from the Work Progress report, so the Timeline shows it
+  // read-only and says so; an unlinked one is editable in place.
+  boqLineItemId?: string | null;
 };
 type GanttDependency = { predecessorId: string; successorId: string; lagDays: number };
 type Milestone = { id: string; name: string; targetDate: string | null };
@@ -153,6 +164,11 @@ export default function ScheduleGanttClient({
   const [baselinesOpen, setBaselinesOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [baselineName, setBaselineName] = useState("");
+  // R67 D-56: the inline "% complete" editor. One row at a time, one field, and
+  // only on activities no BOQ line owns.
+  const [editingPercentId, setEditingPercentId] = useState<string | null>(null);
+  const [percentDraft, setPercentDraft] = useState("");
+  const [savingPercentId, setSavingPercentId] = useState<string | null>(null);
   // "unknown" is NOT the same as "not a PM": if the role lookup itself failed we
   // must not pre-refuse the action on a guess. The route enforces
   // ROLE_GROUPS.PM_OR_ABOVE either way, and its refusal now reaches the footer
@@ -338,6 +354,60 @@ export default function ScheduleGanttClient({
     ? `Measured against "${currentBaseline.name}", captured ${formatDayMonthYear(currentBaseline.createdAt)}`
     : NO_BASELINE_NOTE;
 
+  // ─── R67 D-56 (audit R-185): planned vs actual, from the activity's OWN
+  // window ──────────────────────────────────────────────────────────────────
+  //
+  // D-45's Slip answers "has the finish DATE moved since we baselined?" and
+  // needs a baseline to answer anything at all. D-56 asks the question a site
+  // meeting actually asks -- "is the WORK far enough along for where we are in
+  // this activity's window?" -- and needs no baseline, which matters because
+  // most projects have never captured one. The two columns sit side by side
+  // deliberately: an activity can be dead on its original finish date and
+  // still be a fortnight of work behind.
+  const slippageByTask = new Map<string, TaskSlippage>(
+    tasks.map((t) => {
+      const planned = plannedPercentComplete(t.startDate, t.dueDate, resolvedToday ?? "");
+      return [t.id, taskSlippage(planned, t.completionPercentage, durationDays(t.startDate, t.dueDate))];
+    })
+  );
+  const slippageSummary = summariseTaskSlippage([...slippageByTask.values()]);
+
+  /**
+   * D-56: the inline "% complete" editor, offered only where nothing else owns
+   * the number. It PATCHes the ONE field through the existing task route and
+   * updates the row optimistically; a failure puts the backend's own sentence
+   * in the persistent footer and restores what was there.
+   */
+  async function savePercent(task: GanttTask) {
+    const raw = percentDraft.trim();
+    setEditingPercentId(null);
+    const next = Number(raw);
+    if (raw === "" || !Number.isFinite(next)) return;
+    if (next < 0 || next > 100) {
+      emitMessage({ level: "warning", text: "% complete must be between 0 and 100." });
+      return;
+    }
+    const rounded = Math.round(next);
+    if (rounded === task.completionPercentage) return;
+
+    const previous = task.completionPercentage;
+    setSavingPercentId(task.id);
+    setTasks((rows) => rows.map((r) => (r.id === task.id ? { ...r, completionPercentage: rounded } : r)));
+    try {
+      await fetchJson(`/api/schedule/tasks/${encodeURIComponent(task.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completionPercentage: rounded }),
+      });
+      emitMessage(null);
+    } catch (err) {
+      setTasks((rows) => rows.map((r) => (r.id === task.id ? { ...r, completionPercentage: previous } : r)));
+      emitMessage({ level: "warning", text: errorMessage(err, `% complete was not saved for "${task.title}"`) });
+    } finally {
+      setSavingPercentId(null);
+    }
+  }
+
   // The header's Filter bar narrows the authoritative table only -- the chart
   // keeps every bar, because hiding dependency lines whose other end is
   // filtered out would draw a programme that does not exist.
@@ -365,7 +435,11 @@ export default function ScheduleGanttClient({
       text: t.title,
       ...toGanttDateFields(t.startDate, t.dueDate),
       progress: t.completionPercentage,
-      type: "task" as const,
+      // R67 D-56: "milestones as diamonds". A zero-length activity IS a
+      // milestone, so it is drawn as one rather than as a bar of no width that
+      // the eye cannot find. The chart and the table agree because both ask
+      // isMilestoneWindow().
+      type: isMilestoneWindow(t.startDate, t.dueDate) ? ("milestone" as const) : ("task" as const),
     })),
     ...milestones
       .filter((m) => m.targetDate)
@@ -434,6 +508,26 @@ export default function ScheduleGanttClient({
               {currentBaseline
                 ? `${currentBaseline.name} — captured ${formatDayMonthYear(currentBaseline.createdAt)}`
                 : NO_BASELINE_NOTE}
+            </p>
+          </CardContent>
+        </Card>
+        {/* R67 D-56's project header tile. Unlike the baseline tile beside it,
+            this one answers even when no baseline has ever been captured --
+            it reads each activity's own window. */}
+        <Card className="flex-1 min-w-[260px]" data-testid="schedule-slippage-tile">
+          <CardContent className="p-4">
+            <p className="text-xs text-px-muted">Slippage</p>
+            <p
+              className={
+                slippageSummary.behindCount > 0
+                  ? "text-base font-heading text-[color:var(--color-veri-status-late)]"
+                  : "text-base font-heading text-px-ink"
+              }
+            >
+              {formatSlippageTile(slippageSummary)}
+            </p>
+            <p className="mt-1 text-xs text-px-muted">
+              Planned % is where this activity should be today; Actual % is what has been reported.
             </p>
           </CardContent>
         </Card>
@@ -562,7 +656,12 @@ export default function ScheduleGanttClient({
                 <TableHead>{columnLabel(labelColumns, "start", "Start")}</TableHead>
                 <TableHead>{columnLabel(labelColumns, "due", "Due")}</TableHead>
                 <TableHead className="text-right">Duration</TableHead>
+                {/* D-56 calls this pair Planned % / Actual %. "% Complete" is
+                    the Actual half and keeps the name D-44 shipped it under,
+                    so an existing link, export or screenshot still matches. */}
+                <TableHead className="text-right">Planned %</TableHead>
                 <TableHead className="text-right">% Complete</TableHead>
+                <TableHead className="text-right">Slippage</TableHead>
                 <TableHead>Planned finish</TableHead>
                 <TableHead>Slip</TableHead>
                 <TableHead>{columnLabel(labelColumns, "critical", "Critical Path")}</TableHead>
@@ -571,7 +670,7 @@ export default function ScheduleGanttClient({
             <TableBody>
               {visibleTasks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-sm text-px-muted">
+                  <TableCell colSpan={11} className="py-8 text-center text-sm text-px-muted">
                     {tasks.length === 0
                       ? "No scheduled activities yet."
                       : `No activity matches "${titleFilter}".`}
@@ -581,6 +680,12 @@ export default function ScheduleGanttClient({
                 visibleTasks.map((t) => {
                   const planned = baselineByIssueId.get(t.id) ?? null;
                   const slip = formatSlip(slipDays(t.dueDate, planned?.plannedDueDate));
+                  // R67 D-56
+                  const plannedPercent = plannedPercentComplete(t.startDate, t.dueDate, resolvedToday ?? "");
+                  const slippage = slippageByTask.get(t.id) ?? taskSlippage(null, null, null);
+                  const milestone = isMilestoneWindow(t.startDate, t.dueDate);
+                  const boqOwned = !!t.boqLineItemId;
+                  const editingPercent = editingPercentId === t.id;
                   const plannedBar = barGeometry(
                     planned?.plannedStartDate, planned?.plannedDueDate, chartWindow.start, chartWindow.end
                   );
@@ -591,6 +696,12 @@ export default function ScheduleGanttClient({
                         {/* A real link, so it is reachable by keyboard and by
                             middle-click/open-in-new-tab -- not an onClick on
                             the row, which is neither. */}
+                        {/* D-56: a milestone is an activity with a
+                            zero-length window (Finish = Start). It is drawn
+                            with a diamond AND titled, never by shape alone. */}
+                        {milestone && (
+                          <span className="mr-1 text-px-muted" title="Milestone — finish is the same day as start">◆</span>
+                        )}
                         <Link
                           href={taskHref(t.id)}
                           className="rounded underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ct-navy"
@@ -609,7 +720,64 @@ export default function ScheduleGanttClient({
                       </TableCell>
                       {/* 0 % is a real answer and prints as "0 %"; only an
                           absent figure prints the en-dash. */}
-                      <TableCell className="text-right tabular-nums">{t.completionPercentage} %</TableCell>
+                      <TableCell className="text-right tabular-nums text-px-muted">
+                        {plannedPercent === null ? EMPTY_SCHEDULE_CELL : `${plannedPercent} %`}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {editingPercent ? (
+                          <Input
+                            autoFocus
+                            type="number"
+                            min={0}
+                            max={100}
+                            aria-label={`% complete for ${t.title}`}
+                            className="ml-auto h-8 w-20 text-right"
+                            value={percentDraft}
+                            onChange={(e) => setPercentDraft(e.target.value)}
+                            onBlur={() => void savePercent(t)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void savePercent(t);
+                              // Escape abandons the edit; it must not save.
+                              if (e.key === "Escape") setEditingPercentId(null);
+                            }}
+                          />
+                        ) : boqOwned ? (
+                          // D-56: an activity linked to a BOQ line takes its
+                          // progress from the Work Progress report. Letting the
+                          // Timeline overwrite it would give one number two
+                          // authors and no way to tell which you are reading.
+                          <span title="This activity's progress comes from its BOQ line">
+                            {t.completionPercentage} %{" "}
+                            <span className="text-[11px] text-px-muted">from Work Progress</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="rounded px-1 underline decoration-dotted underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ct-navy"
+                            title="Click to edit % complete"
+                            disabled={savingPercentId === t.id}
+                            onClick={() => {
+                              setEditingPercentId(t.id);
+                              setPercentDraft(String(t.completionPercentage));
+                            }}
+                          >
+                            {savingPercentId === t.id ? "Saving…" : `${t.completionPercentage} %`}
+                          </button>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span
+                          className={
+                            slippage.tone === "behind"
+                              ? "text-xs font-medium text-[color:var(--color-veri-status-late)]"
+                              : "text-xs text-px-muted"
+                          }
+                          title="Planned % minus Actual %, priced in this activity's own days"
+                        >
+                          {slippage.glyph ? `${slippage.glyph} ` : ""}
+                          {slippage.text}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <span className={planned?.plannedDueDate ? undefined : "text-px-muted"} title={slipTitle}>
                           {planned?.plannedDueDate ? displayScheduleDate(planned.plannedDueDate) : EMPTY_SCHEDULE_CELL}

@@ -16,10 +16,14 @@ import {
   formatDurationDays,
   formatScheduleProgress,
   formatSlip,
+  formatSlippageTile,
+  isMilestoneWindow,
   plannedPercentComplete,
   scheduleWindow,
   slipDays,
   summariseScheduleProgress,
+  summariseTaskSlippage,
+  taskSlippage,
   toUtcMs,
   type BaselineWindow,
 } from "./schedule-progress";
@@ -224,5 +228,109 @@ describe("barGeometry / scheduleWindow", () => {
     const window = scheduleWindow([{ id: "a", startDate: null, dueDate: null, completionPercentage: 0 }], new Map());
     expect(window.start).toBeNull();
     expect(window.end).toBeNull();
+  });
+});
+
+// ─────────────────────────── R67 D-56 (audit R-185) ─────────────────────────
+// The item's own unit acceptance, verbatim: "a task with Start 2026-08-01,
+// Finish 2026-09-30 evaluated on 2026-09-02 returns 53 (rounded) and ... Actual
+// 20 yields slippage 'behind'".
+describe("D-56 planned % from the activity's own window", () => {
+  test("THE ACCEPTANCE: Start 2026-08-01, Finish 2026-09-30, today 2026-09-02 -> 53", () => {
+    expect(plannedPercentComplete("2026-08-01", "2026-09-30", "2026-09-02")).toBe(53);
+  });
+
+  test("it clamps rather than running past the ends of the window", () => {
+    expect(plannedPercentComplete("2026-08-01", "2026-09-30", "2026-07-01")).toBe(0);
+    expect(plannedPercentComplete("2026-08-01", "2026-09-30", "2026-12-25")).toBe(100);
+    expect(plannedPercentComplete("2026-08-01", "2026-09-30", "2026-08-01")).toBe(0);
+    expect(plannedPercentComplete("2026-08-01", "2026-09-30", "2026-09-30")).toBe(100);
+  });
+
+  test("an activity with no start or no finish yields null, never 0", () => {
+    expect(plannedPercentComplete(null, "2026-09-30", "2026-09-02")).toBeNull();
+    expect(plannedPercentComplete("2026-08-01", null, "2026-09-02")).toBeNull();
+  });
+});
+
+describe("taskSlippage (D-56)", () => {
+  const duration = durationDays("2026-08-01", "2026-09-30"); // 60 days
+
+  test("THE ACCEPTANCE: planned 53 against an actual of 20 is 'behind'", () => {
+    const slippage = taskSlippage(53, 20, duration);
+    expect(slippage.tone).toBe("behind");
+    expect(slippage.text).toContain("behind");
+    // 33 points of a 60-day window is 20 days of work, not "33 % behind".
+    expect(slippage.days).toBe(20);
+    expect(slippage.text).toBe("20 d behind");
+    // Rose glyph AND the word -- colour is never the only carrier.
+    expect(slippage.glyph).toBe("▲");
+  });
+
+  test("the SAME percentage gap on a short activity is a much smaller number of days", () => {
+    expect(taskSlippage(53, 20, 3).days).toBe(1);
+  });
+
+  test("ahead and exactly on track are distinct, and neither raises the rose glyph", () => {
+    const ahead = taskSlippage(20, 53, duration);
+    expect(ahead.tone).toBe("ahead");
+    expect(ahead.text).toBe("20 d ahead");
+    expect(ahead.glyph).toBe("");
+
+    const onTrack = taskSlippage(50, 50, duration);
+    expect(onTrack.tone).toBe("on-track");
+    expect(onTrack.text).toBe("on track");
+    expect(onTrack.days).toBe(0);
+  });
+
+  test("anything unknown yields the en-dash and tone 'unknown' -- never a 0 that reads as on track", () => {
+    for (const slippage of [
+      taskSlippage(null, 20, duration),
+      taskSlippage(53, null, duration),
+      taskSlippage(53, 20, null),
+      taskSlippage(53, 20, 0), // a milestone has no window to be behind within
+    ]) {
+      expect(slippage.days).toBeNull();
+      expect(slippage.tone).toBe("unknown");
+      expect(slippage.text).toBe(EMPTY_SCHEDULE_CELL);
+    }
+  });
+});
+
+describe("summariseTaskSlippage / formatSlippageTile (D-56 header tile)", () => {
+  test("'Schedule: N tasks behind, worst M days', with the WORST activity, not an average", () => {
+    const summary = summariseTaskSlippage([
+      taskSlippage(53, 20, 60), // 20 d behind
+      taskSlippage(60, 40, 20), // 4 d behind
+      taskSlippage(20, 90, 60), // ahead
+      taskSlippage(null, null, null), // not comparable
+    ]);
+    expect(summary).toEqual({ comparedCount: 3, behindCount: 2, worstDays: 20 });
+    expect(formatSlippageTile(summary)).toBe("Schedule: 2 tasks behind, worst 20 days");
+  });
+
+  test("one behind activity is a 'task', not a 'tasks'", () => {
+    expect(formatSlippageTile(summariseTaskSlippage([taskSlippage(53, 20, 60)])))
+      .toBe("Schedule: 1 task behind, worst 20 days");
+  });
+
+  test("nothing behind and nothing comparable are DIFFERENT sentences", () => {
+    expect(formatSlippageTile(summariseTaskSlippage([taskSlippage(50, 50, 60)]))).toBe("Schedule: 0 tasks behind");
+    expect(formatSlippageTile(summariseTaskSlippage([]))).toBe(
+      "Schedule: no activity has both a start and a finish date yet"
+    );
+  });
+});
+
+describe("isMilestoneWindow (D-56)", () => {
+  test("finish on the same day as start is a milestone", () => {
+    expect(isMilestoneWindow("2026-09-02", "2026-09-02")).toBe(true);
+  });
+
+  test("a real window, or a half-dated activity, is not", () => {
+    expect(isMilestoneWindow("2026-09-02", "2026-09-05")).toBe(false);
+    expect(isMilestoneWindow("2026-09-02", null)).toBe(false);
+    expect(isMilestoneWindow(null, "2026-09-02")).toBe(false);
+    expect(isMilestoneWindow(null, null)).toBe(false);
   });
 });

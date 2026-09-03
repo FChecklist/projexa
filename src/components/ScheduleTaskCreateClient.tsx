@@ -60,6 +60,11 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   const [priority, setPriority] = useState("no_priority");
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  // R67 D-56: a milestone is an activity with a zero-length window (Finish =
+  // Start). Storing it that way needs no column and no migration -- pms_issues
+  // already carries both dates, and "no duration" IS what a milestone means on
+  // a programme. The Timeline draws those rows as diamonds.
+  const [isMilestone, setIsMilestone] = useState(false);
   const [duration, setDuration] = useState("");
   const [predecessorId, setPredecessorId] = useState("");
   const [boqLineItemId, setBoqLineItemId] = useState("");
@@ -116,6 +121,19 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   const missing = missingActivityFields({ title, startDate, dueDate });
   const dueError = dueDateError(startDate, dueDate);
 
+  /**
+   * D-56: ticking Milestone collapses the window onto the start date, and
+   * un-ticking it hands the finish date back rather than leaving the form in a
+   * state the user cannot undo.
+   */
+  function onMilestoneChange(next: boolean) {
+    setIsMilestone(next);
+    if (next) {
+      setDueDate(startDate);
+      setDuration("0");
+    }
+  }
+
   /** Typing a duration moves the finish date; typing a finish date moves the duration. */
   function onDurationChange(next: string) {
     setDuration(next);
@@ -128,6 +146,12 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   }
   function onStartDateChange(next: string) {
     setStartDate(next);
+    // A milestone has no duration to preserve: its finish IS its start.
+    if (isMilestone) {
+      setDueDate(next);
+      setDuration("0");
+      return;
+    }
     // Keep whichever of the pair the user last expressed an opinion about: a
     // typed duration is re-applied from the new start, otherwise the duration
     // is re-derived from the finish date that is already there.
@@ -262,23 +286,51 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
               />
             )}
           </FormField>
-          <FormField label="Duration (days)" hint="Or set the finish date — each derives the other">
+          <FormField
+            label="Duration (days)"
+            hint={isMilestone ? "A milestone has no duration" : "Or set the finish date — each derives the other"}
+          >
             {(f) => (
-              <Input {...f} type="number" min={0} step={1} value={duration} onChange={(e) => onDurationChange(e.target.value)} />
+              <Input
+                {...f}
+                type="number"
+                min={0}
+                step={1}
+                value={duration}
+                disabled={isMilestone}
+                title={isMilestone ? "A milestone has no duration" : undefined}
+                onChange={(e) => onDurationChange(e.target.value)}
+              />
             )}
           </FormField>
-          <FormField label="Due Date" error={touched.due ? dueError : undefined}>
+          <FormField
+            label="Due Date"
+            error={touched.due ? dueError : undefined}
+            hint={isMilestone ? "Follows the start date" : undefined}
+          >
             {(f) => (
               <Input
                 {...f}
                 type="date"
                 value={dueDate}
+                disabled={isMilestone}
+                title={isMilestone ? "A milestone finishes on the day it starts" : undefined}
                 onChange={(e) => onDueDateChange(e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, due: true }))}
               />
             )}
           </FormField>
         </div>
+
+        <label className="flex items-center gap-2 text-[13px]">
+          <input
+            type="checkbox"
+            className="size-4"
+            checked={isMilestone}
+            onChange={(e) => onMilestoneChange(e.target.checked)}
+          />
+          <span>Milestone (finish is the same day as start)</span>
+        </label>
 
         <FormField label="Predecessor (optional)" error={predecessors.error ?? undefined} hint="The activity this one follows">
           {(f) => (

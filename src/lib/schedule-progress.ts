@@ -100,6 +100,95 @@ export function plannedPercentComplete(
   return Math.round(((now - start) / (due - start)) * 100);
 }
 
+// ───────────────────────── R67 D-56 (audit R-185) ──────────────────────────
+//
+// D-45's slip answers "has the FINISH DATE moved since we baselined?".
+// D-56 asks a different question, and it is the one a site meeting actually
+// asks: "given where we are in this activity's own window, is the WORK far
+// enough along?". An activity can be dead on its original finish date and
+// still be 40 % of the way behind where it should be by now. So this pair of
+// numbers is derived from the activity's OWN Start/Finish -- no baseline
+// required, which matters because most projects have never captured one.
+//
+// Planned % is plannedPercentComplete() above, fed the task's own dates rather
+// than a baseline window; the arithmetic is identical and is deliberately not
+// duplicated here.
+
+export type TaskSlippage = {
+  /** Whole days of work behind (positive) or ahead (negative). Null when it cannot be computed. */
+  days: number | null;
+  tone: "behind" | "ahead" | "on-track" | "unknown";
+  /** Rose glyph, and only for "behind" -- being ahead needs no alarm. */
+  glyph: string;
+  /** Always carries the WORD, never the glyph alone. */
+  text: string;
+};
+
+/**
+ * D-56: "Slippage in days, with a rose glyph plus the word 'behind'".
+ *
+ * The translation from percent to days is the honest one: the gap between
+ * where the work should be and where it is, priced in this activity's own
+ * calendar. An activity 33 percentage points behind on a 60-day window is 20
+ * days of work behind; the same 33 points on a 3-day window is 1 day. A single
+ * "percent behind" figure would report those as equally serious.
+ *
+ * Every input that is missing yields `null` -- "we cannot say" -- and never 0,
+ * which would read as "on track".
+ */
+export function taskSlippage(
+  plannedPercent: number | null,
+  actualPercent: number | null,
+  duration: number | null
+): TaskSlippage {
+  if (plannedPercent === null || actualPercent === null || duration === null || duration <= 0) {
+    return { days: null, tone: "unknown", glyph: "", text: EMPTY_SCHEDULE_CELL };
+  }
+  const days = Math.round(((plannedPercent - actualPercent) / 100) * duration);
+  if (days > 0) return { days, tone: "behind", glyph: "▲", text: `${days} d behind` };
+  if (days < 0) return { days, tone: "ahead", glyph: "", text: `${Math.abs(days)} d ahead` };
+  return { days: 0, tone: "on-track", glyph: "", text: "on track" };
+}
+
+export type SlippageSummary = {
+  /** Activities whose slippage could be computed at all. */
+  comparedCount: number;
+  behindCount: number;
+  /** The worst single activity, in days. Null when nothing is behind. */
+  worstDays: number | null;
+};
+
+/** D-56's project header tile, over every activity that has a start and a finish. */
+export function summariseTaskSlippage(slippages: readonly TaskSlippage[]): SlippageSummary {
+  const compared = slippages.filter((s) => s.days !== null);
+  const behind = compared.filter((s) => (s.days as number) > 0);
+  return {
+    comparedCount: compared.length,
+    behindCount: behind.length,
+    worstDays: behind.length ? Math.max(...behind.map((s) => s.days as number)) : null,
+  };
+}
+
+/** "Schedule: 3 tasks behind, worst 12 days". Singular is spelled correctly; nothing comparable says so. */
+export function formatSlippageTile(summary: SlippageSummary): string {
+  if (summary.comparedCount === 0) return "Schedule: no activity has both a start and a finish date yet";
+  if (summary.behindCount === 0) return "Schedule: 0 tasks behind";
+  const noun = summary.behindCount === 1 ? "task" : "tasks";
+  return `Schedule: ${summary.behindCount} ${noun} behind, worst ${summary.worstDays} days`;
+}
+
+/**
+ * D-56: "a Milestone checkbox (Finish = Start)".
+ *
+ * A milestone is stored as an activity with a zero-length window rather than as
+ * a flag column, so it needs no migration and no second definition: pms_issues
+ * already carries both dates, and "this activity has no duration" IS what a
+ * milestone means on a programme. The Gantt draws those rows as diamonds.
+ */
+export function isMilestoneWindow(startDate: string | null | undefined, dueDate: string | null | undefined): boolean {
+  return !!startDate && !!dueDate && startDate === dueDate;
+}
+
 export type BaselineWindow = { plannedStartDate: string | null; plannedDueDate: string | null };
 
 export type ScheduleActivity = {

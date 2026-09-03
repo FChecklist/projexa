@@ -340,3 +340,81 @@ describe("the footer callback must not drive a fetch loop", () => {
     expect(baselineCalls).toBeLessThanOrEqual(2);
   });
 });
+
+// ─────────────────────────── R67 D-56 (audit R-185) ─────────────────────────
+// Planned % / Slippage from the activity's OWN window, the header tile, the
+// milestone diamond, and the inline "% complete" editor that is offered only
+// where no BOQ line owns the number.
+describe("D-56 planned vs actual on the activity's own window", () => {
+  test("t1 (01 Aug -> 05 Sep, today 02 Sep, 40 % done) shows its planned % and its slippage in days", async () => {
+    const { container, findByText } = renderGantt();
+    await findByText("Joinery shop drawings");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Joinery shop drawings"))!;
+    // 32 of 35 days elapsed -> 91 % planned; 40 % actual over a 35-day window
+    // is 18 days of work behind.
+    expect(row.textContent).toContain("91 %");
+    expect(row.textContent).toContain("18 d behind");
+  });
+
+  test("an activity with no dates says so in both columns rather than reporting 0", async () => {
+    const { container, findByText } = renderGantt();
+    await findByText("Slab pour");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Slab pour"))!;
+    // Its own % complete is still a real 0 %; planned and slippage are not.
+    expect(row.textContent).toContain("0 %");
+    expect(row.textContent).toContain("—");
+  });
+
+  test("the header tile names how many activities are behind and the worst of them", async () => {
+    const { findByTestId } = renderGantt();
+    const tile = await findByTestId("schedule-slippage-tile");
+    expect(tile.textContent).toContain("Schedule: 1 task behind, worst 18 days");
+  });
+
+  test("a zero-length activity is drawn as a milestone diamond and titled, not by shape alone", async () => {
+    const { container, findByText } = renderGantt({
+      gantt: {
+        tasks: [{
+          id: "m1", title: "Handover", startDate: "2026-09-30", dueDate: "2026-09-30",
+          completionPercentage: 0, milestoneId: null, parentIssueId: null, isCritical: false, floatDays: null,
+        }],
+        dependencies: [],
+        milestones: [],
+      },
+    });
+    await findByText("Handover");
+    const diamond = container.querySelector('[title^="Milestone"]');
+    expect(diamond).not.toBeNull();
+    expect(diamond!.textContent).toBe("◆");
+  });
+});
+
+describe("D-56 the inline % complete editor", () => {
+  const LINKED = [
+    {
+      id: "t1", title: "Joinery shop drawings", startDate: "2026-08-01", dueDate: "2026-09-05",
+      completionPercentage: 40, milestoneId: null, parentIssueId: null, isCritical: false, floatDays: 2,
+      boqLineItemId: "boq-line-7",
+    },
+  ];
+
+  test("an unlinked activity's % is a control, and clicking it opens an editor on that row only", async () => {
+    const { container, findByText, getByLabelText } = renderGantt();
+    await findByText("Joinery shop drawings");
+    const trigger = [...container.querySelectorAll("button")].find((b) => b.textContent === "40 %")!;
+    expect(trigger).toBeDefined();
+    fireEvent.click(trigger);
+    await waitFor(() => expect(getByLabelText("% complete for Joinery shop drawings")).toBeDefined());
+    // One row at a time: the other activity is still showing its plain figure.
+    expect([...container.querySelectorAll("input")].length).toBe(1);
+  });
+
+  test("an activity whose progress comes from a BOQ line is read-only and SAYS WHY", async () => {
+    const { container, findByText } = renderGantt({
+      gantt: { tasks: LINKED, dependencies: [], milestones: [] },
+    });
+    await findByText("from Work Progress");
+    // No control at all on that cell -- the number has one author.
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent === "40 %")).toBe(false);
+  });
+});
