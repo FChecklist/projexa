@@ -18,9 +18,12 @@ export default async function ScheduleLogTimePage({ searchParams }: { searchPara
     );
   }
 
+  // R67 D-51: the project's NAME goes down with its id, so the form can print
+  // "Project: <name> — change in the top bar" instead of leaving the user to
+  // guess whether the top rail and the rows they are about to write agree.
   return (
     <div className="flex-1">
-      <ScheduleLogTimeClient projectId={project.id} />
+      <ScheduleLogTimeClient projectId={project.id} projectName={project.name} />
     </div>
   );
 }

@@ -304,7 +304,7 @@ export function ScheduleTabsClient({
             <ScheduleSprintsClient projectId={projectId} />
           </TabsContent>
           <TabsContent value="timesheet">
-            <ScheduleTimesheetClient projectId={projectId} />
+            <ScheduleTimesheetClient projectId={projectId} projectName={projectName} />
           </TabsContent>
         </Tabs>
       </div>

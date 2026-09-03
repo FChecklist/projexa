@@ -16,13 +16,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus } from "lucide-react";
+import { formatDayMonthYear } from "@/lib/format-date";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
   issue?: { id: string; number: number; title: string } | null;
 };
 
-export default function ScheduleTimesheetClient({ projectId }: { projectId: string }) {
+export default function ScheduleTimesheetClient({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  /**
+   * R67 D-51: Sumeet's own column order is Date | Project | Category | Task |
+   * Hours, and every row on this screen belongs to the project the page
+   * resolved -- the list is fetched by projectId. Naming it in the row is what
+   * makes an exported or printed timesheet readable away from this screen.
+   */
+  projectName?: string;
+}) {
   const router = useRouter();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,18 +90,27 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
         <Card className="shadow-card">
           <CardContent className="p-0">
             <Table>
+              {/* R67 D-51: Sumeet's column order, the org date format, hours
+                  right-aligned to two decimals, and the en-dash for an empty
+                  cell -- never a blank one. */}
               <TableHeader>
                 <TableRow>
-                  <TableHead>Task</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Hours</TableHead>
-                  <TableHead>Activity</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Task</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
                   <TableHead>Comments</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {entries.map((entry) => (
                   <TableRow key={entry.id}>
+                    <TableCell>{entry.spentOn ? formatDayMonthYear(entry.spentOn) : "—"}</TableCell>
+                    <TableCell>{projectName ?? "—"}</TableCell>
+                    <TableCell className={entry.activityType ? undefined : "text-px-muted"}>
+                      {entry.activityType ?? "—"}
+                    </TableCell>
                     <TableCell>
                       <button
                         type="button"
@@ -98,15 +120,13 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
                         {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}
                       </button>
                     </TableCell>
-                    <TableCell>{entry.spentOn}</TableCell>
-                    <TableCell>{entry.hours}</TableCell>
-                    <TableCell>{entry.activityType ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{Number(entry.hours).toFixed(2)}</TableCell>
                     <TableCell className="max-w-xs truncate">{entry.comments ?? "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <div className="border-t border-px-border p-3 text-right text-sm font-medium text-px-ink">
+            <div className="border-t border-px-border p-3 text-right text-sm font-medium text-px-ink tabular-nums">
               Total: {totalHours.toFixed(2)} hrs
             </div>
           </CardContent>

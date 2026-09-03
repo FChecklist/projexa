@@ -49,7 +49,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
-import { readRailProject, writeRailProject } from "@/lib/rail-project";
+import { readRailProject, subscribeRailProject, writeRailProject } from "@/lib/rail-project";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -180,6 +180,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // src/lib/rail-project.ts owns the storage and its failure modes.
     setProjectId(readRailProject());
   }, []);
+
+  // R67 D-51: a SCREEN can now resolve a project server-side and tell the rail
+  // about it (e.g. /schedule/log-time, whose form prints the project it is
+  // logging against). Without this subscription that write only reached the
+  // rail on the NEXT navigation, so the form and the chip above it disagreed
+  // for the whole time the user was filling the form in -- which is precisely
+  // the mistake M24 calls "the most expensive mistake available in this
+  // product". Same-tab writes only; the browser's own `storage` event covers
+  // other tabs and is deliberately not listened for here.
+  useEffect(() => subscribeRailProject(setProjectId), []);
 
   useEffect(() => {
     try {
