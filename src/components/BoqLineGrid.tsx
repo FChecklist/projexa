@@ -220,6 +220,7 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
                 failed={Boolean(categoriesFailed)}
                 onChange={(value) => onUpdate(i, "category", value)}
                 onAddNew={onAddCategory}
+                ariaLabel={`Line ${i + 1} Category`}
               />
             </div>
 

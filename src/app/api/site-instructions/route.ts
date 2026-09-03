@@ -66,7 +66,14 @@ export async function POST(request: NextRequest) {
     description: String(form.get("description") ?? "").trim() || "Site instruction authorising this BOQ revision",
     ...(form.get("boqId") ? { boqId: String(form.get("boqId")) } : {}),
     ...(form.get("drawingRef") ? { drawingRef: String(form.get("drawingRef")) } : {}),
-    costImpact: true,
+    // Read from the form like every other field, NEVER hardcoded. costImpact
+    // is what drives change-order and claim workflows in a construction ERP:
+    // asserting it on the user's behalf makes the record state a commercial
+    // fact nobody stated. Omitted entirely when the form does not carry it, so
+    // VERIDIAN's own column default decides -- exactly what the JSON branch
+    // above does by passing the caller's body through untouched. The two
+    // branches of this handler must not disagree about the same column.
+    ...(form.get("costImpact") !== null ? { costImpact: form.get("costImpact") === "true" } : {}),
   };
 
   let siteInstruction: { id?: string; siNumber?: number };

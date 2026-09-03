@@ -23,7 +23,7 @@ mock.module("next/navigation", () => ({
 }));
 
 const WorkProgressObjectClient = (await import("./WorkProgressObjectClient")).default;
-const { NO_PHOTO_LABEL } = await import("./WorkProgressObjectClient");
+const { NO_PHOTO_LABEL, PHOTOS_UNAVAILABLE_LABEL } = await import("./WorkProgressObjectClient");
 const { boqLineLabel } = await import("@/lib/work-progress-report");
 
 afterEach(() => {
@@ -75,10 +75,13 @@ function router(handlers: Record<string, (init?: RequestInit) => Response>) {
   }) as typeof fetch;
 }
 
-function mount(overrides: { photos?: unknown[]; entry?: Record<string, unknown> } = {}) {
+function mount(overrides: { photos?: unknown[]; photosFail?: boolean; entry?: Record<string, unknown> } = {}) {
   const entry = { ...ENTRY, ...(overrides.entry ?? {}) };
   globalThis.fetch = router({
-    "/api/work-progress/photos": () => jsonRes({ photos: overrides.photos ?? [] }),
+    "/api/work-progress/photos": () =>
+      overrides.photosFail
+        ? jsonRes({ error: "Photo storage is unavailable" }, 503)
+        : jsonRes({ photos: overrides.photos ?? [] }),
     "/api/work-progress/activities": () => jsonRes({ activities: [{ id: "act-1", name: "Skiphop sub", unit: "m2" }] }),
     "/api/work-progress/entry-1": () => jsonRes(entry),
     "/api/work-progress?projectId": () => jsonRes({ entries: [SIBLING, entry] }),
@@ -121,6 +124,19 @@ describe("WorkProgressObjectClient (R67 D-28)", () => {
   test("an entry with no photo says so, rather than showing an empty strip", async () => {
     const { getByText } = mount();
     await waitFor(() => expect(getByText(NO_PHOTO_LABEL)).toBeDefined());
+  });
+
+  // The distinction this pins: a site engineer whose photo endpoint is down
+  // must NOT be told their evidence was never attached. That reading invites
+  // them to re-upload a photo that is already stored.
+  test("a FAILED photo lookup says so and offers Retry -- never the 'no photo attached' empty state", async () => {
+    const { findByText, queryByText, getByRole } = mount({ photosFail: true });
+    // The backend's own words when it gave any, this screen's sentence when it
+    // did not -- either way, not the empty state.
+    await findByText(/Photo storage is unavailable|Couldn't load the site photos/);
+    expect(queryByText(NO_PHOTO_LABEL)).toBeNull();
+    expect(getByRole("button", { name: "Retry" })).toBeDefined();
+    expect(PHOTOS_UNAVAILABLE_LABEL).not.toBe(NO_PHOTO_LABEL);
   });
 
   test("a photo is rendered as a thumbnail captioned with the entry date", async () => {

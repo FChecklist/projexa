@@ -416,12 +416,13 @@ export default function ScopeObjectClient({
                       value={r.category ?? ""}
                       categories={categories}
                       failed={categoriesFailed}
-                      onChange={(next) => saveLineItemBudget(r.id, { category: next.trim() === "" ? null : next })}
+                      onChange={(next) => saveLineItemBudget(r.id, { category: next.trim() === "" ? null : next }, `${r.id}:category`)}
                       onAddNew={registerCategory}
                     />
                     {!r.category && (
                       <span className="ml-1 text-[10px] text-ct-muted">{NO_CATEGORY_CHIP_LABEL}</span>
                     )}
+                    <SavedTick shown={!!savedCells[`${r.id}:category`]} />
                   </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>

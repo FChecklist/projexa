@@ -58,6 +58,13 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   // R67 D-27: the lines the 409 is actually about, as rows rather than prose.
   const [conflicts, setConflicts] = useState<ScopeReductionConflict[]>([]);
   const [siFile, setSiFile] = useState<File | null>(null);
+  // Whether this instruction carries a cost impact. STATED by the user, never
+  // assumed: in a construction ERP that flag is what drives change-order and
+  // claim workflows, so the record must not assert a commercial fact nobody
+  // chose. A variation with a real money figure is the common case, so it
+  // starts ticked -- but it is a control the user can see and untick, not a
+  // constant buried in the route.
+  const [siCostImpact, setSiCostImpact] = useState(true);
   // Set once the revision has been created, so an attachment Retry attaches to
   // THAT revision instead of creating a second one.
   const [savedRevisionId, setSavedRevisionId] = useState<string | null>(null);
@@ -70,11 +77,9 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       const rows = data.lineItems ?? [];
       setLines(rows.length > 0 ? toDrafts(rows) : [emptyLine()]);
       setLoadError(null);
-      // Optional picklist -- a failure degrades to an empty list, never blocks
-      // the revision.
-      fetchJson<{ categories?: string[] }>(`/api/scope/categories?projectId=${encodeURIComponent(data.projectId)}`)
-        .then((c) => setCategories(c.categories ?? []))
-        .catch(() => setCategories([]));
+      // The category picklist is loaded once for the screen by
+      // useBoqCategories() above -- the org's editable list, not a per-project
+      // one derived from values already written. Nothing to fetch here.
     } catch (err) {
       setBoq(null);
       setLoadError(errorMessage(err, "Couldn't load the current scope to revise"));
@@ -103,6 +108,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     body.set("projectId", projectId);
     body.set("boqId", revisionId);
     body.set("description", `Site instruction authorising revision of "${title}"`);
+    body.set("costImpact", String(siCostImpact));
     const res = await fetch("/api/site-instructions", { method: "POST", body });
     const data = await res.json().catch(() => ({}));
     if (res.status === 207) return data.attachmentError ?? "The site instruction could not be attached";
@@ -249,6 +255,21 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
             onChange={(e) => setSiFile(e.target.files?.[0] ?? null)}
           />
           <p className="text-[11.5px] text-px-muted">Attach the client&apos;s instruction that authorises this change</p>
+          <label className="flex items-start gap-2 pt-1 text-[12.5px] text-px-ink">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={siCostImpact}
+              disabled={!siFile}
+              onChange={(e) => setSiCostImpact(e.target.checked)}
+            />
+            <span>
+              This instruction has a cost impact
+              <span className="block text-[11.5px] text-px-muted">
+                Recorded on the instruction; it is what a change order or a claim is raised from.
+              </span>
+            </span>
+          </label>
         </div>
 
         {savedRevisionId && messages.some((m) => m.level === "warning") && (

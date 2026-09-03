@@ -83,9 +83,11 @@ describe("ScopeClient lineage grouping (D-23)", () => {
     expect(getAllByText("▼ AED -850.00").length).toBeGreaterThan(0); // Rev1, both columns
     expect(getByText("▲ AED +1,175.00")).toBeDefined(); // Rev2 vs original
 
+    // R67 G-05: the currency lives in the column HEADER, once, rather than
+    // being repeated down every row.
     const headers = [...document.querySelectorAll("thead th")].map((h) => h.textContent?.trim());
-    expect(headers).toContain("Variation vs original");
-    expect(headers).toContain("Variation vs prior");
+    expect(headers).toContain("Variation vs original (AED)");
+    expect(headers).toContain("Variation vs prior (AED)");
   });
 
   test("a row with no figure gets the empty-value dash titled 'Variation unavailable', never a fabricated AED 0", async () => {
