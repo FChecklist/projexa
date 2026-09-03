@@ -16,6 +16,7 @@ import {
   formatVariancePercent,
   groupSubmittedByDesignerDay,
   headerStatus,
+  isResubmittable,
   HOURS_OVER_DAY,
   HOURS_TOO_SMALL,
   requiredReason,
@@ -266,5 +267,17 @@ describe("costRowsFor -- relabels the report, never re-derives it", () => {
   test("no report yet is an empty list, not a crash", () => {
     expect(costRowsFor(null, "category")).toEqual([]);
     expect(costRowsFor({}, "designer")).toEqual([]);
+  });
+});
+
+describe("isResubmittable -- what a designer can still act on themselves", () => {
+  test("a draft and a returned entry are both theirs to fix and send", () => {
+    expect(isResubmittable("draft")).toBe(true);
+    expect(isResubmittable("rejected")).toBe(true);
+  });
+
+  test("a submitted entry belongs to the manager, and an approved one has already been counted as cost", () => {
+    expect(isResubmittable("submitted")).toBe(false);
+    expect(isResubmittable("approved")).toBe(false);
   });
 });

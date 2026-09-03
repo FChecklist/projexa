@@ -54,6 +54,18 @@ const HEADER_STATUS_LABEL: Record<TimesheetApprovalStatus, string> = {
   rejected: "Rejected",
 };
 
+/**
+ * The states a designer can still act on themselves: a draft they have not
+ * sent yet, and one their manager sent back. Mirrors VERIDIAN's own
+ * RESUBMITTABLE_STATUSES in pms-time-service.ts -- an APPROVED entry is
+ * deliberately not in the set, because it has already been counted as cost.
+ */
+export const RESUBMITTABLE_STATUSES = ["draft", "rejected"] as const;
+
+export function isResubmittable(status: string): boolean {
+  return (RESUBMITTABLE_STATUSES as readonly string[]).includes(status);
+}
+
 export function rowStatus(status: string): { label: string; tone: StatusTone } {
   return ROW_STATUS[status as TimesheetApprovalStatus] ?? { label: status, tone: "neutral" };
 }

@@ -30,6 +30,7 @@ import {
   formatDayLabel,
   formatHours,
   headerStatus,
+  isResubmittable,
   validateHours,
 } from "@/lib/design-studio-timesheet";
 
@@ -177,7 +178,7 @@ export default function DesignStudioTimesheetObjectClient({
         ]}
         mode={mode}
         hasDraft={false}
-        onEdit={entry.approvalStatus === "draft" ? () => setMode("edit") : undefined}
+        onEdit={isResubmittable(entry.approvalStatus) ? () => setMode("edit") : undefined}
         onSave={save}
         onCancel={() => { setMode("display"); void load(); }}
         onDelete={() => setConfirmDelete(true)}
@@ -221,14 +222,14 @@ export default function DesignStudioTimesheetObjectClient({
             </div>
           )}
 
-          {mode === "display" && entry.approvalStatus === "draft" && (
+          {mode === "display" && isResubmittable(entry.approvalStatus) && (
             <button
               type="button"
               onClick={() => void submit()}
               disabled={busy}
               className="rounded-md border border-px-border px-3 py-1.5 text-[13px] text-px-ink disabled:opacity-50"
             >
-              Submit
+              {entry.approvalStatus === "rejected" ? "Send again" : "Submit"}
             </button>
           )}
         </div>

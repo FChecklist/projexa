@@ -34,6 +34,7 @@ import {
   emptyDayMessage,
   formatDayLabel,
   formatHours,
+  isResubmittable,
   rowStatus,
   submitDayLabel,
   todayIso,
@@ -144,7 +145,9 @@ export default function DesignStudioTimesheetClient({
 
   const dayEntries = useMemo(() => entries.filter((e) => e.spentOn === spentOn), [entries, spentOn]);
   const dayHours = totalHours(dayEntries);
-  const draftRows = dayEntries.filter((e) => e.approvalStatus === "draft");
+  // Drafts AND rows the manager sent back: "Submit today" re-sends a
+  // corrected day, which is the other half of the return loop.
+  const draftRows = dayEntries.filter((e) => isResubmittable(e.approvalStatus));
   const projectNameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
 
   async function addRow() {
@@ -331,8 +334,10 @@ export default function DesignStudioTimesheetClient({
                     <TableCell>{formatHours(entry.hours)}</TableCell>
                     <TableCell><StatusBadge tone={chip.tone} label={chip.label} /></TableCell>
                     <TableCell className="text-right">
-                      {entry.approvalStatus === "draft" && !entry.id.startsWith("pending-") && (
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void submitEntry(entry)}>Submit</Button>
+                      {isResubmittable(entry.approvalStatus) && !entry.id.startsWith("pending-") && (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void submitEntry(entry)}>
+                          {entry.approvalStatus === "rejected" ? "Send again" : "Submit"}
+                        </Button>
                       )}
                     </TableCell>
                   </TableRow>
