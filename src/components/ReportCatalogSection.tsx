@@ -27,7 +27,9 @@
 //                     ReportCatalogRunner.tsx, which POSTs to the pre-
 //                     existing /api/reports/definitions/[id]/run proxy.
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { FileBarChart, Search } from "lucide-react";
+import { placeCatalogEntry } from "@/lib/report-registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -83,8 +85,22 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
   );
 }
 
+// R67 E-22 (R-224). WHAT THIS REPLACED, and why it was wrong.
+//
+// Every non-definition card carried one blanket sentence: "Runs on VERIDIAN
+// own dashboard (<route>) -- not yet renderable inside PROJEXA, shown for
+// visibility only." That sentence was FALSE for seventeen of these cards.
+// Every entry whose id starts with "construction-" is one of the reports the
+// Project Reports tab on this very screen already runs. The catalog was
+// telling the reader they could not see a report that was one tab away.
+//
+// The card now states which of three things is true, from
+// src/lib/report-registry.ts: "Runs here" with an Open action,
+// "Runs in VERIDIAN - open there" with the link, or "Not built - data gap"
+// with the reason. No card is a dead end and none of them overstates.
 function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies: Company[] }) {
   const [expanded, setExpanded] = useState(false);
+  const placement = placeCatalogEntry(entry);
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -92,26 +108,24 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
         <span className="text-sm font-medium text-px-ink">{entry.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={entry.status} />
-          {entry.source === "static" && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
-          {entry.source === "definition" && (
-            <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30">Engine</Badge>
-          )}
+          <Badge
+            variant="secondary"
+            className={`text-[10px] ${placement.availability === "runs-here" ? "bg-px-teal/10 text-px-teal border-px-teal/30" : ""}`}
+          >
+            {placement.label}
+          </Badge>
         </div>
       </div>
       <p className="text-xs text-px-muted mb-1.5">{entry.description}</p>
 
-      {entry.source === "static" ? (
-        <p className="text-[10.5px] text-px-muted/80">
-          Runs on VERIDIAN own dashboard ({entry.route}) -- not yet renderable inside PROJEXA, shown for visibility only.
-        </p>
-      ) : (
+      {placement.runsInPlace ? (
         <>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="text-xs font-medium text-px-teal hover:text-px-ink transition-colors"
           >
-            {expanded ? "Hide" : "Run this report"}
+            {expanded ? "Hide" : placement.action}
           </button>
           {expanded && entry.definitionId && (
             <ReportCatalogRunner
@@ -121,6 +135,18 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
             />
           )}
         </>
+      ) : placement.href && placement.availability === "runs-here" ? (
+        <Link href={placement.href} className="text-xs font-medium text-px-teal hover:text-px-ink transition-colors">
+          {placement.action} →
+        </Link>
+      ) : placement.href ? (
+        // A VERIDIAN route is a different app the reader has no session in,
+        // so it is stated as such rather than dressed up as an in-app link.
+        <p className="text-[10.5px] text-px-muted/80">
+          {placement.action}: <span className="font-mono">{placement.href}</span>
+        </p>
+      ) : (
+        <p className="text-[10.5px] text-px-muted/80">{placement.note}</p>
       )}
     </div>
   );
@@ -199,8 +225,14 @@ export function ReportCatalogSection() {
     return grouped;
   }, [filtered]);
 
-  const definitionCount = catalog?.filter((e) => e.source === "definition").length ?? 0;
-  const runnableHereCount = catalog?.filter((e) => e.source === "definition" && (e.status ?? "built") === "built").length ?? 0;
+  // R67 E-22: counted from the SAME placement function the cards render, so
+  // the headline number and the badges can never disagree. It used to count
+  // only report_definitions rows, which is why it under-reported by the
+  // seventeen construction reports this app has always been able to run.
+  const placements = useMemo(() => (catalog ?? []).map((e) => placeCatalogEntry(e)), [catalog]);
+  const runnableHereCount = placements.filter((p) => p.availability === "runs-here").length;
+  const veridianCount = placements.filter((p) => p.availability === "runs-in-veridian").length;
+  const notBuiltCount = placements.filter((p) => p.availability === "not-built").length;
 
   return (
     <Card className="shadow-card">
@@ -214,7 +246,7 @@ export function ReportCatalogSection() {
             ? "Loading the full catalog..."
             : loadError
               ? "Could not load the catalog from VERIDIAN -- try again shortly."
-              : `${catalog.length} report/analysis types across the platform -- ${runnableHereCount} of ${definitionCount} run live, right here, through the Reports and Analysis Engine. The rest are either a real data gap (not yet built) or run on VERIDIAN own dashboard only, shown for visibility rather than hidden.`}
+              : `${catalog.length} report/analysis types across the platform -- ${runnableHereCount} run here, ${veridianCount} run in VERIDIAN, ${notBuiltCount} are not built yet. Every card says which it is.`}
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-2">
           <div className="relative w-64">

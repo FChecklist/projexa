@@ -1,7 +1,7 @@
 import { PageHeading } from "@/components/PageHeading";
 import ProjectLoadError from "@/components/ProjectLoadError";
 import { resolveSelectedProject } from "@/lib/project-selection";
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
+import { getServerOrganizationId, requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import ReportsClient, { type RegistryColumn } from "@/components/ReportsClient";
 
@@ -28,11 +28,16 @@ async function resolveReportsListColumns(organizationId: string | null): Promise
   }
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; report?: string }> }) {
+  const { projectId, report } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveReportsListColumns(organizationId);
+  // R67 E-22: a report is a document, and a document says who generated it.
+  // Same derivation as /dashboard's greeting -- the local part of the signed-in
+  // email, which is the only display name this app has.
+  const authCtx = await requireAuth();
+  const generatedBy = authCtx.user?.email?.split("@")[0] ?? "your account";
 
   // Priority 17 follow-on (projexa_reports_dispatch_2026_07_16): previously
   // this page refused to render ReportsClient at all when the org had no
@@ -53,7 +58,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             words and adds the retry, the same control the other 23
             project-scoped pages already got. */}
         {errorMessage && <ProjectLoadError message={`Could not load projects: ${errorMessage}`} />}
-        <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} registryColumns={registryColumns} />
+        <ReportsClient
+          key={project?.id ?? "no-project"}
+          projectId={project?.id ?? null}
+          projectName={project?.name ?? null}
+          generatedBy={generatedBy}
+          registryColumns={registryColumns}
+          requestedReport={report ?? null}
+        />
       </div>
     </>
   );
