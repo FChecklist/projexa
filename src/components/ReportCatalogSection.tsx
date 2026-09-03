@@ -67,6 +67,14 @@ const DOMAIN_LABELS: Record<ReportDomain, string> = {
 
 const DOMAIN_ORDER: ReportDomain[] = ["construction", "ERP", "compliance", "custom", "AI-ops"];
 
+// R67 E-28 (R-244): the catalog OPENS on Construction. This is PROJEXA -- the
+// construction reports are the ones a reader here can actually run, and the
+// other four domains are the platform's, reachable in one click. Opening on
+// all five buried seventeen runnable reports under a scroll of cards that all
+// say "Runs in VERIDIAN".
+const DEFAULT_DOMAIN: DomainFilter = "construction";
+type DomainFilter = ReportDomain | "all";
+
 const STATUS_FILTERS = ["all", "built", "data_gap", "planned"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
@@ -158,6 +166,7 @@ export function ReportCatalogSection() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [domainFilter, setDomainFilter] = useState<DomainFilter>(DEFAULT_DOMAIN);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,10 +205,11 @@ export function ReportCatalogSection() {
     const q = search.trim().toLowerCase();
     return catalog.filter((e) => {
       if (statusFilter !== "all" && (e.status ?? "built") !== statusFilter) return false;
+      if (domainFilter !== "all" && e.domain !== domainFilter) return false;
       if (q && !e.name.toLowerCase().includes(q) && !e.description.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [catalog, search, statusFilter]);
+  }, [catalog, search, statusFilter, domainFilter]);
 
   // R46 F_028 real root cause (confirmed live against production, 2026-08-25:
   // this exact line threw "Cannot read properties of undefined (reading
@@ -269,6 +279,25 @@ export function ReportCatalogSection() {
                 }`}
               >
                 {STATUS_FILTER_LABELS[s]}
+              </button>
+            ))}
+          </div>
+          {/* R67 E-28: the domain filter, opening on Construction (PROJEXA).
+              Every other domain is one click away and says how many it holds,
+              so nothing is hidden -- it is just not first. */}
+          <div className="flex flex-wrap gap-1">
+            {(["all", ...DOMAIN_ORDER] as DomainFilter[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={domainFilter === d}
+                onClick={() => setDomainFilter(d)}
+                className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${
+                  domainFilter === d ? "bg-px-ink text-white border-px-ink" : "border-px-border text-px-muted hover:bg-muted/50"
+                }`}
+              >
+                {d === "all" ? "All domains" : DOMAIN_LABELS[d]}
+                {catalog !== null && d !== "all" ? ` (${catalog.filter((e) => e.domain === d).length})` : ""}
               </button>
             ))}
           </div>

@@ -52,6 +52,14 @@ const RUNNABLE = new Set<string>(PROJEXA_RUNNABLE_REPORTS);
 /** D-02: the single Work Progress Report route. The Reports picker and the catalog both point here. */
 export const WORK_PROGRESS_REPORT_ROUTE = "/work-progress?tab=report";
 
+/**
+ * R67 E-28 (R-244): the verb on a runnable catalog card. It names the
+ * destination, because "Open" on its own left the reader guessing whether the
+ * card would run in place, navigate, or do nothing -- the same uncertainty the
+ * old "Not yet viewable here" created, only quieter.
+ */
+export const OPEN_IN_PROJECT_REPORTS = "Open in Project Reports";
+
 export type ReportAvailability = "runs-here" | "runs-in-veridian" | "not-built";
 
 /** The words on the card. Fixed, so the catalog and the picker cannot describe the same report differently. */
@@ -136,7 +144,11 @@ export function placeCatalogEntry(entry: CatalogEntryLike): ReportPlacement {
     return {
       availability: "runs-here",
       label: AVAILABILITY_LABEL["runs-here"],
-      action: "Open",
+      // R67 E-28: the verb names WHERE it opens. "Open" alone left the reader
+      // guessing whether a card would run in place, navigate, or do nothing --
+      // which is the same uncertainty the old "Not yet viewable here" created,
+      // just quieter.
+      action: OPEN_IN_PROJECT_REPORTS,
       href: `/reports?report=${encodeURIComponent(reportName)}`,
       runsInPlace: false,
     };

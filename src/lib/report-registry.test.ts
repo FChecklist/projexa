@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   AVAILABILITY_LABEL,
+  OPEN_IN_PROJECT_REPORTS,
   PROJEXA_RUNNABLE_REPORTS,
   WORK_PROGRESS_REPORT_ROUTE,
   placeCatalogEntry,
@@ -40,10 +41,14 @@ describe("reportNameForCatalogId", () => {
 });
 
 describe("placeCatalogEntry -- the catalog stops saying 'not yet viewable here' about reports it runs", () => {
-  test("a construction report the Project Reports tab runs says 'Runs here' with an Open action", () => {
+  test("a construction report the Project Reports tab runs says 'Runs here', and the verb names where it opens", () => {
     const placement = placeCatalogEntry(entry());
     expect(placement.label).toBe("Runs here");
-    expect(placement.action).toBe("Open");
+    // R67 E-28 (R-244): "Open in Project Reports", not a bare "Open" -- the
+    // verb has to say WHERE, or the reader is left guessing whether the card
+    // runs in place, navigates, or does nothing.
+    expect(placement.action).toBe(OPEN_IN_PROJECT_REPORTS);
+    expect(placement.action).toBe("Open in Project Reports");
     expect(placement.href).toBe("/reports?report=attendance");
     expect(placement.runsInPlace).toBe(false);
   });

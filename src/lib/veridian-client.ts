@@ -114,13 +114,41 @@ function isTimeout(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+// R67 E-28 (R-244): a caller-supplied signal, combined with this file's own
+// per-attempt timeout. Written by hand rather than with AbortSignal.any(),
+// which is Node 20.3+ and would be a runtime-version dependency for one line.
+//
+// WHAT IT IS FOR. A long report needs to be abandonable from the OUTSIDE:
+// either because the browser gave up (the route passes request.signal) or
+// because the route set its own deadline. Without this, a cancelled run kept
+// six upstream calls alive on a five-connection pool with nobody waiting for
+// the answer.
+export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const real = signals.filter((s): s is AbortSignal => !!s);
+  if (real.length === 1) return real[0];
+  const already = real.find((s) => s.aborted);
+  if (already) return already;
+  const controller = new AbortController();
+  for (const signal of real) {
+    signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+function withCallerSignal(timeoutMs: number, caller?: AbortSignal): AbortSignal {
+  return combineAbortSignals(AbortSignal.timeout(timeoutMs), caller);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, callerSignal?: AbortSignal): Promise<Response> {
   const attempts = VERIDIAN_RETRY_ON_TIMEOUT && isIdempotent(init) ? 2 : 1;
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    // A caller that has already given up must not trigger a retry: the retry
+    // exists for a slow upstream, not for a request nobody is waiting on.
+    if (callerSignal?.aborted) break;
     try {
-      return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
+      return await fetch(url, { ...init, signal: withCallerSignal(VERIDIAN_FETCH_TIMEOUT_MS, callerSignal) });
     } catch (err) {
       lastErr = err;
       if (!isTimeout(err)) throw err;
@@ -130,6 +158,13 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
         console.warn(`[veridian] timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms, retrying once:`, url);
       }
     }
+  }
+
+  // R67 E-28: a run the caller abandoned is not a service failure, and must
+  // not be reported as one. Its own words, so the screen can say "cancelled"
+  // rather than accusing the backend of being slow.
+  if (callerSignal?.aborted) {
+    throw new VeridianApiError("The request was cancelled before the construction data service answered.", 499);
   }
 
   if (isTimeout(lastErr)) {
@@ -213,7 +248,10 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN's PUT /currencies/base (compliance-tracker PR #1391) -- every
 // prior caller in this file used POST/PATCH for writes, so PUT was simply
 // never needed here before.
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+// R67 E-28 (R-244): `signal` lets a route abandon an upstream call -- either
+// because the browser disconnected (request.signal) or because the route set
+// its own deadline. See withCallerSignal() above.
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal };
 
 // Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
 // route (a real binary response, not JSON) can reuse the exact same
@@ -232,7 +270,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
-  });
+  }, options.signal);
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));

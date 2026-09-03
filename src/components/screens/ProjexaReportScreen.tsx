@@ -24,6 +24,23 @@
 import { ScreenFrame, type HeaderActionState } from "@fchecklist/veridian-ui-kit/screens";
 import type { ReactNode } from "react";
 
+/**
+ * R67 E-28: a footer action that is a real DOWNLOAD rather than a click
+ * handler. A server-rendered PDF or XLSX arrives as a normal GET, so the
+ * honest control is an anchor -- it can be middle-clicked, it shows its
+ * destination, and the browser's own download machinery handles the stream
+ * instead of the page holding a blob in memory. `disabledReason` still wins:
+ * a report that has not run, or one whose subtotals do not tie, must not be
+ * exportable, and the reason is the button's title either way.
+ */
+export type ProjexaDownloadActionState = {
+  label: string;
+  href?: string;
+  /** Suggested filename. The server's own Content-Disposition still wins when it sends one. */
+  downloadName?: string;
+  disabledReason?: string;
+};
+
 export type ProjexaReportHeaderBlock = {
   /** The project, as a link. This is the one reason this component is a fork. */
   project: ReactNode;
@@ -44,21 +61,44 @@ export type ProjexaReportScreenProps = {
   /** null = the subtotals tie. A mismatch renders LOUDLY and the caller must disable export. */
   tieError?: string | null;
   shareAction?: HeaderActionState;
+  /** R67 E-28 (R-254): beside Share, never instead of it -- two different ways to hand the same link over. */
+  shareWhatsAppAction?: HeaderActionState;
   exportCsvAction?: HeaderActionState;
-  exportPdfAction?: HeaderActionState;
+  /** R67 E-28: server-rendered, streamed through a relay -- projexa gains no spreadsheet library. */
+  exportXlsxAction?: ProjexaDownloadActionState;
+  exportPdfAction?: HeaderActionState | ProjexaDownloadActionState;
   children: ReactNode;
 };
 
-function FooterButton({ action }: { action?: HeaderActionState }) {
+const FOOTER_BUTTON_CLASS =
+  "rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy disabled:opacity-50 disabled:cursor-not-allowed";
+
+function isDownloadAction(action: HeaderActionState | ProjexaDownloadActionState): action is ProjexaDownloadActionState {
+  return "href" in action || "downloadName" in action;
+}
+
+function FooterButton({ action }: { action?: HeaderActionState | ProjexaDownloadActionState }) {
   if (!action) return null;
   const disabled = !!action.disabledReason;
+
+  // A download with a real href renders as an anchor -- but only when it is
+  // enabled. A disabled anchor is not a thing HTML has; a disabled button that
+  // says WHY is, and that is what the reader needs anyway.
+  if (!disabled && isDownloadAction(action) && action.href) {
+    return (
+      <a href={action.href} download={action.downloadName} className={`${FOOTER_BUTTON_CLASS} inline-block`}>
+        {action.label}
+      </a>
+    );
+  }
+
   return (
     <button
       type="button"
-      onClick={action.onClick}
+      onClick={isDownloadAction(action) ? undefined : action.onClick}
       disabled={disabled}
       title={action.disabledReason}
-      className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy disabled:opacity-50 disabled:cursor-not-allowed"
+      className={FOOTER_BUTTON_CLASS}
     >
       {action.label}
     </button>
@@ -71,7 +111,9 @@ export function ProjexaReportScreen({
   parameterBar,
   tieError,
   shareAction,
+  shareWhatsAppAction,
   exportCsvAction,
+  exportXlsxAction,
   exportPdfAction,
   children,
 }: ProjexaReportScreenProps) {
@@ -81,10 +123,15 @@ export function ProjexaReportScreen({
       // REPORT.GLOBAL: "+ New not applicable -- SUPPRESSED, not greyed."
       filterAction={undefined}
       messages={[]}
+      // R67 E-28: ONE fixed order, so the same five controls are never in two
+      // orders on two reports: Share | Send on WhatsApp | Export CSV | Export
+      // XLSX | Export PDF.
       footerActions={
         <>
           <FooterButton action={shareAction} />
+          <FooterButton action={shareWhatsAppAction} />
           <FooterButton action={exportCsvAction} />
+          <FooterButton action={exportXlsxAction} />
           <FooterButton action={exportPdfAction} />
         </>
       }

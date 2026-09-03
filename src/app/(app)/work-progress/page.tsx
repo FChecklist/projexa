@@ -7,8 +7,16 @@ import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
 
-export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+// R67 E-28 (D-02): the Work Progress Report's parameters live in the URL --
+// from, to, view and boqId next to projectId -- and they are read HERE, on the
+// server, then passed in. Never through useSearchParams() in the client, which
+// forces a Suspense bailout at build time for the whole subtree.
+export default async function WorkProgressPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; tab?: string; from?: string; to?: string; view?: string; boqId?: string }>;
+}) {
+  const { projectId, tab, from, to, view, boqId } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
@@ -38,7 +46,16 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
             </TabsList>
             <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
             <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
-            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
+            <TabsContent value="report">
+              <WorkProgressReportClient
+                projectId={project.id}
+                projectName={project.name}
+                initialFrom={from ?? null}
+                initialTo={to ?? null}
+                initialView={view ?? null}
+                initialBoqId={boqId ?? null}
+              />
+            </TabsContent>
           </Tabs>
         )}
       </div>

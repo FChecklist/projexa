@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, combineAbortSignals, VeridianApiError } from "@/lib/veridian-client";
+
+/**
+ * R67 E-28 (R-244): "a run over 30 s is cancelled server-side". The measured
+ * run is 2.7 s; anything an order of magnitude past that is not a slow report,
+ * it is a report nobody is going to wait for.
+ */
+export const REPORT_DEADLINE_MS = 30_000;
 import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
@@ -52,19 +59,41 @@ export async function GET(request: NextRequest) {
   // set and still tie to each other.
   const categoryFilter = searchParams.getAll("category").filter((c) => c.trim() !== "");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
-  if (!from || !to) return NextResponse.json({ error: "from and to (YYYY-MM-DD) query params are required" }, { status: 400 });
+  // R67 E-28 (C-04): `from` is now OPTIONAL, and that is the point. The screen
+  // used to default it to the first of the current month and then tell the
+  // reader to "Pick a date range and click Run Report" over a range that was
+  // already filled -- and on a project whose work started in June, a
+  // month-to-date default reports a project as having done nothing.
+  //
+  // The default now comes from the DATA: the earliest progress entry this
+  // project has. That is computed below, from the entries this route already
+  // fetches, so it costs no extra call, and the effective range comes back on
+  // the response so the screen shows what it really ran. `to` still has a
+  // sensible client-side default (today) and is still required here, because a
+  // missing end date is a different mistake from an unspecified start.
+  if (!to) return NextResponse.json({ error: "to (YYYY-MM-DD) query param is required" }, { status: 400 });
 
   const orgId = ctx.organizationId!;
   const qp = `projectId=${encodeURIComponent(projectId)}`;
 
+  // R67 E-28 (R-244): this report fans out to six upstream calls on a
+  // five-connection pool, and before this it had no way to stop. Two things
+  // now abandon it: the browser giving up (request.signal -- the Cancel button
+  // on the WPR header aborts its fetch, and that reaches here), and this
+  // route's own 30-second deadline. Either way the upstream calls are aborted
+  // rather than left running for an answer nobody is waiting for.
+  const deadline = AbortSignal.timeout(REPORT_DEADLINE_MS);
+  const signal = combineAbortSignals(request.signal, deadline);
+  const call = { organizationId: orgId, signal };
+
   try {
     const [scopeData, workProgressData, progressData, attendanceData, rosterData, vendorsData] = await Promise.all([
-      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId }),
-      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId }),
-      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}`, { organizationId: orgId }),
-      callVeridian<{ attendance: Attendance[] }>(`/attendance?${qp}`, { organizationId: orgId }),
-      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true }),
-      callVeridian<{ vendors: VeridianVendor[] }>("/vendors", { organizationId: orgId }),
+      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, call),
+      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, call),
+      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}`, call),
+      callVeridian<{ attendance: Attendance[] }>(`/attendance?${qp}`, call),
+      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { ...call, root: true }),
+      callVeridian<{ vendors: VeridianVendor[] }>("/vendors", call),
     ]);
 
     // Scope-wise / category-wise are computed from the latest, non-superseded
@@ -81,20 +110,45 @@ export async function GET(request: NextRequest) {
 
     const vendors: Vendor[] = (vendorsData.vendors ?? []).map((v) => ({ id: v.id, name: v.vendorName }));
 
+    const entries = progressData.entries ?? [];
+    // R67 E-28 (C-04): the data-derived default start date. The earliest
+    // progress entry is the first day this project recorded anything, so a
+    // report that starts there covers the whole of it.
+    //
+    // NOT "the project start", which R-244 also names: nothing in this app's
+    // payloads carries one (resolveSelectedProject returns {id, name}, and the
+    // dashboard payload has no start date either), so claiming a project start
+    // here would mean inventing one. With no entries at all there is no
+    // earliest date, and the range collapses to the single day `to` -- an empty
+    // report the screen then explains in words.
+    const earliestEntryDate = entries.reduce<string | null>(
+      (earliest, e) => (earliest === null || e.entryDate < earliest ? e.entryDate : earliest),
+      null
+    );
+    const effectiveFrom = from ?? earliestEntryDate ?? to;
+
     const report = buildWorkProgressReport({
       lineItems,
-      entries: progressData.entries ?? [],
+      entries,
       activities: workProgressData.activities ?? [],
       categories: workProgressData.categories ?? [],
-      from,
+      from: effectiveFrom,
       to,
       categoryFilter,
     });
-    const byManpower = buildManpowerBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], from, to });
-    const byVendor = buildVendorBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], vendors, from, to });
+    const byManpower = buildManpowerBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], from: effectiveFrom, to });
+    const byVendor = buildVendorBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], vendors, from: effectiveFrom, to });
 
     return NextResponse.json({
-      projectId, from, to,
+      projectId,
+      // The range it REALLY ran, so the parameter bar and the URL can show the
+      // truth rather than what the client guessed before it asked.
+      from: effectiveFrom,
+      to,
+      /** null when this project has logged nothing at all. */
+      earliestEntryDate,
+      /** True when `from` was defaulted here rather than chosen by the caller. */
+      fromWasDefaulted: !from,
       boqTitle: latestBoq?.title ?? null,
       boqId: latestBoq?.id ?? null,
       // R36/P5: the full list of this project's BOQs (id/title/status/
@@ -114,6 +168,15 @@ export async function GET(request: NextRequest) {
       byVendor,
     });
   } catch (err) {
+    // The deadline gets its own words. "The service did not answer" would be
+    // false -- it was still working, and we stopped waiting; the reader's fix
+    // is a narrower range, not a retry of the same thing.
+    if (deadline.aborted) {
+      return NextResponse.json(
+        { error: `The Work Progress Report was still running after ${REPORT_DEADLINE_MS / 1000} s and was cancelled. Narrow the date range and run it again.` },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report" },
       { status: err instanceof VeridianApiError ? err.status : 502 }

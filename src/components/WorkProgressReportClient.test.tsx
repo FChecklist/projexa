@@ -53,8 +53,12 @@ describe("ScopeTable (point 108: banded layout)", () => {
   test("renders three visually separated bands in XLSX order: Percent, then Quantity, then Amount", () => {
     const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
     const headerText = textsOfTag(html, "th");
+    // R67 E-28 (R-244) added "BOQ Qty" -- the line's own CONTRACTED quantity,
+    // beside the quantity done. Named for what it is: R-244 asks for a "PO
+    // Qty" column and nothing in this schema links a BOQ line to a purchase
+    // order, so a "PO Qty" header would be a label over the wrong number.
     expect(headerText).toEqual([
-      "S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt",
+      "S.No", "Category", "Code", "Description", "Unit", "BOQ Qty", "Rate", "Amt",
       "Percent", "Quantity", "Amount",
       "Previous", "Current", "Total", "Previous", "Current", "Total", "Previous", "Current", "Total",
     ]);
@@ -212,5 +216,40 @@ describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
       <CategoryFilterGroup available={["Civil"]} selected={["Civil"]} disabled onToggle={noop} onApply={noop} />
     );
     expect(html).toMatch(/data-testid="wpr-category-apply"[^>]*disabled=""|disabled=""[^>]*data-testid="wpr-category-apply"/);
+  });
+});
+
+// R67 E-28 (R-244 / R-254): the three things the table itself had to gain --
+// the contracted quantity beside the quantity done, the first three columns
+// pinned so the amount group is reachable at 1440 px, and a code that links to
+// the BOQ REVISION the report actually ran against.
+describe("ScopeTable (R67 E-28)", () => {
+  test("the BOQ's own contracted quantity is rendered beside rate and amount", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
+    const headers = textsOfTag(html, "th");
+    expect(headers.indexOf("BOQ Qty")).toBe(headers.indexOf("Unit") + 1);
+    expect(html).toContain("472"); // PARENT.qtyTotal, the contracted quantity
+  });
+
+  test("the first three columns are pinned, on an opaque background", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
+    // sticky needs a background or the scrolled cells show through it.
+    expect(html).toContain("sticky bg-white left-0");
+    expect(html).toContain("sticky bg-white left-12");
+    expect(html).toContain("sticky bg-white left-40");
+  });
+
+  test("a code links to the BOQ revision the report ran against, when it knows which", () => {
+    const withBoq = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" boqId="boq-7" />);
+    expect(withBoq).toContain('href="/scope/boq-7"');
+    // ...and falls back to the project's BOQ list when it does not.
+    const withoutBoq = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
+    expect(withoutBoq).toContain('href="/scope?projectId=p1"');
+  });
+
+  test("the Grand Total row still lands under the Amt column after the new one", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
+    expect(html).toContain('colSpan="7"');
+    expect(html).toContain("Grand Total");
   });
 });
