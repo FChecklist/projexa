@@ -88,6 +88,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/grc/risks/[id]",
   "/grc/risks/new",
   "/grc/vendors/new",
+  "/hi",
+  "/hi/how-it-works",
   "/how-it-works",
   "/hr",
   "/inventory",

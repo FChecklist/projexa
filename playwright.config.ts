@@ -42,7 +42,20 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
-      testIgnore: /auth\.setup\.ts/,
+      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/],
+    },
+    {
+      // R67 J-01/J-02/J-03 (audit R-246/R-279/R-280). The public marketing
+      // pages are measured logged OUT, so this project deliberately has NO
+      // `dependencies: ["setup"]`: auth.setup.ts logs four seeded users in
+      // against the REAL site, and pointing the run at a local build would
+      // fail all four before a single timing assertion ran. The spec skips
+      // itself unless PLAYWRIGHT_BASE_URL names a local origin.
+      //     PLAYWRIGHT_BASE_URL=http://localhost:3100 \
+      //       bunx playwright test --project=public-pages
+      name: "public-pages",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /public-pages-perf\.spec\.ts/,
     },
   ],
 });

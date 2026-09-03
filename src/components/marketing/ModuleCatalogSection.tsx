@@ -3,6 +3,7 @@ import {
   UserCog, ShieldAlert, Library, Bot,
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 // Every item below was verified against this repo's real
@@ -55,9 +56,9 @@ const CATEGORIES = [
 
 const CORE_ITEMS = ["veri", "reports", "kpis", "multiProject", "bilingual"] as const;
 
-export async function ModuleCatalogSection() {
-  const t = await getTranslations("Marketing.moduleCatalog");
-  const tSystem = await getTranslations("Marketing.system");
+export async function ModuleCatalogSection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.moduleCatalog" });
+  const tSystem = await getTranslations({ locale, namespace: "Marketing.system" });
 
   return (
     <section className="border-b border-border bg-background py-20 sm:py-28">

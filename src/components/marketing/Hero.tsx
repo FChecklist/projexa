@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Users2, GanttChartSquare, Wallet, MessageCircleQuestion, HardHat } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Button } from "@/components/ui/button";
 
 const STAT_CHIP_KEYS = ["coordination", "productivity", "savings"] as const;
@@ -19,8 +20,8 @@ const PREVIEW_TILE_KEYS = [
 // as one line inside it, not the whole card. The blueprint-grid texture and
 // ambient orange/steel glow are kept from the previous centered layout;
 // only the content layout changes.
-export async function Hero() {
-  const t = await getTranslations("Marketing.hero");
+export async function Hero({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.hero" });
 
   return (
     <section id="ai-os" className="relative overflow-hidden bg-px-ink">
