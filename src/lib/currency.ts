@@ -57,36 +57,137 @@ export function currencyLabel(id: string | null | undefined, currencies: Currenc
  * to tell them apart: "the /api/currencies request has not answered yet" and
  * "this org genuinely has no currency row". currencyLabel() above did not care
  * -- it fell back to CURRENCY_FALLBACK_LABEL in both cases -- but useOrgMoney()
- * does: it must say "Currency not set → Settings" in the second case and must
+ * does: it must say "Currency not set -> Settings" in the second case and must
  * NOT say it in the first, because for an org that HAS a currency that sentence
  * is simply false, and it would flash on every page load.
  *
- * `loaded` is set in BOTH the .then and the .catch: a failed fetch is still a
- * settled question as far as the UI is concerned -- we asked, we have no
- * currency, so the honest render is the bare-number one, not a permanent
- * loading state.
+ * `loaded` is set on BOTH outcomes: a failed fetch is still a settled question
+ * as far as the UI is concerned -- we asked, we have no currency, so the honest
+ * render is the bare-number one, not a permanent loading state.
  */
 export type CurrenciesState = { currencies: Currency[]; loaded: boolean };
 
-// Wraps the fetch-once-on-mount pattern every fixed file used to duplicate
-// by hand (`useEffect(() => { fetch("/api/currencies")... }, [])`). Safe to
-// call from multiple components on the same page -- each mounts its own
-// independent fetch, matching how these components already independently
-// fetch their own report/list data.
-export function useCurrenciesState(): CurrenciesState {
-  const [state, setState] = useState<CurrenciesState>({ currencies: [], loaded: false });
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/currencies")
+// R67 F-04 (R-060), merged with G-05 above. The org's currency list is the
+// definition of session-stable reference data -- it changes when somebody
+// changes the org's currencies, which is approximately never -- and yet EVERY
+// component calling useCurrencies() used to mount its own independent fetch, on
+// every mount, on every navigation. /scope alone has two consumers; a page with
+// three money tables made three identical requests.
+//
+// One in-flight promise is now shared across every caller in the tab, and the
+// resolved list is remembered in sessionStorage so a navigation re-renders with
+// the code ALREADY THERE rather than flashing an unlabelled number.
+// sessionStorage (not localStorage) on purpose: it dies with the tab. It does
+// NOT die on sign-out on its own, so M24Shell calls clearCurrenciesCache()
+// there -- see that call site; without it a second sign-in in the same tab
+// could read the previous org's codes until the refetch landed.
+const CURRENCIES_SESSION_KEY = "px.currencies";
+
+/**
+ * `ok` distinguishes a real answer from a failed one. Both settle the question
+ * (`loaded` becomes true either way, per G-05), but only a real answer may
+ * replace a list we already have -- otherwise one flaky request would blank
+ * every money label on the page.
+ */
+type CurrenciesLoadResult = { currencies: Currency[]; ok: boolean };
+
+let currenciesPromise: Promise<CurrenciesLoadResult> | null = null;
+
+function readCachedCurrencies(): Currency[] | null {
+  try {
+    const raw = sessionStorage.getItem(CURRENCIES_SESSION_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as Currency[]) : null;
+  } catch {
+    // Private mode, disabled storage, corrupt entry -- all mean "no cache",
+    // never a thrown error on a render path.
+    return null;
+  }
+}
+
+function writeCachedCurrencies(currencies: Currency[]): void {
+  try {
+    sessionStorage.setItem(CURRENCIES_SESSION_KEY, JSON.stringify(currencies));
+  } catch {
+    // Storage full or unavailable: the in-memory promise above still dedupes
+    // for the life of this page, which is the larger half of the win.
+  }
+}
+
+function loadCurrenciesResult(): Promise<CurrenciesLoadResult> {
+  if (!currenciesPromise) {
+    currenciesPromise = fetch("/api/currencies")
       .then((r) => r.json())
       .then((d) => {
-        if (!cancelled) setState({ currencies: d.currencies ?? [], loaded: true });
+        const currencies: Currency[] = d.currencies ?? [];
+        writeCachedCurrencies(currencies);
+        return { currencies, ok: true };
       })
       .catch(() => {
-        if (!cancelled) setState({ currencies: [], loaded: true });
+        // A failed lookup must not be cached as "this org has no currencies"
+        // -- that would render every amount unlabelled for the whole session.
+        // Clear the memo so the next mount retries.
+        currenciesPromise = null;
+        return { currencies: [], ok: false };
       });
+  }
+  return currenciesPromise;
+}
+
+/** The shared list, for non-React callers. One request per tab. */
+export function loadCurrencies(): Promise<Currency[]> {
+  return loadCurrenciesResult().then((result) => result.currencies);
+}
+
+/**
+ * Drops both halves of the cache. Called on sign-out (M24Shell): sessionStorage
+ * outlives a sign-out inside one tab, and the currency list is org-scoped data.
+ */
+export function clearCurrenciesCache(): void {
+  currenciesPromise = null;
+  try {
+    sessionStorage.removeItem(CURRENCIES_SESSION_KEY);
+  } catch {
+    // nothing to clear
+  }
+}
+
+// Test seam: bun test runs every file in one process, so the module-level memo
+// above would otherwise leak between test files. Same function, named for the
+// job it does in a suite.
+export const __resetCurrenciesCacheForTests = clearCurrenciesCache;
+
+/**
+ * Wraps the fetch-once pattern every fixed file used to duplicate by hand
+ * (`useEffect(() => { fetch("/api/currencies")... }, [])`). Safe to call from
+ * any number of components: they share one request, and after the first they
+ * render with the list already in hand.
+ */
+export function useCurrenciesState(): CurrenciesState {
+  // Deliberately starts empty even when a cached list exists: this hook runs
+  // inside components that are server-rendered first, and seeding state from
+  // sessionStorage (which the server does not have) would make the client's
+  // first render disagree with the HTML it is hydrating. The cache is read in
+  // the effect below instead -- synchronously, before the network call, so the
+  // code still appears in the same commit rather than a round trip later.
+  const [state, setState] = useState<CurrenciesState>({ currencies: [], loaded: false });
+  useEffect(() => {
+    let active = true;
+    // A cached list was only ever written after a real answer, so it settles
+    // the G-05 question too: `loaded` is true, and no screen flashes
+    // "Currency not set" for an org that has one.
+    const cached = readCachedCurrencies();
+    if (cached) setState({ currencies: cached, loaded: true });
+    loadCurrenciesResult().then((result) => {
+      if (!active) return;
+      // Never overwrite a good cached list with an empty failure result -- but
+      // the question is settled either way.
+      if (!result.ok && cached) setState({ currencies: cached, loaded: true });
+      else setState({ currencies: result.currencies, loaded: true });
+    });
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, []);
   return state;

@@ -32,16 +32,19 @@ const CHAIN: Chain = {
 
 const noop = () => {};
 
+// REBASE NOTE (r67 lane A onto this lane G suite): the fork's prop surface
+// changed. onModeChange/history/onLoadChain are gone with the mode row (A-22)
+// and the HISTORY drop (A-01); `instruction` and `canSend` replace the
+// disabledReason/emptyInputReason/allowEmptySubmit trio (A-19). See the
+// describes below for why each of G's rules survives the swap.
 function renderComposer(overrides: Partial<ComposerProps> = {}) {
   const props: ComposerProps = {
     chain: CHAIN,
-    onModeChange: noop,
     onCutFrom: noop,
     onHome: noop,
     onReset: noop,
-    // R67 C-10: the composer no longer owns a history drop, so it no longer
-    // takes a history list or a chain loader -- only the word's handler.
-    onHistory: noop,
+    instruction: "",
+    canSend: true,
     value: "",
     onChange: noop,
     onSubmit: noop,
@@ -50,10 +53,16 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
   return render(<Composer {...props} />);
 }
 
-const sendButton = (container: HTMLElement) =>
-  Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Send") as HTMLButtonElement;
-
-const reasonNode = (container: HTMLElement) => container.querySelector("#veri-composer-send-reason");
+/** The Send button, found by role rather than by the exact word "Send": A-19
+ *  renames it for what it will do ("Save progress", "Run") and appends what is
+ *  missing ("Send (pick a project)"), so an equality on "Send" would silently
+ *  stop finding it. It is the last button in the composer's footer row. */
+const sendButton = (container: HTMLElement) => {
+  const buttons = Array.from(container.querySelectorAll("button"));
+  const found = buttons[buttons.length - 1];
+  if (!found) throw new Error("no Send button rendered");
+  return found as HTMLButtonElement;
+};
 
 const textarea = (container: HTMLElement) => container.querySelector("textarea") as HTMLTextAreaElement;
 
@@ -79,80 +88,126 @@ describe("Send is navy on saffron, not white on saffron", () => {
   });
 });
 
-describe("a disabled Send always has words beside it", () => {
-  test("the caller's reason renders with role=status, and the textarea points at it", () => {
-    const { container } = renderComposer({ value: "log 2 hours", disabledReason: "Sending…" });
-    const reason = reasonNode(container)!;
-    expect(reason).not.toBeNull();
-    expect(reason.textContent).toBe("Sending…");
-    expect(reason.getAttribute("role")).toBe("status");
-    expect(sendButton(container).disabled).toBe(true);
-    expect(textarea(container).getAttribute("aria-describedby")).toBe("veri-composer-send-reason");
+// G'S RULE, KEPT; G'S MECHANISM, REPLACED (rebase reconciliation).
+//
+// G-04 said: a disabled Send must never be a dead control with no words, and
+// there must be exactly one instruction, not two. G bought that with a
+// separate sentence rendered next to the button (role=status + a
+// aria-describedby from the textarea).
+//
+// Lane A's A-19 removed that slot and put the missing thing INSIDE the
+// button's own label -- "Send (pick a project, say what you need)" -- which
+// keeps G's rule and makes it stronger in three ways: the words are the
+// control's own accessible name, so they are announced on focus rather than
+// through an indirection; there is structurally nowhere for a second sentence
+// to appear; and the empty-input state G had to add `emptyInputReason` for is
+// just one of the things missingThings() lists.
+//
+// So these assert the RULE against the new mechanism. The end-to-end proof
+// that no blocked state is ever silent lives in chain-status.test.ts (every
+// state maps to a label) and composer-send.test.tsx ("every label chain-status
+// can produce reaches the button unchanged").
+describe("a disabled Send still always has words -- now IN the button", () => {
+  test("the reason is the button's visible label AND its accessible name", () => {
+    const { container } = renderComposer({
+      value: "",
+      canSend: false,
+      sendLabel: "Send (pick a project, say what you need)",
+      instruction: "Which project? Choose one in the top rail",
+    });
+    const btn = sendButton(container);
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe("Send (pick a project, say what you need)");
+    // A-19: the accessible name is EXACTLY the label, with nothing appended --
+    // the button can never announce one sentence and read another.
+    expect(btn.getAttribute("aria-label")).toBe("Send (pick a project, say what you need)");
   });
 
-  test("the state the kit left SILENT now has a sentence", () => {
-    // Empty textarea, nothing armed: the kit disabled Send and said nothing.
-    const { container } = renderComposer({ value: "" });
-    expect(sendButton(container).disabled).toBe(true);
-    expect(reasonNode(container)?.textContent).toBe("Type what you need, then press Send.");
+  test("the state the kit left SILENT still has a sentence", () => {
+    // Empty textarea, nothing armed. The kit disabled Send and said nothing;
+    // G gave it a sentence beside the button; A-19 gives it one ON the button.
+    const { container } = renderComposer({ value: "", canSend: false, sendLabel: "Send (say what you need)" });
+    const btn = sendButton(container);
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe("Send (say what you need)");
   });
 
-  test("the caller's own reason wins over the empty-input one -- exactly one instruction", () => {
-    const { container } = renderComposer({ value: "", disabledReason: "Pick a project first" });
-    expect(container.querySelectorAll("#veri-composer-send-reason")).toHaveLength(1);
-    expect(reasonNode(container)?.textContent).toBe("Pick a project first");
+  test("EXACTLY ONE instruction -- the old reason slot is gone, not duplicated", () => {
+    const { container } = renderComposer({
+      value: "",
+      canSend: false,
+      sendLabel: "Send (pick a project)",
+      instruction: "Which project? Choose one in the top rail",
+    });
+    // The slot G introduced no longer exists...
+    expect(container.querySelector("#veri-composer-send-reason")).toBeNull();
+    expect(textarea(container).getAttribute("aria-describedby")).toBeNull();
+    // ...and the strip's question is carried as the hover title rather than
+    // printed a second time in the footer, so it appears once on screen.
+    expect(sendButton(container).getAttribute("title")).toBe("Which project? Choose one in the top rail");
+    const printed = Array.from(container.querySelectorAll("p, span")).filter(
+      (n) => n.textContent === "Which project? Choose one in the top rail"
+    );
+    expect(printed.length).toBeLessThanOrEqual(1);
   });
 
-  test("the reason sits at 12px, immediately LEFT of Send, in the same group", () => {
-    // The kit put it at 11px at the far left of the row -- the bottom-left
-    // corner of the viewport, behind Next's dev badge.
-    const { container } = renderComposer({ value: "", disabledReason: "Sending…" });
-    const reason = reasonNode(container)! as HTMLElement;
-    expect(reason.className).toContain("text-[12px]");
-    expect(reason.className).not.toContain("text-[11px]");
-
-    const group = reason.parentElement!;
-    expect(group.className).toContain("ml-auto");
-    // Same parent as Send, and BEFORE it in document order.
-    expect(sendButton(container).parentElement).toBe(group);
-    expect(reason.compareDocumentPosition(sendButton(container)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  test("the words sit ON the control, at a 44px target, not at 11px in the corner", () => {
+    // G's finding was that the kit put the reason at 11px in the bottom-left
+    // of the viewport, behind Next's dev badge. It is now the button's label,
+    // which A-18 sizes as a real touch target.
+    const { container } = renderComposer({ value: "", canSend: false, sendLabel: "Send (say what you need)" });
+    const btn = sendButton(container);
+    const style = btn.getAttribute("style") ?? "";
+    expect(style).toContain("min-height: 44px");
+    expect(btn.className).not.toContain("text-[11px]");
   });
 });
 
-describe("a live Send has no words at all", () => {
-  test("typed input enables the button and removes the instruction", () => {
-    const { container } = renderComposer({ value: "log 2 hours" });
-    expect(sendButton(container).disabled).toBe(false);
-    expect(reasonNode(container)).toBeNull();
+describe("a live Send has no extra words at all", () => {
+  test("when the sentence is complete the button is plain and the footer empty", () => {
+    const { container } = renderComposer({ value: "log 2 hours", canSend: true, sendLabel: "Send", instruction: "" });
+    const btn = sendButton(container);
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe("Send");
+    expect(container.querySelector("#veri-composer-send-reason")).toBeNull();
     expect(textarea(container).getAttribute("aria-describedby")).toBeNull();
+    // Nothing failed, so the footer's alert line is absent entirely.
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  test("allowEmptySubmit makes an EMPTY input a legitimate submission", () => {
-    // The kit's contradiction: once a module pill was picked, the placeholder
-    // read "Press send to run this…" while Send was disabled. Telling the user
-    // to press a button you have disabled is worse than saying nothing.
-    const { container } = renderComposer({
-      value: "",
-      allowEmptySubmit: true,
-      placeholder: "Press send to run this, or add detail first…",
-    });
+  test("an armed card makes an EMPTY input a legitimate submission", () => {
+    // G's point, unchanged and still true: once a module card is armed, telling
+    // the user to press a button you have disabled is worse than saying
+    // nothing. `allowEmptySubmit` is gone as a prop -- canSend now carries the
+    // whole decision, computed by chain-status from the armed action.
+    const { container } = renderComposer({ value: "", canSend: true, sendLabel: "Save progress" });
     expect(sendButton(container).disabled).toBe(false);
-    expect(reasonNode(container)).toBeNull();
-    expect(textarea(container).getAttribute("placeholder")).toBe("Press send to run this, or add detail first…");
+    expect(sendButton(container).textContent).toBe("Save progress");
   });
 
-  test("whitespace alone is not input", () => {
-    const { container } = renderComposer({ value: "   \n  " });
-    expect(sendButton(container).disabled).toBe(true);
-    expect(reasonNode(container)?.textContent).toBe("Type what you need, then press Send.");
+  test("a real FAILURE is a different thing and keeps its own line", () => {
+    // The one case that still prints words in the footer: something went wrong.
+    const { container } = renderComposer({ value: "x", canSend: true, errorMessage: "Nothing was saved" });
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe("Nothing was saved");
+    // ...and it does not rename the button (A-10 follow-up).
+    expect(sendButton(container).textContent).toBe("Send");
   });
 });
 
 describe("the fork still assembles the kit's own composer", () => {
   test("the forked ControlStrip is the one mounted, chain and all", () => {
-    const { getByTitle, getByText } = renderComposer({ value: "x" });
+    const { getByTitle, getByText, queryByText } = renderComposer({ value: "x" });
+    // The chain's root segment, rendered by the strip with its full name.
     expect(getByTitle("Cedar Heights Villa")).toBeDefined();
-    expect(getByText("HISTORY")).toBeDefined();
+    // WAS: expect(getByText("HISTORY")).toBeDefined(). A-01 deleted the
+    // composer's HISTORY button so the Task Master's History tab is the only
+    // control by that name (correction C-03), and nothing in this repo ever
+    // wrote the drop's storage key -- it listed nothing for its whole life.
+    // HOME is the strip control that proves the fork is mounted, and HISTORY's
+    // absence is now itself the assertion.
+    expect(getByText("HOME")).toBeDefined();
+    expect(queryByText("HISTORY")).toBeNull();
   });
 
   test("the pills and conversation bands render only when given content", () => {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,8 @@ import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -136,12 +139,33 @@ function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: un
 // report/analysis type across the whole platform (ERP, compliance,
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
+// R67 F-10 (R-134). A report run is a full round trip that replaces whatever is
+// on screen with a spinner -- including when the user re-runs the SAME report on
+// the SAME project a moment later, or comes back to /reports having just looked
+// at it. Three changes, none of which can make the screen show a figure it did
+// not receive from the server:
+//
+//   1. RESULTS ARE CACHED per (report, project, params) in sessionStorage and
+//      painted immediately while a fresh run replaces them. The reader gets
+//      something to read at once; the number they end up with is still current.
+//      A cached result is LABELLED as such until the live one lands, so nobody
+//      mistakes a remembered figure for a just-computed one.
+//   2. CHANGING THE PICKER PREFETCHES that report, so Run Report is usually
+//      instant instead of starting the round trip on the click.
+//   3. A 20 s ABORT BUDGET, so a hung upstream ends in a message and a usable
+//      screen rather than an indefinite spinner.
+const REPORT_REQUEST_BUDGET_MS = 20_000;
+
 function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
+  const router = useRouter();
   const [reportName, setReportName] = useState("project-status");
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [ranOnce, setRanOnce] = useState(false);
+  const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const orgMoney = useOrgMoney();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
@@ -155,6 +179,56 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   // any resolving fetch whose captured generation no longer matches the
   // latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
+
+  // The params that identify THIS run, in one place, so the cache key, the
+  // request and the prefetch cannot drift apart.
+  const currentParams = useCallback(
+    (name: string): Record<string, string> => (name === "weekly-project" ? { weekStart } : {}),
+    [weekStart]
+  );
+
+  const requestUrl = useCallback(
+    (name: string) => {
+      const params = new URLSearchParams({ projectId, ...currentParams(name) });
+      return `/api/reports/${encodeURIComponent(name)}?${params.toString()}`;
+    },
+    [projectId, currentParams]
+  );
+
+  const cacheKeyFor = useCallback(
+    (name: string) => reportCacheKey(name, projectId, currentParams(name)),
+    [projectId, currentParams]
+  );
+
+  // Paint from cache the moment the selection changes. Safe: the value is
+  // labelled as remembered, and a live run overwrites it with the server's own
+  // answer.
+  useEffect(() => {
+    const cached = readCachedReport(cacheKeyFor(reportName));
+    if (cached !== null) {
+      setResult(cached);
+      setFromCache(true);
+      setRanOnce(true);
+      setRunError(null);
+    }
+  }, [reportName, cacheKeyFor]);
+
+  // Changing the picker warms the next report, so Run Report is usually
+  // instant. Failures are swallowed: a prefetch must never surface an error,
+  // and the real Run that follows reports properly.
+  const prefetchReport = useCallback(
+    (name: string) => {
+      const key = cacheKeyFor(name);
+      if (readCachedReport(key) !== null) return;
+      void fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data !== null) writeCachedReport(key, data);
+        })
+        .catch(() => {});
+    },
+    [cacheKeyFor, requestUrl]
+  );
 
   // R67 C-02: THE COMPOSER LEAF AND THE PICKER REACH THE SAME PLACE. Sending
   // a report from the composer navigates here with ?report=<value>&run=1, so
@@ -173,33 +247,75 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
     const requested = url.get("report");
     if (!requested || !reports.some((r) => r.value === requested)) return;
     setReportName(requested);
+    // R67 MERGE (D-11): runReport() now takes the optional override name F-10
+    // also relies on internally, precisely so an arrival run does not have to
+    // wait a render for setReportName's state update above to land -- calling
+    // it with no argument here would still be racing the stale `reportName`
+    // closure.
     if (url.get("run") === "1") void runReport(requested);
     // Runs exactly once per mount, guarded by arrivalHandled: this reads the
     // URL the user ARRIVED on, so re-running it on any later change would
     // re-run a report the user has since moved away from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function runReport(overrideName?: string) {
     const name = overrideName ?? reportName;
     const myGeneration = ++requestGeneration.current;
+    const key = cacheKeyFor(name);
     setLoading(true);
+    setRunError(null);
+    setStartedAt(Date.now());
     try {
-      const params = new URLSearchParams({ projectId });
-      if (name === "weekly-project") params.set("weekStart", weekStart);
-      const res = await fetch(`/api/reports/${encodeURIComponent(name)}?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
+      // A hung upstream must end in a message and a usable screen, not an
+      // indefinite spinner on a page whose whole content is this one panel.
+      const res = await fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const reason = typeof data?.error === "string" ? data.error : null;
+        const failure = new Error(reason ?? `Request failed (HTTP ${res.status})`);
+        (failure as Error & { httpStatus?: number }).httpStatus = res.status;
+        throw failure;
+      }
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
+      setFromCache(false);
       setRanOnce(true);
+      writeCachedReport(key, data);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      toast.error(err instanceof Error && err.message ? err.message : "Could not generate report");
-      setResult(null);
+      // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
+      // so the panel below settled on the flat sentence "Could not generate
+      // this report." while the backend's own reason -- the only thing that
+      // says WHICH report failed and why -- faded with the notification. The
+      // failure is now stated in the panel, through the same dictionary
+      // every other pane uses, with a Retry that re-runs it.
+      const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      setRunError({
+        status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
+        message: aborted
+          ? "The report did not finish in time. Try a narrower range, or run it again."
+          : err instanceof Error && err.message
+            ? err.message
+            : null,
+      });
+      // R67 F-10: a previously cached result is deliberately LEFT on screen
+      // when a fresh run fails. It is still the last real answer the server
+      // gave, and it is still labelled as remembered, so nothing is presented
+      // as current that is not. Only a panel with nothing real to show clears.
+      if (!fromCache) setResult(null);
     } finally {
       if (myGeneration === requestGeneration.current) setLoading(false);
     }
   }
+
+  // R67 D-02: ONE Work Progress Report. Selecting "Work Progress" here no
+  // longer runs the slow /api/reports/work-progress path (24.3 s measured,
+  // six fan-out calls) beside the module's own faster, richer report -- it
+  // navigates to /work-progress?tab=report, which runs on arrival with its
+  // parameters in the URL, a BOQ selector, the tie check and an export. Two
+  // screens for one report is the duplication the decision retires.
+  const destination = projexaReportDestination({ id: reportName }, projectId);
 
   return (
     <div className="space-y-4">
@@ -207,7 +323,15 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5">
             <Label>Report</Label>
-            <Select value={reportName} onValueChange={setReportName}>
+            <Select
+              value={reportName}
+              onValueChange={(name) => {
+                setReportName(name);
+                // R67 F-10: warm the next report on SELECTION, so Run Report is
+                // usually instant instead of starting the round trip on click.
+                prefetchReport(name);
+              }}
+            >
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -215,29 +339,76 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           {reportName === "weekly-project" && (
             <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
           )}
-          {/* R67 C-02: wrapped, not passed by reference -- runReport now takes
-              an optional report name, and a bare onClick would hand it the
-              MouseEvent as that argument. */}
-          <Button onClick={() => void runReport()} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
-          </Button>
+          {destination ? (
+            <Button onClick={() => router.push(destination)} data-testid="reports-open-work-progress">
+              <Play className="size-4" /> Open Report
+            </Button>
+          ) : (
+            // R67 C-02: wrapped, not passed by reference -- runReport now
+            // takes an optional report name, and a bare onClick would hand it
+            // the MouseEvent as that argument.
+            <Button onClick={() => void runReport()} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+            </Button>
+          )}
         </CardContent>
       </Card>
 
       <Card className="shadow-card">
         <CardContent className="p-4">
-          {!ranOnce ? (
-            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
-          ) : loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : result === null ? (
-            <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
-          ) : (
-            <ReportOutput
-              data={result}
-              fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+          {destination ? (
+            <p className="py-10 text-center text-sm text-px-muted">
+              The Work Progress Report opens in the Work Progress module, where the date range, the view and the
+              BOQ version live in the URL and the report runs as soon as it opens.
+            </p>
+          ) : runError && result === null ? (
+            <PaneErrorCard
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              error={runError}
+              onRetry={() => void runReport()}
             />
+          ) : loading && result === null ? (
+            <PaneWaitingCaption
+              startedAt={startedAt}
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              onRetry={() => void runReport()}
+            />
+          ) : !ranOnce ? (
+            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
+          ) : result === null ? (
+            <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
+          ) : (
+            // R67 D-65 x F-10. Both lanes' rules apply here at once, and the
+            // ORDER of the two branches above is what makes them compatible:
+            // a failure or a wait with NOTHING real on screen still gets D-65's
+            // error card or waiting caption, but neither is allowed to REPLACE
+            // a remembered answer the reader is already reading. When there is
+            // one, the failure is stated above it and the answer stays, still
+            // labelled as remembered -- so nothing is ever shown as current
+            // that is not, and nothing true is thrown away to say so.
+            <>
+              {runError && (
+                <div className="mb-3">
+                  <PaneErrorCard
+                    entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+                    error={runError}
+                    onRetry={() => void runReport()}
+                  />
+                </div>
+              )}
+              {(fromCache || loading) && (
+                <p role="status" className="mb-3 text-[12.5px] text-px-muted">
+                  {loading
+                    ? "Showing the last result while this run finishes…"
+                    : "Showing the last result. Click Run Report for current figures."}
+                </p>
+              )}
+              <ReportOutput
+                data={result}
+                fieldLabels={REPORT_FIELD_LABELS[reportName]}
+                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -277,7 +448,9 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection />
+        {/* R67 D-02: the catalog needs the project so its Work Progress row can
+            link to the module's real report for THIS project, not a bare route. */}
+        <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>
   );

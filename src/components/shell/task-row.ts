@@ -21,6 +21,7 @@
 
 import type { ChainMode } from "@fchecklist/veridian-ui-kit/shell";
 import {
+  LEGACY_FALLBACK_MESSAGE,
   isSystemFailureCode,
   maskTechnical,
   resolveTaskError,
@@ -39,33 +40,80 @@ export type TaskGroup = "needsYou" | "running" | "done" | "blocked";
 
 export type TaskTabId = "home" | "approval-pending" | "in-queue" | "completed" | "history";
 
-/** GET /api/tasks -> VERIDIAN /api/v1/projexa/tasks. `errorCode` and `missing`
- *  are WS-B's addition; every field is optional because the rows already in
- *  compliance.pipeline_tasks predate them. */
+/**
+ * GET /api/tasks -> VERIDIAN /api/v1/projexa/tasks.
+ *
+ * R67 FIX PASS (governance decision #1d) -- CONFIRMED against the real
+ * backend's route.ts (compliance-tracker origin/main), not assumed:
+ *
+ *   * `error` IS NEVER SENT. The GET handler destructures it out of every row
+ *     before the response is built (B-01 fix-pass: it used to leak the R66
+ *     driver string -- host, port and all -- to the browser). Reading it here
+ *     is dead code reading a field that will never be populated (decision
+ *     #1b), so it is GONE from this type.
+ *   * `legacyError` replaces it: safe legacy prose, for a row written before
+ *     the pipeline returned codes, with anything that discloses internals
+ *     already converted server-side into a real failure code (decision #1a).
+ *   * `errorCode`/`errorParams` are the raw typed columns, still sent
+ *     alongside the server's own COMPOSED `failure` object -- which merges
+ *     the typed code with `missing`/`context`. There is no flat top-level
+ *     `missing` on the real payload; it lives only inside `failure.missing`.
+ *   * `systemFailure` is not sent per row today (C-13's `systemBlocked` is a
+ *     TAB-level count, not a row flag) -- kept here only as the harmless,
+ *     already-documented fallback path below (isSystemFailureCode covers it).
+ *   * `result` is declared (and rendered through, in objectIdLabel below) but
+ *     is NOT selected by the real GET handler today -- decision #1c. A done
+ *     row's "View" link still works (it comes from OBJECT_ROUTES, keyed by
+ *     functionId, independent of `result`); only the specific "View #412"
+ *     label degrades to the generic "View" until a backend PR selects it.
+ *     Nothing here fakes a result that was not sent.
+ */
 export type ApiTask = {
   id: string;
+  submissionId?: string | null;
+  sequence?: number | null;
+  dependsOn?: string | null;
   projectId?: string | null;
   derivedChain?: { full?: string; mode?: string; root?: string; steps?: string[] } | null;
   functionId?: string | null;
   status?: string | null;
-  error?: string | null;
-  /** D-03's closed vocabulary, when the server sends it. */
+  /** D-03's closed vocabulary, when the server sends it. Same value as
+   *  `failure.code` when `failure` is present; kept as an independent field
+   *  because a row's raw column can be populated even where `failure` is not
+   *  (a defensive fallback, not the primary read path). */
   errorCode?: string | null;
+  errorParams?: Record<string, string | number | null> | null;
+  /**
+   * R67 FIX PASS -- the server's own COMPOSED failure, exactly as GET
+   * /api/v1/projexa/tasks now sends it: the typed `errorCode`/`errorParams`
+   * merged with `missing`, or a failure the server itself inferred from a
+   * legacy row that revealed internals. THE authoritative source for a row's
+   * code/missing/context -- see codeFor()/toTaskRow() below.
+   */
+  failure?: { code?: string | null; missing?: string[]; context?: Record<string, string | number | null> | null } | null;
+  /**
+   * R67 FIX PASS -- the row's stored English, for a row written before the
+   * pipeline returned codes. `legacyToCode()`/pattern-matching recovers a real
+   * code from it where possible; LEGACY_FALLBACK_MESSAGE is shown otherwise
+   * (decision #1a) rather than resolveTaskError's own generic UNKNOWN text.
+   */
+  legacyError?: string | null;
   /**
    * R67 C-13: the server's own answer to "can anyone on site do something
    * about this?" Stated rather than inferred -- the client should not have to
    * know which codes mean an outage to keep them out of its needs-you badge.
-   * Absent on every row written before C-13, which is why the code is still
-   * consulted as a fallback.
+   * Not sent by the real backend today (verified); kept as a forward-
+   * compatible input, with isSystemFailureCode(...) as the live fallback.
    */
   systemFailure?: boolean | null;
-  /** The slots the server says are missing, most important first. */
-  missing?: string[] | null;
   params?: Record<string, unknown> | null;
-  /** R67 C-11: what the function actually returned, so a done row can link to it. */
+  /** R67 C-11: what the function actually returned, so a done row can link to
+   *  it. NOT selected by the real GET route today -- see this type's own
+   *  header comment (decision #1c). */
   result?: Record<string, unknown> | null;
   rawInput?: string | null;
   mode?: string | null;
+  label?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -187,12 +235,19 @@ export function humaniseFunctionId(functionId: string): string {
 }
 
 /** The object of line 1: registry first, then the derived chain, then words. */
-export function objectFor(t: Pick<ApiTask, "functionId" | "derivedChain">): string {
+export function objectFor(t: Pick<ApiTask, "functionId" | "derivedChain" | "label">): string {
   const fid = t.functionId ?? "";
   const registered = FUNCTION_DISPLAY_NAMES[fid];
   if (registered) return registered;
   const steps = t.derivedChain?.steps ?? [];
   if (steps.length > 0) return steps.join(" > ");
+  // R67 FIX PASS (decision #1d): the real GET route sends the function's own
+  // HUMAN LABEL ("Record progress") beside the id today, computed server-side
+  // from the same function catalogue this registry is a curated subset of.
+  // Preferred over this file's own guesswork for a function this local
+  // registry has not (yet) named -- it is the server's authority, not this
+  // client's inference, and it is real English rather than a title-cased id.
+  if (t.label && t.label.trim()) return t.label.trim();
   if (fid) return humaniseFunctionId(fid);
   return "Task";
 }
@@ -291,16 +346,56 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
   // user can make -- so it takes the needs-you glyph and the loud pill.
   const state: TaskState = group === "done" ? "done" : group === "running" ? "running" : "needs-you";
 
-  const failed = group === "blocked" || Boolean(t.errorCode) || Boolean(t.error);
-  const resolved = failed
+  // R67 FIX PASS (decision #1a/#1b/#1d) -- READ THE REAL SHAPE.
+  //
+  // `failure` (the server's own composed {code, missing, context}) is the
+  // primary source; `errorCode` is a defensive fallback for a row whose
+  // failure was not composed for some reason but still carries the typed
+  // column. `legacyError` -- never `error`, which the real GET route no
+  // longer sends at all -- is what a pre-B-01 row carries, and is passed to
+  // resolveTaskError's own `raw` so its LEGACY_PATTERNS can still recover a
+  // real code from it, exactly as it already does for a row with no `failure`
+  // at all.
+  const failureCode = t.failure?.code ?? t.errorCode ?? null;
+  const failureMissing = t.failure?.missing ?? null;
+  const failureContext = (t.failure?.context ?? {}) as Record<string, string | number | null>;
+  const legacyError = t.legacyError ?? null;
+
+  const failed = group === "blocked" || Boolean(failureCode) || Boolean(legacyError);
+  const resolvedRaw = failed
     ? resolveTaskError({
-        code: t.errorCode,
-        missing: t.missing ?? null,
-        raw: t.error ?? null,
-        itemCode: typeof t.params?.itemCode === "string" ? (t.params.itemCode as string) : null,
-        projectName: ctx.projectName ?? null,
+        code: failureCode,
+        missing: failureMissing,
+        raw: legacyError,
+        itemCode:
+          (typeof failureContext.itemCode === "string" ? failureContext.itemCode : null) ??
+          (typeof t.params?.itemCode === "string" ? (t.params.itemCode as string) : null),
+        projectName:
+          ctx.projectName ?? (typeof failureContext.project === "string" ? failureContext.project : null),
+        boqVersion: typeof failureContext.version === "string" ? failureContext.version : undefined,
+        functionId: t.functionId ?? undefined,
       })
     : null;
+  // R67 FIX PASS (decision #1a) -- A LEGACY ROW STILL READS AS ENGLISH, NEVER
+  // AS resolveTaskError's OWN GENERIC FALLBACK.
+  //
+  // `raw: legacyError` above already recovers a real D-03 code for most
+  // legacy rows (BACKEND_UNAVAILABLE, PROJECT_REQUIRED, ...) via
+  // task-errors.ts's own LEGACY_PATTERNS -- that is most of what "port
+  // legacyError handling" means, and it was simply never wired: this file
+  // used to pass the (always-empty, from the real backend) `error` field
+  // here instead. For the residual case -- stored English that matches none
+  // of those patterns -- resolveTaskError falls all the way to UNKNOWN
+  // ("Something went wrong"), which is exactly the generic sentence this
+  // fix exists to replace. LEGACY_FALLBACK_MESSAGE is real English about
+  // what to do next ("This task needs your input"), and only the SENTENCE is
+  // overridden -- the action/verbLabel/missingStep UNKNOWN already offers
+  // (Retry) still stand, because retrying an old, unclassified row is a real
+  // and safe next step, exactly as it is for every other RETRY-kind code.
+  const resolved =
+    resolvedRaw && resolvedRaw.inferred && resolvedRaw.code === "UNKNOWN" && legacyError
+      ? { ...resolvedRaw, sentence: LEGACY_FALLBACK_MESSAGE }
+      : resolvedRaw;
 
   // Line 2. A failure gets D-03's sentence; anything else gets the user's own
   // words -- masked, because a person can paste anything into the composer.

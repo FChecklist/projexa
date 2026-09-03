@@ -49,7 +49,12 @@ export function ProjectSwitcher({ pathname, projectId }: { pathname: string; pro
   return (
     <div className="px-3 pb-3">
       <Select value={selectedId} onValueChange={handleChange}>
+        {/* R67 lane D22 (item D-41): a stable hook so a project-scoped screen
+            with nothing selected can put the cursor IN this control ("Pick a
+            project in the top rail to see its budget") instead of describing
+            where it is. See PickProjectPrompt.tsx. */}
         <SelectTrigger
+          data-project-switcher
           size="sm"
           className="w-full border-px-ink2 bg-px-ink2 text-px-cloud data-[placeholder]:text-px-cloud2 [&_svg:not([class*='text-'])]:text-px-cloud2"
         >

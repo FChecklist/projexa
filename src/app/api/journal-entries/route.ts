@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 15: VERIDIAN's /api/v1/projexa/journal-entries -- General Ledger
 // list (paged/filtered) + draft-entry creation (double-entry, debit=credit
 // validated server-side).
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
     const data = await callVeridian(`/journal-entries${request.nextUrl.search}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load journal entries" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load journal entries");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -24,6 +26,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/journal-entries", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create journal entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create journal entry");
   }
-}
+});

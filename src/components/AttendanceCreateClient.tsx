@@ -5,96 +5,170 @@
 // -- a daily attendance row is a write-once transaction (dailyCost computed
 // server-side at write time from the roster entry's own dailyRate), same
 // class as Expenses/Stock Entries.
-import { useEffect, useState } from "react";
+//
+// R67 D-67: onto the shared archetype. The roster read's failure was a
+// toast, so the Worker select had no options and the primary sat disabled
+// naming "Worker" as missing -- the form blaming a site supervisor for a
+// backend failure. It now says what happened, offers Retry, and the reason
+// names the real cause.
+//
+// R67 D-80 merge: the Worker field is the archetype's "combobox" -- typing
+// filters the roster, a one-person roster is preselected, and the last worker
+// marked on this project is offered back. D-80 originally shipped that picker
+// as a hand-rolled form on this screen; it now sits inside the shared
+// archetype, so this screen keeps D-67's structure AND the one-click picker.
+//
+// R67 D-53: the screen opens on the day the caller was looking at (the Daily
+// Summary's own date), not silently on today.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { PaneErrorCard } from "@/components/PaneState";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
+import type { CreateField } from "@/lib/create-screen";
+import { getLastChoice, setLastChoice } from "@/lib/last-choice";
 // R67 C-06: a multi-field create route IS the card -- band 2 stays empty
 // while this form is open -- so the save reports itself back to the shell
 // and the receipt line lands in the same band a composer write's would.
 import { useShellChain } from "@/components/shell/shell-chain-context";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
-type RosterEntry = { id: string; name: string; isActive: boolean };
+type RosterEntry = { id: string; name: string; employeeCode?: string | null; trade?: string | null; isActive: boolean };
 
-export default function AttendanceCreateClient({ projectId }: { projectId: string }) {
+/** D-80: this picker's memory is scoped per user, per project, per picker. */
+const WORKER_PICKER = "worker";
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
   const { pushReceipt } = useShellChain();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
-  const [rosterId, setRosterId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("present");
-  const [hoursWorked, setHoursWorked] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [rememberedWorker, setRememberedWorker] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({
+    attendanceDate: initialDate ?? todayIso(),
+    status: "present",
+  });
 
+  // Read after mount: localStorage is a browser fact, and reading it during
+  // render would differ between the server pass and the client's.
   useEffect(() => {
-    fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`)
-      .then((d) => setRoster((d.roster ?? []).filter((r) => r.isActive)))
-      .catch((err) => toast.error(errorMessage(err, "Couldn't load roster")));
+    setRememberedWorker(getLastChoice(WORKER_PICKER, projectId));
   }, [projectId]);
 
-  const missing = [...(rosterId ? [] : ["Worker"]), ...(attendanceDate ? [] : ["Date"])];
-
-  async function createAttendance() {
-    if (missing.length) return;
-    setSubmitting(true);
+  const loadRoster = useCallback(async () => {
+    setRosterError(null);
+    setRosterLoading(true);
     try {
-      await fetchJson("/api/attendance", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
-      });
-      toast.success("Attendance recorded");
-      const worker = roster.find((r) => r.id === rosterId);
-      pushReceipt({
-        text: `Marked ${worker?.name ?? "this worker"} ${status.replace("_", " ")} on ${attendanceDate}`,
-        href: `/labour?projectId=${projectId}&tab=attendance`,
-      });
-      router.push(`/labour?projectId=${projectId}&tab=attendance`);
+      const d = await fetchJson<{ roster?: RosterEntry[] }>(
+        `/api/labour-roster?projectId=${encodeURIComponent(projectId)}`
+      );
+      setRoster((d.roster ?? []).filter((r) => r.isActive));
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't record attendance"));
+      setRoster([]);
+      setRosterError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
     } finally {
-      setSubmitting(false);
+      setRosterLoading(false);
     }
-  }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadRoster();
+  }, [loadRoster]);
+
+  const moduleHref = `/labour?projectId=${projectId}&tab=attendance`;
+
+  const fields: CreateField[] = [
+    {
+      name: "rosterId",
+      label: "Worker",
+      kind: "combobox",
+      required: true,
+      loading: rosterLoading,
+      placeholder: rosterError ? "Could not be loaded" : "Type a name or ID",
+      // id + trade as the hint, so typing "mas" or an employee code both find
+      // the right person and two workers with the same name stay apart.
+      options: roster.map((r) => ({
+        value: r.id,
+        label: r.name,
+        hint: [r.employeeCode, r.trade].filter(Boolean).join(" · ") || undefined,
+      })),
+      storedValue: rememberedWorker,
+    },
+    { name: "attendanceDate", label: "Date", kind: "date", required: true },
+    {
+      name: "status",
+      label: "Status",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "present", label: "Present" },
+        { value: "half_day", label: "Half Day" },
+        { value: "absent", label: "Absent" },
+      ],
+    },
+    { name: "hoursWorked", label: "Hours Worked", kind: "number", placeholder: "e.g. 8" },
+  ];
+
+  const submit = useSubmit({
+    objectLabel: "Attendance",
+    buildRequest: () => ({
+      input: "/api/attendance",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          rosterId: values.rosterId,
+          attendanceDate: values.attendanceDate,
+          status: values.status,
+          hoursWorked: values.hoursWorked ? Number(values.hoursWorked) : undefined,
+        }),
+      },
+    }),
+    // No object page for an attendance row -- back to the tab it joined.
+    onSuccess: () => {
+      // Remembered only after the server accepted it: a choice that failed to
+      // save is not the choice to offer back next time.
+      setLastChoice(WORKER_PICKER, projectId, values.rosterId);
+      // R67 C-06: the save reports itself back to the shell -- the receipt
+      // line lands in the same band a composer write's would.
+      const worker = roster.find((r) => r.id === values.rosterId);
+      pushReceipt({
+        text: `Marked ${worker?.name ?? "this worker"} ${values.status.replace("_", " ")} on ${values.attendanceDate}`,
+        href: moduleHref,
+      });
+      router.replace(moduleHref);
+    },
+  });
 
   return (
-    <ObjectScreen
-      breadcrumb="Labour / Mark Attendance"
+    <CreateScreen
+      module="Labour"
+      moduleHref={moduleHref}
+      objectLabel="Attendance"
       title="Mark Attendance"
-      mode="create"
-      hasDraft={false}
-      onSave={createAttendance}
-      onCancel={() => router.push(`/labour?projectId=${projectId}&tab=attendance`)}
-      onBack={() => router.push(`/labour?projectId=${projectId}&tab=attendance`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Saving…" : missing.length ? missing.join(", ") : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Worker</Label>
-          <Select value={rosterId} onValueChange={setRosterId}>
-            <SelectTrigger><SelectValue placeholder="Select worker" /></SelectTrigger>
-            <SelectContent>{roster.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} /></div>
-        <div className="space-y-1.5">
-          <Label>Status</Label>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="present">Present</SelectItem>
-              <SelectItem value="half_day">Half Day</SelectItem>
-              <SelectItem value="absent">Absent</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5"><Label>Hours Worked (optional)</Label><Input type="number" value={hoursWorked} onChange={(e) => setHoursWorked(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      extraMissing={rosterError ? ["the roster could not be loaded"] : []}
+      banner={
+        rosterError ? (
+          <PaneErrorCard entity="this project's roster" error={rosterError} onRetry={() => void loadRoster()} />
+        ) : undefined
+      }
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
+    />
   );
 }

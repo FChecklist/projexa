@@ -21,9 +21,16 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useOrgMoney } from "./use-org-money";
+import { clearCurrenciesCache } from "./currency";
 import { CURRENCY_NOT_SET_NOTICE } from "./format-money";
 
 afterEach(cleanup);
+// R67 F-04 merge: useCurrenciesState() now shares ONE in-flight request (and
+// one sessionStorage entry) across every caller in the tab. Without this the
+// second test in this file would inherit the first one's settled answer, never
+// call the stub, and pass or fail for reasons that have nothing to do with the
+// three states it is asserting.
+afterEach(clearCurrenciesCache);
 
 type FetchStub = { resolve: (currencies: unknown[]) => void; reject: (reason?: unknown) => void };
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
 const BUCKET = "work-progress-photos";
 
@@ -11,7 +12,7 @@ const BUCKET = "work-progress-photos";
 // see org/provision/route.ts -- not a service-role bypass), so Storage's own
 // RLS policies (drizzle/0013) apply exactly the same as every other
 // PROJEXA-owned table.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -53,9 +54,9 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(row, { status: 201 });
-}
+});
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -79,4 +80,4 @@ export async function GET(request: NextRequest) {
   );
 
   return NextResponse.json({ photos });
-}
+});

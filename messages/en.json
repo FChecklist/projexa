@@ -17,6 +17,7 @@
       "dashboard": "Dashboard",
       "companyDashboard": "Company Dashboard",
       "projectsOverview": "Projects Overview",
+      "projects": "Projects",
       "schedule": "Schedule",
       "meetings": "Meetings",
       "scope": "Scope of Work (BOQ)",
@@ -31,6 +32,7 @@
       "submittals": "Submittals",
       "punchList": "Punch List",
       "changeOrders": "Change Orders",
+      "designStudio": "Design Studio",
       "moodBoards": "Mood Boards",
       "ffe": "FF&E Specification",
       "floorPlans": "Floor Plans",
@@ -48,7 +50,8 @@
       "salesOrders": "Sales Orders",
       "customers": "Customers",
       "grc": "Risk & Compliance",
-      "budgets": "Budgets",
+      "budget": "Budget",
+      "financeBudgetsErp": "Finance Budgets (ERP)",
       "expenses": "Expenses",
       "accounting": "Accounting",
       "invoices": "Invoices",
@@ -453,7 +456,8 @@
         "fact1": { "value": "1", "label": "Login. Every module, every project, one place." },
         "fact2": { "value": "0", "label": "Manual re-entry between modules." },
         "fact3": { "value": "38", "label": "Real modules, one coordinated system." }
-      }
+      },
+      "backToHome": "Back to projexa-ai.com"
     }
   }
 }

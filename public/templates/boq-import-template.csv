@@ -1,0 +1,7 @@
+S.No,Category,Code,Description,Qty,Unit,Rate,Amount,Parent code,Breakdown %
+1,Civil,1.00,Blockwork to internal partitions,120,m2,45.00,5400.00,,
+2,Civil,1.01,Plaster to blockwork,120,m2,18.00,2160.00,,
+3,Gypsum,2.00,Suspended ceiling grid and tiles,80,m2,65.00,5200.00,,
+4,Gypsum,2.01,Frame,,,,,2.00,30
+5,Gypsum,2.02,Gypsum board,,,,,2.00,45
+6,Gypsum,2.03,Finishing and sanding,,,,,2.00,25

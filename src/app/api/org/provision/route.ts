@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getClaimsWithRetry } from "@/lib/supabase/get-claims-with-retry";
 import { db, organizations, memberships, veridianCredentials } from "@/lib/db";
 import { getVeridianApiKey, provisionVeridianOrg, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 17 (VERIDIAN platform provisioning): the ONLY place PROJEXA
 // creates a new organization row. Called from signup/page.tsx right after
@@ -27,7 +28,7 @@ function slugify(name: string) {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "org";
 }
 
-export async function POST(req: Request) {
+export const POST = withTiming("POST", async function POST(req: Request) {
   const body = await req.json().catch(() => null) as { orgName?: string } | null;
   const orgName = body?.orgName?.trim();
   if (!orgName) {
@@ -138,4 +139,4 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ organizationId: org.id }, { status: 201 });
-}
+});

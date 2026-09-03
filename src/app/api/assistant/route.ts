@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Dispatches through VERIDIAN's /api/v1/projexa/assistant (Wave 129) and
 // keeps a local history row -- dispatchTool() is synchronous, so this table
@@ -12,7 +14,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // veridian_credentials instead of the shared demo VERIDIAN_API_KEY. Orgs
 // with no credentials row yet (pre-existing/demo orgs) still fall back to
 // the shared key automatically -- see resolveApiKey() in veridian-client.ts.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -26,7 +28,7 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ queries: data });
-}
+});
 
 // R42 seq14 (M25 pipeline): the real submission -> segmentation -> task
 // pipeline, additive alongside the existing codeReference dispatch below
@@ -45,11 +47,11 @@ async function postPipeline(ctx: Awaited<ReturnType<typeof requireAuth>>, body: 
     });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to run submission pipeline" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to run submission pipeline");
   }
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -91,8 +93,11 @@ export async function POST(request: NextRequest) {
       .single();
     return NextResponse.json(updated ?? row, { status: 201 });
   } catch (err) {
+    // R67 F-20: the row still records the backend's own words, and the
+    // response is built by the shared classifier so this route reports the
+    // same typed code / Retry-After as every other proxy.
     const message = err instanceof VeridianApiError ? err.message : "Failed to dispatch to VERIDIAN";
     await supabase.from("assistant_queries").update({ status: "error", error_message: message }).eq("id", row.id);
-    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to dispatch to VERIDIAN");
   }
-}
+});

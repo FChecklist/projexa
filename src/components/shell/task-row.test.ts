@@ -75,7 +75,7 @@ describe("line 1 is a verb plus a human object, never a function id", () => {
 describe("line 2 is a D-03 sentence, never the backend's own words", () => {
   test("the CONNECT_TIMEOUT row loses its IP and its port", () => {
     const row = toTaskRow(
-      task({ functionId: "list_leads", error: "write CONNECT_TIMEOUT 3.109.171.244:6543" }),
+      task({ functionId: "list_leads", legacyError: "write CONNECT_TIMEOUT 3.109.171.244:6543" }),
       "blocked",
       { now: NOW }
     );
@@ -86,7 +86,7 @@ describe("line 2 is a D-03 sentence, never the backend's own words", () => {
   });
 
   test("a camelCase parameter name never reaches the row", () => {
-    const row = toTaskRow(task({ functionId: "record_work_progress", error: "itemCode is required" }), "blocked", {
+    const row = toTaskRow(task({ functionId: "record_work_progress", legacyError: "itemCode is required" }), "blocked", {
       now: NOW,
     });
     expect(row.detail).toBe("Pick a BOQ line");
@@ -125,11 +125,74 @@ describe("line 2 is a D-03 sentence, never the backend's own words", () => {
     expect(row.detail).not.toMatch(/\d+\.\d+\.\d+\.\d+:\d+/);
     expect(row.detail).not.toContain("ECONNREFUSED");
   });
+
+  // R67 FIX PASS (governance decision #1a/#1b/#1d) -- the real GET route
+  // sends the composed `failure` object (never `error`), plus safe legacy
+  // prose as `legacyError` for a row that predates it. These assert against
+  // that real shape, not the pre-fix-pass flat `errorCode`/`error` reading.
+  test("the server's composed `failure` object is read, not a flat errorCode alone", () => {
+    const row = toTaskRow(
+      task({
+        functionId: "record_work_progress",
+        errorCode: "BOQ_LINE_NOT_FOUND", // the raw column, sent alongside `failure`
+        failure: { code: "BOQ_LINE_NOT_FOUND", missing: ["itemCode"], context: { itemCode: "1.02", project: "Cedar Heights Villa - Phase 1" } },
+      }),
+      "blocked",
+      { now: NOW }
+    );
+    // The `failure.context` values fill the sentence even with no `params`
+    // and no `ctx.projectName` at all -- proving `failure` is read directly,
+    // not merely tolerated alongside the flat fields the old shape had.
+    expect(row.detail).toBe("There is no line 1.02 on Cedar Heights Villa - Phase 1 — pick a line");
+    expect(row.errorCode).toBe("BOQ_LINE_NOT_FOUND");
+  });
+
+  test("a legacy row whose stored English matches a known pattern still reads as English", () => {
+    const row = toTaskRow(task({ legacyError: "no project resolved for this task" }), "blocked", { now: NOW });
+    expect(row.detail).toBe("Pick a project");
+    expect(row.actions[0].label).toBe("Choose project");
+  });
+
+  test("a legacy row nothing recognises falls back to LEGACY_FALLBACK_MESSAGE, not resolveTaskError's generic UNKNOWN text", () => {
+    const row = toTaskRow(task({ legacyError: "the printer is out of toner" }), "blocked", { now: NOW });
+    expect(row.detail).toBe("This task needs your input - [Fix]");
+    expect(row.detail).not.toBe("Something went wrong");
+    // UNKNOWN's own action still stands: retrying an old, unclassified row
+    // remains a real and safe next step.
+    expect(row.actions[0]).toEqual({ kind: "retry", label: "Retry", missingStep: null });
+  });
+
+  test("a row with neither failure nor legacyError is not treated as failed", () => {
+    const row = toTaskRow(task({ functionId: "record_work_progress", rawInput: "excavation 50%" }), "needsYou", {
+      now: NOW,
+    });
+    expect(row.detail).toBe("excavation 50%");
+    expect(row.errorCode).toBeNull();
+  });
+});
+
+describe("R67 FIX PASS -- the object falls back to the server's own label", () => {
+  test("an unregistered function id prefers the server's label over local guesswork", () => {
+    expect(objectFor({ functionId: "some_future_function", derivedChain: null, label: "Reconcile Advances" })).toBe(
+      "Reconcile Advances"
+    );
+  });
+
+  test("a registered function id still wins over the server's label", () => {
+    expect(
+      objectFor({ functionId: "record_work_progress", derivedChain: null, label: "Progress" })
+    ).toBe("Work Progress > New entry");
+  });
+
+  test("no label at all still falls back to humanised words, never the id", () => {
+    expect(objectFor({ functionId: "list_future_widgets", derivedChain: null, label: null })).toBe("Future Widgets");
+    expect(humaniseFunctionId("list_future_widgets")).toBe("Future Widgets");
+  });
 });
 
 describe("Dismiss appears only on a blocked row older than 24 h", () => {
   const blocked = (createdAt: string) =>
-    toTaskRow(task({ functionId: "record_work_progress", error: "itemCode is required", createdAt }), "blocked", {
+    toTaskRow(task({ functionId: "record_work_progress", legacyError: "itemCode is required", createdAt }), "blocked", {
       now: NOW,
     });
 
@@ -145,7 +208,7 @@ describe("Dismiss appears only on a blocked row older than 24 h", () => {
   });
 
   test("a row with no timestamp is never dismissed by guesswork", () => {
-    const row = toTaskRow(task({ error: "itemCode is required" }), "blocked", { now: NOW });
+    const row = toTaskRow(task({ legacyError: "itemCode is required" }), "blocked", { now: NOW });
     expect(row.actions.map((a) => a.kind)).toEqual(["fix"]);
     expect(row.createdAtMs).toBeNull();
   });
@@ -297,12 +360,18 @@ describe("a failure nobody on site can fix leaves the needs-you list", () => {
   const infra = (id: string, code: string) =>
     toTaskRow(task({ id, functionId: "list_leads", errorCode: code }), "blocked", { now: NOW });
 
-  test("the server's own infra code names all resolve to the one sentence", () => {
+  test("every one of the server's own infra code names is a system failure, off the needs-you list", () => {
+    // R67 MERGE (D-11): UPSTREAM_TIMEOUT is now a first-class code with its
+    // own, more precise sentence ("took too long", not "didn't answer") --
+    // see task-errors.ts's own merge note. POOL_TIMEOUT and INFRA_UNAVAILABLE
+    // have no code of their own and still alias to BACKEND_UNAVAILABLE. The
+    // guarantee this describe block is named for -- none of the four is ever
+    // something a site engineer can act on -- holds for all four either way.
     for (const code of ["BACKEND_UNAVAILABLE", "UPSTREAM_TIMEOUT", "POOL_TIMEOUT", "INFRA_UNAVAILABLE"]) {
       const row = infra("t-" + code, code);
-      expect(row.errorCode).toBe("BACKEND_UNAVAILABLE");
+      expect(["BACKEND_UNAVAILABLE", "UPSTREAM_TIMEOUT"]).toContain(row.errorCode);
       expect(row.isSystemFailure).toBe(true);
-      expect(row.detail).toBe("The construction data service didn't answer — nothing was saved");
+      expect(row.detail).toMatch(/^The construction data service (didn't answer|took too long) — nothing was saved$/);
       expect(row.actions[0].label).toBe("Retry");
     }
   });
@@ -569,7 +638,7 @@ describe("the server states whether a failure is anyone's to fix", () => {
 
   test("a row written before C-13 is still classified from its code", () => {
     const row = toTaskRow(
-      task({ id: "s2", functionId: "list_leads", error: "write CONNECT_TIMEOUT 3.109.171.244:6543" }),
+      task({ id: "s2", functionId: "list_leads", legacyError: "write CONNECT_TIMEOUT 3.109.171.244:6543" }),
       "blocked",
       { now: NOW }
     );

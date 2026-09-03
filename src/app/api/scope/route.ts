@@ -1,19 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { MODULE_TAGS } from "@/lib/module-list-source";
+import { revalidateTag } from "next/cache";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
+  // R67 F-23 (R-239) / F-29 (R-273): `?include=` asks VERIDIAN to compute each
+  // revision's variation-vs-prior AND its compare summary (line count, total,
+  // delta amount and percent) in the SAME query as the list, replacing the one
+  // /api/scope/{id}/compare request PER ROW the /scope screen used to make just
+  // to fill a cell. Only RECOGNISED values are forwarded, rebuilt from a closed
+  // set rather than passed through, so this proxy can never put an arbitrary
+  // string into the upstream URL.
+  const requested = new Set((request.nextUrl.searchParams.get("include") ?? "").split(",").map((s) => s.trim()));
+  const allowed = ["variation", "compare"].filter((value) => requested.has(value));
+  const include = allowed.length > 0 ? `&include=${allowed.join(",")}` : "";
   try {
-    const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}${include}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load scope of work" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load scope of work");
   }
-}
+});
 
 // R46M13_TC10_01 (fault reproduced live 3x on projexa-ai.com, 2026-08-25):
 // creating a parent + 3-weighted-children BOQ through the real "New BOQ"
@@ -40,7 +54,7 @@ export async function GET(request: NextRequest) {
 // as "BOQ created".
 type CreatedBoqResponse = { id?: unknown; lineItems?: unknown; error?: unknown };
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -71,8 +85,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // R67 F-18: the cached list must be cleared or the new row is
+    // invisible until the 30 s window expires, which reads as a failed save.
+    revalidateTag(MODULE_TAGS.scope, "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create BOQ" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create BOQ");
   }
-}
+});

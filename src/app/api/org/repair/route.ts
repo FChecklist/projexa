@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, organizations, veridianCredentials } from "@/lib/db";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { getVeridianApiKey, provisionVeridianOrg, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R48 UAT -- closes NO_VERIDIAN_CREDENTIALS_AR04, and the half of
 // NO_CREDENTIAL_LIFECYCLE_SURFACE that says "no repair".
@@ -50,7 +51,7 @@ export const dynamic = "force-dynamic";
 // UI can tell "this workspace is not connected" from "this workspace is
 // empty". Those two look identical today, which is a large part of why the
 // broken state went unnoticed.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -66,9 +67,9 @@ export async function GET() {
     veridianConnected: apiKey !== null,
     repairAvailable: apiKey === null,
   });
-}
+});
 
-export async function POST() {
+export const POST = withTiming("POST", async function POST() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -177,4 +178,4 @@ export async function POST() {
   }
 
   return NextResponse.json({ organizationId, repaired: true }, { status: 201 });
-}
+});

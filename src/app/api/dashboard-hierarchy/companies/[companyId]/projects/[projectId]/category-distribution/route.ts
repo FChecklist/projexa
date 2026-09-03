@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type CategoryBoqAmounts = { categories: { categoryId: string; name: string; totalAmount: number }[]; uncategorizedAmount: number; totalAmount: number };
 type CategoryProgress = { categories: { categoryId: string; name: string; percentComplete: number }[] };
@@ -24,7 +26,7 @@ export type CategoryDistributionEntry = {
 // (or an activity whose category no longer exists) are real BOQ amounts
 // too; they're surfaced as an "Uncategorized" slice instead of being
 // dropped, so shares still sum to 100%.
-export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
   const { companyId, projectId } = await params;
   const scope = await requireCompanyScope(companyId);
   if (scope.response) return scope.response;
@@ -65,6 +67,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
 
     return NextResponse.json({ categories, totalAmount: total });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load category distribution" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load category distribution");
   }
-}
+});

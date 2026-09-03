@@ -17,6 +17,11 @@
 // covered, the TRANSPORT between the two halves was not. That is what this
 // file pins -- a 409 carrying code REPLACE_REQUIRED reaching the exact client
 // shape the shell reads.
+//
+// R67 MERGE (D-11): veridian-client's own field for this is `ruleCode` now
+// (see VeridianApiError's "lane B x lane F2" merge note) -- the constructor
+// shape below and route.ts's own catch both moved onto it; the client-facing
+// JSON shape this file pins (`body.code`) is unchanged.
 import { describe, expect, test, mock } from "bun:test";
 import type { AuthContext } from "@/lib/supabase/auth-guard";
 import { VeridianApiError } from "@/lib/veridian-client";
@@ -70,11 +75,17 @@ describe("POST /api/attendance", () => {
   test("*** A 409 CARRYING REPLACE_REQUIRED REACHES THE CLIENT WITH ITS CODE ***", async () => {
     mockCtx = ctx();
     nextResult = async () => {
+      // R67 MERGE (D-11): veridian-client's field for a business-rule code is
+      // now `ruleCode`, parsed from the upstream body's own `code` -- see
+      // VeridianApiError's "lane B x lane F2" merge note. The 6th constructor
+      // argument is that body.
       throw new VeridianApiError(
         "Attendance for 2026-09-03 is already saved for 2 of these workers",
         409,
         undefined,
-        "REPLACE_REQUIRED"
+        null,
+        0,
+        { code: "REPLACE_REQUIRED" }
       );
     };
 
@@ -91,17 +102,21 @@ describe("POST /api/attendance", () => {
     expect(body.error).toContain("2 of these workers");
   });
 
-  test("a refusal with no code carries no code -- one is never invented", async () => {
+  test("a refusal with no rule code carries the transport code, never an invented one", async () => {
     mockCtx = ctx();
     nextResult = async () => {
       throw new VeridianApiError("Roster entry not found", 404);
     };
 
     const res = await POST(post(CREW));
-    const body = (await res.json()) as { error: string; code?: string };
+    const body = (await res.json()) as { error: string; code?: string | null };
 
     expect(res.status).toBe(404);
-    expect(body.code).toBeUndefined();
+    // R67 MERGE (D-11): veridianErrorResponse() always writes `code` (the
+    // TRANSPORT classification -- null for a plain 4xx with no rule code),
+    // rather than omitting the field the way WS-C's own bespoke branch did.
+    // Never REPLACE_REQUIRED or any other value that was not actually sent.
+    expect(body.code).toBeNull();
     expect(body.error).toBe("Roster entry not found");
   });
 
@@ -122,12 +137,12 @@ describe("POST /api/attendance", () => {
 });
 
 describe("VeridianApiError carries the backend's machine-readable reason", () => {
-  test("code is optional and survives construction", () => {
-    const withCode = new VeridianApiError("already saved", 409, undefined, "REPLACE_REQUIRED");
-    expect(withCode.code).toBe("REPLACE_REQUIRED");
+  test("ruleCode is optional and survives construction", () => {
+    const withCode = new VeridianApiError("already saved", 409, undefined, null, 0, { code: "REPLACE_REQUIRED" });
+    expect(withCode.ruleCode).toBe("REPLACE_REQUIRED");
     expect(withCode.status).toBe(409);
 
     const withoutCode = new VeridianApiError("not found", 404);
-    expect(withoutCode.code).toBeUndefined();
+    expect(withoutCode.ruleCode).toBeUndefined();
   });
 });
