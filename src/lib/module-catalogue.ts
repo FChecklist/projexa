@@ -257,13 +257,12 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. Set budget % to 30 on all civil lines",
     examples: ["Set budget % to 30 on all civil lines", "Show budget vs actual by category for this project"],
     leaves: [
-      // R67 lane D22 (item D-41): /budgets/new no longer exists. /budgets is now
-      // the PROJECT's BOQ budget -- a read of a BOQ, with nothing to create --
-      // and the ERP fiscal-year ledger this leaf was really about moved intact
-      // to /accounting/annual-budgets, where AppSidebar calls it "Finance
-      // Budgets (ERP)". The verb still works; it just leads where the thing
-      // being created now lives.
-      { id: "budgets.new", label: "New finance budget", path: "/accounting/annual-budgets/new", chainLabel: "New finance budget" },
+      // R67 lane D22 (item D-41) x R67 D-62, reconciled at the integration
+      // merge: both lanes moved the ERP fiscal-year ledger out of "Budgets",
+      // and D-62's address is the one that shipped -- /finance/budgets, with
+      // /budgets/* kept as redirects so existing links still land. The verb
+      // still works; it just leads where the thing being created now lives.
+      { id: "budgets.new", label: "New finance budget", path: "/finance/budgets/new", chainLabel: "New finance budget" },
       { id: "budgets.open", label: "Open", path: "/budgets" },
     ],
   },

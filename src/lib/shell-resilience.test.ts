@@ -158,7 +158,10 @@ describe("readJsonWithRetry -- every call is attempted twice before any fallback
       },
     });
     expect(calls).toBe(2);
-    expect(read).toEqual({ ok: false, error: "pill usage is down", attempts: 2 });
+    // R67 D-65 merge: `status` is additive. It is what lets the shared
+    // read-error dictionary name a 504 as a timeout and refuse a Retry on a
+    // 401 -- neither of which is recoverable from the message alone.
+    expect(read).toEqual({ ok: false, error: "pill usage is down", attempts: 2, status: 503 });
   });
 
   test("a thrown request is a failure like any other, and is retried too", async () => {
@@ -171,7 +174,9 @@ describe("readJsonWithRetry -- every call is attempted twice before any fallback
       },
     });
     expect(calls).toBe(2);
-    expect(read).toEqual({ ok: false, error: "Failed to fetch", attempts: 2 });
+    // A thrown request never reached a server, so there is no status to
+    // report -- and reporting one would be inventing a reply that never came.
+    expect(read).toEqual({ ok: false, error: "Failed to fetch", attempts: 2, status: null });
   });
 
   test("a status with no message still names the status rather than nothing", async () => {
@@ -180,7 +185,23 @@ describe("readJsonWithRetry -- every call is attempted twice before any fallback
       attempts: 1,
       fetcher: async () => new Response("<html>gateway</html>", { status: 502 }),
     });
-    expect(read).toEqual({ ok: false, error: "HTTP 502", attempts: 1 });
+    expect(read).toEqual({ ok: false, error: "HTTP 502", attempts: 1, status: 502 });
+  });
+
+  test("a refusal followed by a thrown retry does not keep the refusal's status", async () => {
+    // The status describes the LAST attempt. Leaving 503 behind after a
+    // request that never reached the server would make the dictionary answer
+    // a question about a reply nobody received.
+    let calls = 0;
+    const read = await readJsonWithRetry("/api/tasks", {
+      sleep: noSleep,
+      fetcher: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ error: "busy" }), { status: 503 });
+        throw new Error("Failed to fetch");
+      },
+    });
+    expect(read).toEqual({ ok: false, error: "Failed to fetch", attempts: 2, status: null });
   });
 
   test("the wait between the two attempts is the one second the item names", async () => {

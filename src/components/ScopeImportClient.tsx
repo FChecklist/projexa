@@ -1,269 +1,319 @@
 "use client";
 
-// R67 lane D22 (item D-52, rec R-176; rebuilt on the shared screen by item
-// D-68, rec R-258) -- THE BOQ EXCEL IMPORT SCREEN.
-//
-// The importer itself has been shipped end to end for a while
-// (construction-boq-import-service.parseBoqSpreadsheet, POST
-// /api/v1/projexa/scope/import, this repo's own /api/scope/import proxy) and
-// has never had a screen, so the only way to use it was a curl command.
-//
-// D-52 built this as its own three-step wizard. D-68 then asked for ONE import
-// screen behind all three of this app's imports (BOQ, programme, roster), so
-// that screen is now ImportScreen and this file is the BOQ's knowledge of
-// itself: which columns it understands, how a row reads, and the one thing no
-// other import has -- whether the file becomes Rev0 or a revision of an
-// existing BOQ. D-52's own sentence, "N of M rows will import", is kept as the
-// secondary summary line, because it says something D-68's sentence does not:
-// how many of the file's rows the parser could use at all.
-//
-// NO XLSX LIBRARY IS ADDED HERE, and none may be: the file is posted as
-// FormData and parsed server-side, and the preview is VERIDIAN's real reading
-// of it (dryRun=true), not a second client-side parse that could disagree with
-// what actually gets committed.
-import { useCallback, useEffect, useState } from "react";
+// R67 D-25 (R-064). The BOQ Excel importer has shipped end to end for months --
+// construction-boq-import-service.parseBoqSpreadsheet, POST
+// /api/v1/projexa/scope/import and this repo's own proxy -- and the ONLY thing
+// missing was a screen. So nothing is built on the parse side here: the
+// preview comes from the SAME server parse (?dryRun=1) that the real import
+// runs, and PROJEXA gains no XLSX library. A browser-side SheetJS preview would
+// have been a second set of rules that can disagree with the one that imports.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useOrgMoney } from "@/lib/use-org-money";
-import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { setFooterMessage } from "@/lib/footer-message";
-import { attributeRowMessages } from "@/lib/import-row-messages";
-import ImportScreen, { UNMAPPED, type ImportField, type ImportPreview } from "@/components/ImportScreen";
-import type { Boq } from "@/lib/boq-helpers";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fetchJson } from "@/lib/fetch-json";
+import { revisionLabel } from "@/lib/boq-lineage";
+import { formatAmount } from "@/lib/boq-helpers";
 
-type PreviewRow = {
-  index: number;
-  itemCode?: string;
+export const EXPECTED_COLUMNS_SENTENCE =
+  "Columns expected: Category, Code, Description, Unit, Qty, Rate (Amount is calculated). Sub-tasks: Parent Item Code + Breakdown %.";
+
+const ACCEPTED_EXTENSIONS = [".xlsx", ".csv"] as const;
+
+export type PreviewRow = {
+  category: string | null;
+  code: string | null;
   description: string;
   unit: string;
   quantity: number;
   rate: number;
   amount: number;
-  category?: string;
-  parentItemCode?: string;
-  breakdownPercentage?: number;
-  status: "ok" | "warning";
-  messages: string[];
+  parentItemCode: string | null;
+  breakdownPercentage: number | null;
 };
 
-type DryRunResponse = {
-  dryRun: true;
-  fileName: string;
-  mapping: Record<string, string | undefined>;
-  headers: string[];
-  totalRows: number;
-  warnings: string[];
+export type RowIssue = { row: number; message: string; blocking: boolean };
+
+type DryRun = {
   rows: PreviewRow[];
-  willImport: number;
-  totalParsed: number;
+  issues: RowIssue[];
+  summary: { totalRows: number; readyLines: number; rowsWithErrors: number };
 };
 
-type CommitResponse = {
-  boq: { id: string; title: string; version: number };
-  importSummary: { totalRows: number; importedLineItems: number; totalValue: number; warnings: string[] };
-};
+export type ExistingBoq = { id: string; title: string; version: number; status: string };
 
-// The five fields a BOQ line cannot be read without. Order is Sumeet's own
-// column order, so the "2 required fields unmapped - Qty, Rate" sentence names
-// them the way the sheet does.
-const FIELDS: ImportField[] = [
-  { key: "itemCode", label: "Code", required: true },
-  { key: "description", label: "Description", required: true },
-  { key: "quantity", label: "Qty", required: true },
-  { key: "unit", label: "Unit", required: true },
-  { key: "rate", label: "Rate", required: true },
-  { key: "amount", label: "Amount" },
-  { key: "parentItemCode", label: "Parent code" },
-  { key: "breakdownPercentage", label: "Breakdown %" },
-  { key: "subTask", label: "Sub task" },
-  { key: "category", label: "Category" },
-];
-
-const PREVIEW_COLUMNS = ["Category", "Code", "Description", "Qty", "Unit", "Rate", "Amount"];
+/** "3 lines ready, 1 with errors" / "3 lines ready, 0 with errors" -- always both halves, so a clean file says so out loud. */
+export function summaryLine(readyLines: number, rowsWithErrors: number): string {
+  return `${readyLines} line${readyLines === 1 ? "" : "s"} ready, ${rowsWithErrors} with error${rowsWithErrors === 1 ? "" : "s"}`;
+}
 
 export default function ScopeImportClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  // R67 review finding: THE money formatter (R67 G-05), not this lane's own
-  // second one. src/lib/money.ts is deleted -- it rendered "0.00" for a
-  // missing figure where the shared module renders the en-dash, and dropped
-  // the currency token silently where the shared one warns.
-  const orgMoney = useOrgMoney();
-
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  // The project's current BOQs, so an import can be offered as a revision of
+  // the latest instead of a second, competing baseline. Fetched HERE rather
+  // than on the server so the /scope list's known slowness never delays the
+  // file input, and so a failure degrades to "no revision option offered"
+  // instead of blocking the import.
+  const [existingBoqs, setExistingBoqs] = useState<ExistingBoq[]>([]);
   const [file, setFile] = useState<File | null>(null);
-  const [raw, setRaw] = useState<DryRunResponse | null>(null);
-  const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [boqs, setBoqs] = useState<Boq[]>([]);
-  const [target, setTarget] = useState<string>("rev0");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [skipRowsWithErrors, setSkipRowsWithErrors] = useState(false);
+  const [title, setTitle] = useState("");
+  const [preview, setPreview] = useState<DryRun | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
+  // null = import as a NEW BOQ. A BOQ id = import as the next revision of it.
+  const [reviseOf, setReviseOf] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchJson<{ boqs: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
-      .then((data) => setBoqs(data.boqs ?? []))
-      // A project with no BOQ yet is the common first-import case, not an
-      // error: the revision radio simply has nothing to offer.
-      .catch(() => setBoqs([]));
+    fetchJson<{ boqs?: ExistingBoq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
+      .then((data) => setExistingBoqs(data.boqs ?? []))
+      .catch(() => setExistingBoqs([]));
   }, [projectId]);
 
-  const runDryRun = useCallback(async (chosen: File, mappingOverride?: Record<string, string>) => {
-    setBusy(true);
-    setError(null);
+  // The revision candidate: the latest non-superseded BOQ, which is what
+  // "Rev n of <title>" means to a user looking at the list.
+  const latestBoq = useMemo(() => {
+    if (existingBoqs.length === 0) return null;
+    const live = existingBoqs.filter((b) => b.status !== "superseded");
+    const pool = live.length > 0 ? live : existingBoqs;
+    return pool.reduce((best, b) => (b.version > best.version ? b : best), pool[0]);
+  }, [existingBoqs]);
+
+  const blockingRows = useMemo(
+    () => new Set((preview?.issues ?? []).filter((i) => i.blocking).map((i) => i.row)),
+    [preview]
+  );
+  const issuesByRow = useMemo(() => {
+    const map = new Map<number, RowIssue[]>();
+    for (const issue of preview?.issues ?? []) {
+      map.set(issue.row, [...(map.get(issue.row) ?? []), issue]);
+    }
+    return map;
+  }, [preview]);
+
+  const readyLines = preview?.summary.readyLines ?? 0;
+  const importDisabledReason = !file
+    ? "Choose a file"
+    : parsing
+      ? "Reading the file…"
+      : !preview
+        ? "Choose a file"
+        : blockingRows.size > 0
+          ? `${blockingRows.size} row${blockingRows.size === 1 ? "" : "s"} with errors`
+          : readyLines === 0
+            ? "No usable lines in this file"
+            : importing
+              ? `Importing ${readyLines} lines…`
+              : undefined;
+
+  function isAccepted(candidate: File): boolean {
+    const name = candidate.name.toLowerCase();
+    return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
+  }
+
+  async function chooseFile(candidate: File) {
+    if (!isAccepted(candidate)) {
+      setMessages([{ level: "error", text: `${candidate.name} is not an .xlsx or .csv file.` }]);
+      return;
+    }
+    setFile(candidate);
+    setTitle((current) => current || candidate.name.replace(/\.[^.]+$/, ""));
+    setMessages([]);
+    await runDryRun(candidate);
+  }
+
+  /** The preview. Reads the file on the SERVER, through the same parser the real import uses. */
+  async function runDryRun(candidate: File) {
+    setParsing(true);
+    setPreview(null);
     try {
       const body = new FormData();
-      body.append("file", chosen);
-      body.append("projectId", projectId);
-      body.append("dryRun", "true");
-      if (mappingOverride && Object.keys(mappingOverride).length > 0) {
-        // UNMAPPED is the UI's way of saying "this field has no column"; the
-        // server reads an empty string as that, so translate rather than
-        // sending an internal sentinel over the wire.
-        body.append("mapping", JSON.stringify(
-          Object.fromEntries(Object.entries(mappingOverride).map(([k, v]) => [k, v === UNMAPPED ? "" : v]))
-        ));
-      }
-      const res = await fetch("/api/scope/import", { method: "POST", body });
+      body.set("file", candidate);
+      body.set("projectId", projectId);
+      const res = await fetch("/api/scope/import?dryRun=1", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't read this file");
-      const parsed = data as DryRunResponse;
-      setRaw(parsed);
-      return parsed;
+      if (!res.ok) throw new Error(data.error ?? "Couldn't read this spreadsheet");
+      setPreview({ rows: data.rows ?? [], issues: data.issues ?? [], summary: data.summary ?? { totalRows: 0, readyLines: 0, rowsWithErrors: 0 } });
     } catch (err) {
-      setError(errorMessage(err, "Couldn't read this file"));
-      return null;
+      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't read this spreadsheet" }]);
     } finally {
-      setBusy(false);
+      setParsing(false);
     }
-  }, [projectId]);
-
-  async function onFileChosen(chosen: File | null) {
-    setFile(chosen);
-    setRaw(null);
-    setMapping({});
-    setSkipRowsWithErrors(false);
-    if (!chosen) { setError(null); return; }
-    await runDryRun(chosen);
   }
 
-  async function onImport() {
-    if (!file || !raw) return;
-    setBusy(true);
-    setError(null);
+  async function runImport() {
+    if (!file || !preview) return;
+    setImporting(true);
+    setMessages([]);
     try {
       const body = new FormData();
-      body.append("file", file);
-      body.append("projectId", projectId);
-      if (Object.keys(mapping).length > 0) {
-        body.append("mapping", JSON.stringify(
-          Object.fromEntries(Object.entries(mapping).map(([k, v]) => [k, v === UNMAPPED ? "" : v]))
-        ));
-      }
-      if (target !== "rev0") body.append("parentBoqId", target);
+      body.set("file", file);
+      body.set("projectId", projectId);
+      body.set("title", title.trim() || file.name.replace(/\.[^.]+$/, ""));
+      if (reviseOf) body.set("parentBoqId", reviseOf);
+
       const res = await fetch("/api/scope/import", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Stays on the preview. The importer commits in one transaction, so a
-        // failure really did write nothing -- saying so is what lets a user
-        // press Retry without wondering whether half a BOQ is now in there.
-        throw new Error(data.error ? `Import failed - nothing was saved. ${data.error}` : "Import failed - nothing was saved. Retry");
-      }
-      const { boq, importSummary } = data as CommitResponse;
-      setFooterMessage(`/scope/${boq.id}`, {
-        level: "success",
-        text: `BOQ ${boq.title} v${boq.version} created - ${importSummary.importedLineItems} lines, ${orgMoney.money(importSummary.totalValue)}`,
-      });
-      router.push(`/scope/${boq.id}`);
+      if (!res.ok) throw new Error(data.error ?? "Couldn't import this BOQ");
+      const saved = data.boq as { id?: string; title?: string; version?: number } | undefined;
+      if (!saved?.id) throw new Error("The scope service reported success but returned no saved BOQ. Nothing has been imported — please try again.");
+
+      const importedLines = data.importSummary?.importedLineItems ?? preview.summary.readyLines;
+      const notice = `Imported BOQ ${saved.title ?? title} · ${revisionLabel(saved.version ?? 1)} · ${importedLines} lines`;
+      // Carried in the URL, not held in this screen's own band: this component
+      // unmounts with the navigation, so its band would vanish with it (the
+      // same reason MoMsClient reads ?deleted=).
+      router.push(`/scope/${saved.id}?imported=${encodeURIComponent(notice)}`);
     } catch (err) {
-      setError(errorMessage(err, "Import failed - nothing was saved. Retry"));
-      setBusy(false);
+      // The preview is deliberately KEPT -- the user's file selection and the
+      // rows they were looking at survive a failed import.
+      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't import this BOQ" }]);
+    } finally {
+      setImporting(false);
     }
   }
-
-  // The rows the parser could NOT use are reported as "Row N: ..." warnings
-  // rather than as preview rows, so they are synthesised here -- a row a person
-  // has to go and fix is exactly the thing that must not be invisible.
-  const preview: ImportPreview | null = raw
-    ? (() => {
-        const { byRow, sheetLevel } = attributeRowMessages(raw.warnings);
-        const parsedRows: ImportPreview["rows"] = raw.rows.map((row) => ({
-          key: `parsed-${row.index}`,
-          rowNumber: row.index,
-          cells: [
-            row.category ?? "—",
-            <span key="code" className="font-mono text-[11px]">{row.itemCode ?? "—"}</span>,
-            <span key="desc" className={row.parentItemCode ? "pl-4 text-px-muted" : ""}>{row.description}</span>,
-            row.quantity,
-            row.unit || "—",
-            orgMoney.money(row.rate),
-            orgMoney.money(row.amount),
-          ],
-          errors: [],
-          warnings: row.status === "warning" ? row.messages : [],
-        }));
-        const errorRows: ImportPreview["rows"] = [...byRow.entries()].map(([rowNumber, messages]) => ({
-          key: `unusable-${rowNumber}`,
-          rowNumber,
-          cells: PREVIEW_COLUMNS.map(() => "—"),
-          errors: messages,
-          warnings: [],
-        }));
-        return {
-          fileName: raw.fileName,
-          headers: raw.headers,
-          mapping: raw.mapping,
-          blockingErrors: [],
-          notices: sheetLevel,
-          rows: [...parsedRows, ...errorRows].sort((a, b) => a.rowNumber - b.rowNumber),
-        };
-      })()
-    : null;
 
   return (
-    <>
-    <ImportScreen
+    <KitObjectScreen
+      breadcrumb="Scope / Import BOQ"
       title="Import BOQ from Excel"
-      helpText="One row per BOQ line. Sub-items use Parent code and Breakdown %."
-      templateHref="/templates/boq-import-template.xlsx"
-      templateColumns="S.No | Category | Code | Description | Qty | Unit | Rate | Amount | Parent code | Breakdown %"
-      fields={FIELDS}
-      previewColumns={PREVIEW_COLUMNS}
-      preview={preview}
-      busy={busy}
-      error={error}
-      skipRowsWithErrors={skipRowsWithErrors}
-      onSkipChange={setSkipRowsWithErrors}
-      onFileChosen={onFileChosen}
-      onMappingChange={(field, header) => {
-        // Correcting a column re-runs the SERVER's reading of the file, never a
-        // second client-side interpretation of it -- the preview and the commit
-        // must be the same parse.
-        const next = { ...mapping, [field]: header };
-        setMapping(next);
-        if (file) void runDryRun(file, next);
-      }}
-      onImport={onImport}
-      onRetry={() => (raw ? onImport() : file && onFileChosen(file))}
-      extraSummary={raw ? `${raw.willImport} of ${raw.totalParsed} rows will import` : undefined}
-      extraControls={
-        <fieldset className="space-y-2 text-[12.5px]">
-          <legend className="text-px-muted">Create as</legend>
-          <label className="flex items-center gap-2">
-            <input type="radio" name="import-target" value="rev0" checked={target === "rev0"} onChange={() => setTarget("rev0")} />
-            Create as Rev0
-          </label>
-          {boqs.map((b) => (
-            <label key={b.id} className="flex items-center gap-2">
-              <input type="radio" name="import-target" value={b.id} checked={target === b.id} onChange={() => setTarget(b.id)} />
-              Create as new revision of {b.title} (v{b.version})
-            </label>
-          ))}
-        </fieldset>
-      }
-    />
-      {/* R67 G-05: said once, at the foot of the screen -- it explains the
-          warning glyph beside every unlabelled figure above, and renders
-          nothing at all when the org has a currency. */}
-      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
-    </>
+      mode="create"
+      hasDraft={false}
+      onSave={runImport}
+      onCancel={() => router.push(`/scope?projectId=${projectId}`)}
+      onBack={() => router.push(`/scope?projectId=${projectId}`)}
+      saveDisabled={!!importDisabledReason}
+      saveDisabledReason={importDisabledReason}
+      messages={messages}
+    >
+      <div className="space-y-4 px-4 py-3">
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const dropped = e.dataTransfer.files?.[0];
+            if (dropped) void chooseFile(dropped);
+          }}
+          className={`rounded-md border border-dashed p-6 text-center ${dragging ? "border-px-steel bg-px-cloud" : "border-px-border2"}`}
+        >
+          <p className="text-[13px] text-px-ink">Drop an .xlsx or .csv here, or choose a file.</p>
+          <input
+            ref={fileInput}
+            type="file"
+            aria-label="BOQ spreadsheet"
+            accept=".xlsx,.csv"
+            className="mt-3 mx-auto block text-[13px]"
+            onChange={(e) => {
+              const chosen = e.target.files?.[0];
+              if (chosen) void chooseFile(chosen);
+            }}
+          />
+          <p className="mt-3 text-[11.5px] text-px-muted">{EXPECTED_COLUMNS_SENTENCE}</p>
+          {/* Built by VERIDIAN and relayed byte-for-byte -- PROJEXA must not
+              gain an XLSX library. */}
+          <a href="/api/scope/import/template" className="mt-2 inline-block text-[12px] underline text-px-steel">Download template</a>
+        </div>
+
+        <div className="max-w-md space-y-1.5">
+          <Label htmlFor="import-title">BOQ title</Label>
+          <Input
+            id="import-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Defaults to the file name"
+          />
+        </div>
+
+        {latestBoq && (
+          <div className="rounded-md border border-px-border2 p-3">
+            <p className="text-[13px] text-px-ink">
+              Import as a new BOQ or as {revisionLabel(latestBoq.version + 1)} of &ldquo;{latestBoq.title}&rdquo;?
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={reviseOf === null ? "default" : "outline"}
+                onClick={() => setReviseOf(null)}
+              >
+                New BOQ
+              </Button>
+              <Button
+                size="sm"
+                variant={reviseOf === latestBoq.id ? "default" : "outline"}
+                onClick={() => setReviseOf(latestBoq.id)}
+              >
+                {revisionLabel(latestBoq.version + 1)} of &ldquo;{latestBoq.title}&rdquo;
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {parsing && <p className="text-[13px] text-px-muted">Reading the file…</p>}
+
+        {preview && (
+          <div className="space-y-2">
+            <p className="text-[13px] font-medium text-px-ink">
+              {summaryLine(preview.summary.readyLines, blockingRows.size)}
+            </p>
+
+            {preview.issues.length > 0 && (
+              <ul className="space-y-0.5">
+                {preview.issues.map((issue, i) => (
+                  <li key={`${issue.row}-${i}`} className={issue.blocking ? "text-[12px] text-px-error" : "text-[12px] text-px-muted"}>
+                    {issue.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="overflow-x-auto rounded-md border border-px-border2">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Parent Item Code</TableHead>
+                    <TableHead className="text-right">Breakdown %</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {preview.rows.map((row, i) => (
+                    <TableRow key={`${row.code ?? "row"}-${i}`}>
+                      <TableCell className="text-px-muted">{row.category ?? "–"}</TableCell>
+                      <TableCell className="font-mono text-[11px]">{row.code ?? "–"}</TableCell>
+                      <TableCell>{row.description}</TableCell>
+                      <TableCell className="text-px-muted">{row.unit || "–"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatAmount(row.quantity)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatAmount(row.rate)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatAmount(row.amount)}</TableCell>
+                      <TableCell className="text-px-muted">{row.parentItemCode ?? "–"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.breakdownPercentage ?? "–"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {issuesByRow.size > 0 && (
+              <p className="text-[11.5px] text-px-muted">
+                Rows with an error are listed above by their sheet row number and are not imported.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </KitObjectScreen>
   );
 }

@@ -17,43 +17,55 @@
 //  - Share Links -- listMeetingShareLinks() had a working v1 route, no UI
 //    (only "create + open WhatsApp" existed, with no way to see or revoke
 //    an existing link). Revoke had no PROJEXA route until this conversion.
+//
+// ─── R67 D-17 / D-19 / D-21 ───────────────────────────────────────────────
+// What the R66 audit recorded about this screen, and what each change closes:
+//
+//  D-17  Minutes are Sumeet's LIVE artefact -- typed during the meeting -- but
+//        the only way to keep them was to remember to press "Save Minutes".
+//        They now autosave on a 2s debounce (the fork's ObjectScreen owns the
+//        timing), the explicit button is "Save now", and the state is stated
+//        beside the Minutes heading as "Saving…" / "Saved HH:mm" / "Not saved
+//        - retrying". A failed save NEVER clears the box: the text stays, the
+//        save retries with back-off, and the failure sits in the persistent
+//        footer band instead of a toast that vanishes.
+//
+//  D-17  Delete did not exist at all, and Edit disappeared silently once a
+//        meeting was published -- a missing feature and a broken one look
+//        identical. Both are now always rendered and disabled with the reason
+//        beside them (see src/components/screens/KitObjectScreen.tsx, the
+//        PROJEXA-local kit fork this screen imports -- decision D-11's addendum
+//        put D-17's fork there rather than at screens/ObjectScreen.tsx, which
+//        lane D0's PROJEXA-native archetype owns).
+//
+//  D-17  Publish was ONE CLICK and irreversible: it locks the title, date,
+//        attendees, agenda and minutes forever. It is now behind a confirm
+//        that states that blast radius in words, and is refused while there
+//        is unsaved minutes text.
+//
+//  D-17  The PDF was a ghost icon-link and the share was an outline button,
+//        both buried in the body. They are now a worded Export menu in the
+//        object header: Export PDF / Send on WhatsApp / Copy link. Published
+//        meetings keep it -- a locked meeting is exactly the one you send.
+//
+//  D-19  The assignee field asked for a pasted VERIDIAN user id and apologised
+//        on screen for having no directory. It is a real people picker over
+//        GET /api/org-users, with the meeting's own attendees listed first.
+//
+//  D-21  The share link named VERIDIAN to a PROJEXA customer and pointed at
+//        whichever host answered. The proxy now sends brand + shareOrigin and
+//        the composed message comes back from the server; this screen reports
+//        the expiry and lists live links with a worded Revoke.
 // Once published, meeting-level fields AND minutes lock server-side
-// (assertEditable) -- the UI mirrors that by hiding Edit/Save-Minutes
-// rather than letting a click 409.
-//
-// R67 lane D22 (item D-58, rec R-187): the icon-only PDF glyph and the
-// "Create Share Link & Send via WhatsApp" sentence-in-a-button are replaced by
-// the shared ShareSheet (Export PDF / Share on WhatsApp / Share link), and the
-// action-item Assignee free-text box -- which asked a human to paste a
-// VERIDIAN user id and hinted `usr_abc123` -- is now a real people picker over
-// the org directory. No screen in this module prints a user id any more.
-//
-// ─── R67 lane D22 (item D-75, rec R-287): THIS PAGE OPENS READ-ONLY ────────
-//
-// WHAT WAS WRONG. Arriving at a meeting put you straight into a half-edit
-// state: the minutes were a live <textarea> with their own "Save Minutes"
-// button, the action-item composer sat open with three empty inputs, and the
-// loudest control on the screen -- the only saffron one -- was "Publish &
-// Lock", an IRREVERSIBLE action (there is no unpublish anywhere in this
-// codebase) offered above minutes that were still empty. Three different save
-// paths, none of them named Save, and the riskiest button was the brightest.
-//
-// WHAT IT IS NOW. Everything is display text until the header's single Edit is
-// pressed; edit mode has exactly ONE Save / Cancel pair, in the footer, that
-// commits the details, the minutes and any newly agreed action items together.
-// Publish & Lock is a secondary control that says why it cannot be pressed
-// ("Publish & Lock (no minutes yet)") and asks inline before it fires. Exactly
-// one saffron button exists on arrival: Edit.
-import { Suspense, useEffect, useState } from "react";
+// (assertEditable). R67 D-17 changes HOW the UI mirrors that: the controls are
+// no longer hidden -- they are rendered disabled with the reason beside them,
+// because a missing feature and a broken one look identical when a button
+// simply is not there.
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { toast } from "sonner";
-// R67 lane D22 (item D-63, rec R-203): the FORKED ObjectScreen, not the kit's.
-// The fork adds one thing -- a header-actions slot -- because R-203's global
-// object-screen rule puts an object's own actions in its header, in a fixed
-// order, and the kit's ObjectScreen puts Edit in the footer with no way to add
-// Export/Share beside it. See src/components/screens/ScreenFrame.tsx's header
-// for why this is a fork and not a kit change (programme decision D-09).
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MOM_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
@@ -62,17 +74,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, Link2, Ban, Plus, X } from "lucide-react";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { formatDateTime, formatDayMonthYear } from "@/lib/format-date";
 import {
-  meetingShareSummary, canPublishMeeting, publishLockLabel, PUBLISH_LOCK_CONFIRM, PUBLISH_LOCK_LABEL,
-} from "@/lib/mom-format";
-import type { MoMDraftActionItem } from "@/lib/mom-draft";
-import ShareSheet, { type ShareLinkResult } from "@/components/ShareSheet";
-import OrgUserPicker from "@/components/OrgUserPicker";
-import AttendeesField from "@/components/AttendeesField";
-import { takeFooterMessage } from "@/lib/footer-message";
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronsUpDown, Loader2, Sparkles } from "lucide-react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+// R67 D-74: the ORG date form, from the one formatter -- not format-date.ts's
+// pinned en-US, which is what D-17 originally imported here.
+import { formatDate, formatDateTime, formatClock, toLocalInputValue, toOrgInstant } from "@/lib/format";
+// R67 D-19: the people picker's rules, extracted so they are unit-tested.
+import {
+  ACTION_ITEM_VALIDATION_MESSAGE, addActionItemDisabledReason, displayNameOf,
+  groupOrgUsers, initialsOf, roleLabelOf, type OrgUser,
+} from "@/lib/org-user-picker";
 
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
@@ -82,44 +102,9 @@ type Meeting = {
   publishedAt: string | null; aiSummary: string | null; aiKeyDecisions: string[]; aiSuggestedActionItems: SuggestedActionItem[];
   actionItems: ActionItem[];
 };
-// shareUrl is resolved by this repo's own /api/moms/[id]/share-links proxy
-// (R67 D-63) so the Share controls are real links on arrival, not buttons that
-// have to round-trip before they know where they point.
-type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: string | null; createdAt: string; shareUrl?: string };
-
-type Draft = {
-  title: string;
-  meetingType: string;
-  scheduledAt: string;
-  attendees: string[];
-  agenda: string[];
-  minutes: string;
-  newActionItems: MoMDraftActionItem[];
-};
+type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: string | null; createdAt: string };
 
 const STATUS_TONE: Record<string, StatusTone> = { draft: "neutral", published: "done" };
-
-function emptyActionItem(): MoMDraftActionItem {
-  return { title: "", assigneeUserId: null, assigneeName: null, dueDate: "" };
-}
-
-function toLocalInputValue(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function draftFrom(meeting: Meeting): Draft {
-  return {
-    title: meeting.title,
-    meetingType: meeting.meetingType,
-    scheduledAt: toLocalInputValue(meeting.scheduledAt),
-    attendees: [...meeting.attendees],
-    agenda: meeting.agenda.length ? [...meeting.agenda] : [""],
-    minutes: meeting.minutes ?? "",
-    newActionItems: [emptyActionItem()],
-  };
-}
 
 /**
  * R67 A-20 -- THE COMPOSER'S OBJECT-PAGE CARDS PUT THE CURSOR ON THE REAL
@@ -150,147 +135,316 @@ function FocusRequest() {
   return null;
 }
 
-export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
+
+// Escalating, bounded. A save that keeps failing must not hammer the API, and
+// must not give up silently either -- the last step repeats until it works or
+// the user leaves, with the box still holding their text.
+const RETRY_BACKOFF_MS = [2_000, 5_000, 10_000, 30_000];
+
+type MinutesState =
+  | { status: "idle" }
+  | { status: "saving" }
+  | { status: "saved"; at: Date }
+  | { status: "retrying" };
+
+export default function MoMObjectClient({
+  meetingId,
+  justCreated = false,
+}: {
+  meetingId: string;
+  /** ?created=1 -- so the footer can name the thing that was just made. */
+  justCreated?: boolean;
+}) {
   const router = useRouter();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState({ title: "", meetingType: "team", scheduledAt: "", attendees: "", agenda: "" });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  // Publishing is irreversible, so it asks -- inline, never a modal (the one
-  // dialog this product keeps is Create Project, per correction C-01).
-  const [confirmingPublish, setConfirmingPublish] = useState(false);
+  // R67 D-17: publish and delete are both irreversible, so each is behind a
+  // confirm that states its own blast radius in words.
+  const [confirming, setConfirming] = useState<"publish" | "delete" | null>(null);
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
+  const [autosaveSavedAt, setAutosaveSavedAt] = useState<Date | null>(null);
+  // Set by every real edit, cleared by a landed write. Without it, merely
+  // ENTERING edit mode would schedule a PATCH of unchanged values.
+  const dirtyRef = useRef(false);
+  // The autosave reads the draft from here rather than closing over it, so
+  // the debounce callback does not have to be rebuilt on every keystroke
+  // (which would clear its own pending timer and never fire).
+  const draftRef = useRef(draft);
 
+  const [minutesDraft, setMinutesDraft] = useState("");
+  const [minutesState, setMinutesState] = useState<MinutesState>({ status: "idle" });
   const [busy, setBusy] = useState<string | null>(null);
-  // The create screen's receipt, and anything the share controls need to say
-  // (a blocked popup, a copied link) -- both land in the footer message area
-  // the kit's ObjectScreen already owns, never in a toast that vanishes.
-  const [screenMessages, setScreenMessages] = useState<FieldMessage[]>([]);
+  const [notices, setNotices] = useState<FieldMessage[]>([]);
 
-  useEffect(() => {
-    const receipt = takeFooterMessage(`/moms/${meetingId}`);
-    if (receipt) setScreenMessages([{ level: receipt.level, text: receipt.text }]);
-  }, [meetingId]);
+  const [actionTitle, setActionTitle] = useState("");
+  const [actionAssignee, setActionAssignee] = useState<OrgUser | null>(null);
+  const [actionDueDate, setActionDueDate] = useState("");
+  const [actionAttempted, setActionAttempted] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
 
-  async function load() {
+  // The last text the server has confirmed. Kept in a ref, not state, because
+  // the retry timer closes over it and must always see the newest value.
+  const savedMinutesRef = useRef<string>("");
+  const latestMinutesRef = useRef<string>("");
+  // The retry timer has to call the SAME function it was scheduled from. A
+  // direct self-reference inside the useCallback would capture the first
+  // instance forever (and React's lint rule refuses it), so the timer goes
+  // through this always-current handle instead.
+  const patchMinutesRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const retryRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; attempt: number }>({ timer: null, attempt: 0 });
+  const minutesBoxRef = useRef<HTMLTextAreaElement | null>(null);
+  const hydratedRef = useRef(false);
+
+  const isPublished = meeting?.status === "published";
+
+  const load = useCallback(async () => {
     try {
       const [data, linkData] = await Promise.all([
         fetchJson<Meeting>(`/api/moms/${meetingId}`),
         fetchJson<{ links?: ShareLink[] }>(`/api/moms/${meetingId}/share-links`).catch(() => ({ links: [] })),
       ]);
       setMeeting(data);
+      // Only ever seed the box from the server on first load, or when there is
+      // nothing unsaved in it. A reload triggered by some other action must
+      // never overwrite text the user is still typing.
+      const serverMinutes = data.minutes ?? "";
+      if (!hydratedRef.current || latestMinutesRef.current === savedMinutesRef.current) {
+        setMinutesDraft(serverMinutes);
+        latestMinutesRef.current = serverMinutes;
+      }
+      savedMinutesRef.current = serverMinutes;
+      hydratedRef.current = true;
       setLinks(linkData.links ?? []);
       setLoadError(null);
     } catch (err) {
       setMeeting(null);
       setLoadError(errorMessage(err, "Couldn't load this meeting"));
     }
+  }, [meetingId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Clear any pending retry when this screen goes away, so a background timer
+  // cannot fire against an unmounted component.
+  useEffect(() => () => { if (retryRef.current.timer) clearTimeout(retryRef.current.timer); }, []);
+
+  // D-17: arriving from /moms/new names what was just made, with its number,
+  // in the persistent band. Landing the CURSOR in the minutes box is lane A's
+  // FocusRequest above -- ?focus=minutes against this file's own
+  // data-focus="minutes" -- so there is one focus mechanism on this page, not
+  // a prop and a query param that could disagree.
+  useEffect(() => {
+    if (!meeting) return;
+    if (justCreated) {
+      const number = meeting.systemId ? ` (${meeting.systemId})` : "";
+      setNotices((prev) =>
+        prev.some((n) => n.field === "created")
+          ? prev
+          : [...prev, { field: "created", level: "success", text: `Created meeting ${meeting.title}${number} - start typing the minutes` }]
+      );
+    }
+    // Runs once the meeting is first known; nothing here depends on later edits.
+  }, [meeting?.id, meeting?.systemId, meeting?.title, justCreated]);
+
+  // D-19: the org directory the picker used to apologise for not having.
+  useEffect(() => {
+    let cancelled = false;
+    const query = pickerQuery.trim();
+    const timer = setTimeout(() => {
+      fetchJson<{ users?: OrgUser[] }>(`/api/org-users${query ? `?q=${encodeURIComponent(query)}` : ""}`)
+        .then((data) => { if (!cancelled) setOrgUsers(data.users ?? []); })
+        .catch(() => { if (!cancelled) setOrgUsers([]); });
+    }, query ? 200 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [pickerQuery]);
+
+  function note(message: FieldMessage) {
+    setNotices((prev) => [...prev.filter((n) => n.field !== message.field), message]);
   }
-  useEffect(() => { load(); }, [meetingId]);
+
+  function clearNote(field: string) {
+    setNotices((prev) => prev.filter((n) => n.field !== field));
+  }
+
+  // Synced in an effect, never during render: writing a ref while rendering
+  // is a real hazard (React may discard the render) and the repo's
+  // react-hooks/refs rule rejects it. Declared before the autosave effect,
+  // so within one commit the ref is fresh before a write can be scheduled.
+  useEffect(() => {
+    draftRef.current = draft;
+  });
 
   function startEdit() {
     if (!meeting) return;
-    setDraft(draftFrom(meeting));
-    setConfirmingPublish(false);
+    setDraft({
+      title: meeting.title, meetingType: meeting.meetingType, scheduledAt: toLocalInputValue(meeting.scheduledAt),
+      attendees: meeting.attendees.join(", "), agenda: meeting.agenda.join("\n"),
+    });
+    dirtyRef.current = false;
+    setAutosaveStatus("idle");
+    setAutosaveSavedAt(null);
     setMode("edit");
   }
 
-  function cancelEdit() {
-    setDraft(null);
-    setMode("display");
+  // R67 D-67: the ONE way this screen changes the draft. Every field goes
+  // through it, so no control can be added later that edits the meeting
+  // without arming the autosave -- which would silently reintroduce the
+  // "typed for ten minutes, pressed Back, lost it all" case.
+  function editDraft(update: (d: typeof draft) => typeof draft) {
+    dirtyRef.current = true;
+    setDraft(update);
   }
 
-  /**
-   * ONE Save. The details, the minutes and any newly agreed action items are
-   * committed together from the single footer button.
-   *
-   * Three calls rather than one because VERIDIAN's PATCH is a discriminated
-   * route -- { minutes } and the detail fields are different branches of
-   * v1/projexa/veri-meetings/[id], and action items are their own endpoint
-   * (they create real `tasks` rows). Only what actually changed is sent, and
-   * the first failure stops the rest and is reported at the screen with the
-   * backend's own sentence, with the page reloaded so what is shown is what
-   * was actually stored -- never a Save that half-succeeded in silence.
-   */
+  // R67 D-67: ONE body for both writes. An autosave that sent a different
+  // shape from the Save button would be a second, invisible way to change a
+  // record, and the two would drift the first time either was edited.
+  function meetingPatchBody(d: typeof draft) {
+    return {
+      title: d.title.trim(),
+      meetingType: d.meetingType,
+      // R67 D-74: `d.scheduledAt` is a datetime-local value with no zone.
+      // `new Date(...)` read it in the BROWSER's zone, so the same meeting
+      // saved from Dubai and from London stored two different instants, and
+      // neither was necessarily the one the user typed. The org's offset is
+      // attached instead -- by the same function the create form uses, so
+      // the two write paths cannot disagree.
+      scheduledAt: toOrgInstant(d.scheduledAt),
+      attendees: d.attendees.split(",").map((s) => s.trim()).filter(Boolean),
+      agenda: d.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
+    };
+  }
+
   async function saveEdit() {
-    if (!meeting || !draft) return;
     if (!draft.title.trim() || !draft.scheduledAt) return;
     setSaving(true);
     try {
-      const agenda = draft.agenda.map((a) => a.trim()).filter(Boolean);
-      const detailsChanged =
-        draft.title.trim() !== meeting.title ||
-        draft.meetingType !== meeting.meetingType ||
-        new Date(draft.scheduledAt).toISOString() !== new Date(meeting.scheduledAt).toISOString() ||
-        JSON.stringify(draft.attendees) !== JSON.stringify(meeting.attendees) ||
-        JSON.stringify(agenda) !== JSON.stringify(meeting.agenda);
-
-      if (detailsChanged) {
-        const res = await fetch(`/api/moms/${meetingId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: draft.title.trim(), meetingType: draft.meetingType,
-            scheduledAt: new Date(draft.scheduledAt).toISOString(),
-            attendees: draft.attendees, agenda,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? "Couldn't save this meeting");
-      }
-
-      if (draft.minutes !== (meeting.minutes ?? "")) {
-        const res = await fetch(`/api/moms/${meetingId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ minutes: draft.minutes }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? "Couldn't save the minutes");
-      }
-
-      // An action item with a description but no owner would become a task
-      // nobody is assigned -- refused here rather than silently dropped.
-      const pending = draft.newActionItems.filter((a) => a.title.trim());
-      const ownerless = pending.find((a) => !a.assigneeUserId);
-      if (ownerless) throw new Error(`Action item "${ownerless.title.trim()}" needs an owner`);
-      for (const item of pending) {
-        const res = await fetch(`/api/moms/${meetingId}/action-items`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: item.title.trim(), assigneeUserId: item.assigneeUserId, dueDate: item.dueDate || undefined }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? `Couldn't add the action item "${item.title.trim()}"`);
-      }
-
+      const res = await fetch(`/api/moms/${meetingId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meetingPatchBody(draft)),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to save meeting");
+      // R67 D-17: the receipt is a PERSISTENT message, not a toast that is
+      // gone before the user has looked up from the field they were typing.
+      clearNote("edit");
+      note({ field: "edit", level: "success", text: "Meeting details saved" });
+      // R67 D-67: an explicit save settles the autosave line too, so it never
+      // reads "Not saved" over a record that has just been written.
+      dirtyRef.current = false;
+      setAutosaveSavedAt(new Date());
+      setAutosaveStatus("saved");
       setMode("display");
-      setDraft(null);
-      setScreenMessages([{ level: "success", text: `Meeting ${meeting.systemId ?? meeting.title} saved` }]);
       await load();
     } catch (err) {
-      setScreenMessages([{ level: "error", text: errorMessage(err, "Couldn't save this meeting") }]);
-      await load();
+      note({ field: "edit", level: "error", text: errorMessage(err, "Couldn't save meeting") });
     } finally {
       setSaving(false);
     }
   }
 
+  // ─── R67 D-17 x D-67: TWO autosaves, for two different things ────────────
+  //
+  // They are not duplicates and neither replaces the other:
+  //   * MINUTES (below) are typed on the DISPLAY page, live, during the
+  //     meeting. There is no edit mode to enter, so a timer armed only while
+  //     editing could never fire for the one field in this product that most
+  //     needs it. It retries with back-off and never clears the box.
+  //   * The DETAILS DRAFT (further down) is the title/type/date form, saved
+  //     after a 2 s pause while the user is in edit mode, so Cancel, Back, a
+  //     reload or a closed tab no longer throw the edit away.
+  //
+  // ─── Minutes: autosave, explicit save, retry with back-off ───────────────
+  const patchMinutes = useCallback(async (text: string) => {
+    if (isPublished) return;
+    if (text === savedMinutesRef.current) return; // nothing to save -- also stops the fork's onChangeCapture from firing a write for an unrelated field
+    if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
+    setMinutesState({ status: "saving" });
+    try {
+      const res = await fetch(`/api/moms/${meetingId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes: text }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't save minutes");
+      savedMinutesRef.current = text;
+      setMeeting((prev) => (prev ? { ...prev, minutes: text } : prev));
+      retryRef.current.attempt = 0;
+      clearNote("minutes");
+      setMinutesState({ status: "saved", at: new Date() });
+    } catch (err) {
+      // The text stays in the box. The failure is stated once, persistently.
+      note({ field: "minutes", level: "error", text: errorMessage(err, "Couldn't save minutes") });
+      setMinutesState({ status: "retrying" });
+      const attempt = Math.min(retryRef.current.attempt + 1, RETRY_BACKOFF_MS.length);
+      retryRef.current.attempt = attempt;
+      retryRef.current.timer = setTimeout(() => { void patchMinutesRef.current(latestMinutesRef.current); }, RETRY_BACKOFF_MS[attempt - 1]);
+    }
+  }, [isPublished, meetingId]);
+
+  useEffect(() => { patchMinutesRef.current = patchMinutes; }, [patchMinutes]);
+
+  function onMinutesChange(value: string) {
+    latestMinutesRef.current = value;
+    setMinutesDraft(value);
+  }
+
+  // Derived from state, not from savedMinutesRef: meeting.minutes IS the last
+  // value the server confirmed (patchMinutes writes it back on success), and a
+  // ref read during render would not re-render the pencil or Save now.
+  const hasUnsavedMinutes = minutesDraft !== (meeting?.minutes ?? "");
+
+  // R67 DECISION D-11 point 1: the 2 s idle autosave that used to live here --
+  // "MoMs autosave after ~2 s of inactivity with 'Saving… / Saved 12:04'"
+  // (D-67) -- is REMOVED. It wrote the record while the user was still
+  // deciding, which is exactly what the ruling forbids. What D-67 was
+  // protecting against is not reintroduced by accident: Cancel and Back still
+  // discard knowingly, and the primary is disabled with its reason until the
+  // required fields are there, so a save that lands is always one the user
+  // asked for. The autosave STATUS LINE survives (autosaveLabel below) and is
+  // now settled by the explicit save alone, so "Saved 12:04" still says when
+  // the record was last written.
+
   async function publish() {
+    setConfirming(null);
     setPublishing(true);
     try {
       const res = await fetch(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "publish" }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to publish meeting");
-      setConfirmingPublish(false);
-      setScreenMessages([{ level: "success", text: "Meeting published and locked" }]);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to publish meeting");
+      note({ field: "publish", level: "success", text: `Published and locked at ${formatClock(new Date())}` });
       await load();
     } catch (err) {
-      setScreenMessages([{ level: "error", text: errorMessage(err, "Couldn't publish meeting") }]);
+      note({ field: "publish", level: "error", text: errorMessage(err, "Couldn't publish meeting") });
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function deleteMeeting() {
+    if (!meeting) return;
+    setConfirming(null);
+    setBusy("delete");
+    try {
+      const res = await fetch(`/api/moms/${meetingId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't delete this meeting");
+      // The confirmation belongs where the user lands, not on a screen that is
+      // about to unmount -- MoMsClient renders ?deleted= as a persistent notice.
+      const base = meeting.projectId ? `/moms?projectId=${meeting.projectId}&` : "/moms?";
+      router.push(`${base}deleted=${encodeURIComponent(meeting.title)}`);
+    } catch (err) {
+      note({ field: "delete", level: "error", text: errorMessage(err, "Couldn't delete this meeting") });
+      setBusy(null);
     }
   }
 
@@ -300,39 +454,76 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       const res = await fetch(`/api/moms/${meetingId}/generate-intelligence`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to generate AI summary");
-      toast.success("AI summary generated");
+      clearNote("ai");
+      note({ field: "ai", level: "success", text: "AI summary generated" });
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't generate AI summary");
+      note({ field: "ai", level: "error", text: errorMessage(err, "Couldn't generate AI summary") });
     } finally {
       setBusy(null);
     }
   }
 
-  /** Puts the AI's suggested wording into the first empty action-item row of the edit form. */
+  // D-19: an AI suggestion promotes into the SAME picker -- its `assignee` is
+  // free text the model read out of the minutes, so it seeds the search rather
+  // than pretending to be a user id.
   function promoteSuggestion(s: SuggestedActionItem) {
-    if (!meeting) return;
-    // The AI's `assignee` is a NAME it read out of the minutes, not a user id,
-    // so it cannot be used to pre-select an owner -- the owner is still chosen
-    // deliberately from the directory.
-    const base = draft ?? draftFrom(meeting);
-    const rows = [...base.newActionItems];
-    const emptyIndex = rows.findIndex((a) => !a.title.trim());
-    if (emptyIndex >= 0) rows[emptyIndex] = { ...rows[emptyIndex], title: s.title };
-    else rows.push({ ...emptyActionItem(), title: s.title });
-    setDraft({ ...base, newActionItems: rows });
-    setMode("edit");
+    setActionTitle(s.title);
+    if (s.assignee) {
+      setPickerQuery(s.assignee);
+      setPickerOpen(true);
+    }
   }
 
-  // Handed to ShareSheet, which owns the WhatsApp/copy-link behaviour and the
-  // blocked-popup fallback. It only ever asks for a link it does not already
-  // have, so a second share reuses the first link rather than minting one.
-  async function createShareLink(): Promise<ShareLinkResult> {
-    const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Couldn't create a share link");
-    await load();
-    return { shareUrl: data.shareUrl as string, whatsappHref: data.whatsappHref as string };
+  const addDisabledReason = addActionItemDisabledReason({
+    title: actionTitle, assigneeId: actionAssignee?.id ?? "", busy: busy === "action",
+  });
+
+  async function addActionItem() {
+    if (addDisabledReason) { setActionAttempted(true); return; }
+    setActionAttempted(false);
+    setBusy("action");
+    try {
+      const res = await fetch(`/api/moms/${meetingId}/action-items`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: actionTitle.trim(), assigneeUserId: actionAssignee!.id, dueDate: actionDueDate || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to add action item");
+      clearNote("action");
+      note({ field: "action", level: "success", text: `Action item added for ${displayNameOf(actionAssignee!)}` });
+      setActionTitle(""); setActionAssignee(null); setActionDueDate(""); setPickerQuery("");
+      await load();
+    } catch (err) {
+      note({ field: "action", level: "error", text: errorMessage(err, "Couldn't add action item") });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // ─── Share (D-21) ────────────────────────────────────────────────────────
+  async function createShareLink(open: "whatsapp" | "clipboard") {
+    setBusy("share");
+    try {
+      const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Failed to create a share link");
+      if (open === "whatsapp" && data.whatsappHref) {
+        window.open(data.whatsappHref, "_blank", "noopener,noreferrer");
+      } else if (open === "clipboard") {
+        await navigator.clipboard?.writeText(data.shareUrl).catch(() => {});
+      }
+      clearNote("share");
+      note({
+        field: "share", level: "success",
+        text: `Share link created - expires ${formatDateTime(data.expiresAt)}${open === "clipboard" ? " - copied to your clipboard" : ""}`,
+      });
+      await load();
+    } catch (err) {
+      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't create a share link") });
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function revokeLink(linkId: string) {
@@ -341,10 +532,11 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       const res = await fetch(`/api/moms/share-links/${linkId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to revoke share link");
-      toast.success("Share link revoked");
+      clearNote("share");
+      note({ field: "share", level: "success", text: "Share link revoked - it no longer opens" });
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't revoke share link");
+      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't revoke share link") });
     } finally {
       setBusy(null);
     }
@@ -354,64 +546,31 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     return (
       <div className="space-y-3 p-6">
         <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button>
       </div>
     );
   }
-  if (!meeting) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!meeting) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
+      label={MOM_OBJECT_BREADCRUMB.label}
+      actions={MOM_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
-  const isPublished = meeting.status === "published";
-  const activeShareUrl = links.find((l) => !l.revokedAt && new Date(l.expiresAt) > new Date() && l.shareUrl)?.shareUrl ?? null;
-  // The backend refuses to share a draft (createMeetingShareLink, 409). Say so
-  // on the control rather than letting the click fail.
-  const shareDisabledReason = isPublished ? null : "Publish the meeting first";
-  const canPublish = canPublishMeeting(meeting.minutes);
-  // R67 D-63: the header actions, as words, in this fixed order --
-  // Edit | Export PDF | Share on WhatsApp | Share link. One place to look on
-  // every object screen, rather than an Edit in the footer, a PDF glyph beside
-  // the minutes and a share button at the bottom of the page.
-  //
-  // R67 D-75: Edit is THE primary here. It is the one thing this page is for
-  // once you have read it, and it is safe -- unlike Publish & Lock, which used
-  // to hold the emphasis while being the one action that cannot be undone.
-  const headerActions = mode === "display" ? (
-    <span className="flex items-center gap-1">
-      {/* R67 A-20's ?focus=minutes landed on the always-live <textarea> this
-          page used to open with. D-75 removed that textarea -- minutes are
-          display text until Edit is pressed -- so the focus target moves to the
-          control that now leads to writing minutes. The card still puts the
-          cursor on the real control; the real control changed. */}
-      <Button
-        size="sm"
-        data-focus="minutes"
-        disabled={isPublished}
-        title={isPublished ? "Published meetings are locked" : undefined}
-        onClick={startEdit}
-      >
-        Edit
-      </Button>
-      <ShareSheet
-        // A-20's ?focus=share named the old "Create Share Link & Send via
-        // WhatsApp" button, which D-58 replaced with this sheet's three word
-        // controls. The key puts the cursor on Share on WhatsApp, which is the
-        // control that card is about.
-        focusKey="share"
-        pdfHref={`/api/moms/${meeting.id}/pdf`}
-        createShareLink={createShareLink}
-        shareUrl={activeShareUrl}
-        // The one line that goes ahead of the link, so a client who receives it
-        // knows what they have been sent before opening anything.
-        whatsappSummary={meetingShareSummary(meeting.title, formatDayMonthYear(meeting.scheduledAt), meeting.actionItems.length)}
-        shareDisabledReason={shareDisabledReason}
-        onMessage={(m) => setScreenMessages([{ level: m.level, text: m.text }])}
-      />
-    </span>
-  ) : undefined;
+  const minutesStatusText =
+    minutesState.status === "saving" ? "Saving…"
+    : minutesState.status === "retrying" ? "Not saved - retrying"
+    : minutesState.status === "saved" ? `Saved ${formatClock(minutesState.at)}`
+    : null;
 
-  const saveMissing = !draft ? [] : [
-    ...(draft.title.trim() ? [] : ["Title"]),
-    ...(draft.scheduledAt ? [] : ["Date & time"]),
-  ];
+  const groups = groupOrgUsers(orgUsers, meeting.attendees);
+  const publishDisabledReason = hasUnsavedMinutes ? "Save minutes first" : undefined;
 
   return (
     <>
@@ -427,198 +586,166 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
           filed against no project at all -- and null is published as null
           rather than being replaced with the rail's guess. */}
       <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
-    <ObjectScreen
-      breadcrumb="Minutes of Meeting / Meeting"
+    <KitObjectScreen
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
       mode={mode}
-      hasDraft={false}
+      // D-17: the pencil marks unsaved live text, which is exactly what the
+      // kit's hasDraft flag is for.
+      hasDraft={hasUnsavedMinutes}
       headerStatus={{ tone: STATUS_TONE[meeting.status] ?? "neutral", label: meeting.status }}
+      headerActions={
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline">Export</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <a href={`/api/moms/${meeting.id}/pdf`} target="_blank" rel="noopener noreferrer">Export PDF</a>
+            </DropdownMenuItem>
+            <DropdownMenuItem data-focus="share" disabled={busy === "share"} onSelect={() => void createShareLink("whatsapp")}>
+              Send on WhatsApp
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={busy === "share"} onSelect={() => void createShareLink("clipboard")}>
+              Copy link
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      }
       facets={[
-        { label: "System ID", value: meeting.systemId ?? "—" },
+        // D-19: "System ID" is what a database calls it; "Meeting no." is what
+        // the person holding the printed minutes calls it.
+        { label: "Meeting no.", value: meeting.systemId ?? "—" },
         { label: "When", value: formatDateTime(meeting.scheduledAt) },
         { label: "Type", value: meeting.meetingType },
         ...(meeting.publishedAt ? [{ label: "Published", value: formatDateTime(meeting.publishedAt) }] : []),
       ]}
-      headerActions={headerActions}
+      onEdit={!isPublished && mode === "display" ? startEdit : undefined}
+      editDisabledReason={isPublished ? "Published meetings cannot be edited" : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
-      onCancel={mode === "edit" ? cancelEdit : undefined}
+      onCancel={mode === "edit" ? () => setMode("display") : undefined}
+      // D-17: always rendered. It used to be absent on anything but a draft,
+      // which is indistinguishable from a broken build.
+      onDelete={() => setConfirming("delete")}
+      deleteDisabledReason={
+        busy === "delete" ? "Deleting…"
+        : meeting.status === "draft" ? undefined
+        : "Published meetings cannot be deleted"
+      }
       onBack={() => router.push(meeting.projectId ? `/moms?projectId=${meeting.projectId}` : "/moms")}
-      saveDisabled={saving || saveMissing.length > 0}
-      saveDisabledReason={saving ? "Saving…" : saveMissing.length ? saveMissing.join(", ") : undefined}
+      saveDisabled={saving || !draft.title.trim() || !draft.scheduledAt}
+      saveDisabledReason={saving ? "Saving…" : !draft.title.trim() || !draft.scheduledAt ? "Title and date/time are required" : undefined}
+      // R67 DECISION D-11 point 1, applied at the integration merge: NO
+      // onAutosave. Lane D22's read-only-until-Edit ruling is that a record
+      // other people read must not be written without a decision point -- a
+      // stray keystroke changing a published minute, with nothing to confirm
+      // and nothing to undo, is the defect. The minutes box below therefore
+      // writes only when "Save now" is pressed, and the details form only when
+      // Save is. Nothing else about this screen changes: Edit/Delete are still
+      // rendered-and-disabled-with-a-reason (D-17), the people picker (D-19)
+      // and the share-link list (D-21) are untouched, and the save still goes
+      // through this file's one submit path so the receipt and the failure
+      // wording are the ones D-17 specified.
       messages={[
-        ...screenMessages,
         ...(isPublished ? [{ level: "info" as const, text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []),
+        ...(actionAttempted && addDisabledReason ? [{ field: "action-validation", level: "warning" as const, text: ACTION_ITEM_VALIDATION_MESSAGE }] : []),
+        ...notices,
       ]}
     >
-      {mode === "display" && !isPublished && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
-          {/* Secondary (outlined), never the page's primary -- and it names its
-              own reason while there is nothing to publish. */}
-          {!confirmingPublish ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canPublish || publishing}
-              onClick={() => setConfirmingPublish(true)}
-            >
-              {publishing ? "Publishing…" : publishLockLabel(meeting.minutes)}
-            </Button>
-          ) : (
-            <span className="flex flex-wrap items-center gap-2 text-[12.5px] text-ct-navy">
-              <span>{PUBLISH_LOCK_CONFIRM}</span>
-              <Button size="sm" variant="outline" disabled={publishing} onClick={publish}>
-                {publishing ? "Publishing…" : PUBLISH_LOCK_LABEL}
-              </Button>
-              <Button size="sm" variant="ghost" disabled={publishing} onClick={() => setConfirmingPublish(false)}>Cancel</Button>
-            </span>
-          )}
+      {!isPublished && mode === "display" && (
+        <div className="flex items-center gap-2 border-b border-ct-border px-4 py-3">
+          <Button
+            size="sm"
+            disabled={publishing || !!publishDisabledReason}
+            title={publishDisabledReason}
+            onClick={() => setConfirming("publish")}
+          >
+            {publishing ? "Publishing…" : "Publish & Lock"}
+            {publishDisabledReason && <span className="ml-1.5 text-[11px] font-normal">({publishDisabledReason})</span>}
+          </Button>
         </div>
       )}
 
-      {mode === "edit" && draft ? (
-        <div className="space-y-5 px-4 py-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => setDraft((d) => (d ? { ...d, title: e.target.value } : d))} /></div>
-            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => setDraft((d) => (d ? { ...d, scheduledAt: e.target.value } : d))} /></div>
+      {mode === "edit" ? (
+        <div className="space-y-3 px-4 py-3">
+          {/* R67 D-67's autosave line. role="status" so a screen reader is
+              told, and it renders nothing at all until there is something
+              true to say -- a screen that has saved nothing makes no claim. */}
+          {autosaveLabel(autosaveStatus, autosaveSavedAt) && (
+            <p role="status" className="text-[12px] text-px-muted">
+              {autosaveLabel(autosaveStatus, autosaveSavedAt)}
+            </p>
+          )}
+          <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => editDraft((d) => ({ ...d, title: e.target.value }))} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={draft.meetingType} onValueChange={(v) => editDraft((d) => ({ ...d, meetingType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="team">Team</SelectItem>
+                  <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="vendor">Vendor</SelectItem>
+                  <SelectItem value="one_on_one">One-on-one</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => editDraft((d) => ({ ...d, scheduledAt: e.target.value }))} /></div>
           </div>
-          <div className="space-y-1.5 sm:w-1/2">
-            <Label>Type</Label>
-            <Select value={draft.meetingType} onValueChange={(v) => setDraft((d) => (d ? { ...d, meetingType: v } : d))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="team">Team</SelectItem>
-                <SelectItem value="client">Client</SelectItem>
-                <SelectItem value="vendor">Vendor</SelectItem>
-                <SelectItem value="one_on_one">One-on-one</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* The same attendee control the create screen uses -- colleagues
-              picked out of the org, externals added by name and company -- so
-              nobody has to retype a comma-separated list here. */}
-          <AttendeesField value={draft.attendees} onChange={(next) => setDraft((d) => (d ? { ...d, attendees: next } : d))} />
-
-          <div className="space-y-2">
-            <Label>Agenda</Label>
-            <ul className="space-y-1.5">
-              {draft.agenda.map((item, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <span aria-hidden="true" className="text-px-muted">•</span>
-                  <Input
-                    aria-label={`Agenda item ${i + 1}`}
-                    value={item}
-                    placeholder="What this meeting covers"
-                    onChange={(e) => setDraft((d) => (d ? { ...d, agenda: d.agenda.map((a, idx) => (idx === i ? e.target.value : a)) } : d))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        setDraft((d) => (d ? { ...d, agenda: [...d.agenda.slice(0, i + 1), "", ...d.agenda.slice(i + 1)] } : d));
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button" variant="ghost" size="icon" aria-label={`Remove agenda item ${i + 1}`}
-                    disabled={draft.agenda.length === 1}
-                    onClick={() => setDraft((d) => (d ? { ...d, agenda: d.agenda.filter((_, idx) => idx !== i) } : d))}
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-            <Button type="button" variant="outline" size="sm" onClick={() => setDraft((d) => (d ? { ...d, agenda: [...d.agenda, ""] } : d))}>
-              <Plus className="size-3.5" aria-hidden="true" /> Add agenda item
-            </Button>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Minutes</Label>
-            <Textarea
-              value={draft.minutes}
-              rows={Math.min(24, Math.max(8, draft.minutes.split("\n").length + 1))}
-              placeholder="Type what is being said, as it is said…"
-              onChange={(e) => setDraft((d) => (d ? { ...d, minutes: e.target.value } : d))}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Add action items</Label>
-            <ul className="space-y-2">
-              {draft.newActionItems.map((item, i) => (
-                <li key={i} className="flex flex-wrap items-end gap-2">
-                  <div className="min-w-[220px] flex-1 space-y-1">
-                    <span className="text-[12px] text-px-muted">Description</span>
-                    <Input
-                      aria-label={`Action item ${i + 1} description`}
-                      value={item.title}
-                      onChange={(e) => setDraft((d) => (d ? { ...d, newActionItems: d.newActionItems.map((a, idx) => (idx === i ? { ...a, title: e.target.value } : a)) } : d))}
-                    />
-                  </div>
-                  <div className="w-56 space-y-1">
-                    <span className="text-[12px] text-px-muted">Owner</span>
-                    <OrgUserPicker
-                      ariaLabel={`Action item ${i + 1} owner`}
-                      value={item.assigneeUserId}
-                      onChange={(userId, user) =>
-                        setDraft((d) => (d ? { ...d, newActionItems: d.newActionItems.map((a, idx) => (idx === i ? { ...a, assigneeUserId: userId, assigneeName: user?.name ?? null } : a)) } : d))
-                      }
-                    />
-                  </div>
-                  <div className="w-40 space-y-1">
-                    <span className="text-[12px] text-px-muted">Due date</span>
-                    <Input
-                      type="date"
-                      aria-label={`Action item ${i + 1} due date`}
-                      value={item.dueDate}
-                      onChange={(e) => setDraft((d) => (d ? { ...d, newActionItems: d.newActionItems.map((a, idx) => (idx === i ? { ...a, dueDate: e.target.value } : a)) } : d))}
-                    />
-                  </div>
-                  <Button
-                    type="button" variant="ghost" size="icon" aria-label={`Remove action item ${i + 1}`}
-                    disabled={draft.newActionItems.length === 1}
-                    onClick={() => setDraft((d) => (d ? { ...d, newActionItems: d.newActionItems.filter((_, idx) => idx !== i) } : d))}
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-            <Button type="button" variant="outline" size="sm" onClick={() => setDraft((d) => (d ? { ...d, newActionItems: [...d.newActionItems, emptyActionItem()] } : d))}>
-              <Plus className="size-3.5" aria-hidden="true" /> Add action item
-            </Button>
-            <p className="text-[12px] text-px-muted">Each action item becomes a real task for its owner — it shows up in their &quot;Needs you&quot; list.</p>
-          </div>
+          <div className="space-y-1.5"><Label>Attendees (comma-separated)</Label><Input value={draft.attendees} onChange={(e) => editDraft((d) => ({ ...d, attendees: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label>Agenda (one per line)</Label><Textarea value={draft.agenda} onChange={(e) => editDraft((d) => ({ ...d, agenda: e.target.value }))} rows={3} /></div>
         </div>
       ) : (
         <div className="space-y-5 px-4 py-3">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <h4 className="mb-1 font-semibold text-ct-navy">Attendees</h4>
-              {meeting.attendees.length === 0 ? <p className="text-ct-muted">None listed.</p> : (
-                <div className="flex flex-wrap gap-1">{meeting.attendees.map((a) => <Badge key={a} variant="outline">{a}</Badge>)}</div>
-              )}
+          {(meeting.attendees.length > 0 || meeting.agenda.length > 0) && (
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <h4 className="mb-1 font-semibold text-ct-navy">Attendees</h4>
+                {meeting.attendees.length === 0 ? <p className="text-ct-muted">None listed.</p> : (
+                  <div className="flex flex-wrap gap-1">{meeting.attendees.map((a) => <Badge key={a} variant="outline">{a}</Badge>)}</div>
+                )}
+              </div>
+              <div>
+                <h4 className="mb-1 font-semibold text-ct-navy">Agenda</h4>
+                {meeting.agenda.length === 0 ? <p className="text-ct-muted">None listed.</p> : (
+                  <ul className="list-disc space-y-0.5 pl-4">{meeting.agenda.map((a) => <li key={a}>{a}</li>)}</ul>
+                )}
+              </div>
             </div>
-            <div>
-              <h4 className="mb-1 font-semibold text-ct-navy">Agenda</h4>
-              {meeting.agenda.length === 0 ? <p className="text-ct-muted">None listed.</p> : (
-                <ul className="list-disc space-y-0.5 pl-4">{meeting.agenda.map((a) => <li key={a}>{a}</li>)}</ul>
-              )}
-            </div>
-          </div>
+          )}
 
           <div>
-            <h4 className="mb-1.5 font-semibold text-ct-navy text-sm">Minutes</h4>
-            {/* Display text, not a textarea. Reading a meeting is the common
-                case; editing one is the deliberate act behind Edit. */}
-            {meeting.minutes?.trim() ? (
-              <p className="whitespace-pre-wrap text-sm text-ct-navy">{meeting.minutes}</p>
-            ) : (
-              <p className="text-sm text-ct-muted">No minutes yet — press Edit to write them.</p>
-            )}
+            <div className="mb-1.5 flex items-center gap-2">
+              <h4 className="font-semibold text-ct-navy text-sm">Minutes</h4>
+              {/* State beside the heading, where the eye already is -- not a
+                  toast that has gone by the time the typist looks up. */}
+              {minutesStatusText && (
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className={`text-[11px] ${minutesState.status === "retrying" ? "text-px-error" : "text-ct-muted"}`}
+                >
+                  {minutesStatusText}
+                </span>
+              )}
+            </div>
+            <Textarea
+              data-focus="minutes"
+              ref={minutesBoxRef}
+              value={minutesDraft}
+              onChange={(e) => onMinutesChange(e.target.value)}
+              rows={8}
+              placeholder="Type live meeting notes here…"
+              disabled={isPublished}
+            />
             <div className="mt-2 flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={generateSummary} disabled={busy === "ai"}>
+              {!isPublished && (
+                <Button size="sm" onClick={() => void patchMinutes(minutesDraft)} disabled={minutesState.status === "saving" || !hasUnsavedMinutes}>
+                  Save now
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => void generateSummary()} disabled={busy === "ai"}>
                 {busy === "ai" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Summary
               </Button>
             </div>
@@ -638,9 +765,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                       {meeting.aiSuggestedActionItems.map((s, i) => (
                         <li key={i} className="flex items-center justify-between gap-2">
                           <span>{s.title}{s.assignee ? ` — ${s.assignee}` : ""}{s.dueDateHint ? ` (${s.dueDateHint})` : ""}</span>
-                          {!isPublished && (
-                            <Button size="sm" variant="ghost" onClick={() => promoteSuggestion(s)}>Add as Action Item</Button>
-                          )}
+                          <Button size="sm" variant="ghost" onClick={() => promoteSuggestion(s)}>Add as Action Item</Button>
                         </li>
                       ))}
                     </ul>
@@ -653,52 +778,165 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
           <div>
             <h4 className="mb-1.5 font-semibold text-ct-navy text-sm">Action Items</h4>
             {meeting.actionItems.length === 0 ? (
-              <p className="text-sm text-ct-muted">No action items yet — press Edit to add one.</p>
+              <p className="text-sm text-ct-muted">No action items yet.</p>
             ) : (
-              <ul className="space-y-1 text-sm">
+              <ul className="mb-2 space-y-1 text-sm">
                 {meeting.actionItems.map((a) => (
                   <li key={a.id} className="flex items-center justify-between rounded-md border border-ct-border px-2 py-1.5">
                     <span>{a.task.title}</span>
-                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${new Date(a.task.dueDate).toLocaleDateString()}` : ""}</span>
+                    {/* A due DATE, not a date and time: a task is due on a
+                        day, and D-74's one org form renders it. */}
+                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${formatDate(a.task.dueDate)}` : ""}</span>
                   </li>
                 ))}
               </ul>
             )}
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1.5"><Label htmlFor="mom-action-title">Title</Label><Input id="mom-action-title" className="w-52" value={actionTitle} onChange={(e) => setActionTitle(e.target.value)} /></div>
+
+              {/* D-19: a real people picker. This used to be a text box
+                  captioned "paste a known VERIDIAN user ID". */}
+              <div className="space-y-1.5">
+                <Label htmlFor="mom-action-assignee">Assignee</Label>
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="mom-action-assignee"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      role="combobox"
+                      aria-expanded={pickerOpen}
+                      className="w-56 justify-between font-normal"
+                    >
+                      {actionAssignee ? (
+                        <span className="flex items-center gap-1.5 truncate">
+                          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-ct-cloud text-[10px] font-medium text-ct-navy">
+                            {initialsOf(actionAssignee)}
+                          </span>
+                          <span className="truncate">{displayNameOf(actionAssignee)}</span>
+                        </span>
+                      ) : (
+                        <span className="text-ct-muted">Choose an assignee</span>
+                      )}
+                      <ChevronsUpDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-0" align="start">
+                    <Command shouldFilter={false}>
+                      <CommandInput placeholder="Search people…" value={pickerQuery} onValueChange={setPickerQuery} />
+                      <CommandList>
+                        <CommandEmpty>
+                          <div className="space-y-1.5 px-2 py-3 text-center">
+                            <p className="text-xs text-ct-muted">Nobody in this organisation matches that.</p>
+                            {/* Disabled-by-condition, never hidden: the reader
+                                learns the capability exists and why they cannot
+                                use it yet. */}
+                            <Button size="sm" variant="outline" disabled title="Coming soon">
+                              Invite by email <span className="ml-1 text-[11px]">(Coming soon)</span>
+                            </Button>
+                          </div>
+                        </CommandEmpty>
+                        {groups.inMeeting.length > 0 && (
+                          <CommandGroup heading="In this meeting">
+                            {groups.inMeeting.map((user) => (
+                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); setPickerOpen(false); }} />
+                            ))}
+                          </CommandGroup>
+                        )}
+                        {groups.others.length > 0 && (
+                          <CommandGroup heading={groups.inMeeting.length > 0 ? "Everyone else" : "People"}>
+                            {groups.others.map((user) => (
+                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); setPickerOpen(false); }} />
+                            ))}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-1.5"><Label htmlFor="mom-action-due">Due Date (optional)</Label><Input id="mom-action-due" type="date" className="w-40" value={actionDueDate} onChange={(e) => setActionDueDate(e.target.value)} /></div>
+              <Button size="sm" disabled={!!addDisabledReason} title={addDisabledReason} onClick={() => void addActionItem()}>
+                Add
+                {addDisabledReason && <span className="ml-1.5 text-[11px] font-normal">({addDisabledReason})</span>}
+              </Button>
+            </div>
           </div>
 
           <div>
-            <h4 className="mb-1.5 flex items-center gap-1.5 font-semibold text-ct-navy text-sm"><Link2 className="size-3.5" /> Share Links</h4>
+            <h4 className="mb-1.5 font-semibold text-ct-navy text-sm">Share links</h4>
             {links.length === 0 ? (
-              <p className="text-sm text-ct-muted">No share links created yet.</p>
+              <p className="text-sm text-ct-muted">No share links created yet. Use Export → Send on WhatsApp.</p>
             ) : (
-              <ul className="mb-2 space-y-1 text-sm">
+              <ul className="space-y-1 text-sm">
                 {links.map((l) => {
                   const revoked = !!l.revokedAt;
                   const expired = !revoked && new Date(l.expiresAt) < new Date();
                   return (
                     <li key={l.id} className="flex items-center justify-between rounded-md border border-ct-border px-2 py-1.5">
-                      <span className="font-mono text-xs">{l.token.slice(0, 12)}…</span>
-                      <span className="flex items-center gap-2">
-                        <Badge variant={revoked ? "outline" : expired ? "outline" : "default"}>{revoked ? "revoked" : expired ? "expired" : "active"}</Badge>
-                        {!revoked && !expired && (
-                          <Button size="sm" variant="ghost" disabled={busy === `revoke-${l.id}`} onClick={() => revokeLink(l.id)}>
-                            <Ban className="size-3.5" /> Revoke
-                          </Button>
-                        )}
+                      <span className="text-ct-muted">
+                        {revoked ? "Revoked" : expired ? "Expired" : "Active"} · expires {formatDateTime(l.expiresAt)}
                       </span>
+                      {!revoked && !expired && (
+                        <Button size="sm" variant="ghost" disabled={busy === `revoke-${l.id}`} onClick={() => void revokeLink(l.id)}>
+                          Revoke
+                        </Button>
+                      )}
                     </li>
                   );
                 })}
               </ul>
             )}
-            {/* Creating and sending a link is the Share control at the top of
-                this screen; what stays here is the audit view of the links
-                that exist and the ability to revoke one. */}
-            <p className="text-xs text-ct-muted">Use Share on WhatsApp or Share link above to create one.</p>
           </div>
         </div>
       )}
-    </ObjectScreen>
+
+      {/* D-17: publishing locks the record forever, so the blast radius is
+          stated in words before the write, not discovered after it. */}
+      <AlertDialog open={confirming === "publish"} onOpenChange={(open) => !open && setConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish and lock &ldquo;{meeting.title}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Title, date, attendees, agenda and minutes can no longer be edited. Action items stay editable.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void publish()}>Publish &amp; Lock</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirming === "delete"} onOpenChange={(open) => !open && setConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &ldquo;{meeting.title}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the draft meeting and everything typed into its minutes. Only a draft can be deleted; a published meeting stays as the locked record.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void deleteMeeting()}>Delete meeting</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </KitObjectScreen>
     </>
+  );
+}
+
+function PersonRow({ user, onPick }: { user: OrgUser; onPick: () => void }) {
+  return (
+    <CommandItem value={user.id} onSelect={onPick} className="gap-2">
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ct-cloud text-[10px] font-medium text-ct-navy">
+        {initialsOf(user)}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{displayNameOf(user)}</span>
+      <span className="shrink-0 text-[11px] text-ct-muted">{roleLabelOf(user.role)}</span>
+    </CommandItem>
   );
 }

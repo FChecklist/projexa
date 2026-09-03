@@ -6,7 +6,7 @@
 // Real Delete = real Cancel (cancelBudget() -- an actual, designed lifecycle
 // end-state, not an invented mapping like Schedule's archive-as-delete).
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -31,6 +31,12 @@ function money(n: number, label: string) {
 
 export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
   const router = useRouter();
+  // R67 D-42: the create screen navigates here with ?created=<name>, so the
+  // receipt for a save is on the page the user actually lands on, in the
+  // persistent message area -- not in a toast that has gone by the time the
+  // new object finishes loading.
+  const searchParams = useSearchParams();
+  const createdName = searchParams?.get("created") ?? null;
   const currencies = useCurrencies();
   const label = currencyLabel(undefined, currencies);
   const [budget, setBudget] = useState<Budget | null>(null);
@@ -110,7 +116,7 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
 
   return (
     <ObjectScreen
-      breadcrumb="Accounting / Annual Budgets / Annual Budget"
+      breadcrumb="Budgets / Budget"
       title={budget.name}
       mode={mode}
       hasDraft={false}
@@ -124,9 +130,9 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
       onCancel={mode === "edit" ? () => { setDraftLines(budget.lineItems); setMode("display"); } : undefined}
       onDelete={budget.status !== "cancelled" ? () => runAction("cancel") : undefined}
       deleteDisabledReason={budget.status === "cancelled" ? "Already cancelled" : actionBusy ? "Working…" : undefined}
-      onBack={() => router.push("/accounting/annual-budgets")}
+      onBack={() => router.push("/finance/budgets")}
       saveDisabled={actionBusy !== null}
-      messages={[]}
+      messages={createdName ? [{ level: "success", text: `Budget ${createdName} created` }] : []}
     >
       {isDraft && mode === "display" && (
         <div className="flex items-center gap-2 border-b border-ct-border px-4 py-3">

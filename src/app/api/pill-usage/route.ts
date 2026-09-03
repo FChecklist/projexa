@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R52: PROJEXA's proxy to VERIDIAN's pill ranking + M24 history.
 // Contract from R53's handshake, claude_log id=35.
@@ -28,7 +30,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = withTiming("GET", async function GET(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -44,12 +46,9 @@ export async function GET(req: NextRequest) {
     const data = await callVeridian(`/pill-usage${suffix}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to load pill usage" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to load pill usage");
   }
-}
+});
 
 // R67 A-07 -- POST: record ONE card click.
 //
@@ -63,7 +62,7 @@ export async function GET(req: NextRequest) {
 // *** RECORDING IS NOT RUNNING. *** The body carries a pillKey, an optional
 // functionId and the chain the user built; VERIDIAN's own handler upserts one
 // compliance.pill_usage row and returns. There is no dispatch on this path.
-export async function POST(req: NextRequest) {
+export const POST = withTiming("POST", async function POST(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -83,9 +82,8 @@ export async function POST(req: NextRequest) {
     // The backend's own words. A failed ranking write must never be shown to
     // the user as a failed CLICK: the caller ignores this response entirely,
     // because the navigation the click performed has already happened.
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to record pill usage" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    // R67 F-20: shaped by the one shared error path, so an upstream that is
+    // not answering is a 503 with a Retry-After rather than a bare 502.
+    return veridianErrorResponse(err, "Failed to record pill usage");
   }
-}
+});

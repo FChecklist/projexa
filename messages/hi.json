@@ -17,6 +17,7 @@
       "dashboard": "डैशबोर्ड",
       "companyDashboard": "कंपनी डैशबोर्ड",
       "projectsOverview": "प्रोजेक्ट्स अवलोकन",
+      "projects": "प्रोजेक्ट्स",
       "schedule": "शेड्यूल",
       "meetings": "मीटिंग्स",
       "scope": "कार्य क्षेत्र (BOQ)",
@@ -31,6 +32,7 @@
       "submittals": "सबमिटल्स",
       "punchList": "पंच लिस्ट",
       "changeOrders": "चेंज ऑर्डर",
+      "designStudio": "डिज़ाइन स्टूडियो",
       "moodBoards": "मूड बोर्ड",
       "ffe": "FF&E विनिर्देश",
       "floorPlans": "फ़्लोर प्लान",
@@ -454,7 +456,8 @@
         "fact1": { "value": "1", "label": "लॉगिन। हर मॉड्यूल, हर प्रोजेक्ट, एक जगह।" },
         "fact2": { "value": "0", "label": "मॉड्यूल के बीच मैनुअल दोबारा एंट्री।" },
         "fact3": { "value": "38", "label": "असली मॉड्यूल, एक समन्वित सिस्टम।" }
-      }
+      },
+      "backToHome": "projexa-ai.com पर वापस जाएँ"
     }
   }
 }

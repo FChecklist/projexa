@@ -19,7 +19,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MATERIAL_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,9 +32,26 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { MATERIAL_UNITS, isMaterialUnit, materialUnitLabel, normaliseMaterialUnit } from "@/lib/material-units";
 import { useOrgMoney } from "@/lib/use-org-money";
+import { EMPTY_VALUE, formatQty } from "@/lib/format-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
-type Material = { id: string; projectId: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+type Material = {
+  id: string;
+  projectId: string;
+  name: string;
+  spec: string | null;
+  unit: string;
+  unitCost: string;
+  isActive: boolean;
+  // R67 D-40: computed by the service (received minus issued, voided receipts
+  // excluded), never stored -- so the master and the Cost Report cannot
+  // disagree. Absent rather than 0 when there is no stock ledger for the item.
+  receivedToDate?: string | number | null;
+  issuedToDate?: string | number | null;
+  onHand?: string | number | null;
+  /** null means "no threshold"; 0 means "flag me the moment it runs out". */
+  reorderLevel?: string | number | null;
+};
 
 export default function MaterialObjectClient({ materialId }: { materialId: string }) {
   const router = useRouter();
@@ -39,7 +59,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const [material, setMaterial] = useState<Material | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
-  const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "" });
+  const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "", reorderLevel: "" });
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
@@ -68,6 +88,8 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       spec: material.spec ?? "",
       unit: normaliseMaterialUnit(material.unit) ?? material.unit,
       unitCost: material.unitCost,
+      reorderLevel:
+        material.reorderLevel === null || material.reorderLevel === undefined ? "" : String(material.reorderLevel),
     });
     setMode("edit");
   }
@@ -78,7 +100,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     try {
       const res = await fetch(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
+        body: JSON.stringify({ reorderLevel: draft.reorderLevel === "" ? null : Number(draft.reorderLevel), name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save material");
@@ -110,6 +132,19 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     }
   }
 
+  // R67 D-67. Deactivating is reversible in the data but not in the UI --
+  // the master list only offers active materials and there is no reactivate
+  // control anywhere -- and it silently removes the item from every receipt
+  // form in the project. One click was not enough deliberation for that.
+  // Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Material",
+    identifier: material?.name ?? null,
+    extra: "and remove it from the Record Receipt form",
+    verb: "Deactivate",
+    run: deactivate,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -118,7 +153,18 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       </div>
     );
   }
-  if (!material) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!material) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
+      label={MATERIAL_OBJECT_BREADCRUMB.label}
+      actions={MATERIAL_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   // A stored unit the vocabulary does not recognise. It stays selectable so
   // the record can be edited without being forced to change a field the editor
@@ -131,13 +177,27 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
         rather than naming the module, and the project is the one on the record
         rather than whichever one the top rail was left on. */}
     <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
-    <ObjectScreen
-      breadcrumb="Materials / Material"
+    <KitObjectScreen
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Material" : material.name}
       mode={mode}
       hasDraft={false}
       headerStatus={{ tone: material.isActive ? "done" : "late", label: material.isActive ? "active" : "inactive" }}
       facets={[
+        // R67 D-40: On hand LEADS -- it is the figure a storekeeper opened this
+        // page for -- with what produced it beneath. An absent figure is the
+        // en-dash, never 0: "no stock ledger for this item" and "none left" are
+        // different facts, and only one of them means stop work.
+        { label: `On hand${material.unit ? ` (${material.unit})` : ""}`, value: formatQty(material.onHand) },
+        { label: "Received to date", value: formatQty(material.receivedToDate) },
+        { label: "Issued to date", value: formatQty(material.issuedToDate) },
+        {
+          label: "Reorder level",
+          value:
+            material.reorderLevel === null || material.reorderLevel === undefined
+              ? EMPTY_VALUE
+              : `${formatQty(material.reorderLevel)} ${material.unit}`,
+        },
         { label: "Spec", value: material.spec ?? "—" },
         { label: "Unit", value: materialUnitLabel(material.unit) },
         // Was `${label}${material.unitCost}` -- a currency label glued to the
@@ -148,13 +208,14 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       onEdit={material.isActive && mode === "display" ? startEdit : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={material.isActive && mode === "display" ? deactivate : undefined}
+      onDelete={material.isActive && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
       onBack={() => router.push(`/materials?projectId=${material.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.unit.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.unit.trim() ? "Name and unit are required" : undefined}
       messages={[]}
     >
+      {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
@@ -172,6 +233,20 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
                 {MATERIAL_UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="material-reorder-level">Reorder level (optional)</Label>
+            <Input
+              id="material-reorder-level"
+              type="number"
+              min="0"
+              value={draft.reorderLevel}
+              onChange={(e) => setDraft((d) => ({ ...d, reorderLevel: e.target.value }))}
+              placeholder="e.g. 50"
+            />
+            <p className="text-[12px] text-px-muted">
+              Leave blank for no threshold. 0 flags this material the moment it runs out.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="material-unit-cost">Unit Cost{orgMoney.unitSuffix} (optional)</Label>
@@ -192,7 +267,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
           <CurrencyNotSetNotice currencySet={false} />
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

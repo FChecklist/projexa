@@ -10,6 +10,7 @@ import {
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
+  Clock,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
 import { filterShippedNav } from "@/lib/nav-routes";
@@ -34,6 +35,11 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
       { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
       { labelKey: "items.projectsOverview", href: "/dashboard/overview", icon: BarChart3 },
+      // R67 D-69 (audit R-261/R-300): the Projects LIST. Projects were the one
+      // entity every other entity nests under that had no landing of its own --
+      // only a card at the bottom of the home dashboard and a cycling switcher
+      // in the top rail, neither of which is a list you can filter or export.
+      { labelKey: "items.projects", href: "/projects", icon: FolderOpen },
     ],
   },
   {
@@ -42,10 +48,6 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.schedule", href: "/schedule", icon: GanttChartSquare },
       { labelKey: "items.meetings", href: "/meetings", icon: CalendarClock },
       { labelKey: "items.scope", href: "/scope", icon: FileText },
-      // R67 lane D22 (item D-41): the PROJECT's BOQ budget (Sumeet 6.png II),
-      // which belongs beside Scope in Execution -- not the org-wide ERP
-      // fiscal-year ledger, which is now "Finance Budgets (ERP)" under Finance.
-      { labelKey: "items.budget", href: "/budgets", icon: Wallet },
       { labelKey: "items.workProgress", href: "/work-progress", icon: ClipboardList },
       { labelKey: "items.siteDiary", href: "/site-diary", icon: BookOpen },
       { labelKey: "items.documents", href: "/documents", icon: FolderOpen },
@@ -70,6 +72,11 @@ const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.design",
     items: [
+      // R67 WS-H (item H-01): the Design Studio joins the DESIGN group beside
+      // Mood Boards, FF&E Specification and Floor Plans. Its Review and Cost
+      // analysis tabs are deliberately NOT separate nav entries -- see
+      // nav-routes.test.ts's allowlist for that reasoning.
+      { labelKey: "items.designStudio", href: "/design-studio", icon: Clock },
       { labelKey: "items.moodBoards", href: "/mood-boards", icon: Palette },
       { labelKey: "items.ffe", href: "/ffe", icon: Sofa },
       { labelKey: "items.floorPlans", href: "/floor-plans", icon: LayoutPanelLeft },
@@ -114,7 +121,16 @@ const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.finance",
     items: [
-      { labelKey: "items.financeBudgetsErp", href: "/accounting/annual-budgets", icon: Wallet },
+      // R67 D-62 (audit R-202): "Budgets" in a project manager's sidebar has to
+      // mean the PROJECT's budget -- a percent and a vendor amount per BOQ line,
+      // which is what Sumeet's own budget sheet is. It used to open the ERP's
+      // fiscal-year budget, a screen that cannot save anything until a finance
+      // team has created a fiscal year and a chart of accounts, so the one door
+      // marked Budgets was a dead end for the person most likely to open it.
+      // The ERP budget still exists, at /finance/budgets, reached from the
+      // project dashboard's own "Budget vs Actual" tile (and from VERIDIAN's ERP
+      // module, where it belongs) -- see nav-routes.test.ts's allowlist entry.
+      { labelKey: "items.budgets", href: "/scope?tab=budget", icon: Wallet },
       { labelKey: "items.expenses", href: "/expenses", icon: Receipt },
       { labelKey: "items.accounting", href: "/accounting", icon: Calculator },
       { labelKey: "items.invoices", href: "/invoices", icon: ReceiptText },

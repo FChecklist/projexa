@@ -10,9 +10,22 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { CURRENCY_FALLBACK_LABEL, currencyLabel, useCurrencies, useCurrenciesState, type Currency } from "./currency";
+import {
+  CURRENCY_FALLBACK_LABEL,
+  clearCurrenciesCache,
+  currencyLabel,
+  useCurrencies,
+  useCurrenciesState,
+  type Currency,
+} from "./currency";
 
 afterEach(cleanup);
+// R67 F-04 merge: the module now shares ONE in-flight request (and one
+// sessionStorage entry) across every caller in the tab. That is the point of
+// the cache, and it means a suite must clear it between tests or the second
+// test would silently reuse the first one's stubbed answer and never call
+// fetch at all -- turning "one mount, one fetch" green for the wrong reason.
+afterEach(clearCurrenciesCache);
 
 const AED: Currency = { id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true };
 const USD: Currency = { id: "c2", code: "USD", name: "US Dollar", symbol: "$", isBaseCurrency: false };

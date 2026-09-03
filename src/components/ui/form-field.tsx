@@ -42,8 +42,14 @@ export function FormField({
 }: {
   label: React.ReactNode;
   required?: boolean;
-  /** A validation message to show under the field. Falsy renders nothing. */
-  error?: string | null;
+  /**
+   * A validation message to show under the field. Falsy renders nothing.
+   * R67 D-18: widened from `string` to ReactNode so a caller can put a
+   * warning glyph beside the sentence (the audit asked for glyph + text, not
+   * colour alone) without a second, parallel error slot. Every existing
+   * caller passes a plain string, which is still a ReactNode.
+   */
+  error?: React.ReactNode;
   /** Static helper text, always shown. Announced with the field. */
   hint?: React.ReactNode;
   className?: string;
@@ -62,6 +68,14 @@ export function FormField({
         {label}
         {required ? (
           <>
+            {/* R67 D-50/D-51 quote these labels as "Category *", "Task *",
+                "Hours *" -- with the space. The marker used to sit flush
+                against the label, so the serialised text was "Category*" and
+                the quoted string was never produced verbatim on any screen
+                built from this primitive. The literal space is inside the
+                JSX expression so JSX cannot strip it as whitespace between
+                elements. */}
+            {" "}
             {/* The asterisk is decorative -- aria-required on the control is
                 what actually conveys this, so it is hidden from the a11y tree
                 rather than read out as "asterisk". */}

@@ -70,6 +70,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review/certifications/[id]": "ORG_ADMIN",
   "/assistant": "ANY_MEMBER",
   "/attendance": "FIELD",
+  // R67 D-30: the whole-roster daily sheet. Same tier as the one-worker
+  // write it batches -- marking a site's attendance is field work, and a
+  // batch of the same act is not a more privileged one.
+  "/attendance/bulk": "FIELD",
+  // R67 D-31: minting a public, unauthenticated link to this project's
+  // attendance and labour cost is a commercial disclosure, not a site record --
+  // same tier as /work-progress/report/share, which shares the identical
+  // mechanism.
+  "/attendance/summary/share": "PM_OR_ABOVE",
   "/audit-engagements": "ORG_ADMIN",
   "/audit-findings": "ORG_ADMIN",
   "/audit-findings/[id]": "ORG_ADMIN",
@@ -98,7 +107,19 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/documents": "FIELD",
   "/documents/[id]": "FIELD",
   "/documents/[id]/dispose": "FIELD",
+  // R67 D-15: uploading a corrected copy of a document is the same act, by the
+  // same person, as uploading the original -- a site engineer who scanned a
+  // permit crooked must be able to replace it without an admin. It is also
+  // strictly additive: a new version never overwrites or deletes the bytes
+  // already stored, so the worst case is one extra version in the list.
+  "/documents/[id]/versions": "FIELD",
   "/drawings": "FIELD",
+  // R67 D-11: same tier as /drawings and /documents/[id] -- the people who
+  // upload a drawing are the people who fix its name, its discipline, and the
+  // upload they made by mistake. The destructive half is gated far harder than
+  // by role anyway: VERIDIAN refuses a hard delete outside the 24-hour window,
+  // under a legal hold, or with anything referencing the row.
+  "/drawings/[id]": "FIELD",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",
@@ -123,14 +144,21 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/kpi-entries": "FIELD",
   "/kpi-entries/[id]/approve": "FIELD",
   "/kpis": "PM_OR_ABOVE",
-  // R67 lane D22 (item D-68): importing a roster is NOT the same act as adding
-  // one worker. It rewrites the crew list wholesale and, when the vendor
-  // opt-in is used, creates vendor master records -- commercial decisions, at
-  // the same tier as the BOQ and programme imports. Adding a single worker
-  // stays FIELD below, which is the site engineer's own route in.
-  "/labour/import": "PM_OR_ABOVE",
+  // R67 lane D22 (item D-68) argued PM_OR_ABOVE for the roster import, because
+  // ITS importer also created vendor master records on an opt-in -- a
+  // commercial decision, at the same tier as the BOQ and programme imports.
+  // That importer and its /labour/import route are gone at the integration
+  // merge (D-34's is the one that survives, see
+  // construction-roster-import-service.ts's header), and with them the vendor
+  // creation the argument rested on. The surviving route is a plain bulk load,
+  // so it keeps D-34's FIELD tier below: the same write, thirty-eight times,
+  // done by the same person on site. If one-click vendor creation is ever
+  // folded in, this is the entry that has to move with it.
   "/labour-roster": "FIELD",
   "/labour-roster/[id]": "FIELD",
+  // R67 D-34: bulk roster load. Same tier as adding one worker -- it is the
+  // same write, thirty-eight times, done by the same person on site.
+  "/labour-roster/import": "FIELD",
   "/leads": "PM_OR_ABOVE",
   "/leads/[id]": "PM_OR_ABOVE",
   "/leads/bulk-reassign": "PM_OR_ABOVE",
@@ -139,6 +167,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/leave/requests": "ANY_MEMBER",
   "/leave/requests/[id]/decision": "PM_OR_ABOVE",
   "/materials": "FIELD",
+  // R67 D-36: the receipt's soft void. Same tier as recording the receipt --
+  // correcting a mis-keyed delivery is the same site work as entering it,
+  // and the void keeps the row rather than destroying it.
+  "/materials/[id]": "FIELD",
+  // R67 D-40: issuing material to site is the storekeeper's own job, the same
+  // site work as recording what arrived -- so the same tier as /materials.
+  "/materials/issues": "FIELD",
   "/materials/master": "FIELD",
   "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",
@@ -291,6 +326,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/timesheets/[id]/approve": "PM_OR_ABOVE",
   "/timesheets/[id]/reject": "PM_OR_ABOVE",
   "/timesheets/[id]/submit": "ANY_MEMBER",
+  // R67 WS-H (item H-01): submitting a whole day is the same self-action as
+  // submitting one entry -- a designer submitting their OWN hours -- so it
+  // carries the same policy as /timesheets/[id]/submit, not a stricter one.
+  // VERIDIAN independently refuses to move anyone else's rows.
+  "/timesheets/submit-day": "ANY_MEMBER",
+  // R67 WS-H (item H-03): deciding a whole day at once is the same authority as
+  // deciding one entry -- PM and above -- so it matches /timesheets/[id]/approve
+  // rather than the designer-side submit-day beside it.
+  "/timesheets/review-day": "PM_OR_ABOVE",
   // R52: the composer's submit target. Same class as /discuss and /todos --
   // any member may ask the assistant to do something, and what they are
   // ALLOWED to do is re-checked server-side at execution, per R53's rule that
@@ -315,9 +359,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",
-  // R67 lane D22 (item D-77): correcting or removing an entry you recorded is
-  // the same act, at the same authority, as recording it -- the site engineer
-  // who typed 500 instead of 50 must be able to fix it without a PM.
+  // R67 D-28 x R67 lane D22 (item D-77): correcting or deleting one progress
+  // entry is the same act, at the same authority, as recording it -- the site
+  // engineer who typed 500 instead of 50 is the person who has to be able to
+  // fix it, without a PM, and VERIDIAN re-runs the create path's own validation
+  // on both.
   "/work-progress/[id]": "FIELD",
   "/work-progress/activities": "FIELD",
   "/work-progress/photos": "FIELD",

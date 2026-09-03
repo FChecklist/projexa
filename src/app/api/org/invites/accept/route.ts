@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getClaimsWithRetry } from "@/lib/supabase/get-claims-with-retry";
+import { withTiming } from "@/lib/with-timing";
 
 // Redemption. Deliberately NOT behind requireAuth(): requireAuth() answers
 // 400 "No organization" for exactly the user this route exists to serve --
@@ -8,7 +9,7 @@ import { getClaimsWithRetry } from "@/lib/supabase/get-claims-with-retry";
 // session itself and delegates every authorisation decision to
 // public.accept_org_invite(), which checks revocation, expiry, reuse and the
 // email binding in one place (drizzle/0015_org_invites.sql).
-export async function POST(req: Request) {
+export const POST = withTiming("POST", async function POST(req: Request) {
   const supabase = await createClient();
   const { data: claims, error: claimsError } = await getClaimsWithRetry(supabase);
   if (claimsError || !claims?.claims) {
@@ -29,4 +30,4 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ organizationId: data });
-}
+});
