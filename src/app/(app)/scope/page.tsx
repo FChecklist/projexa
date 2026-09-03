@@ -6,6 +6,7 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
 import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
+import BudgetActualClient from "@/components/BudgetActualClient";
 
 // R44 seq3 (M28 registry-model proof, same pattern as permits/page.tsx's
 // resolvePermitsListColumns): resolved server-side so ScopeClient never
@@ -57,13 +58,20 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
           // DashboardProjectClient). The BOQ tab (ScopeClient) stays the
           // CUSTOM weighted-tree screen for editing/hierarchy; variance is
           // a different, flat "which line is worst" question.
-          <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+          // R67 E-08 (R-115): "Budget" is the third tab -- Sumeet item 9's
+          // Revenue / Budget / Actual, scope-wise and category-wise. The item
+          // asks for it on the project-scoped Budget screen (C03-16); until
+          // that ships it lives here, beside the BOQ it is derived from, which
+          // is the item's own stated fallback.
+          <Tabs defaultValue={tab === "variance" ? "variance" : tab === "budget" ? "budget" : "boq"} className="space-y-4">
             <TabsList>
               <TabsTrigger value="boq">BOQ</TabsTrigger>
               <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+              <TabsTrigger value="budget">Budget</TabsTrigger>
             </TabsList>
             <TabsContent value="boq"><ScopeClient projectId={project.id} listColumns={boqListColumns} /></TabsContent>
             <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
+            <TabsContent value="budget"><BudgetActualClient projectId={project.id} /></TabsContent>
           </Tabs>
         )}
       </div>
