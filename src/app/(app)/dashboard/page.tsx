@@ -32,7 +32,7 @@
 // dashboard read rather than before it, and therefore inside the boundary.
 import { Suspense } from "react";
 import { cookies } from "next/headers";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { getScreenColumns } from "@/lib/module-list-source";
 import { dashboardScope, PROJECT_COOKIE } from "@/lib/project-selection";
@@ -61,6 +61,23 @@ function DashboardSkeleton() {
   );
 }
 
+// R67 F-01 (integration, lane F1 onto main). The currency master list is not a
+// live figure -- it is a lookup table that changes when someone adds a currency,
+// not between two page views -- and the home screen re-requested it on every
+// visit. It now comes from a 5-minute per-org server cache, so the only
+// uncached call left in the block below is the one that carries real numbers.
+//
+// The wrapper is created ONCE at module scope, not per request: see
+// createCachedVeridianGet's own comment. The org id is both an explicit key
+// part and the fetcher's sole argument, so one org's currency list can never be
+// served to another (AR-04 / E-45).
+const DASHBOARD_LOOKUP_TTL_SECONDS = 300;
+const readCachedCurrencies = createCachedVeridianGet<{ currencies: CurrencyRow[] }>(
+  "dashboard-currencies",
+  "/currencies",
+  DASHBOARD_LOOKUP_TTL_SECONDS
+);
+
 async function DashboardHome({ requestedProjectId }: { requestedProjectId?: string }) {
   const authCtx = await requireAuth();
   const organizationId = authCtx.organizationId;
@@ -77,12 +94,17 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
   // so the number and the screen it opens can never disagree.
   const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
-    callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
-    // R67 MERGE: this third read is lane D1's, and the merge had kept its
+    // R67 F1: the currencies read is memoised per org now -- same value, one
+    // fewer round trip on every dashboard navigation.
+    organizationId
+      ? readCachedCurrencies(organizationId)
+      : callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+    // R67 MERGE: this third read is lane D1's, and a PREVIOUS merge had kept its
     // comment above, its destructuring below and the KPI that consumes it while
     // dropping the CALL -- so `permitsResult` was index 2 of a two-element
-    // tuple. Restored here rather than by deleting the other three, because the
-    // tile it feeds is on screen and would otherwise have read a permanent
+    // tuple. It survives this merge too: lane F1 rewrote the element ABOVE it,
+    // which is exactly the shape of edit that silently truncated the tuple last
+    // time. The tile it feeds is on screen and would otherwise read a permanent
     // en-dash that no failure caused.
     callVeridian<{ permits?: unknown[] }>("/permits?withinDays=30", {
       organizationId: organizationId ?? undefined,

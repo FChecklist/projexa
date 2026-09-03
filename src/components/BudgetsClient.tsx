@@ -62,14 +62,25 @@ type Budget = {
   id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null;
   status: string; actionIfExceeded: string | null;
   /**
-   * R67 D-43. VERIDIAN's budgets LIST DTO does not carry an amount today (see
-   * toProjectBudgetShape in the v1/projexa/project-budgets route: it projects
-   * the erp_budgets header only, and the amounts live in erp_budget_line_items,
-   * read only by getBudget). The column is here and formatted so it populates
-   * the moment that DTO carries a total; until then the cell is an en-dash with
-   * a title saying so, rather than a zero that would read as a real figure.
+   * R67 D-43 x F-08. D-43 added this column against a LIST DTO that carried no
+   * amount, and said so honestly: an en-dash with a title, never a zero that
+   * would read as a real figure. Lane F1 then made the DTO carry it --
+   * listBudgets resolves the total inside the transaction it already holds
+   * (erp-budget-service.ts's BudgetListExtras), and the route projects it
+   * (toProjectBudgetListShape). So the column now populates for real, and the
+   * en-dash branch below survives as the honest answer for a VERIDIAN that
+   * predates it, NOT as the normal case.
+   *
+   * Still optional, and still not sent on CREATE: a freshly created budget has
+   * no line items yet, and inventing a 0 there is the defect this avoids.
    */
   annualAmount?: string | number | null;
+  /**
+   * R67 F-08. The year's NAME, resolved upstream in the same read. This screen
+   * used to fetch the whole /api/fiscal-years list purely to turn one id into
+   * one string, per navigation -- the id-to-label round trip the lane removes.
+   */
+  fiscalYearName?: string | null;
 };
 type FiscalYear = { id: string; yearName: string };
 type Project = { id: string; name: string };
@@ -85,7 +96,7 @@ export type RegistryColumn = ScreenColumn;
 
 const COLUMNS: ScreenColumn[] = [
   { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Fiscal Year", field: "fiscalYearId", type: "text", importance: "High" },
+  { label: "Fiscal Year", field: "fiscalYearName", type: "text", importance: "High" },
   { label: "Annual Amount", field: "annualAmount", type: "number", importance: "High" },
   { label: "Status", field: "status", type: "text", importance: "High" },
   { label: "Action if Exceeded", field: "actionIfExceeded", type: "text", importance: "Medium" },
@@ -93,7 +104,7 @@ const COLUMNS: ScreenColumn[] = [
 
 // The two quantity/identity columns D-43 adds, appended when a registry row
 // predates them -- same reasoning as MaterialsClient's QUANTITY_COLUMNS.
-const ADDED_COLUMNS = COLUMNS.filter((c) => c.field === "fiscalYearId" || c.field === "annualAmount");
+const ADDED_COLUMNS = COLUMNS.filter((c) => c.field === "fiscalYearName" || c.field === "annualAmount");
 
 // The user sentence. The line it replaces read "Fiscal year, cost center, and
 // the line item's account are all looked up live from VERIDIAN's ERP module --
@@ -106,10 +117,27 @@ export const SUB_COPY =
 /** The empty state's own copy. `orgName` is the org the user is actually in. */
 export const EMPTY_COPY = (orgName: string | null) => `No budgets yet for ${orgName ?? "this organisation"}`;
 
+// R67 F-08: exported so budgets/page.tsx's <Suspense> frame carries the REAL
+// column headers before any data has arrived -- the same array this client
+// falls back to, so the frame and the table cannot drift apart.
+export const BUDGETS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
+
 export const NO_PROJECT_REASON = "Pick a project first";
 export const BOQ_BUDGET_LABEL = "Open BOQ budget →";
 
-export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
+export default function BudgetsClient({
+  registryColumns,
+  companies: initialCompanies,
+}: {
+  registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-08: the companies list, read in the server component alongside
+   * everything else it already reads. Supplied, the client-side /api/companies
+   * round trip below does not happen at all. Optional so any caller that does
+   * not prefetch keeps the original self-loading behaviour.
+   */
+  companies?: Company[];
+}) {
   const router = useRouter();
   const orgMoney = useOrgMoney();
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -128,7 +156,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
 
   // Priority 17 remaining gap: companies list + list-level filter scope,
   // same pattern as AccountingClient.tsx/LeadsClient.tsx.
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<Company[]>(initialCompanies ?? []);
   const [scope, setScope] = useState<CompanyScope>({ companyId: null, consolidate: false });
 
   const load = useCallback(async (companyId: string | null = null) => {
@@ -155,13 +183,29 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   useEffect(() => {
     // Every one of these is a display-only lookup: a failure degrades one cell
     // or one label, never the list.
-    fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
-    fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years").then((d) => setFiscalYears(d.fiscalYears ?? [])).catch(() => {});
+    // R67 F-08: skipped entirely when the server component already supplied it.
+    if (!initialCompanies) {
+      fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
+    }
     fetchJson<{ projects?: Project[] }>("/api/projects").then((d) => setProjects(d.projects ?? [])).catch(() => {});
     fetchJson<{ organization?: { name?: string } }>("/api/organization")
       .then((d) => setOrgName(d.organization?.name ?? null))
       .catch(() => {});
-  }, []);
+  }, [initialCompanies]);
+
+  // R67 F-08. The fiscal-year list is NO LONGER fetched to translate one id per
+  // row: listBudgets resolves the name upstream and every row carries it, which
+  // is the id-to-label round trip this item removes. It is fetched ONLY if a
+  // loaded row turns out to have no name -- a VERIDIAN older than that change
+  // -- so the normal path costs nothing and the old one still degrades to a
+  // real year rather than an em-dash.
+  useEffect(() => {
+    if (budgets.length === 0 || fiscalYears.length > 0) return;
+    if (budgets.every((b) => b.fiscalYearName)) return;
+    fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years")
+      .then((d) => setFiscalYears(d.fiscalYears ?? []))
+      .catch(() => {});
+  }, [budgets, fiscalYears.length]);
 
   // R67 D-38's rail selection: the BOQ budget lives on ONE project, so this
   // screen has to know whether one is selected before it can offer that link.
@@ -179,14 +223,18 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
     [projects, railProjectId]
   );
 
+  // R67 F-08: the row's own resolved name first; the id lookup only when the
+  // payload did not carry one. An unresolvable year is an em-dash, never the
+  // raw id -- an opaque id where a year name belongs reads as data.
   const fiscalYearName = useCallback(
-    (id: string) => fiscalYears.find((fy) => fy.id === id)?.yearName ?? "—",
+    (b: Pick<Budget, "fiscalYearId" | "fiscalYearName">) =>
+      b.fiscalYearName ?? fiscalYears.find((fy) => fy.id === b.fiscalYearId)?.yearName ?? "—",
     [fiscalYears]
   );
 
   function exportBudgets() {
     const rows = budgets.map((b, i) => [
-      i + 1, b.name, fiscalYearName(b.fiscalYearId), b.annualAmount ?? "", b.status, b.actionIfExceeded ?? "",
+      i + 1, b.name, fiscalYearName(b), b.annualAmount ?? "", b.status, b.actionIfExceeded ?? "",
     ]);
     const csv = toCsv(["S.No", "Name", "Fiscal Year", "Annual Amount", "Status", "Action if Exceeded"], rows);
     downloadCsv(csvFilename("budgets", orgName ?? "org", new Date().toISOString().slice(0, 10)), csv);
@@ -265,7 +313,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
               actionIfExceeded: (row) => (
                 <span className="text-px-muted">{(row.actionIfExceeded as string | null) ?? "—"}</span>
               ),
-              fiscalYearId: (row) => fiscalYearName(String(row.fiscalYearId)),
+              fiscalYearName: (row) => fiscalYearName(row as unknown as Budget),
               annualAmount: (row) => {
                 const amount = (row as unknown as Budget).annualAmount;
                 if (amount === undefined || amount === null || amount === "") {

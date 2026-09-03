@@ -1,11 +1,10 @@
 // R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
 // rationale: the three serial round-trips that ran before the first byte are
-// gone and the frame streams first. The tab clients still fetch their own
-// data (the four tabs read four different backends); per-tab loading is F-25.
+// gone and the frame streams first.
 //
-// *** MERGE NOTE (F-18 x WS-A A-13). ***
+// *** MERGE NOTE (F-18 x WS-A A-13 x F-09). ***
 //
-// These two items pull in opposite directions on THIS screen only, and the
+// F-18 and A-13 pull in opposite directions on THIS screen only, and the
 // resolution is to separate what each is actually about.
 //
 // F-18 is about WHEN the frame paints. A-13 is about WHICH project the screen
@@ -27,6 +26,17 @@
 // asking them to pick one -- never a spinner over the whole page, and never
 // another project's board under this project's heading.
 //
+// F-09 (R-122) is the third item on this file, and it is additive to both: the
+// Timeline tab used to start fetching its gantt only after it had hydrated, so
+// the tab that opens by default showed a client-side spinner under an
+// already-painted frame. The gantt is now fetched HERE, beside the registry
+// columns in ONE Promise.all, and handed to ScheduleGanttClient as
+// `initialGantt`, so the stat tiles and the All-tasks table are on the FIRST
+// render. It is a PREFETCH, never a blocker: resolveInitialGantt() cannot
+// throw, and a null answer simply leaves the client to fetch and retry exactly
+// as it did before. It runs only once a project has resolved, so A-13's
+// "Pick a project" path costs no call at all.
+//
 // F_016 fix (2026-08-27) is preserved: isScheduleTab comes from
 // src/lib/schedule-tabs.ts (a plain, non-"use client" module), NOT from
 // ScheduleTabsClient.tsx. A function exported from a "use client" file becomes
@@ -44,6 +54,8 @@ import { ScreenContext } from "@/components/shell/shell-screen-context";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { ScheduleTabsClient } from "@/components/ScheduleTabsClient";
 import { isScheduleTab } from "@/lib/schedule-tabs";
+import { callVeridian, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
+import { type GanttPayload } from "@/components/ScheduleGanttClient";
 
 const SKELETON = (
   <ModuleListSkeletonBody
@@ -51,6 +63,28 @@ const SKELETON = (
     tabs={["Timeline", "Board", "Sprints", "Timesheet"]}
   />
 );
+
+/**
+ * R67 F-09. The Timeline tab's own payload, prefetched on the server.
+ *
+ * Deliberately swallowing: this is an optimisation, not a dependency. A failure
+ * here must leave the screen exactly as it was before F-09 -- the client fetches
+ * it itself and shows its own error with Retry -- never take down a page that
+ * has three other tabs. It carries D-04's 8 s page budget rather than the 20 s
+ * upstream ceiling, because a prefetch that outlives the frame it was meant to
+ * fill has stopped being a prefetch.
+ */
+async function resolveInitialGantt(projectId: string, organizationId: string | null): Promise<GanttPayload | null> {
+  try {
+    return await callVeridian<GanttPayload>(`/schedule/gantt?projectId=${encodeURIComponent(projectId)}`, {
+      organizationId: organizationId ?? undefined,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
+    });
+  } catch (err) {
+    console.error("[schedule/page] gantt prefetch failed, the client will retry:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 async function ScheduleSection({
   requestedProjectId,
@@ -75,7 +109,12 @@ async function ScheduleSection({
   // Identical to A-13's own resolveScheduleTimelineColumns (same path, same
   // 404-is-normal fallback to ScheduleGanttClient's hardcoded DEFAULT_COLUMNS),
   // but cached an hour per org by F-18 rather than re-fetched on every render.
-  const timelineColumns = await getScreenColumns("schedule.timeline", organizationId);
+  // F-09: the gantt does not depend on the labels and the labels do not depend
+  // on the gantt, so they are one batch, not two hops.
+  const [timelineColumns, initialGantt] = await Promise.all([
+    getScreenColumns("schedule.timeline", organizationId),
+    project ? resolveInitialGantt(project.id, organizationId) : Promise.resolve(null),
+  ]);
   const initialTab = isScheduleTab(tab) ? tab : "timeline";
 
   return (
@@ -117,6 +156,7 @@ async function ScheduleSection({
           initialQuery={query ?? ""}
           highlightEntryId={highlight}
           timelineColumns={timelineColumns}
+          initialGantt={initialGantt}
         />
       )}
     </>

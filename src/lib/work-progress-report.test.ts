@@ -10,6 +10,7 @@ import {
   formatParentOnlyPercent,
   formatProgressCell,
   sumRootAmtTotal,
+  vendorsFromRoster,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -645,6 +646,62 @@ describe("applyWeightedParentRollup (via buildWorkProgressReport) -- R12 point 1
   });
 });
 
+// R67 F-13 (R-193/R-217). The Work Progress Report assembled itself from SIX
+// VERIDIAN calls, one of which existed only to turn a handful of vendorIds into
+// names: it fetched the org's ENTIRE vendor master. VERIDIAN's roster rows now
+// carry vendorName (resolved in the transaction listRoster already holds), so
+// the set of vendors this report can attribute cost to comes from the roster
+// itself -- and that set is complete by construction, because a vendor nobody
+// on the roster belongs to cannot have labour cost.
+describe("vendorsFromRoster (R67 F-13: the sixth call, removed)", () => {
+  test("collects each named vendor once, however many workers belong to it", () => {
+    const vendors = vendorsFromRoster([
+      { id: "r1", trade: "Mason", vendorId: "v1", name: "Ramesh", vendorName: "ABC Contractors" },
+      { id: "r2", trade: "Mason", vendorId: "v1", name: "Suresh", vendorName: "ABC Contractors" },
+      { id: "r3", trade: "Electrician", vendorId: "v2", name: "Imran", vendorName: "XYZ Electricals" },
+    ]);
+    expect(vendors).toEqual([
+      { id: "v1", name: "ABC Contractors" },
+      { id: "v2", name: "XYZ Electricals" },
+    ]);
+  });
+
+  test("direct labour (no vendor) contributes nothing", () => {
+    expect(vendorsFromRoster([{ id: "r1", trade: "Mason", vendorId: null, name: "Ramesh", vendorName: null }])).toEqual([]);
+  });
+
+  test("a vendor whose row is gone is left out, so the breakdown falls back to its id -- as it always did", () => {
+    const roster: LabourRoster[] = [{ id: "r1", trade: "Mason", vendorId: "v-deleted", name: "Ramesh", vendorName: null }];
+    const rows = buildVendorBreakdown({
+      roster,
+      attendance: [{ id: "a1", rosterId: "r1", attendanceDate: "2026-07-12", dailyCost: 500 }],
+      vendors: vendorsFromRoster(roster),
+      from: "2026-07-10",
+      to: "2026-07-20",
+    });
+    expect(rows).toEqual([{ vendorId: "v-deleted", vendorName: "v-deleted", totalCost: 500 }]);
+  });
+
+  test("the roster-derived list produces the SAME breakdown the vendor master did", () => {
+    const roster: LabourRoster[] = [
+      { id: "r1", trade: "Mason", vendorId: "v1", name: "Ramesh", vendorName: "ABC Contractors" },
+      { id: "r2", trade: "Electrician", vendorId: "v2", name: "Suresh", vendorName: "XYZ Electricals" },
+    ];
+    const attendance: Attendance[] = [
+      { id: "a1", rosterId: "r1", attendanceDate: "2026-07-12", dailyCost: 500 },
+      { id: "a2", rosterId: "r2", attendanceDate: "2026-07-13", dailyCost: 800 },
+    ];
+    const fromMaster = buildVendorBreakdown({
+      roster,
+      attendance,
+      vendors: [{ id: "v1", name: "ABC Contractors" }, { id: "v2", name: "XYZ Electricals" }, { id: "v3", name: "Unused Vendor" }],
+      from: "2026-07-10",
+      to: "2026-07-20",
+    });
+    const fromRoster = buildVendorBreakdown({ roster, attendance, vendors: vendorsFromRoster(roster), from: "2026-07-10", to: "2026-07-20" });
+    expect(fromRoster).toEqual(fromMaster);
+  });
+});
 // ---------------------------------------------------------------------------
 // R67 lane I (WS-I item I-05, R-177): the BOQ line's own `category` column
 // (drizzle/0532) is now the primary source of a row's categoryName, and the

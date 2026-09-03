@@ -70,7 +70,12 @@ export default function ProjectsListClient() {
     inFlight.current = true;
     setLoading(true);
     try {
-      const res = await fetch("/api/projects");
+      // R67 merge (D-11, D1 x F1): /api/projects/overview, not /api/projects.
+      // F-03 made the latter cheap ({id, name, status}) because the app shell
+      // refetches it on every navigation; this screen needs the money and task
+      // figures, so it reads the aggregate endpoint instead. See
+      // src/app/api/projects/route.ts's header for why they are two routes.
+      const res = await fetch("/api/projects/overview");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         // The rows are CLEARED on failure, so the empty-state sentence below

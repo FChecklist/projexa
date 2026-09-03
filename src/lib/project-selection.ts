@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 import {
@@ -7,7 +8,9 @@ import {
   type ProjectSource,
 } from "@/lib/project-preference";
 
-export type SelectableProject = { id: string; name: string };
+// R67 F-03: `status` rides along because GET /projects returns it and two
+// screens read it; it is optional so every existing caller is unaffected.
+export type SelectableProject = { id: string; name: string; status?: string };
 
 /**
  * R67 D-20/D-66 -- the cookie holding the user's last project choice.
@@ -102,14 +105,76 @@ export function fellBackFrom(source: ProjectSource | null): boolean {
   return source === "auto";
 }
 
-// R67 D-20. The opt-in the item requires: without it this function behaves
-// exactly as it did before (first-project fallback), so the ~50 module pages
-// that call it compile AND behave unchanged and adopt the honest mode in
-// their own items. With it, "nothing was asked for" resolves to the org-wide
-// mode instead of quietly picking a project for the user.
+// R67 D-20 + F-06/F-07/F-09. Two lanes gave this function an options bag for
+// two unrelated reasons, so the bag carries both: D-20 decides WHICH project
+// is chosen, F-03/F-06 decides how the project LIST is read. They are
+// independent by construction -- see the note on `cacheSeconds`.
 export type ResolveProjectOptions = {
+  /**
+   * R67 D-20. The opt-in the item requires: without it this function behaves
+   * exactly as it did before (first-project fallback), so the ~50 module pages
+   * that call it compile AND behave unchanged and adopt the honest mode in
+   * their own items. With it, "nothing was asked for" resolves to the org-wide
+   * mode instead of quietly picking a project for the user.
+   */
   allProjectsWhenUnset?: boolean;
+  /**
+   * R67 F-06/F-07/F-09. When set, the PROJECT LIST read is memoised per org
+   * for this many seconds (Next's Data Cache), so a run of navigations across
+   * project-scoped pages costs one round trip rather than one per page.
+   *
+   * Only the LIST is cached. Which project is selected -- the ?projectId=
+   * param, the remembered rail choice, the first-project fallback, D-20's
+   * refusal -- is decided by chooseProject() outside the cache on every call,
+   * so switching project is still instant and a cached list can never pin the
+   * wrong selection.
+   *
+   * Omitted by default: ~50 callers share this function and a page that has
+   * just created a project must be able to see it immediately.
+   */
+  cacheSeconds?: number;
 };
+
+export function projectsCacheTag(organizationId: string | null): string {
+  return `projects:${organizationId ?? "shared"}`;
+}
+
+// R67 F-03 -- WHAT CHANGED AND WHY IT MATTERED. Both resolvers below used to
+// read the project list from VERIDIAN's GET /dashboard: getOrgDashboard(), the
+// earned-value/BOQ/invoice aggregate, measured at 1.4-4.0 s. Fifty page.tsx
+// files call them, and every one awaited that aggregate BEFORE sending a byte
+// of HTML, purely to learn a project's id and name. That is why /documents
+// measured TTFB 1951 ms and /moms 1983 ms while /budgets -- which does not do
+// this -- painted at 580 ms.
+//
+// GET /projects is answered by compliance-tracker from one indexed read of
+// `projects` inside one transaction, with its own 60 s per-org cache. This
+// fixes all fifty callers, not the two pages the audit happened to measure.
+//
+// The D-04 screen budget is kept on the call: this read gates ~50 module pages,
+// so a hung upstream costs 8 s and an honest error, not 20 s of blank frame.
+//
+// A failure is deliberately NOT cached -- caching "this org has no projects"
+// for a minute would turn one blip into a minute of "No active projects yet."
+async function listProjects(organizationId: string | null, cacheSeconds?: number): Promise<SelectableProject[]> {
+  const read = async (orgId: string | null) => {
+    const data = await callVeridian<{ projects: SelectableProject[] }>("/projects", {
+      organizationId: orgId ?? undefined,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
+    });
+    return data.projects ?? [];
+  };
+  if (!cacheSeconds || cacheSeconds <= 0) return read(organizationId);
+  // organizationId is both an explicit key part and the wrapped function's
+  // argument, so the entry is org-scoped two independent ways -- callVeridian
+  // attaches a PER-ORG bearer token and Next keys its fetch cache on URL only
+  // (see createCachedVeridianGet's comment on that cross-tenant leak).
+  const cached = unstable_cache(read, ["projects", organizationId ?? "shared"], {
+    revalidate: cacheSeconds,
+    tags: [projectsCacheTag(organizationId)],
+  });
+  return cached(organizationId);
+}
 
 /**
  * R67 D-20 -- the whole decision, extracted from the fetch so it is unit
@@ -191,7 +256,9 @@ export function projectListFailureBanner(raw: string): string {
 export const PROJECT_LIST_UNAVAILABLE_REASON = "project list unavailable";
 
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
-// so they don't each re-implement the same "/dashboard" fetch + fallback.
+// so they don't each re-implement the same project fetch + fallback. (The
+// fetch was GET /dashboard until R67 F-03 moved it to GET /projects; see
+// listProjects() above.)
 //
 // R67 A-05 -- THE RAIL AND THE PANE NOW AGREE, because they apply ONE rule.
 //
@@ -223,15 +290,10 @@ export async function resolveSelectedProject(
   options?: ResolveProjectOptions
 ): Promise<ProjectSelection> {
   try {
-    // R67 D-04: this one call gates ~50 module pages -- nothing renders until
-    // it answers -- so it takes the screen budget (8 s) rather than the
-    // client's 20 s write ceiling. A hung upstream now costs a module page
-    // 8 s and an honest error, not 20 s of blank frame.
-    const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard", {
-      organizationId: organizationId ?? undefined,
-      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
-    });
-    const projects = data.projects ?? [];
+    // R67 F-03: the cheap GET /projects, never the /dashboard aggregate. The
+    // D-04 screen budget rides inside listProjects().
+    const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
+    // A-05: and ONE selection rule, shared with the shell's own rail.
     const preferred = await readPreferredProjectId();
     return {
       projects,
@@ -296,13 +358,14 @@ export type RouteProjectSelection = ProjectSelection & {
 export async function resolveRouteProject(
   searchParams: { projectId?: string | null } | undefined,
   objectProjectId?: string | null,
-  organizationId?: string | null
+  organizationId?: string | null,
+  options?: ResolveProjectOptions
 ): Promise<RouteProjectSelection> {
   try {
-    const data = await callVeridian<{ projects: SelectableProject[] }>("/dashboard", {
-      organizationId: organizationId ?? undefined,
-    });
-    const projects = data.projects ?? [];
+    // R67 F-03: this resolver was written against /dashboard, the aggregate
+    // F-03 exists to get off the render path -- and it is on the render path
+    // of every screen that belongs to one project.
+    const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
     const picked = pickRouteProject({
       requested: searchParams?.projectId ?? null,
       objectProjectId: objectProjectId ?? null,
