@@ -32,7 +32,17 @@ type StatusOption = { id: string; name: string };
 
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-export default function ScheduleTaskObjectClient({ taskId }: { taskId: string }) {
+export default function ScheduleTaskObjectClient({
+  taskId,
+  backTo,
+}: {
+  taskId: string;
+  /**
+   * R67 D-44: the list's own URL, carrying the project, the tab and the filter
+   * the user had. Validated by the page before it reaches here.
+   */
+  backTo?: string;
+}) {
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -102,7 +112,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to archive task");
       toast.success("Task archived");
-      router.push(`/schedule?projectId=${task!.projectId}`);
+      router.push(backTo ?? `/schedule?projectId=${task!.projectId}&tab=timeline`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't archive task");
     } finally {
@@ -157,7 +167,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       onCancel={mode === "edit" ? () => { setValues(task); setMode("display"); } : undefined}
       onDelete={!task.isArchived ? handleArchive : undefined}
       deleteDisabledReason={task.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
-      onBack={() => router.push(`/schedule?projectId=${task.projectId}`)}
+      onBack={() => router.push(backTo ?? `/schedule?projectId=${task.projectId}&tab=timeline`)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
       messages={[]}

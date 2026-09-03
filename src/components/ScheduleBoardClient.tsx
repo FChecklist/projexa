@@ -18,8 +18,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -94,12 +93,11 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
     if (issueId) moveIssue(issueId, statusId);
   }
 
-  // Real screen navigation (2026-08-30) -- replaces the old "New Task"
-  // Dialog popup with a real create route.
-  const newTaskButton = (
-    <Button onClick={() => router.push(`/schedule/tasks/new?projectId=${projectId}`)}><Plus className="size-4" /> New Task</Button>
-  );
-
+  // R67 D-44: the "New Task" button used to live HERE, inside the Board tab's
+  // own body, so on Timeline, Phases and Time there was no way to create an
+  // activity at all. It is hoisted into ScheduleTabsClient, above the TabsList,
+  // where it exists on every tab -- this component no longer renders one, and
+  // must not start again.
   if (loading) {
     return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
   }
@@ -113,15 +111,13 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   if (columns.length === 0 || columns.every((c) => c.issues.length === 0)) {
     return (
       <div className="space-y-4">
-        <div className="flex justify-end">{newTaskButton}</div>
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
+        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet — use “New Task” above to add one.</CardContent></Card>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">{newTaskButton}</div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
           <div
