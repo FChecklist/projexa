@@ -22,6 +22,7 @@ import {
   timesheetReceiptLine,
   timesheetRoute,
   DOORS,
+  MANPOWER_CARD,
   DOOR_SEGMENT_PREFIX,
   doorById,
   doorRoute,
@@ -193,7 +194,9 @@ describe("the Design Studio card", () => {
 
   test("cardForRoute finds the chain a route should seed", () => {
     expect(cardForRoute("/schedule/log-time")).toBe(DESIGN_STUDIO_CARD);
-    expect(cardForRoute("/labour")).toBeNull();
+    // R67 C-08: /labour is the Manpower card's own route now.
+    expect(cardForRoute("/labour")).toBe(MANPOWER_CARD);
+    expect(cardForRoute("/settings")).toBeNull();
     expect(cardForRoute("")).toBeNull();
   });
 

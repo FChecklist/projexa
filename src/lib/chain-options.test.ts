@@ -8,7 +8,11 @@ import {
   parseLevelPath,
   pickCurrentBoq,
   progressValueLevel,
+  activeRoster,
+  rosterLevel,
+  tradeOf,
   type BoqRow,
+  type RosterEntry,
 } from "./chain-options";
 
 const BOQ: BoqRow = {
@@ -151,5 +155,119 @@ describe("normaliseLevel guards the contract", () => {
 
   test("an unrecognised kind falls back to step rather than failing the level", () => {
     expect(normaliseLevel({ legend: "Which?", kind: "banana", options: [] })?.kind).toBe("step");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-08 -- THE ROSTER LEVEL
+// ---------------------------------------------------------------------------
+
+const ROSTER: RosterEntry[] = [
+  { id: "w1", name: "Rakesh", trade: "Carpenter", isActive: true },
+  { id: "w2", name: "Anil", trade: "Mason", isActive: true },
+  { id: "w3", name: "Suresh", trade: "Carpenter", isActive: true },
+  { id: "w4", name: "Vinod", trade: null, isActive: true },
+  { id: "w5", name: "Left last month", trade: "Mason", isActive: false },
+];
+
+describe("activeRoster", () => {
+  test("a worker who has left is not on site today", () => {
+    expect(activeRoster(ROSTER).map((r) => r.id)).toEqual(["w1", "w2", "w3", "w4"]);
+  });
+
+  test("a row with no isActive flag at all is treated as active, not dropped", () => {
+    expect(activeRoster([{ id: "w9", name: "New" }]).map((r) => r.id)).toEqual(["w9"]);
+  });
+});
+
+describe("tradeOf", () => {
+  test("never yields a blank sub-heading", () => {
+    expect(tradeOf({ id: "x", trade: "Mason" })).toBe("Mason");
+    expect(tradeOf({ id: "x", trade: "  " })).toBe("No trade recorded");
+    expect(tradeOf({ id: "x" })).toBe("No trade recorded");
+  });
+});
+
+describe("rosterLevel", () => {
+  const level = rosterLevel(ROSTER);
+
+  test("asks its question in words, and is a multi-select level", () => {
+    expect(level.legend).toBe("Who was on site?");
+    expect(level.multi).toBe(true);
+    expect(level.searchBy).toBe("name or trade");
+  });
+
+  test("EVERY active worker arrives already ticked -- present is the default", () => {
+    expect(level.preselectedIds).toEqual(["w1", "w2", "w3", "w4"]);
+    expect(level.options.map((o) => o.label)).toEqual(["Rakesh", "Anil", "Suresh", "Vinod"]);
+    // The trade travels with the chip, so the grid search really is "by name
+    // or trade" and not by name with a misleading label.
+    expect(level.options.map((o) => o.keywords)).toEqual([
+      "Carpenter",
+      "Mason",
+      "Carpenter",
+      "No trade recorded",
+    ]);
+  });
+
+  test("the grid is grouped by trade, in a stable order", () => {
+    expect(level.groups).toEqual([
+      { label: "Carpenter", optionIds: ["w1", "w3"] },
+      { label: "Mason", optionIds: ["w2"] },
+      { label: "No trade recorded", optionIds: ["w4"] },
+    ]);
+  });
+
+  test("a nameless row still renders as something a person can pick", () => {
+    expect(rosterLevel([{ id: "w1", name: "  " }]).options[0].label).toBe("Unnamed worker");
+  });
+
+  test("an empty roster prompts with the way out, never a blank grid", () => {
+    const empty = rosterLevel([]);
+    expect(empty.options).toEqual([]);
+    expect(empty.emptyPrompt).toEqual({
+      text: "This project has no workers on its roster yet",
+      actionLabel: "Add worker",
+      route: "/labour/new",
+    });
+  });
+});
+
+describe("levelSourceFor, C-08's paths", () => {
+  test("the crew comes from the roster read, and only with a project", () => {
+    expect(levelSourceFor(["manpower", "mark_attendance"], "p1")).toEqual({ kind: "roster", projectId: "p1" });
+    expect(levelSourceFor(["manpower", "mark_attendance"], null)).toBeNull();
+  });
+
+  test("site photos reuse the BOQ line chips", () => {
+    expect(levelSourceFor(["work_progress", "upload_photos"], "p1")).toEqual({ kind: "boq", projectId: "p1" });
+  });
+});
+
+describe("normaliseLevel guards the multi contract too", () => {
+  test("groups and preselectedIds survive the round trip", () => {
+    const level = normaliseLevel(rosterLevel(ROSTER));
+    expect(level?.multi).toBe(true);
+    expect(level?.preselectedIds).toEqual(["w1", "w2", "w3", "w4"]);
+    expect(level?.groups?.[0]).toEqual({ label: "Carpenter", optionIds: ["w1", "w3"] });
+  });
+
+  test("a malformed group is dropped rather than crashing the grid", () => {
+    const level = normaliseLevel({
+      legend: "Who was on site?",
+      kind: "step",
+      options: [{ id: "w1", label: "Rakesh" }],
+      multi: true,
+      groups: [{ label: "Carpenter", optionIds: ["w1", 42] }, { optionIds: ["w1"] }, "nonsense"],
+      preselectedIds: ["w1", 7],
+    });
+    expect(level?.groups).toEqual([{ label: "Carpenter", optionIds: ["w1"] }]);
+    expect(level?.preselectedIds).toEqual(["w1"]);
+  });
+
+  test("a single-select level is not silently turned into a multi one", () => {
+    const level = normaliseLevel(progressValueLevel());
+    expect(level?.multi).toBe(false);
+    expect(level?.groups).toBeUndefined();
   });
 });

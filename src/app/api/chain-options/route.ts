@@ -6,7 +6,9 @@ import {
   levelSourceFor,
   normaliseLevel,
   parseLevelPath,
+  rosterLevel,
   type BoqRow,
+  type RosterEntry,
 } from "@/lib/chain-options";
 
 // R67 WS-C (C-04) -- WHAT BAND 2 ASKS NEXT.
@@ -60,6 +62,27 @@ export async function GET(req: NextRequest) {
 
   if (source.kind === "static") {
     return NextResponse.json(normaliseLevel(source.level));
+  }
+
+  if (source.kind === "roster") {
+    // R67 C-08. Same rule as the BOQ read below: a failed roster read is an
+    // ERROR, never an empty chip grid that would say "this project has no
+    // workers" about a project with twelve.
+    try {
+      const data = await callVeridian<RosterEntry[] | { roster?: RosterEntry[] }>(
+        `/construction/labour-roster?projectId=${encodeURIComponent(source.projectId)}`,
+        { organizationId: ctx.organizationId!, root: true }
+      );
+      const roster: RosterEntry[] = Array.isArray(data) ? data : (data?.roster ?? []);
+      const level = normaliseLevel(rosterLevel(roster));
+      if (!level) return NextResponse.json({ error: "Couldn't build that step" }, { status: 502 });
+      return NextResponse.json(level);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof VeridianApiError ? err.message : "Couldn't load this project's roster" },
+        { status: err instanceof VeridianApiError ? err.status : 502 }
+      );
+    }
   }
 
   try {

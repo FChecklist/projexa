@@ -12,7 +12,7 @@
 //
 // PURE. No fetch, no React. The route hands it the JSON it already fetched.
 
-import type { ChainOptionDto, ChainOptionsLevel } from "./card-catalogue";
+import type { ChainOptionDto, ChainOptionGroup, ChainOptionsLevel } from "./card-catalogue";
 
 // ---------------------------------------------------------------------------
 // THE CONTRACT
@@ -50,6 +50,7 @@ export function normaliseLevel(raw: unknown): ChainOptionsLevel | null {
     options.push({
       id: opt.id,
       label: opt.label,
+      keywords: typeof opt.keywords == "string" ? opt.keywords : undefined,
       isLeaf: opt.isLeaf === true,
       unavailableReason: typeof opt.unavailableReason === "string" ? opt.unavailableReason : undefined,
     });
@@ -67,7 +68,96 @@ export function normaliseLevel(raw: unknown): ChainOptionsLevel | null {
             : undefined;
         })()
       : undefined;
-  return { legend: r.legend, kind, options, emptyPrompt };
+  const groups: ChainOptionGroup[] = Array.isArray(r.groups)
+    ? (r.groups as unknown[]).flatMap((g) => {
+        if (!g || typeof g !== "object") return [];
+        const group = g as Record<string, unknown>;
+        if (typeof group.label !== "string" || !Array.isArray(group.optionIds)) return [];
+        return [{ label: group.label, optionIds: group.optionIds.filter((id): id is string => typeof id === "string") }];
+      })
+    : [];
+  const preselectedIds = Array.isArray(r.preselectedIds)
+    ? (r.preselectedIds as unknown[]).filter((id): id is string => typeof id === "string")
+    : undefined;
+  return {
+    legend: r.legend,
+    kind,
+    options,
+    emptyPrompt,
+    multi: r.multi === true,
+    preselectedIds,
+    groups: groups.length > 0 ? groups : undefined,
+    searchBy: typeof r.searchBy === "string" ? r.searchBy : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE ROSTER (R67 C-08)
+// ---------------------------------------------------------------------------
+
+export type RosterEntry = {
+  id: string;
+  name?: string | null;
+  trade?: string | null;
+  isActive?: boolean | null;
+};
+
+/** Workers who are still on the books. An inactive one is not on site today. */
+export function activeRoster(roster: readonly RosterEntry[]): RosterEntry[] {
+  return roster.filter((r) => r.isActive !== false);
+}
+
+/** "Carpenter" / "No trade recorded" -- never a blank sub-heading. */
+export function tradeOf(entry: RosterEntry): string {
+  const trade = (entry.trade ?? "").trim();
+  return trade || "No trade recorded";
+}
+
+/**
+ * "Who was on site?" -- the whole crew, grouped by trade, EVERY ID ALREADY
+ * TICKED.
+ *
+ * *** THE DEFAULT IS PRESENT, BECAUSE THAT IS THE TRUTH ON MOST DAYS. *** A
+ * foreman marks the exceptions; asking him to tick twelve names to record a
+ * normal morning is the twelve-round-trip form this replaces, with extra
+ * steps.
+ *
+ * The groups are ordered by trade name so the grid does not reshuffle between
+ * two loads of the same roster, and the workers inside a trade keep the
+ * roster's own order.
+ */
+export function rosterLevel(roster: readonly RosterEntry[]): ChainOptionsLevel {
+  const active = activeRoster(roster);
+  const options: ChainOptionDto[] = active.map((r) => ({
+    id: r.id,
+    label: (r.name ?? "").trim() || "Unnamed worker",
+    // C-08's search is "by name or trade", so the trade travels with the chip.
+    keywords: tradeOf(r),
+  }));
+  const byTrade = new Map<string, string[]>();
+  for (const entry of active) {
+    const trade = tradeOf(entry);
+    const bucket = byTrade.get(trade);
+    if (bucket) bucket.push(entry.id);
+    else byTrade.set(trade, [entry.id]);
+  }
+  const groups = [...byTrade.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([label, optionIds]) => ({ label, optionIds }));
+  return {
+    legend: "Who was on site?",
+    kind: "step",
+    options,
+    multi: true,
+    preselectedIds: options.map((o) => o.id),
+    groups,
+    searchBy: "name or trade",
+    emptyPrompt: {
+      text: "This project has no workers on its roster yet",
+      actionLabel: "Add worker",
+      route: "/labour/new",
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +278,11 @@ export function progressValueLevel(): ChainOptionsLevel {
 // ---------------------------------------------------------------------------
 
 /** Which upstream read a level needs, so the route fetches only that. */
-export type LevelSource = { kind: "boq"; projectId: string } | { kind: "static"; level: ChainOptionsLevel } | null;
+export type LevelSource =
+  | { kind: "boq"; projectId: string }
+  | { kind: "roster"; projectId: string }
+  | { kind: "static"; level: ChainOptionsLevel }
+  | null;
 
 /**
  * What a level path means. The route uses this to decide what to fetch; every
@@ -200,6 +294,17 @@ export type LevelSource = { kind: "boq"; projectId: string } | { kind: "static";
 export function levelSourceFor(path: LevelPath, projectId: string | null): LevelSource {
   const key = path.join("/");
   if (key === "work_progress/record_progress") {
+    return projectId ? { kind: "boq", projectId } : null;
+  }
+  // R67 C-08: the crew, for a day's attendance in one write.
+  if (key === "manpower/mark_attendance") {
+    return projectId ? { kind: "roster", projectId } : null;
+  }
+  // R67 C-08: site photos get the same BOQ-line chip row, because "which line
+  // is this a photo of" is the question that makes a photo useful later. The
+  // line is OPTIONAL here -- the attach card saves with or without one -- so
+  // nothing on this level blocks the upload.
+  if (key === "work_progress/upload_photos") {
     return projectId ? { kind: "boq", projectId } : null;
   }
   if (path.length === 3 && path[0] === "work_progress" && path[1] === "record_progress") {

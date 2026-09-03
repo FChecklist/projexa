@@ -16,7 +16,12 @@
 // What this file adds around it is the part a bare chip row cannot say: the
 // question, and what to do when there is nothing to pick.
 
-import { OptionChain, type ChainSegment } from "@fchecklist/veridian-ui-kit/shell";
+// R67 C-08: OptionChain is now PROJEXA's fork (D-09). The kit's multi mode is
+// a flat row of checkbox chips with no trade headings, no search and no way to
+// say that an unticked chip means ABSENT -- and absent is money. The chain
+// types it hands back are still the kit's.
+import type { ChainSegment } from "@fchecklist/veridian-ui-kit/shell";
+import { OptionChain } from "./OptionChain";
 import type { ChainOptionsLevel } from "@/lib/card-catalogue";
 
 export type ChainOptionsPanelProps = {
@@ -35,6 +40,15 @@ export type ChainOptionsPanelProps = {
   /** The backend's OWN words when the level could not be read. */
   error?: string | null;
   onRetry?: () => void;
+  /**
+   * R67 C-08: the multi-select state, owned by the caller because it is what
+   * the Save button's own label is computed from ("12 present, 0 absent").
+   */
+  selectedIds?: readonly string[];
+  onToggle?: (id: string) => void;
+  uncheckedWord?: string;
+  secondary?: { label: string; activeIds: readonly string[]; onToggle: (id: string) => void };
+  countLine?: string;
 };
 
 /** Three chips, so the shape of the answer arrives before the answer does. */
@@ -61,6 +75,11 @@ export function ChainOptionsPanel({
   loadingLegend,
   error,
   onRetry,
+  selectedIds,
+  onToggle,
+  uncheckedWord,
+  secondary,
+  countLine,
 }: ChainOptionsPanelProps) {
   // ERROR FIRST. A stale level rendered under a failed refetch is a list of
   // options that may no longer exist -- and a chip the user can click into a
@@ -118,6 +137,14 @@ export function ChainOptionsPanel({
       kind={level.kind}
       selectedId={selectedId ?? null}
       onAdvance={onAdvance}
+      multi={level.multi === true}
+      selectedIds={selectedIds}
+      onToggle={onToggle}
+      groups={level.groups}
+      searchBy={level.searchBy}
+      uncheckedWord={uncheckedWord}
+      secondary={secondary}
+      countLine={countLine}
     />
   );
 }

@@ -22,11 +22,16 @@ import { MB, type AttachPolicy } from "./attachments";
 export type ChainOptionDto = {
   id: string;
   label: string;
+  /** R67 C-08: a second string the grid search matches -- the worker's trade. */
+  keywords?: string;
   /** A leaf is the last step -- the thing that would actually be done. */
   isLeaf?: boolean;
   /** Shown, in words, on a chip that cannot be picked. Never a dead end. */
   unavailableReason?: string;
 };
+
+/** A sub-heading over part of a level's chips: R67 C-08's trades. */
+export type ChainOptionGroup = { label: string; optionIds: readonly string[] };
 
 /** One question the composer asks in band 2. */
 export type ChainOptionsLevel = {
@@ -37,6 +42,17 @@ export type ChainOptionsLevel = {
   options: ChainOptionDto[];
   /** What to say -- and where to send the user -- when there is nothing to choose. */
   emptyPrompt?: { text: string; actionLabel?: string; route?: string };
+  /**
+   * R67 C-08: this level is answered by picking MANY, not one -- the whole
+   * crew at once. `preselectedIds` is what arrives already ticked, because a
+   * roster is present by default and the exceptions are what a foreman marks.
+   */
+  multi?: boolean;
+  preselectedIds?: readonly string[];
+  /** Trade sub-headings over the chip grid. */
+  groups?: readonly ChainOptionGroup[];
+  /** The word a search box offers to filter by ("name or trade"). */
+  searchBy?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -341,7 +357,13 @@ export const WORK_PROGRESS_CARD: CardDef = {
   routes: ["/work-progress"],
   placeholder: "e.g. record 50% on EX-01 excavation today",
   coldStartRoles: [],
-  actions: [{ id: "record_progress", label: "Record progress", functionId: "record_work_progress" }],
+  actions: [
+    { id: "record_progress", label: "Record progress", functionId: "record_work_progress" },
+    // R67 C-08. There is no photo endpoint in either repo, so this action
+    // ends at the Documents form and its button says so -- see uploadAction
+    // below and the label the shell builds from it.
+    { id: "upload_photos", label: "Upload site photos", functionId: null },
+  ],
   chipInPillsBand: false,
   // R67 C-07, verbatim.
   attach: {
@@ -457,7 +479,26 @@ export const SCOPE_CARD: CardDef = {
   uploadEndpoint: { label: "Import BOQ from Excel", url: "/api/scope/import", busyLabel: "Importing…" },
 };
 
+export const MANPOWER_CARD: CardDef = {
+  id: "manpower",
+  label: "Manpower",
+  kind: "action",
+  functionId: null,
+  route: "/labour",
+  entitySegment: { id: "manpower", label: "Manpower", kind: "action" },
+  routes: ["/labour"],
+  placeholder: "e.g. everyone present today except Rakesh",
+  coldStartRoles: [],
+  // R67 C-08: the composer's own path to a day's attendance -- the whole crew
+  // in one write. The module's "+ Mark Attendance" button still opens
+  // /labour/attendance/new, which is the right screen for one worker with
+  // hours; this is the right one for twelve without.
+  actions: [{ id: "mark_attendance", label: "Mark attendance", functionId: null }],
+  chipInPillsBand: false,
+};
+
 export const CARD_CATALOGUE: readonly CardDef[] = [
+  MANPOWER_CARD,
   DESIGN_STUDIO_CARD,
   WORK_PROGRESS_CARD,
   PERMITS_CARD,

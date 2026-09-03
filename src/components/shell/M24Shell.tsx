@@ -79,6 +79,20 @@ import { ShellChainProvider, type ShellChainApi } from "@/components/shell/shell
 // and PROJEXA never filled.
 import { DropZone, type AttachedFile } from "@/components/shell/DropZone";
 import { checkBatch, formatSize, importSummaryLine, importWarnings } from "@/lib/attachments";
+// R67 C-08: a day's attendance as a draft of EXCEPTIONS -- the roster arrives
+// ticked and the foreman marks who was not there.
+import {
+  EMPTY_ATTENDANCE_DRAFT,
+  attendanceCountLine,
+  attendanceCounts,
+  attendanceEntries,
+  attendanceSaveLabel,
+  presentIds,
+  replaceWarning,
+  toggleAbsent,
+  toggleHalfDay,
+  type AttendanceDraft,
+} from "@/lib/attendance-draft";
 import { ConfirmCard } from "@/components/shell/ConfirmCard";
 import { AnswerBlock } from "@/components/shell/AnswerBlock";
 import {
@@ -280,6 +294,12 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [importNote, setImportNote] = useState<{ line: string; warnings: string[] } | null>(null);
+  // R67 C-08: the day's exceptions, the write in flight, and the question a
+  // second save for the same date has to ask before it overwrites anything.
+  const [attendance, setAttendance] = useState<AttendanceDraft>(EMPTY_ATTENDANCE_DRAFT);
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [attendanceReplaceAsk, setAttendanceReplaceAsk] = useState<string | null>(null);
   const attachFilesRef = useRef<Map<string, File>>(new Map());
   const attachXhrRef = useRef<Map<string, XMLHttpRequest>>(new Map());
   const attachSeqRef = useRef(0);
@@ -733,6 +753,95 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Whether the deepest level asks for a number the user already knows. The
   // chips cover the common answers; this covers every other one.
   const wantsScalar = levelPath.length >= 3 && levelPath[0] === "work_progress";
+
+  // -------------------------------------------------------------------------
+  // R67 C-08 -- A DAY'S ATTENDANCE, THE WHOLE CREW, ONE WRITE
+  // -------------------------------------------------------------------------
+
+  const onAttendanceLevel =
+    levelPath[0] === "manpower" && levelPath[1] === "mark_attendance" && serverLevel?.multi === true;
+
+  /** The roster ids this grid is showing, in the server's own order. */
+  const rosterIds = useMemo(
+    () => (onAttendanceLevel ? (serverLevel?.options ?? []).map((o) => o.id) : []),
+    [onAttendanceLevel, serverLevel]
+  );
+
+  /** Today, in the ISO shape every date this app sends or stores uses. */
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const attendanceTicked = useMemo(() => presentIds(rosterIds, attendance), [rosterIds, attendance]);
+
+  const onToggleWorker = useCallback((id: string) => {
+    setAttendanceError(null);
+    setAttendanceReplaceAsk(null);
+    setAttendance((prev) => toggleAbsent(prev, id));
+  }, []);
+
+  const onToggleHalfDay = useCallback((id: string) => {
+    setAttendanceError(null);
+    setAttendance((prev) => toggleHalfDay(prev, id));
+  }, []);
+
+  /**
+   * *** ONE WRITE FOR THE WHOLE CREW, AND A SECOND SAVE IS A QUESTION. ***
+   *
+   * The batch body goes to the SAME /api/attendance the single-worker form
+   * posts to -- WS-C's own recordAttendanceBatch branches on `entries`, so
+   * there is one endpoint and one permission check, not two. A day that is
+   * already saved comes back 409 with code REPLACE_REQUIRED, and the answer
+   * to that is a question with the blast radius in it, never a silent
+   * overwrite and never a silent double.
+   */
+  const onSaveAttendance = useCallback(
+    async (replace: boolean) => {
+      if (attendanceBusy || rosterIds.length === 0 || !projectId) return;
+      setAttendanceBusy(true);
+      setAttendanceError(null);
+      setAttendanceReplaceAsk(null);
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            attendanceDate: todayIso,
+            entries: attendanceEntries(rosterIds, attendance),
+            replace,
+          }),
+        });
+        const d = (await res.json().catch(() => null)) as
+          | { error?: string; code?: string; written?: number }
+          | null;
+        if (!res.ok) {
+          if (d?.code === "REPLACE_REQUIRED") {
+            setAttendanceReplaceAsk(
+              replaceWarning({ attendanceDate: todayIso, today: todayIso, rosterCount: rosterIds.length })
+            );
+            return;
+          }
+          setAttendanceError(
+            d && typeof d.error === "string" && d.error.trim()
+              ? maskTechnical(d.error)
+              : `Couldn't save attendance (HTTP ${res.status})`
+          );
+          return;
+        }
+        const counts = attendanceCounts(rosterIds, attendance);
+        setReceipt({
+          text: `Saved attendance for ${todayIso}: ${counts.present} present, ${counts.halfDay} half day, ${counts.absent} absent`,
+          href: `/labour?projectId=${encodeURIComponent(projectId)}&tab=attendance`,
+        });
+        setAttendance(EMPTY_ATTENDANCE_DRAFT);
+        setLevelPath([]);
+      } catch {
+        setAttendanceError("Couldn't reach the attendance service.");
+      } finally {
+        setAttendanceBusy(false);
+      }
+    },
+    [attendanceBusy, rosterIds, projectId, todayIso, attendance]
+  );
 
   /**
    * R67 C-04 -- WHAT SEND WOULD RUN, once the chain is a complete sentence.
@@ -1258,10 +1367,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       };
     }
     const upload = routeCard.uploadAction;
+    // R67 C-08 asks for "Save 4 photos". DELIBERATE, DISCLOSED DEVIATION:
+    // neither repo has an endpoint that saves a site photo, so a button
+    // reading "Save 4 photos" would promise a save the product cannot make.
+    // The count is kept -- it is the useful half -- and the label says where
+    // the four photos actually go.
+    const photos = routeCard.attach && routeCard.attach.maxFiles > 1 && readyAttachments.length > 1;
+    const primaryLabel = upload
+      ? photos
+        ? `Upload ${readyAttachments.length} photos — opens the Documents form`
+        : upload.label
+      : "Open the form";
     return {
       mode: "form" as const,
       title: `Attach ${names} — ${routeCard.label}`,
-      primaryLabel: upload?.label ?? "Open the form",
+      primaryLabel,
       disabledReason: upload ? undefined : "this module has no upload form yet",
       busy: false,
     };
@@ -2117,15 +2237,80 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                     real loading state and a real error state -- never an
                     empty chip row standing in for either. */}
                 {levelPath.length > 0 ? (
+                  <>
                   <ChainOptionsPanel
                     level={serverLevel}
                     loading={levelLoading}
-                    loadingLegend={levelPath.length === 2 ? "Which BOQ line?" : "How much?"}
+                    loadingLegend={
+                      levelPath[0] === "manpower"
+                        ? "Who was on site?"
+                        : levelPath.length === 2
+                          ? "Which BOQ line?"
+                          : "How much?"
+                    }
                     error={levelError}
                     onRetry={() => setLevelReload((n) => n + 1)}
                     onAdvance={onLevelAdvance}
                     onEmptyAction={(route) => router.push(route)}
+                    // R67 C-08: the multi-select state lives out here because
+                    // the Save button's own label is computed from it.
+                    selectedIds={onAttendanceLevel ? attendanceTicked : undefined}
+                    onToggle={onAttendanceLevel ? onToggleWorker : undefined}
+                    uncheckedWord={onAttendanceLevel ? "absent" : undefined}
+                    secondary={
+                      onAttendanceLevel
+                        ? { label: "Half day", activeIds: attendance.halfDayIds, onToggle: onToggleHalfDay }
+                        : undefined
+                    }
+                    countLine={onAttendanceLevel ? attendanceCountLine(rosterIds, attendance) : undefined}
                   />
+                  {onAttendanceLevel && rosterIds.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* THE BUTTON SAYS WHAT IT IS ABOUT TO WRITE. */}
+                      <button
+                        type="button"
+                        className="rounded-lg px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
+                        style={{ background: "var(--color-ct-saffron)", color: "var(--color-ct-navy)" }}
+                        disabled={attendanceBusy || !projectId}
+                        onClick={() => void onSaveAttendance(false)}
+                      >
+                        {attendanceBusy ? "Saving…" : attendanceSaveLabel(rosterIds, attendance)}
+                      </button>
+                      {!projectId && (
+                        <span className="text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
+                          Pick a project in the top rail first
+                        </span>
+                      )}
+                      {attendanceError && (
+                        <span role="alert" className="text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
+                          {attendanceError}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* A SECOND SAVE FOR THE SAME DATE IS A QUESTION, WITH THE
+                      BLAST RADIUS IN THE SENTENCE. */}
+                  {attendanceReplaceAsk && (
+                    <p className="flex flex-wrap items-center gap-2 text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                      <span role="alert">{attendanceReplaceAsk}</span>
+                      <button
+                        type="button"
+                        className="veri-view-tab"
+                        disabled={attendanceBusy}
+                        onClick={() => void onSaveAttendance(true)}
+                      >
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        className="veri-view-tab"
+                        onClick={() => setAttendanceReplaceAsk(null)}
+                      >
+                        Keep what is saved
+                      </button>
+                    </p>
+                  )}
+                  </>
                 ) : actionLevel ? (
                   <ChainOptionsPanel level={actionLevel} onAdvance={onActionAdvance} />
                 ) : null}
@@ -2264,6 +2449,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // create form first (R-163).
           attachSlot={
             attachPolicy ? (
+              <div className="flex min-w-0 flex-col gap-0.5">
+                {/* R67 C-08: the SAME DropZone, inside the Record progress
+                    card, labelled for what it is there -- optional. */}
+                {levelPath[0] === "work_progress" && levelPath[1] === "record_progress" && (
+                  <span className="text-[10.5px]" style={{ color: "var(--color-ct-muted)" }}>
+                    Photos (optional)
+                  </span>
+                )}
               <DropZone
                 policy={attachPolicy}
                 files={attachments}
@@ -2275,6 +2468,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 // module the composer can finish itself.
                 onRetry={routeCard?.uploadEndpoint ? onUploadAttachment : undefined}
               />
+              </div>
             ) : undefined
           }
           onSubmit={onSubmit}
