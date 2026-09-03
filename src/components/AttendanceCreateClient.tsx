@@ -11,6 +11,15 @@
 // naming "Worker" as missing -- the form blaming a site supervisor for a
 // backend failure. It now says what happened, offers Retry, and the reason
 // names the real cause.
+//
+// R67 D-80 merge: the Worker field is the archetype's "combobox" -- typing
+// filters the roster, a one-person roster is preselected, and the last worker
+// marked on this project is offered back. D-80 originally shipped that picker
+// as a hand-rolled form on this screen; it now sits inside the shared
+// archetype, so this screen keeps D-67's structure AND the one-click picker.
+//
+// R67 D-53: the screen opens on the day the caller was looking at (the Daily
+// Summary's own date), not silently on today.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
@@ -18,21 +27,37 @@ import { PaneErrorCard } from "@/components/PaneState";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
+import { getLastChoice, setLastChoice } from "@/lib/last-choice";
 
-type RosterEntry = { id: string; name: string; isActive: boolean };
+type RosterEntry = { id: string; name: string; employeeCode?: string | null; trade?: string | null; isActive: boolean };
+
+/** D-80: this picker's memory is scoped per user, per project, per picker. */
+const WORKER_PICKER = "worker";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function AttendanceCreateClient({ projectId }: { projectId: string }) {
+export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({ attendanceDate: todayIso(), status: "present" });
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [rememberedWorker, setRememberedWorker] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({
+    attendanceDate: initialDate ?? todayIso(),
+    status: "present",
+  });
+
+  // Read after mount: localStorage is a browser fact, and reading it during
+  // render would differ between the server pass and the client's.
+  useEffect(() => {
+    setRememberedWorker(getLastChoice(WORKER_PICKER, projectId));
+  }, [projectId]);
 
   const loadRoster = useCallback(async () => {
     setRosterError(null);
+    setRosterLoading(true);
     try {
       const d = await fetchJson<{ roster?: RosterEntry[] }>(
         `/api/labour-roster?projectId=${encodeURIComponent(projectId)}`
@@ -44,6 +69,8 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
         status: err instanceof ApiError ? err.status : null,
         message: err instanceof Error && err.message ? err.message : null,
       });
+    } finally {
+      setRosterLoading(false);
     }
   }, [projectId]);
 
@@ -57,10 +84,18 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
     {
       name: "rosterId",
       label: "Worker",
-      kind: "select",
+      kind: "combobox",
       required: true,
-      placeholder: rosterError ? "Could not be loaded" : "Select worker",
-      options: roster.map((r) => ({ value: r.id, label: r.name })),
+      loading: rosterLoading,
+      placeholder: rosterError ? "Could not be loaded" : "Type a name or ID",
+      // id + trade as the hint, so typing "mas" or an employee code both find
+      // the right person and two workers with the same name stay apart.
+      options: roster.map((r) => ({
+        value: r.id,
+        label: r.name,
+        hint: [r.employeeCode, r.trade].filter(Boolean).join(" · ") || undefined,
+      })),
+      storedValue: rememberedWorker,
     },
     { name: "attendanceDate", label: "Date", kind: "date", required: true },
     {
@@ -94,7 +129,12 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
       },
     }),
     // No object page for an attendance row -- back to the tab it joined.
-    onSuccess: () => router.replace(moduleHref),
+    onSuccess: () => {
+      // Remembered only after the server accepted it: a choice that failed to
+      // save is not the choice to offer back next time.
+      setLastChoice(WORKER_PICKER, projectId, values.rosterId);
+      router.replace(moduleHref);
+    },
   });
 
   return (

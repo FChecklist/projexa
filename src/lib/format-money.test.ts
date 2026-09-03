@@ -6,6 +6,7 @@ import {
   UNKNOWN_CURRENCY_GLYPH,
   currencyUnitSuffix,
   formatMoney,
+  formatQty,
   formatSignedMoney,
   hasCurrency,
 } from "./format-money";
@@ -183,5 +184,51 @@ describe("one alignment rule for every money cell", () => {
   test("right-aligned with tabular figures", () => {
     expect(MONEY_CELL_CLASS).toContain("text-right");
     expect(MONEY_CELL_CLASS).toContain("tabular-nums");
+  });
+});
+
+// ─── R67 D-57: one money format across Materials ─────────────────────────
+//
+// D-57's own acceptance quotes this exact string, and it is asserted here as
+// well as on the two screens that must agree about it (the Inbound ledger and
+// the Cost Report), so a change to grouping or decimals fails in this file
+// rather than being noticed on a screenshot of one tab.
+describe("D-57 acceptance: one money format", () => {
+  test("formatMoney(21750, { currency: 'AED' }) === 'AED 21,750.00'", () => {
+    expect(formatMoney(21750, { currency: "AED" })).toBe("AED 21,750.00");
+  });
+
+  test("the same figure from a numeric DB column formats identically", () => {
+    expect(formatMoney("21750", { currency: "AED" })).toBe("AED 21,750.00");
+  });
+});
+
+// ─── R67 D-39/D-40: quantities are not money ─────────────────────────────
+//
+// A quantity shares money's grouping so the two columns line up, and shares
+// its "no figure is not zero" rule -- but must NOT carry a currency token or
+// forced decimals: a bag count reading "50.00 bag" is noise, and a batching
+// quantity of 0.125 cum would be rounded away at two decimals.
+describe("formatQty", () => {
+  test("no currency token and no forced decimals -- '50 bag' is 50, not 50.00", () => {
+    expect(formatQty(50)).toBe("50");
+    expect(formatQty("50")).toBe("50");
+  });
+
+  test("keeps up to three real decimals and groups thousands like money", () => {
+    expect(formatQty(1234.5)).toBe("1,234.5");
+    expect(formatQty(0.125)).toBe("0.125");
+  });
+
+  test("zero is a quantity; null and unparseable are the en-dash", () => {
+    expect(formatQty(0)).toBe("0");
+    expect(formatQty(null)).toBe(EMPTY_VALUE);
+    expect(formatQty(undefined)).toBe(EMPTY_VALUE);
+    expect(formatQty("abc")).toBe(EMPTY_VALUE);
+  });
+
+  test("never carries a currency token, even when the org has one", () => {
+    expect(formatQty(50)).not.toContain("AED");
+    expect(formatQty(50)).not.toContain(UNKNOWN_CURRENCY_GLYPH);
   });
 });

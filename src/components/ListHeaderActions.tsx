@@ -44,7 +44,7 @@
 // read the reason for is information; a control that is absent on this tab
 // and present on the next is a puzzle.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Filter as FilterIcon, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,14 @@ export type ListHeaderActionsProps = {
    * looking for a route that is simply not there today.
    */
   createDisabledReasons?: Record<string, string>;
+  /**
+   * R67 D-44 merge: extra actions between Export and "+ New". Schedule's band
+   * is a FOUR-action band -- Filter | Export | Import | + New -- and Import
+   * belongs to that module alone, so it is passed in rather than added to the
+   * shared trio. The order rule above still holds: whatever goes here sits
+   * after Export and before "+ New", on every screen that uses it.
+   */
+  extraActions?: ReactNode;
 };
 
 export function ListHeaderActions({
@@ -79,6 +87,7 @@ export function ListHeaderActions({
   onExport,
   exportDisabledReason,
   createDisabledReasons = {},
+  extraActions,
 }: ListHeaderActionsProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -138,6 +147,8 @@ export function ListHeaderActions({
       >
         <Download className="size-4" aria-hidden /> Export
       </Button>
+
+      {extraActions}
 
       <div className="relative" ref={containerRef}>
         {/* The accessible name is the control's own written label, "+ New",

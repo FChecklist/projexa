@@ -35,7 +35,25 @@ type StatusOption = { id: string; name: string };
 
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-export default function ScheduleTaskObjectClient({ taskId }: { taskId: string }) {
+export default function ScheduleTaskObjectClient({
+  taskId,
+  backTo,
+  createdNumber,
+}: {
+  taskId: string;
+  /**
+   * R67 D-44: the list's own URL, carrying the project, the tab and the filter
+   * the user had. Validated by the page before it reaches here.
+   */
+  backTo?: string;
+  /**
+   * R67 D-47: the activity number the create screen just wrote, so this page
+   * opens with "Activity #12 created" in its persistent message area instead of
+   * the create screen bouncing to an empty form. Validated as digits by the
+   * page before it reaches here.
+   */
+  createdNumber?: string;
+}) {
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -105,7 +123,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to archive task");
       toast.success("Task archived");
-      router.push(`/schedule?projectId=${task!.projectId}`);
+      router.push(backTo ?? `/schedule?projectId=${task!.projectId}&tab=timeline`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't archive task");
     } finally {
@@ -177,10 +195,12 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       onCancel={mode === "edit" ? () => { setValues(task); setMode("display"); } : undefined}
       onDelete={!task.isArchived ? handleArchive : undefined}
       deleteDisabledReason={task.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
-      onBack={() => router.push(`/schedule?projectId=${task.projectId}`)}
+      onBack={() => router.push(backTo ?? `/schedule?projectId=${task.projectId}&tab=timeline`)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
-      messages={[]}
+      // R67 D-47: the create screen's receipt, in the persistent message area
+      // rather than a toast that has gone by the time the page paints.
+      messages={createdNumber ? [{ level: "success", text: `Activity #${createdNumber} created` }] : []}
     >
       <div className="space-y-3 px-4 py-3">
         {mode === "edit" ? (

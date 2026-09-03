@@ -19,7 +19,7 @@
 // /erp/periods screen -- the page that actually creates fiscal years -- so
 // the dead end has an exit. The asterisks are gone with it: D-67's convention
 // is that a required field is named in the Save label and nowhere else.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { CreateScreen } from "@/components/screens/CreateScreen";
@@ -30,6 +30,7 @@ import { useSubmit } from "@/lib/use-submit";
 import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
 import type { CreateField } from "@/lib/create-screen";
+import { ROLE_GROUPS } from "@/lib/authz/roles";
 
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
 type CostCenter = { id: string; name: string; projectId: string | null };
@@ -46,6 +47,31 @@ const FISCAL_SETUP_URL = `${VERIDIAN_APP_URL}/erp/periods`;
 /** C-15's exact wording for the shortened primary. */
 export const BUDGET_PRECONDITION_LABEL = "needs a fiscal year and an account";
 
+// ─── R67 D-42 merge: WHO can act on the block ────────────────────────────
+//
+// C-15's "Set up in VERIDIAN" is the right destination, and it is kept -- it
+// goes to the real ERP provisioning screen, which is better than the guess
+// this lane originally shipped (/accounting, PROJEXA's read-only surface onto
+// it). What it does not answer is D-42's other half: only an org admin can
+// provision a fiscal year, so for everyone else that link opens a screen they
+// cannot use. A site engineer gets a way to ASK instead, and the asking files
+// a real task rather than telling them to go and do something their role
+// forbids.
+//
+// The group is ROLE_GROUPS.ORG_ADMIN (owner | admin) -- the real group in
+// src/lib/authz/roles.ts. D-42's own wording says "ROLE_GROUPS.ADMIN", which
+// does not exist in this repo.
+export const NON_ADMIN_ACTION_LABEL = "Ask your administrator";
+
+// The task filed on a non-admin's behalf. Deliberately the sentence a person
+// would write, because it is read by a person in the left pane.
+export const ADMIN_TASK_TEXT = "Set up fiscal year — needs admin";
+
+/** Only the org's own admins can provision an ERP fiscal year. */
+function canSetUpAccounting(role: string | null | undefined): boolean {
+  return !!role && (ROLE_GROUPS.ORG_ADMIN as readonly string[]).includes(role);
+}
+
 export default function BudgetCreateClient() {
   const router = useRouter();
   const orgMoney = useOrgMoney();
@@ -57,6 +83,45 @@ export default function BudgetCreateClient() {
   const [lookupError, setLookupError] = useState<string | null>(null);
 
   const [values, setValues] = useState<Record<string, string>>({});
+  // R67 D-42: the viewer's own role, for the branch below. A failed or missing
+  // role read leaves `role` null, which is treated as NOT an admin -- the
+  // "ask" path is safe to offer to an admin, whereas sending someone who
+  // cannot act to a provisioning screen is not.
+  const [role, setRole] = useState<string | null>(null);
+  const [askState, setAskState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [askError, setAskError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchJson<{ role?: string | null }>("/api/organization")
+      .then((d) => {
+        if (live) setRole(d.role ?? null);
+      })
+      .catch(() => {
+        if (live) setRole(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const askAdministrator = useCallback(async () => {
+    setAskState("sending");
+    setAskError(null);
+    try {
+      // A real pipeline task, on the same surface the left pane reads, so the
+      // request appears under "Waiting on others" rather than evaporating.
+      await fetchJson("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawInput: ADMIN_TASK_TEXT, mode: "projects", projectId: null }),
+      });
+      setAskState("sent");
+    } catch (err) {
+      setAskState("failed");
+      setAskError(err instanceof Error && err.message ? err.message : "Could not send that request");
+    }
+  }, []);
 
   // R67 MERGE (lane F2's F-19, audit R-245). THIS WAS Promise.all, AND THAT
   // WAS THE BUG: one failed lookup rejected the whole batch, so a 500 on
@@ -111,6 +176,15 @@ export default function BudgetCreateClient() {
   // a single optional lookup's 500 no longer suppresses this real precondition
   // for the two fields that DID answer.
   const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
+
+  // R67 D-42: the two text inputs used to stay LIVE while the form could not be
+  // saved, so a user could type a budget name and an amount into a form that was
+  // never going to accept them. Every field is disabled while blocked -- and
+  // disabled from the FIRST paint, while the lookups are still in flight, so the
+  // form only ever RELAXES and never flips from enabled to blocked in front of
+  // someone mid-keystroke.
+  const fieldsDisabled = lookupsLoading || blocked;
+  const fieldsDisabledReason = lookupsLoading ? "Loading…" : blocked ? BUDGET_PRECONDITION_LABEL : undefined;
 
   const fields: CreateField[] = [
     // While blocked, no field is marked required: the primary must read
@@ -173,6 +247,11 @@ export default function BudgetCreateClient() {
       : []),
   ];
 
+  for (const field of fields) {
+    field.disabled = field.disabled || fieldsDisabled;
+    field.disabledReason = field.disabledReason ?? fieldsDisabledReason;
+  }
+
   const submit = useSubmit<{ id?: unknown }>({
     objectLabel: "Budget",
     buildRequest: () => ({
@@ -214,16 +293,40 @@ export default function BudgetCreateClient() {
       onSubmit={submit.submit}
       onCancel={() => router.push("/budgets")}
       secondaryAction={
+        // R67 D-42: an admin is sent to the screen that fixes this. Everyone
+        // else is given a way to ASK, because the fix is not theirs to make.
         blocked ? (
-          <a
-            href={FISCAL_SETUP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
-          >
-            Set up in VERIDIAN
-            <ExternalLink className="size-3.5" aria-hidden />
-          </a>
+          canSetUpAccounting(role) ? (
+            <a
+              href={FISCAL_SETUP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
+            >
+              Set up in VERIDIAN
+              <ExternalLink className="size-3.5" aria-hidden />
+            </a>
+          ) : askState === "sent" ? (
+            <span role="status" className="text-sm text-px-muted">
+              Sent — your administrator has been asked to set this up.
+            </span>
+          ) : (
+            <span className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void askAdministrator()}
+                disabled={askState === "sending"}
+                className="text-sm font-medium text-ct-navy underline disabled:opacity-60"
+              >
+                {askState === "sending" ? "Sending…" : NON_ADMIN_ACTION_LABEL}
+              </button>
+              {askState === "failed" && askError && (
+                <span role="alert" className="text-sm text-px-error">
+                  {askError}
+                </span>
+              )}
+            </span>
+          )
         ) : undefined
       }
       banner={

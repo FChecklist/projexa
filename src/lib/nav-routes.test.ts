@@ -261,6 +261,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/[id]",
   "/kpis/new",
   "/labour/[id]",
+  // R67 D-30: one day's attendance sheet. Reached from the Manpower module's
+  // Attendance tab (the "Mark Attendance" action and every sheet row), never
+  // from the sidebar -- a nav entry would have to invent a date.
+  "/labour/attendance/[date]",
   "/labour/attendance/new",
   // R67 D-34: the bulk roster load. Same class as "/scope/import" -- reached by
   // the "Import from Excel" action on /labour, which passes the ?projectId= it
@@ -268,7 +272,14 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/labour/import",
   "/labour/new",
   "/materials/[id]",
+  // R67 D-40: recording material issued to site. Reached from the Materials
+  // module's Issues tab ("Record Issue"), never from the sidebar -- it is an
+  // action on a project's material master, not a module of its own.
+  "/materials/issues/new",
   "/materials/new",
+  // R67 D-36: one inbound receipt. Reached by clicking a row in the Materials
+  // module's Inbound Receipts tab, never from the sidebar.
+  "/materials/receipts/[id]",
   "/materials/receipts/new",
   "/meetings/[id]",
   "/meetings/new",

@@ -82,12 +82,41 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       name: "trade",
       label: "Trade",
       kind: "text",
+      // D3 x D21 MERGE (decision D-11). The two lanes changed this ONE field
+      // for two different reasons, and the reasons do not collide -- so both
+      // survive, and nothing here is a compromise between them.
+      //
+      // D3 / D-53: Trade is REQUIRED. It used to be optional, and the cost of
+      // that was only visible once the Daily Summary existed: every un-traded
+      // worker fell into an "Uncategorised trade" bucket on the one report the
+      // site manager reads each morning, so the trade-wise cost he is looking
+      // for was silently spread across a bucket that means nothing. The point
+      // of entry is the only place that can be fixed -- the summary can only
+      // report what was recorded. Existing rows are untouched and still group
+      // under the bucket; this stops the bucket growing. Marking it required
+      // here is also what puts it in the button: "Save (Name, Trade, Daily
+      // Rate)", through the same archetype that produced "Save (Name, Daily
+      // Rate)" before it.
+      required: true,
       placeholder: "e.g. Mason, Electrician",
-      // R67 D-34: offered, not enforced. Picking from the list is what stops
-      // "Mason"/"mason"/"Masonry" splitting the same crew three ways; typing a
-      // trade the org genuinely has and the list does not is still allowed.
+      // D21 / D-34: the suggestion list is OFFERED, not enforced. Picking from
+      // it is what stops "Mason"/"mason"/"Masonry" splitting the same crew
+      // three ways; typing a trade the org genuinely has and the list does not
+      // is still allowed. `required` and `suggestions` are orthogonal in the
+      // archetype -- required is checked by missingCreateFields() against the
+      // typed value, and suggestions only renders a <datalist> -- so "must be
+      // answered" and "here are the answers we already know" compose exactly
+      // as a user would expect.
       suggestions: trades,
-      help: trades.length > 0 ? "Pick an existing trade where you can -- it keeps the trade-wise totals together." : undefined,
+      // Both help sentences said something true and neither said the other's,
+      // so the merged line keeps D3's REASON (why the field is mandatory) and
+      // adds D21's ADVICE (prefer an existing trade) only when there is a list
+      // to prefer. On a cold or failed /trades lookup the field degrades to
+      // required free text, which is exactly what D3 shipped.
+      help:
+        trades.length > 0
+          ? "Groups this worker on the Daily Summary's trade-wise cost -- pick an existing trade where you can, so the totals stay together."
+          : "Groups this worker on the Daily Summary's trade-wise cost",
     },
     {
       name: "vendorId",
@@ -122,7 +151,7 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
           projectId,
           name: values.name,
           employeeCode: values.employeeCode || undefined,
-          trade: values.trade || undefined,
+          trade: values.trade,
           vendorId: values.vendorId || undefined,
           dailyRate: Number(values.dailyRate),
         }),

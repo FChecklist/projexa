@@ -70,6 +70,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review/certifications/[id]": "ORG_ADMIN",
   "/assistant": "ANY_MEMBER",
   "/attendance": "FIELD",
+  // R67 D-30: the whole-roster daily sheet. Same tier as the one-worker
+  // write it batches -- marking a site's attendance is field work, and a
+  // batch of the same act is not a more privileged one.
+  "/attendance/bulk": "FIELD",
   // R67 D-31: minting a public, unauthenticated link to this project's
   // attendance and labour cost is a commercial disclosure, not a site record --
   // same tier as /work-progress/report/share, which shares the identical
@@ -141,6 +145,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/leave/requests": "ANY_MEMBER",
   "/leave/requests/[id]/decision": "PM_OR_ABOVE",
   "/materials": "FIELD",
+  // R67 D-36: the receipt's soft void. Same tier as recording the receipt --
+  // correcting a mis-keyed delivery is the same site work as entering it,
+  // and the void keeps the row rather than destroying it.
+  "/materials/[id]": "FIELD",
+  // R67 D-40: issuing material to site is the storekeeper's own job, the same
+  // site work as recording what arrived -- so the same tier as /materials.
+  "/materials/issues": "FIELD",
   "/materials/master": "FIELD",
   "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",

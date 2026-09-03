@@ -83,14 +83,24 @@ function mount() {
 }
 
 describe("RosterCreateClient (R67 D-34 on the D-67 archetype)", () => {
-  test("the primary is disabled and NAMES both missing fields, in the /labour/new convention", async () => {
+  // D3 x D21 MERGE (decision D-11). The next two assertions are RESTATED, not
+  // deleted. Both were written when Trade was optional; lane D3's D-53 made it
+  // required, because an un-traded worker fell into a meaningless bucket on the
+  // one report the site manager reads each morning. What these tests actually
+  // pin -- that the primary NAMES every field still missing, and that the
+  // required/optional marking on each label matches the field's real state --
+  // is unchanged and is asserted here more strictly than before, over all five
+  // fields rather than a chosen four.
+  test("the primary is disabled and NAMES every missing field, in the /labour/new convention", async () => {
     const { getByRole } = mount();
     const save = await waitFor(() => getByRole("button", { name: /^Save/ }) as HTMLButtonElement);
     expect(save.disabled).toBe(true);
-    expect(save.textContent).toContain("Name, Daily Rate");
+    // Trade joins Name and Daily Rate in the button since D-53 made it
+    // required, in the order the fields are asked for on the form.
+    expect(save.textContent).toContain("Name, Trade, Daily Rate");
   });
 
-  test("the two required fields are the only ones NOT marked optional -- the recorded fault was that neither said so", async () => {
+  test("the three required fields are the only ones NOT marked optional -- the recorded fault was that neither said so", async () => {
     const { container } = mount();
     await waitFor(() => expect(container.querySelector("label[for='name']")).not.toBeNull());
     const optional = (n: string) =>
@@ -98,8 +108,10 @@ describe("RosterCreateClient (R67 D-34 on the D-67 archetype)", () => {
 
     expect(optional("name")).toBe(false);
     expect(optional("dailyRate")).toBe(false);
+    // D-53: required now, so it must NOT carry "(optional)" -- the label and
+    // the Save button have to tell the same story about the same field.
+    expect(optional("trade")).toBe(false);
     expect(optional("employeeCode")).toBe(true);
-    expect(optional("trade")).toBe(true);
     expect(optional("vendorId")).toBe(true);
   });
 
