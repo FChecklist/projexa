@@ -12,11 +12,14 @@ import {
   formatProgressCell,
   groupRows,
   hasRecordedProgress,
+  resolveCategoryName,
   sumRootAmtTotal,
   workProgressExportFileName,
   workProgressParamSignature,
   UNCATEGORIZED_LABEL,
   vendorsFromRoster,
+  countUnlinkedEntries,
+  unlinkedEntriesNote,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -797,6 +800,58 @@ describe("R67 I-05: category resolution order and the server-side Category filte
     expect(parentFiltered.amt).toEqual(parentUnfiltered.amt);
     expect(parentFiltered.qty).toEqual(parentUnfiltered.qty);
   });
+})
+
+// ---------------------------------------------------------------------------
+// R67 E-15 (R-135): the Category column stops saying "Uncategorized" when it
+// has something true to say
+// ---------------------------------------------------------------------------
+describe("resolveCategoryName (R67 E-15)", () => {
+  const CIVIL = "Civil";
+
+  test("the line's OWN category wins over everything else", () => {
+    expect(resolveCategoryName({ category: CIVIL, parentLineItemId: null }, { category: "Paint", itemCode: "P-1" }, "Finishes")).toBe(CIVIL);
+    // A blank string is not a category -- it is an absent one.
+    expect(resolveCategoryName({ category: "   ", parentLineItemId: "p" }, { category: "Paint", itemCode: "P-1" }, null)).toBe("Paint");
+  });
+
+  test("a sub-task inherits its PARENT's category -- it is part of that contract line", () => {
+    expect(resolveCategoryName({ category: null, parentLineItemId: "p" }, { category: CIVIL, itemCode: "C-01" }, null)).toBe(CIVIL);
+  });
+
+  test("the activity's category still applies where neither line carries one, so nothing pre-existing changed", () => {
+    expect(resolveCategoryName({ category: null, parentLineItemId: null }, undefined, "Finishes")).toBe("Finishes");
+  });
+
+  test("ACCEPTANCE: the fallback is the PARENT'S CODE, not 'Uncategorized'", () => {
+    // A reader who sees "C-01" knows which contract line the row belongs to.
+    // "Uncategorized" refused to tell them that.
+    expect(resolveCategoryName({ category: null, parentLineItemId: "p" }, { category: null, itemCode: "C-01" }, null)).toBe("C-01");
+  });
+
+  test("a ROOT line with no category and no activity is the one case that is genuinely uncategorised", () => {
+    expect(resolveCategoryName({ category: null, parentLineItemId: null }, undefined, null)).toBe(UNCATEGORIZED_LABEL);
+    // ...and so is a sub-task whose parent has neither a category nor a code.
+    expect(resolveCategoryName({ category: null, parentLineItemId: "p" }, { category: null, itemCode: null }, null)).toBe(UNCATEGORIZED_LABEL);
+  });
+
+  test("a whole report: the uncategorised sub-task reports under its parent's code, and the roll-up follows", () => {
+    const report = buildWorkProgressReport({
+      lineItems: [
+        { id: "root", itemCode: "C-01", description: "Blockwork", quantity: 100, rate: 10, amount: 1000, unit: "m2", activityId: null, parentLineItemId: null, category: null },
+        { id: "child", itemCode: "C-01.1", description: "First lift", quantity: 40, rate: 10, amount: 400, unit: "m2", activityId: null, parentLineItemId: "root", category: null, budgetPercentage: 40 },
+      ] as unknown as Parameters<typeof buildWorkProgressReport>[0]["lineItems"],
+      entries: [],
+      activities: [],
+      categories: [],
+      from: "2026-01-01",
+      to: "2026-12-31",
+    });
+    const child = report.rows.find((r) => r.lineItemId === "child")!;
+    expect(child.categoryName).toBe("C-01");
+    // The root itself has nothing above it, so it stays honestly uncategorised.
+    expect(report.rows.find((r) => r.lineItemId === "root")!.categoryName).toBe(UNCATEGORIZED_LABEL);
+  });
 });
 
 // R67 E-34 (R-266). The four views are four groupings of data the browser
@@ -978,7 +1033,6 @@ describe("workProgressExportFileName (R67 E-36: one filename rule for CSV, XLSX 
 // an entry by boq_line_item_id or, failing that, by activity, and an entry
 // matching neither never appears in any row. On a project with no BOQ at all
 // that is the whole day's work.
-import { countUnlinkedEntries, unlinkedEntriesNote } from "./work-progress-report";
 
 describe("countUnlinkedEntries / unlinkedEntriesNote -- R67 B-09", () => {
   const LINES: BoqLineItem[] = [

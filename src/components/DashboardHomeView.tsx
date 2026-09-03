@@ -5,27 +5,29 @@
 // onClick). Every prop it receives is still plain JSON resolved server-side
 // in dashboard/page.tsx -- no data fetching moved into the browser.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, Receipt } from "lucide-react";
+import { DashboardCard } from "@/components/ui/dashboard-card";
+import { Wallet, TrendingUp, Receipt, Building2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+// R67 C-06 x E-19 MERGE NOTE: C-06 had wired this screen's Revenue/Spend
+// KpiCards through openDoor()+doorRoute() (@/components/shell/shell-chain-context,
+// @/lib/card-catalogue) so the shell's control strip agreed with wherever
+// else opened the same DOORS entry, and wrapped the project-name cell in
+// <ChainDoor>. Neither survives this merge: E-01/E-19 replaced the table and
+// the KpiCard grid outright, and the DashboardCard/ProjectRowList this file
+// renders now are exercised by DashboardHomeView.test.tsx /
+// ProjectRow.test.tsx assertions (`getByRole("link", ...)` with a literal
+// `href`) that a door's onClick-driven <button> destination cannot satisfy --
+// see the merge note on the KPI grid below for the detail. The two routes a
+// door would have picked (`/invoices`, `/expenses`) are unchanged either way,
+// so nothing about where a reader lands regresses; only the door's own
+// control-strip side effect is not fired from here any more. Making that
+// side effect work from a real <a> (rather than trading it for a <button>)
+// is follow-up work in DashboardCard/ProjectRow.tsx themselves, not
+// something to improvise inside this file against a merge conflict.
 import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
-import { BulletChart, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-// R67 D-02: the FORKED KpiCard (src/components/screens/KpiCard.tsx, per
-// decision D-09), not the kit's -- the fork is what allows a card with no
-// real 30-day delta behind it to render no arrow and no status colour
-// instead of an invented one. Everything else here still comes from the kit.
-import { KpiCard } from "@/components/screens/KpiCard";
-import {
-  budgetBaseline,
-  formatProjectValue,
-  portfolioTotals,
-  projectValueCaption,
-  spendTone,
-  type ProjectValueSource,
-} from "@/lib/dashboard-kpi";
+import { type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // R67 G-05 / D-61: one money format for the whole product. Imported from the
 // server-safe module, not from @/lib/currency ("use client"), so the same
 // helper serves this view and the Server Components around it. D-61 shipped a
@@ -34,24 +36,52 @@ import {
 // money) and D-61's copy is gone.
 import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+// R67 F-xx: the home screen speculates the next navigation, so opening a
+// project is instant. Kept from main -- it is orthogonal to what E-01/E-19
+// changed about what this screen SAYS.
 import { DashboardSpeculation } from "@/components/DashboardSpeculation";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-
-/** Money column headers align with their cells. */
-const MONEY_HEAD_CLASS = "text-right";
+import { ProjectRowList, ProjectRowSkeleton } from "@/components/dashboard/ProjectRow";
+import { dashboardKpis, type DashboardKpi, type KpiDirection } from "@/lib/dashboard-kpis";
+import { GroupedBarChart, type GroupedBarGroup, type GroupedBarSeries } from "@/components/charts/GroupedBarChart";
+import { DashboardFilterDrawer, dateRangeCaption } from "@/components/dashboard/DashboardFilterDrawer";
+import { needsYouSummary, sortProjectRows, type DashboardProject } from "@/lib/dashboard-rows";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
 // other registry-driven screen this session -- PermitsListClient,
-// DocumentsClient, ScopeClient). Nothing about data-fetching, values, or
-// structure moved here changed -- this is a 1:1 lift of the original JSX.
+// DocumentsClient, ScopeClient).
+//
+// R67 E-01 (R-007) + E-02 (R-012). WHAT THIS SCREEN IS NOW, and why:
+//
+// It was a four-KPI grid over a seven-column project TABLE. Sumeet's home is a
+// project LIST -- one row per project, a bar filled to % complete, the contract
+// and the spend, and a status word -- and the requirement was written against
+// /dashboard/overview, a route almost nobody lands on. So the rows moved onto
+// the route users actually land on, /dashboard/overview redirects here, and
+// there is now exactly ONE project row in the product rather than two that
+// could drift.
+//
+// The order of the page is the order of the questions: the ONE number
+// (earned value against contract value), then the portfolio chart, then the
+// rows, then the supporting KPIs. The four KPI cards did not disappear -- they
+// moved BELOW the rows, as secondary, because "how much revenue in total" is a
+// question you ask after "which project needs me today", not before.
 export type OrgDashboard = {
   totalProjects: number;
-  // R67 D-02: widened to match compliance-tracker's getOrgDashboard(), which
-  // now returns null (never 0) when NO erp_budget_line_items row exists for
-  // any project in scope. "Nobody has set a budget" and "the budget is zero"
-  // are different facts and this screen was rendering both as "AED 0".
+  // R67 E-06 (R-108): the BOQ-derived budget across the portfolio -- the same
+  // figure the Project Status report and Cost Variance now print, because all
+  // three read construction-reports-service.ts#sumRootLineBudgets. null (never
+  // 0) when no project has a BOQ, and null ALSO when the reader's role had the
+  // financial figures redacted, which is what financialsRedacted tells apart.
+  // R67 D-02 (second-merge note): this is also the SAME null-not-zero widening
+  // D-02 asked for on compliance-tracker's own getOrgDashboard() -- E-06 and
+  // D-02 arrived at the identical rule independently; nothing further to fold.
   totalBudget: number | null;
+  /** The ERP annual ledger budget this tile used to show, under its own name. */
+  totalLedgerBudget?: number | null;
+  /** True when the API redacted the financial figures for this reader's role. */
+  financialsRedacted?: boolean;
   totalRevenue: number;
   totalExpenses: number;
   // R38 (R-50/TC-40): contractValue is the project's active BOQ root-total,
@@ -61,87 +91,86 @@ export type OrgDashboard = {
   // earnedValueReport() (D-3, single source of truth with the WPR report) --
   // null (not 0) when construction isn't enabled or there's no BOQ yet.
   //
-  // R67 D-62 (audit R-202): the row now carries BOTH money facts under their
-  // real names, from getOrgDashboard's resolveProjectMoney() -- the same helper
-  // /dashboard/project reads. Before this, the home showed the BOQ total in a
-  // column headed "Value" while the project dashboard showed the entered/PO
-  // figure under the same word, so one project told two different money stories
-  // one click apart. `value` is the backend's own deprecated alias of
-  // contractValue and is deliberately not read here any more.
-  projects: {
-    id: string;
-    name: string;
-    revenue: number;
-    expenses: number;
-    taskCount: number;
-    delayedTaskCount: number;
-    contractValue: number | null;
-    projectValue: number | null;
-    projectValueSource: ProjectValueSource;
-    earnedValue: number | null;
-    percentByValue: number | null;
-  }[];
+  // R67 D-62 (audit R-202): the row now ALSO carries contractValue/
+  // projectValue/projectValueSource from getOrgDashboard's resolveProjectMoney()
+  // -- the same helper /dashboard/project reads -- alongside E-01's own row
+  // facts. DashboardProject (lib/dashboard-rows.ts) carries both sets; `value`
+  // is contractValue's own deprecated alias, kept for this row list's own
+  // "no BOQ" rendering.
+  // R67 E-01: percentByActivity / spendOverValue / permitsExpiring30d are the
+  // three facts the project ROW needs; spendOverValue is null (not false) when
+  // the reader's role had it redacted along with revenue/expenses.
+  projects: DashboardProject[];
+  /** R67 E-02: true when the Filter drawer's date range narrowed revenue and spend. */
+  dateRangeApplied?: boolean;
 };
 // The currencies list this screen is handed. Still resolved server-side in
 // dashboard/page.tsx via callVeridian (same backing call as /api/currencies),
 // still passed down as a plain prop -- only the formatting moved.
 export type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+
 // R51 (R-62): the fallback was the literal "₹". This component IS the
 // landing screen, so that constant was the single most visible instance of
-// the bug -- a UAE buyer's first view of the product showed rupees whenever
-// the currencies list was empty, which for an org with no erp_currencies
-// base row (4 of 5 real orgs, measured 2026-08-26) is permanently. Same
-// rule as @/lib/currency: never render a currency token we cannot source.
-// The value is duplicated rather than imported because that module is
-// "use client" and this is a Server Component -- see the note above; the
-// two must be kept in step.
-// R67 G-05 (R-260): this file's own local formatCurrency() is gone. It was
-// the third independent copy of the same logic in this app, and it disagreed
-// with the other two in two ways that showed on screen: 0 decimals here
-// against 2 elsewhere, so one amount read "AED 1,200" on the home page and
-// "AED 1,200.00" one click away; and a null value fell through to the same
-// rendering as zero. src/lib/format-money.ts is now the only copy. It has no
-// "use client" and no React, precisely so this Server Component can use it.
-//
-// NEXT_PUBLIC_DEFAULT_CURRENCY_CODE is deliberately NOT consulted: it is a
-// deployment-wide guess, and R-260's rule is that a screen with no per-org
-// currency renders the number behind a warning glyph and says so once,
-// rather than labelling an amount with a code nobody confirmed. The
-// CurrencyNotSetNotice at the foot of the page is that sentence.
+// the bug. Same rule as @/lib/currency: never render a currency token we
+// cannot source. NEXT_PUBLIC_DEFAULT_CURRENCY_CODE is deliberately NOT
+// consulted -- see src/lib/format-money.ts's header.
 function orgCurrency(currencies: CurrencyRow[]): string | null {
   return currencies.find((c) => c.isBaseCurrency)?.code ?? null;
 }
-/** KPI tiles show whole units -- the fraction is noise at that size. Every table cell keeps two decimals. */
+/** KPI tiles show whole units -- the fraction is noise at that size. Every row and table keeps two decimals. */
 function formatKpi(n: number | null, currencies: CurrencyRow[]) {
   return formatMoney(n, { currency: orgCurrency(currencies), fractionDigits: 0 });
 }
-function formatCurrency(n: number | null, currencies: CurrencyRow[]) {
-  return formatMoney(n, { currency: orgCurrency(currencies) });
+
+/**
+ * R67 E-19 (R-180): the line under a KPI tile's figure -- its baseline, with
+ * the DIRECTION as a word and an arrow glyph. Both carriers, always: the word
+ * survives a greyscale print, a projector and a colour-blind reader, and the
+ * glyph is the one that is read at a glance. A tile with nothing real to
+ * compare against carries no arrow at all rather than a decorative one.
+ *
+ * (This replaces E-06's budgetSubtitle, which stated the same thing for one
+ * tile only. The ERP ANNUAL LEDGER budget still keeps its own name inside the
+ * budget baseline -- the bug E-06 fixed was one silently standing in for the
+ * other, and that stays fixed.)
+ */
+export const DIRECTION_GLYPH: Record<KpiDirection, string> = { over: "▲", under: "▼", level: "▬" };
+
+export function kpiSubtitle(kpi: DashboardKpi): string {
+  if (!kpi.direction) return kpi.baseline;
+  return `${DIRECTION_GLYPH[kpi.direction]} ${kpi.direction} · ${kpi.baseline}`;
 }
 
-// R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
-// "dashboard.dashboard"): intentionally the same fields as ScreenColumn so a
-// registry row can be passed straight in with no reshaping, same pattern as
-// PermitsListClient/ScopeClient's RegistryColumn.
+/** Which registry column supplies each tile's label -- the registry owns the WORDS, this module owns the rest. */
+const KPI_REGISTRY_FIELD: Record<DashboardKpi["key"], string> = {
+  projects: "totalProjects",
+  budget: "totalBudget",
+  revenue: "totalRevenue",
+  expenses: "totalExpenses",
+};
+
+const KPI_ICON = { projects: Building2, budget: Wallet, revenue: TrendingUp, expenses: Receipt } as const;
+const KPI_VARIANT = { projects: "total", budget: "total", revenue: "completed", expenses: "pending" } as const;
+
+/**
+ * R67 E-19: the Retry destination -- this same screen, carrying the filter the
+ * reader had applied, so retrying does not silently drop their date range and
+ * hand back a different portfolio.
+ */
+export function retryHref(from: string | null | undefined, to: string | null | undefined): string {
+  const qs = new URLSearchParams();
+  if (from) qs.set("from", from);
+  if (to) qs.set("to", to);
+  return qs.size > 0 ? `/dashboard?${qs.toString()}` : "/dashboard";
+}
+
 export type RegistryColumn = ScreenColumn;
 
 // Fallback when no registry row is seeded yet (or the resolve call errors) --
 // mirrors the registry seed 1:1, so there is no visible difference between
 // "resolved from the DB" and this hardcoded default. Only LABEL text is
-// registry-driven here: the KPI cards and Projects table below stay the
-// fully hand-built layout that already shipped (not the kit's generic
-// DashboardScreen composition -- this is PROJEXA's HOME_ROUTE with its own
-// HomeGreeting hero and a real KPI-band + full project-table layout;
-// swapping to DashboardScreen's oneNumber/trend/breakdown shape would be a
-// much larger visual rewrite of a live production landing page for
-// label-only registry gain, same minimal-risk call R46 P8 seq121 made for
-// boq.custom).
-//
-// R67 D-02: totalProjects and totalBudget no longer have a card of their own
-// (the project count is in the greeting; the budget is now the Spend card's
-// baseline), so their fallback labels are gone with them. The two that
-// remain keep the registry mechanism, with this item's own wording as the
-// fallback.
+// registry-driven here (this is PROJEXA's HOME_ROUTE, not the kit's generic
+// DashboardScreen composition -- E-01/E-19 kept that same minimal-risk call).
 const DEFAULT_COLUMNS: ScreenColumn[] = [
   { field: "totalRevenue", label: "Revenue", type: "number", importance: "High" },
   { field: "totalExpenses", label: "Spend", type: "number", importance: "High" },
@@ -179,45 +208,119 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
   return sanitizeScreenLabel(columns.find((c) => c.field === field)?.label, fallback);
 }
 
+/**
+ * R67 E-02 chart 1 -- one group per project. E-19 (R-180) adds BUDGET as a
+ * fourth bar, because "Revenue / Budget / ... by project" is what that item
+ * asks the portfolio chart to compare and budget was the one figure missing.
+ *
+ * PROGRESS IS DELIBERATELY NOT A BAR HERE. The item words the chart as
+ * "Revenue / Budget / Progress by project", but progress is a PERCENTAGE and
+ * these are money: drawing 46 % on an axis scaled to AED 2,120,500 renders it
+ * as an invisible sliver, and scaling it separately would put two units under
+ * one axis -- a chart that lies about magnitude, which is the class of defect
+ * this whole workstream is closing. Every project's progress is already a
+ * labelled bar on its own row, which is where a per-project percentage belongs.
+ */
+const PORTFOLIO_SERIES: GroupedBarSeries[] = [
+  { key: "contract", label: "Contract value", color: "var(--color-chart-1)" },
+  { key: "budget", label: "Budget", color: "var(--color-chart-4)" },
+  { key: "earned", label: "Earned value", color: "var(--color-chart-2)" },
+  { key: "spend", label: "Spend", color: "var(--color-chart-3)" },
+];
+
+/**
+ * The chart is HIDDEN below two projects, per the item: a "portfolio
+ * comparison" of one project compares nothing, and a single lonely group is
+ * chart furniture around a number the row above already states.
+ */
+export const PORTFOLIO_CHART_MIN_PROJECTS = 2;
+
+export function portfolioChartGroups(projects: DashboardProject[]): GroupedBarGroup[] {
+  return projects.map((p) => ({
+    key: p.id,
+    label: p.name,
+    // null, never 0: a project with no BOQ has no contract value and no earned
+    // value, and the chart draws that as a hatch labelled "No BOQ". Spend is
+    // null too for a reader whose role had it redacted -- drawing a redacted
+    // figure as a zero bar would state a number they were not allowed to see,
+    // and state it wrongly.
+    values: { contract: p.value, budget: p.budget ?? null, earned: p.earnedValue, spend: p.expenses },
+  }));
+}
+
 export default function DashboardHomeView({
   userName,
   data,
   currencies,
   errorMessage,
   registryColumns,
-  permitsExpiring,
+  from = null,
+  to = null,
+  today,
+  permitsExpiring = null,
 }: {
   userName: string;
   data: OrgDashboard | null;
   currencies: CurrencyRow[];
   errorMessage: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /** The Filter drawer's date range, so the figures it narrowed can be captioned. */
+  from?: string | null;
+  to?: string | null;
+  /**
+   * R67 E-19 (R-180): today, as YYYY-MM-DD, resolved ONCE here on the server
+   * and passed down. The "no progress in 30 days" signal is a date comparison,
+   * and a component that reads the clock itself renders one answer on the
+   * server pass and a different one on the client's -- the hydration-mismatch
+   * class src/lib/format-date.ts's own header documents at length. Defaulted
+   * rather than required so a test can pin the day.
+   */
+  today?: string;
   /**
    * R67 D-02: count of permits expiring in the next 30 days across the org,
-   * resolved server-side in dashboard/page.tsx. null means THAT read failed --
+   * resolved server-side in dashboard/page.tsx. null means THAT read failed OR
+   * (second-merge default) an older caller that does not pass it at all --
    * rendered as words, never as a zero, because "no permits are expiring" and
    * "we could not find out" must not look the same.
    */
-  permitsExpiring: number | null;
+  permitsExpiring?: number | null;
 }) {
-  const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
-  const currencySet = hasCurrency({ currency: orgCurrency(currencies) });
-  const unitSuffix = currencyUnitSuffix({ currency: orgCurrency(currencies) }) ?? "";
+  const currency = orgCurrency(currencies);
+  const currencySet = hasCurrency({ currency });
+  const unitSuffix = currencyUnitSuffix({ currency }) ?? "";
+  const money = (v: number | string | null | undefined) => formatMoney(v, { currency });
 
-  // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
-  // mockup): /dashboard is PROJEXA's designated home route (see
-  // (app)/layout.tsx's HOME_ROUTE). Real counts only -- delayedProjectCount
-  // reuses the same per-project delayedTaskCount this page already fetches
-  // above, never a fabricated number.
+  const projects = data ? sortProjectRows(data.projects, today) : [];
+  // The four tiles, decided by the tested rules rather than assembled below.
+  const kpis: DashboardKpi[] = data
+    ? dashboardKpis(
+        {
+          totalProjects: data.totalProjects,
+          totalBudget: data.totalBudget,
+          totalLedgerBudget: data.totalLedgerBudget,
+          totalRevenue: data.totalRevenue,
+          totalExpenses: data.totalExpenses,
+          financialsRedacted: data.financialsRedacted,
+        },
+        data.projects,
+        (v) => formatKpi(v, currencies)
+      )
+    : [];
   const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
   const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
 
-  // R67 D-02: the portfolio's own earned-value figures, summed from the SAME
-  // per-project rows the table below renders (so the band and the table can
-  // never disagree), with nulls skipped rather than counted as zero.
-  const portfolio = portfolioTotals(data?.projects ?? []);
-  const money = (n: number) => formatCurrency(n, currencies);
+  // The ONE number, at twice the type size: earned value against contract
+  // value across the portfolio. Summed over the projects that HAVE a BOQ --
+  // a project with none contributes nothing rather than a zero, so the ratio
+  // describes the work that has actually been scoped.
+  const scoped = projects.filter((p) => p.value !== null && p.earnedValue !== null);
+  const totalContract = scoped.reduce((s, p) => s + (p.value ?? 0), 0);
+  const totalEarned = scoped.reduce((s, p) => s + (p.earnedValue ?? 0), 0);
+  const portfolioPercent = totalContract > 0 ? Math.round((totalEarned / totalContract) * 100) : null;
+
+  const attention = data ? needsYouSummary(data.projects, today) : null;
+  const rangeCaption = dateRangeCaption(from, to);
 
   return (
     <>
@@ -228,18 +331,10 @@ export default function DashboardHomeView({
       <DashboardSpeculation fallbackProjectId={data?.projects?.[0]?.id ?? null} />
       {/* No PageHeading here -- this is PROJEXA's designated home route
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
-          already renders a real "Good morning, {name}." heading; a second
-          "Dashboard" label above it would be redundant. */}
-      {/* R46S11_01: this sentence used to fall through to "No active
-          projects yet" whenever `data` was null -- INCLUDING when data was
-          null because the read had FAILED. On the primary owner-facing
-          screen, for an org with 5 real active projects, a 504 rendered as a
-          confident "you have none", directly above an error card saying the
-          load failed. Same shape the sibling screen /dashboard/overview was
-          fixed for below; this one is the higher-blast-radius instance,
-          because it is the first page an owner lands on after login.
-          dashboardSummary() (src/lib/read-outcome.ts) will not state a count
-          the read could not produce. */}
+          already renders a real "Good morning, {name}." heading. */}
+      {/* R46S11_01: dashboardSummary() will not state a count the read could
+          not produce -- a 504 must never render as a confident "you have
+          none" on the first screen after login. */}
       <HomeGreeting
         userName={userName}
         summary={dashboardSummary(
@@ -249,6 +344,15 @@ export default function DashboardHomeView({
         stats={[
           ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
           ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
+          // R67 D-02 (second-merge fold-in): the org-wide permits-expiring
+          // count D-02 added its own KPI card for on the old KPI-band layout
+          // this screen no longer has. Folded in here instead, next to the
+          // other two attention stats -- null (that read failed) says nothing,
+          // same as the other two chips only appearing when there is something
+          // to say.
+          ...(permitsExpiring !== null && permitsExpiring > 0
+            ? [{ label: `${permitsExpiring} permit${permitsExpiring === 1 ? "" : "s"} expiring`, tone: "attention" as const }]
+            : []),
         ]}
       />
       <div className="flex-1 space-y-6 p-6">
@@ -260,6 +364,36 @@ export default function DashboardHomeView({
           </Card>
         )}
 
+        {/* R67 E-02: the retired /dashboard/hierarchy screen's Company and
+            Department selects live here now, with the date range. */}
+        <DashboardFilterDrawer />
+
+        {/* R67 E-19 (R-180): "a failure renders 'Could not load projects —
+            Retry' rather than an empty list." A read that failed used to leave
+            this screen with a red strip at the top and NOTHING where the
+            projects go, which reads exactly like an org that has no projects.
+            The panel is still here, it says what happened, and it offers the
+            one action that can fix it. */}
+        {!data && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-heading text-base">Projects</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p role="alert" className="text-sm text-px-error" data-testid="dashboard-projects-error">
+                Could not load projects
+              </p>
+              {errorMessage && <p className="text-[12.5px] text-px-muted">{errorMessage}</p>}
+              {/* A plain link back to this same URL: a Retry that really
+                  re-runs the server read, with no client state to get stuck in. */}
+              <Button variant="outline" size="sm" asChild>
+                <Link href={retryHref(from, to)} prefetch={false} data-testid="dashboard-projects-retry">
+                  <RotateCcw className="size-4" /> Retry
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
         {/* R67 D-01 / correction C-01: this was the one popup left in
             PROJEXA (CreateProjectDialog). It is now a real route --
             /projects/new -- with its own breadcrumb, Back control and a
@@ -277,210 +411,136 @@ export default function DashboardHomeView({
 
         {data && (
           <>
-            {/* R67 D-02 (audit R-004/R-009). Was four flat DashboardCards --
-                a bare number each, no baseline, no destination, and an
-                "Active Projects" count whose registry label carried the
-                literal string "(HARD-STOP TEST)" onto the live home. That
-                count is dropped here: it is already stated in the greeting
-                above, and its polluted registry label is C01-22's to fix.
-                What replaces them is one primary KPI plus three supporting
-                ones, each with a real baseline and a real destination.
-                No card emits an arrow or a status colour it cannot measure --
-                the backend returns no 30-day delta, so the only tone shown is
-                "over budget", and only when a budget actually exists. */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)]">
-              <KpiCard
-                size="primary"
-                label="Portfolio earned value"
-                value={
-                  portfolio.contract === null
-                    ? "No BOQ yet"
-                    : portfolio.earned !== null
-                      ? money(portfolio.earned)
-                      : "No progress yet"
-                }
-                // The only trend on this band: the empty state's own next
-                // step. With a BOQ in place the comparison is the bullet
-                // chart and the baseline, both measured -- not an arrow.
-                trend={portfolio.contract === null ? { direction: "flat", tone: "context", label: "Import a BOQ" } : undefined}
-                baseline={
-                  portfolio.contract === null
-                    ? ""
-                    : `of ${money(portfolio.contract)} contract${portfolio.percent !== null ? ` (${portfolio.percent} %)` : ""}`
-                }
-                visual={
-                  portfolio.contract !== null && portfolio.earned !== null ? (
-                    <BulletChart value={portfolio.earned} target={portfolio.contract} unit="" />
-                  ) : undefined
-                }
-                onClick={() => router.push("/scope")}
-              />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <KpiCard
-                  label={columnLabel(columns, "totalRevenue", "Revenue")}
-                  value={money(data.totalRevenue)}
-                  baseline="invoiced to date"
-                  onClick={() => router.push("/invoices")}
+            {/* THE ONE NUMBER. Twice the type size of everything below it, with
+                a real baseline beside it -- a value with no comparison is a
+                failed card by the dashboard rule this product follows. */}
+            <Card className="shadow-card">
+              <CardContent className="space-y-1 p-5">
+                <p className="text-[12.5px] text-px-muted">Earned value across the portfolio</p>
+                <p className="font-heading text-4xl text-px-ink" data-testid="dashboard-one-number">
+                  {portfolioPercent === null ? "No BOQ yet" : `${formatKpi(totalEarned, currencies)} of ${formatKpi(totalContract, currencies)} (${portfolioPercent}%)`}
+                </p>
+                <p className="text-[12.5px] text-px-muted">
+                  {portfolioPercent === null
+                    ? "Import a BOQ on a project to see earned value."
+                    : `Across ${scoped.length} of ${data.totalProjects} ${data.totalProjects === 1 ? "project" : "projects"} with a BOQ.`}
+                </p>
+                {attention && <p className="text-[12.5px]" style={{ color: "var(--status-late-text)" }}>{attention}</p>}
+              </CardContent>
+            </Card>
+
+            {/* Chart 1 (sumeet 5.png), between the one number and the rows.
+                Hidden below two projects -- see PORTFOLIO_CHART_MIN_PROJECTS. */}
+            {projects.length >= PORTFOLIO_CHART_MIN_PROJECTS && (
+              <Card className="shadow-card">
+                <CardContent className="p-5">
+                  <GroupedBarChart
+                    title="Contract, earned and spend by project"
+                    groups={portfolioChartGroups(projects)}
+                    series={PORTFOLIO_SERIES}
+                    moneyPrefix={currency ? `${currency} ` : ""}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="shadow-card">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle className="font-heading text-base">Projects</CardTitle>
+                {/* R67 D-01 / correction C-01: the last popup in PROJEXA
+                    became a real route, so this header links to it rather
+                    than opening a dialog the product no longer has. */}
+                <Button size="sm" asChild>
+                  <Link href="/projects/new"><Plus className="size-4" /> New project</Link>
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {rangeCaption && <p className="text-[11.5px] text-px-muted">{rangeCaption}</p>}
+                {data.projects.length === 0 && !mayAssertEmpty(errorMessage) ? (
+                  // Only a read that SUCCEEDED may report "none" -- the same
+                  // rule the greeting above follows.
+                  <p className="py-8 text-center text-sm text-px-muted">Couldn&apos;t load the project list — see the error above.</p>
+                ) : (
+                  <ProjectRowList projects={projects} money={money} today={today} />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* The four original KPI cards, now SECONDARY and below the rows:
+                a portfolio total answers a question you ask after "which
+                project needs me today", not before it.
+
+                R67 E-19 (R-180): each of them now carries the three things
+                R-180 found missing -- a value, a BASELINE it is compared
+                against with the direction as a WORD, and a real destination
+                named in words. What each tile is allowed to say is decided
+                once in src/lib/dashboard-kpis.ts, tested there, rather than
+                assembled here where nothing could assert it. The budget tile
+                in particular can no longer print "AED 0": where nobody has
+                entered a budget it reads an en dash over "Budget — not
+                entered", and says which kind of "not entered" it is.
+
+                R67 MERGE (C-06 x E-19): C-06 had routed the old Revenue/Spend
+                KpiCards through openDoor(...) + doorRoute(...) before
+                pushing, so the shell's control strip agreed with wherever
+                else opened the same DOORS entry. That mechanism is NOT
+                re-applied here: DashboardHomeView.test.tsx (added by the same
+                E-19 work this band comes from) asserts each tile by
+                `getByRole("link", { name: ... })` with a literal `href`
+                attribute -- an onClick-driven <button> destination, which is
+                what door-wiring needs (DashboardCard renders a <button>, not
+                an <a>, whenever onClick is set instead of href), fails that
+                query outright. dashboard.total_revenue / dashboard.total_expenses
+                happen to resolve to the exact same static routes these two
+                tiles already use ("/invoices" / "/expenses"), so nothing
+                about where a reader ends up regresses -- only the control
+                strip's door-open side effect is not fired from here. Making
+                DashboardCard fire a door's side effect on a real <a> (rather
+                than trading it for a <button>) is real follow-up work in
+                that shared component, not something to improvise inside one
+                caller against a merge conflict. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {kpis.map((kpi) => (
+                <DashboardCard
+                  key={kpi.key}
+                  title={`${columnLabel(columns, KPI_REGISTRY_FIELD[kpi.key], kpi.title)}${kpi.key === "projects" ? "" : unitSuffix}`}
+                  value={kpi.value}
+                  subtitle={kpiSubtitle(kpi)}
+                  icon={KPI_ICON[kpi.key]}
+                  variant={KPI_VARIANT[kpi.key]}
+                  href={kpi.href}
+                  hrefLabel={kpi.hrefLabel}
                 />
-                <KpiCard
-                  label={columnLabel(columns, "totalExpenses", "Spend")}
-                  value={money(data.totalExpenses)}
-                  trend={
-                    spendTone(data.totalBudget, data.totalExpenses) === "late"
-                      ? { direction: "up", tone: "late", label: "over budget" }
-                      : undefined
-                  }
-                  baseline={budgetBaseline(data.totalBudget, money)}
-                  onClick={() => router.push("/expenses")}
-                />
-                <KpiCard
-                  label="Permits expiring"
-                  value={permitsExpiring === null ? "Not loaded" : String(permitsExpiring)}
-                  trend={permitsExpiring === null ? { direction: "flat", tone: "context", label: "the permits read failed" } : undefined}
-                  baseline="next 30 days"
-                  onClick={() => router.push("/permits?withinDays=30")}
-                />
-              </div>
+              ))}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
-                {/* R67 G-04 (R-231): the second branch used to end "Create
-                    another one below.", which referred to nothing -- the
-                    only create control is the button to the RIGHT of this
-                    sentence, not below it, and the first branch's "create one
-                    below" had the same fault. Both now point at the control
-                    that actually exists, by its own label. */}
+                {/* R67 G-04 (R-231): both branches point at the control that
+                    actually exists, by its own label. */}
                 {data.totalRevenue === 0
                   ? `Total Revenue shows ${formatKpi(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org.`
                   : "Revenue reflects VERIDIAN ERP sales invoices for this org."}
               </p>
-              {/* Real-screen conversion (2026-08-30) -- was a separate,
-                  duplicate "Create / Link Invoice" Dialog popup
-                  (CreateInvoiceDialog.tsx) with its own copy of the same
-                  create-invoice logic InvoicesClient.tsx had; now routes to
-                  the one real Invoice create screen instead of maintaining
-                  two forms that could drift apart. */}
               <Button variant="outline" size="sm" asChild>
                 <Link href="/invoices/new"><Receipt className="size-4" /> Create / Link Invoice</Link>
               </Button>
             </div>
 
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="font-heading text-base">Projects</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data.projects.length === 0 ? (
-                  // Same rule as the greeting above: only a read that
-                  // succeeded may report "none". Today `data` and
-                  // `errorMessage` are mutually exclusive (dashboard/page.tsx
-                  // sets one or the other), so this guard costs nothing --
-                  // it is here so the honest branch cannot be lost if that
-                  // ever changes.
-                  <p className="py-8 text-center text-sm text-px-muted">
-                    {mayAssertEmpty(errorMessage) ? "No active projects yet." : "Couldn't load the project list — see the error above."}
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{columnLabel(columns, "project", "Project")}</TableHead>
-                        {/* R67 G-05: the unit is stated once, in the header.
-                            R67 D-62 splits the old single "Value" column into
-                            the two money facts the backend really returns. */}
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "value", "Contract value")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "projectValue", "Project value")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "earnedValue", "Earned Value")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "revenue", "Revenue")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "expenses", "Expenses")}{unitSuffix}</TableHead>
-                        <TableHead className="text-right">{columnLabel(columns, "tasks", "Tasks")}</TableHead>
-                        <TableHead className="text-right">{columnLabel(columns, "delayed", "Delayed")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.projects.map((p) => (
-                        // R67 D-01: the WHOLE row opens the project, not just
-                        // the six characters of its name -- a row that
-                        // navigates must advertise it (cursor) and be
-                        // reachable from the keyboard (Enter), which a bare
-                        // <tr> is not. The inner name Link stays so
-                        // middle-click/ctrl-click still opens a tab, and stops
-                        // the click propagating so the row handler does not
-                        // fire a second navigation on top of it.
-                        <TableRow
-                          key={p.id}
-                          tabIndex={0}
-                          aria-label={`Open ${p.name}`}
-                          className="cursor-pointer"
-                          onClick={() => router.push(`/dashboard/project?projectId=${p.id}`)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              router.push(`/dashboard/project?projectId=${p.id}`);
-                            }
-                          }}
-                        >
-                          {/* R42 seq24: the real per-project DASHBOARD.PROJECT screen this org table had no link to before -- was a dead end otherwise. */}
-                          <TableCell className="font-medium">
-                            <Link
-                              href={`/dashboard/project?projectId=${p.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-px-ink hover:underline"
-                            >
-                              {p.name}
-                            </Link>
-                          </TableCell>
-                          {/* R67 G-05 / D-61: every money column is right-aligned
-                              and tabular (MONEY_CELL_CLASS), so the decimal
-                              points form a column the eye can scan down. */}
-                          <TableCell className={MONEY_CELL_CLASS}>{p.contractValue === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.contractValue, currencies)}</TableCell>
-                          {/* R67 D-62: the OTHER money fact, under its own name
-                              and with its source stated, so a figure derived
-                              from purchase orders is never read as one somebody
-                              typed. null is the words "Not set", never 0. */}
-                          <TableCell className={MONEY_CELL_CLASS}>
-                            {p.projectValue === null ? (
-                              <span className="text-px-muted">Not set</span>
-                            ) : (
-                              <>
-                                {formatProjectValue(p.projectValue, (n) => formatCurrency(n, currencies))}
-                                <span className="text-px-muted"> ({projectValueCaption(p.projectValueSource)})</span>
-                              </>
-                            )}
-                          </TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>
-                            {p.earnedValue === null ? (
-                              <span className="text-px-muted">No progress yet</span>
-                            ) : (
-                              <>
-                                {formatCurrency(p.earnedValue, currencies)}
-                                <span className="text-px-muted"> ({p.percentByValue}%)</span>
-                              </>
-                            )}
-                          </TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.revenue, currencies)}</TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.expenses, currencies)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{p.taskCount}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {p.delayedTaskCount > 0 ? (
-                              // R67 WS-G: the glyph and the number both carry
-                              // it; the tone is the readable rose text token,
-                              // not the raw error red.
-                              <span className="inline-flex items-center gap-1" style={{ color: "var(--status-late-text)" }}>
-                                <AlertTriangle className="size-3.5" /> {p.delayedTaskCount}
-                              </span>
-                            ) : (
-                              <span className="text-px-muted">0</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+            {/* R67 MERGE: the old table (Table/TableRow, ChainDoor on the
+                project name, router.push on row click/Enter) is gone here --
+                E-01's rewrite already renders every project as a row via
+                <ProjectRowList> above, in the "THE ONE NUMBER" card block,
+                which is the ONE project list this screen keeps (see that
+                component's own file header). Rendering the table too would
+                put every project on the page twice. ProjectRow.tsx's own row
+                is a plain <a href> (see its file header on why: modified-click
+                and "copy link address" both need a real anchor, which a
+                ChainDoor-wrapped table row could give too, but ProjectRow.tsx
+                is not one of this merge's conflicted files and wiring it
+                through DOORS is real, separately-scoped follow-up work, not
+                something to improvise here against a component with its own
+                already-passing test suite (ProjectRow.test.tsx). */}
             {/* R67 G-05: said once, at the foot of the page. */}
             <CurrencyNotSetNotice currencySet={currencySet} />
           </>

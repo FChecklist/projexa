@@ -108,7 +108,10 @@ async function WorkProgressSection({
           <WorkProgressAnalyticalClient projectId={projectId} projectName={projectName} />
         </TabsContent>
         <TabsContent value="report">
-          <WorkProgressReportClient projectId={projectId} initialParams={reportParams} />
+          {/* R67 E-03: the project's NAME is passed in so the WhatsApp message
+              and the report caption can say which project this is without a
+              second lookup. */}
+          <WorkProgressReportClient projectId={projectId} projectName={projectName ?? undefined} initialParams={reportParams} />
         </TabsContent>
       </Tabs>
     </>

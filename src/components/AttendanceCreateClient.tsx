@@ -28,6 +28,10 @@ import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write's would.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 
 type RosterEntry = { id: string; name: string; employeeCode?: string | null; trade?: string | null; isActive: boolean };
 
@@ -40,6 +44,7 @@ function todayIso() {
 
 export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
+  const { pushReceipt } = useShellChain();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [rosterLoading, setRosterLoading] = useState(true);
@@ -133,6 +138,13 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
       // Remembered only after the server accepted it: a choice that failed to
       // save is not the choice to offer back next time.
       setLastChoice(WORKER_PICKER, projectId, values.rosterId);
+      // R67 C-06: the save reports itself back to the shell -- the receipt
+      // line lands in the same band a composer write's would.
+      const worker = roster.find((r) => r.id === values.rosterId);
+      pushReceipt({
+        text: `Marked ${worker?.name ?? "this worker"} ${values.status.replace("_", " ")} on ${values.attendanceDate}`,
+        href: moduleHref,
+      });
       router.replace(moduleHref);
     },
   });

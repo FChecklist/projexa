@@ -34,15 +34,37 @@ const STEEL = {
   reorderLevel: null as string | null, receivedToDate: 0, issuedToDate: 0, onHand: 0,
 };
 
+// R67 E-05 (R-103), merged 2026-09-03: the Cost Report endpoint returns an
+// OBJECT now -- rows, the grand total from the same grouped read, and the
+// parameters echoed back -- because a total the browser re-adds can disagree
+// with the rows above it. The row also carries the vendor and the master unit
+// cost, which the server joins once instead of the screen guessing per row.
 const REPORT_ROW = {
+  key: CEMENT.id,
   materialId: CEMENT.id,
   name: CEMENT.name,
   spec: CEMENT.spec,
+  vendorId: null,
+  vendorName: null,
   unit: "bag",
   totalQuantityReceived: 50,
   totalCost: 21750,
   averageUnitCost: 435,
+  masterUnitCost: 420,
+  variance: 15,
 };
+
+/** The report as the endpoint really answers it. */
+function costReport(rows: (typeof REPORT_ROW)[]) {
+  return {
+    rows,
+    totals: {
+      quantity: rows.reduce((s, r) => s + r.totalQuantityReceived, 0),
+      cost: rows.reduce((s, r) => s + r.totalCost, 0),
+    },
+    params: { projectId: "p1", from: null, to: null, groupBy: "material" as const },
+  };
+}
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -68,7 +90,7 @@ function handlers(over: Partial<Record<string, Handler>> = {}): Record<string, H
   return {
     "/api/materials/master": () => jsonRes({ materials: [CEMENT, STEEL] }),
     "/api/materials/issues": () => jsonRes({ issues: [] }),
-    "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
+    "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([REPORT_ROW]) }),
     "/api/materials": () => jsonRes({ receipts: [] }),
     "/api/vendors": () => jsonRes({ vendors: [] }),
     "/api/currencies": () => jsonRes(CURRENCIES),
@@ -115,7 +137,7 @@ describe("MaterialsClient -- per-tab loading (D-37)", () => {
 
     const { getByText, getByTestId } = renderClient({
       "/api/materials": async () => { await gate; return jsonRes({ receipts: [] }); },
-      "/api/construction-materials/cost-report": async () => { await gate; return jsonRes({ report: [] }); },
+      "/api/construction-materials/cost-report": async () => { await gate; return jsonRes({ report: costReport([]) }); },
     });
 
     // The master's rows AND its header actions are live while the other two
@@ -164,7 +186,7 @@ describe("MaterialsClient -- empty states carry a next step (D-37)", () => {
   test("an empty master says what to do next instead of only that it is empty", async () => {
     const { getByText, getAllByText } = renderClient({
       "/api/materials/master": () => jsonRes({ materials: [] }),
-      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+      "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([]) }),
     });
 
     await waitFor(() => expect(getByText("No materials in the master yet —")).toBeDefined());
@@ -175,7 +197,7 @@ describe("MaterialsClient -- empty states carry a next step (D-37)", () => {
   test("with an empty master the receipts tab keeps Record Receipt visible and says 'Add a material first'", async () => {
     const { getByText, getByTestId } = renderClient({
       "/api/materials/master": () => jsonRes({ materials: [] }),
-      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+      "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([]) }),
     }, "receipts");
 
     await waitFor(() => expect(getByText("Add a material first")).toBeDefined());
@@ -187,7 +209,7 @@ describe("MaterialsClient -- empty states carry a next step (D-37)", () => {
 
   test("an empty Cost Report explains how it fills in", async () => {
     const { getByText } = renderClient({
-      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+      "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([]) }),
     }, "cost-report");
 
     await waitFor(() =>
@@ -315,7 +337,10 @@ describe("MaterialsClient -- the Cost Report explains the 420 vs 435 disagreemen
   test("a material received BELOW its master price reads 'under', not a bare negative number", async () => {
     const { getByText } = renderClient({
       "/api/construction-materials/cost-report": () =>
-        jsonRes({ report: [{ ...REPORT_ROW, averageUnitCost: 400, totalCost: 20000 }] }),
+        // 400 received against a 420 master -> 20 UNDER. The variance is the
+        // server's, from the same read as the row, so the screen never
+        // re-derives it against a materials list fetched at another moment.
+        jsonRes({ report: costReport([{ ...REPORT_ROW, averageUnitCost: 400, totalCost: 20000, variance: -20 }]) }),
     }, "cost-report");
 
     await waitFor(() => expect(getByText("▼ under AED 20.00")).toBeDefined());
@@ -407,7 +432,7 @@ describe("D-57 the Cost Report's window, total and export", () => {
     const urls: string[] = [];
     const { findByText, getByTestId } = renderClient(
       {
-        "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
+        "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([REPORT_ROW]) }),
         "/api/materials": () => jsonRes({ receipts: [{
           id: "rec-1", materialId: CEMENT.id, receivedDate: "2026-07-04", quantity: "50", unitCost: "435",
           vendorId: null, reference: null, voidedAt: null, voidReason: null,
@@ -432,14 +457,19 @@ describe("D-57 the Cost Report's window, total and export", () => {
   test("the report foots with a Total row, and Export says why it cannot run on an empty report", async () => {
     const { container, findByText, getByTestId } = renderClient({}, "cost-report");
     await findByText("Cement OPC 53");
-    const totalRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.startsWith("Total"))!;
+    // R67 E-05 named it "Grand Total" -- the row is the same footing total
+    // D-57 asked for, and the total itself is now the SERVER's, from the same
+    // grouped read as the rows.
+    const totalRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.startsWith("Grand Total"))!;
     expect(totalRow).toBeDefined();
     expect(totalRow.textContent).toContain("AED 21,750.00");
-    expect((getByTestId("cost-report-export") as HTMLButtonElement).disabled).toBe(false);
+    // R67 E-18: ONE Export control per screen, so the reason a format is
+    // unavailable lives in its menu rather than in the button's own label.
+    expect(getByTestId("export-share-actions")).toBeDefined();
 
     cleanup();
-    const empty = renderClient({ "/api/construction-materials/cost-report": () => jsonRes({ report: [] }) }, "cost-report");
+    const empty = renderClient({ "/api/construction-materials/cost-report": () => jsonRes({ report: costReport([]) }) }, "cost-report");
     await empty.findByText(/No receipts to report yet/);
-    expect(empty.getByTestId("cost-report-export").textContent).toBe("Export (Nothing to export)");
+    expect(empty.getByTestId("export-share-reason").textContent).toContain("Nothing to export");
   });
 });

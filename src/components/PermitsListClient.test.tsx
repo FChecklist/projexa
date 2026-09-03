@@ -172,12 +172,16 @@ describe("PermitsListClient -- the read's outcome (D-65 / D-71)", () => {
       expect(container.textContent).toContain("No permits yet for this project.");
     });
     expect(container.innerHTML).not.toContain("Not yet available");
-    expect(container.innerHTML).toContain("Filtering permits is not built yet");
+    // R67 E-18 (R-178), merged 2026-09-03: a disabled control must name WHERE
+    // the capability really is, not merely that it is absent. "Filtering
+    // permits is not built yet" told a reader nothing they could act on; this
+    // sends them to the screen that has the view they came for.
+    expect(container.innerHTML).toContain("the expiring-soon view is reached from the Dashboard");
     // With no rows on screen, Export names the reason it has TODAY.
     expect(container.innerHTML).toContain("Export — no rows to export");
   });
 
-  test("with rows on screen, Export's reason is that it is not built -- not that there is nothing to export", async () => {
+  test("with rows on screen, Export's reason names where exports live -- not that there is nothing to export", async () => {
     stubPermits([PERMIT]);
     const { container } = render(<PermitsListClient {...PROPS} />);
 
@@ -185,7 +189,10 @@ describe("PermitsListClient -- the read's outcome (D-65 / D-71)", () => {
       expect(container.textContent).toContain("BP-2026-0142");
     });
     expect(container.innerHTML).not.toContain("Not yet available");
-    expect(container.innerHTML).toContain("Exporting permits is not built yet");
+    // Not "nothing to export" -- there is a row on screen -- and not a bare
+    // "not built yet" either: it names the place that does export.
+    expect(container.innerHTML).not.toContain("no rows to export");
+    expect(container.innerHTML).toContain("Reports lists every report that can be exported");
   });
 });
 

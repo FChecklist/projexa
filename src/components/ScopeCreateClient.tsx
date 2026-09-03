@@ -60,6 +60,10 @@ import {
   type LineField, type LineItemDraft,
 } from "@/lib/boq-helpers";
 import { draftBoqTotal, draftLineAmount } from "@/lib/boq-helpers";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write would use.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -126,6 +130,8 @@ function missingLineFields(lines: LineItemDraft[]): string[] {
 
 export default function ScopeCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  // R67 C-06: the shell chain context this save reports its receipt into.
+  const { pushReceipt } = useShellChain();
   const [values, setValues] = useState<Record<string, string>>({});
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
   // R67 I-05 (R-177): the org's registered category list, shared with
@@ -227,6 +233,14 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
           `${sentLineCount.current} line item(s) were submitted but only ${savedLineItems} came back saved`
         );
       }
+      // R67 C-06: the save reports itself back to the shell -- the receipt
+      // line lands in the same band a composer write's would, so a save made
+      // through this real screen and one made through the composer read
+      // identically.
+      pushReceipt({
+        text: `Saved BOQ ${(values.title ?? "").trim()} — ${savedLineItems} lines`,
+        href: `/scope/${savedId}`,
+      });
       router.replace(createdHref("/scope", savedId, (values.title ?? "").trim()));
     },
   });

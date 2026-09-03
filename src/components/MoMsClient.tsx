@@ -63,6 +63,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ListStateRegion } from "@/components/ListScreenFrame";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+// R67 C-06: the module's primary button is a DOOR -- one label and one
+// destination, both from src/lib/card-catalogue.ts, and it fills the strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById, doorRoute } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,6 +129,15 @@ const STATUS_OPTIONS = [
   { value: "published", label: "Published" },
 ];
 
+// R67 C-06: one door id, one label, read from the catalogue -- the header
+// button and any composer chip or KPI tile that opens this door say the same
+// words. (WS-C's own renderMeetingCell(), the switch-based per-field
+// renderer, is superseded by labelFor()/COLUMN_LABELS below -- lane A's own
+// column model -- and was dead code once that landed, so it is not carried
+// forward; nothing downstream ever called it.)
+const NEW_MEETING_DOOR_ID = "moms.new_meeting";
+const newMeetingDoorLabel = doorById(NEW_MEETING_DOOR_ID)?.label ?? "New Meeting";
+
 export default function MoMsClient({
   projectId,
   projectName,
@@ -167,6 +180,8 @@ export default function MoMsClient({
   deletedTitle?: string | null;
 }) {
   const router = useRouter();
+  // R67 C-06: fills the control strip when "+ New Meeting" is pressed.
+  const openDoor = useOpenDoor();
   const [rows, setRows] = useState<MeetingListRow[]>(
     initial && !initial.errorMessage ? initial.rows : []
   );
@@ -323,8 +338,22 @@ export default function MoMsClient({
               <DropdownMenuItem onSelect={exportCsv}>Export CSV</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" onClick={() => router.push(newMeetingHref)}>
-            <Plus className="size-4" aria-hidden /> New Meeting
+          {/* Real screen navigation (2026-08-30) -- replaces the old "New
+              Meeting" Dialog popup with a real create route.
+              R67 C-06: it is a door -- the strip reads
+              "<project> > Minutes of Meeting > New meeting" on arrival, and
+              `navigate: false` leaves the actual push to `newMeetingHref`
+              below so "all projects" mode (no door -- there is no project to
+              carry) still works exactly as it did. */}
+          <Button
+            size="sm"
+            onClick={() => {
+              if (projectId) openDoor(NEW_MEETING_DOOR_ID, { projectId, navigate: false });
+              const door = projectId ? doorById(NEW_MEETING_DOOR_ID) : null;
+              router.push(door ? doorRoute(door, projectId) : newMeetingHref);
+            }}
+          >
+            <Plus className="size-4" aria-hidden /> {projectId ? newMeetingDoorLabel : "New Meeting"}
           </Button>
         </div>
       </div>

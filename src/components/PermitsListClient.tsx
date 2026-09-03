@@ -241,16 +241,18 @@ export default function PermitsListClient({
       // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
       // Filter/Export aren't built for this module yet -- say so instead of
       // faking availability.
-      // R67 D-59: "(Not yet available)" was the placeholder on both, and the
-      // shared ListHeaderActions on Labour/Materials/Schedule says something
-      // real. Two conventions for the same disabled control is the finding.
-      // Export names the honest reason it has TODAY -- an empty list has
-      // nothing to export -- and falls back to the not-built sentence.
+      // R67 E-18 (R-178) + D-59: "(Not yet available)" is a stub, not a reason
+      // -- it tells a reader nothing about why, and nothing about where the
+      // thing they wanted actually is. Both now name something real, and
+      // Export distinguishes the two honest cases: a list with nothing in it,
+      // and a capability that does not exist yet.
       exportAction={{
         label: "Export",
-        disabledReason: permits.length === 0 ? "Export — no rows to export" : "Exporting permits is not built yet",
+        disabledReason: permits.length === 0
+          ? "Export — no rows to export"
+          : "No permits export yet — Reports lists every report that can be exported",
       }}
-      filterAction={{ label: "Filter", disabledReason: "Filtering permits is not built yet" }}
+      filterAction={{ label: "Filter", disabledReason: "No filters on this list yet — the expiring-soon view is reached from the Dashboard" }}
       // R67 G-01: status at HEADER level as well as item level. Same three
       // glyphs, same three tones, same counts as the rows beneath -- so the
       // answer to "is anything wrong here" costs no scanning.

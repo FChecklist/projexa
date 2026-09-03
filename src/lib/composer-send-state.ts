@@ -46,3 +46,46 @@ export function composerSendState({
   const reason = blockedByCaller ? disabledReason : nothingTyped ? emptyInputReason : undefined;
   return { canSubmit, reason };
 }
+
+// ---------------------------------------------------------------------------
+// R67 C-15 / DE-45 -- THE SEND BUTTON SAYS WHAT IT IS STILL WAITING FOR.
+// ---------------------------------------------------------------------------
+
+/**
+ * The words that go in the brackets, per slot. D-03's own sentences with the
+ * first letter lowered, so the button reads as one sentence -- "Send (pick a
+ * BOQ line)" -- rather than as a label with a title pasted into it.
+ *
+ * A slot with no entry here yields a plain "Send" rather than a guess: the
+ * chip row above the button is already asking the question in full, and a
+ * button reading "Send (someNewSlot)" would put the camelCase parameter name
+ * back on screen, which is the whole thing D-03 removes.
+ */
+const SEND_SLOT_WORDS: Readonly<Record<string, string>> = {
+  itemcode: "pick a BOQ line",
+  boqlineitemid: "pick a BOQ line",
+  boqline: "pick a BOQ line",
+  projectid: "pick a project",
+  project: "pick a project",
+  percent: "type a quantity or %",
+  quantity: "type a quantity or %",
+  quantitydone: "type a quantity or %",
+  hours: "type the hours",
+  task: "pick a task",
+  issueid: "pick a task",
+  workerid: "pick a worker",
+};
+
+/**
+ * "Send (pick a BOQ line)" -- or plain "Send" when nothing is outstanding.
+ *
+ * ONE question at a time: only the FIRST missing slot is named, because that
+ * is the one the chip row above is asking and a button listing three is a
+ * button nobody reads.
+ */
+export function sendLabelFor(missing: readonly string[] | null | undefined): string {
+  const first = missing?.find((m) => typeof m === "string" && m.trim().length > 0);
+  if (!first) return "Send";
+  const words = SEND_SLOT_WORDS[first.toLowerCase().replace(/[^a-z]/g, "")];
+  return words ? `Send (${words})` : "Send";
+}

@@ -53,6 +53,10 @@ import { toOrgInstant } from "@/lib/format";
 import type { CreateField } from "@/lib/create-screen";
 import { browserTimeZone, nextQuarterHourLocalInput, timeZoneHint } from "@/lib/org-time";
 import { buildCreateMeetingBody } from "@/lib/mom-form";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write would use.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 
 const MEETING_TYPES = [
   { value: "team", label: "Team" },
@@ -105,6 +109,8 @@ function buildFields(zoneHint: string): CreateField[] {
 
 export default function MoMCreateClient({ projectId, projectName }: { projectId: string; projectName: string }) {
   const router = useRouter();
+  // R67 C-06: the shell chain context this save reports its receipt into.
+  const { pushReceipt } = useShellChain();
   // The zone is read once, synchronously, so the required date field is never
   // empty on first paint -- an empty required field would read as
   // "Save (Title, Date & time)" for as long as any lookup took.
@@ -159,6 +165,9 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
     onSuccess: (meeting) => {
       const id = typeof meeting?.id === "string" ? meeting.id : "";
       if (!id) throw new Error("The server did not confirm a saved meeting");
+      // R67 C-06: the save reports itself back to the shell -- the receipt
+      // line lands in the same band a composer write's would.
+      pushReceipt({ text: `Saved meeting ${(values.title ?? "").trim()}`, href: `/moms/${id}` });
       router.replace(createdHref("/moms", id, (values.title ?? "").trim()));
     },
   });

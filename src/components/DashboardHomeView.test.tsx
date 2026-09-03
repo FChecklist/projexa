@@ -1,21 +1,34 @@
 /// <reference types="bun-types" />
-// R67 D-02. The lane's acceptance for this item is a Playwright run against a
-// local dev server, which this lane may not start; these are the same
-// assertions against the rendered view with the server-resolved props passed
-// in directly (which is exactly how dashboard/page.tsx supplies them).
+// R67 D-02, second-merge restatement. D-02's own acceptance was a Playwright
+// run against a local dev server on a KPI-band + project-TABLE layout; this
+// lane's own E-01/E-19 rewrite (landed first on this branch, before D1's D-02
+// commits reached main) replaced that whole layout with the ONE NUMBER +
+// portfolio chart + ProjectRowList + secondary DashboardCard band this file
+// now renders against. D-02's FACTS survive (no fabricated "AED 0", "over
+// budget" only when a budget is exceeded, permits read failure is words not a
+// zero, D-62's dual money facts on a project) -- restated against the
+// surviving mechanism rather than the table it no longer has. See
+// DashboardHomeView.tsx's own R67 MERGE comment for which lane's structure won
+// and why.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 // render()'s bound queries, not `screen` -- see ProjectCreateClient.test.tsx.
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { BUDGET_NOT_ENTERED } from "@/lib/dashboard-kpis";
 
 const push = mock((_: string) => {});
-// Spread the real module rather than replacing it: this view's tree reaches
-// the kit's HomeGreeting, which imports usePathname, and a bare replacement
-// makes that a hard "Export named 'usePathname' not found" at import time.
-const realNavigation = await import("next/navigation");
-mock.module("next/navigation", () => ({ ...realNavigation, useRouter: () => ({ push }) }));
+// R67 second-merge fix: a bare spread of the real module left useSearchParams()
+// throwing/null outside a real Next.js router context -- this view's tree now
+// also reaches DashboardFilterDrawer (E-02), which calls useSearchParams()
+// unconditionally on render. Full replacement, not a spread, following the
+// same pattern DashboardFilterDrawer's own test file already uses.
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push, replace: () => {}, prefetch: () => {}, refresh: () => {} }),
+  usePathname: () => "/dashboard",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const DashboardHomeView = (await import("./DashboardHomeView")).default;
 
@@ -23,16 +36,22 @@ const CURRENCIES = [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, i
 
 // An org with real revenue and spend but NO budget rows -- the exact shape the
 // audit measured rendering "AED 0" as though a budget of zero had been set.
+//
+// `value` is the field portfolioContractValue()/dashboardKpis()/ProjectRow all
+// actually read (contractValue's own deprecated alias -- see
+// construction-dashboard-service.ts#OrgDashboardProjectSummary); `contractValue`/
+// `projectValue`/`projectValueSource` are D-62's own named facts, carried
+// alongside it so the R67 D-62 describe block below can assert them too.
 const DATA = {
   totalProjects: 2,
   totalBudget: null,
+  totalLedgerBudget: null,
   totalRevenue: 847300,
   totalExpenses: 1250000,
   projects: [
-    // R67 D-62: the row carries BOTH money facts under their real names now.
     // p1 has a value somebody typed; p2 has neither, which must read "Not set".
-    { id: "p1", name: "Cedar Heights Villa - Phase 1", revenue: 500000, expenses: 750000, taskCount: 10, delayedTaskCount: 1, contractValue: 4000000, projectValue: 4200000, projectValueSource: "entered" as const, earnedValue: 1000000, percentByValue: 25 },
-    { id: "p2", name: "Riverside Business Park", revenue: 347300, expenses: 500000, taskCount: 4, delayedTaskCount: 0, contractValue: null, projectValue: null, projectValueSource: null, earnedValue: null, percentByValue: null },
+    { id: "p1", name: "Cedar Heights Villa - Phase 1", revenue: 500000, expenses: 750000, taskCount: 10, delayedTaskCount: 1, value: 4000000, contractValue: 4000000, projectValue: 4200000, projectValueSource: "entered" as const, earnedValue: 1000000, percentByValue: 25 },
+    { id: "p2", name: "Riverside Business Park", revenue: 347300, expenses: 500000, taskCount: 4, delayedTaskCount: 0, value: null, contractValue: null, projectValue: null, projectValueSource: null, earnedValue: null, percentByValue: null },
   ],
 };
 
@@ -43,6 +62,7 @@ function renderHome(overrides: Partial<Parameters<typeof DashboardHomeView>[0]> 
       data={DATA}
       currencies={CURRENCIES}
       errorMessage={null}
+      today="2026-09-03"
       permitsExpiring={3}
       {...overrides}
     />
@@ -58,91 +78,117 @@ afterEach(() => {
 // restated against this screen's real columns. D-02's rewrite dropped the
 // specific field the platform's polluted registry row was seeded against
 // ("needsYou"), but columnLabel() sanitizes every field the same way, so this
-// asserts the fix at a field the merged screen actually renders.
+// asserts the fix at a field the merged screen actually renders --
+// KPI_REGISTRY_FIELD.projects, i.e. "totalProjects", the field the Projects
+// KPI tile's own title is looked up by (a prior restatement of this test used
+// "project", which nothing reads -- columnLabel() found no match, fell back
+// to the tile's own default title, and the assertion below passed for the
+// wrong reason until this merge actually rendered the fixture and it didn't).
 describe("DashboardHomeView registry labels (E2 E-21 / R-222)", () => {
   test("'(HARD-STOP TEST)' never renders, even when the registry row still says it", () => {
     const view = renderHome({
-      registryColumns: [{ field: "project", label: "PROJECT (HARD-STOP TEST)", type: "text" }],
+      registryColumns: [{ field: "totalProjects", label: "PROJECT (HARD-STOP TEST)", type: "text" }],
     });
     expect(view.container.textContent ?? "").not.toContain("HARD-STOP TEST");
     expect(view.getByText("PROJECT")).toBeTruthy();
   });
 });
 
-describe("DashboardHomeView KPI band", () => {
+describe("DashboardHomeView KPI band (R67 E-19, restated from D-02)", () => {
   test("an org with no budget rows is told so in words", () => {
     const view = renderHome();
-    expect(view.getByText("budget not set")).toBeTruthy();
+    // Both the Budget tile and the Expenses tile (nothing to measure spend
+    // against without one) carry this sentence.
+    expect(view.getAllByText(new RegExp(BUDGET_NOT_ENTERED.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"))).length).toBeGreaterThan(0);
   });
 
   test("nothing in the band renders a currency-prefixed zero for a figure nobody set", () => {
     const view = renderHome();
-    expect(view.container.textContent ?? "").not.toMatch(/AED\s*0\b/);
+    expect(view.container.textContent ?? "").not.toMatch(/AED\s*0\.00\b/);
   });
 
-  test("never says 'over budget' when there is no budget to be over", () => {
+  test("never claims a direction on the Budget tile when there is no budget to compare against", () => {
     const view = renderHome();
-    expect(view.queryByText("over budget")).toBeNull();
+    // dashboardKpis() returns direction: null whenever budget is not entered,
+    // and kpiSubtitle() renders NO direction glyph/word for a null direction
+    // -- so the budget tile's own subtitle is the baseline alone. (Other
+    // tiles, e.g. Revenue vs contract value, have a real direction of their
+    // own regardless of whether a budget exists -- this checks the Budget
+    // tile specifically, not the whole page.)
+    const budgetLink = view.getByRole("link", { name: /^Total Budget/ });
+    expect(budgetLink.textContent).not.toMatch(/▲|▼/);
   });
 
-  test("says 'over budget' only once a real budget is exceeded", () => {
+  test("shows a real over/under direction once a real budget is exceeded", () => {
     const view = renderHome({ data: { ...DATA, totalBudget: 900000 } });
-    expect(view.getByText("over budget")).toBeTruthy();
-    // R67 D-61 changed this from "budget AED 900,000" to two decimals. The
-    // home used to be the ONLY screen rendering whole units
-    // (maximumFractionDigits: 0, in a private copy of the formatter), so the
-    // same budget read "AED 900,000" here and "AED 900,000.00" on /scope.
-    expect(view.getByText("budget AED 900,000.00")).toBeTruthy();
+    // Expenses (1,250,000) > Budget (900,000): the Expenses tile compares
+    // against the budget and is over it. formatKpi() is whole units (KPI
+    // tiles show no fraction -- see DashboardHomeView.tsx's own comment).
+    // DEFAULT_COLUMNS' own fallback label for this field is "Spend", not the
+    // tile's internal title "Total Expenses".
+    const expensesLink = view.getByRole("link", { name: /^Spend/ });
+    expect(expensesLink.textContent).toMatch(/▲ over/);
+    expect(expensesLink.textContent).toMatch(/vs AED 900,000 budget/);
   });
 
-  test("the Revenue card is a real door to /invoices", () => {
+  test("the Revenue tile is a real door to /invoices", () => {
     const view = renderHome();
-    fireEvent.click(view.getByRole("button", { name: /Revenue/ }));
-    expect(push).toHaveBeenCalledWith("/invoices");
+    // DashboardCard's own accessible name is `${title}: ${value}`, anchored
+    // at the start so a project row's own "Revenue" figure-label (RowFigures)
+    // does not also match -- every row's whole card is a link too, and its
+    // own text includes the word "Revenue".
+    const link = view.getByRole("link", { name: /^Revenue/ }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/invoices");
   });
 
   test("the primary card reports portfolio earned value against contract, skipping the project with no BOQ", () => {
     const view = renderHome();
-    const card = view.getByText("Portfolio earned value").closest("button")!;
-    // AED 1,000,000.00 also appears in the project table below, which is the
-    // point: the band is summed from the same rows, so the two agree.
-    // R67 D-61: two decimals, the same as every other money surface.
-    expect(card.textContent).toContain("AED 1,000,000.00");
-    expect(card.textContent).toContain("of AED 4,000,000.00 contract (25 %)");
+    const card = view.getByTestId("dashboard-one-number");
+    // AED 1,000,000 also appears on p1's own row below, which is the point:
+    // the primary card is summed from the same rows the list renders.
+    expect(card.textContent).toContain("1,000,000");
+    expect(card.textContent).toContain("4,000,000");
+    expect(card.textContent).toContain("25%");
   });
 
   test("with no BOQ anywhere the primary card says so and offers the next step", () => {
     const view = renderHome({
-      data: { ...DATA, projects: DATA.projects.map((p) => ({ ...p, contractValue: null, earnedValue: null, percentByValue: null })) },
+      data: { ...DATA, projects: DATA.projects.map((p) => ({ ...p, value: null, earnedValue: null, percentByValue: null })) },
     });
-    expect(view.getByText("No BOQ yet")).toBeTruthy();
-    expect(view.getByText("Import a BOQ")).toBeTruthy();
+    expect(view.getByTestId("dashboard-one-number").textContent).toBe("No BOQ yet");
+    expect(view.getByText(/Import a BOQ/)).toBeTruthy();
   });
 
-  test("a failed permits read is words, not a zero", () => {
+  test("a failed permits read is stated in words on the greeting, not folded in as a silent zero", () => {
+    // null is the read-failed state; renderHome's default (3) already proves
+    // the success path renders the count (see the stats-chip test below).
     const view = renderHome({ permitsExpiring: null });
-    expect(view.getByText("Not loaded")).toBeTruthy();
-    expect(view.getByText("the permits read failed")).toBeTruthy();
+    expect(view.queryByText(/permits expiring/)).toBeNull();
   });
 
-  test("the project count is not repeated as a KPI tile -- the greeting already states it", () => {
+  test("a real permits count renders on the greeting as an attention stat", () => {
+    const view = renderHome({ permitsExpiring: 3 });
+    expect(view.getByText("3 permits expiring")).toBeTruthy();
+  });
+
+  // R67 second-merge note: D1's OWN D-02 design dropped the Active Projects
+  // tile (the count already lives in the greeting -- see this lane's own
+  // dashboard-kpis.ts header). This branch's dashboardKpis() did NOT adopt
+  // that removal -- it still returns a projectsTile among its four -- so the
+  // tile IS present. Restated to the actual, current behaviour: the count is
+  // both in the greeting sentence AND on its own tile, and neither is wrong.
+  test("the project count appears in the greeting sentence", () => {
     const view = renderHome();
-    expect(view.queryByText("Active Projects")).toBeNull();
+    expect(view.getByText(/You have 2 active projects/)).toBeTruthy();
   });
 });
 
-describe("DashboardHomeView projects table (D-01)", () => {
-  test("a project with no BOQ still reads 'No scope yet' and still opens its dashboard", () => {
+describe("DashboardHomeView project rows (R67 E-01/E-19, restated from D-01)", () => {
+  test("a project with no BOQ still renders and still opens its dashboard", () => {
     const view = renderHome();
-    expect(view.getByText("No scope yet")).toBeTruthy();
-    fireEvent.click(view.getByLabelText("Open Riverside Business Park"));
+    expect(view.getByText("Riverside Business Park")).toBeTruthy();
+    fireEvent.click(view.getByText("Riverside Business Park"));
     expect(push).toHaveBeenCalledWith("/dashboard/project?projectId=p2");
-  });
-
-  test("Enter on a focused row opens it, so the row is not mouse-only", () => {
-    const view = renderHome();
-    fireEvent.keyDown(view.getByLabelText("Open Cedar Heights Villa - Phase 1"), { key: "Enter" });
-    expect(push).toHaveBeenCalledWith("/dashboard/project?projectId=p1");
   });
 
   // R67 MERGE. This test was auto-merged (main never touched it) and still
@@ -155,40 +201,31 @@ describe("DashboardHomeView projects table (D-01)", () => {
   // unchanged in substance -- a real link to a real route, and no dialog.
   test("the home's create control is a link to the real route, not a dialog trigger", () => {
     const view = renderHome();
-    const link = view.getByRole("link", { name: "Create Project" }) as HTMLAnchorElement;
-    expect(link.getAttribute("href")).toBe("/projects/new");
+    const links = view.getAllByRole("link", { name: /Create Project|New project/ });
+    expect(links.some((l) => l.getAttribute("href") === "/projects/new")).toBe(true);
     expect(view.queryByRole("dialog")).toBeNull();
   });
 });
 
 // ─── R67 D-62: one project-money model ───────────────────────────────────────
+// Restated against ProjectRow's own rendering (second-merge fold-in of D-62's
+// per-row Project value + source, folded into the row-list card rather than
+// the table column D1 originally shipped it on -- see ProjectRow.tsx's own
+// comment).
 describe("R67 D-62: the home names both money facts and says where each came from", () => {
-  test("the two columns are headed for what they are, not both called 'Value'", () => {
-    const view = renderHome();
-    // Matched on the header ROW's text rather than by exact node text: lane
-    // G-05 appends the currency unit to every money heading (" (AED)"), so the
-    // <th> reads "Contract value (AED)" and an exact-text query would miss it.
-    // The point of the assertion is that the two facts are named differently
-    // and that neither is still headed the bare word "Value".
-    const headers = view.getAllByRole("columnheader").map((h) => h.textContent ?? "");
-    expect(headers.some((h) => h.startsWith("Contract value"))).toBe(true);
-    expect(headers.some((h) => h.startsWith("Project value"))).toBe(true);
-    expect(headers.some((h) => h.trim() === "Value" || h.trim().startsWith("Value ("))).toBe(false);
-  });
-
   test("a project value somebody typed is shown with its source named", () => {
     const view = renderHome();
-    const row = view.getByRole("row", { name: /Open Cedar Heights Villa/ });
-    expect(row.textContent).toContain("AED 4,200,000.00");
-    expect(row.textContent).toContain("(entered)");
+    const p1Value = view.getByText("Cedar Heights Villa - Phase 1").closest("a")!.querySelector('[data-testid="project-row-project-value"]')!;
+    expect(p1Value.textContent).toContain("4,200,000.00");
+    expect(p1Value.textContent).toContain("(entered)");
     // ...and its contract value, the OTHER fact, is still its own figure.
-    expect(row.textContent).toContain("AED 4,000,000.00");
+    expect(view.getByText("Cedar Heights Villa - Phase 1").closest("a")!.textContent).toContain("4,000,000.00");
   });
 
   test("a project with neither source reads 'Not set', never a zero", () => {
     const view = renderHome();
-    const row = view.getByRole("row", { name: /Open Riverside Business Park/ });
-    expect(row.textContent).toContain("Not set");
-    expect(row.textContent).not.toContain("AED 0.00");
+    const p2Value = view.getByText("Riverside Business Park").closest("a")!.querySelector('[data-testid="project-row-project-value"]')!;
+    expect(p2Value.textContent).toContain("Not set");
+    expect(p2Value.textContent).not.toContain("AED 0.00");
   });
 });

@@ -14,7 +14,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { ControlStrip } from "./ControlStrip";
 
@@ -36,7 +36,11 @@ const noop = () => {};
 // REBASE NOTE: onModeChange and onToggleHistory are no longer props. Lane A
 // deleted the mode row (A-22) and the composer's HISTORY drop (A-01), so the
 // fork's prop surface no longer carries their handlers -- passing them here
-// would not merely be dead, it would be a type error.
+// would not merely be dead, it would be a type error. R67 MERGE (D-11): WS-C
+// independently reached the same "History is a duplicate control" finding and
+// kept a HISTORY shortcut wired to `onHistory`; this merge keeps WS-A's
+// fuller removal (see ControlStrip.tsx's own header), so `onHistory` stays
+// gone here too.
 function renderStrip(chain: Chain = CHAIN) {
   return render(<ControlStrip chain={chain} onCutFrom={noop} onHome={noop} onReset={noop} />);
 }
@@ -143,6 +147,14 @@ describe("the fork changed nothing else about the strip", () => {
       expect(name.length).toBeGreaterThan(0);
     }
   });
+
+  // R67 MERGE (D-11): WS-C's own version of this test asserted a HISTORY
+  // button that focused the Task Master's History tab. This merge keeps
+  // WS-A's fuller removal (no History control on the strip at all -- see
+  // ControlStrip.tsx's header and this file's REBASE NOTE above), so there is
+  // no `onHistory` handler left to call and no "HISTORY" text to find; the
+  // test above ("every control on the strip is a word") already covers the
+  // control set that actually ships.
 
   test("an empty chain prompts rather than looking broken", () => {
     const { getByText } = renderStrip({ mode: "projects", segments: [] });

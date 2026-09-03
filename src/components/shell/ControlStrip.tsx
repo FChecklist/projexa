@@ -24,7 +24,12 @@
 //     is a duplicate control (correction C-03 withdrew only the z-index/
 //     "covering" claim; the duplicate-name finding stands). The one History
 //     is now the Task Master's own History tab, which keeps the same contract:
-//     a row click LOADS the chain and stops.
+//     a row click LOADS the chain and stops. R67 WS-C (C-10) independently
+//     reached the same finding and kept a HISTORY shortcut on the strip,
+//     wired to focus that same tab; this merge (D-11) keeps WS-A's fuller
+//     removal, which is the deliberate, reasoned version -- adding the
+//     shortcut back would be reopening a decision WS-A already made, not
+//     folding in a distinct capability.
 //
 //  3. ONE INSTRUCTION, NOT TWO. The kit hard-coded "Select a module to begin"
 //     here while the product wrote "Pick a project or a module first" beside

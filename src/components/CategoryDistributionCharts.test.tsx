@@ -24,7 +24,8 @@ mock.module("next/navigation", () => ({
 }));
 
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { CategoryDistributionCharts } from "./CategoryDistributionCharts";
+import { CategoryDistributionCharts, CategoryDistributionChartsView, type CategoryEntry } from "./CategoryDistributionCharts";
+import { formatMoney } from "@/lib/format-money";
 
 afterEach(() => {
   cleanup();
@@ -183,5 +184,49 @@ describe("R67 E-40: every BOQ line uncategorised", () => {
     const { container } = render(<CategoryDistributionCharts projectId="p1" />);
     await waitFor(() => expect(container.textContent).toContain("Civil"));
     expect(container.textContent).not.toContain("All BOQ lines are uncategorised");
+  });
+});
+
+// R67 MERGE (2026-09-03): CategoryDistributionChartsView exercised directly,
+// the way DashboardProjectClient.tsx actually uses it -- with its own bound
+// `money` prop and no fetch of its own (see the component file's own MERGE
+// note for why the split exists). Covers what lane E1's R67 E-02 (R-012)
+// suite covered for the presentational half -- the money labels and the
+// link destination -- now against the no-pie (E-23) rendering.
+const money = (v: number | string | null | undefined) => formatMoney(v, { currency: "AED" });
+
+function categoryEntry(i: number, overrides: Partial<CategoryEntry> = {}): CategoryEntry {
+  return {
+    categoryId: `cat-${i}`,
+    name: `Category ${i}`,
+    totalAmount: 1000 * i,
+    sharePercent: 10 * i,
+    percentComplete: 40,
+    completedAmount: 400 * i,
+    ...overrides,
+  };
+}
+
+describe("CategoryDistributionChartsView, called directly with a bound money prop", () => {
+  test("every category is labelled with the money, not just a percentage", () => {
+    const { getByText } = render(
+      <CategoryDistributionChartsView categories={[categoryEntry(1, { name: "Civil" })]} projectId="p-1" money={money} />
+    );
+    expect(getByText(/Civil - 10% of BOQ/)).toBeDefined();
+    expect(getByText(/AED 400\.00 of AED 1,000\.00/)).toBeDefined();
+  });
+
+  test("every category is a link into Work Progress > Analytics, filtered to it -- never a dead end", () => {
+    const { getByText } = render(
+      <CategoryDistributionChartsView categories={[categoryEntry(1, { name: "Civil" })]} projectId="p-1" money={money} />
+    );
+    const link = getByText(/Civil - 10% of BOQ/).closest("a");
+    expect(link?.getAttribute("href")).toBe("/work-progress?projectId=p-1&tab=analytics&category=Civil");
+  });
+
+  test("no categories at all: the empty state says what to do next, and offers the link to do it", () => {
+    const { getByText } = render(<CategoryDistributionChartsView categories={[]} projectId="p-1" money={money} />);
+    expect(getByText(/No BOQ line items for this project yet/)).toBeDefined();
+    expect(getByText("Import BOQ").closest("a")?.getAttribute("href")).toBe("/scope?projectId=p-1");
   });
 });

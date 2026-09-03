@@ -74,14 +74,21 @@ export function cellValue(v: unknown): string {
  * renders exactly as before via cellValue() -- no behavioural change for
  * the other 16 reports or the AI Copilot's 7 tool results that don't pass
  * one. */
+/** `omitKeys` (R67 E-12): keys this renderer must leave alone because a
+ * schema-driven ReportDocument is rendering them properly right below. Without
+ * it the same rows would appear twice -- once as a real document and once as
+ * the generic key-named table this component falls back to. Anything NOT named
+ * here is still rendered, so a key can never disappear silently. */
 export function ReportOutput({
   data,
   fieldLabels,
   fieldFormatters,
+  omitKeys,
 }: {
   data: unknown;
   fieldLabels?: Record<string, string>;
   fieldFormatters?: Record<string, (v: unknown) => string>;
+  omitKeys?: string[];
 }) {
   if (Array.isArray(data)) {
     if (data.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No rows returned.</p>;
@@ -119,8 +126,9 @@ export function ReportOutput({
   }
 
   if (isPlainObject(data)) {
-    const scalarEntries = Object.entries(data).filter(([, v]) => !Array.isArray(v) && !isPlainObject(v));
-    const nestedEntries = Object.entries(data).filter(([, v]) => Array.isArray(v) || isPlainObject(v));
+    const omitted = new Set(omitKeys ?? []);
+    const scalarEntries = Object.entries(data).filter(([k, v]) => !omitted.has(k) && !Array.isArray(v) && !isPlainObject(v));
+    const nestedEntries = Object.entries(data).filter(([k, v]) => !omitted.has(k) && (Array.isArray(v) || isPlainObject(v)));
     return (
       <div className="space-y-4">
         {scalarEntries.length > 0 && (
@@ -138,7 +146,7 @@ export function ReportOutput({
         {nestedEntries.map(([k, v]) => (
           <div key={k} className="space-y-2">
             <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? k}</div>
-            <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} />
+            <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} omitKeys={omitKeys} />
           </div>
         ))}
       </div>

@@ -54,11 +54,18 @@ async function MaterialsSection({
   requestedProjectId,
   tab,
   materialId,
+  from,
+  to,
 }: {
   requestedProjectId?: string;
   tab?: string;
   /** From ?materialId= -- set when the Cost Report drills into one material's receipts. */
   materialId?: string;
+  /** R67 E-05 (R-103): the Cost Report tab's period, so Reports > "Material
+   *  Consumption" and this tab are ONE report reached from two places, in the
+   *  same state. */
+  from?: string;
+  to?: string;
 }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, projectName: resolvedName, errorMessage, mode } = await resolveProjectForModule(
@@ -120,6 +127,8 @@ async function MaterialsSection({
       initialTab={tab}
       initialMaterialId={materialId}
       initialMaster={master}
+      initialFrom={from}
+      initialTo={to}
     />
   );
 }
@@ -129,15 +138,15 @@ async function MaterialsSection({
 export default async function MaterialsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string; materialId?: string }>;
+  searchParams: Promise<{ projectId?: string; tab?: string; materialId?: string; from?: string; to?: string }>;
 }) {
-  const { projectId, tab, materialId } = await searchParams;
+  const { projectId, tab, materialId, from, to } = await searchParams;
 
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Materials" />
       <Suspense fallback={SKELETON}>
-        <MaterialsSection requestedProjectId={projectId} tab={tab} materialId={materialId} />
+        <MaterialsSection requestedProjectId={projectId} tab={tab} materialId={materialId} from={from} to={to} />
       </Suspense>
     </div>
   );

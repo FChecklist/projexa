@@ -74,7 +74,12 @@ describe("MaterialsClient -- a pane that has answered is not read twice", () => 
       const url = typeof input === "string" ? input : input.toString();
       calls.push(url);
       if (url.includes("/api/materials/master")) return jsonRes({ materials: [CEMENT] });
-      if (url.includes("/api/construction-materials/cost-report")) return jsonRes({ report: [] });
+      // R67 E-05 (merged 2026-09-03): the Cost Report endpoint answers with an
+      // object -- rows, the grand total from the same grouped read, and the
+      // parameters echoed back.
+      if (url.includes("/api/construction-materials/cost-report")) {
+        return jsonRes({ report: { rows: [], totals: { quantity: 0, cost: 0 }, params: { projectId: "p1", from: null, to: null, groupBy: "material" } } });
+      }
       if (url.includes("/api/materials")) return jsonRes({ receipts: [] });
       return jsonRes({});
     }) as typeof fetch;

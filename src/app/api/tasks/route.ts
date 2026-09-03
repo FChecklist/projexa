@@ -73,7 +73,18 @@ export const POST = withTiming("POST", async function POST(req: NextRequest) {
   try {
     const data = await callVeridian("/tasks", {
       method: "POST",
-      body,
+      // R67 C-03 (decision D-05) -- THE ACTING USER TRAVELS WITH EVERY WRITE.
+      //
+      // This proxy authenticates with the per-ORG API key, so on VERIDIAN's
+      // side `ctx.dbUser` is null and the actor id falls back to the API
+      // key's own id. That is fine for pipeline_tasks and fatally wrong for
+      // any executor attributing a business row to a PERSON --
+      // pms_time_entries.user_id has a hard FK to compliance.users. The same
+      // actorEmail convention /api/timesheets has used since R39 lets
+      // VERIDIAN resolve a real, active, org-scoped user; the composer's
+      // timesheet write refuses honestly when it resolves to nobody rather
+      // than attributing hours to an API key.
+      body: { ...body, actorEmail: ctx.user?.email ?? null },
       organizationId: ctx.organizationId!,
     });
     return NextResponse.json(data, { status: 201 });

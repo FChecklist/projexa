@@ -34,7 +34,12 @@ export type HierarchyDashboardProject = {
 
 export type HierarchyDashboard = {
   totalProjects: number;
+  // R67 E-06 (R-108): the BOQ-derived portfolio budget, null when no project
+  // in scope has a BOQ (and null when redacted for the reader's role) -- see
+  // compliance-tracker getOrgDashboard. totalLedgerBudget is the ERP annual
+  // ledger figure this field used to carry, kept under its own name.
   totalBudget: number | null;
+  totalLedgerBudget?: number | null;
   totalRevenue: number | null;
   totalExpenses: number | null;
   projects: HierarchyDashboardProject[];

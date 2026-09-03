@@ -85,6 +85,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/board": "FIELD",
   "/change-orders": "PM_OR_ABOVE",
   "/change-orders/[id]": "PM_OR_ABOVE",
+  // R67 C-03/C-05: the composer's PREVIEW. It is a POST only because the
+  // sentence goes in the body -- VERIDIAN's own handler gates it on READ
+  // scope and returns executed:false on every response, so classifying
+  // "approve VO-014" approves nothing. Same tier as /assistant and /tasks
+  // for the same reason: any member may ask what would happen, and what they
+  // are actually allowed to RUN is re-checked at execution.
+  "/classify": "ANY_MEMBER",
   "/companies": "ORG_ADMIN",
   "/compliance-register": "ORG_ADMIN",
   "/construction-budget/lines": "PM_OR_ABOVE",
@@ -264,6 +271,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/recruitment/job-openings/[id]/status": "ORG_ADMIN",
   // POST only because running a saved report needs a body; it is a read.
   "/reports/definitions/[id]/run": "FIELD",
+  // R67 E-12 (R-136) added this route and did not declare it here, which is
+  // what this file's own test exists to catch. Minting a signed link PUBLISHES
+  // a report to anyone holding the URL, so it is the same tier as its sibling
+  // /work-progress/report/share above -- deliberately NOT "FIELD", because
+  // handing the org's cost figures outside the org is a manager's decision.
+  "/reports/[reportName]/share": "PM_OR_ABOVE",
   "/rfis": "FIELD",
   "/rfis/[id]": "FIELD",
   "/risks": "PM_OR_ABOVE",

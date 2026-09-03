@@ -271,8 +271,10 @@ export default function WorkProgressListClient({
     // separate "+ New" would just duplicate what's already on screen.
     <ScreenFrame
       breadcrumb="Work Progress"
-      exportAction={{ label: "Export", disabledReason: "Exporting progress entries is not built yet" }}
-      filterAction={{ label: "Filter", disabledReason: "Filtering progress entries is not built yet" }}
+      // R67 E-18 (R-178): the reason, in words, naming where the capability
+      // really is -- never a bare "(Not yet available)".
+      exportAction={{ label: "Export", disabledReason: "Export from the Report tab — PDF, XLSX and CSV of these entries against the BOQ" }}
+      filterAction={{ label: "Filter", disabledReason: "Filter by period and category on the Report tab" }}
       // R67 D-28: a deletion happens on the entry's own page, which unmounts
       // with the navigation, so its confirmation is carried here in the URL and
       // shown in the persistent band -- never as a toast that has already gone
