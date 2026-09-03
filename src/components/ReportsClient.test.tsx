@@ -98,13 +98,19 @@ describe("ReportsClient: Work Progress navigates, it is never fetched here (R67 
 
     const { getByTestId } = render(<ReportsClient projectId="p-1" />);
 
-    // The primary says what pressing it does -- this report opens a screen, it
-    // does not run here.
-    expect(getByTestId("reports-run").textContent).toContain("Open Report");
+    // R67 E-15 (R-135): the primary NAMES the screen it opens, so a reader
+    // knows before pressing that they are about to leave this one.
+    expect(getByTestId("reports-run").textContent).toContain("Open Work Progress Report");
     fireEvent.click(getByTestId("reports-run"));
 
     await waitFor(() => expect(pushed.length).toBe(1));
-    expect(pushed[0]).toContain("/work-progress?tab=report&projectId=p-1");
+    // R67 E-15 ACCEPTANCE (first clause): the destination carries the project
+    // AND the period, so the WPR runs on arrival with the same window this
+    // screen was showing. The second clause -- a "PO Qty" header visible with no
+    // further click -- is asserted on the real screen in
+    // WorkProgressReportClient.autorun.test.tsx.
+    expect(pushed[0]).toMatch(/\/work-progress\?tab=report&projectId=.+&from=.+&to=.+/);
+    expect(pushed[0]).toContain("projectId=p-1");
     // THE assertion this item exists for: the 24.3 s path is never touched.
     expect(calls.filter((u) => u.includes("/api/reports/work-progress"))).toHaveLength(0);
   });

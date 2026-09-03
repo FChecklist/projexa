@@ -67,11 +67,16 @@ describe("the primary is never clickable into a 400 (R67 E-11)", () => {
     expect(runButtonLabel("project-status", [], false)).toBe("Run Report");
   });
 
-  test("a report with a screen of its own says it opens one", () => {
-    // A hosted report with no name of its own still says it opens something;
-    // item E-15 gives the Work Progress Report the specific words.
-    expect(runButtonLabel("work-progress", [], true)).toBe("Open Report");
+  test("a report with a screen of its own NAMES that screen (R67 E-15)", () => {
+    // "Open Report" is true but says nothing about where. A reader should know
+    // before pressing that they are about to leave this screen.
+    expect(runButtonLabel("work-progress", [], true)).toBe("Open Work Progress Report");
+    // A hosted report with no name of its own still says it opens something.
     expect(runButtonLabel("not-a-report", [], true)).toBe("Open Report");
+    // ...and a missing prerequisite is still appended to whichever words apply.
+    expect(runButtonLabel("work-progress", ["select a project"], true)).toBe(
+      "Open Work Progress Report (select a project)"
+    );
   });
 
   test("a week start that is not a Monday is reported at the field, not on the button", () => {

@@ -102,6 +102,11 @@ export const REPORT_PARAMETERS: Record<string, ReportParameterSpec> = {
     needsWeekStart: false,
     supportsCategory: true,
     supportsVendor: false,
+    // R67 E-15 (R-135): "Open Report" is true but says nothing about WHERE.
+    // Naming the screen means the reader knows, before pressing, that they are
+    // about to leave this one -- and it is the same name the Full Catalog card
+    // and the picker entry use, which is the whole point of D-02.
+    openLabel: "Open Work Progress Report",
   },
   "category-progress": {
     description: "Category Progress: percent complete per BOQ category, with the completed and total amount behind each one.",
