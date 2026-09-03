@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 import DataLoadError from "@/components/DataLoadError";
 import SkeletonTable from "@/components/SkeletonTable";
 import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
@@ -60,7 +61,7 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
-type Material = {
+export type Material = {
   id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean;
   // R67 D-40: computed by the master GET, never stored -- see listMaterials()
   // in construction-materials-service.ts. Optional on this type only because a
@@ -241,12 +242,16 @@ export default function MaterialsClient({
   registryColumns,
   initialTab,
   initialMaterialId,
+  initialMaster = null,
   readOnlyReason,
 }: {
   projectId: string;
-  projectName: string;
+  projectName: string | null;
   registryColumns?: RegistryColumn[] | null;
   initialTab?: string;
+  /** R67 F-18: the material master, already fetched by materials/page.tsx on
+   *  the server. The landing tab therefore paints filled with no round trip. */
+  initialMaster?: ModuleListInitial<Material> | null;
   /** From ?materialId= -- set when the Cost Report drills into one material's receipts. */
   initialMaterialId?: string;
   /**
@@ -293,7 +298,10 @@ export default function MaterialsClient({
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
   const [reportWindowSeeded, setReportWindowSeeded] = useState(false);
-  const [materials, setMaterials] = useState<Material[]>([]);
+  // R67 F-18 merge: the master arrives as a PROP, fetched by the page inside
+  // its own Suspense boundary, so the landing tab paints filled with no round
+  // trip of its own. The client read below is still what every REFRESH uses.
+  const [materials, setMaterials] = useState<Material[]>(() => initialMaster?.rows ?? []);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -303,11 +311,15 @@ export default function MaterialsClient({
   // and the cost-report aggregate, two tabs they had not opened. Three flags,
   // each cleared by its own promise, so the master paints as soon as the master
   // arrives.
-  const [loadingMaterials, setLoadingMaterials] = useState(true);
+  const [loadingMaterials, setLoadingMaterials] = useState(() => !initialMaster);
   const [loadingReceipts, setLoadingReceipts] = useState(true);
   const [loadingIssues, setLoadingIssues] = useState(true);
   const [loadingReport, setLoadingReport] = useState(true);
-  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; issues?: string; report?: string }>({});
+  const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; issues?: string; report?: string }>(
+    // A seeded master can still carry a failure -- the server read is allowed
+    // to have partly failed -- so the seed brings its own message with it.
+    () => (initialMaster?.errorMessage ? { materials: initialMaster.errorMessage } : {})
+  );
 
   const loadMaterials = useCallback(async () => {
     setLoadingMaterials(true);
@@ -533,7 +545,7 @@ export default function MaterialsClient({
       ["S.No", "Name", "Spec", "Unit", code ? `Unit Cost (${code})` : "Unit Cost", "Received to date", "Issued to date", "On hand", "Status"],
       rows
     );
-    downloadCsv(csvFilename("materials", projectName, new Date().toISOString().slice(0, 10)), csv);
+    downloadCsv(csvFilename("materials", projectName ?? "project", new Date().toISOString().slice(0, 10)), csv);
   }
 
   // R67 D-57: the Cost Report exports what it is SHOWING, window and all --
@@ -557,7 +569,7 @@ export default function MaterialsClient({
       rows
     );
     downloadCsv(
-      csvFilename(`cost-report-${reportFrom || "start"}-to-${reportTo || "today"}`, projectName, new Date().toISOString().slice(0, 10)),
+      csvFilename(`cost-report-${reportFrom || "start"}-to-${reportTo || "today"}`, projectName ?? "project", new Date().toISOString().slice(0, 10)),
       csv
     );
   }

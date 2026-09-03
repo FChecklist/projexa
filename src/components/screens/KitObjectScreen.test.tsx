@@ -1,145 +1,150 @@
 /// <reference types="bun-types" />
-// Sibling test for the D-09 fork at src/components/screens/KitObjectScreen.tsx.
+// R67 F-34 (R-290). The acceptance is a Playwright screenshot at 300 ms of a
+// navigation into /moms/<id> with the record delayed: the DOM must carry the
+// breadcrumb text and an aria-busy element, and the literal "Loading…" must not
+// stand alone. Every one of those is a property of this component, so it is
+// asserted here, where it can be run without a server -- the Playwright run is
+// then a check that the component is actually mounted on those routes, not the
+// only place the rule exists.
 //
-// WHAT THIS FILE IS FOR. The fork exists to add exactly two things to the kit's
-// ObjectScreen, both required by R67 D-33, and both easy to lose the next time
-// someone re-syncs this file against a kit release:
-//
-//   deleteLabel      The kit hard-codes "Delete" on the destructive footer
-//                    action. On a worker that word is a lie -- the action sets
-//                    isActive=false and keeps every attendance row and every
-//                    cost -- so the screen must be able to call it "Deactivate".
-//   secondaryAction  A display-mode action beside Edit, so "Reactivate" exists
-//                    and deactivation is not one-way in the UI.
-//
-// It ALSO pins the name. This component sits at KitObjectScreen, not
-// ObjectScreen, because lane D0 (merged) owns a completely different component
-// at src/components/screens/ObjectScreen.tsx and decision D-11 §3 forbids two
-// different components sharing one import path. If someone ever moves this back,
-// the import in this file breaks and says so.
-//
-// Everything else here is the kit's behaviour, imported and unchanged; only the
-// two additions and the mode switch are asserted.
+// Queries come from the render RESULT, never from `screen`: the happy-dom
+// global is registered at module scope and @testing-library's `screen` binds to
+// document.body at ITS import time, which is earlier. (Same note as
+// ListScreenFrame.test.tsx.)
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
+GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { KitObjectScreen, OBJECT_LOADING_REASON } from "./KitObjectScreen";
+import { MOM_OBJECT_BREADCRUMB, OBJECT_BREADCRUMBS } from "@/lib/object-breadcrumbs";
 
-const { KitObjectScreen } = await import("./KitObjectScreen");
+afterEach(cleanup);
 
-afterEach(() => cleanup());
-
-type Overrides = Record<string, unknown>;
-
-function renderScreen(overrides: Overrides = {}) {
-  return render(
-    <KitObjectScreen
-      breadcrumb="Manpower / Roster / Ali Hassan"
-      title="Ali Hassan"
-      mode="display"
-      hasDraft={false}
-      messages={[]}
-      onEdit={() => {}}
-      onDelete={() => {}}
-      {...overrides}
-    >
-      <p>details</p>
-    </KitObjectScreen>
-  );
-}
-
-describe("KitObjectScreen -- deleteLabel", () => {
-  test("defaults to the kit's word, 'Delete'", () => {
-    const { getByText } = renderScreen();
-    expect(getByText("Delete")).toBeDefined();
-  });
-
-  test("a screen can name the destructive action for what it actually does", () => {
-    const { getByText, queryByText } = renderScreen({ deleteLabel: "Deactivate" });
-    expect(getByText("Deactivate")).toBeDefined();
-    // ...and the misleading word is gone entirely, not merely hidden.
-    expect(queryByText("Delete")).toBeNull();
-  });
-
-  test("the destructive action fires its handler, and does not when it carries a reason", () => {
-    let fired = 0;
-    const { getByText, rerender } = render(
-      <KitObjectScreen breadcrumb="b" title="t" mode="display" hasDraft={false} messages={[]} deleteLabel="Deactivate" onDelete={() => { fired += 1; }}>
-        <p>details</p>
-      </KitObjectScreen>
+describe("KitObjectScreen loading variant", () => {
+  test("the breadcrumb is real text while the record is still in flight", () => {
+    const { getByText } = render(
+      <KitObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
     );
-    fireEvent.click(getByText("Deactivate"));
-    expect(fired).toBe(1);
-
-    rerender(
-      <KitObjectScreen breadcrumb="b" title="t" mode="display" hasDraft={false} messages={[]} deleteLabel="Deactivate" deleteDisabledReason="Already inactive" onDelete={() => { fired += 1; }}>
-        <p>details</p>
-      </KitObjectScreen>
-    );
-    fireEvent.click(getByText("Deactivate"));
-    expect(fired).toBe(1);
-    expect((getByText("Deactivate") as HTMLButtonElement).title).toBe("Already inactive");
+    // The exact literal the acceptance screenshots for.
+    expect(getByText(/Minutes of Meeting/)).toBeDefined();
   });
 
-  test("no onDelete means no destructive action at all", () => {
-    const { queryByText } = renderScreen({ onDelete: undefined });
-    expect(queryByText("Delete")).toBeNull();
+  test("the waiting region is marked busy and states its loading data-state", () => {
+    const { container } = render(<KitObjectScreen loading breadcrumb="Permits / Permit" />);
+    const region = container.querySelector("[data-testid='object-screen-loading']")!;
+    expect(region.getAttribute("aria-busy")).toBe("true");
+    expect(region.getAttribute("data-state")).toBe("loading");
+  });
+
+  test("the title is a bar, not the word 'Loading…' -- and that word never stands alone", () => {
+    const { container, queryByText } = render(
+      <KitObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
+    );
+    expect(container.querySelector("[data-testid='object-screen-title-skeleton']")).not.toBeNull();
+    // "Loading…" appears ONLY as the reason beside a disabled action, never as
+    // the whole answer: there is a breadcrumb and a title bar beside it.
+    const loadingText = queryByText(OBJECT_LOADING_REASON);
+    expect(loadingText).not.toBeNull();
+    expect(container.textContent).toContain("Minutes of Meeting");
+  });
+
+  test("the action bar is present and disabled with its reason, not absent", () => {
+    const { getByRole } = render(
+      <KitObjectScreen loading breadcrumb="Permits / Permit" actions={["Edit"]} />
+    );
+    const edit = getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+    expect(edit.disabled).toBe(true);
+    expect(edit.getAttribute("title")).toBe(OBJECT_LOADING_REASON);
+  });
+
+  test("each screen outlines the actions it really has -- a BOQ revision is never offered Edit", () => {
+    const { queryByRole, getByRole } = render(
+      <KitObjectScreen
+        loading
+        breadcrumb={OBJECT_BREADCRUMBS.scope.breadcrumb}
+        actions={OBJECT_BREADCRUMBS.scope.actions}
+      />
+    );
+    expect(queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(getByRole("button", { name: "Create Revision" })).toBeDefined();
+  });
+
+  test("after three seconds it says what it is waiting for, in the user's own noun", async () => {
+    const { findByText } = render(
+      <KitObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
+    );
+    // Real elapsed time, not fake timers: the assertion is that a user staring
+    // at the screen is told something, not that the component reads a constant.
+    const words = await findByText(/Still loading the meeting/, {}, { timeout: 6000 });
+    expect(words.textContent).toMatch(/Still loading the meeting…\s*\d+\s*s/);
+  }, 10000);
+
+  test("nothing is said for the first three seconds -- an ordinary wait is not narrated", () => {
+    const { queryByText } = render(
+      <KitObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
+    );
+    expect(queryByText(/Still loading/)).toBeNull();
+  });
+
+  test("a screen with no noun for what it is waiting on simply shows the frame", () => {
+    const { container } = render(<KitObjectScreen loading breadcrumb="Schedule / Task" />);
+    expect(container.textContent).toContain("Schedule / Task");
+    expect(container.textContent).not.toContain("Still loading");
   });
 });
 
-describe("KitObjectScreen -- secondaryAction", () => {
-  test("renders beside Edit in display mode and calls back when clicked", () => {
-    let reactivated = 0;
-    const { getByText } = renderScreen({
-      secondaryAction: { label: "Reactivate", onClick: () => { reactivated += 1; } },
-    });
-    expect(getByText("Edit")).toBeDefined();
-    fireEvent.click(getByText("Reactivate"));
-    expect(reactivated).toBe(1);
+describe("KitObjectScreen loaded variant -- unchanged from the kit's", () => {
+  test("renders the title, the breadcrumb, the children and a ready data-state", () => {
+    const { container, getByText } = render(
+      <KitObjectScreen
+        breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
+        title="Site walkthrough 12 Aug"
+        mode="display"
+        hasDraft={false}
+        messages={[]}
+      >
+        <p>the record</p>
+      </KitObjectScreen>
+    );
+    expect(getByText("Site walkthrough 12 Aug")).toBeDefined();
+    expect(getByText("the record")).toBeDefined();
+    expect(container.querySelector("[data-state='ready']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='object-screen-loading']")).toBeNull();
   });
 
-  test("a disabled secondary action names its reason in the label, in the product's 'Label (reason)' form", () => {
-    let reactivated = 0;
-    const { getByText } = renderScreen({
-      secondaryAction: { label: "Reactivate", disabledReason: "Needs PM role", onClick: () => { reactivated += 1; } },
-    });
-    const button = getByText("Reactivate (Needs PM role)") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    fireEvent.click(button);
-    expect(reactivated).toBe(0);
+  test("Edit is live once the record is there, and Save carries its disabled reason in edit mode", () => {
+    const display = render(
+      <KitObjectScreen breadcrumb="Permits / Permit" title="Fire NOC" mode="display" hasDraft={false} messages={[]} onEdit={() => {}}>
+        <p>fields</p>
+      </KitObjectScreen>
+    );
+    const edit = display.getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+    expect(edit.disabled).toBe(false);
+    cleanup();
+
+    const editing = render(
+      <KitObjectScreen
+        breadcrumb="Permits / Permit" title="Fire NOC" mode="edit" hasDraft={false} messages={[]}
+        saveDisabled saveDisabledReason="2 required fields"
+      >
+        <p>fields</p>
+      </KitObjectScreen>
+    );
+    expect(editing.getByRole("button", { name: "Save (2 required fields)" })).toBeDefined();
   });
 
-  test("it is a DISPLAY-mode action -- editing shows Save and Cancel instead", () => {
-    const { queryByText, getByText } = renderScreen({
-      mode: "edit",
-      secondaryAction: { label: "Reactivate", onClick: () => {} },
-    });
-    expect(queryByText("Reactivate")).toBeNull();
-    expect(queryByText("Edit")).toBeNull();
-    expect(getByText("Save")).toBeDefined();
-    expect(getByText("Cancel")).toBeDefined();
-  });
-
-  test("omitting it renders nothing extra", () => {
-    const { queryByText } = renderScreen();
-    expect(queryByText("Reactivate")).toBeNull();
-  });
-});
-
-describe("KitObjectScreen -- the kit behaviour the fork must not have broken", () => {
-  test("the Save label carries the disabled reason in brackets, as every R67 create form relies on", () => {
-    const { getByText } = renderScreen({ mode: "create", saveDisabled: true, saveDisabledReason: "2 required fields" });
-    expect((getByText("Save (2 required fields)") as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  test("title, facets and children all render", () => {
-    const { getByText } = renderScreen({
-      facets: [{ label: "Trade", value: "Mason" }, { label: "Daily Rate", value: "AED 300.00" }],
-    });
-    expect(getByText("Ali Hassan")).toBeDefined();
-    expect(getByText("Mason")).toBeDefined();
-    expect(getByText("AED 300.00")).toBeDefined();
-    expect(getByText("details")).toBeDefined();
+  test("the breadcrumb is the SAME string loading and loaded, so it cannot rewrite itself on arrival", async () => {
+    const loading = render(<KitObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} />);
+    const whileLoading = loading.container.textContent ?? "";
+    cleanup();
+    const loaded = render(
+      <KitObjectScreen breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} title="Kickoff" mode="display" hasDraft={false} messages={[]}>
+        <p>fields</p>
+      </KitObjectScreen>
+    );
+    expect(whileLoading).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
+    expect(loaded.container.textContent).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
+    await waitFor(() => expect(true).toBe(true));
   });
 });

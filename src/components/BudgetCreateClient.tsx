@@ -178,8 +178,8 @@ export default function BudgetCreateClient() {
   const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
 
   // R67 D-42: the two text inputs used to stay LIVE while the form could not be
-  // saved, so a user could type a budget name and an amount into a form that
-  // was never going to accept them. Every field is disabled while blocked -- and
+  // saved, so a user could type a budget name and an amount into a form that was
+  // never going to accept them. Every field is disabled while blocked -- and
   // disabled from the FIRST paint, while the lookups are still in flight, so the
   // form only ever RELAXES and never flips from enabled to blocked in front of
   // someone mid-keystroke.

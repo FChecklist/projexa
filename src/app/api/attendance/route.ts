@@ -4,11 +4,11 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
-// R67 D-30/D-33 + F-25 (R-241), reconciled: this proxy used to forward ONLY
-// projectId, so the whole project's attendance ledger came back on every call
-// and any narrowing -- one date for the daily sheet, one worker for the object
-// page's history, a month window for the summary -- had to happen in the
-// browser. VERIDIAN's listAttendance() filters all of them server-side.
+// R67 F-25 (R-241) + D-30/D-33, reconciled. Attendance is a DATED question and
+// also a question ABOUT SOMEONE, and this proxy used to forward projectId
+// alone -- so the Manpower screen pulled a project's whole attendance log on
+// every landing, for a tab it opens closed, and any narrowing had to happen in
+// the browser. VERIDIAN's listAttendance() filters all of it server-side.
 //
 // Two lanes narrowed it from different ends and BOTH are kept:
 //   * F-25's dated question: ?date= for one day, ?from=/?to= for an inclusive
@@ -41,7 +41,6 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     const value = request.nextUrl.searchParams.get(key);
     if (value && ISO_DATE.test(value)) params.set(key, value);
   }
-
   try {
     const data = await callVeridian(`/attendance?${params.toString()}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);

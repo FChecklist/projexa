@@ -16,12 +16,12 @@ import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
 // R67 D-51 + F-19. D-51 needs the project's NAME on the form -- "Project:
-// <name> - change in the top bar" -- and F-19 forbids buying it with a
+// <name> — change in the top bar" -- and F-19 forbids buying it with a
 // blocking round trip. So the name is passed down whenever the server already
-// has it for free (the cookie path below resolves it while checking the id
-// still belongs to this caller), and when it does not, the client looks it up
-// itself after first paint. Either way the form names its project; only the
-// moment it can do so differs, and no byte of TTFB is spent on it.
+// has it for free (the cookie path resolves it while checking the id still
+// belongs to this caller), and when it does not, the client looks it up itself
+// after first paint. Either way the form names its project; only the moment it
+// can do so differs, and no byte of TTFB is spent on it.
 async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, projectName, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
@@ -36,9 +36,7 @@ export default async function ScheduleLogTimePage({ searchParams }: { searchPara
 
   if (known) {
     return (
-      <div className="flex-1 p-6">
-        {/* No name here by construction -- this branch exists precisely because
-            it makes no call. The client resolves it. */}
+      <div className="flex-1">
         <ScheduleLogTimeClient projectId={known} />
       </div>
     );

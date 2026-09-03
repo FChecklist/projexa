@@ -19,7 +19,8 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 // showing, so the form opens on THAT date rather than silently on today --
 // otherwise the one click from "No attendance marked for 28-08-2026" would
 // record the mark against the wrong day. A malformed value is ignored rather
-// than forwarded, and the client then falls back to today.
+// than forwarded, and the client then falls back to today, which beats
+// fetching a sheet for "2026-13-45".
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function validDate(date: string | undefined): string | undefined {
@@ -50,7 +51,7 @@ export default async function LabourAttendanceNewPage({
 
   if (known) {
     return (
-      <div className="flex-1 p-6">
+      <div className="flex-1">
         <AttendanceCreateClient projectId={known} initialDate={validDate(date)} />
       </div>
     );

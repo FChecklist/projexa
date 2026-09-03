@@ -23,11 +23,11 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
 
 // R67 D-47: an ACTIVITY, not just a titled issue. startDate / durationDays /
 // predecessorId / boqLineItemId are forwarded to createScheduleActivity() on
-// the VERIDIAN side, which validates the two ids against the org and derives the
-// finish date from the duration. startDate is checked here too
-// so the form gets the same refusal without a round trip -- a programme
-// activity with no start cannot be drawn on a timeline, cannot have a
-// duration, and cannot be compared to a baseline.
+// the VERIDIAN side, which validates the two ids against the org and derives
+// the finish date from the duration. startDate is checked here too so the form
+// gets the same refusal without a round trip -- a programme activity with no
+// start cannot be drawn on a timeline, cannot have a duration, and cannot be
+// compared to a baseline.
 const ACTIVITY_FIELDS = ["startDate", "durationDays", "predecessorId", "boqLineItemId"] as const;
 
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
@@ -41,22 +41,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     return NextResponse.json({ error: "startDate is required" }, { status: 400 });
   }
   try {
-    const data = await callVeridian("/schedule", {
-      organizationId: ctx.organizationId!,
-      method: "POST",
-      // Explicit rather than a bare spread, so a field this proxy does not know
-      // about cannot reach the write path unreviewed.
-      body: {
-        projectId: body.projectId,
-        title: body.title,
-        description: body.description,
-        typeId: body.typeId,
-        priority: body.priority,
-        statusId: body.statusId,
-        dueDate: body.dueDate,
-        ...Object.fromEntries(ACTIVITY_FIELDS.map((f) => [f, body[f]])),
-      },
-    });
+    const data = await callVeridian("/schedule", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create task");

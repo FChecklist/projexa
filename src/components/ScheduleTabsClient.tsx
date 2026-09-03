@@ -248,11 +248,12 @@ export function ScheduleTabsClient({
       {/* A real <header>: this band is the screen's header, and D-44's
           acceptance -- four actions, in a fixed order, over a breadcrumb that
           names the project -- is stated over it. */}
-      <header className="space-y-2">
-      <PageHeading
-        title="Schedule"
-        breadcrumb={breadcrumb}
-      />
+      <header className="flex flex-wrap items-end justify-between gap-2">
+        {/* The TITLE is the page's, painted at TTFB outside every Suspense
+            boundary (F-30). This band carries the trail and the actions, which
+            both need the project's name and a client handler. Two "Schedule"
+            headings on one screen is what dropping it here avoids. */}
+        <p className="text-[12px] text-px-muted">{breadcrumb}</p>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <ListHeaderActions
