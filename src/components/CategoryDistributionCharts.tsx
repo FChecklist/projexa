@@ -1,35 +1,55 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { formatCompactNumber } from "@/lib/format-number";
+// R67 E-23 (R-206, correction C-07). THE PIE IS GONE.
+//
+// WHAT IT WAS. A pie of each category's share of the BOQ, capped at five
+// slices with everything past slot five folded into a neutral "Other", plus
+// a grouped total-vs-completed bar. Two problems, both real: the cap HID
+// categories -- a project with nine trades showed four of them and a lump --
+// and a pie forces the reader to compare angles when the question ("which
+// trade is the biggest part of this BOQ, and how far through is it?") is a
+// length comparison.
+//
+// WHAT IT IS NOW. One sorted horizontal bar per category, Completed drawn
+// over Total, the share printed after the label as "Civil - 40% of BOQ", and
+// a bar click opening the Work Progress analytics filtered to that category.
+// EVERY category gets a bar -- nothing is hidden -- and the long tail is
+// folded only in the label list beneath, where folding costs the reader
+// nothing.
+//
+// Colours are WS-G's tokens, never a recharts default; the printed share and
+// the printed amounts mean the chart is readable without hovering and without
+// telling two muted fills apart.
 
-// Same validated 5-slot categorical order as ReportChart.tsx (dataviz
-// skill, see ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md) -- fixed order,
-// never cycled, anything past slot 5 folds into a neutral "Other" bucket.
-// R67 WS-G re-valued those five slots to the muted CVD-checked set in
-// globals.css; the references here are unchanged because they were already
-// token references and not hexes.
-const PIE_COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
-const PIE_OTHER_COLOR = "var(--status-neutral-text)";
-const PIE_MAX_SLICES = 5;
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { formatNumber } from "@/lib/format-number";
 
-const barConfig = {
-  totalAmount: { label: "Total", color: "var(--color-chart-1)" },
-  completedAmount: { label: "Completed", color: "var(--color-chart-2)" },
-} satisfies ChartConfig;
+type CategoryEntry = {
+  categoryId: string;
+  name: string;
+  totalAmount: number;
+  sharePercent: number;
+  percentComplete: number;
+  completedAmount: number;
+};
 
-type CategoryEntry = { categoryId: string; name: string; totalAmount: number; sharePercent: number; percentComplete: number; completedAmount: number };
+/** How many categories get a named row in the label list beneath the bars. Never how many get a BAR. */
+const LABEL_LIST_LIMIT = 5;
 
 export function CategoryDistributionCharts({ companyId, projectId }: { companyId: string; projectId: string }) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
   const [error, setError] = useState(false);
+  const orgMoney = useOrgMoney();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setCategories(null);
     setError(false);
-    fetch(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`)
+    return fetch(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`)
       .then((res) => {
         if (!res.ok) throw new Error(`category-distribution fetch failed: ${res.status}`);
         return res.json();
@@ -38,59 +58,103 @@ export function CategoryDistributionCharts({ companyId, projectId }: { companyId
       .catch(() => setError(true));
   }, [companyId, projectId]);
 
-  if (error) return <p className="py-6 text-center text-sm text-destructive">Unable to load category data. Please try again later.</p>;
-  if (categories === null) return <p className="py-6 text-center text-sm text-px-muted">Loading category distribution...</p>;
-  if (categories.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No BOQ line items found for this project yet.</p>;
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const pieData = [...categories]
-    .sort((a, b) => b.totalAmount - a.totalAmount)
-    .slice(0, PIE_MAX_SLICES)
-    .map((c) => ({ name: c.name, value: c.sharePercent }));
-  if (categories.length > PIE_MAX_SLICES) {
-    const otherShare = [...categories].sort((a, b) => b.totalAmount - a.totalAmount).slice(PIE_MAX_SLICES).reduce((s, c) => s + c.sharePercent, 0);
-    pieData.push({ name: "Other", value: otherShare });
+  if (error) {
+    return (
+      <div className="space-y-2 py-6 text-center">
+        <p role="alert" className="text-sm text-px-error">Couldn&apos;t load category data</p>
+        <Button size="sm" variant="outline" onClick={() => void load()}>Retry</Button>
+      </div>
+    );
   }
 
-  const barData = categories.map((c) => ({ name: c.name, totalAmount: c.totalAmount, completedAmount: Math.round(c.completedAmount) }));
+  if (categories === null) {
+    return (
+      <div className="space-y-2" aria-busy="true">
+        <p className="text-xs text-px-muted">Loading budget and completion per category…</p>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="space-y-1">
+            <Skeleton className="h-3 w-48" />
+            <Skeleton className="h-2.5 w-full" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (categories.length === 0) {
+    return (
+      <div className="space-y-2 py-6 text-center">
+        <p className="text-sm text-px-muted">No BOQ line items for this project yet</p>
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/scope?projectId=${encodeURIComponent(projectId)}`}>Import BOQ</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const sorted = [...categories].sort((a, b) => b.totalAmount - a.totalAmount);
+  const axisMax = sorted.reduce((max, c) => (c.totalAmount > max ? c.totalAmount : max), 0);
+  const width = (value: number) => (axisMax <= 0 ? 0 : Math.max(0.5, (value / axisMax) * 100));
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div className="space-y-4">
       <div>
-        <h4 className="mb-2 text-sm font-medium text-px-fg">Category share of total BOQ</h4>
-        <ChartContainer config={barConfig} className="aspect-auto h-72 w-full">
-          <PieChart>
-            <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" formatter={(value) => `${Number(value).toFixed(1)}%`} />} />
-            <Pie data={pieData} dataKey="value" nameKey="name" label={(entry) => `${entry.name} ${Number(entry.value).toFixed(0)}%`}>
-              {pieData.map((entry, i) => (
-                <Cell key={entry.name} fill={entry.name === "Other" ? PIE_OTHER_COLOR : PIE_COLORS[i % PIE_COLORS.length]} />
-              ))}
-            </Pie>
-            <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-          </PieChart>
-        </ChartContainer>
+        <h4 className="mb-1 text-sm font-medium text-px-fg">Budget and completed value by category</h4>
+        <p className="mb-3 text-[11.5px] text-px-muted">
+          The full bar is the category&apos;s BOQ amount; the darker bar over it is the value completed. Click a bar to see its progress entries.
+        </p>
+        <ul className="space-y-2.5">
+          {sorted.map((category) => (
+            <li key={category.categoryId}>
+              <Link
+                href={`/work-progress?projectId=${encodeURIComponent(projectId)}&tab=analytics&category=${encodeURIComponent(category.name)}`}
+                className="block rounded-md p-1.5 hover:bg-muted/40"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  {/* The share is printed after the label, in words -- "Civil - 40% of BOQ". */}
+                  <span className="min-w-0 truncate text-[12.5px] text-px-ink">
+                    {category.name} - {formatNumber(category.sharePercent, { fractionDigits: 0 })}% of BOQ
+                  </span>
+                  <span className={`${MONEY_CELL_CLASS} shrink-0 text-[11.5px] text-px-muted`}>
+                    {orgMoney.money(category.completedAmount, { fractionDigits: 0 })} of {orgMoney.money(category.totalAmount, { fractionDigits: 0 })}
+                  </span>
+                </div>
+                <span className="mt-1 block h-2.5 rounded-sm" style={{ width: `${width(category.totalAmount)}%`, backgroundColor: "var(--color-chart-5)" }}>
+                  <span
+                    className="block h-2.5 rounded-sm"
+                    style={{
+                      width: `${category.totalAmount > 0 ? Math.min(100, (category.completedAmount / category.totalAmount) * 100) : 0}%`,
+                      backgroundColor: "var(--color-chart-2)",
+                    }}
+                    aria-hidden
+                  />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
-      <div>
-        <h4 className="mb-2 text-sm font-medium text-px-fg">Completed vs total amount per category</h4>
-        <ChartContainer config={barConfig} className="aspect-auto h-72 w-full">
-          <BarChart data={barData} margin={{ left: 8, right: 8 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
-            <YAxis tickLine={false} axisLine={false} width={56} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            {/* R67 WS-G (R-227): radius 0 and the value printed at the bar
-                end, on both series -- the grouped pair is exactly the case
-                where two muted fills are hardest to tell apart, and the
-                printed figure removes the need to. */}
-            <Bar dataKey="totalAmount" fill="var(--color-chart-1)" radius={0}>
-              <LabelList dataKey="totalAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
-            </Bar>
-            <Bar dataKey="completedAmount" fill="var(--color-chart-2)" radius={0}>
-              <LabelList dataKey="completedAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
-            </Bar>
-            <ChartLegend content={<ChartLegendContent />} />
-          </BarChart>
-        </ChartContainer>
-      </div>
+
+      {sorted.length > LABEL_LIST_LIMIT && (
+        // Only the LABEL LIST folds. Every category still has its own bar
+        // above -- hiding a trade from the chart is what the capped pie did.
+        <details className="text-[11.5px] text-px-muted">
+          <summary className="cursor-pointer">
+            {sorted.length} categories in this BOQ — show the smallest {sorted.length - LABEL_LIST_LIMIT} by name
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-4">
+            {sorted.slice(LABEL_LIST_LIMIT).map((category) => (
+              <li key={category.categoryId}>
+                {category.name} - {formatNumber(category.sharePercent, { fractionDigits: 0 })}% of BOQ
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
