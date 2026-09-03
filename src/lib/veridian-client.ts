@@ -47,9 +47,24 @@ export const VERIDIAN_ORIGIN = VERIDIAN_API_ROOT.replace(/\/api\/v1$/, "");
 // the exact budget -- and is only ever logged server-side, never returned.
 export class VeridianApiError extends Error {
   readonly detail?: string;
-  constructor(message: string, public status: number, detail?: string) {
+  /**
+   * R67 B-09 (decision D-03) -- the upstream's CLOSED-VOCABULARY FAILURE.
+   *
+   * VERIDIAN no longer answers a rule violation with an English sentence; it
+   * answers with {code, missing} and PROJEXA composes the words from
+   * src/lib/task-errors.ts. Before this, that body reached `errorBody.error`
+   * as `undefined` and every coded refusal degraded to the generic "VERIDIAN
+   * API request failed (400)" -- the code was thrown away one line before it
+   * would have been useful. Both are optional, so nothing that still returns
+   * `{error}` changes shape.
+   */
+  readonly code?: string;
+  readonly missing?: string[];
+  constructor(message: string, public status: number, detail?: string, coded?: { code?: unknown; missing?: unknown }) {
     super(message);
     this.detail = detail;
+    this.code = typeof coded?.code === "string" ? coded.code : undefined;
+    this.missing = Array.isArray(coded?.missing) ? coded.missing.filter((m): m is string => typeof m === "string") : undefined;
   }
 }
 
@@ -236,7 +251,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return res;
 }
@@ -266,7 +281,7 @@ export async function callVeridianBinary(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
 }
@@ -293,7 +308,7 @@ export async function callVeridianUpload<T = unknown>(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
+    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status, undefined, errorBody);
   }
   return res.json() as Promise<T>;
 }
