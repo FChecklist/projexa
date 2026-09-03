@@ -25,8 +25,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ListScreen, ScreenFrame, type FieldMessage, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import DataLoadError from "@/components/DataLoadError";
-import { MONEY_CELL_CLASS, formatMoney, formatNumber } from "@/lib/format-money";
-import { useCurrencyCode } from "@/lib/currency";
+// R67 D-61/D-62: the money helpers are lane G-05's shared modules. D-61
+// briefly shipped its own format-money.ts plus a useCurrencyCode() hook in
+// @/lib/currency; G-05's format-money.ts + useOrgMoney() landed on main first
+// and are a superset (three-state currency: not-asked / none / a code), so the
+// D-61 copies were dropped at the merge and these call sites moved across.
+import { MONEY_CELL_CLASS } from "@/lib/format-money";
+import { formatNumber } from "@/lib/format-number";
+import { useOrgMoney } from "@/lib/use-org-money";
 import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
 import {
   PROJECT_EXPORT_HEADERS,
@@ -56,7 +62,7 @@ export default function ProjectsListClient() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [status, setStatus] = useState("");
-  const currency = useCurrencyCode();
+  const { money } = useOrgMoney();
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -89,7 +95,6 @@ export default function ProjectsListClient() {
   }, [load]);
 
   const shown = useMemo(() => filterProjects(rows, status), [rows, status]);
-  const money = (n: number | null) => formatMoney(n, { currency });
   const messages: FieldMessage[] = loadError ? [{ level: "error", text: loadError }] : [];
 
   return (
@@ -172,14 +177,14 @@ export default function ProjectsListClient() {
                   <span
                     className="h-1.5 w-20 shrink-0 rounded-full bg-ct-border2"
                     role="img"
-                    aria-label={`${formatNumber(width, { decimals: 0 })}% complete by BOQ value`}
+                    aria-label={`${formatNumber(width)}% complete by BOQ value`}
                   >
                     <span
                       className="block h-full rounded-full bg-[color:var(--color-veri-status-done)]"
                       style={{ width: `${width}%` }}
                     />
                   </span>
-                  <span className="tabular-nums text-[12.5px]">{formatNumber(width, { decimals: 0 })}%</span>
+                  <span className="tabular-nums text-[12.5px]">{formatNumber(width)}%</span>
                 </span>
               );
             },

@@ -42,9 +42,19 @@ export const RULE_MESSAGE =
  * exemption cannot outlive the defect, and a new file can never be added to the
  * list to silence the rule (the test also fails on a path that does not exist).
  *
- * Swept in R67 D-61: DashboardHomeView, DashboardProjectClient,
- * WorkProgressReportClient, MaterialsClient, ReportsClient, ReportOutput,
- * app/share/report/[token]/page.tsx, and the forked KpiCard's typography.
+ * Swept and therefore NOT listed: DashboardHomeView, DashboardProjectClient,
+ * WorkProgressReportClient, MaterialsClient, ReportsClient, MeetingsClient,
+ * MeetingObjectClient and ScopeClient (lane G's G-05, which shipped
+ * src/lib/format-money.ts and src/lib/format-number.ts and is where the shared
+ * helpers now live); ReportOutput, app/share/report/[token]/page.tsx,
+ * BudgetAnalyticalClient, ProjectsListClient and the forked KpiCard (this lane,
+ * D-61/D-62/D-69).
+ *
+ * The list has already shrunk once, at the lane G merge: MeetingsClient,
+ * MeetingObjectClient and ScopeClient were listed when this rule was written
+ * and were swept by G-05 before it landed, so their lines are gone. That is the
+ * mechanism working -- the test below fails on a listed file that no longer
+ * offends, which is what forced the deletion.
  */
 export const NOT_YET_SWEPT = [
   "src/components/AccountingClient.tsx",
@@ -72,8 +82,6 @@ export const NOT_YET_SWEPT = [
   "src/components/ItemObjectClient.tsx",
   "src/components/JournalEntryCreateClient.tsx",
   "src/components/JournalEntryObjectClient.tsx",
-  "src/components/MeetingObjectClient.tsx",
-  "src/components/MeetingsClient.tsx",
   "src/components/MoMObjectClient.tsx",
   "src/components/OpportunitiesClient.tsx",
   "src/components/OpportunityObjectClient.tsx",
@@ -91,7 +99,6 @@ export const NOT_YET_SWEPT = [
   "src/components/SalesQuotationObjectClient.tsx",
   "src/components/ScheduleGanttClient.tsx",
   "src/components/ScheduleTimesheetClient.tsx",
-  "src/components/ScopeClient.tsx",
   "src/components/ScopeObjectClient.tsx",
   "src/components/reports/pivot-utils.ts",
   // The two vendored shadcn/ui primitives. Both format for a chart axis or a

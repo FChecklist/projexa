@@ -130,69 +130,33 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "qty-current")[0]).toBe("");
     expect(textsByTestId(html, "amt-current")[0]).toBe("");
     // prev WAS touched, so it still renders as a real formatted number.
-    // R67 D-61 changed the money half of this expectation from "5,400" to
-    // "5,400.00": money is two decimals in every column of this product now,
-    // so a rate of 108.00 and an amount of 5,400.00 line up down the column.
-    // The QUANTITY half is deliberately unchanged -- 50 Sqm is not 50.00
-    // dirhams, and the two bands no longer share a formatter.
+    // R67 D-61 briefly changed the money half of this to "5,400.00" on the
+    // grounds that money is two decimals everywhere. It is back to "5,400",
+    // because lane G's G-05 -- already on main -- answered the same finding
+    // differently and better for THIS table: one formatDecimal() helper serves
+    // both the Quantity band and the Amount band here, with the currency named
+    // once in the band heading, precisely so a quantity of 50 Sqm is not
+    // rendered as if it were 50.00 dirhams. Two decimals is the rule for a
+    // money-only column (formatMoney), not for a grid whose columns are
+    // sometimes quantities.
     expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
-    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400.00");
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400");
   });
 
   test("a real touched value still uses money()'s thousands formatting, not a raw number", () => {
     const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
-    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490.00");
+    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
   });
 });
 
-// ─── R67 D-61 (audit R-198/R-226) ────────────────────────────────────────
-// One money format across every screen. On this table specifically: the local
-// money() was `toLocaleString(undefined, ...)` -- the RUNTIME's locale, so a
-// visitor on this app's "hi" locale saw Indian digit grouping on the hydration
-// pass and Western grouping on the SSR pass -- and it was applied to the
-// Quantity band as well as the Amount band.
-describe("ScopeTable money format (R67 D-61)", () => {
-  test("money is two decimals and thousands-separated; the currency is named once, in the heading", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
-    const headerText = textsOfTag(html, "th");
-    expect(headerText).toContain("Rate (AED)");
-    expect(headerText).toContain("Amt (AED)");
-    expect(headerText).toContain("Amount (AED)");
-    // ...and NOT repeated in all fifteen money cells of every row.
-    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490.00");
-    expect(textsByTestId(html, "amt-prev")[0]).toBe("16,200.00");
-  });
-
-  test("no currency to source means the bare heading, never a guessed code", () => {
-    const headerText = textsOfTag(renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency={null} />), "th");
-    expect(headerText).toContain("Rate");
-    expect(headerText).toContain("Amount");
-    expect(headerText.some((t) => t.includes("AED") || t.includes("INR") || t.includes("₹"))).toBe(false);
-  });
-
-  test("the Quantity band never picks up a currency token or forced money decimals", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
-    expect(textsByTestId(html, "qty-prev")[0]).toBe("150");
-    expect(textsByTestId(html, "qty-current")[0]).toBe("67.5");
-    // The Quantity band's own heading stays a plain word.
-    expect(textsOfTag(html, "th")).toContain("Quantity");
-  });
-
-  test("the grouping is pinned, so the SSR pass and the hydration pass cannot disagree", () => {
-    // 1,200,000 -- Western grouping. The bug this replaces rendered
-    // "12,00,000" for the same row on a Hindi-locale browser.
-    const big: LineItemRow = { ...PARENT, amt: { prev: 1200000, current: 0, total: 1200000, balance: 0 } };
-    const html = renderToStaticMarkup(<ScopeTable rows={[big]} mode="total" currency="AED" />);
-    expect(textsByTestId(html, "amt-prev")[0]).toBe("1,200,000.00");
-  });
-
-  test("every money cell is right-aligned with tabular figures, so the decimal points form a column", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" currency="AED" />);
-    const amtPrevCell = /<td[^>]*data-testid="amt-prev"[^>]*>/.exec(html)?.[0] ?? "";
-    expect(amtPrevCell).toContain("text-right");
-    expect(amtPrevCell).toContain("tabular-nums");
-  });
-});
+// R67 D-61's own ScopeTable money-format block used to sit here. It was
+// DROPPED at the lane G merge: G-05 had already fixed this table's local
+// money(), and fixed it differently -- one formatDecimal() helper serving both
+// the Quantity band and the Amount band, with the currency named once in the
+// band heading and ScopeTable taking no currency prop at all. D-61's tests
+// asserted the prop it no longer has. The behaviour those tests were written to
+// protect is covered by src/lib/format-number.test.ts (the pinned locale and
+// the grouping) and by the "ScopeTable money format" assertions above.
 
 // R67 lane I (WS-I item I-05, R-177): the Category multi-select the item asks
 // for on the WPR parameter bar. Same renderToStaticMarkup approach as above --
@@ -266,6 +230,9 @@ describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
       <CategoryFilterGroup available={["Civil"]} selected={["Civil"]} disabled onToggle={noop} onApply={noop} />
     );
     expect(html).toMatch(/data-testid="wpr-category-apply"[^>]*disabled=""|disabled=""[^>]*data-testid="wpr-category-apply"/);
+  });
+});
+
 // ─── R67 D-29 (audit R-080) ──────────────────────────────────────────────
 // A report that ran over a window in which nothing happened used to render four
 // empty tables under four tabs, leaving the reader to work out for themselves

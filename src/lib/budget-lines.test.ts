@@ -23,8 +23,8 @@ function line(over: Partial<BudgetLine> = {}): BudgetLine {
     category: "Civil",
     budgetPercentage: 25,
     budget: 25_000,
-    materialCost: null,
-    labourCost: null,
+    materialAmount: null,
+    manpowerAmount: null,
     vendorId: null,
     vendorName: null,
     vendorAmount: null,
@@ -77,8 +77,8 @@ describe("R67 D-62 filtering", () => {
 describe("R67 D-62 totals", () => {
   test("nulls are skipped, not counted as zero", () => {
     const totals = budgetTotals([
-      line({ budget: 25_000, vendorAmount: 30_000, variance: 5_000, materialCost: 10_000, labourCost: null }),
-      line({ budget: 10_000, vendorAmount: null, variance: null, materialCost: null, labourCost: null }),
+      line({ budget: 25_000, vendorAmount: 30_000, variance: 5_000, materialAmount: 10_000, manpowerAmount: null }),
+      line({ budget: 10_000, vendorAmount: null, variance: null, materialAmount: null, manpowerAmount: null }),
     ]);
     expect(totals.budget).toBe(35_000);
     expect(totals.vendorAmount).toBe(30_000);
@@ -136,7 +136,7 @@ describe("R67 D-62 export", () => {
       "Vendor amount",
       "Variance",
     ]);
-    const [row] = budgetExportRows([line({ materialCost: 1, labourCost: 2, vendorName: "Al Noor", vendorAmount: 3, variance: 4 })]);
+    const [row] = budgetExportRows([line({ materialAmount: 1, manpowerAmount: 2, vendorName: "Al Noor", vendorAmount: 3, variance: 4 })]);
     expect(row).toHaveLength(BUDGET_EXPORT_HEADERS.length);
     expect(row).toEqual(["1.1", "Excavation", "Civil", 25, 25_000, 1, 2, "Al Noor", 3, 4]);
   });

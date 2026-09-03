@@ -9,15 +9,22 @@ export type BudgetLine = {
   code: string | null;
   description: string;
   amount: number;
-  /** The BOQ category this line is classified under, via its activity. null when it has none. */
+  /** The line's own category column (lane I, I-05). null when it has none. */
   category: string | null;
   /** The per-line override. The column's own default is 25, so an untouched line reads 25. */
   budgetPercentage: number;
   /** amount x budgetPercentage / 100, rounded once by the backend. */
   budget: number;
-  /** Wave 125 rate-buildup columns. null when nobody has broken the rate down. */
-  materialCost: number | null;
-  labourCost: number | null;
+  /**
+   * The budget-side split of this line, as the QS enters it -- lane I's
+   * material_amount / manpower_amount columns, NOT Wave 125's per-unit
+   * materialCost / labourCost rate-analysis inputs, which mean something else
+   * on the same row (schema.ts states the distinction at both pairs). null,
+   * never 0, when nobody has split the line: "unsplit" and "split as zero" are
+   * different facts and only the second is worth reporting.
+   */
+  materialAmount: number | null;
+  manpowerAmount: number | null;
   vendorId: string | null;
   vendorName: string | null;
   /** null until this line has actually been quoted -- never 0. */
@@ -31,8 +38,8 @@ export type BudgetReport = {
   totalBudget: number;
   totalVendorAmount: number;
   totalVariance: number;
-  totalMaterialCost: number;
-  totalLabourCost: number;
+  totalMaterialAmount: number;
+  totalManpowerAmount: number;
 };
 
 /** The Budget Report's two filters. An empty string means "all". */
@@ -95,8 +102,8 @@ export function budgetTotals(lines: readonly BudgetLine[]): {
   };
   return {
     budget: Math.round(lines.reduce((s, l) => s + l.budget, 0) * 100) / 100,
-    material: sum(lines.map((l) => l.materialCost)),
-    labour: sum(lines.map((l) => l.labourCost)),
+    material: sum(lines.map((l) => l.materialAmount)),
+    labour: sum(lines.map((l) => l.manpowerAmount)),
     vendorAmount: sum(lines.map((l) => l.vendorAmount)),
     variance: sum(lines.map((l) => l.variance)),
     quotedLines: lines.filter((l) => l.vendorAmount !== null).length,
@@ -153,8 +160,8 @@ export function budgetExportRows(lines: readonly BudgetLine[]): unknown[][] {
     l.category ?? "",
     l.budgetPercentage,
     l.budget,
-    l.materialCost ?? "",
-    l.labourCost ?? "",
+    l.materialAmount ?? "",
+    l.manpowerAmount ?? "",
     l.vendorName ?? "",
     l.vendorAmount ?? "",
     l.variance ?? "",

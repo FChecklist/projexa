@@ -142,8 +142,15 @@ describe("DashboardHomeView projects table (D-01)", () => {
 describe("R67 D-62: the home names both money facts and says where each came from", () => {
   test("the two columns are headed for what they are, not both called 'Value'", () => {
     const view = renderHome();
-    expect(view.getByText("Contract value")).toBeTruthy();
-    expect(view.getByText("Project value")).toBeTruthy();
+    // Matched on the header ROW's text rather than by exact node text: lane
+    // G-05 appends the currency unit to every money heading (" (AED)"), so the
+    // <th> reads "Contract value (AED)" and an exact-text query would miss it.
+    // The point of the assertion is that the two facts are named differently
+    // and that neither is still headed the bare word "Value".
+    const headers = view.getAllByRole("columnheader").map((h) => h.textContent ?? "");
+    expect(headers.some((h) => h.startsWith("Contract value"))).toBe(true);
+    expect(headers.some((h) => h.startsWith("Project value"))).toBe(true);
+    expect(headers.some((h) => h.trim() === "Value" || h.trim().startsWith("Value ("))).toBe(false);
   });
 
   test("a project value somebody typed is shown with its source named", () => {

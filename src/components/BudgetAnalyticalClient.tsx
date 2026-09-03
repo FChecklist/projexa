@@ -17,7 +17,7 @@
 // them; and a Budget Report view with Category and Vendor filters and an Export.
 //
 // NO MIGRATION WAS NEEDED, and D-62 says to check before inventing one:
-// budgetPercentage, vendorId, vendorAmount, materialCost and labourCost are all
+// budgetPercentage, vendorId, vendorAmount, materialAmount and manpowerAmount are all
 // real, long-standing columns on construction_boq_line_items. They had a write
 // path and a report; what they did not have was a screen.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,8 +25,14 @@ import { AnalyticalScreen, KpiTag } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import DataLoadError from "@/components/DataLoadError";
-import { MONEY_CELL_CLASS, formatMoney, formatNumber } from "@/lib/format-money";
-import { useCurrencyCode } from "@/lib/currency";
+// R67 D-61/D-62: the money helpers are lane G-05's shared modules. D-61
+// briefly shipped its own format-money.ts plus a useCurrencyCode() hook in
+// @/lib/currency; G-05's format-money.ts + useOrgMoney() landed on main first
+// and are a superset (three-state currency: not-asked / none / a code), so the
+// D-61 copies were dropped at the merge and these call sites moved across.
+import { MONEY_CELL_CLASS } from "@/lib/format-money";
+import { formatNumber } from "@/lib/format-number";
+import { useOrgMoney } from "@/lib/use-org-money";
 import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
 import {
   BUDGET_EXPORT_HEADERS,
@@ -66,7 +72,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   const [drafts, setDrafts] = useState<Record<string, { budgetPercentage?: string; vendorAmount?: string }>>({});
   const [savingLineId, setSavingLineId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const currency = useCurrencyCode();
+  const { money } = useOrgMoney();
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -111,7 +117,6 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   const shown = useMemo(() => filterBudgetLines(lines, filters), [lines, filters]);
   const totals = useMemo(() => budgetTotals(shown), [shown]);
   const filtered = filters.category !== "" || filters.vendor !== "";
-  const money = (n: number | null) => formatMoney(n, { currency });
 
   async function saveLine(lineItemId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null }) {
     setSavingLineId(lineItemId);
@@ -345,15 +350,15 @@ function BudgetRow({
             )}
           </>
         ) : (
-          formatNumber(line.budgetPercentage, { decimals: 0 })
+          formatNumber(line.budgetPercentage)
         )}
       </TableCell>
       <TableCell className={MONEY_CELL_CLASS}>{money(line.budget)}</TableCell>
       <TableCell className={MONEY_CELL_CLASS}>
-        {line.materialCost === null ? <span className="text-ct-muted">Not set</span> : money(line.materialCost)}
+        {line.materialAmount === null ? <span className="text-ct-muted">Not set</span> : money(line.materialAmount)}
       </TableCell>
       <TableCell className={MONEY_CELL_CLASS}>
-        {line.labourCost === null ? <span className="text-ct-muted">Not set</span> : money(line.labourCost)}
+        {line.manpowerAmount === null ? <span className="text-ct-muted">Not set</span> : money(line.manpowerAmount)}
       </TableCell>
       <TableCell>
         {editable ? (
