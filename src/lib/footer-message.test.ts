@@ -15,10 +15,27 @@ class MemoryStorage {
 }
 
 const globalWithStorage = globalThis as unknown as { sessionStorage?: unknown };
-const original = globalWithStorage.sessionStorage;
 
-beforeEach(() => { globalWithStorage.sessionStorage = new MemoryStorage(); });
-afterEach(() => { globalWithStorage.sessionStorage = original; });
+// Installed with defineProperty, NOT plain assignment. `bun test` runs every
+// file in one process unless --isolate is passed, and another file in this
+// suite installs a DOM in which `sessionStorage` is a READONLY accessor on
+// globalThis; a plain `globalThis.sessionStorage = …` then throws
+// "Attempted to assign to readonly property" and every test here fails --
+// only in the full run, never on its own, which is the worst way for a test
+// to be wrong. defineProperty replaces the property whatever its shape, and
+// restoring the original DESCRIPTOR puts an accessor back as an accessor
+// rather than flattening it into a value.
+const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+
+function installStorage(value: unknown) {
+  Object.defineProperty(globalThis, "sessionStorage", { value, configurable: true, writable: true });
+}
+
+beforeEach(() => { installStorage(new MemoryStorage()); });
+afterEach(() => {
+  if (originalDescriptor) Object.defineProperty(globalThis, "sessionStorage", originalDescriptor);
+  else delete globalWithStorage.sessionStorage;
+});
 
 describe("footer message receipts", () => {
   test("a receipt written for one route is read on that route", () => {
@@ -59,7 +76,9 @@ describe("footer message receipts", () => {
   });
 
   test("with sessionStorage unavailable, writing and reading are both survivable no-ops", () => {
-    globalWithStorage.sessionStorage = undefined;
+    // Same reason as the beforeEach above: plain assignment throws when a
+    // sibling file has installed a readonly accessor.
+    installStorage(undefined);
     expect(() => setFooterMessage("/scope/abc", { level: "success", text: "done" })).not.toThrow();
     expect(takeFooterMessage("/scope/abc")).toBeNull();
     expect(() => clearFooterMessage("/scope/abc")).not.toThrow();
