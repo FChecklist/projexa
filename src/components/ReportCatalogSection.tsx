@@ -27,13 +27,17 @@
 //                     ReportCatalogRunner.tsx, which POSTs to the pre-
 //                     existing /api/reports/definitions/[id]/run proxy.
 import { useEffect, useMemo, useState } from "react";
-import { FileBarChart, Search } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, FileBarChart, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReportCatalogRunner } from "@/components/ReportCatalogRunner";
 import type { Company } from "@/components/company-scope";
+// R67 E-04 (R-079): the ONE place that says where a report name goes -- shared
+// with the Project Reports picker, so the two tabs cannot drift apart again.
+import { catalogDestination, monthToDate } from "@/lib/report-destinations";
 
 type ReportDomain = "compliance" | "ERP" | "construction" | "AI-ops" | "custom";
 
@@ -83,8 +87,21 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
   );
 }
 
-function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies: Company[] }) {
+function CatalogCard({ entry, companies, projectId }: { entry: FullCatalogEntry; companies: Company[]; projectId: string | null }) {
   const [expanded, setExpanded] = useState(false);
+
+  // R67 E-04 (R-079): "the Full Catalog says 'Not yet viewable here'" was the
+  // third of three contradicting answers to "where is my Work Progress
+  // Report?" -- said about a report the reader can run in 2.7 s one tab away.
+  // A card whose route resolves to a PROJEXA screen now says so and offers the
+  // way in. Everything else keeps the honest "runs on VERIDIAN's dashboard"
+  // note, because claiming a screen for a report that has none is the same
+  // defect facing the other way.
+  //
+  // Needs a project: these are project-scoped construction reports, and a link
+  // without one would land on a screen that cannot answer.
+  const period = monthToDate();
+  const hosted = projectId ? catalogDestination(entry.route, { projectId, from: period.from, to: period.to }) : null;
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -92,15 +109,24 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
         <span className="text-sm font-medium text-px-ink">{entry.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={entry.status} />
-          {entry.source === "static" && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
-          {entry.source === "definition" && (
+          {hosted && (
+            <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30" data-testid="catalog-runs-here">
+              {hosted.label}
+            </Badge>
+          )}
+          {!hosted && entry.source === "static" && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
+          {!hosted && entry.source === "definition" && (
             <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30">Engine</Badge>
           )}
         </div>
       </div>
       <p className="text-xs text-px-muted mb-1.5">{entry.description}</p>
 
-      {entry.source === "static" ? (
+      {hosted ? (
+        <Link href={hosted.href} className="inline-flex items-center gap-1 text-xs font-medium text-px-teal hover:text-px-ink" data-testid="catalog-open-link">
+          <ExternalLink className="size-3.5" /> Open
+        </Link>
+      ) : entry.source === "static" ? (
         <p className="text-[10.5px] text-px-muted/80">
           Runs on VERIDIAN own dashboard ({entry.route}) -- not yet renderable inside PROJEXA, shown for visibility only.
         </p>
@@ -126,7 +152,10 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
   );
 }
 
-export function ReportCatalogSection() {
+// R67 E-04: the catalog needs the selected project so a "Runs here" card can
+// link somewhere that can actually answer. Optional, so a caller with no
+// project still renders every card -- just without the shortcut.
+export function ReportCatalogSection({ projectId = null }: { projectId?: string | null } = {}) {
   const [catalog, setCatalog] = useState<FullCatalogEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -259,7 +288,7 @@ export function ReportCatalogSection() {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {byDomain[domain].map((entry) => (
-                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} />
+                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} projectId={projectId} />
               ))}
             </div>
           </div>

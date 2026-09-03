@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,11 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, RotateCcw } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
+import { isHostedReport, monthToDate, reportDestination } from "@/lib/report-destinations";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
@@ -136,13 +138,46 @@ function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: un
 // report/analysis type across the whole platform (ERP, compliance,
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
-function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
-  const [reportName, setReportName] = useState("project-status");
+/** The report the panel opens on when the URL names none. */
+export const DEFAULT_REPORT_NAME = "project-status";
+
+function ProjectReportsPanel({
+  projectId,
+  reports,
+  initialReportName = DEFAULT_REPORT_NAME,
+}: {
+  projectId: string;
+  reports: { value: string; label: string }[];
+  /** R67 E-04: the selected report comes from ?report= so a run is addressable and Back restores it. */
+  initialReportName?: string;
+}) {
+  const router = useRouter();
+  const [reportName, setReportName] = useState(initialReportName);
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
-  const [loading, setLoading] = useState(false);
+  // R67 E-04 (R-079): an EXPLICIT status, replacing the ranOnce/loading pair.
+  // The old pair tested ranOnce BEFORE loading, so on a first run the panel
+  // kept showing "Pick a report and click Run Report." while the button was
+  // already spinning -- the running state was literally unreachable. That
+  // string is deleted from this file, so it can never sit on screen during a
+  // request again.
+  const [status, setStatus] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
-  const [ranOnce, setRanOnce] = useState(false);
   const orgMoney = useOrgMoney();
+  const abortRef = useRef<AbortController | null>(null);
+
+  const currentLabel = reports.find((r) => r.value === reportName)?.label ?? reportName;
+
+  // The elapsed-seconds counter. A reader watching a spinner cannot tell a slow
+  // report from a hung one; a number that keeps moving can.
+  useEffect(() => {
+    if (status !== "running") return;
+    const started = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [status]);
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
@@ -156,24 +191,52 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   // latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
+  function cancelRun() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // Bumping the generation makes any in-flight response a stale one, so a
+    // request that resolves after the abort cannot commit state.
+    requestGeneration.current += 1;
+    setStatus(result === null ? "idle" : "success");
+  }
+
   async function runReport() {
+    // R67 E-04 (R-079) and binding decision D-02: a report with a screen of
+    // its own NAVIGATES; it must not be fetched here. Fetching the Work
+    // Progress report from this panel is the 24.3 s spinner that renders
+    // nothing, measured in the audit -- the same report renders in 2.7 s with
+    // exports at /work-progress?tab=report.
+    const period = monthToDate();
+    const destination = reportDestination(reportName, { projectId, from: period.from, to: period.to, weekStart });
+    if (destination.kind === "navigate") {
+      router.push(destination.href);
+      return;
+    }
+
     const myGeneration = ++requestGeneration.current;
-    setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus("running");
+    setErrorText(null);
     try {
-      const params = new URLSearchParams({ projectId });
-      if (reportName === "weekly-project") params.set("weekStart", weekStart);
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
+      const res = await fetch(destination.path, { signal: controller.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
-      setRanOnce(true);
+      setStatus("success");
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      toast.error(err instanceof Error && err.message ? err.message : "Could not generate report");
+      // An abort is the reader own decision, not a failure to report back at
+      // them.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      const message = err instanceof Error && err.message ? err.message : "Could not generate report";
+      setErrorText(message);
       setResult(null);
+      setStatus("error");
+      toast.error(message);
     } finally {
-      if (myGeneration === requestGeneration.current) setLoading(false);
+      if (myGeneration === requestGeneration.current) abortRef.current = null;
     }
   }
 
@@ -191,26 +254,49 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           {reportName === "weekly-project" && (
             <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
           )}
-          <Button onClick={runReport} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+          <Button onClick={runReport} disabled={status === "running"} data-testid="reports-run">
+            {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+            {/* The primary says what pressing it does. For a report that lives
+                on its own screen, that is opening the screen -- not running
+                something here. */}
+            {isHostedReport(reportName) ? "Open Report" : "Run Report"}
           </Button>
         </CardContent>
       </Card>
 
       <Card className="shadow-card">
         <CardContent className="p-4">
-          {!ranOnce ? (
-            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
-          ) : loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : result === null ? (
-            <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
-          ) : (
+          {/* The status is evaluated in ONE order -- running, then error, then
+              a result, then idle -- so no combination of flags can put an idle
+              prompt on screen while a request is in flight. */}
+          {status === "running" ? (
+            <div className="space-y-3 py-6 text-center" data-testid="reports-running">
+              <p className="text-sm text-px-ink">Running {currentLabel}... {elapsed} s</p>
+              <p className="text-xs text-px-muted">Usually 2-3 s.</p>
+              <Button variant="ghost" size="sm" onClick={cancelRun} data-testid="reports-cancel">Cancel</Button>
+            </div>
+          ) : status === "error" ? (
+            // The BACKEND own sentence, and a way to try again -- never a
+            // generic "could not generate this report" that says nothing about
+            // what failed.
+            <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-error">
+              <p className="text-sm text-px-error">Could not run {currentLabel}: {errorText}</p>
+              <Button variant="outline" size="sm" onClick={runReport} data-testid="reports-retry">
+                <RotateCcw className="size-4" /> Retry
+              </Button>
+            </div>
+          ) : result !== null ? (
             <ReportOutput
               data={result}
               fieldLabels={REPORT_FIELD_LABELS[reportName]}
               fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
             />
+          ) : isHostedReport(reportName) ? (
+            <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-hosted-hint">
+              {currentLabel} runs on its own screen -- press Open Report.
+            </p>
+          ) : (
+            <p className="py-10 text-center text-sm text-px-muted">Choose a report above.</p>
           )}
         </CardContent>
       </Card>
@@ -232,6 +318,12 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
 // buildReports() falls back to DEFAULT_REPORT_COLUMNS.
 export default function ReportsClient({ projectId, registryColumns }: { projectId: string | null; registryColumns?: RegistryColumn[] | null }) {
   const reports = buildReports(registryColumns);
+  // R67 E-04: which report is selected is part of the URL, not private React
+  // state -- so a link to a run opens on that run, and Back restores it. An
+  // unknown slug falls back to the default rather than selecting nothing.
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("report");
+  const initialReportName = requested && reports.some((r) => r.value === requested) ? requested : DEFAULT_REPORT_NAME;
   return (
     <Tabs defaultValue={projectId ? "project" : "catalog"} className="space-y-4">
       <TabsList>
@@ -240,7 +332,7 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
       </TabsList>
       <TabsContent value="project">
         {projectId ? (
-          <ProjectReportsPanel projectId={projectId} reports={reports} />
+          <ProjectReportsPanel projectId={projectId} reports={reports} initialReportName={initialReportName} />
         ) : (
           <Card className="shadow-card">
             <CardContent className="p-8 text-center text-sm text-px-muted">
@@ -250,7 +342,7 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection />
+        <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>
   );
