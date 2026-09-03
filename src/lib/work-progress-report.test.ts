@@ -5,9 +5,13 @@ import {
   buildVendorBreakdown,
   buildWorkProgressReport,
   computeLineItemProgress,
+  describeGroups,
   formatParentOnlyPercent,
   formatProgressCell,
+  groupRows,
+  hasRecordedProgress,
   sumRootAmtTotal,
+  UNCATEGORIZED_LABEL,
   type Activity,
   type Attendance,
   type BoqLineItem,
@@ -733,3 +737,115 @@ describe("R67 I-05: category resolution order and the server-side Category filte
     expect(parentFiltered.qty).toEqual(parentUnfiltered.qty);
   });
 })
+
+// R67 E-34 (R-266). The four views are four groupings of data the browser
+// already holds -- switching one must never re-fetch -- so each view's rule is
+// tested here rather than inferred from a screenshot.
+describe("groupRows (R67 E-34: one grouping helper per view)", () => {
+  const line = (
+    id: string,
+    categoryName: string,
+    amtTotal: number,
+    parentLineItemId: string | null = null,
+    touched = { prev: false, current: false, total: false }
+  ) => ({ lineItemId: id, categoryName, amtTotal, parentLineItemId, touched });
+
+  const SOURCE = {
+    rows: [
+      line("a", "Civil", 1000),
+      line("b", "Civil", 500),
+      line("c", "Paint", 250),
+      // A hierarchical child: it is a real row, but its own amtTotal is
+      // informational and must not be added to its parent's money.
+      line("d", "Civil", 400, "a"),
+    ],
+    byManpower: [
+      { trade: "Mason", workerDays: 12, totalCost: 3600 },
+      { trade: "Carpenter", workerDays: 4, totalCost: 1600 },
+    ],
+    byVendor: [
+      { vendorId: "v1", vendorName: "Al Noor Labour", totalCost: 3600 },
+      { vendorId: "v2", vendorName: "Gulf Trades", totalCost: 1600 },
+    ],
+  };
+
+  test("vendor: one group per distinct vendor, named by the vendor", () => {
+    const groups = groupRows(SOURCE, "vendor");
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.label)).toEqual(["Al Noor Labour", "Gulf Trades"]);
+    expect(groups.map((g) => g.amount)).toEqual([3600, 1600]);
+  });
+
+  test("manpower: one group per distinct trade, carrying its worker-days", () => {
+    const groups = groupRows(SOURCE, "manpower");
+    expect(groups.map((g) => g.label)).toEqual(["Mason", "Carpenter"]);
+    expect(groups[0].rowCount).toBe(12);
+  });
+
+  test("category: one group per distinct category, ROOT lines only in the money", () => {
+    const groups = groupRows(SOURCE, "category");
+    expect(groups.map((g) => g.label)).toEqual(["Civil", "Paint"]);
+    // 1000 + 500 -- the 400 child is counted as a ROW but not as money.
+    expect(groups[0]).toEqual({ key: "Civil", label: "Civil", rowCount: 3, amount: 1500 });
+    expect(groups[1].amount).toBe(250);
+  });
+
+  test("category: a row with no category name falls into the one named bucket, never a blank one", () => {
+    const groups = groupRows({ rows: [line("x", "", 100)] }, "category");
+    expect(groups).toEqual([{ key: UNCATEGORIZED_LABEL, label: UNCATEGORIZED_LABEL, rowCount: 1, amount: 100 }]);
+  });
+
+  test("scope: one group over the whole BOQ, whose money is the roots-only sum", () => {
+    expect(groupRows(SOURCE, "scope")).toEqual([
+      { key: "all", label: "All BOQ lines", rowCount: 4, amount: 1750 },
+    ]);
+  });
+
+  test("a view with no source data returns no groups at all -- never one empty group", () => {
+    expect(groupRows({ rows: [] }, "scope")).toEqual([]);
+    expect(groupRows({ rows: [] }, "vendor")).toEqual([]);
+    expect(groupRows({ rows: [], byManpower: [] }, "manpower")).toEqual([]);
+  });
+});
+
+describe("describeGroups (R67 E-34: the caption under the view switcher)", () => {
+  const g = (key: string, rowCount: number) => ({ key, label: key, rowCount, amount: 0 });
+
+  test("counts GROUPS for category, manpower and vendor", () => {
+    expect(describeGroups("category", [g("Civil", 3), g("Paint", 1)])).toBe("2 categories");
+    expect(describeGroups("manpower", [g("Mason", 12)])).toBe("1 trade");
+    expect(describeGroups("vendor", [g("v1", 1), g("v2", 1), g("v3", 1)])).toBe("3 vendors");
+  });
+
+  test("counts ROWS for scope, whose group count is always 1 and would say nothing", () => {
+    expect(describeGroups("scope", [g("all", 18)])).toBe("18 BOQ lines");
+    expect(describeGroups("scope", [g("all", 1)])).toBe("1 BOQ line");
+  });
+
+  test("no groups at all still reads as a real count, never as an empty string", () => {
+    expect(describeGroups("vendor", [])).toBe("0 vendors");
+    expect(describeGroups("scope", [])).toBe("0 BOQ lines");
+  });
+});
+
+describe("hasRecordedProgress (R67 E-34: the empty-range sentence's own test)", () => {
+  const row = (touched: { prev: boolean; current: boolean; total: boolean }) => ({ touched });
+
+  test("false when every bucket on every row was never touched", () => {
+    expect(hasRecordedProgress([
+      row({ prev: false, current: false, total: false }),
+      row({ prev: false, current: false, total: false }),
+    ])).toBe(false);
+  });
+
+  test("true as soon as ONE bucket on one row was touched, even at a value of zero", () => {
+    expect(hasRecordedProgress([
+      row({ prev: false, current: false, total: false }),
+      row({ prev: false, current: true, total: true }),
+    ])).toBe(true);
+  });
+
+  test("no rows at all is not 'nothing was recorded' -- it is 'there is no BOQ', a different sentence", () => {
+    expect(hasRecordedProgress([])).toBe(false);
+  });
+});

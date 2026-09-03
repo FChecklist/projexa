@@ -95,6 +95,28 @@ export function formatHourMinute(value: Date | string | number): string {
 }
 
 /**
+ * e.g. "01-09-2026" -- day-month-year, zero-padded, hyphen separated.
+ *
+ * R67 E-34 / E-31 (R-266 / R-264). The sentences these items specify quote the
+ * date in words: "No progress was recorded between 01-09-2026 and 02-09-2026".
+ * formatDate() gives "9/1/2026", which is the en-US month-first order -- in a
+ * sentence about a range, a reader who reads dates day-first sees a different
+ * range, and there is nothing in "9/1/2026" that says which convention is in
+ * play. Zero-padded day-first with hyphens is unambiguous to both.
+ *
+ * Built from pinned parts, and from the SAME locale and time zone as every
+ * helper here, for the same hydration reason: a date-only value near a day
+ * boundary formats as a different calendar day once the time zone moves.
+ */
+export function formatDateDMY(value: Date | string | number): string {
+  const date = new Date(value);
+  const day = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, day: "2-digit" });
+  const month = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, month: "2-digit" });
+  const year = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, year: "numeric" });
+  return `${day}-${month}-${year}`;
+}
+
+/**
  * e.g. "25 Aug" -- the short day-and-month form a chart caption uses, where a
  * full "8/25/2026" is more precision than the sentence needs.
  *

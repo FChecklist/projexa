@@ -9,7 +9,7 @@
 // runtime-dependent flake.
 import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateTime, formatDayMonth, formatHourMinute, formatTime } from "./format-date";
+import { formatDate, formatDateDMY, formatDateTime, formatDayMonth, formatHourMinute, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -93,5 +93,25 @@ describe("formatHourMinute (R67 E-30)", () => {
   test("is pinned to UTC like its siblings, so the stamp cannot differ per visitor", () => {
     expect(formatHourMinute(new Date("2026-09-03T23:59:00.000Z"))).toBe("23:59");
     expect(formatHourMinute(Date.parse("2026-09-03T23:59:00.000Z"))).toBe("23:59");
+  });
+});
+
+describe("formatDateDMY (R67 E-34 / E-31)", () => {
+  test("is day-first, zero-padded and hyphenated -- the form the range sentences quote", () => {
+    expect(formatDateDMY("2026-09-01")).toBe("01-09-2026");
+    expect(formatDateDMY("2026-09-02")).toBe("02-09-2026");
+  });
+
+  test("a two-digit day and month are not re-padded into three digits", () => {
+    expect(formatDateDMY("2026-12-25")).toBe("25-12-2026");
+  });
+
+  test("is pinned to UTC like its siblings, so a late-evening value keeps its own day", () => {
+    expect(formatDateDMY("2026-09-01T23:30:00.000Z")).toBe("01-09-2026");
+  });
+
+  test("accepts a Date and an epoch, like every other helper here", () => {
+    expect(formatDateDMY(new Date("2026-01-02T00:00:00.000Z"))).toBe("02-01-2026");
+    expect(formatDateDMY(Date.parse("2026-01-02T00:00:00.000Z"))).toBe("02-01-2026");
   });
 });

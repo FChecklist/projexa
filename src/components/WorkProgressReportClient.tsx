@@ -11,11 +11,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play } from "lucide-react";
-import { formatDate, formatTime } from "@/lib/format-date";
+import { formatDate, formatDateDMY, formatTime } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
 import { timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
 import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
-import { formatProgressCell } from "@/lib/work-progress-report";
+import {
+  WORK_PROGRESS_REPORT_VIEWS,
+  WORK_PROGRESS_VIEW_LABEL,
+  describeGroups,
+  formatProgressCell,
+  groupRows,
+  hasRecordedProgress,
+  normaliseWorkProgressView,
+  type WorkProgressReportView,
+} from "@/lib/work-progress-report";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -350,16 +359,22 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export type WorkProgressReportView = "scope" | "category" | "manpower" | "vendor";
-const VIEWS: WorkProgressReportView[] = ["scope", "category", "manpower", "vendor"];
-const VIEW_LABEL: Record<WorkProgressReportView, string> = {
-  scope: "Scope-wise",
-  category: "Category-wise",
-  manpower: "Manpower-wise",
-  vendor: "Vendor-wise",
-};
-function normaliseView(value: string | null | undefined): WorkProgressReportView {
-  return VIEWS.includes(value as WorkProgressReportView) ? (value as WorkProgressReportView) : "scope";
+// R67 E-34 (R-266): the view list, its labels and its URL normalisation moved
+// into src/lib/work-progress-report.ts beside the grouping helpers, so the
+// four names, the four groupings and the ?view= parameter cannot drift apart.
+// Re-exported here because this module's own consumers already import the type
+// from it.
+export type { WorkProgressReportView };
+
+/**
+ * R67 E-34 (R-266). The sentence a reader gets when the range they asked for
+ * holds no progress at all. Says WHICH range, in a date form that cannot be
+ * read month-first by mistake -- "the table is empty" and "you are looking at a
+ * fortnight in which nobody logged anything" are different facts, and only the
+ * second one tells the reader what to do (widen the range).
+ */
+export function noProgressSentence(from: string, to: string): string {
+  return `No progress was recorded between ${formatDateDMY(from)} and ${formatDateDMY(to)}`;
 }
 
 /**
@@ -423,7 +438,7 @@ export default function WorkProgressReportClient({
   const [to, setTo] = useState(initialTo ?? today());
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [view, setView] = useState<WorkProgressReportView>(normaliseView(initialView));
+  const [view, setView] = useState<WorkProgressReportView>(normaliseWorkProgressView(initialView));
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
   // R36/P5 (B5 decision, cc_spec point 177): a project can have more than one
@@ -682,13 +697,23 @@ export default function WorkProgressReportClient({
       return <p className="py-10 text-center text-sm text-px-muted">Cancelled. Nothing was run.</p>;
     }
     if (!report) return <p className="py-10 text-center text-sm text-px-muted">Loading this project&apos;s Work Progress Report…</p>;
+    // R67 E-34: the SAME rows, regrouped for whichever view is showing. Pure,
+    // synchronous and off the rows already in state -- this is what makes
+    // "switching a view never re-fetches" true by construction rather than by
+    // habit.
+    const groups = groupRows(report, view);
+    // R67 E-34: a range in which nothing was logged is a fact worth saying. It
+    // is NOT the same fact as "this project has no BOQ" (ScopeTable's own empty
+    // state, below), so it is said above a table that may well still have rows
+    // in it -- the BOQ lines exist, the progress against them does not.
+    const noProgress = !hasRecordedProgress(report.rows);
     return (
       <div className="space-y-3">
         {/* Four real views over rows already in state -- switching one never
             re-fetches. The horizontal scroll lives INSIDE this container, so
             the page itself never scrolls sideways. */}
         <div role="tablist" aria-label="Work Progress Report view" className="flex flex-wrap gap-1">
-          {VIEWS.map((v) => (
+          {WORK_PROGRESS_REPORT_VIEWS.map((v) => (
             <button
               key={v}
               type="button"
@@ -697,10 +722,18 @@ export default function WorkProgressReportClient({
               onClick={() => setView(v)}
               className={`rounded-md border px-3 py-1.5 text-[13px] ${view === v ? "border-px-ink bg-muted/60 text-px-ink" : "border-px-border text-px-muted"}`}
             >
-              {VIEW_LABEL[v]}
+              {WORK_PROGRESS_VIEW_LABEL[v]}
             </button>
           ))}
+          <span className="self-center pl-2 text-xs text-px-muted" data-testid="wpr-group-count">
+            {describeGroups(view, groups)}
+          </span>
         </div>
+        {noProgress && (
+          <p className="text-sm text-px-muted" data-testid="wpr-no-progress">
+            {noProgressSentence(effectiveFrom || to, to)}
+          </p>
+        )}
         <div className="overflow-x-auto">
           {view === "scope" && <ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} boqId={report.boqId} />}
           {view === "category" && <CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} />}
