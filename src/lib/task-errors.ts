@@ -39,6 +39,12 @@ export const TASK_ERROR_CODES = [
   // so a timesheet short of a task read "Something went wrong" and an
   // unregistered function offered a Retry that could only fail again.
   "TASK_REQUIRED",
+  // R67 C-16 quotes three question labels as D-03 vocabulary -- "Pick a BOQ
+  // line", "Pick a worker", "Type quantity or %" -- and the middle one had no
+  // sentence here. The picker behind it is real and shipped (C-08's roster
+  // grid, level ["manpower","mark_attendance"]), so the sentence is what was
+  // missing, not the answer.
+  "WORKER_REQUIRED",
   "FUNCTION_NOT_AVAILABLE",
   "BACKEND_UNAVAILABLE",
   "UNKNOWN",
@@ -62,6 +68,17 @@ export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
  */
 export type TaskErrorAction = "fix" | "retry" | "open";
 
+/**
+ * The chain step a failure is missing.
+ *
+ * R67 C-16 gives this its own exported name because it is now the KEY into
+ * src/lib/chain-walk.ts's level table -- "which question does band 2 open to
+ * answer this?" -- rather than only a hint for a Fix button. Three modules
+ * used to spell the union out by hand, which is three places to forget a new
+ * step in.
+ */
+export type MissingStep = "boqLine" | "project" | "value" | "task" | "worker";
+
 export type TaskErrorEntry = {
   code: TaskErrorCode;
   /** The words a person reads. `{code}`, `{project}` and `{version}` are filled from context. */
@@ -73,7 +90,7 @@ export type TaskErrorEntry = {
    * The chain step this failure is missing, so a "Fix" click knows which
    * picker to open. Null when the failure is not about a missing value.
    */
-  missingStep: "boqLine" | "project" | "value" | "task" | null;
+  missingStep: MissingStep | null;
 };
 
 export const TASK_ERROR_DICTIONARY: Readonly<Record<TaskErrorCode, TaskErrorEntry>> = {
@@ -114,6 +131,14 @@ export const TASK_ERROR_DICTIONARY: Readonly<Record<TaskErrorCode, TaskErrorEntr
     verbLabel: "Pick task",
     action: "fix",
     missingStep: "task",
+  },
+  WORKER_REQUIRED: {
+    // R67 C-16, verbatim from the item's own list of question labels.
+    code: "WORKER_REQUIRED",
+    template: "Pick a worker",
+    verbLabel: "Pick worker",
+    action: "fix",
+    missingStep: "worker",
   },
   FUNCTION_NOT_AVAILABLE: {
     code: "FUNCTION_NOT_AVAILABLE",

@@ -47,6 +47,23 @@ describe("D-03: the closed vocabulary", () => {
     expect(resolveTaskError({ code: "BACKEND_UNAVAILABLE" }).verbLabel).toBe("Retry");
   });
 
+  test("R67 C-16: the worker sentence the item names, with the picker C-08 shipped", () => {
+    expect(resolveTaskError({ code: "WORKER_REQUIRED" }).sentence).toBe("Pick a worker");
+    expect(resolveTaskError({ code: "WORKER_REQUIRED" }).verbLabel).toBe("Pick worker");
+    expect(resolveTaskError({ code: "WORKER_REQUIRED" }).action).toBe("fix");
+    expect(resolveTaskError({ code: "WORKER_REQUIRED" }).missingStep).toBe("worker");
+  });
+
+  test("every missingStep in the dictionary is a step something can answer", () => {
+    // The union is exported (task-errors.ts's MissingStep) precisely so a new
+    // code cannot introduce a step chain-walk.ts has never heard of.
+    const steps = new Set(["boqLine", "project", "value", "task", "worker"]);
+    for (const code of TASK_ERROR_CODES) {
+      const step = TASK_ERROR_DICTIONARY[code].missingStep;
+      if (step !== null) expect(steps.has(step)).toBe(true);
+    }
+  });
+
   test("a missing-slot failure offers Fix, a transport failure offers Retry", () => {
     expect(resolveTaskError({ code: "BOQ_LINE_REQUIRED" }).action).toBe("fix");
     expect(resolveTaskError({ code: "VALUE_REQUIRED" }).action).toBe("fix");

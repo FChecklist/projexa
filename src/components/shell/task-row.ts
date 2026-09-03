@@ -24,6 +24,7 @@ import {
   isSystemFailureCode,
   maskTechnical,
   resolveTaskError,
+  type MissingStep,
   type TaskErrorAction,
   type TaskErrorCode,
 } from "@/lib/task-errors";
@@ -77,7 +78,10 @@ export type RowAction = {
   /** A word, never an icon: "Pick line", "Choose project", "Retry", "Dismiss". */
   label: string;
   /** For a "fix": which picker the loaded chain should open. */
-  missingStep: "boqLine" | "project" | "value" | "task" | null;
+  // R67 C-16: one exported union (task-errors.ts's MissingStep), because this
+  // is now the key into chain-walk.ts's level table -- "which picker answers
+  // this?" -- and three hand-written copies of it is three places to forget.
+  missingStep: MissingStep | null;
   /** For an "open": where the row's object actually is. */
   href?: string;
 };

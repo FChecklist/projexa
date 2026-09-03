@@ -115,6 +115,12 @@ const MISSING_FIELD_CODES: Readonly<Record<string, TaskErrorCode>> = {
   quantity: "VALUE_REQUIRED",
   quantitydone: "VALUE_REQUIRED",
   hours: "VALUE_REQUIRED",
+  // R67 C-16: the third label the item names. Its picker is C-08's roster
+  // grid, so the question and the answer both exist.
+  workerid: "WORKER_REQUIRED",
+  worker: "WORKER_REQUIRED",
+  task: "TASK_REQUIRED",
+  issueid: "TASK_REQUIRED",
 };
 
 export function missingFieldLabel(field: string): string {

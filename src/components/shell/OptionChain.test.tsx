@@ -25,6 +25,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 // before GlobalRegistrator has made one, so queries go through render()'s own.
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { OptionChain } from "./OptionChain";
+// R67 C-16: the level under test is built by the same two functions the shell
+// uses, so this suite fails if either of them stops agreeing with the other.
+import { boqLineLevel } from "@/lib/chain-options";
+import { chainDone, firstQuestion, openQuestionSlots } from "@/lib/chain-walk";
 
 afterEach(cleanup);
 
@@ -285,5 +289,96 @@ describe("the chip row is a shortlist, not a wall", () => {
     );
     fireEvent.click(container.querySelectorAll("button.veri-rchip")[0]);
     expect(advanced).toEqual([{ id: "l5", label: "R60SK-A Excavation and earth works", kind: "step" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-16 -- the item's own unit acceptance, verbatim:
+//
+//   "OptionChain with missing ['boqLine'] renders the chip row and does not
+//    call onExecute on chip click."
+//
+// The level is built the way the shell builds it -- firstQuestion(['itemCode'])
+// picks the level path, boqLineLevel() fills it from a real BOQ shape -- so
+// this asserts the WIRING and not a hand-written fixture that happens to
+// agree with it.
+// ---------------------------------------------------------------------------
+
+describe("missing ['boqLine'] renders the chip row, and a chip click executes nothing", () => {
+  const BOQ = [
+    {
+      id: "boq1",
+      version: 3,
+      status: "active",
+      lineItems: [
+        { id: "li1", itemCode: "R66-1009b", description: "Excavation" },
+        { id: "li2", itemCode: "R66-1010", description: "Blinding" },
+      ],
+    },
+  ];
+
+  test("the question the missing slot names is the one drawn, with a chip per line", () => {
+    const question = firstQuestion(["itemCode"], { projectId: "p1" });
+    expect(question?.levelPath).toEqual(["work_progress", "record_progress"]);
+    const level = boqLineLevel(BOQ);
+
+    const view = render(
+      <OptionChain
+        legend={level.legend}
+        options={level.options}
+        kind={level.kind}
+        onAdvance={() => {}}
+      />
+    );
+    // Twice, deliberately: the <legend> a screen reader announces and the
+    // visible line above the chips. Both are the same words.
+    expect(view.getAllByText("Which BOQ line?").length).toBe(2);
+    expect(view.getByRole("button", { name: "R66-1009b Excavation" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "R66-1010 Blinding" })).toBeTruthy();
+  });
+
+  test("*** A CHIP CLICK NEVER EXECUTES *** -- it advances, and it touches no network", () => {
+    // There is no onExecute prop on this component, and that IS the guarantee.
+    // Asserting it structurally would only prove TypeScript works, so the
+    // assertion is the observable one: a click produces a chain segment and
+    // NOT a request. A future edit that made a chip run something would have
+    // to reach fetch to do it.
+    const advanced: unknown[] = [];
+    const executed: unknown[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((...args: unknown[]) => {
+      executed.push(args);
+      return Promise.reject(new Error("a chip click must not call the network"));
+    }) as unknown as typeof fetch;
+
+    try {
+      const level = boqLineLevel(BOQ);
+      const view = render(
+        <OptionChain
+          legend={level.legend}
+          options={level.options}
+          kind={level.kind}
+          onAdvance={(seg) => advanced.push(seg)}
+        />
+      );
+      fireEvent.click(view.getByRole("button", { name: "R66-1009b Excavation" }));
+      // The chain segment carries the ITEM CODE, because that is what the
+      // executor resolves a line by.
+      expect(advanced).toEqual([{ id: "R66-1009b", label: "R66-1009b Excavation", kind: "step" }]);
+      expect(executed).toEqual([]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("picking the chip completes nothing on its own -- the walk still asks for the value", () => {
+    // C-16's flow: chip -> next level -> confirmation card. The click that
+    // answers the line question must not make the chain runnable by itself,
+    // or Save would appear before the value was given.
+    expect(openQuestionSlots(["work_progress", "record_progress", "R66-1009b"], "")).toEqual(["percent"]);
+    expect(chainDone({ levelPath: ["work_progress", "record_progress", "R66-1009b"], value: "" })).toBe(false);
+    expect(chainDone({ levelPath: ["work_progress", "record_progress", "R66-1009b", "50"], value: "" })).toBe(
+      true
+    );
   });
 });
