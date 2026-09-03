@@ -36,8 +36,15 @@ export const EN_DASH = "–";
 /**
  * The sentence a budget tile shows instead of a figure when nobody has entered
  * one. R-180 quotes the defect as "TOTAL BUDGET AED 0" and the fix as this.
+ *
+ * ASCII HYPHEN, deliberately, and the one place in this lane that is not the
+ * typographic dash used everywhere else: item E-19's acceptance quotes this
+ * string verbatim ("assert an org with no budget shows the text 'Budget - not
+ * entered'"), and an exact-text assertion against the item is how the owner
+ * checks it. The clause separator after it stays an em dash -- that half is
+ * this lane's own copy, not quoted by anyone.
  */
-export const BUDGET_NOT_ENTERED = "Budget — not entered";
+export const BUDGET_NOT_ENTERED = "Budget - not entered";
 
 export type KpiDirection = "over" | "under" | "level";
 

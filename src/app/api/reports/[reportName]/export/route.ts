@@ -45,6 +45,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
   const vendorId = searchParams.get("vendorId");
   if (vendorId) upstream.set("vendorId", vendorId);
+  // The report's PERIOD, forwarded the same way the sibling material cost-report
+  // relay already forwards it. Without this the Design Studio Cost Analysis
+  // export -- which passes projectId/from/to (DesignStudioCostAnalysisClient's
+  // exportParams) and whose VERIDIAN handler reads exactly from/to before
+  // calling designerTimesheetReport -- reached VERIDIAN with neither, fell back
+  // to whole-project history, and stamped the document "whole project to date"
+  // while the on-screen table showed the selected month. That is precisely the
+  // "exported file disagrees with the table it came from" defect R-136 exists
+  // to close, so the period is not optional plumbing here.
+  for (const key of ["from", "to"]) {
+    const value = searchParams.get(key);
+    if (value) upstream.set(key, value);
+  }
 
   try {
     const res = await callVeridianRaw(`/reports/${encodeURIComponent(reportName)}/export?${upstream.toString()}`, {

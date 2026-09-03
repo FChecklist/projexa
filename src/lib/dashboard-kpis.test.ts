@@ -1,7 +1,7 @@
 /// <reference types="bun-types" />
 // R67 E-19 (R-180). The item's acceptance, as far as pure rules can carry it:
 // every tile has a baseline line and a destination, and an org with no budget
-// reads "Budget — not entered" and NEVER "AED 0". The rendered half (the rows
+// reads "Budget - not entered" and NEVER "AED 0". The rendered half (the rows
 // really being links) is asserted in ProjectRow.test.tsx.
 import { describe, expect, test } from "bun:test";
 import { BUDGET_NOT_ENTERED, EN_DASH, compareTo, dashboardKpis, portfolioContractValue } from "./dashboard-kpis";
@@ -52,7 +52,7 @@ describe("every tile carries a baseline and a destination (R67 E-19 acceptance)"
   });
 });
 
-describe("an org with no budget: 'Budget — not entered', never 'AED 0' (R67 E-19 acceptance)", () => {
+describe("an org with no budget: 'Budget - not entered', never 'AED 0' (R67 E-19 acceptance)", () => {
   test("no BOQ anywhere -- the figure is an en dash and the baseline says which null this is", () => {
     const tiles = dashboardKpis(
       { ...TOTALS, totalBudget: null, totalLedgerBudget: null },
@@ -83,6 +83,14 @@ describe("an org with no budget: 'Budget — not entered', never 'AED 0' (R67 E-
     const expenses = tiles.find((t) => t.key === "expenses")!;
     expect(expenses.direction).toBeNull();
     expect(expenses.baseline).toBe(`${BUDGET_NOT_ENTERED} — nothing to measure spend against`);
+  });
+
+  test("the sentence is the item's own string, character for character", () => {
+    // Every assertion above goes through the constant, which would keep passing
+    // if the constant itself drifted from the wording E-19's acceptance quotes.
+    // This one is the literal, so an exact-text check against the item cannot
+    // silently stop matching. ASCII hyphen -- see the constant's own note.
+    expect(BUDGET_NOT_ENTERED).toBe("Budget - not entered");
   });
 });
 
