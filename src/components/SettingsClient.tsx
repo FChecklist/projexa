@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
@@ -127,6 +128,10 @@ export default function SettingsClient() {
   async function signOut() {
     setSigningOut(true);
     const supabase = createClient();
+    // See AccountMenu: a selected-project cookie that outlives the session
+    // makes the next user's list screens report "there are none" about a
+    // project that was never theirs.
+    rememberSelectedProject(null);
     await supabase.auth.signOut();
     router.push("/login");
   }

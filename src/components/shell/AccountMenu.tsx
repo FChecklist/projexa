@@ -18,6 +18,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, LogOut, Settings, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -35,6 +36,12 @@ export default function AccountMenu({ email }: { email?: string }) {
   async function handleLogout() {
     setLoggingOut(true);
     const supabase = createClient();
+    // Before the session goes: the selected-project cookie outlives it by 30
+    // days otherwise, and the NEXT person to sign in on this browser gets the
+    // previous user's project resolved server-side with no network call --
+    // which VERIDIAN answers with zero rows and no error, i.e. a list screen
+    // calmly saying "there are none" about somebody else's project.
+    rememberSelectedProject(null);
     await supabase.auth.signOut();
     router.push("/login");
   }

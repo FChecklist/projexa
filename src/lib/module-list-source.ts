@@ -48,33 +48,79 @@ export { PROJECT_COOKIE } from "@/lib/project-cookie";
  * and only then is the /dashboard hop worth paying for.
  */
 export async function resolveProjectIdFast(requestedProjectId?: string): Promise<string | null> {
-  if (requestedProjectId) return requestedProjectId;
+  const { projectId } = await resolveProjectIdFastWithSource(requestedProjectId);
+  return projectId;
+}
+
+/**
+ * The same fast resolution, saying WHERE the answer came from.
+ *
+ * The source matters because the two are not equally trustworthy. A
+ * `?projectId=` was put there by this app's own navigation a moment ago. The
+ * cookie can be thirty days old and can outlive the session that wrote it: a
+ * sign-out followed by a different user signing in on the same browser, or one
+ * user switching organisation, leaves an id that resolves to nothing for the
+ * caller who now reads it -- and VERIDIAN answers that with zero rows and no
+ * error, which a list screen renders as a calm "there are none". Every
+ * sign-out path clears the cookie, but a cleared cookie is a promise and this
+ * is the check.
+ */
+export async function resolveProjectIdFastWithSource(
+  requestedProjectId?: string
+): Promise<{ projectId: string | null; source: "url" | "cookie" | "none" }> {
+  if (requestedProjectId) return { projectId: requestedProjectId, source: "url" };
   try {
     const jar = await cookies();
     const value = jar.get(PROJECT_COOKIE)?.value;
-    return value && value.trim() ? value : null;
+    return value && value.trim() ? { projectId: value, source: "cookie" } : { projectId: null, source: "none" };
   } catch {
     // cookies() throws outside a request scope; a missing cookie is simply
     // "we don't know yet", never an error the user should see.
-    return null;
+    return { projectId: null, source: "none" };
   }
 }
 
 export type ResolvedModuleProject = { projectId: string | null; errorMessage: string | null };
 
 /**
+ * Is this id one of the caller's OWN projects?
+ *
+ * Costs nothing on the hot path: cachedProjects() below is the same 60 s
+ * per-org cache /schedule already reads for the project's name, so a page that
+ * arrives with a valid cookie makes no extra round trip. A read that FAILS
+ * returns true -- an unreachable project list is not evidence that the id is
+ * wrong, and refusing a good cookie because a lookup blipped would send the
+ * user through the /dashboard hop for nothing.
+ */
+async function cookieProjectStillBelongs(projectId: string, organizationId: string | null): Promise<boolean> {
+  try {
+    const data = await cachedProjects(organizationId ?? null);
+    const projects = data.projects ?? [];
+    if (projects.length === 0) return true; // nothing to check against
+    return projects.some((p) => p.id === projectId);
+  } catch {
+    return true;
+  }
+}
+
+/**
  * The project a module page is about.
  *
  * The fast path costs nothing. The /dashboard hop is only paid when neither
- * the URL nor the cookie knew, and callers run this INSIDE their <Suspense>
- * boundary so even that case has the frame on screen first.
+ * the URL nor the cookie knew -- or when the cookie names a project this
+ * caller does not have, which is what a stale cross-session cookie looks like
+ * -- and callers run this INSIDE their <Suspense> boundary so even that case
+ * has the frame on screen first.
  */
 export async function resolveProjectForModule(
   requestedProjectId: string | undefined,
   organizationId: string | null
 ): Promise<ResolvedModuleProject> {
-  const fast = await resolveProjectIdFast(requestedProjectId);
-  if (fast) return { projectId: fast, errorMessage: null };
+  const { projectId: fast, source } = await resolveProjectIdFastWithSource(requestedProjectId);
+  if (fast && source === "url") return { projectId: fast, errorMessage: null };
+  if (fast && (await cookieProjectStillBelongs(fast, organizationId))) {
+    return { projectId: fast, errorMessage: null };
+  }
   const { resolveSelectedProject } = await import("@/lib/project-selection");
   const { project, errorMessage } = await resolveSelectedProject(undefined, organizationId);
   return { projectId: project?.id ?? null, errorMessage };

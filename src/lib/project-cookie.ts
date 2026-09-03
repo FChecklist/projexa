@@ -23,6 +23,17 @@ const PROJECT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
  * Records (or clears) the selected project for the server to read on the next
  * navigation. Browser-only; a no-op anywhere else.
  *
+ * *** CLEAR IT ON SIGN-OUT. *** Pass null before signOut() -- every sign-out
+ * path in this app does (AccountMenu, AppTopbar, SettingsClient, and M24Shell's
+ * own SIGNED_OUT handler for a sign-out that happened in another tab). A
+ * 30-day cookie left behind means the NEXT person to sign in on this browser
+ * has the previous user's project id resolved for them with no network call.
+ * VERIDIAN scopes every read by org, so nothing of the old tenant's leaks --
+ * what leaks is worse to read: the new user's /permits, /moms, /drawings and
+ * /scope come back with zero rows and NO error, so the screen calmly says
+ * there are none. resolveProjectForModule() therefore also validates a
+ * cookie-sourced id against the caller's own project list before trusting it.
+ *
  * SameSite=Lax so it is sent on ordinary top-level navigations -- which is
  * exactly and only what needs it -- and never on a cross-site subrequest. Not
  * HttpOnly, deliberately: this is a UI preference the client itself writes,
@@ -33,9 +44,14 @@ const PROJECT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export function rememberSelectedProject(projectId: string | null): void {
   if (typeof document === "undefined") return;
   try {
+    // `Secure` on HTTPS so the value cannot be planted over a plaintext
+    // downgrade. Omitted on http:// because a Secure cookie is silently
+    // dropped there, which would break local development rather than protect
+    // it.
+    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; secure" : "";
     document.cookie = projectId
-      ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE_SECONDS}; samesite=lax`
-      : `${PROJECT_COOKIE}=; path=/; max-age=0; samesite=lax`;
+      ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE_SECONDS}; samesite=lax${secure}`
+      : `${PROJECT_COOKIE}=; path=/; max-age=0; samesite=lax${secure}`;
   } catch {
     // A blocked cookie jar just means the URL stays the only source; it must
     // never take the shell down.
