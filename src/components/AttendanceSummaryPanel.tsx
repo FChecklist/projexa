@@ -30,14 +30,29 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function AttendanceSummaryPanel({ projectId }: { projectId: string }) {
+export default function AttendanceSummaryPanel({
+  projectId,
+  date,
+}: {
+  projectId: string;
+  /**
+   * R67 integration (D-31 x F-25): the day the SURROUNDING screen is showing.
+   * F-25 gave the Attendance tab its own date control, and two independent
+   * date pickers on one tab is two answers to "which day am I looking at" --
+   * so when the caller has a day, this panel's anchor follows it and the panel
+   * shows the presets over that day rather than over its own. Optional: a
+   * caller with no day (the panel used standalone) keeps today, exactly as
+   * before, and the existing tests are unaffected.
+   */
+  date?: string;
+}) {
   const currencies = useCurrencies();
   // Attendance cost has no per-row currencyId -- roster daily rates are always
   // in the org's base currency, the same undefined-id lookup the roster table
   // already uses.
   const currency = currencyLabel(undefined, currencies);
 
-  const [anchor, setAnchor] = useState(todayIso);
+  const [anchor, setAnchor] = useState(date ?? todayIso);
   const [preset, setPreset] = useState<RangePreset>("today");
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +79,13 @@ export default function AttendanceSummaryPanel({ projectId }: { projectId: strin
       setLoading(false);
     }
   }, [projectId, preset, anchor]);
+
+  // The screen's day wins over the panel's own when it changes -- one control,
+  // one answer. Guarded so a user who then moves the panel's own date input is
+  // not dragged back on the next render.
+  useEffect(() => {
+    if (date) setAnchor(date);
+  }, [date]);
 
   useEffect(() => { void load(); }, [load]);
 

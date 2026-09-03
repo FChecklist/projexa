@@ -53,7 +53,7 @@ const ENTRY = {
   remarks: null,
   activityName: "Skiphop sub",
   boqItemCode: "R60SK-A",
-  boqLineDescription: "R60 skiphop sub",
+  boqDescription: "R60 skiphop sub",
   boqLineQuantity: "100",
   boqLineRate: "10",
   boqLineAmount: "1000",
@@ -90,8 +90,14 @@ function mount(overrides: { photos?: unknown[]; photosFail?: boolean; entry?: Re
 }
 
 describe("boqLineLabel (R67 D-28)", () => {
-  test("renders '{itemCode} - {description}', the shape the list and the page share", () => {
-    expect(boqLineLabel("R60SK-A", "R60 skiphop sub")).toBe("R60SK-A - R60 skiphop sub");
+  test("renders '{itemCode} — {description}', the shape the list and the page share", () => {
+    // R67 INTEGRATION: an EM dash, not a hyphen. F-24 shipped the same join
+    // first, in WorkProgressListClient, with an em dash and a test asserting
+    // it -- and item codes themselves contain hyphens ("R60SK-A"), which makes
+    // a hyphen separator genuinely ambiguous. One function, one separator; the
+    // string here is corrected to the merged one rather than the assertion
+    // being dropped.
+    expect(boqLineLabel("R60SK-A", "R60 skiphop sub")).toBe("R60SK-A — R60 skiphop sub");
   });
 
   test("an entry with no BOQ line gets an en-dash, never a raw id", () => {
@@ -107,7 +113,8 @@ describe("WorkProgressObjectClient (R67 D-28)", () => {
   test("shows the BOQ line in words and prints no raw id anywhere on the page", async () => {
     const { container, getAllByText } = mount();
 
-    await waitFor(() => expect(getAllByText(/R60SK-A - R60 skiphop sub/).length).toBeGreaterThan(0));
+    // R67 INTEGRATION: em dash -- see the boqLineLabel suite above.
+    await waitFor(() => expect(getAllByText(/R60SK-A — R60 skiphop sub/).length).toBeGreaterThan(0));
 
     // The acceptance's own guard, applied to the rendered text: nothing on this
     // page may read as a bare cuid.
@@ -164,7 +171,7 @@ describe("WorkProgressObjectClient (R67 D-28)", () => {
 
   test("an entry with no BOQ line still gets an honest confirmation, with no invented percentage", async () => {
     const { getByRole, findByText } = mount({
-      entry: { boqLineItemId: null, boqItemCode: null, boqLineDescription: null, boqLineQuantity: null, boqLineRate: null, boqLineAmount: null, unit: "nos" },
+      entry: { boqLineItemId: null, boqItemCode: null, boqDescription: null, boqLineQuantity: null, boqLineRate: null, boqLineAmount: null, unit: "nos" },
     });
 
     await waitFor(() => expect(getByRole("button", { name: /^Delete/ })).toBeDefined());

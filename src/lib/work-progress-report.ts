@@ -700,16 +700,26 @@ export function progressDeleteConfirmSentence(impact: ProgressDeleteImpact, fall
   return `${head}; the running total drops from ${impact.percentBefore}% to ${impact.percentAfter}%.`;
 }
 
+/** What a row shows when the entry names no BOQ line at all. */
+export const NO_BOQ_LINE_LABEL = "–";
+
 /**
- * R67 D-28: "R60SK-A - R60 skiphop sub", or an en-dash when the entry names no
+ * R67 D-28: "R60SK-A — R60 skiphop sub", or an en-dash when the entry names no
  * BOQ line. One function, so the list cell, the object page's facet and its
  * subtitle cannot render the same entry three ways -- and so neither of them
  * ever falls back to printing a raw id, which is what the list used to do for
  * any entry recorded against a revision the screen had not fetched.
+ *
+ * R67 INTEGRATION: F-24 shipped the SAME join first, inline in
+ * WorkProgressListClient, with an EM dash. Two functions at two separators is
+ * exactly what this one exists to prevent, so the component's copy now
+ * delegates here and the em dash wins -- item codes themselves contain hyphens
+ * ("R60SK-A"), which makes a hyphen separator genuinely ambiguous. D-28's own
+ * test string is corrected to the merged separator rather than dropped.
  */
 export function boqLineLabel(itemCode: string | null | undefined, description: string | null | undefined): string {
-  if (!itemCode && !description) return "–";
+  if (!itemCode && !description) return NO_BOQ_LINE_LABEL;
   if (!itemCode) return description!;
   if (!description) return itemCode;
-  return `${itemCode} - ${description}`;
+  return `${itemCode} — ${description}`;
 }

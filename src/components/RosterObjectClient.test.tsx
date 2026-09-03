@@ -77,7 +77,12 @@ describe("RosterObjectClient (R67 D-34)", () => {
   });
 
   test("Edit opens the SAME fields the create screen uses, with Trade as a picklist", async () => {
-    const { findByRole, getByLabelText } = mount();
+    const { findByRole, findByText, getByLabelText } = mount();
+    // R67 INTEGRATION: wait for the RECORD, not just for a button called Edit.
+    // F-34 gave this screen a loading frame whose action bar is present and
+    // DISABLED, so an Edit button exists before the worker does -- clicking
+    // that one is a no-op, which is exactly what it is there to be.
+    await findByText("Ali");
     fireEvent.click(await findByRole("button", { name: /^Edit/ }));
     await waitFor(() => expect(getByLabelText(/^Name/)).toBeDefined());
     expect(getByLabelText(/^Name/).getAttribute("aria-required")).toBe("true");
@@ -88,7 +93,8 @@ describe("RosterObjectClient (R67 D-34)", () => {
   test("a trade this worker already carries survives becoming a Select -- opening Edit never silently clears it", async () => {
     // "Tiler" is NOT in the seeded list this test serves, which is exactly the
     // case a naive Select would blank.
-    const { findByRole, getByLabelText } = mount();
+    const { findByRole, findByText, getByLabelText } = mount();
+    await findByText("Ali");
     fireEvent.click(await findByRole("button", { name: /^Edit/ }));
     await waitFor(() => expect(getByLabelText(/^Trade/).textContent).toContain("Tiler"));
   });

@@ -10,7 +10,7 @@
 // disagree with the one that imports. Same posture as the BOQ import screen.
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -141,7 +141,7 @@ export default function RosterImportClient({ projectId }: { projectId: string })
   }
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Labour / Import Workers"
       title="Import Workers from Excel"
       mode="create"
@@ -237,6 +237,6 @@ export default function RosterImportClient({ projectId }: { projectId: string })
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

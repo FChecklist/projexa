@@ -11,14 +11,14 @@
 // is not offered instead of vanishing.
 //
 // The names on this page come from the SERVER (activityName, boqItemCode,
-// boqLineDescription, unit -- the LEFT JOIN R67 D-28 added to
+// boqDescription, unit -- the LEFT JOIN R67 D-28 added to
 // listProgressEntries/getProgressEntry). This screen never re-resolves an id
 // against whatever BOQ it happened to fetch, which is exactly how the list came
 // to print ids: an entry recorded against another revision had no name to find.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -43,7 +43,7 @@ export type ProgressEntryDetail = {
   remarks: string | null;
   activityName: string | null;
   boqItemCode: string | null;
-  boqLineDescription: string | null;
+  boqDescription: string | null;
   boqLineQuantity: string | null;
   boqLineRate: string | null;
   boqLineAmount: string | null;
@@ -196,7 +196,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
           id: entry.boqLineItemId,
           activityId: entry.activityId,
           itemCode: entry.boqItemCode,
-          description: entry.boqLineDescription ?? "",
+          description: entry.boqDescription ?? "",
           unit: entry.unit ?? "",
           quantity: entry.boqLineQuantity ?? 0,
           rate: entry.boqLineRate ?? 0,
@@ -251,10 +251,10 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
     );
   }
 
-  const lineLabel = boqLineLabel(entry.boqItemCode, entry.boqLineDescription);
+  const lineLabel = boqLineLabel(entry.boqItemCode, entry.boqDescription);
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Work Progress / Entry"
       title={`${entry.activityName ?? "Progress entry"} · ${formatDayMonthYearNumeric(entry.entryDate)}`}
       subtitle={lineLabel === "–" ? undefined : lineLabel}
@@ -353,6 +353,6 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

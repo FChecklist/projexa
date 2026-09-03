@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 // R67 D-24/D-27: the PROJEXA-local ObjectScreen fork (programme decision
 // D-09), so this screen gets the same disabled-with-reason primary the create
 // screen uses and its server errors land in the persistent messages band.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -197,7 +197,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   if (!boq) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Scope / New Revision"
       title={`New Revision — from "${boq.title}" (v${boq.version})`}
       mode="create"
@@ -316,6 +316,6 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

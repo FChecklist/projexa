@@ -9,7 +9,7 @@
 // have been a second set of rules that can disagree with the one that imports.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -180,7 +180,7 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
   }
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Scope / Import BOQ"
       title="Import BOQ from Excel"
       mode="create"
@@ -314,6 +314,6 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

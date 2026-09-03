@@ -14,13 +14,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-// R67 D-22: the PROJEXA-local fork of the kit's ObjectScreen (programme
-// decision D-09 -- the kit cannot be released from this machine). The fork
-// always renders Edit and Delete and shows the reason beside a disabled one;
-// the kit hid both entirely, which is exactly the fault this item closes. Only
-// the scope screens are re-pointed here -- every other screen keeps importing
-// the kit until its own item forks it.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+// R67 F-34 (D-09) + D-22, reconciled by the integration train: the FORKED
+// ObjectScreen. It carries the `loading` variant (F-34) AND renders Edit and
+// Delete disabled-with-reason instead of hiding them (D-22) -- the kit hid
+// both entirely, which is exactly the fault D-22 closes. Only the screens that
+// need it are re-pointed here; every other screen keeps importing the kit.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { SCOPE_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
-  boqTotal, withCurrency, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
+  boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
@@ -240,6 +241,16 @@ export default function ScopeObjectClient({
     }
   }
 
+  // R67 D-67: deleting a BOQ takes its line items with it, and a QS may
+  // have spent an afternoon building them. The kit fired this from a single
+  // click. Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "BOQ",
+    identifier: boq ? `${boq.title} (v${boq.version})` : null,
+    extra: rows.length > 0 ? `and its ${rows.length} line item${rows.length === 1 ? "" : "s"}` : null,
+    run: () => runAction("delete"),
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -248,7 +259,18 @@ export default function ScopeObjectClient({
       </div>
     );
   }
-  if (loading || !boq) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (loading || !boq) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCOPE_OBJECT_BREADCRUMB.label}
+      actions={SCOPE_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const total = boqTotal(rows);
   const isDraft = boq.status === "draft";
@@ -265,8 +287,8 @@ export default function ScopeObjectClient({
         comes from src/lib/object-screens.ts so every screen showing one uses
         the same word. Renders nothing. */}
     <ObjectContext moduleId="scope" label={boq.title} projectId={boq.projectId} />
-    <ObjectScreen
-      breadcrumb="Scope / Bill of Quantities"
+    <KitObjectScreen
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
       title={boq.title}
       subtitle={`Version ${boq.version}`}
       mode="display"
@@ -289,13 +311,17 @@ export default function ScopeObjectClient({
         },
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
-      // never a fake-enabled button that fails after the click. R67 D-22:
-      // onDelete is now passed UNCONDITIONALLY. Previously it was withheld on
-      // anything but a draft, and the kit's ObjectScreen answered a missing
-      // handler by rendering nothing at all — so on every approved or
-      // superseded BOQ (the majority of rows) the user saw no Delete and no
-      // reason. The fork renders it disabled with the reason beside the word.
-      onDelete={() => runAction("delete")}
+      // never a fake-enabled button that fails after the click.
+      //
+      // R67 D-22 x integration: the handler is still withheld on anything but
+      // a draft -- an enabled Delete that the server would refuse is the fault
+      // this line avoids -- but the control is NO LONGER ABSENT, because
+      // KitObjectScreen now renders it disabled whenever a reason is supplied
+      // (see the fold-in note in its header). So on an approved or superseded
+      // BOQ the user reads "Delete (Only a draft BOQ can be deleted)" instead
+      // of finding nothing and being unable to tell a missing feature from a
+      // broken one.
+      onDelete={isDraft ? removal.request : undefined}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
       // Edit was never offered on this screen at all (no onEdit was ever
       // passed), for a real reason: a BOQ's lines are immutable once issued and
@@ -348,6 +374,7 @@ export default function ScopeObjectClient({
           Edit/Delete/Save/Cancel. Every button here maps to a real endpoint
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
+      {removal.card}
       <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
         {isDraft && (
           <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("submit")}>
@@ -426,7 +453,7 @@ export default function ScopeObjectClient({
                   </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
-                  <TableCell className="text-right">{isSub ? (derived ? derived.rate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") : r.rate}</TableCell>
+                  <TableCell className="text-right">{isSub ? (derived ? formatAmount(derived.rate) : "—") : formatAmount(r.rate)}</TableCell>
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input
@@ -483,7 +510,7 @@ export default function ScopeObjectClient({
           </TableBody>
         </Table>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

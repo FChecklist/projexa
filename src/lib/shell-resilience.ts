@@ -158,7 +158,24 @@ export const TASKS_UNAVAILABLE = "Could not load your tasks";
 
 export type JsonRead<T> =
   | { ok: true; data: T; attempts: number }
-  | { ok: false; error: string; attempts: number };
+  | {
+      ok: false;
+      error: string;
+      attempts: number;
+      /**
+       * R67 D-65 merge: the HTTP status of the last attempt, or null when the
+       * request never reached a server at all.
+       *
+       * A-16 needed only the backend's own sentence. D-65's shared read-error
+       * dictionary (src/lib/task-errors.ts) needs the STATUS as well, because
+       * two of its rules turn on it and cannot be recovered from the message:
+       * a 401/403 is offered no Retry (retrying will not fix a permission),
+       * and a 504 is named as a timeout rather than as whatever prose the
+       * proxy happened to emit. Additive, so every existing caller is
+       * unaffected.
+       */
+      status: number | null;
+    };
 
 export type ReadJsonOptions = {
   fetcher?: (url: string) => Promise<Response>;
@@ -193,16 +210,22 @@ export async function readJsonWithRetry<T>(url: string, opts: ReadJsonOptions = 
   const total = Math.max(1, opts.attempts ?? 2);
 
   let error = "the request did not complete";
+  // null until a server actually answers: a thrown fetch has no status, and
+  // reporting one would be inventing a reply that never came.
+  let status: number | null = null;
   for (let attempt = 1; attempt <= total; attempt += 1) {
     try {
       const res = await fetcher(url);
       const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
       if (res.ok) return { ok: true, data: (body ?? ({} as T)) as T, attempts: attempt };
+      status = res.status;
       error = body && typeof body.error === "string" && body.error.trim() ? body.error : `HTTP ${res.status}`;
     } catch (err) {
+      // A throw after a refusal must not leave the refusal's status behind.
+      status = null;
       error = err instanceof Error ? err.message : "the request did not complete";
     }
     if (attempt < total) await sleep(delayMs);
   }
-  return { ok: false, error, attempts: total };
+  return { ok: false, error, attempts: total, status };
 }

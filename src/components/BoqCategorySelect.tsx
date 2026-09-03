@@ -42,7 +42,15 @@ export function useBoqCategories() {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/scope/categories")
-      .then((r) => r.json())
+      // R67 D-03 / D-71: the STATUS is read before the body. This chain used
+      // to go straight to `.then((r) => r.json())` and infer failure from the
+      // body's own shape (`d.error || !Array.isArray(d.categories)`), which
+      // happens to catch what this route really sends but is a weaker test
+      // than asking the server what it said -- a proxy 502 returning an HTML
+      // page, or any 5xx whose body parses to something array-shaped, would
+      // have arrived here as data. It is also the exact shape
+      // src/lib/no-swallowed-http-errors.test.ts's third guard exists to stop.
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`scope/categories ${r.status}`))))
       .then((d: { categories?: BoqCategory[]; error?: string }) => {
         if (cancelled) return;
         if (d.error || !Array.isArray(d.categories)) { setFailed(true); return; }

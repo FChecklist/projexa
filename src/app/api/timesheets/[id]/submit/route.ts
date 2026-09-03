@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -12,7 +14,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 // tell WHO was submitting without this, and always 400'd. Forwarding this
 // real session's email lets VERIDIAN resolve the real acting user itself
 // (resolveActingUser() in its own auth-guard.ts).
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -24,6 +26,6 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to submit time entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to submit time entry");
   }
-}
+});

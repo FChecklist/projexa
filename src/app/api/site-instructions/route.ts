@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
 import { callVeridian, callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R39/R-C14: Architect/Site Instruction (SI) -- SCHEMA-ASSUMED-INDUSTRY-
 // STANDARD, see the VERIDIAN-side schema.ts comment for the full explanation.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -13,9 +15,9 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/site-instructions?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load site instructions" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load site instructions");
   }
-}
+});
 
 /**
  * R67 D-27: this handler now accepts a multipart body as well as JSON.
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest) {
  */
 export const SI_DOCUMENT_ENTITY_TYPE = "construction_site_instruction";
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE);
@@ -50,7 +52,10 @@ export async function POST(request: NextRequest) {
       const data = await callVeridian("/site-instructions", { organizationId: ctx.organizationId!, method: "POST", body });
       return NextResponse.json(data, { status: 201 });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create site instruction" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+      // R67 integration: the JSON branch classifies its failure through the
+      // SAME helper the multipart branch below already uses (F-20), so the two
+      // branches of one handler cannot report a timeout differently.
+      return veridianErrorResponse(err, "Failed to create site instruction");
     }
   }
 
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
       organizationId: ctx.organizationId!, method: "POST", body: record,
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create site instruction" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create site instruction");
   }
 
   if (!(file instanceof File) || !siteInstruction?.id) {
@@ -110,4 +115,4 @@ export async function POST(request: NextRequest) {
       { status: 207 }
     );
   }
-}
+});

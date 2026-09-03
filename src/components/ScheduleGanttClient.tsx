@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Wave 140 (PROJEXA gap analysis): Gantt/critical-path view. Uses SVAR
 // React Gantt (@svar-ui/react-gantt, MIT license -- verified against the
 // package's own LICENSE file, not just its package.json field) for the
@@ -28,7 +38,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
 import "@svar-ui/react-gantt/all.css";
@@ -69,21 +82,26 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   const [dependencies, setDependencies] = useState<GanttDependency[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [capturing, setCapturing] = useState(false);
 
   async function loadGantt() {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
       const res = await fetch(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load schedule");
-      setTasks(data.tasks ?? []);
-      setDependencies(data.dependencies ?? []);
-      setMilestones(data.milestones ?? []);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
+      setDependencies(Array.isArray(data?.dependencies) ? data.dependencies : []);
+      setMilestones(Array.isArray(data?.milestones) ? data.milestones : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load schedule");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -112,14 +130,37 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
     }
   }
 
+  // R67 D-46: the timeline's own shape -- three summary tiles and five row
+  // bars -- rather than a spinner in the middle of an empty pane.
   if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+    return (
+      <ListStateRegion state="loading" className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the schedule" onRetry={() => void loadGantt()} />
+        <div className="flex flex-wrap items-center gap-4">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="min-w-[140px] flex-1">
+              <CardContent className="space-y-2 p-4">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-7 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="shadow-card">
+          <CardContent className="space-y-3 p-4">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </ListStateRegion>
+    );
   }
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load schedule: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the schedule" error={error} onRetry={() => void loadGantt()} />
+      </ListStateRegion>
     );
   }
 
@@ -190,10 +231,27 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   ];
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={tasks.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "taskCount", "Tasks")}</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
-        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p><p className="text-2xl font-heading text-px-error">{criticalCount}</p></CardContent></Card>
+        {/* R67 D-46: a tile that is permanently red says nothing. Zero tasks
+            on the critical path is GOOD NEWS and reads in the ordinary ink
+            tone; only a real count above zero takes the error token, and it
+            takes a glyph and the word "critical" with it -- never colour
+            alone, which is lost to greyscale, to colour-blindness and to a
+            screenshot pasted into a report. */}
+        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4">
+          <p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p>
+          {criticalCount > 0 ? (
+            <p className="flex items-center gap-1.5 text-2xl font-heading text-px-error">
+              <AlertTriangle className="size-5" aria-hidden />
+              {criticalCount}
+              <span className="text-xs font-normal">critical</span>
+            </p>
+          ) : (
+            <p className="text-2xl font-heading text-px-ink">{criticalCount}</p>
+          )}
+        </CardContent></Card>
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "milestoneCount", "Milestones")}</p><p className="text-2xl font-heading text-px-ink">{milestones.length}</p></CardContent></Card>
         <Button onClick={captureBaseline} disabled={capturing} variant="outline">
           {capturing ? "Capturing…" : "Capture Baseline"}
@@ -278,6 +336,6 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
           </Table>
         </CardContent>
       </Card>
-    </div>
+    </ListStateRegion>
   );
 }

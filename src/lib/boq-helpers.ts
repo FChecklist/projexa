@@ -5,6 +5,8 @@
 // matches this codebase's own established convention of keeping business
 // logic independently testable from the DB/network layer.
 
+import { formatMoney, formatSignedMoney } from "@/lib/format-money";
+
 export type Boq = {
   id: string;
   projectId: string;
@@ -97,14 +99,25 @@ export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
   }));
 }
 
+// R67 G-05 / D-74: these three used `toLocaleString(undefined, ...)`, which
+// resolves to the RUNTIME's locale -- the deployment's on the server pass and
+// the visitor's in the browser. Two different strings for one BOQ amount is a
+// hydration mismatch, and neither of them is the organisation's form. They
+// now all route through THE money module, so a BOQ line and a Materials cell
+// on the same screen cannot disagree about how an amount is written.
+//
+// `pending: true` rather than an absent currency: these helpers are called
+// both with a resolved code and without one, and an absent code would print
+// the warning glyph in front of a figure whose currency the CALLER is showing
+// separately (ScopeCompareClient prefixes the code itself). "We were not told
+// here" is the honest state for a helper that takes the code as an argument.
 export function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${sign}${formatMoney(amount, { pending: true })}`;
 }
 
 export function formatAmount(value: string | number | null | undefined): string {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
+  return formatMoney(value ?? 0, { pending: true });
 }
 
 // Deliberately NOT currencyLabel() from the shared helper: that returns a
@@ -112,8 +125,16 @@ export function formatAmount(value: string | number | null | undefined): string 
 // on a UAE contractor's BOQ. Here an unresolved currency degrades to the bare
 // number instead - no label is survivable, the wrong label is not.
 export function withCurrency(code: string, value: string | number | null | undefined): string {
-  const n = formatAmount(value);
-  return code ? `${code} ${n}` : n;
+  return formatMoney(value ?? 0, { currency: code || null, pending: !code });
+}
+
+/**
+ * A BOQ variance with its DIRECTION readable without colour -- "▲ AED +2,025".
+ * The signed form the money module already owns; exported here so a BOQ screen
+ * reaching for it does not write a fourth one.
+ */
+export function formatSignedAmount(code: string, value: number | string | null | undefined): string {
+  return formatSignedMoney(value, { currency: code || null, pending: !code });
 }
 
 export function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {

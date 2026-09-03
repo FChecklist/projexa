@@ -184,6 +184,9 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
   return (
     <AnalyticalScreen
       breadcrumb="Scope of Work / Cost variance"
+      // R67 integration: main disabled these two with "not built yet"; D-26
+      // builds them, so the live handlers replace the disclaimers rather than
+      // the other way round. A working control beats an honest dead one.
       filterAction={{ label: "Filter", onClick: () => setFiltersOpen((open) => !open) }}
       exportAction={{ label: "Export CSV", onClick: exportCsv }}
       newAction={undefined}

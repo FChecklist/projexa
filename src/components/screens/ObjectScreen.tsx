@@ -1,234 +1,182 @@
 "use client";
 
-// PROJEXA-LOCAL FORK of @fchecklist/veridian-ui-kit/screens/ObjectScreen.
+// R67 D-67 -- ONE object page for every module.
 //
-// WHY A FORK AND NOT A KIT RELEASE (programme decision D-09): the kit's source
-// is not on this machine and the package is not published -- projexa pins a
-// git commit (package.json) and compiles the raw src through
-// transpilePackages. Editing node_modules is erased by CI's
-// `bun install --frozen-lockfile`, so the only honest way to change this
-// component's BEHAVIOUR is to copy it here, re-point the screens that need the
-// change, and leave every other screen importing the kit until its own item
-// forks it. Everything this file does not own -- ScreenFrame, StatusBadge,
-// DocumentFlow, the shared types -- is still imported from the kit, so this is
-// a fork of one component, not of the kit.
+// R-257: "ObjectScreen (display-first with the word actions Edit | Delete |
+// Back, Delete separated from Edit, footer message slot, autosave slot)."
 //
-// WHAT DIFFERS FROM THE KIT VERSION, and why (R67 D-17 / D-22):
+// Four decisions this makes once, so twenty object pages cannot each make
+// them differently:
 //
-//  1. EDIT AND DELETE ARE ALWAYS RENDERED IN DISPLAY MODE.
-//     The kit renders Edit only when onEdit exists (its line 107) and Delete
-//     only when onDelete exists (its line 114). ScopeObjectClient passed
-//     onDelete for drafts only and MoMObjectClient passed onEdit for unpublished
-//     meetings only -- so on every approved or superseded BOQ, and on every
-//     published meeting (the majority of rows in both), the user saw no Edit,
-//     no Delete and NO REASON, and could not tell a missing feature from a
-//     broken one. Here both are always present; a caller that cannot offer one
-//     passes editDisabledReason / deleteDisabledReason and the button renders
-//     disabled with that reason as VISIBLE TEXT beside the word, not only as a
-//     title attribute a mouse has to hover to find.
-//
-//  2. AUTOSAVE FIRES IN DISPLAY MODE TOO, WHEN onAutosave IS SUPPLIED.
-//     The kit only arms its (already correct, 2s) debounce while
-//     mode === "edit" | "create". A MoM's minutes are typed live, during the
-//     meeting, on the DISPLAY page -- there is no "edit mode" to enter -- so
-//     the kit's own timer could never fire for the one field in this product
-//     that most needs it. The debounce itself is unchanged and still lives in
-//     one place; only the arming condition moved from "is editing" to "did the
-//     caller ask for autosave".
-//
-//  3. A headerActions SLOT.
-//     R-047/R-053 asked for a worded Export menu in the object header rather
-//     than a ghost icon-link buried in the body. ScreenFrame's own header
-//     takes three fixed single-button actions (Filter | Export | + New) and
-//     cannot carry a menu, so the slot renders in the object header block --
-//     the row that already carries the title and the status badge.
-//
-// Everything else is the kit's code, kept deliberately close to the original
-// so a future kit release can be diffed against it.
-import { useEffect, useRef } from "react";
-import { Pencil } from "lucide-react";
-import { ScreenFrame, StatusBadge, DocumentFlow } from "@fchecklist/veridian-ui-kit/screens";
-import type { DocumentFlowData, FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+//  1. DISPLAY FIRST. The page opens showing what the record IS. An object
+//     page that opens as an edit form makes reading a record cost a decision
+//     about whether you are about to change it.
+//  2. DELETE IS SEPARATED FROM EDIT. Not adjacent, not the same size, not
+//     the same tone. Delete sits after a gap, in the muted word style, and
+//     it never fires on its own click.
+//  3. THE CONFIRM IS INLINE AND NAMES THE BLAST RADIUS. "Delete permit
+//     BP-2026-0142 and its PDF? This cannot be undone." -- not "Are you
+//     sure?", and not a modal: PROJEXA's one remaining popup was removed by
+//     D-01 and this is not the place to add a new one.
+//  4. THE FOOTER MESSAGE IS PERSISTENT. "Created permit BP-2026-0142" has to
+//     survive being read. A toast that fades is how a user ends up unsure
+//     whether the save happened.
 
-const AUTOSAVE_DEBOUNCE_MS = 2000; // GLOBAL: "autosave debounced ~2s"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 
-export type ObjectScreenMode = "display" | "edit" | "create";
+export type ObjectFacet = { label: string; value: React.ReactNode };
 
 export type ObjectScreenProps = {
-  breadcrumb: React.ReactNode;
+  module: string;
+  moduleHref: string;
+  /** "Permit", "BOQ", "Progress entry". */
+  objectLabel: string;
+  /** The record's own name, as the <h1>. */
   title: string;
-  subtitle?: string;
-  headerStatus?: { tone: StatusTone; label: string };
-  /** FORK: worded actions (e.g. an Export menu) in the object header row. */
-  headerActions?: React.ReactNode;
-  facets?: { label: string; value: string }[];
-  documentFlow?: DocumentFlowData;
-  mode: ObjectScreenMode;
-  hasDraft: boolean;
-  lockedByOther?: { userId: string; lockExpiresAt: string } | null;
-  onEdit?: () => void | Promise<void>;
-  onSave?: () => void | Promise<void>;
-  onCancel?: () => void | Promise<void>;
-  onDelete?: () => void | Promise<void>;
-  onBack?: () => void;
-  /** FORK: when set, Edit renders disabled with this reason beside the word. */
-  editDisabledReason?: string;
-  /** FORK: as above for Delete. Previously the only way to express "you cannot delete this" was to omit onDelete, which said nothing. */
-  deleteDisabledReason?: string;
-  saveDisabled?: boolean;
-  saveDisabledReason?: string;
-  onAutosave?: () => void | Promise<void>;
-  messages: FieldMessage[];
-  onMessageClick?: (message: FieldMessage) => void;
+  /** Small context pairs under the title -- "Project: Cedar Heights Villa". */
+  facets?: ObjectFacet[];
+  onEdit?: () => void;
+  /** Omit entirely where the module has no delete path -- never a dead control. */
+  onDelete?: {
+    /** The whole sentence, from deleteConfirmation(). */
+    confirmation: string;
+    run: () => void | Promise<void>;
+    /** Why the control is unavailable. Renders it disabled with the reason. */
+    disabledReason?: string;
+  };
+  /** A persistent line under the actions: "Created permit BP-2026-0142". */
+  footerMessage?: React.ReactNode;
+  /** "Saving… / Saved 12:04" for screens that autosave. */
+  autosave?: React.ReactNode;
+  /** A failure raised by an action on this page. */
+  error?: string | null;
   children: React.ReactNode;
 };
 
 export function ObjectScreen({
-  breadcrumb,
+  module,
+  moduleHref,
+  objectLabel,
   title,
-  subtitle,
-  headerStatus,
-  headerActions,
-  facets,
-  documentFlow,
-  mode,
-  hasDraft,
-  lockedByOther,
+  facets = [],
   onEdit,
-  onSave,
-  onCancel,
   onDelete,
-  onBack,
-  editDisabledReason,
-  deleteDisabledReason,
-  saveDisabled,
-  saveDisabledReason,
-  onAutosave,
-  messages,
-  onMessageClick,
+  footerMessage,
+  autosave,
+  error,
   children,
 }: ObjectScreenProps) {
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function scheduleAutosave() {
-    if (!onAutosave) return;
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = setTimeout(() => {
-      void onAutosave();
-    }, AUTOSAVE_DEBOUNCE_MS);
-  }
-  useEffect(() => () => {
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-  }, []);
-
-  const isEditing = mode === "edit" || mode === "create";
-
-  // A control with no handler is as unusable as one with a reason, so both
-  // count as disabled -- but only a reason is ever SHOWN, and every caller in
-  // this repo supplies one whenever it withholds the handler.
-  const editDisabled = !onEdit || !!editDisabledReason;
-  const deleteDisabled = !onDelete || !!deleteDisabledReason;
-
-  const footerActions: React.ReactNode = isEditing ? (
-    <>
-      <button
-        type="button"
-        onClick={() => onSave?.()}
-        disabled={saveDisabled}
-        title={saveDisabled ? saveDisabledReason : undefined}
-        className="rounded-md bg-ct-teal px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Save{saveDisabled && saveDisabledReason ? ` (${saveDisabledReason})` : ""}
-      </button>
-      <button type="button" onClick={() => onCancel?.()} className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy">
-        Cancel
-      </button>
-    </>
-  ) : (
-    <>
-      <button
-        type="button"
-        onClick={() => onEdit?.()}
-        disabled={editDisabled}
-        title={editDisabledReason}
-        className="inline-flex items-center gap-1.5 rounded-md bg-ct-navy px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Edit
-        {/* The reason as VISIBLE text beside the word, in the same shape
-            ScreenFrame's own header actions already use for a disabled
-            action -- not a title-only tooltip. */}
-        {editDisabledReason && <span className="text-[11px] font-normal">({editDisabledReason})</span>}
-      </button>
-      {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a
-          spacer, not just a gap class, keeps Delete visually separated. The
-          kit made this spacer conditional on onDelete; Delete is now always
-          there, so the spacer always is too. */}
-      <div className="flex-1" />
-      <button
-        type="button"
-        onClick={() => onDelete?.()}
-        disabled={deleteDisabled}
-        title={deleteDisabledReason}
-        className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Delete
-        {deleteDisabledReason && <span className="text-[11px]">({deleteDisabledReason})</span>}
-      </button>
-    </>
-  );
-
-  const headerMessageStrip = lockedByOther
-    ? `Locked by another user until ${new Date(lockedByOther.lockExpiresAt).toLocaleTimeString()}`
-    : undefined;
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
-    <ScreenFrame
-      breadcrumb={
-        <span className="flex items-center gap-2">
-          {onBack && (
-            <button type="button" onClick={onBack} className="text-ct-muted hover:text-ct-navy">
-              ← Back
-            </button>
-          )}
-          {breadcrumb}
-        </span>
-      }
-      headerMessageStrip={headerMessageStrip}
-      footerActions={footerActions}
-      messages={messages}
-      onMessageClick={onMessageClick}
-    >
-      <div data-veri-autosave-trigger onChangeCapture={onAutosave ? scheduleAutosave : undefined}>
-        <div className="px-4 py-3 border-b border-ct-border">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h1 className="font-heading text-xl text-ct-navy flex items-center gap-2">
-                {title}
-                {hasDraft && !isEditing && <Pencil className="size-3.5 text-ct-muted" aria-label="Draft in progress" />}
-              </h1>
-              {subtitle && <p className="text-[13px] text-ct-muted mt-0.5">{subtitle}</p>}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {headerActions}
-              {headerStatus && <StatusBadge tone={headerStatus.tone} label={headerStatus.label} />}
-            </div>
-          </div>
-          {facets && facets.length > 0 && (
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 mt-3">
+    <div className="flex-1 space-y-4 p-6">
+      <ProjectBreadcrumb module={module} moduleHref={moduleHref} trail={[title]} backHref={moduleHref} />
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-xl text-ct-navy">{title}</h1>
+          {facets.length > 0 && (
+            <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-px-muted">
               {facets.map((f) => (
-                <div key={f.label} className="text-[12.5px]">
-                  <dt className="text-ct-muted inline">{f.label}: </dt>
-                  <dd className="text-ct-navy inline font-medium">{f.value}</dd>
+                <div key={f.label} className="flex gap-1">
+                  <dt>{f.label}:</dt>
+                  <dd className="text-ct-navy">{f.value}</dd>
                 </div>
               ))}
             </dl>
           )}
         </div>
 
-        {children}
-
-        {documentFlow && <DocumentFlow data={documentFlow} />}
+        {/* Word actions, in R-257's order, with Delete pushed away from Edit
+            by a real gap rather than sitting next to it in the same tone. */}
+        <div className="flex items-center gap-2">
+          {autosave && <span className="mr-2 text-[12px] text-px-muted">{autosave}</span>}
+          {onEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              Edit
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => router.push(moduleHref)}>
+            Back
+          </Button>
+          {onDelete && (
+            <span className="ml-6 inline-flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-px-error"
+                disabled={Boolean(onDelete.disabledReason) || deleting}
+                title={onDelete.disabledReason}
+                onClick={() => setConfirming(true)}
+              >
+                Delete
+              </Button>
+              {onDelete.disabledReason && <span className="text-xs text-px-muted">{onDelete.disabledReason}</span>}
+            </span>
+          )}
+        </div>
       </div>
-    </ScreenFrame>
+
+      {confirming && onDelete && (
+        <div
+          role="alertdialog"
+          aria-label="Confirm delete"
+          className="rounded-lg border border-px-error-border bg-px-error-light p-4 text-sm"
+        >
+          <p className="flex items-start gap-2 text-px-error">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {onDelete.confirmation}
+          </p>
+          <div className="mt-3 flex items-center gap-2 pl-6">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await onDelete.run();
+                } finally {
+                  setDeleting(false);
+                  setConfirming(false);
+                }
+              }}
+            >
+              {deleting ? "Deleting…" : `Delete ${objectLabel.toLowerCase()}`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
+          {error}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="p-6">{children}</CardContent>
+      </Card>
+
+      {/* The receipt. Persistent, not a toast -- it is the only proof on
+          screen that the save the user just made actually landed. */}
+      {footerMessage && (
+        <div role="status" className="rounded-md border border-px-border bg-white px-3 py-2 text-[12px] text-px-muted">
+          {footerMessage}
+        </div>
+      )}
+    </div>
   );
 }
+
+export default ObjectScreen;

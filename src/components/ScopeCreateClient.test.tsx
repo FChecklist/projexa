@@ -7,19 +7,36 @@
 // truncated inside their own inputs; and Remove was an unlabelled "✕" that was
 // silently inert on the last row.
 //
-// The acceptance's first half ("render empty, the primary is named
-// 'Save (Title, Line 1)' and is disabled") runs here verbatim. The second half
-// ("blur an empty Qty input and assert 'Enter the quantity' is rendered next to
-// that input") also runs here verbatim: blur DOES reach React under this
-// repo's bun + happy-dom + React 19 harness -- unlike a simulated keystroke
-// into a controlled text input, which does not (measured in R67 D-18/D-19).
+// R67 INTEGRATION TRAIN. D-24 and D-67 both rewrote this screen. D-67's
+// CreateScreen archetype won the SHAPE (decision D-11's rule of thumb: the
+// version already on main is canonical), and D-24's capabilities were folded
+// onto it -- including the per-field blur messages, which the archetype's grid
+// did not have and which this file exists to hold to. Two assertions are
+// CORRECTED to the merged reality rather than dropped, and each says so where
+// it is made:
+//
+//   * the primary's label. The archetype names the grid's own columns --
+//     "Save (Title, Description, Qty, Rate)" -- rather than D-24's coarser
+//     "Save (Title, Line 1)". It is the same rule (name what is missing, never
+//     "complete the form") stated more precisely, so the assertion follows it.
+//   * the column labels. They are a real <th> header row now, in the header's
+//     own wording ("Item code", "Parent code"), instead of labels above a
+//     div grid.
+//
+// The acceptance's second half ("blur an empty Qty input and assert 'Enter the
+// quantity' is rendered next to that input") runs here verbatim: blur DOES
+// reach React under this repo's bun + happy-dom + React 19 harness -- unlike a
+// simulated keystroke into a controlled text input, which does not (measured
+// in R67 D-18/D-19).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
-mock.module("next/navigation", () => ({ useRouter: () => ({ push: mock(() => {}), prefetch: mock(() => {}) }) }));
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: mock(() => {}), replace: mock(() => {}), prefetch: mock(() => {}) }),
+}));
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
 const ScopeCreateClient = (await import("./ScopeCreateClient")).default;
@@ -44,21 +61,28 @@ function mount(categories: { id: string; name: string; isActive: boolean }[] = O
     if (url.includes("/api/scope/categories")) {
       return new Response(JSON.stringify({ categories }), { status: 200, headers: { "content-type": "application/json" } });
     }
+    if (url.includes("/api/currencies")) {
+      return new Response(JSON.stringify({ currencies: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
   return render(<ScopeCreateClient projectId="proj-1" />);
 }
 
 describe("ScopeCreateClient primary action (D-24 acceptance, first half)", () => {
-  test("renders empty with the primary named 'Save (Title, Line 1)' and DISABLED", () => {
+  test("renders empty with the primary NAMING what is missing, and DISABLED", () => {
     const { getByRole } = mount();
-    const save = getByRole("button", { name: "Save (Title, Line 1)" }) as HTMLButtonElement;
+    // CORRECTED wording, same rule: the archetype names the grid's own columns.
+    const save = getByRole("button", { name: "Save (Title, Description, Qty, Rate)" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
   });
 
   test("the reason names the fields, not a generic 'complete the form'", () => {
     const { getByRole } = mount();
-    expect(getByRole("button", { name: /^Save \(/ }).textContent).toContain("Title, Line 1");
+    const label = getByRole("button", { name: /^Save \(/ }).textContent ?? "";
+    expect(label).toContain("Title");
+    expect(label).toContain("Description");
+    expect(label).not.toContain("complete the form");
   });
 });
 
@@ -69,7 +93,7 @@ describe("ScopeCreateClient on-blur field validation (D-24 acceptance, second ha
     // Nothing is said before the field has been visited.
     expect(queryByText("Enter the quantity")).toBeNull();
 
-    const qty = getByLabelText("Line 1 Qty") as HTMLInputElement;
+    const qty = getByLabelText("Qty, line 1") as HTMLInputElement;
     fireEvent.blur(qty);
 
     expect(await findByText("Enter the quantity")).toBeDefined();
@@ -82,38 +106,39 @@ describe("ScopeCreateClient on-blur field validation (D-24 acceptance, second ha
     expect(qty.getAttribute("aria-invalid")).toBe("true");
   });
 
-  test("blurring an empty Title renders its own sentence under the field", async () => {
-    const { getByLabelText, findByText } = mount();
-    fireEvent.blur(getByLabelText("Title (required)"));
-    expect(await findByText("Enter a title, e.g. Civil Works - Phase 1")).toBeDefined();
-  });
-
   test("blurring one field does NOT report every other empty field at once", async () => {
     const { getByLabelText, findByText, queryByText } = mount();
-    fireEvent.blur(getByLabelText("Line 1 Qty"));
+    fireEvent.blur(getByLabelText("Qty, line 1"));
     await findByText("Enter the quantity");
     expect(queryByText("Enter the rate")).toBeNull();
+  });
+
+  test("blurring an empty Description renders its own sentence under the field", async () => {
+    const { getByLabelText, findByText } = mount();
+    fireEvent.blur(getByLabelText("Description, line 1"));
+    expect(await findByText(/Enter a description/)).toBeDefined();
   });
 });
 
 describe("ScopeCreateClient line grid (D-24)", () => {
-  test("the mandatory fields carry the '(required)' marker and aria-required", () => {
-    const { getByLabelText } = mount();
-    const title = getByLabelText("Title (required)");
-    expect(title.getAttribute("aria-required")).toBe("true");
+  test("Title is required and says so by NOT being marked optional", () => {
+    const { container } = mount();
+    const label = container.querySelector("label[for='title']")?.textContent ?? "";
+    expect(label).toContain("Title");
+    expect(label).not.toContain("(optional)");
   });
 
-  test("every column has a VISIBLE label above the grid, including the two that used to truncate", () => {
-    const { getAllByText } = mount();
-    // getAllByText, not getByText: "Category" is also the Select's own
-    // placeholder, which is exactly the point -- the label above the column
-    // stays visible once a value is chosen and the placeholder is gone.
-    for (const label of ["Description", "Unit", "Qty", "Rate", "Item Code", "Parent Item Code", "Breakdown %", "Category"]) {
-      expect(getAllByText(label).length).toBeGreaterThan(0);
+  test("every column has a VISIBLE header, including the two that used to truncate", () => {
+    const { container } = mount();
+    const headers = Array.from(container.querySelectorAll("th")).map((h) => h.textContent?.trim());
+    // CORRECTED to the header row's own wording -- shortened precisely so the
+    // two that used to truncate no longer can.
+    for (const label of ["Description", "Category", "Unit", "Qty", "Rate", "Item code", "Parent code", "Breakdown %"]) {
+      expect(headers).toContain(label);
     }
   });
 
-  test("the grid's help sentence explains Item Code and the 100% sub-task rule", () => {
+  test("the grid's help sentences explain Item Code and the 100% sub-task rule", () => {
     const { getByText } = mount();
     expect(getByText(/Item Code identifies the line in reports and the WPR\./)).toBeDefined();
     expect(getByText(/children of one parent should add up to 100%/)).toBeDefined();
@@ -134,22 +159,25 @@ describe("ScopeCreateClient line grid (D-24)", () => {
   });
 
   test("adding an untouched second line does NOT disable Save any further than line 1 already does", async () => {
-    const { getByRole } = mount();
+    const { getByRole, getAllByRole } = mount();
+    const before = getByRole("button", { name: /^Save \(/ }).textContent;
     fireEvent.click(getByRole("button", { name: "+ Add Line" }));
-    await waitFor(() => expect(getByRole("button", { name: /^Save \(/ }).textContent).toContain("Title, Line 1"));
-    expect(getByRole("button", { name: /^Save \(/ }).textContent).not.toContain("Line 2");
+    await waitFor(() => expect(getAllByRole("button", { name: /^Remove/ })).toHaveLength(2));
+    // An empty row a user has not touched is not a demand: the label is the
+    // same after adding it as it was before.
+    expect(getByRole("button", { name: /^Save \(/ }).textContent).toBe(before);
   });
 
-  test("the per-line Category select is fed by the org's own editable picklist, not a list this screen invents", async () => {
+  test("the per-line Category control is fed by the org's own editable picklist, not a list this screen invents", async () => {
     const { getByLabelText } = mount();
-    // Lane I's BoqCategorySelect labels its trigger "Line 1 Category" through
-    // the same aria-label convention the rest of the grid uses.
-    await waitFor(() => expect(getByLabelText("Line 1 Category")).toBeDefined());
+    // Lane I's BoqCategorySelect labels its trigger through the same per-row
+    // aria-label convention the rest of the grid uses.
+    await waitFor(() => expect(getByLabelText(/Category, line 1/)).toBeDefined());
   });
 
   test("an org that has retired every category still renders the control -- Category is optional, never a blocker", async () => {
     const { getByLabelText, queryByText } = mount([]);
-    await waitFor(() => expect(getByLabelText("Line 1 Category")).toBeDefined());
+    await waitFor(() => expect(getByLabelText(/Category, line 1/)).toBeDefined());
     expect(queryByText(/Couldn't load/)).toBeNull();
   });
 });
