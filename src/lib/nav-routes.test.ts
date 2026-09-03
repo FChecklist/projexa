@@ -137,6 +137,16 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/invite/[token]",
   "/share/report/[token]",
 
+  // R67 WS-H. The Design Studio is ONE nav entry (/design-studio, in the
+  // DESIGN group beside Mood Boards, FF&E and Floor Plans). Its Review and
+  // Cost analysis halves are TABS of that module -- they are real routes so
+  // a manager can be sent a link straight to the review queue, but putting
+  // all three in the sidebar would advertise one module as three.
+  "/design-studio/review",
+  "/design-studio/cost-analysis",
+  "/design-studio/timesheets/[id]",
+  "/design-studio/timesheets/new",
+
   // Reached from their own parent flow, never from the top-level nav: you
   // open a customer from the customers list, a permit from the permits list,
   // a project dashboard by clicking a project row. Listing these would put an
