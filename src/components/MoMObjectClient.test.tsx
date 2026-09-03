@@ -18,7 +18,14 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const pushed: string[] = [];
-mock.module("next/navigation", () => ({ useRouter: () => ({ push: (href: string) => { pushed.push(href); } }) }));
+// usePathname / useSearchParams: lane A's <ObjectContext> and its
+// <FocusRequest> both read them. No ?focus= is set here, so FocusRequest is a
+// no-op and these tests exercise the page as a plain visit does.
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: (href: string) => { pushed.push(href); } }),
+  usePathname: () => "/moms/meeting-1",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const MoMObjectClient = (await import("./MoMObjectClient")).default;
 
@@ -44,7 +51,7 @@ const ORG_USERS = [
 
 const writes: { url: string; method: string }[] = [];
 
-function mount(overrides: Partial<typeof BASE_MEETING> = {}, props: { focusMinutes?: boolean; justCreated?: boolean } = {}) {
+function mount(overrides: Partial<typeof BASE_MEETING> = {}, props: { justCreated?: boolean } = {}) {
   const meeting = { ...BASE_MEETING, ...overrides };
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -178,7 +185,7 @@ describe("D-17: the Export menu, and the minutes box", () => {
   });
 
   test("arriving from Save on /moms/new names what was made, with its number, in the persistent band", async () => {
-    const { getByText } = mount({}, { focusMinutes: true, justCreated: true });
+    const { getByText } = mount({}, { justCreated: true });
     await waitFor(() =>
       expect(getByText("Created meeting Weekly Site Coordination (MOM-2026-4821) - start typing the minutes")).toBeDefined()
     );

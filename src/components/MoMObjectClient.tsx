@@ -43,8 +43,8 @@
 //        whichever host answered. The proxy now sends brand + shareOrigin and
 //        the composed message comes back from the server; this screen reports
 //        the expiry and lists live links with a worded Revoke.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
