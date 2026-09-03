@@ -273,8 +273,10 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
           />
         )}
         {preview === "image" && (
-          // eslint-disable-next-line @next/next/no-img-element -- a signed,
-          // short-lived storage URL cannot go through next/image's optimiser.
+          // A plain <img>, not next/image: a signed, short-lived storage URL
+          // cannot go through next/image's optimiser. (No eslint-disable here
+          // -- this repo has @next/next/no-img-element off, so the directive
+          // reported nothing and lint flagged it as an unused disable.)
           <img
             src={doc.signedUrl ?? undefined}
             alt={doc.name}

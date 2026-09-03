@@ -47,6 +47,11 @@ export type DrawingKind = "dwg" | "3d_walkthrough";
  * server-side with "File exceeds 25 MB limit" -- the exact fail-after-click R67
  * D-09 set out to remove from this form, still live because the client's number
  * and the server's number were written in different files on different days.
+ *
+ * RECORDED DEVIATION: D-09's written acceptance quotes the hint "Max 50 MB".
+ * The field renders "Max 25 MB" instead, and deliberately: 50 was a number no
+ * upload could ever satisfy. Raising the server cap is a bucket change nobody
+ * asked for; matching the real one is the honest fix.
  */
 export const MAX_DRAWING_MB = 25;
 
@@ -55,6 +60,18 @@ export const MAX_DRAWING_MB = 25;
  * plot of one; a 3D walkthrough is a model or a recorded fly-through. The
  * accept attribute is built from this same list, so the filter the OS picker
  * applies and the message shown when it is bypassed can never drift apart.
+ *
+ * RECORDED DEVIATION: D-78's written acceptance quotes the message
+ * "Choose a .dwg file - this is a .pdf". That exact sentence is unreachable on
+ * THIS field, because a .pdf is a legitimate DWG-field upload -- D-09 settled
+ * that above, and compliance-tracker's own drawings route accepts a PDF for
+ * category "drawing", so narrowing the client here would refuse a file the
+ * server allows. D-78's MESSAGE SHAPE is adopted everywhere instead
+ * (`Choose a <allowed list> file - this is a <chosen ext>`), and the quoted
+ * single-extension form is realised on the permit PDF field, which really does
+ * take one extension: fileTypeError("x.docx", [".pdf"]) ->
+ * "Choose a .pdf file - this is a .docx". A .png in this field reads
+ * "Choose a .dwg, .dxf or .pdf file - this is a .png".
  */
 export const ACCEPTED_EXTENSIONS: Record<DrawingKind, readonly string[]> = {
   dwg: [".dwg", ".dxf", ".pdf"],
