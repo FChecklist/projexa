@@ -9,7 +9,7 @@
 // runtime-dependent flake.
 import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateTime, formatDayMonth, formatTime } from "./format-date";
+import { formatDate, formatDateTime, formatDayMonth, formatHourMinute, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -77,5 +77,21 @@ describe("formatDayMonth (R67 E-25)", () => {
   test("accepts the same inputs as the other helpers here", () => {
     expect(formatDayMonth(new Date("2026-01-02T00:00:00.000Z"))).toBe("2 Jan");
     expect(formatDayMonth(Date.parse("2026-12-31T12:00:00.000Z"))).toBe("31 Dec");
+  });
+});
+
+describe("formatHourMinute (R67 E-30)", () => {
+  test("is the clock alone, 24-hour and zero-padded -- 'Ran in 2.7 s at 14:02'", () => {
+    expect(formatHourMinute("2026-09-03T14:02:37.000Z")).toBe("14:02");
+    expect(formatHourMinute("2026-09-03T09:05:00.000Z")).toBe("09:05");
+  });
+
+  test("midnight reads 00:00, not 24:00 -- en-US's own h23/h24 trap", () => {
+    expect(formatHourMinute("2026-09-03T00:00:00.000Z")).toBe("00:00");
+  });
+
+  test("is pinned to UTC like its siblings, so the stamp cannot differ per visitor", () => {
+    expect(formatHourMinute(new Date("2026-09-03T23:59:00.000Z"))).toBe("23:59");
+    expect(formatHourMinute(Date.parse("2026-09-03T23:59:00.000Z"))).toBe("23:59");
   });
 });

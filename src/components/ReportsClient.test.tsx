@@ -87,11 +87,43 @@ describe("ReportsClient -- Project Status renders as a document", () => {
   test("while it runs, the panel says WHICH report is running and offers Cancel", async () => {
     stubFetch({ hold: true });
     const { container, findAllByRole } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("Running Project Status…"));
+    // R67 E-30 (R-263): the sentence names the report AND the project.
+    await waitFor(() =>
+      expect(container.textContent).toContain("Running Project Status for Cedar Heights Villa - Phase 1…")
+    );
     const cancels = await findAllByRole("button", { name: "Cancel" });
     expect(cancels.length).toBeGreaterThan(0);
     // The idle prompt must never be what a running report looks like.
     expect(container.textContent).not.toContain("Choosing a report runs it.");
+  });
+
+  test("R67 E-30: the elapsed counter really ticks while the reader waits", async () => {
+    stubFetch({ hold: true });
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.textContent).toContain("Running Project Status"));
+    // "0 s" immediately, then a real second later "1 s". Without the counter a
+    // reader cannot tell a slow report from a broken one.
+    expect(container.textContent).toContain("0 s");
+    await waitFor(() => expect(container.textContent).toContain("1 s"), { timeout: 3000 });
+  });
+
+  test("R67 E-30: a finished run is stamped with how long it took and when", async () => {
+    stubFetch();
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
+    // "Ran in 0.0 s at 14:02" -- the duration and a 24-hour clock, above the
+    // output, so a reader knows whether the numbers are fresh.
+    expect(container.textContent).toMatch(/Ran in \d+\.\d s at \d{2}:\d{2}/);
+  });
+
+  test("R67 E-30: Cancel stops the run and says so, rather than spinning forever", async () => {
+    stubFetch({ hold: true });
+    const { container, findAllByRole } = renderPanel();
+    await waitFor(() => expect(container.textContent).toContain("Running Project Status"));
+    const [cancel] = await findAllByRole("button", { name: "Cancel" });
+    cancel.click();
+    await waitFor(() => expect(container.textContent).toContain("Cancelled. Nothing was run."));
+    expect(container.textContent).not.toContain("Running Project Status");
   });
 
   test("money is formatted through the one formatter, with the org currency", async () => {

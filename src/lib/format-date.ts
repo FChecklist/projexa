@@ -76,6 +76,25 @@ export function formatDateTimeMedium(value: Date | string | number): string {
 }
 
 /**
+ * e.g. "14:02" -- the clock time alone, 24-hour, zero-padded.
+ *
+ * R67 E-30 (R-263). The run stamp reads "Ran in 2.7 s at 14:02", and
+ * formatTime() gives "2:30:00 PM" -- seconds nobody needs and a meridiem the
+ * sentence did not ask for. Pinned to the same locale and time zone as every
+ * other helper here for the same hydration reason; `hour12: false` is stated
+ * explicitly because en-US would otherwise ignore the 2-digit hour and print
+ * "2:02 PM".
+ */
+export function formatHourMinute(value: Date | string | number): string {
+  return new Date(value).toLocaleTimeString(FIXED_LOCALE, {
+    timeZone: FIXED_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
  * e.g. "25 Aug" -- the short day-and-month form a chart caption uses, where a
  * full "8/25/2026" is more precision than the sentence needs.
  *

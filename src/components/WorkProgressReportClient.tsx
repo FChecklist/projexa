@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -439,8 +439,12 @@ export default function WorkProgressReportClient({
   // filter), so selecting one never removes the others from the control.
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const run = useTimedRun<ReportResponse>();
-  const runRef = useRef(run);
-  runRef.current = run;
+  // `run` is a fresh object every render, but `run.run` is a stable
+  // useCallback -- so the runner can be a dependency directly. It used to be
+  // held in a ref that was WRITTEN during render, which React's own lint rule
+  // forbids for a real reason: a ref written in render is not tracked, so a
+  // concurrent re-render can read a value from a render that was thrown away.
+  const startRun = run.run;
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
@@ -453,7 +457,7 @@ export default function WorkProgressReportClient({
       const rangeFrom = overrides.from ?? from;
       const rangeTo = overrides.to ?? to;
 
-      const data = await runRef.current.run(async (signal) => {
+      const data = await startRun(async (signal) => {
         const params = new URLSearchParams({ projectId, to: rangeTo });
         // Omitted on purpose when empty: that is what asks the server for the
         // data-derived default rather than guessing one here.
@@ -479,7 +483,7 @@ export default function WorkProgressReportClient({
         setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
       }
     },
-    [projectId, selectedBoqId, selectedCategories, from, to]
+    [projectId, selectedBoqId, selectedCategories, from, to, startRun]
   );
 
   // RUN ON ARRIVAL (C-04). Once, for the parameters the URL brought, and again
@@ -488,7 +492,8 @@ export default function WorkProgressReportClient({
   // inputs re-run explicitly on change instead.
   useEffect(() => {
     void runReport();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // runReport is deliberately not a dependency: it changes on every date
+    // keystroke, and this effect is "run on arrival", not "run on every edit".
   }, [projectId]);
 
   // The URL carries the parameters, so a run is linkable and the Reports

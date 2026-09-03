@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,9 @@ import { ReportDocument } from "@/components/reports/ReportDocument";
 import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatHourMinute } from "@/lib/format-date";
 import { WORK_PROGRESS_REPORT_ROUTE } from "@/lib/report-registry";
+import { DEFAULT_RUN_TIMEOUT_MS, timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
 import {
   NOT_SET,
   buildAttendanceDocument,
@@ -56,8 +57,13 @@ export type RegistryColumn = ScreenColumn;
 //    `!ranOnce ? "Pick a report and click Run Report." : loading ? spinner`
 //    -- so on the FIRST run, which is the only run most sessions do, the
 //    spinner branch was unreachable and the idle prompt sat there for the
-//    whole request. The state is now one machine (idle | running | done |
-//    failed), running always wins, and it says which report is running.
+//    whole request. The state is now one machine, running always wins, and it
+//    says which report is running.
+//
+//    R67 E-30 (R-263) finished that job: the machine moved into the shared
+//    useTimedRun hook, so the panel also has a live elapsed counter, a real
+//    Cancel, a 20 s deadline with somewhere to go next, and a run stamp
+//    ("Ran in 2.7 s at 14:02") above the output.
 //
 // 3. Nothing ran until the user pressed a button, even though every
 //    parameter already had a default. The report now runs on arrival and on
@@ -100,13 +106,14 @@ const NAMED_REPORTS = new Set(["project-status", "weekly-project", "attendance",
 /** A named report that needs the budget-variance lines as well as its own payload. */
 const NEEDS_VARIANCE = new Set(["project-status", "scope"]);
 
-type RunState = "idle" | "running" | "done" | "failed";
-
+// R67 E-30 (R-263). The run state machine is no longer this component's own.
+// It is src/lib/use-timed-run.ts, which owns the AbortController, the
+// one-second elapsed ticker, the 20 s deadline and the six states -- including
+// the three ("failed", "timeout", "cancelled") that this panel used to collapse
+// into one, and which need three different things said to the reader.
 type RunResult = {
   primary: unknown;
   variance: BudgetVariancePayload | null;
-  ranAt: number;
-  elapsedMs: number;
 };
 
 function ProjectReportsPanel({
@@ -126,82 +133,55 @@ function ProjectReportsPanel({
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [scopeCategory, setScopeCategory] = useState<string>("__all__");
   const [scopeVendor, setScopeVendor] = useState<string>("__all__");
-  const [state, setState] = useState<RunState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<RunResult | null>(null);
   const orgMoney = useOrgMoney();
 
-  // Priority 19's stale-response guard, kept and reused: every run captures a
-  // generation, and a response whose generation is no longer current is
-  // dropped instead of committing state. Cancel bumps the SAME counter, which
-  // is what makes an in-flight run's late answer harmless rather than
-  // something that reappears after the user cancelled it.
-  const requestGeneration = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  // The hook keeps the stale-response guard this component used to own: every
+  // run takes a generation and a late answer from a superseded, cancelled or
+  // timed-out run never commits.
+  const run = useTimedRun<RunResult>({ timeoutMs: DEFAULT_RUN_TIMEOUT_MS });
+  // `run` is a new object each render; `run.run` and `run.reset` are stable
+  // useCallbacks, so they can be dependencies directly.
+  const startRun = run.run;
+  const resetRun = run.reset;
+  const result = run.result;
 
   const reportLabel = reports.find((r) => r.value === reportName)?.label ?? reportName;
 
   const runReport = useCallback(async () => {
-    const myGeneration = ++requestGeneration.current;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const startedAt = Date.now();
-    setState("running");
-    setError(null);
-
-    try {
+    await startRun(async (signal) => {
       const params = new URLSearchParams({ projectId });
       if (reportName === "weekly-project") params.set("weekStart", weekStart);
 
       const requests: Promise<Response>[] = [
-        fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`, { signal: controller.signal }),
+        fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`, { signal }),
       ];
       if (NEEDS_VARIANCE.has(reportName)) {
         // The vendor/category detail Sumeet's Project Status and Scope sheets
         // need lives on budget-variance -- the only report that carries a
         // vendor and a category per BOQ line. Fetched alongside, never
         // fabricated from the other payload.
-        requests.push(
-          fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`, { signal: controller.signal })
-        );
+        requests.push(fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`, { signal }));
       }
 
-      const responses = await Promise.all(requests);
-      const [primaryRes, varianceRes] = responses;
+      const [primaryRes, varianceRes] = await Promise.all(requests);
       const primary = await primaryRes.json();
       if (!primaryRes.ok) throw new Error(primary?.error || `The report service answered ${primaryRes.status}`);
       const variance = varianceRes && varianceRes.ok ? ((await varianceRes.json()) as BudgetVariancePayload) : null;
-
-      if (myGeneration !== requestGeneration.current) return;
-      setResult({ primary, variance, ranAt: Date.now(), elapsedMs: Date.now() - startedAt });
-      setState("done");
-    } catch (err) {
-      if (myGeneration !== requestGeneration.current) return; // cancelled or superseded
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setError(err instanceof Error && err.message ? err.message : "the service did not answer");
-      setState("failed");
-    }
-  }, [projectId, reportName, weekStart]);
+      return { primary, variance };
+    });
+  }, [projectId, reportName, weekStart, startRun]);
 
   // Run on arrival and on every parameter change: every parameter already has
   // a default, so making the reader press a button first bought nothing.
   useEffect(() => {
     if (reportName === "work-progress") {
-      // D-02: this one is a link, not a run.
-      setState("idle");
-      setResult(null);
+      // D-02: this one is a link, not a run. reset() also aborts anything the
+      // previous report left in flight.
+      resetRun();
       return;
     }
     void runReport();
-    return () => abortRef.current?.abort();
-  }, [runReport, reportName]);
-
-  function cancel() {
-    requestGeneration.current += 1; // any in-flight answer is now stale
-    abortRef.current?.abort();
-    setState(result ? "done" : "idle");
-  }
+  }, [runReport, reportName, resetRun]);
 
   const varianceForFilters = result?.variance ?? null;
   const { categories, vendors } = scopeFilterOptions(varianceForFilters);
@@ -290,8 +270,8 @@ function ProjectReportsPanel({
           </div>
         </>
       )}
-      {state === "running" ? (
-        <Button variant="outline" onClick={cancel}>Cancel</Button>
+      {run.state === "running" ? (
+        <Button variant="outline" onClick={() => run.cancel()}>Cancel</Button>
       ) : (
         <Button variant="outline" onClick={() => void runReport()}>Run again</Button>
       )}
@@ -308,29 +288,72 @@ function ProjectReportsPanel({
         </div>
       );
     }
-    if (state === "running") {
+    // RUNNING always wins. The defect this replaces was an ordering bug: the
+    // panel asked "have we run before?" first, so on a FIRST run -- the only
+    // run most sessions do -- the idle prompt sat there for the whole request.
+    if (run.state === "running") {
       return (
         <div className="flex h-40 flex-col items-center justify-center gap-3">
           <Loader2 className="size-5 animate-spin text-px-muted" aria-hidden />
-          <p className="text-sm text-px-muted">Running {reportLabel}…</p>
-          <Button size="sm" variant="outline" onClick={cancel}>Cancel</Button>
+          {/* R-263's own sentence, and the counter is what tells a reader
+              "slow" from "broken". */}
+          <p className="text-sm text-px-muted" aria-live="polite">
+            Running {reportLabel} for {projectName}… {run.elapsedSeconds} s
+          </p>
+          <Button size="sm" variant="outline" onClick={() => run.cancel()}>Cancel</Button>
         </div>
       );
     }
-    if (state === "failed") {
+    if (run.state === "timeout") {
       return (
         <div className="space-y-3 py-10 text-center">
-          <p role="alert" className="text-sm text-px-error">Could not run {reportLabel}: {error}</p>
+          <p role="alert" className="text-sm text-px-error">{timeoutSentence(DEFAULT_RUN_TIMEOUT_MS)}</p>
+          <div className="flex items-center justify-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => void runReport()}>Run again</Button>
+            {/* D-02: the one Work Progress Report, which is measured in
+                seconds where this path was measured in tens of them. */}
+            <Button size="sm" variant="outline" asChild>
+              <Link href={`${WORK_PROGRESS_REPORT_ROUTE}&projectId=${encodeURIComponent(projectId)}`}>
+                Open Work Progress › Report
+              </Link>
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    if (run.state === "failed") {
+      return (
+        <div className="space-y-3 py-10 text-center">
+          <p role="alert" className="text-sm text-px-error">Could not run {reportLabel}: {run.error}</p>
           <Button size="sm" variant="outline" onClick={() => void runReport()}>Run again</Button>
         </div>
       );
     }
+    if (run.state === "cancelled" && !result) {
+      return <p className="py-10 text-center text-sm text-px-muted">Cancelled. Nothing was run.</p>;
+    }
     if (!result) return <p className="py-10 text-center text-sm text-px-muted">Choosing a report runs it.</p>;
-    if (model) return <ReportDocument model={model} orgMoney={orgMoney} />;
-    // The twelve reports without a named column set keep the generic
-    // renderer -- inside the same document chrome, so the header block,
-    // parameter bar and export actions are identical on every report.
-    return <ReportOutput data={result.primary} />;
+    return (
+      <div className="space-y-3">
+        {/* R67 E-30: the run stamp, above the output, in the org's own pinned
+            formatter. "2.7 s" answers "was that slow?" and "14:02" answers
+            "am I looking at a fresh number or one from before lunch?" -- the
+            second question is the one a stale panel cannot answer at all. */}
+        {run.ranAt !== null && run.durationMs !== null && (
+          <p className="text-[12px] text-px-muted">
+            Ran in {(run.durationMs / 1000).toFixed(1)} s at {formatHourMinute(run.ranAt)}
+          </p>
+        )}
+        {model ? (
+          <ReportDocument model={model} orgMoney={orgMoney} />
+        ) : (
+          // The twelve reports without a named column set keep the generic
+          // renderer -- inside the same document chrome, so the header block,
+          // parameter bar and export actions are identical on every report.
+          <ReportOutput data={result.primary} />
+        )}
+      </div>
+    );
   })();
 
   return (
@@ -341,9 +364,12 @@ function ProjectReportsPanel({
           project: <Link href={`/dashboard/project?projectId=${encodeURIComponent(projectId)}`} className="hover:underline">{projectName}</Link>,
           revision,
           period: reportName === "weekly-project" ? `Week of ${weekStart}` : undefined,
-          generatedAt: result ? formatDateTime(result.ranAt) : "—",
+          // Provenance for the document itself -- the full date and the
+          // author, which is what an exported or shared sheet needs on it.
+          // How LONG the run took is run feedback, not provenance, and it is
+          // said once above the output (R67 E-30) rather than twice here.
+          generatedAt: run.ranAt !== null ? formatDateTime(run.ranAt) : "—",
           generatedBy,
-          generatedIn: result ? `${(result.elapsedMs / 1000).toFixed(1)} s` : undefined,
         }}
         parameterBar={parameterBar}
         shareAction={{ label: "Share", onClick: () => void share(), disabledReason: result ? undefined : "Share (run the report first)" }}
