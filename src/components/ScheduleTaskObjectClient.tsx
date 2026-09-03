@@ -26,8 +26,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 // The FORKED ObjectScreen (programme decision D-09) -- it is the only one with
-// a header-actions slot. See src/components/screens/ScreenFrame.tsx's header.
+// a header-actions slot, which D-77 needs to put Edit in this page's header.
+// The kit is still imported for everything that was not forked.
 import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -275,6 +277,12 @@ export default function ScheduleTaskObjectClient({ taskId, fromTab = null }: { t
   const assigneeLabel = assignees.length ? assignees.map((u) => u.name).join(", ") : "Unassigned";
 
   return (
+    <>
+    {/* R67 A-21: "<project> › Task #14 Shuttering, ground floor". The number is
+        part of the label because it is how this product identifies a task on
+        every other screen -- the page heading, the board card and the timesheet
+        all lead with it. */}
+    <ObjectContext moduleId="schedule" label={`#${task.number} ${task.title}`} projectId={task.projectId} />
     <ObjectScreen
       breadcrumb="Schedule / Task"
       title={`#${task.number} ${task.title}`}
@@ -452,5 +460,6 @@ export default function ScheduleTaskObjectClient({ taskId, fromTab = null }: { t
         )}
       </div>
     </ObjectScreen>
+    </>
   );
 }

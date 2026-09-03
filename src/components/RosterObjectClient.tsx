@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -111,6 +112,11 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
 
   return (
+    <>
+    {/* R67 A-21: the composer's strip names this worker and their project --
+        "<project> › Worker Ramesh Kumar" -- instead of the module. Published
+        after the fetch, which is when this page first knows either. */}
+    <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
     <ObjectScreen
       breadcrumb="Labour / Worker"
       title={mode === "edit" ? "Edit Worker" : entry.name}
@@ -149,5 +155,6 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         </div>
       )}
     </ObjectScreen>
+    </>
   );
 }

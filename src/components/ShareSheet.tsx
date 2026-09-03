@@ -46,6 +46,14 @@ export type ShareSheetProps = {
   /** Where the caller surfaces the outcome -- the footer message area on an object screen. */
   onMessage?: (message: { level: "success" | "info" | "error"; text: string }) => void;
   size?: "sm" | "default";
+  /**
+   * Stamps `data-focus` on the WhatsApp control, so R67 A-20's `?focus=<key>`
+   * deep link can put the cursor on it. Opt-in rather than always-on: this
+   * component is also rendered once per row on a list, and A-20's focus request
+   * is a `document.querySelector`, which would otherwise land on whichever row
+   * happened to be first.
+   */
+  focusKey?: string;
 };
 
 /** Pure: the wa.me href for a share link, with the one-line summary ahead of it. */
@@ -72,6 +80,7 @@ export default function ShareSheet({
   shareDisabledReason = null,
   onMessage,
   size = "sm",
+  focusKey,
 }: ShareSheetProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(shareUrl ?? null);
   const [busy, setBusy] = useState(false);
@@ -154,12 +163,12 @@ export default function ShareSheet({
           the browser can open, long-press or copy -- not a script-only button. */}
       {waHref && !disabled ? (
         <Button variant="ghost" size={size} asChild>
-          <a href={waHref} target="_blank" rel="noopener noreferrer" onClick={(e) => { e.preventDefault(); void shareOnWhatsApp(); }}>
+          <a data-focus={focusKey} href={waHref} target="_blank" rel="noopener noreferrer" onClick={(e) => { e.preventDefault(); void shareOnWhatsApp(); }}>
             <Send className="size-3.5" aria-hidden="true" /> Share on WhatsApp
           </a>
         </Button>
       ) : (
-        <Button variant="ghost" size={size} disabled={disabled} title={shareDisabledReason ?? undefined} onClick={() => void shareOnWhatsApp()}>
+        <Button data-focus={focusKey} variant="ghost" size={size} disabled={disabled} title={shareDisabledReason ?? undefined} onClick={() => void shareOnWhatsApp()}>
           <Send className="size-3.5" aria-hidden="true" /> Share on WhatsApp
         </Button>
       )}

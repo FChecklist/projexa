@@ -12,6 +12,7 @@
 // outcome (Minutes) was already real and stays exactly as it was.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatDateTimeMedium } from "@/lib/format-date";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
@@ -30,9 +31,11 @@ type MeetingDetail = {
   agendaItems: AgendaItem[]; outcomes: Outcome[]; participants: Participant[];
 };
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-}
+// R67 G-05: this local copy pinned the locale but not the time zone, so the
+// SSR pass stamped a meeting in UTC and the browser in the visitor's zone --
+// a different clock time, and near midnight a different DATE. One shared,
+// fully pinned helper now.
+const formatDateTime = formatDateTimeMedium;
 // datetime-local inputs need "YYYY-MM-DDTHH:mm" in local time, not an ISO
 // string with a Z/offset -- same conversion createMeeting's own dialog used.
 function toLocalInputValue(iso: string) {

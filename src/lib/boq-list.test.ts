@@ -2,7 +2,8 @@
 // R67 lane D22 (item D-76, rec R-288). Two rules the BOQ list must not break:
 // the newest BOQ is the first row, and rose is reserved for rejected/late.
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BOQ_SORT, boqStatusPill, boqVariation, nextBoqSort, sortBoqs } from "./boq-list";
+import { BOQ_SEMANTIC_STATUS, DEFAULT_BOQ_SORT, boqVariation, nextBoqSort, sortBoqs } from "./boq-list";
+import { STATUS_MAP, TONE_STYLE, toSemanticStatus } from "@/components/ui/status-pill";
 
 const rev0 = { id: "b0", version: 1, createdAt: "2026-08-01T09:00:00.000Z", parentBoqId: null };
 const rev1 = { id: "b1", version: 2, createdAt: "2026-08-20T09:00:00.000Z", parentBoqId: "b0" };
@@ -44,43 +45,53 @@ describe("nextBoqSort", () => {
   });
 });
 
-describe("boqStatusPill", () => {
+// R67 lane D22 (review finding): this block used to test a pill function that
+// lived in boq-list.ts -- a second status->tone->word mapping beside the one
+// origin/main already ships in src/components/ui/status-pill.tsx. The guarantee
+// it protected is worth keeping and is kept, but it is now asserted against the
+// map that OWNS the vocabulary, so it cannot pass here while the screen renders
+// something else.
+describe("BOQ statuses on the app-wide status map", () => {
   test("a superseded pill carries NO rose colour class", () => {
-    const pill = boqStatusPill("superseded");
-    expect(pill.className).not.toContain("error");
-    expect(pill.className).not.toContain("destructive");
-    expect(pill.className).toContain("bg-px-cloud");
-    expect(pill.glyph).toBe("archive");
-    expect(pill.label).toBe("superseded");
+    // WS-G's rule, at its source: superseded resolves to the neutral tone, and
+    // the neutral tone is not the late (rose) one.
+    const tone = STATUS_MAP[BOQ_SEMANTIC_STATUS.superseded!].tone;
+    expect(tone).toBe("neutral");
+    expect(TONE_STYLE[tone].colorVar).not.toContain("late");
+    expect(TONE_STYLE[tone].colorVar).toBe("var(--status-neutral-text)");
+    expect(STATUS_MAP[BOQ_SEMANTIC_STATUS.superseded!].word).toBe("superseded");
   });
 
-  test("draft is a grey outline with the word and no glyph", () => {
-    const pill = boqStatusPill("draft");
-    expect(pill.className).toContain("bg-transparent");
-    expect(pill.className).not.toContain("error");
-    expect(pill.glyph).toBe("none");
+  test("draft is neutral too -- not started is not a fault", () => {
+    expect(STATUS_MAP[BOQ_SEMANTIC_STATUS.draft!].tone).toBe("neutral");
   });
 
-  test("approved is sage with a tick and the word", () => {
-    const pill = boqStatusPill("approved");
-    expect(pill.className).toContain("success");
-    expect(pill.glyph).toBe("tick");
-    expect(pill.label).toBe("approved");
+  test("approved is the done tone, with a word", () => {
+    const entry = STATUS_MAP[BOQ_SEMANTIC_STATUS.approved!];
+    expect(entry.tone).toBe("done");
+    expect(entry.word.length).toBeGreaterThan(0);
   });
 
-  test("rose is used for rejected and late, and for nothing else", () => {
-    for (const status of ["rejected", "late"]) {
-      expect(boqStatusPill(status).className).toContain("error");
+  test("submitted is distinguishable from draft -- awaiting approval is not untouched", () => {
+    expect(BOQ_SEMANTIC_STATUS.submitted).not.toBe(BOQ_SEMANTIC_STATUS.draft);
+    expect(STATUS_MAP[BOQ_SEMANTIC_STATUS.submitted!].tone).toBe("running");
+  });
+
+  test("NO BOQ status reaches the rose tone -- rose is reserved for late and error", () => {
+    for (const semantic of Object.values(BOQ_SEMANTIC_STATUS)) {
+      expect(STATUS_MAP[semantic].tone).not.toBe("late");
     }
+  });
+
+  test("every word this backend emits is in the map, so none falls through to a bare status", () => {
     for (const status of ["draft", "submitted", "approved", "superseded"]) {
-      expect(boqStatusPill(status).className).not.toContain("error");
+      expect(BOQ_SEMANTIC_STATUS[status]).toBeDefined();
     }
   });
 
-  test("an unrecognised status is neutral and still shows its own word", () => {
-    const pill = boqStatusPill("archived_2027");
-    expect(pill.label).toBe("archived_2027");
-    expect(pill.className).not.toContain("error");
+  test("an unrecognised status is not in the map, and the screen falls back to neutral with its own word", () => {
+    expect(BOQ_SEMANTIC_STATUS["archived_2027"]).toBeUndefined();
+    expect(toSemanticStatus("archived_2027")).toBeNull();
   });
 });
 

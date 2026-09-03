@@ -37,9 +37,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CellFeedback, useLineItemSaver, type BudgetFieldKey } from "@/components/BudgetLineCells";
-import { useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { errorMessage, fetchJson } from "@/lib/fetch-json";
-import { withMoney } from "@/lib/money";
 import {
   applyLineItemPatch,
   budgetCategoryOptions,
@@ -122,8 +122,11 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
   const [groupByCategory, setGroupByCategory] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [vendorFilter, setVendorFilter] = useState<string[]>([]);
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  // R67 review finding: THE money formatter (R67 G-05), not this lane's own
+  // second one. src/lib/money.ts is deleted -- it rendered "0.00" for a
+  // missing figure where the shared module renders the en-dash, and dropped
+  // the currency token silently where the shared one warns.
+  const orgMoney = useOrgMoney();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -225,8 +228,8 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
         <TableCell className={isChild ? "pl-6 text-px-muted" : "font-medium"}>{line.description}</TableCell>
         <TableCell className="text-right">{line.quantity}</TableCell>
         <TableCell className="text-px-muted">{line.unit}</TableCell>
-        <TableCell className="text-right">{withMoney(currencyCode, line.rate)}</TableCell>
-        <TableCell className="text-right font-medium">{withMoney(currencyCode, line.amount)}</TableCell>
+        <TableCell className="text-right">{orgMoney.money(line.rate)}</TableCell>
+        <TableCell className="text-right font-medium">{orgMoney.money(line.amount)}</TableCell>
         <TableCell className="text-right">
           <Input
             type="number" aria-label={`Budget % for ${line.code ?? line.description}`}
@@ -241,7 +244,7 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
           />
           <CellFeedback state={cell("budgetPercentage")} />
         </TableCell>
-        <TableCell className="text-right">{withMoney(currencyCode, line.budget)}</TableCell>
+        <TableCell className="text-right">{orgMoney.money(line.budget)}</TableCell>
         <TableCell>
           <Select
             disabled={busy("vendorId")} value={line.vendorId ?? undefined}
@@ -274,10 +277,10 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
           </TableCell>
         ))}
         <TableCell className="text-right">
-          {line.actual === null || line.actual === undefined ? <span className="text-px-muted">–</span> : withMoney(currencyCode, line.actual)}
+          {line.actual === null || line.actual === undefined ? <span className="text-px-muted">–</span> : orgMoney.money(line.actual)}
         </TableCell>
         <TableCell className="text-right">
-          {line.revenue === null || line.revenue === undefined ? <span className="text-px-muted">–</span> : withMoney(currencyCode, line.revenue)}
+          {line.revenue === null || line.revenue === undefined ? <span className="text-px-muted">–</span> : orgMoney.money(line.revenue)}
         </TableCell>
         <TableCell className="text-right">
           {variance === null ? (
@@ -287,10 +290,10 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
             // word "over", never colour alone.
             <span className="flex items-center justify-end gap-1 text-px-error">
               <TriangleAlert className="size-3.5" aria-hidden="true" />
-              {withMoney(currencyCode, Math.abs(variance))} over
+              {orgMoney.money(Math.abs(variance))} over
             </span>
           ) : (
-            withMoney(currencyCode, variance)
+            orgMoney.money(variance)
           )}
         </TableCell>
       </TableRow>
@@ -301,30 +304,31 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
     <TableRow className={emphasis}>
       <TableCell />
       <TableCell colSpan={6} className="text-[12px] font-medium">{label}</TableCell>
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.amount)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.amount)}</TableCell>
       <TableCell />
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.budget)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.budget)}</TableCell>
       <TableCell />
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.vendorAmount)}</TableCell>
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.materialAmount)}</TableCell>
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.manpowerAmount)}</TableCell>
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.actual)}</TableCell>
-      <TableCell className="text-right font-medium">{withMoney(currencyCode, subtotal.revenue)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.vendorAmount)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.materialAmount)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.manpowerAmount)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.actual)}</TableCell>
+      <TableCell className="text-right font-medium">{orgMoney.money(subtotal.revenue)}</TableCell>
       <TableCell className="text-right font-medium">
         {subtotal.budget - subtotal.actual < 0
-          ? <span className="text-px-error">{withMoney(currencyCode, subtotal.actual - subtotal.budget)} over</span>
-          : withMoney(currencyCode, subtotal.budget - subtotal.actual)}
+          ? <span className="text-px-error">{orgMoney.money(subtotal.actual - subtotal.budget)} over</span>
+          : orgMoney.money(subtotal.budget - subtotal.actual)}
       </TableCell>
     </TableRow>
   );
 
   return (
+    <>
     <AnalyticalScreen
       breadcrumb="Scope of Work / Budget"
       kpiTags={
         <>
-          <KpiTag label="Total budget" value={report ? withMoney(currencyCode, grandTotal.budget) : "—"} />
-          <KpiTag label="Actual" value={report ? withMoney(currencyCode, grandTotal.actual) : "—"} />
+          <KpiTag label="Total budget" value={report ? orgMoney.money(grandTotal.budget) : "—"} />
+          <KpiTag label="Actual" value={report ? orgMoney.money(grandTotal.actual) : "—"} />
           <KpiTag label="Lines over budget" value={report ? String(linesOverBudget) : "—"} />
         </>
       }
@@ -336,7 +340,7 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
                 <div className="mb-0.5 flex justify-between text-[12px] text-px-slate">
                   <span>{group.category}</span>
                   <span className="tabular-nums">
-                    {withMoney(currencyCode, group.subtotal.actual)} of {withMoney(currencyCode, group.subtotal.budget)}
+                    {orgMoney.money(group.subtotal.actual)} of {orgMoney.money(group.subtotal.budget)}
                   </span>
                 </div>
                 <BulletChart value={group.subtotal.actual} target={group.subtotal.budget} lowerIsBetter />
@@ -351,8 +355,8 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
         <div className="space-y-3 p-4">
           {!tiesToBoq && (
             <p role="alert" className="rounded-sm border border-px-error-border bg-px-error-light px-3 py-2 text-[12.5px] text-px-error">
-              Grand total {withMoney(currencyCode, unfilteredTotal.amount)} does not tie to this BOQ&apos;s own total{" "}
-              {withMoney(currencyCode, boqTotalValue ?? 0)} — reload before trusting these figures.
+              Grand total {orgMoney.money(unfilteredTotal.amount)} does not tie to this BOQ&apos;s own total{" "}
+              {orgMoney.money(boqTotalValue ?? 0)} — reload before trusting these figures.
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3">
@@ -418,5 +422,10 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
       exportAction={{ label: "Export", disabledReason: "Export the Budget from Reports > Budget variance" }}
       newAction={undefined}
     />
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

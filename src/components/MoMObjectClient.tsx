@@ -44,8 +44,8 @@
 // Publish & Lock is a secondary control that says why it cannot be pressed
 // ("Publish & Lock (no minutes yet)") and asks inline before it fires. Exactly
 // one saffron button exists on arrival: Edit.
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 // R67 lane D22 (item D-63, rec R-203): the FORKED ObjectScreen, not the kit's.
 // The fork adds one thing -- a header-actions slot -- because R-203's global
@@ -55,6 +55,7 @@ import { toast } from "sonner";
 // for why this is a fork and not a kit change (programme decision D-09).
 import { ObjectScreen } from "@/components/screens/ObjectScreen";
 import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -118,6 +119,35 @@ function draftFrom(meeting: Meeting): Draft {
     minutes: meeting.minutes ?? "",
     newActionItems: [emptyActionItem()],
   };
+}
+
+/**
+ * R67 A-20 -- THE COMPOSER'S OBJECT-PAGE CARDS PUT THE CURSOR ON THE REAL
+ * CONTROL. "Save minutes" and "Share via WhatsApp" are both live on THIS page,
+ * so those cards navigate here with ?focus=minutes / ?focus=share and this
+ * focuses the control they name -- rather than doing it, which would make a
+ * card execute a write from one click, or doing nothing, which would land the
+ * user on a long page to find the button themselves. Same shape as A-04's
+ * ?focus=activity on the Work Progress form, and the targets are explicit
+ * data-focus attributes rather than a positional querySelector, because both
+ * controls are this file's own markup.
+ *
+ * IT IS A SEPARATE COMPONENT BEHIND A SUSPENSE BOUNDARY -- the convention this
+ * repo already uses for useSearchParams() (search-command.tsx's
+ * SearchDialogWithProject, M24Shell's RouteProjectIdReader), because reading it
+ * in the page's own component opts the route out of static rendering. It is
+ * mounted only once the meeting has loaded, which is when the controls it looks
+ * for exist. It renders nothing.
+ */
+function FocusRequest() {
+  const focus = useSearchParams().get("focus");
+  useEffect(() => {
+    if (!focus) return;
+    const control = document.querySelector<HTMLElement>(`[data-focus="${focus}"]`);
+    control?.focus();
+    control?.scrollIntoView({ block: "center" });
+  }, [focus]);
+  return null;
 }
 
 export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
@@ -346,8 +376,14 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   // to hold the emphasis while being the one action that cannot be undone.
   const headerActions = mode === "display" ? (
     <span className="flex items-center gap-1">
+      {/* R67 A-20's ?focus=minutes landed on the always-live <textarea> this
+          page used to open with. D-75 removed that textarea -- minutes are
+          display text until Edit is pressed -- so the focus target moves to the
+          control that now leads to writing minutes. The card still puts the
+          cursor on the real control; the real control changed. */}
       <Button
         size="sm"
+        data-focus="minutes"
         disabled={isPublished}
         title={isPublished ? "Published meetings are locked" : undefined}
         onClick={startEdit}
@@ -355,6 +391,11 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
         Edit
       </Button>
       <ShareSheet
+        // A-20's ?focus=share named the old "Create Share Link & Send via
+        // WhatsApp" button, which D-58 replaced with this sheet's three word
+        // controls. The key puts the cursor on Share on WhatsApp, which is the
+        // control that card is about.
+        focusKey="share"
         pdfHref={`/api/moms/${meeting.id}/pdf`}
         createShareLink={createShareLink}
         shareUrl={activeShareUrl}
@@ -373,6 +414,19 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   ];
 
   return (
+    <>
+      {/* A-20: mounted here, after the meeting has loaded, so the control the
+          composer's card named already exists when the focus is applied. */}
+      <Suspense fallback={null}>
+        <FocusRequest />
+      </Suspense>
+      {/* R67 A-21 -- THE STRIP NAMES THIS MEETING. Same reason and same moment
+          as the focus request above: the meeting is fetched in the browser, so
+          the title and the project only exist once it has arrived.
+          `meeting.projectId` is genuinely nullable here -- a meeting can be
+          filed against no project at all -- and null is published as null
+          rather than being replaced with the rail's guess. */}
+      <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
     <ObjectScreen
       breadcrumb="Minutes of Meeting / Meeting"
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
@@ -645,5 +699,6 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
         </div>
       )}
     </ObjectScreen>
+    </>
   );
 }

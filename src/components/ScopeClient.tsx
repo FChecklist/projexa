@@ -4,18 +4,21 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { StatusPill, StatusPillTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, Plus, GitCompare, GitBranchPlus, Upload, ArrowDown, ArrowUp, Check, Archive, Clock, AlertTriangle, MoreHorizontal } from "lucide-react";
-import { useCurrencies } from "@/lib/currency";
+import { Loader2, Plus, GitCompare, GitBranchPlus, Upload, ArrowDown, ArrowUp, MoreHorizontal } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 // R67 lane D22 (item D-76, rec R-288): order and colour, both pure and tested.
 import {
-  DEFAULT_BOQ_SORT, boqStatusPill, boqVariation, nextBoqSort, sortBoqs,
+  BOQ_SEMANTIC_STATUS, DEFAULT_BOQ_SORT, boqVariation, nextBoqSort, sortBoqs,
   type BoqSort, type BoqSortField,
 } from "@/lib/boq-list";
 
@@ -87,28 +90,22 @@ type BoqComparison = {
   warnings: string[]; totalVariation: number;
 };
 
-// R67 lane D22 (item D-76, rec R-288). The old map lived here:
-//   { draft: "secondary", submitted: "default", approved: "outline",
-//     superseded: "destructive" }
-// -- which painted a superseded revision in the DESTRUCTIVE (rose) variant.
-// Rose in this system means rejected or late. A superseded revision is the
-// ordinary consequence of raising the next one, and colouring it as a failure
-// teaches a reader to stop trusting the colour on the rows where it matters.
-// The tones now come from boq-list.ts, where the WS-G rule is unit-asserted.
-const PILL_GLYPH = { tick: Check, archive: Archive, clock: Clock, alert: AlertTriangle } as const;
+// R67 G-05 (R-260). This was shadcn Badge variants, and the worst of them was
+// `superseded: "destructive"` -- a BRIGHT RED badge on every superseded BOQ
+// revision. Rose is reserved for late and error; a superseded revision is not
+// a fault, it is history, and painting it red made every project with a
+// revision look like it had a problem. `submitted: "default"` was the saffron
+// primary fill, which made a passive state look like the screen's one action.
+// Both now come from the single status map in ui/status-pill.tsx; the BOQ's own
+// vocabulary lives beside this list's other pure rules, in boq-list.ts, where
+// "nothing here may reach the rose tone" is unit-asserted.
 
-function StatusPill({ status }: { status: string }) {
-  const pill = boqStatusPill(status);
-  const Glyph = pill.glyph === "none" ? null : PILL_GLYPH[pill.glyph];
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium ${pill.className}`}>
-      {Glyph && <Glyph className="size-3" aria-hidden="true" />}
-      {pill.label}
-    </span>
-  );
-}
-
-/** A sortable column header -- the arrow says which way, the word says what. */
+/**
+ * A sortable column header -- the arrow says which way, the word says what.
+ *
+ * R67 lane D22 (item D-76): the BOQ list arrived in whatever order the API
+ * returned and offered no way to change it.
+ */
 function SortableHead({ label, field, sort, onSort, className }: { label: string; field: BoqSortField; sort: BoqSort; onSort: (field: BoqSortField) => void; className?: string }) {
   const active = sort.field === field;
   const Arrow = sort.dir === "asc" ? ArrowUp : ArrowDown;
@@ -144,10 +141,12 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-function formatVariation(amount: number): string {
-  const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
+// R67 G-05: formatVariation() lived here and passed `undefined` as the locale
+// -- the exact hydration bug src/lib/format-date.ts exists to prevent, since
+// the server formats in ITS locale and the browser in the visitor's. It also
+// carried its meaning in colour (green for up, red for down). Both are gone:
+// the figure now comes from the one money formatter, and its DIRECTION is a
+// glyph plus an explicit sign ("▲ AED +2,025"), rendered in ink.
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level
 // helpers (create/revise line drafting, budget/vendor overlay, derived
@@ -173,8 +172,7 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
   // R67 D-76: newest first on arrival, with an explicit Version toggle.
   const [sort, setSort] = useState<BoqSort>(DEFAULT_BOQ_SORT);
 
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  const orgMoney = useOrgMoney();
 
   async function load() {
     setLoading(true);
@@ -260,9 +258,18 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                   <TableHead>{columnLabel(boqListColumns, "title", "Title")}</TableHead>
                   <SortableHead label={columnLabel(boqListColumns, "version", "Version")} field="version" sort={sort} onSort={(f) => setSort((s) => nextBoqSort(s, f))} />
                   <TableHead>{columnLabel(boqListColumns, "status", "Status")}</TableHead>
-                  <TableHead>{columnLabel(boqListColumns, "variation", "Variation vs. prior")}</TableHead>
+                  <TableHead className="text-right">
+                    {columnLabel(boqListColumns, "variation", "Variation vs. prior")}
+                    {orgMoney.unitSuffix}
+                  </TableHead>
                   <SortableHead label={columnLabel(boqListColumns, "createdAt", "Created")} field="createdAt" sort={sort} onSort={(f) => setSort((s) => nextBoqSort(s, f))} />
-                  <TableHead className="text-right">Actions</TableHead>
+                  {/* R67 G-04's minimum width is kept even though D-76 moved the
+                      widest action into a More menu: G-04's contract is that an
+                      action label never truncates to "Ne...", and a width that
+                      does not depend on how many controls happen to be in the
+                      cell is the only version of that contract that stays true
+                      the next time one is added. */}
+                  <TableHead className="w-[300px] min-w-[300px] whitespace-nowrap text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -272,14 +279,22 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.title}</TableCell>
                       <TableCell className="text-px-muted">v{b.version}</TableCell>
-                      <TableCell><StatusPill status={b.status} /></TableCell>
                       <TableCell>
+                        {BOQ_SEMANTIC_STATUS[b.status] ? (
+                          <StatusPill status={BOQ_SEMANTIC_STATUS[b.status]} label={b.status} />
+                        ) : (
+                          <StatusPillTone tone="neutral" label={b.status} />
+                        )}
+                      </TableCell>
+                      <TableCell className={MONEY_CELL_CLASS}>
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
                         ) : variation === undefined ? (
-                          <span className="text-px-muted">—</span>
+                          <span className="text-px-muted">{EMPTY_VALUE}</span>
                         ) : (
-                          <span className={variation > 0 ? "text-px-success" : variation < 0 ? "text-px-error" : "text-px-muted"}>{currencyCode ? `${currencyCode} ` : ""}{formatVariation(variation)}</span>
+                          // In ink, with the direction in the glyph and the
+                          // sign -- not in the colour.
+                          <span className="text-ct-navy">{orgMoney.signedMoney(variation)}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-px-muted whitespace-nowrap">{formatDate(b.createdAt)}</TableCell>
@@ -287,7 +302,7 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
                           table at 1440 px -- "New Revision" is the widest and
                           the least frequent, so it moves into a More menu and
                           the two everyday ones stay as words that fit. */}
-                      <TableCell className="text-right">
+                      <TableCell className="w-[300px] min-w-[300px] whitespace-nowrap text-right">
                         <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap">
                           {/* Real screen navigation (2026-08-30) -- replaces the old
                               "View" Dialog popup with a real Object Page route,
@@ -316,6 +331,10 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
           )}
         </CardContent>
       </Card>
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }

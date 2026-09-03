@@ -14,13 +14,16 @@
 //    variant. Rose in this system means REJECTED or LATE -- something is
 //    wrong and somebody has to act. A superseded revision is neither: it is
 //    the ordinary, expected consequence of raising Rev2, and colouring it like
-//    a failure teaches a reader to distrust the colour everywhere else. WS-G's
-//    rule is followed literally here: draft = grey outline + word, superseded =
-//    grey filled + glyph + word, approved = sage + tick + word, rose ONLY for
-//    rejected or late.
+//    a failure teaches a reader to distrust the colour everywhere else. The
+//    tones themselves belong to WS-G's src/components/ui/status-pill.tsx --
+//    the one map in this app that turns a status into a tone, a glyph and a
+//    word. What lives here is only the BOQ's own vocabulary and the rule that
+//    none of it may reach the rose tone.
 //
 // Pure, and in its own file, so both rules are unit-provable without rendering
 // a table.
+
+import type { SemanticStatus } from "@/components/ui/status-pill";
 
 export type BoqSortField = "createdAt" | "version";
 export type BoqSortDir = "asc" | "desc";
@@ -65,40 +68,33 @@ export function nextBoqSort(current: BoqSort, field: BoqSortField): BoqSort {
   return { field, dir: "desc" };
 }
 
-export type BoqPillGlyph = "none" | "tick" | "archive" | "clock" | "alert";
-
-export type BoqStatusPill = {
-  /** The status word itself -- every pill shows the word, never a bare colour. */
-  label: string;
-  glyph: BoqPillGlyph;
-  className: string;
+/**
+ * A BOQ's own status words, mapped onto the app-wide status vocabulary.
+ *
+ * R67 lane D22 (item D-76) first shipped its own pill function here, with its
+ * own tone table and its own Tailwind class strings. That was a SECOND mapping
+ * for one vocabulary: origin/main already carries
+ * src/components/ui/status-pill.tsx (R67 WS-G), whose STATUS_MAP is the single
+ * place a status becomes a tone, a glyph and a word -- the very rule D-76's own
+ * change text cited. Two maps drift the first time a status is added, so the
+ * tones are gone from here and only the BOQ's own vocabulary remains: which
+ * words this backend really emits, and what each one means.
+ *
+ * "submitted" and "approved" are BOQ words the shared map has no key for, which
+ * is exactly why this translation exists rather than handing the raw status to
+ * StatusPillFor: without it both would fall through to neutral, and a BOQ
+ * awaiting approval would look identical to one nobody has touched.
+ *
+ * Nothing here maps to "late", the only rose tone. A superseded revision is
+ * history, not a fault -- which is the whole of defect 2 above, now enforced by
+ * what this map is ALLOWED to contain rather than by a second colour table.
+ */
+export const BOQ_SEMANTIC_STATUS: Record<string, SemanticStatus> = {
+  draft: "draft",
+  submitted: "running",
+  approved: "current",
+  superseded: "superseded",
 };
-
-// Grey outline, grey fill, sage, amber, rose -- named once so a reader can see
-// at a glance that only the last one is a failure colour.
-const GREY_OUTLINE = "border border-px-border2 bg-transparent text-px-muted";
-const GREY_FILLED = "border border-px-border2 bg-px-cloud text-px-slate";
-const SAGE = "border border-px-success-border bg-px-success-light text-px-success";
-const AMBER = "border border-px-warning-border bg-px-warning-light text-px-warning";
-const ROSE = "border border-px-error-border bg-px-error-light text-px-error";
-
-const PILLS: Record<string, BoqStatusPill> = {
-  // Not started, nothing wrong: the quietest pill on the screen.
-  draft: { label: "draft", glyph: "none", className: GREY_OUTLINE },
-  // Waiting on a person -- amber, because it is neither done nor failed.
-  submitted: { label: "submitted", glyph: "clock", className: AMBER },
-  approved: { label: "approved", glyph: "tick", className: SAGE },
-  // Historical, not failed. Grey, filled, with the archive glyph.
-  superseded: { label: "superseded", glyph: "archive", className: GREY_FILLED },
-  // The only two things rose is for.
-  rejected: { label: "rejected", glyph: "alert", className: ROSE },
-  late: { label: "late", glyph: "alert", className: ROSE },
-};
-
-/** Pure: the pill for a BOQ status. An unrecognised status is neutral, never rose. */
-export function boqStatusPill(status: string): BoqStatusPill {
-  return PILLS[status] ?? { label: status, glyph: "none", className: GREY_OUTLINE };
-}
 
 /**
  * Pure: this row's variation against its parent revision.

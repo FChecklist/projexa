@@ -35,8 +35,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCurrencies } from "@/lib/currency";
-import { withMoney } from "@/lib/money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import {
   childPercentNote, collectLines, createBoqSaveDisabledReason, draftBoqTotal, draftLineAmount,
   draftLineFieldMessages, emptyLine, toPayloadLineItems, NO_CATEGORY_CHIP_LABEL, type LineItemDraft,
@@ -66,8 +66,11 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   const [blurred, setBlurred] = useState<Record<string, boolean>>({});
   // R67 lane I (WS-I item I-05, R-177).
   const { categories, failed: categoriesFailed, addLocal } = useBoqCategories();
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  // R67 review finding: THE money formatter (R67 G-05), not this lane's own
+  // second one. src/lib/money.ts is deleted -- it rendered "0.00" for a
+  // missing figure where the shared module renders the en-dash, and dropped
+  // the currency token silently where the shared one warns.
+  const orgMoney = useOrgMoney();
 
   function updateLine(index: number, field: keyof LineItemDraft, value: string) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
@@ -137,6 +140,7 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   const total = useMemo(() => draftBoqTotal(lines), [lines]);
 
   return (
+    <>
     <ObjectScreen
       breadcrumb="Scope / New BOQ"
       title="New Bill of Quantities"
@@ -160,7 +164,7 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
             <Label>Line Items</Label>
             <span className="text-[13px]">
               <span className="text-px-muted">BOQ total </span>
-              <span className="font-medium">{withMoney(currencyCode, total)}</span>
+              <span className="font-medium">{orgMoney.money(total)}</span>
             </span>
           </div>
           <p className="text-[12px] text-px-muted">{HELP_LINE}</p>
@@ -238,7 +242,7 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                           breakdown % for a sub-task -- the same formula the
                           server stores. */}
                       <TableCell className="pt-4 text-right tabular-nums">
-                        {amount === null ? <span className="text-px-muted">–</span> : withMoney(currencyCode, amount)}
+                        {amount === null ? <span className="text-px-muted">–</span> : orgMoney.money(amount)}
                       </TableCell>
                       <TableCell>
                         <Input
@@ -283,11 +287,16 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
             </Button>
             <span className="text-[13px]">
               <span className="text-px-muted">BOQ total </span>
-              <span className="font-medium tabular-nums">{withMoney(currencyCode, total)}</span>
+              <span className="font-medium tabular-nums">{orgMoney.money(total)}</span>
             </span>
           </div>
         </div>
       </div>
     </ObjectScreen>
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

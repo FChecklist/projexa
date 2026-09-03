@@ -3,7 +3,8 @@ import { PageHeading } from "@/components/PageHeading";
 import FooterMessageBanner from "@/components/FooterMessageBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { resolveRouteProject } from "@/lib/project-selection";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { type RegistryColumn } from "@/components/ScheduleGanttClient";
@@ -39,15 +40,35 @@ async function resolveScheduleTimelineColumns(organizationId: string | null): Pr
 // from the server but isScheduleTab is on the client" (digest 1240219489,
 // confirmed live 2026-08-27, first seen minutes after R57/PR#185 -- which
 // introduced this exact call -- went live).
+// R67 A-13 -- THIS SCREEN RENDERS STRICTLY FROM THE URL.
+//
+// It used to call resolveSelectedProject(), whose last resort is the org's
+// FIRST project. So /schedule with no ?projectId= showed one project's board,
+// timeline, sprints and timesheet under a heading naming that project, with
+// nothing on screen admitting the choice had been made for the user -- and the
+// top rail, which keeps its own answer, could be naming a different project two
+// lines above. A schedule is a project's schedule; guessing which one is the
+// same class of mistake as logging progress against the wrong project.
+//
+// Now: the URL names the project or the page ASKS for one. Ten reloads of
+// /schedule?projectId=X render X, every time, whatever the rail remembers.
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
   const { projectId, tab } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source, missing, unreachable } = await resolveRouteProject(
+    { projectId },
+    null,
+    organizationId
+  );
   const timelineColumns = await resolveScheduleTimelineColumns(organizationId);
   const initialTab = isScheduleTab(tab) ? tab : "timeline";
 
   return (
     <>
+      {/* The shell's rail and strip name what this pane is actually showing --
+          including the case where it is showing nothing because no project was
+          named, which is a fact the top rail must not paper over. */}
+      <ScreenContext moduleId="schedule" project={project} source={source ?? "route"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Schedule" />
         {/* R67 lane D22 (item D-48): the receipt an import left for this page
@@ -59,8 +80,20 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
           </Card>
         )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
+        {missing && (
+          // The sentence asks for the one decision that is missing. No rows are
+          // rendered underneath it: an empty board beside "Pick a project" would
+          // read as "this project has no tasks".
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-px-muted">Pick a project</CardContent>
+          </Card>
+        )}
+        {unreachable && (
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-px-muted">
+              That project is not on your list — pick a project
+            </CardContent>
+          </Card>
         )}
         {project && (
           <>

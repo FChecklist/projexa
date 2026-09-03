@@ -19,6 +19,7 @@ import { describe, test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { SHIPPED_ROUTES, isShippedRoute, filterShippedNav } from "./nav-routes";
+import { MODULE_CATALOGUE } from "./module-catalogue";
 
 const APP_ROOT = join(import.meta.dir, "..", "app");
 const SIDEBAR_PATH = join(import.meta.dir, "..", "components", "AppSidebar.tsx");
@@ -306,5 +307,44 @@ describe("every module route is reachable by clicking (C01 REACHABLE)", () => {
 
   test("/site-materials specifically is in the nav -- the route this guard was written for", () => {
     expect(sidebarHrefs()).toContain("/site-materials");
+  });
+});
+
+// ── R67 A-06 ────────────────────────────────────────────────────────────────
+// The composer's route-prefix table is a SECOND list of routes in this repo,
+// and a second list is a second thing that can go stale. SHIPPED_ROUTES is
+// regenerated from disk above, so checking the catalogue against it here is
+// checking it against the filesystem -- a module prefix or a leaf pointing at
+// a page that no longer exists fails in CI rather than producing a strip
+// segment or a card that navigates into a 404.
+describe("the composer's module catalogue is covered by the shipped-route registry (A-06)", () => {
+  test("every module list route is a real page", () => {
+    const dead = MODULE_CATALOGUE.map((m) => m.route).filter((route) => !isShippedRoute(route));
+    expect(dead).toEqual([]);
+  });
+
+  test("every route prefix a module claims is a real page", () => {
+    const dead = MODULE_CATALOGUE.flatMap((m) => m.prefixes).filter((prefix) => !isShippedRoute(prefix));
+    expect(dead).toEqual([]);
+  });
+
+  test("every leaf destination is a real page", () => {
+    const dead = MODULE_CATALOGUE.flatMap((m) => m.leaves.map((l) => l.path)).filter(
+      (path) => !isShippedRoute(path)
+    );
+    expect(dead).toEqual([]);
+  });
+
+  test("no shipped route is claimed by two module prefixes", () => {
+    // Two modules claiming one URL would make the strip's sentence depend on
+    // catalogue order, which is not a rule anyone could read off the screen.
+    const owners = new Map<string, string[]>();
+    for (const mod of MODULE_CATALOGUE) {
+      for (const prefix of mod.prefixes) {
+        owners.set(prefix, [...(owners.get(prefix) ?? []), mod.id]);
+      }
+    }
+    const contested = [...owners.entries()].filter(([, ids]) => ids.length > 1);
+    expect(contested).toEqual([]);
   });
 });

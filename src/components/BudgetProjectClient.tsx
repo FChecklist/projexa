@@ -31,9 +31,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { CellFeedback, useLineItemSaver, type BudgetFieldKey } from "@/components/BudgetLineCells";
-import { useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { withMoney } from "@/lib/money";
 import { applyLineItemPatch, groupBudgetLinesByCategory, isOverBudget, type BudgetLine } from "@/lib/budget-lines";
 import type { Vendor } from "@/lib/boq-helpers";
 
@@ -56,8 +56,11 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  // R67 review finding: THE money formatter (R67 G-05), not this lane's own
+  // second one. src/lib/money.ts is deleted -- it rendered "0.00" for a
+  // missing figure where the shared module renders the en-dash, and dropped
+  // the currency token silently where the shared one warns.
+  const orgMoney = useOrgMoney();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,12 +127,13 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
   }
 
   return (
+    <>
     <AnalyticalScreen
       breadcrumb={`${projectName} / Budget`}
       kpiTags={
         <>
-          <KpiTag label="Total budget" value={report ? withMoney(currencyCode, grandTotal.budget) : "—"} />
-          <KpiTag label="Total actual" value={report ? withMoney(currencyCode, grandTotal.actual) : "—"} />
+          <KpiTag label="Total budget" value={report ? orgMoney.money(grandTotal.budget) : "—"} />
+          <KpiTag label="Total actual" value={report ? orgMoney.money(grandTotal.actual) : "—"} />
           <KpiTag label="Lines over budget" value={report ? String(linesOverBudget) : "—"} />
         </>
       }
@@ -187,8 +191,8 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
                         </TableCell>
                         <TableCell className={isChild ? "pl-6 text-px-muted" : "font-medium"}>{line.description}</TableCell>
                         <TableCell className="text-right">{line.quantity} {line.unit}</TableCell>
-                        <TableCell className="text-right">{withMoney(currencyCode, line.rate)}</TableCell>
-                        <TableCell className="text-right font-medium">{withMoney(currencyCode, line.amount)}</TableCell>
+                        <TableCell className="text-right">{orgMoney.money(line.rate)}</TableCell>
+                        <TableCell className="text-right font-medium">{orgMoney.money(line.amount)}</TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number" aria-label={`Budget % for ${line.code ?? line.description}`}
@@ -203,7 +207,7 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
                           />
                           <CellFeedback state={cell("budgetPercentage")} />
                         </TableCell>
-                        <TableCell className="text-right">{withMoney(currencyCode, line.budget)}</TableCell>
+                        <TableCell className="text-right">{orgMoney.money(line.budget)}</TableCell>
                         <TableCell>
                           <Select
                             disabled={busy("vendorId")} value={line.vendorId ?? undefined}
@@ -241,26 +245,26 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
                   <TableRow className="bg-px-cloud/50">
                     <TableCell />
                     <TableCell colSpan={5} className="text-[12px] font-medium">{group.category} subtotal</TableCell>
-                    <TableCell className="text-right font-medium">{withMoney(currencyCode, group.subtotal.amount)}</TableCell>
+                    <TableCell className="text-right font-medium">{orgMoney.money(group.subtotal.amount)}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-medium">{withMoney(currencyCode, group.subtotal.budget)}</TableCell>
+                    <TableCell className="text-right font-medium">{orgMoney.money(group.subtotal.budget)}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-medium">{withMoney(currencyCode, group.subtotal.vendorAmount)}</TableCell>
-                    <TableCell className="text-right font-medium">{withMoney(currencyCode, group.subtotal.materialAmount)}</TableCell>
-                    <TableCell className="text-right font-medium">{withMoney(currencyCode, group.subtotal.manpowerAmount)}</TableCell>
+                    <TableCell className="text-right font-medium">{orgMoney.money(group.subtotal.vendorAmount)}</TableCell>
+                    <TableCell className="text-right font-medium">{orgMoney.money(group.subtotal.materialAmount)}</TableCell>
+                    <TableCell className="text-right font-medium">{orgMoney.money(group.subtotal.manpowerAmount)}</TableCell>
                   </TableRow>
                 </Fragment>
               ))}
               <TableRow className="border-t-2 border-px-border2 bg-px-cloud">
                 <TableCell />
                 <TableCell colSpan={5} className="text-[12px] font-semibold">Grand total</TableCell>
-                <TableCell className="text-right font-semibold">{withMoney(currencyCode, grandTotal.amount)}</TableCell>
+                <TableCell className="text-right font-semibold">{orgMoney.money(grandTotal.amount)}</TableCell>
                 <TableCell />
-                <TableCell className="text-right font-semibold">{withMoney(currencyCode, grandTotal.budget)}</TableCell>
+                <TableCell className="text-right font-semibold">{orgMoney.money(grandTotal.budget)}</TableCell>
                 <TableCell />
-                <TableCell className="text-right font-semibold">{withMoney(currencyCode, grandTotal.vendorAmount)}</TableCell>
-                <TableCell className="text-right font-semibold">{withMoney(currencyCode, grandTotal.materialAmount)}</TableCell>
-                <TableCell className="text-right font-semibold">{withMoney(currencyCode, grandTotal.manpowerAmount)}</TableCell>
+                <TableCell className="text-right font-semibold">{orgMoney.money(grandTotal.vendorAmount)}</TableCell>
+                <TableCell className="text-right font-semibold">{orgMoney.money(grandTotal.materialAmount)}</TableCell>
+                <TableCell className="text-right font-semibold">{orgMoney.money(grandTotal.manpowerAmount)}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -270,5 +274,10 @@ export default function BudgetProjectClient({ projectId, projectName }: { projec
       exportAction={{ label: "Export", disabledReason: "Export the Budget on Scope of Work / Budget" }}
       newAction={report?.boqId ? { label: "Open BOQ", onClick: () => router.push(`/scope/${report.boqId}`) } : undefined}
     />
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

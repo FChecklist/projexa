@@ -23,9 +23,9 @@
 // what actually gets committed.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { withMoney } from "@/lib/money";
 import { setFooterMessage } from "@/lib/footer-message";
 import { attributeRowMessages } from "@/lib/import-row-messages";
 import ImportScreen, { UNMAPPED, type ImportField, type ImportPreview } from "@/components/ImportScreen";
@@ -83,8 +83,11 @@ const PREVIEW_COLUMNS = ["Category", "Code", "Description", "Qty", "Unit", "Rate
 
 export default function ScopeImportClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const currencies = useCurrencies();
-  const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
+  // R67 review finding: THE money formatter (R67 G-05), not this lane's own
+  // second one. src/lib/money.ts is deleted -- it rendered "0.00" for a
+  // missing figure where the shared module renders the en-dash, and dropped
+  // the currency token silently where the shared one warns.
+  const orgMoney = useOrgMoney();
 
   const [file, setFile] = useState<File | null>(null);
   const [raw, setRaw] = useState<DryRunResponse | null>(null);
@@ -167,7 +170,7 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
       const { boq, importSummary } = data as CommitResponse;
       setFooterMessage(`/scope/${boq.id}`, {
         level: "success",
-        text: `BOQ ${boq.title} v${boq.version} created - ${importSummary.importedLineItems} lines, ${withMoney(currencyCode, importSummary.totalValue)}`,
+        text: `BOQ ${boq.title} v${boq.version} created - ${importSummary.importedLineItems} lines, ${orgMoney.money(importSummary.totalValue)}`,
       });
       router.push(`/scope/${boq.id}`);
     } catch (err) {
@@ -191,8 +194,8 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
             <span key="desc" className={row.parentItemCode ? "pl-4 text-px-muted" : ""}>{row.description}</span>,
             row.quantity,
             row.unit || "—",
-            withMoney(currencyCode, row.rate),
-            withMoney(currencyCode, row.amount),
+            orgMoney.money(row.rate),
+            orgMoney.money(row.amount),
           ],
           errors: [],
           warnings: row.status === "warning" ? row.messages : [],
@@ -216,6 +219,7 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
     : null;
 
   return (
+    <>
     <ImportScreen
       title="Import BOQ from Excel"
       helpText="One row per BOQ line. Sub-items use Parent code and Breakdown %."
@@ -256,5 +260,10 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
         </fieldset>
       }
     />
+      {/* R67 G-05: said once, at the foot of the screen -- it explains the
+          warning glyph beside every unlabelled figure above, and renders
+          nothing at all when the org has a currency. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
+    </>
   );
 }

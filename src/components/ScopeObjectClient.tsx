@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -171,6 +172,17 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   const isDraft = boq.status === "draft";
 
   return (
+    <>
+    {/* R67 A-21 -- THE STRIP NAMES THIS BOQ, AND ITS PROJECT.
+        Rendered here, after the fetch, because that is the first moment this
+        page can answer honestly: /scope/<id> resolves nothing on the server and
+        carries no ?projectId=, so before `boq` exists the composer's strip has
+        no title to show and (until now) fell back to whatever project the top
+        rail happened to be on -- which could name a DIFFERENT project than the
+        line items rendered below. The kind word "BOQ" is not written here; it
+        comes from src/lib/object-screens.ts so every screen showing one uses
+        the same word. Renders nothing. */}
+    <ObjectContext moduleId="scope" label={boq.title} projectId={boq.projectId} />
     <ObjectScreen
       breadcrumb="Scope / Bill of Quantities"
       title={boq.title}
@@ -347,5 +359,6 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
         </Table>
       )}
     </ObjectScreen>
+    </>
   );
 }

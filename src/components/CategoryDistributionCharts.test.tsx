@@ -4,7 +4,15 @@
 // renders a distinct "unable to load" error state rather than being
 // indistinguishable from a genuinely empty category list.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-GlobalRegistrator.register();
+// Guarded, like the ten other happy-dom suites in this repo. `bun test` runs
+// every file in ONE process and a second register() throws ("Happy DOM has
+// already been globally registered"), so an UNGUARDED call only works while
+// this file happens to be the first registrant in alphabetical order. It was,
+// until R67 lane I added src/components/BoqCategoriesCard.test.tsx -- "B"
+// sorts before "C" -- at which point this line started throwing and took the
+// whole suite's tests down with it. The guard makes the file order-independent
+// rather than relying on nobody ever adding an earlier-sorting DOM test.
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
