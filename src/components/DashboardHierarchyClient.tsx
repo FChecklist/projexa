@@ -71,6 +71,10 @@ export function DashboardHierarchyClient() {
   // chart that reads as "this company has no projects".
   const [barsLoading, setBarsLoading] = useState(false);
   const [barsError, setBarsError] = useState<string | null>(null);
+  // R67 E-29: the Company/Department pair lives behind the Filter action.
+  // Closed by default -- the scope is named ON the button, so folding them
+  // away costs the reader no information.
+  const [filterOpen, setFilterOpen] = useState(false);
   const orgMoney = useOrgMoney();
 
   // Company level: load the current user's real memberships once.
@@ -134,6 +138,14 @@ export function DashboardHierarchyClient() {
   }
   useEffect(loadDetails, [companyId, projectId, fromDate, toDate]);
 
+  // What the Filter button says it is filtering by. The scope is never hidden
+  // behind the fold -- only the controls that change it are.
+  const selectedCompany = companies.find((c) => c.id === companyId);
+  const selectedDepartmentName =
+    departmentId === "__all__"
+      ? "All departments"
+      : (departments.find((d) => d.id === departmentId)?.name ?? "All departments");
+
   // Point 121: a user-entered value always wins over the PO-derived
   // fallback -- editing it here is a deliberate human override.
   async function editProjectValue() {
@@ -151,35 +163,61 @@ export function DashboardHierarchyClient() {
 
   return (
     <div className="space-y-6">
-      <Card className="shadow-card">
-        <CardContent className="flex flex-wrap items-end gap-4 pt-6">
-          <div className="space-y-1">
-            <Label className="text-xs">Company</Label>
-            <Select value={companyId} onValueChange={setCompanyId}>
-              <SelectTrigger className="h-9 w-52"><SelectValue placeholder="Select company" /></SelectTrigger>
-              <SelectContent>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}{c.country ? ` (${c.country})` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Department</Label>
-            <Select value={departmentId} onValueChange={setDepartmentId} disabled={!companyId}>
-              <SelectTrigger className="h-9 w-52"><SelectValue placeholder="All departments" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      {/* R67 E-29 (R-255): "the Company and Department selects fold into the
+          Filter action". They used to be a permanent card at the top of the
+          screen -- two dropdowns a reader passes every single visit and
+          changes almost never, sitting above the charts they came to see. The
+          scope is now STATED in the Filter control itself, so nothing is
+          hidden: the button reads the current company and department, and
+          opens the two selects when the reader actually wants to change them. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((open) => !open)}
+        >
+          Filter: {selectedCompany?.name ?? "Select company"} · {selectedDepartmentName}
+        </Button>
+        {(fromDate || toDate) && (
+          <span className="text-xs text-px-muted">
+            {fromDate || "the beginning"} to {toDate || "today"}
+          </span>
+        )}
+      </div>
+
+      {filterOpen && (
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-end gap-4 pt-6">
+            <div className="space-y-1">
+              <Label className="text-xs">Company</Label>
+              <Select value={companyId} onValueChange={setCompanyId}>
+                <SelectTrigger className="h-9 w-52"><SelectValue placeholder="Select company" /></SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}{c.country ? ` (${c.country})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Department</Label>
+              <Select value={departmentId} onValueChange={setDepartmentId} disabled={!companyId}>
+                <SelectTrigger className="h-9 w-52"><SelectValue placeholder="All departments" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All departments</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {companies.length === 0 && (
         <p className="text-sm text-px-muted">No company memberships found for this account.</p>

@@ -41,7 +41,14 @@ type CategoryEntry = {
 /** How many categories get a named row in the label list beneath the bars. Never how many get a BAR. */
 const LABEL_LIST_LIMIT = 5;
 
-export function CategoryDistributionCharts({ companyId, projectId }: { companyId: string; projectId: string }) {
+/**
+ * R67 E-29 (R-255): `companyId` is OPTIONAL, because this chart is now mounted
+ * on the project dashboard as well as on the company hierarchy, and the
+ * project dashboard has a project and no company. Both endpoints answer the
+ * same shape from the same pure function (src/lib/category-distribution.ts);
+ * the only difference is which scope the server enforces before answering.
+ */
+export function CategoryDistributionCharts({ companyId, projectId }: { companyId?: string; projectId: string }) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const orgMoney = useOrgMoney();
@@ -49,7 +56,10 @@ export function CategoryDistributionCharts({ companyId, projectId }: { companyId
   const load = useCallback(() => {
     setCategories(null);
     setError(false);
-    return fetch(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`)
+    const url = companyId
+      ? `/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`
+      : `/api/projects/${encodeURIComponent(projectId)}/category-distribution`;
+    return fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`category-distribution fetch failed: ${res.status}`);
         return res.json();

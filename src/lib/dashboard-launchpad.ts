@@ -41,6 +41,8 @@ export type LaunchpadProject = {
   earnedValuePrevWeek?: number | null;
   progressPercent?: number | null;
   budget?: number | null;
+  /** R67 E-29: the BOQ-derived budget (root line amount x budget %), for the per-project bars. */
+  boqBudget?: number | null;
   tasksDue?: number;
   tasksLate?: number;
   hasSchedule?: boolean;
@@ -134,6 +136,45 @@ export function portfolioProgress(projects: LaunchpadProject[]): PortfolioProgre
       percent === null || percentPrevWeek === null ? null : Math.round((percent - percentPrevWeek) * 10) / 10,
     projectsCounted,
   };
+}
+
+/**
+ * R67 E-29 (R-255). THE ONE DOMINANT SENTENCE, at the top left of the home
+ * screen: "Portfolio earned value AED 0 of AED 2,120,500 (0 %)".
+ *
+ * It is a SENTENCE and not a bare number on purpose. "AED 0" alone is
+ * alarming and meaningless; "0 of AED 2,120,500" says what the zero is
+ * measured against, and the percentage says how far through that is. The
+ * space before the % is Sumeet's own writing, kept.
+ *
+ * `formatAmount` is passed in rather than imported so this stays pure and the
+ * caller decides the currency and the number of decimals -- the headline shows
+ * whole units, because the fraction is noise at three times body size.
+ */
+export function portfolioHeadline(
+  portfolio: PortfolioProgress,
+  formatAmount: (value: number) => string
+): string {
+  if (portfolio.percent === null) {
+    // No project has a contract value: there is nothing to be a percentage OF,
+    // and printing "0 %" would claim a project had done none of its work when
+    // the truth is that no work has been priced yet.
+    return "Portfolio earned value — no BOQ priced yet";
+  }
+  return `Portfolio earned value ${formatAmount(portfolio.earned)} of ${formatAmount(portfolio.contract)} (${portfolio.percent} %)`;
+}
+
+/**
+ * The activity-log percentage for one row -- the SECOND, differently-derived
+ * progress figure (a flat average of each activity's latest logged percent, no
+ * BOQ scoping). Returned only when it says something the value-weighted figure
+ * does not, so a row does not print two identical numbers.
+ */
+export function activityLogPercent(project: LaunchpadProject): number | null {
+  if (typeof project.progressPercent !== "number") return null;
+  const byValue = rowPercentByValue(project);
+  if (byValue !== null && Math.round(byValue) === Math.round(project.progressPercent)) return null;
+  return project.progressPercent;
 }
 
 export type ProjectVerdict = {

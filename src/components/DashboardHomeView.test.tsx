@@ -67,11 +67,18 @@ function dashboard(over: Partial<OrgDashboard> = {}): OrgDashboard {
 
 describe("DashboardHomeView (the launchpad)", () => {
   test("the project row is a link to that project's dashboard", () => {
-    const { getByRole } = render(
+    const { getAllByRole } = render(
       <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
     );
-    const row = getByRole("link", { name: /Cedar Heights Villa/ });
-    expect(row.getAttribute("href")).toBe("/dashboard/project?projectId=prj-cedar");
+    // R67 E-29 added the per-project bar block below the rows, so the project
+    // is now named by TWO links -- the row and its bar row. Both are doors to
+    // the same place, and asserting that is stronger than asserting one of
+    // them: a project's name on this screen must never lead anywhere else.
+    const links = getAllByRole("link", { name: /Cedar Heights Villa/ });
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toBe("/dashboard/project?projectId=prj-cedar");
+    }
   });
 
   test("'(HARD-STOP TEST)' never renders, even when the registry row still says it", () => {
@@ -88,11 +95,11 @@ describe("DashboardHomeView (the launchpad)", () => {
     expect(container.textContent).toContain("ACTIVE PROJECTS");
   });
 
-  test("the hero states the one number, its baseline and its vs-last-week delta", () => {
+  test("the dominant number states the percentage, its baseline and its vs-last-week delta", () => {
     const { container } = render(
       <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
     );
-    expect(container.textContent).toContain("25%");
+    expect(container.textContent).toContain("25% complete by value");
     expect(container.textContent).toContain("points vs last week");
     expect(container.textContent).toContain("AED 118,750 earned of AED 475,000");
   });
@@ -103,8 +110,10 @@ describe("DashboardHomeView (the launchpad)", () => {
     );
     // The kit's KpiCard renders label / value / trend / baseline in that
     // order; the baseline is the last line of each card. Assert on the words
-    // each of the four cards owes the reader.
-    for (const baseline of ["earned of", "of 1 active project", "Budget Not set → Budgets", "across 1 project"]) {
+    // each of the three cards owes the reader.
+    // R67 E-29 (R-255) fixed the unset-budget baseline to its own words:
+    // "Budget not set → Budgets".
+    for (const baseline of ["of 1 active project", "Budget not set → Budgets", "across 1 project"]) {
       expect(container.textContent).toContain(baseline);
     }
   });
@@ -151,5 +160,92 @@ describe("DashboardHomeView (the launchpad)", () => {
     expect(without.container.textContent).toContain("none can be called on track");
     expect(without.container.textContent).not.toContain("1 on track");
     expect(without.container.textContent).toContain("no schedule set");
+  });
+});
+
+// R67 E-29 (R-255). The launchpad's own acceptance clauses: the portfolio
+// number is the FIRST heading on the page (it used to be "Welcome back,
+// {name}." with the number third, inside a card), the needs-you projects are
+// listed as links rather than as a count, and the per-project bars are drawn
+// beneath with every bar a door.
+describe("DashboardHomeView (R67 E-29: Sumeet's sketch)", () => {
+  test("the first heading is the portfolio number, in the sentence Sumeet wrote", () => {
+    const { container } = render(
+      <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
+    );
+    const firstHeading = container.querySelector("h1, h2, h3");
+    expect(firstHeading?.textContent).toMatch(/Portfolio earned value AED [\d,]+ of AED [\d,]+/);
+    expect(firstHeading?.tagName).toBe("H1");
+  });
+
+  test("the portfolio figure is stated ONCE, and exactly three KPI cards follow it", () => {
+    const { container } = render(
+      <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
+    );
+    const text = container.textContent ?? "";
+    // It used to be the <h1> AND a hero KpiCard directly beneath restating it.
+    expect(text.split("complete by value").length - 1).toBe(1);
+
+    // R-255's three cards, each a door with its own destination.
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    for (const href of ["/schedule", "/budgets", "/invoices"]) {
+      expect(hrefs).toContain(href);
+    }
+  });
+
+  test("the greeting sentence survives -- under the number, not above it", () => {
+    const { container } = render(
+      <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("Welcome back, rajat.");
+    expect(text.indexOf("Portfolio earned value")).toBeLessThan(text.indexOf("Welcome back"));
+  });
+
+  test("a project that needs you is named as a LINK, not counted and left to be found", () => {
+    const { getAllByRole, container } = render(
+      <DashboardHomeView
+        userName="rajat"
+        data={dashboard({ projects: [projectRow({ tasksLate: 3 })] })}
+        currencies={CURRENCIES}
+        errorMessage={null}
+      />
+    );
+    expect(container.textContent).toContain("Needs you:");
+    for (const link of getAllByRole("link", { name: /Cedar Heights Villa/ })) {
+      expect(link.getAttribute("href")).toBe("/dashboard/project?projectId=prj-cedar");
+    }
+  });
+
+  test("the three series are drawn per project, each named in words beside its swatch", () => {
+    const { container } = render(
+      <DashboardHomeView userName="rajat" data={dashboard()} currencies={CURRENCIES} errorMessage={null} />
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("Revenue, budget and earned value per project");
+    expect(text).toContain("Progress (earned value)");
+  });
+
+  test("the activity-log figure appears as a secondary only when it disagrees with the bar", () => {
+    const disagreeing = render(
+      <DashboardHomeView
+        userName="rajat"
+        data={dashboard({ projects: [projectRow({ percentByValue: 25, progressPercent: 60 })] })}
+        currencies={CURRENCIES}
+        errorMessage={null}
+      />
+    );
+    expect(disagreeing.container.textContent).toContain("60% logged in the activity log");
+    cleanup();
+
+    const agreeing = render(
+      <DashboardHomeView
+        userName="rajat"
+        data={dashboard({ projects: [projectRow({ percentByValue: 25, progressPercent: 25 })] })}
+        currencies={CURRENCIES}
+        errorMessage={null}
+      />
+    );
+    expect(agreeing.container.textContent).not.toContain("logged in the activity log");
   });
 });

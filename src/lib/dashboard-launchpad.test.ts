@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  activityLogPercent,
   budgetVerdict,
   needsYouProjects,
   onTrackProjects,
+  portfolioHeadline,
   portfolioProgress,
   projectVerdict,
   rowContractValue,
@@ -184,5 +186,48 @@ describe("budgetVerdict (a zero target is not an alarm)", () => {
     expect(v.budget).toBe(100_000);
     expect(v.spent).toBe(15_000);
     expect(v.word).toBe("within budget");
+  });
+});
+
+// R67 E-29 (R-255). The one dominant sentence, and the second progress figure.
+describe("portfolioHeadline", () => {
+  const aed = (n: number) => `AED ${n.toLocaleString("en-US")}`;
+
+  test("Sumeet's own sentence: earned of contract, with the percentage", () => {
+    const headline = portfolioHeadline(
+      portfolioProgress([
+        project({ id: "a", contractValue: 2_120_500, earnedValue: 0, earnedValuePrevWeek: 0 }),
+      ]),
+      aed
+    );
+    expect(headline).toBe("Portfolio earned value AED 0 of AED 2,120,500 (0 %)");
+  });
+
+  test("a real percentage is carried through", () => {
+    const headline = portfolioHeadline(
+      portfolioProgress([project({ id: "a", contractValue: 1000, earnedValue: 250 })]),
+      aed
+    );
+    expect(headline).toBe("Portfolio earned value AED 250 of AED 1,000 (25 %)");
+  });
+
+  test("with nothing priced it says so, rather than claiming 0 %", () => {
+    const headline = portfolioHeadline(portfolioProgress([]), aed);
+    expect(headline).toBe("Portfolio earned value — no BOQ priced yet");
+    expect(headline).not.toContain("0 %");
+  });
+});
+
+describe("activityLogPercent -- the second, differently-derived figure", () => {
+  test("reported when it disagrees with the value-weighted one", () => {
+    expect(activityLogPercent(project({ contractValue: 1000, earnedValue: 0, percentByValue: 0, progressPercent: 60 }))).toBe(60);
+  });
+
+  test("withheld when the two agree -- a row must not print the same number twice", () => {
+    expect(activityLogPercent(project({ contractValue: 1000, earnedValue: 250, percentByValue: 25, progressPercent: 25 }))).toBeNull();
+  });
+
+  test("withheld when there is no activity-log figure at all", () => {
+    expect(activityLogPercent(project({ progressPercent: undefined }))).toBeNull();
   });
 });

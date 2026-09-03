@@ -31,18 +31,23 @@
 //    Permits Expiring card confidently read "0 / none due soon" when the
 //    truth was that nobody knew. It now tracks the failure and says so, with
 //    a Retry that refetches just that card.
+//
+// R67 E-29 (R-255): the "Progress by scope category" panel was a percent-only
+// bar chart, which ranked a 100%-complete AED 4,000 category above a
+// 40%-complete AED 4,000,000 one. It now mounts CategoryDistributionCharts --
+// the same component and the same server-side arithmetic the company
+// hierarchy uses -- so category SIZE and category PROGRESS are read together.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
   KpiCard,
   BulletChart,
-  BarChart,
   LineChart,
   LinkListCard,
-  type BarChartDatum,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
 import {
   NO_PROGRESS_CAPTION,
   budgetCardModel,
@@ -95,7 +100,6 @@ type ProjectDashboard = {
   contractValue: number | null;
 };
 type Currency = { code: string; isBaseCurrency: boolean };
-type CategoryRow = { categoryId: string; name: string; percentComplete: number };
 type RecentEntry = { id: string; activityId: string; entryDate: string; quantityDone: string; percentComplete: string };
 type Activity = { id: string; name: string };
 type Permit = { id: string; daysToExpiry: number | null };
@@ -112,7 +116,6 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
   const [dashboard, setDashboard] = useState<ProjectDashboard | null>(null);
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [permitsExpiring, setPermitsExpiring] = useState<Permit[]>([]);
@@ -163,13 +166,12 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       setRecent(entries.slice(0, 5));
       setBoqBudget(typeof varianceRes?.totalBudget === "number" ? varianceRes.totalBudget : null);
 
-      // Category breakdown (RIGHT COLUMN, sorted horizontal bar) reuses the
-      // ALREADY-REGISTERED "category-progress" report (REPORT_REGISTRY,
-      // construction-reports-service.ts) computed server-side (D-4: never
-      // summed in the browser) -- no projexa consumer of this real, working
-      // report existed before this seq.
-      const catRes = await fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => null);
-      setCategories(catRes?.categories ?? []);
+      // R67 E-29: the category breakdown used to be fetched HERE, serially,
+      // after the five parallel calls above had already resolved -- so the
+      // whole screen waited on it before rendering anything. It now belongs to
+      // CategoryDistributionCharts, which loads itself and shows its own
+      // labelled skeleton, and the rest of the dashboard paints one round trip
+      // sooner.
       setLoading(false);
     }
     load();
@@ -182,7 +184,6 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const expiringCount = permitsExpiring.length;
   const expiredCount = permitsExpiring.filter((p) => (p.daysToExpiry ?? 0) < 0).length;
 
-  const categoryBars: BarChartDatum[] = categories.map((c) => ({ label: c.name, value: c.percentComplete }));
   const progress = cumulativeProgressSeries(allEntries);
   const budgetCard = budgetCardModel(
     dashboard.expenses,
@@ -322,11 +323,18 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       breakdownColumn={
         <>
           <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressByCategoryHeading", "Progress by scope category")}</h3>
-          {categoryBars.length > 0 ? (
-            <BarChart data={categoryBars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />
-          ) : (
-            <p className="text-[12.5px] text-ct-muted">No category breakdown yet.</p>
-          )}
+          {/* R67 E-29 (R-255): the percent-only bar is replaced by the real
+              category chart -- the one the company hierarchy already shows.
+              WHY THE SWAP IS A FIX AND NOT A PREFERENCE: a bar of
+              "Civil 42%, Joinery 8%" tells a PM which trade is furthest along
+              but nothing about which trade MATTERS, so a 100%-complete
+              AED 4,000 category out-drew a 40%-complete AED 4,000,000 one.
+              This chart draws each category's BOQ amount with its completed
+              value over it and prints both, so size and progress are read
+              together. It is the SAME component and the same server-side
+              arithmetic as /dashboard/hierarchy -- one derivation, two
+              screens (src/lib/category-distribution.ts). */}
+          <CategoryDistributionCharts projectId={projectId} />
         </>
       }
       linkList={

@@ -3,16 +3,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
-import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import { KpiCard, Sparkline, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { mayAssertEmpty } from "@/lib/read-outcome";
 import { MONEY_CELL_CLASS, formatMoney, hasCurrency } from "@/lib/format-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import DashboardRowRetry from "@/components/DashboardRowRetry";
+import { DashboardPortfolioBars } from "@/components/DashboardPortfolioBars";
 import {
+  activityLogPercent,
   budgetVerdict,
   needsYouProjects,
   onTrackProjects,
+  portfolioHeadline,
   portfolioProgress,
   projectVerdict,
   rowContractValue,
@@ -85,8 +87,10 @@ export type RegistryColumn = ScreenColumn;
 // Fallback when no registry row is seeded yet (or the resolve call errors).
 // Only LABEL text is registry-driven; every value, destination and state on
 // this screen is computed from the payload.
+// R67 E-29: "portfolioProgress" is no longer in this list. The portfolio
+// number stopped being a labelled tile and became the page's dominant
+// sentence, and a registry row cannot relabel half a sentence.
 const DEFAULT_COLUMNS: ScreenColumn[] = [
-  { field: "portfolioProgress", label: "% complete by value", type: "text", importance: "High" },
   { field: "needsYou", label: "Projects needing you", type: "number", importance: "High" },
   { field: "budgetVsSpend", label: "Budget vs spend", type: "number", importance: "High" },
   { field: "totalRevenue", label: "Revenue invoiced", type: "number", importance: "High" },
@@ -163,14 +167,68 @@ export default function DashboardHomeView({
 
   return (
     <>
-      <HomeGreeting
-        userName={userName}
-        summary={summary}
-        stats={[
-          ...(needsYou.length > 0 ? [{ label: `${needsYou.length} needs you`, tone: "attention" as const }] : []),
-          ...(onTrack.length > 0 ? [{ label: `${onTrack.length} on track`, tone: "onTrack" as const }] : []),
-        ]}
-      />
+      {/* R67 E-29 (R-255): THE ONE DOMINANT NUMBER, top left, at roughly three
+          times body size, and it is the page's first heading.
+
+          THE KIT'S HomeGreeting IS DELIBERATELY NOT USED HERE ANY MORE. Its
+          own <h1> is "Welcome back, {name}." -- so the largest, first thing on
+          a launchpad was a salutation, and the portfolio number came third,
+          inside a card. The greeting SENTENCE still matters and is kept below
+          the number, computed from the same verdicts the rows render (which is
+          what stops "5 on track" being said about five projects that have no
+          schedule), and the projects that need the reader are listed as links
+          rather than as a count they then have to go looking for. The kit is
+          not edited (D-09) -- this screen simply does not use that one
+          component. */}
+      <div className="border-b border-px-border bg-white/70 px-6 py-6">
+        <h1 className="font-heading text-3xl leading-tight tracking-tight text-ct-navy sm:text-4xl">
+          {portfolioHeadline(portfolio, (n) => formatKpi(n, currencies))}
+        </h1>
+        {/* The number's own supporting line: the percentage, the two-point
+            sparkline and the vs-last-week delta, all beside the figure they
+            describe. This USED to be a fourth KpiCard restating the headline
+            underneath it -- one screen, one fact, twice. R-255's count is
+            three KPI cards, and the dominant number is not one of them. The
+            number is still a door: the breakdown behind it is Work Progress
+            analytics, which is where "how did we get to 25%" is answered. */}
+        <Link
+          href="/work-progress?tab=analytics"
+          className="mt-2 flex w-fit flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-px-muted hover:underline"
+        >
+          <span className={`${MONEY_CELL_CLASS} text-px-ink`}>
+            {portfolio.percent === null ? NOT_SET : `${portfolio.percent}%`} complete by value
+          </span>
+          {portfolio.percent !== null && portfolio.percentPrevWeek !== null && (
+            <span aria-hidden className="inline-block w-24 align-middle">
+              <Sparkline values={[portfolio.percentPrevWeek, portfolio.percent]} />
+            </span>
+          )}
+          <span>
+            {portfolio.deltaPercentagePoints === null
+              ? "no BOQ to measure against yet"
+              : `${portfolio.deltaPercentagePoints > 0 ? "+" : ""}${portfolio.deltaPercentagePoints} points vs last week`}
+          </span>
+          <span>
+            {portfolio.percent === null
+              ? "Import a BOQ to see earned value"
+              : `${formatKpi(portfolio.earned, currencies)} earned of ${formatKpi(portfolio.contract, currencies)} across ${portfolio.projectsCounted} project${portfolio.projectsCounted === 1 ? "" : "s"}`}
+          </span>
+        </Link>
+        <p className="mt-2 max-w-3xl text-[15px] leading-relaxed text-ct-navy">
+          {userName ? `Welcome back, ${userName}. ` : ""}
+          {summary}
+        </p>
+        {needsYou.length > 0 && (
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-px-muted">
+            <span>Needs you:</span>
+            {needsYou.map((p) => (
+              <Link key={p.id} href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink underline">
+                {p.name}
+              </Link>
+            ))}
+          </p>
+        )}
+      </div>
       <div className="flex-1 space-y-6 p-6">
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
@@ -188,44 +246,12 @@ export default function DashboardHomeView({
 
         {data && (
           <>
-            {/* THE ONE NUMBER, then at most three KPIs. Every one of the four
-                is a link with a real destination and a baseline line --
+            {/* R67 E-29 (R-255): THREE KPI cards, and the dominant number
+                above is not one of them. Every card is a real link with a
+                value, a delta versus the last period, and a baseline --
                 correction C-14 recorded that three of the old tiles had no
                 destination at all and the fourth had the wrong one. */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-              <div className="lg:col-span-2">
-                <Link href="/work-progress?tab=analytics" className="block">
-                  <KpiCard
-                    size="primary"
-                    label={columnLabel(columns, "portfolioProgress", "% complete by value")}
-                    value={portfolio.percent === null ? NOT_SET : `${portfolio.percent}%`}
-                    trend={{
-                      direction:
-                        portfolio.deltaPercentagePoints === null || portfolio.deltaPercentagePoints === 0
-                          ? "flat"
-                          : portfolio.deltaPercentagePoints > 0
-                            ? "up"
-                            : "down",
-                      tone: "context",
-                      label:
-                        portfolio.deltaPercentagePoints === null
-                          ? "no BOQ to measure against yet"
-                          : `${portfolio.deltaPercentagePoints > 0 ? "+" : ""}${portfolio.deltaPercentagePoints} points vs last week`,
-                    }}
-                    baseline={
-                      portfolio.percent === null
-                        ? "Import a BOQ to see earned value"
-                        : `${formatKpi(portfolio.earned, currencies)} earned of ${formatKpi(portfolio.contract, currencies)} across ${portfolio.projectsCounted} project${portfolio.projectsCounted === 1 ? "" : "s"}`
-                    }
-                    visual={
-                      portfolio.percent !== null && portfolio.percentPrevWeek !== null ? (
-                        <Sparkline values={[portfolio.percentPrevWeek, portfolio.percent]} />
-                      ) : undefined
-                    }
-                  />
-                </Link>
-              </div>
-
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Link href="/schedule" className="block">
                 <KpiCard
                   label={columnLabel(columns, "needsYou", "Projects needing you")}
@@ -244,7 +270,8 @@ export default function DashboardHomeView({
                   label={columnLabel(columns, "budgetVsSpend", "Budget vs spend")}
                   value={formatKpi(budget.spent, currencies)}
                   trend={{ direction: budget.direction, tone: budget.tone, label: budget.word }}
-                  baseline={budget.budget === null ? `Budget ${NOT_SET} → Budgets` : `budget ${formatKpi(budget.budget, currencies)}`}
+                  // R67 E-29's own words for the unset case.
+                  baseline={budget.budget === null ? "Budget not set → Budgets" : `budget ${formatKpi(budget.budget, currencies)}`}
                 />
               </Link>
 
@@ -310,6 +337,15 @@ export default function DashboardHomeView({
                                 <EarnedValueBar earned={p.earnedValue} contract={contract} />
                                 <span className="text-[11.5px] text-px-muted">
                                   {formatCurrency(p.earnedValue, currencies)} earned of {formatCurrency(contract, currencies)} · spend {formatCurrency(spent, currencies)}
+                                  {/* R67 E-29: the activity-log figure as a small
+                                      grey SECONDARY, and only when it says
+                                      something the bar does not -- two identical
+                                      numbers side by side teach nothing, and two
+                                      DIFFERENT ones with no explanation are what
+                                      made this screen read as contradictory. */}
+                                  {activityLogPercent(p) !== null && (
+                                    <> · {activityLogPercent(p)}% logged in the activity log</>
+                                  )}
                                 </span>
                               </span>
                             )}
@@ -333,6 +369,28 @@ export default function DashboardHomeView({
                 )}
               </CardContent>
             </Card>
+            {/* R67 E-29 (R-255): "Revenue / Budget / Earned value per project",
+                one shared axis, every bar a door to its project. The same
+                component the company dashboard uses, on this screen's data --
+                one chart of one thing, so the two cannot drift apart. */}
+            {projects.length > 0 && (
+              <Card className="shadow-card">
+                <CardContent className="space-y-3 p-4">
+                  <h2 className="text-sm font-medium text-px-ink">Revenue, budget and earned value per project</h2>
+                  <DashboardPortfolioBars
+                    projects={projects.map((p) => ({
+                      id: p.id,
+                      name: p.name,
+                      revenue: p.revenue,
+                      boqBudget: p.boqBudget,
+                      budget: p.budget,
+                      earnedValue: p.earnedValue,
+                    }))}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* R67 G-05: said once, at the foot of the page. */}
             <CurrencyNotSetNotice currencySet={currencySet} />
           </>
