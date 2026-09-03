@@ -11,6 +11,7 @@ import {
   groupRows,
   hasRecordedProgress,
   sumRootAmtTotal,
+  workProgressParamSignature,
   UNCATEGORIZED_LABEL,
   type Activity,
   type Attendance,
@@ -805,6 +806,41 @@ describe("groupRows (R67 E-34: one grouping helper per view)", () => {
     expect(groupRows({ rows: [] }, "scope")).toEqual([]);
     expect(groupRows({ rows: [] }, "vendor")).toEqual([]);
     expect(groupRows({ rows: [], byManpower: [] }, "manpower")).toEqual([]);
+  });
+});
+
+// R67 E-35 (R-267 / R-303). The signature decides whether a failed re-run keeps
+// the table it already has or throws it away, so its equality rules matter more
+// than they look.
+describe("workProgressParamSignature (R67 E-35)", () => {
+  const base = { projectId: "p1", from: "2026-09-01", to: "2026-09-02", boqId: "", categories: [] as string[] };
+
+  test("identical parameters produce an identical signature", () => {
+    expect(workProgressParamSignature(base)).toBe(workProgressParamSignature({ ...base }));
+  });
+
+  test("a changed date, project or BOQ is a different report", () => {
+    expect(workProgressParamSignature({ ...base, to: "2026-09-30" })).not.toBe(workProgressParamSignature(base));
+    expect(workProgressParamSignature({ ...base, from: "2026-08-01" })).not.toBe(workProgressParamSignature(base));
+    expect(workProgressParamSignature({ ...base, projectId: "p2" })).not.toBe(workProgressParamSignature(base));
+    expect(workProgressParamSignature({ ...base, boqId: "boq-3" })).not.toBe(workProgressParamSignature(base));
+  });
+
+  test("the category filter is a SET -- order does not make it a different report", () => {
+    expect(workProgressParamSignature({ ...base, categories: ["Civil", "Paint"] })).toBe(
+      workProgressParamSignature({ ...base, categories: ["Paint", "Civil"] })
+    );
+  });
+
+  test("blank and whitespace-only category entries are not a filter", () => {
+    expect(workProgressParamSignature({ ...base, categories: ["", "  "] })).toBe(workProgressParamSignature(base));
+    expect(workProgressParamSignature({ ...base, categories: [" Civil "] })).toBe(
+      workProgressParamSignature({ ...base, categories: ["Civil"] })
+    );
+  });
+
+  test("adding a real category filter IS a different report", () => {
+    expect(workProgressParamSignature({ ...base, categories: ["Civil"] })).not.toBe(workProgressParamSignature(base));
   });
 });
 

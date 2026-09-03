@@ -653,6 +653,41 @@ export function groupRows(source: WorkProgressGroupSource, view: WorkProgressRep
 }
 
 /**
+ * R67 E-35 (R-267 / R-303): the parameter set one WPR result was produced from.
+ * `boqId` is "" for "whichever one the server picks", which is a real, distinct
+ * parameter value and not a missing one.
+ */
+export type WorkProgressReportParams = {
+  projectId: string;
+  from: string;
+  to: string;
+  boqId: string;
+  categories: string[];
+};
+
+/**
+ * R67 E-35 (R-267 / R-303): a comparable fingerprint of the parameters behind a
+ * result.
+ *
+ * WHY IT EXISTS. When a re-run fails, the screen has to answer one question
+ * before it can say anything useful: does the table still on screen describe the
+ * parameters now in the inputs? If it does, keeping it and saying "showing
+ * results from 14:02" is the kindest thing to do. If it does not, the SAME
+ * table is a lie -- last fortnight's numbers sitting under this fortnight's
+ * dates -- and it must go. R-267 and R-303 each asked for one of those two
+ * behaviours; the parameter set is what reconciles them.
+ *
+ * Categories are sorted and trimmed because a filter is a SET: picking Civil
+ * then Paint and picking Paint then Civil are the same report, and a signature
+ * that disagreed would throw away a perfectly good table.
+ */
+export function workProgressParamSignature(p: WorkProgressReportParams): string {
+  const categories = p.categories.map((c) => c.trim()).filter((c) => c !== "");
+  categories.sort();
+  return JSON.stringify([p.projectId, p.from, p.to, p.boqId, categories]);
+}
+
+/**
  * R67 E-34 (R-266): what each view calls one of its groups, singular and plural.
  * Beside the labels and the groupings on purpose -- a view that gains a grouping
  * rule but no noun would caption itself "3 groups", which tells a reader nothing

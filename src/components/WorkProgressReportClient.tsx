@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Play } from "lucide-react";
-import { formatDate, formatDateDMY, formatTime } from "@/lib/format-date";
+import { AlertTriangle, Loader2, Play } from "lucide-react";
+import { formatDate, formatDateDMY, formatHourMinute, formatTime } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
 import { timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
 import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
@@ -23,6 +23,8 @@ import {
   groupRows,
   hasRecordedProgress,
   normaliseWorkProgressView,
+  workProgressParamSignature,
+  type WorkProgressReportParams,
   type WorkProgressReportView,
 } from "@/lib/work-progress-report";
 
@@ -436,7 +438,17 @@ export default function WorkProgressReportClient({
   // "" means "let the server pick the start date from the data" -- see the header.
   const [from, setFrom] = useState(initialFrom ?? "");
   const [to, setTo] = useState(initialTo ?? today());
-  const [report, setReport] = useState<ReportResponse | null>(null);
+  // R67 E-35 (R-267 / R-303): the last SUCCESSFUL result never travels alone --
+  // it carries when it was produced and the parameters that produced it, which
+  // is the only way a failed re-run can tell "your table is still true, the
+  // service just hiccuped" from "this table is last month's numbers under this
+  // month's dates". Deliberately kept in state even when the parameters have
+  // moved on: it stays valid FOR ITS OWN parameters, so going back to them
+  // shows it again rather than re-running.
+  const [retained, setRetained] = useState<
+    { report: ReportResponse; ranAt: number; params: WorkProgressReportParams } | null
+  >(null);
+  const report = retained?.report ?? null;
   const [sharing, setSharing] = useState(false);
   const [view, setView] = useState<WorkProgressReportView>(normaliseWorkProgressView(initialView));
   // Point 11: component state only -- never persisted, never sent to the API.
@@ -482,12 +494,31 @@ export default function WorkProgressReportClient({
         for (const c of categories) params.append("category", c);
         const res = await fetch(`/api/work-progress/report?${params.toString()}`, { signal });
         const body = await res.json();
-        if (!res.ok) throw new Error(body?.error || `The report service answered ${res.status}`);
+        // R67 E-35: the SERVER'S OWN WORDS, from `message` first (the field the
+        // item names) and `error` second (what this route actually sends today),
+        // never a status code dressed up as a sentence -- and never a bare
+        // "Something went wrong", which tells the reader nothing they can act on.
+        if (!res.ok) throw new Error(body?.message || body?.error || `the report service answered ${res.status}`);
         return body as ReportResponse;
       });
 
       if (!data) return; // cancelled, timed out or failed -- the hook holds which
-      setReport(data);
+      // R67 E-35: stamped with the RESOLVED parameters, not the requested ones.
+      // The server may pick the start date (see the header) and the BOQ, and
+      // those picks land in this component's own state a line below -- so a
+      // signature built from what was SENT would never match the signature
+      // rebuilt from state, and every re-run would look like a parameter change.
+      setRetained({
+        report: data,
+        ranAt: Date.now(),
+        params: {
+          projectId,
+          from: data.from || rangeFrom,
+          to: rangeTo,
+          boqId: boqId || data.boqId || "",
+          categories,
+        },
+      });
       // Reflect what the server really ran: its effective range and its BOQ pick.
       if (data.from && data.from !== rangeFrom) setFrom(data.from);
       if (!boqId && data.boqId) setSelectedBoqId(data.boqId);
@@ -598,12 +629,50 @@ export default function WorkProgressReportClient({
   }
 
   const running = run.state === "running";
-  const failureMessage =
-    run.state === "timeout"
-      ? `${timeoutSentence()} Narrow the date range, or pick a single BOQ, and run it again.`
-      : run.state === "failed"
-        ? `Could not run Work Progress: ${run.error ?? "the service did not answer"}`
-        : null;
+  const failed = run.state === "failed" || run.state === "timeout";
+  // R67 E-35: the words that go INTO a banner, not a whole banner sentence --
+  // the two banners below wrap them differently because they are two different
+  // situations. A timeout has no server message by definition (nothing
+  // answered), so the deadline itself is the message.
+  const serverMessage =
+    run.state === "timeout" ? timeoutSentence() : (run.error ?? "the service did not answer");
+  // R67 E-35: does the table on screen still describe what the inputs now say?
+  const currentSignature = workProgressParamSignature({
+    projectId,
+    from,
+    to,
+    boqId: selectedBoqId,
+    categories: selectedCategories,
+  });
+  const retainedIsCurrent = retained !== null && workProgressParamSignature(retained.params) === currentSignature;
+
+  /**
+   * R67 E-35: the rose banner, in the WS-G error colours with the WS-G error
+   * glyph AND the words -- colour is never the only thing carrying the fact.
+   * Its sentence is the whole point of the item: under UNCHANGED parameters it
+   * says what is still on screen and where it came from, so a reader is not
+   * left guessing whether the numbers below are new; under CHANGED parameters
+   * there is nothing below and it says so plainly.
+   */
+  const failureBanner = failed ? (
+    <div
+      role="alert"
+      data-testid="wpr-failure-banner"
+      className="flex items-start gap-2 rounded-md border border-px-error-border bg-px-error-light px-3 py-2 text-[13px] text-px-error"
+    >
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="space-y-2">
+        <p>
+          {retained && retainedIsCurrent
+            ? `The report did not run: ${serverMessage} — showing results from ${formatHourMinute(retained.ranAt)}`
+            : `Could not run the report — ${serverMessage}`}
+        </p>
+        <Button size="sm" variant="outline" onClick={() => void runReport()}>
+          Run again
+        </Button>
+      </div>
+    </div>
+  ) : null;
 
   const parameterBar = (
     <div className="flex flex-wrap items-end gap-3">
@@ -685,11 +754,17 @@ export default function WorkProgressReportClient({
         </div>
       );
     }
-    if (failureMessage) {
+    // R67 E-35 (R-267 / R-303). THE TABLE GOES when the parameters moved.
+    // R-267 asked to keep a good result visible through a failed re-run;
+    // R-303 asked that stale numbers never sit under new parameters. Both are
+    // right, and the parameter signature is what tells them apart: same
+    // parameters -> the table below is still true and stays, with the banner
+    // over it; different parameters -> it describes a report nobody asked for
+    // any more, and only the banner is honest.
+    if (failed && !retainedIsCurrent) {
       return (
-        <div className="space-y-3 py-10 text-center">
-          <p role="alert" className="text-sm text-px-error">{failureMessage}</p>
-          <Button size="sm" variant="outline" onClick={() => void runReport()}>Retry</Button>
+        <div className="space-y-3 py-6">
+          {failureBanner}
         </div>
       );
     }
@@ -709,6 +784,18 @@ export default function WorkProgressReportClient({
     const noProgress = !hasRecordedProgress(report.rows);
     return (
       <div className="space-y-3">
+        {failureBanner}
+        {/* R67 E-35: how old the numbers below are, said once, above them. When
+            the reader has moved the parameters on (they cancelled a re-run, say)
+            the stamp names the range these numbers actually describe rather than
+            letting them read as an answer to the inputs above. */}
+        {retained && (
+          <p className="text-xs text-px-muted" data-testid="wpr-results-from">
+            {retainedIsCurrent
+              ? `Results from ${formatHourMinute(retained.ranAt)}`
+              : `Results from ${formatHourMinute(retained.ranAt)}, for ${formatDateDMY(retained.params.from || retained.params.to)} to ${formatDateDMY(retained.params.to)} — not the range now selected`}
+          </p>
+        )}
         {/* Four real views over rows already in state -- switching one never
             re-fetches. The horizontal scroll lives INSIDE this container, so
             the page itself never scrolls sideways. */}
@@ -764,9 +851,15 @@ export default function WorkProgressReportClient({
       parameterBar={parameterBar}
       // REPORT.GLOBAL: subtotals that do not tie say so LOUDLY, and export is
       // blocked -- an export of a report that does not add up is worse than no
-      // export. A failed run is mirrored here for the same reason: the footer's
-      // Export buttons are the next thing the reader was going to press.
-      tieError={tieError ?? failureMessage}
+      // export. R67 E-35: a failed RUN is no longer mirrored into this slot.
+      // E-28 put it here because the footer's Export buttons were the next
+      // thing the reader would press with nothing on screen; now a failure
+      // either leaves a real, still-current result up (whose CSV is built from
+      // those very rows and is perfectly exportable) or leaves no result at
+      // all, in which case every export is already disabled with "run the
+      // report first". Two banners saying the same thing was the only thing
+      // the mirror still bought.
+      tieError={tieError}
       shareAction={{
         label: "Share",
         onClick: () => void shareReport(),

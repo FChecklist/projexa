@@ -229,3 +229,100 @@ describe("R67 E-34: the empty-range sentence", () => {
     expect(container.textContent).not.toContain("No progress was recorded between");
   });
 });
+
+// R67 E-35 (R-267 / R-303). The two failure branches, which are the whole item:
+// the same 500 means two different things depending on whether the parameters
+// still match the result on screen.
+describe("R67 E-35: a failed re-run, with and without a parameter change", () => {
+  /** Succeeds once, then fails every later call -- the exact shape of a re-run that breaks. */
+  function stubFailAfterFirst(status = 500, body: unknown = { message: "BOQ revision 3 is locked" }) {
+    let served = 0;
+    stubFetch(() => {
+      served += 1;
+      if (served === 1) return ok(reportBody());
+      return new Response(JSON.stringify(body), { status });
+    });
+  }
+
+  test("a good run is stamped with the time it came back", async () => {
+    stubFetch(() => ok(reportBody()));
+    const { container, findByTestId } = renderReport();
+    await waitFor(() => expect(container.textContent).toContain("Grand Total"));
+    expect((await findByTestId("wpr-results-from")).textContent).toMatch(/^Results from \d{2}:\d{2}$/);
+  });
+
+  test("UNCHANGED parameters: the table stays, under a banner in the server's own words", async () => {
+    stubFailAfterFirst();
+    const { container, findByRole, findByTestId } = renderReport();
+    await waitFor(() => expect(container.textContent).toContain("Grand Total"));
+
+    fireEvent.click(await findByRole("button", { name: /Run again/ }));
+
+    const banner = await findByTestId("wpr-failure-banner");
+    await waitFor(() => expect(banner.textContent).toContain("The report did not run"));
+    // The server's own message, not a status code and not a generic apology.
+    expect(banner.textContent).toContain("BOQ revision 3 is locked");
+    expect(banner.textContent).toMatch(/showing results from \d{2}:\d{2}/);
+    // ...and the numbers are still there, because they are still true.
+    expect(container.textContent).toContain("Grand Total");
+  });
+
+  test("CHANGED parameters: the table is gone and the banner says so instead", async () => {
+    stubFailAfterFirst();
+    const { container, findByTestId, getByLabelText } = renderReport();
+    await waitFor(() => expect(container.textContent).toContain("Grand Total"));
+
+    // The parameter moved here is the CATEGORY FILTER, not a date, and
+    // deliberately: fireEvent.change on an <input type="date"> does not reach
+    // React's onChange under happy-dom in this repo's test environment
+    // (verified in isolation on a bare controlled date input -- the state never
+    // updates), so a date-driven version of this test would pass for the wrong
+    // reason, asserting the UNCHANGED branch while claiming to assert the
+    // changed one. Adding a category is the same kind of parameter change to
+    // workProgressParamSignature, driven by clicks that do work.
+    fireEvent.click(getByLabelText("Civil"));
+    fireEvent.click(await findByTestId("wpr-category-apply"));
+
+    const banner = await findByTestId("wpr-failure-banner");
+    await waitFor(() => expect(banner.textContent).toContain("Could not run the report"));
+    expect(banner.textContent).toContain("BOQ revision 3 is locked");
+    expect(banner.textContent).not.toContain("showing results from");
+    // R-303's own rule: old numbers never sit under new parameters.
+    expect(container.textContent).not.toContain("Grand Total");
+  });
+
+  test("a response with no message at all still gets words, never an empty banner", async () => {
+    stubFailAfterFirst(500, {});
+    const { container, findByRole, findByTestId } = renderReport();
+    await waitFor(() => expect(container.textContent).toContain("Grand Total"));
+
+    fireEvent.click(await findByRole("button", { name: /Run again/ }));
+
+    const banner = await findByTestId("wpr-failure-banner");
+    await waitFor(() => expect(banner.textContent).toContain("The report did not run"));
+    expect(banner.textContent).toContain("the report service answered 500");
+  });
+
+  test("the banner offers Run again, and pressing it really re-runs", async () => {
+    stubFailAfterFirst();
+    const { container, findByRole, findByTestId } = renderReport();
+    await waitFor(() => expect(container.textContent).toContain("Grand Total"));
+    expect(reportCalls).toHaveLength(1);
+
+    fireEvent.click(await findByRole("button", { name: /Run again/ }));
+    await findByTestId("wpr-failure-banner");
+    expect(reportCalls).toHaveLength(2);
+
+    fireEvent.click((await findByTestId("wpr-failure-banner")).querySelector("button")!);
+    await waitFor(() => expect(reportCalls).toHaveLength(3));
+  });
+
+  test("the first run failing leaves no table to keep, and says the changed-parameter sentence", async () => {
+    stubFetch(() => new Response(JSON.stringify({ message: "no BOQ on this project" }), { status: 404 }));
+    const { container, findByTestId } = renderReport();
+    const banner = await findByTestId("wpr-failure-banner");
+    expect(banner.textContent).toContain("Could not run the report");
+    expect(banner.textContent).toContain("no BOQ on this project");
+    expect(container.textContent).not.toContain("Grand Total");
+  });
+});
