@@ -72,6 +72,9 @@ import {
 // clicks fills the strip in front of them instead of the strip reading
 // "Select a module to begin" on the very screen it is docked to.
 import { ChainOptionsPanel } from "@/components/shell/ChainOptionsPanel";
+// R67 C-06: the handle every page uses to fill the strip. The three doors --
+// a module's header button, a KPI number, a composer card -- now share one.
+import { ShellChainProvider, type ShellChainApi } from "@/components/shell/shell-chain-context";
 import { ConfirmCard } from "@/components/shell/ConfirmCard";
 import { AnswerBlock } from "@/components/shell/AnswerBlock";
 import {
@@ -93,6 +96,9 @@ import {
   cardActionById,
   cardForRoute,
   coldStartCards,
+  doorById,
+  doorRoute,
+  doorSegments,
   periodLabel,
   periodOptionsLevel,
   reportLeafById,
@@ -165,6 +171,19 @@ const PERIOD_SEGMENT_PREFIX = "period:";
 // the id so cutting the strip can cut the level path to match.
 const LEVEL_SEGMENT_PREFIX = "lvl:";
 const REPORTS_ROUTE = "/reports";
+
+/**
+ * R67 C-06: is this module already on the strip?
+ *
+ * A door writes its segments with namespaced ids ("door:scope.new_boq:scope"),
+ * and the route effects below seed a bare one ("scope"). Without this check
+ * arriving on /work-progress through the "Run Report" door would append a
+ * SECOND "Work Progress" segment and the strip would read
+ * "… > Work Progress > Report > Work Progress", which is not a sentence.
+ */
+function hasSegmentFor(segments: Chain["segments"], id: string): boolean {
+  return segments.some((s) => s.id === id || s.id.endsWith(`:${id}`));
+}
 
 export default function M24Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -536,7 +555,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pathname !== REPORTS_ROUTE) return;
     setSegments((prev) =>
-      prev.some((s) => s.id === REPORTS_ENTITY_SEGMENT.id) ? prev : [...prev, REPORTS_ENTITY_SEGMENT]
+      hasSegmentFor(prev, REPORTS_ENTITY_SEGMENT.id) ? prev : [...prev, REPORTS_ENTITY_SEGMENT]
     );
     setPillUsage((prev) => {
       if (prev.some((r) => r.pillKey === REPORTS_PILL_KEY && r.pinned)) return prev;
@@ -560,7 +579,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!routeCard) return;
     setSegments((prev) =>
-      prev.some((s) => s.id === routeCard.entitySegment.id) ? prev : [...prev, routeCard.entitySegment]
+      hasSegmentFor(prev, routeCard.entitySegment.id) ? prev : [...prev, routeCard.entitySegment]
     );
   }, [routeCard]);
 
@@ -577,7 +596,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const onCardSelect = useCallback(
     (card: CardDef) => {
       setSegments((prev) =>
-        prev.some((s) => s.id === card.entitySegment.id) ? prev : [...prev, card.entitySegment]
+        hasSegmentFor(prev, card.entitySegment.id) ? prev : [...prev, card.entitySegment]
       );
       setSubmitError(null);
       if (pathname !== card.route) router.push(card.route);
@@ -798,6 +817,65 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       if (load.route) router.push(load.route);
     },
     [router]
+  );
+
+  /**
+   * R67 C-06 -- OPEN A DOOR. *** IT FILLS THE STRIP AND OPENS A SCREEN. ***
+   *
+   * The sentence and the destination both come from the catalogue's one DOORS
+   * table, so the header button on /labour, the KPI tile on /dashboard and a
+   * composer card that name the same door cannot put different words on the
+   * strip or land in different places.
+   *
+   * It arms NO functionId, so the next Send is still a deliberate second act;
+   * and it adopts the door's project, which is what finally ties the
+   * composer's own project state to the ?projectId= the pages read.
+   */
+  const openDoor = useCallback(
+    (doorId: string, opts?: { projectId?: string | null; navigate?: boolean }) => {
+      const door = doorById(doorId);
+      if (!door) return;
+      const nextProjectId = opts?.projectId ?? projectId;
+      if (opts?.projectId && opts.projectId !== projectId) setProjectId(opts.projectId);
+      // A door is a NEW sentence, not an addition to the old one, so
+      // everything that belonged to the previous sentence goes with it.
+      setSegments(doorSegments(door));
+      setLevelPath([]);
+      setScalarValue("");
+      setScalarError(null);
+      setReportId(null);
+      setPeriodId(DEFAULT_PERIOD);
+      setProposal(null);
+      setAnswer(null);
+      setPendingFunctionId(null);
+      setPendingRawInput(null);
+      setFixTarget(null);
+      setSubmitError(null);
+      // A door whose screen is already open fills the strip and stops: a
+      // push back into the route the user is standing on would drop the query
+      // that route arrived with (the report's own from/to, for one).
+      if (opts?.navigate === false) return;
+      const route = doorRoute(door, nextProjectId);
+      if (route) router.push(route);
+    },
+    [projectId, router]
+  );
+
+  // C-06: a multi-field create route IS the card -- band 2 stays empty while
+  // its form is open -- so the page reports its own save back here and the
+  // receipt lands in the same band a composer write's would.
+  const pushReceipt = useCallback((next: { text: string; href: string }) => {
+    setReceipt(next);
+  }, []);
+
+  const shellChain: ShellChainApi = useMemo(
+    () => ({
+      hasShell: true,
+      loadChain: (c: Chain, route?: string) => onLoadChain(loadChain(c, route)),
+      openDoor,
+      pushReceipt,
+    }),
+    [onLoadChain, openDoor, pushReceipt]
   );
 
   // A pill click records usage (so MP-RULE-3 can rank it) and appends the
@@ -1922,7 +2000,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {children}
+      {/* R67 C-06: every routed screen renders inside this provider, so a
+          module's own header button and a KPI number can fill the strip that
+          lives out here -- the one thing a page could not do before. */}
+      <ShellChainProvider value={shellChain}>{children}</ShellChainProvider>
     </AppShell>
   );
 }

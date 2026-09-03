@@ -8,6 +8,12 @@
 // onClick below for exactly where it lands and why that's a real screen.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+// R67 C-06: every KPI on this screen is a DOOR -- a real link that also fills
+// the control strip with that tile's own sentence. Correction C-14 recorded
+// one of these five as navigating to a destination that does not exist
+// (Budget vs Actual -> /scope?tab=variance, a tab ScopeClient never renders);
+// the destination now lives once, in src/lib/card-catalogue.ts's DOORS.
+import { ChainDoor } from "@/components/shell/ChainDoor";
 import {
   DashboardScreen,
   KpiCard,
@@ -132,6 +138,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       exportAction={{ label: "Export", disabledReason: "Not yet available" }}
       oneNumber={
+        <ChainDoor
+          doorId="project.percent_by_value"
+          projectId={projectId}
+          disabledReason={hasEv ? undefined : "No BOQ on this project yet"}
+        >
         <KpiCard
           size="primary"
           // CONS-01 (R46 P4 consistency sweep): relabelled from "% Complete
@@ -147,20 +158,27 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this" }}
           baseline={hasEv ? `of ${money(dashboard.contractValue!, currency)} contract value` : ""}
           visual={hasEv ? <BulletChart value={dashboard.earnedValue!} target={dashboard.contractValue!} unit="" /> : undefined}
-          // % complete -> ANALYTICAL work-progress, filtered to this project (DASHBOARD.PROJECT's own row)
-          onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)}
+          // % complete -> ANALYTICAL work-progress, filtered to this project.
+          // The destination is the ChainDoor above, not an onClick: C-06 asks
+          // for a real link, and a button that calls router.push is not one.
         />
+        </ChainDoor>
       }
       secondaryKpis={
         <>
-          <KpiCard
-            label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
-            value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
-            trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
-            baseline="latest BOQ revision"
-            // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
-          />
+          <ChainDoor
+            doorId="project.contract_value"
+            projectId={projectId}
+            disabledReason={hasEv ? undefined : "No BOQ on this project yet"}
+          >
+            <KpiCard
+              label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
+              value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
+              trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
+              baseline="latest BOQ revision"
+              // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
+            />
+          </ChainDoor>
           {/* Sumeet audit fix (2026-08-30, requirement #10: "Project value
               matches BOQ total"). Real, confirmed gap: this screen already
               fetches dashboard.projectValue (see the ProjectDashboard type
@@ -175,38 +193,49 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               Point 121's own override mechanism controls. Null (not 0) is
               the honest "neither a manual value nor any linked PO exists
               yet" state, matching every other null-safe KPI on this screen. */}
-          <KpiCard
-            label={labelFor(dashboardLabels, "projectValue", "Project Value")}
-            value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
-            trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
-            baseline="overridable per project"
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
-          />
-          <KpiCard
-            label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
-            value={money(dashboard.expenses, currency)}
-            trend={{
-              direction: dashboard.expenses > dashboard.budget ? "up" : "down",
-              tone: dashboard.expenses > dashboard.budget ? "late" : "done",
-              label: dashboard.expenses > dashboard.budget ? "over budget" : "within budget",
-            }}
-            baseline={`budget ${money(dashboard.budget, currency)}`}
-            visual={<BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
-            // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
-            onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
-          />
-          <KpiCard
-            label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
-            value={String(expiringCount)}
-            trend={{
-              direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
-              tone: expiredCount > 0 ? "late" : expiringCount > 0 ? "needs-you" : "done",
-              label: expiredCount > 0 ? `${expiredCount} already expired` : expiringCount > 0 ? "within 30 days" : "none due soon",
-            }}
-            baseline="next 30 days"
-            // Permits expiring -> PERMITS.LIST pre-filtered "Expiring 30d" (DASHBOARD.PROJECT's own row, verbatim)
-            onClick={() => router.push(`/permits?projectId=${projectId}&withinDays=30`)}
-          />
+          <ChainDoor doorId="project.project_value" projectId={projectId}>
+            <KpiCard
+              label={labelFor(dashboardLabels, "projectValue", "Project Value")}
+              value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
+              trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
+              baseline="overridable per project"
+            />
+          </ChainDoor>
+          {/* CORRECTION C-14, THE TILE THAT WENT TO THE WRONG PLACE. It
+              pointed at /scope?tab=variance; ScopeClient renders no tabs, so
+              the parameter was ignored and this landed on the same BOQ list
+              as Contract Value beside it. It now opens the Budget module. */}
+          <ChainDoor doorId="project.budget_vs_actual" projectId={projectId}>
+            <KpiCard
+              label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
+              value={money(dashboard.expenses, currency)}
+              trend={{
+                direction: dashboard.expenses > dashboard.budget ? "up" : "down",
+                tone: dashboard.expenses > dashboard.budget ? "late" : "done",
+                label: dashboard.expenses > dashboard.budget ? "over budget" : "within budget",
+              }}
+              baseline={`budget ${money(dashboard.budget, currency)}`}
+              visual={<BulletChart value={dashboard.expenses} target={dashboard.budget} lowerIsBetter unit="" />}
+            />
+          </ChainDoor>
+          {/* C-06, verbatim: this tile "must load 'Cedar Heights > Permits >
+              Expiring soon' and open /permits?withinDays=30". */}
+          <ChainDoor
+            doorId="project.permits_expiring"
+            projectId={projectId}
+            disabledReason={expiringCount === 0 ? "No permits expiring in the next 30 days" : undefined}
+          >
+            <KpiCard
+              label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
+              value={String(expiringCount)}
+              trend={{
+                direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
+                tone: expiredCount > 0 ? "late" : expiringCount > 0 ? "needs-you" : "done",
+                label: expiredCount > 0 ? `${expiredCount} already expired` : expiringCount > 0 ? "within 30 days" : "none due soon",
+              }}
+              baseline="next 30 days"
+            />
+          </ChainDoor>
         </>
       }
       trendColumn={

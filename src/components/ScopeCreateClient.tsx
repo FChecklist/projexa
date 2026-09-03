@@ -14,10 +14,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { emptyLine, childPercentSum, collectLines, toPayloadLineItems, NO_CATEGORY_CHIP_LABEL, type LineItemDraft } from "@/lib/boq-helpers";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write would use.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
 export default function ScopeCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const { pushReceipt } = useShellChain();
   const [title, setTitle] = useState("");
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
@@ -77,6 +82,7 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
         throw new Error(`Couldn't create BOQ — ${validLines.length} line item(s) were submitted but only ${savedLineItems} came back saved.`);
       }
       toast.success("BOQ created");
+      pushReceipt({ text: `Saved BOQ ${title.trim()} — ${savedLineItems} lines`, href: `/scope/${savedId}` });
       router.push(`/scope/${savedId}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't create BOQ");

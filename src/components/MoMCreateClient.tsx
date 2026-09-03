@@ -8,10 +8,15 @@ import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write would use.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 export default function MoMCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const { pushReceipt } = useShellChain();
   const [title, setTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -27,6 +32,7 @@ export default function MoMCreateClient({ projectId }: { projectId: string }) {
         body: JSON.stringify({ title: title.trim(), scheduledAt, projectId }),
       });
       toast.success("Meeting created");
+      pushReceipt({ text: `Saved meeting ${title.trim()}`, href: `/moms/${meeting.id}` });
       router.push(`/moms/${meeting.id}`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't create meeting"));

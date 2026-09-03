@@ -41,6 +41,10 @@
 // implemented it on the other side either, until now.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+// R67 C-06: "+ Record Receipt" is a DOOR -- its words and its destination
+// come from src/lib/card-catalogue.ts, and pressing it fills the control strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -110,8 +114,13 @@ function renderMaterialCell(field: string, m: Material, money: (v: number | stri
   }
 }
 
+// R67 C-06: one door id, one label, read from the catalogue.
+const RECEIPT_DOOR_ID = "materials.record_receipt";
+const receiptDoorLabel = doorById(RECEIPT_DOOR_ID)?.label ?? "Record Receipt";
+
 export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
   const router = useRouter();
+  const openDoor = useOpenDoor();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const orgMoney = useOrgMoney();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
@@ -196,10 +205,17 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           {/* Real screen navigation (2026-08-30) -- replaces the old
-              "Record Receipt" Dialog popup with a real create route. */}
-          <Button disabled={materials.length === 0} onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}><Plus className="size-4" /> Record Receipt</Button>
+              "Record Receipt" Dialog popup with a real create route.
+              R67 C-06: the button is a door, and when it cannot be pressed it
+              says why in words rather than sitting greyed and silent. */}
+          {materials.length === 0 && (
+            <span className="text-xs text-px-muted">Add a material to the master list first</span>
+          )}
+          <Button disabled={materials.length === 0} onClick={() => openDoor(RECEIPT_DOOR_ID, { projectId })}>
+            <Plus className="size-4" /> {receiptDoorLabel}
+          </Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">

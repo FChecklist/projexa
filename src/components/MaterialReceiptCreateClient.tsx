@@ -10,12 +10,17 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write's would.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Material = { id: string; name: string; isActive: boolean };
 
 export default function MaterialReceiptCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const { pushReceipt } = useShellChain();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialId, setMaterialId] = useState("");
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -40,6 +45,11 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
         body: JSON.stringify({ projectId, materialId, receivedDate, quantity: Number(quantity), unitCost: unitCost ? Number(unitCost) : undefined }),
       });
       toast.success("Receipt recorded");
+      const material = materials.find((m) => m.id === materialId);
+      pushReceipt({
+        text: `Recorded ${quantity} of ${material?.name ?? "this material"} on ${receivedDate}`,
+        href: `/materials?projectId=${projectId}&tab=receipts`,
+      });
       router.push(`/materials?projectId=${projectId}&tab=receipts`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't record receipt"));

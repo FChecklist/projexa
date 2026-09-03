@@ -21,6 +21,12 @@ import {
   resolveTaskTitle,
   timesheetReceiptLine,
   timesheetRoute,
+  DOORS,
+  DOOR_SEGMENT_PREFIX,
+  doorById,
+  doorRoute,
+  doorSegments,
+  doorSentence,
 } from "./card-catalogue";
 
 const CEDAR = "Cedar Heights Villa - Phase 1";
@@ -237,5 +243,101 @@ describe("the timesheet receipt", () => {
   test("the right pane lands on the project's own timesheet tab", () => {
     expect(timesheetRoute("p1")).toBe("/schedule?projectId=p1&tab=timesheet");
     expect(timesheetRoute(null)).toBe("/schedule?tab=timesheet");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-06 -- THE DOORS
+// ---------------------------------------------------------------------------
+
+describe("DOORS", () => {
+  test("every door id is unique -- two rows for one id is a silent override", () => {
+    const ids = DOORS.map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("every door has a route, a label and at least one step", () => {
+    for (const door of DOORS) {
+      expect(door.route.startsWith("/")).toBe(true);
+      expect(door.label.trim().length).toBeGreaterThan(0);
+      expect(door.steps.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("no door's route carries a query string -- the query is `query`, so it cannot be doubled", () => {
+    for (const door of DOORS) {
+      expect(door.route.includes("?")).toBe(false);
+    }
+  });
+
+  test("doorById is null for an id nobody registered, rather than throwing", () => {
+    expect(doorById("nope.nothing")).toBeNull();
+    expect(doorById("labour.mark_attendance")?.label).toBe("Mark Attendance");
+  });
+});
+
+describe("doorSentence", () => {
+  test("C-06's acceptance string, verbatim", () => {
+    const door = doorById("labour.mark_attendance")!;
+    expect(doorSentence(door, "Cedar Heights Villa - Phase 1")).toBe(
+      "Cedar Heights Villa - Phase 1 > Manpower > Mark attendance > Today"
+    );
+  });
+
+  test("C-06's Permits tile, verbatim", () => {
+    const door = doorById("project.permits_expiring")!;
+    expect(doorSentence(door, "Cedar Heights")).toBe("Cedar Heights > Permits > Expiring soon");
+  });
+
+  test("with no project it is still a sentence, not a leading separator", () => {
+    const door = doorById("dashboard.total_budget")!;
+    expect(doorSentence(door, null)).toBe("Budget > All budgets");
+    expect(doorSentence(door, "   ")).toBe("Budget > All budgets");
+  });
+});
+
+describe("doorRoute", () => {
+  test("C-06's Permits tile lands on /permits with the project and the 30-day filter", () => {
+    const door = doorById("project.permits_expiring")!;
+    expect(doorRoute(door, "p1")).toBe("/permits?projectId=p1&withinDays=30");
+  });
+
+  test("a door that is not project-scoped never carries a projectId it was handed", () => {
+    const door = doorById("project.budget_vs_actual")!;
+    expect(doorRoute(door, "p1")).toBe("/budgets");
+  });
+
+  test("the Work Progress Report is D-02's one screen", () => {
+    const door = doorById("work_progress.run_report")!;
+    expect(doorRoute(door, "p1")).toBe("/work-progress?projectId=p1&tab=report");
+  });
+
+  test("a project-scoped door with no project still opens its screen", () => {
+    expect(doorRoute(doorById("scope.new_boq")!, null)).toBe("/scope/new");
+  });
+});
+
+describe("doorSegments", () => {
+  test("segments are namespaced, so the route effects can tell a door's own step apart", () => {
+    const segments = doorSegments(doorById("scope.new_boq")!);
+    expect(segments.map((s) => s.label)).toEqual(["Scope", "New BOQ"]);
+    expect(segments[0].id).toBe(`${DOOR_SEGMENT_PREFIX}scope.new_boq:scope`);
+    expect(segments[0].kind).toBe("action");
+    expect(segments[1].kind).toBe("step");
+  });
+
+  test("no segment is a root -- the project root is the shell's, never a door's", () => {
+    for (const door of DOORS) {
+      for (const seg of doorSegments(door)) {
+        expect(seg.kind === "action" || seg.kind === "step").toBe(true);
+      }
+    }
+  });
+
+  test("the ids a door writes are unique within that door", () => {
+    for (const door of DOORS) {
+      const ids = doorSegments(door).map((s) => s.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
   });
 });

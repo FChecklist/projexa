@@ -3,6 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+// R67 C-06: "Run Report" is a DOOR. It fills the control strip with
+// "<project> > Work Progress > Report" and then runs, rather than running
+// against a strip that still reads "Select a module to begin".
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -335,7 +340,11 @@ function defaultFrom() {
   return d.toISOString().slice(0, 10);
 }
 
+const RUN_REPORT_DOOR_ID = "work_progress.run_report";
+const runReportDoorLabel = doorById(RUN_REPORT_DOOR_ID)?.label ?? "Run Report";
+
 export default function WorkProgressReportClient({ projectId }: { projectId: string }) {
+  const openDoor = useOpenDoor();
   const [from, setFrom] = useState(defaultFrom());
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
@@ -440,8 +449,18 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <Button onClick={() => runReport()} disabled={loading} data-testid="work-progress-report-run">
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+          <Button
+            onClick={() => {
+              // The strip first, then the run. `navigate: false` because this
+              // IS the report screen -- pushing its own route again would
+              // throw away the from/to the user just picked.
+              openDoor(RUN_REPORT_DOOR_ID, { projectId, navigate: false });
+              void runReport();
+            }}
+            disabled={loading}
+            data-testid="work-progress-report-run"
+          >
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} {runReportDoorLabel}
           </Button>
           {report && (
             <Button onClick={shareReport} disabled={sharing} variant="outline">

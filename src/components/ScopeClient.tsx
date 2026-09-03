@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+// R67 C-06: the module's primary button is a DOOR -- one label and one
+// destination, both from src/lib/card-catalogue.ts, and it fills the strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
@@ -124,8 +128,12 @@ function isTimeoutError(err: unknown): boolean {
 // to live in this file are gone, replaced by real routes. This List Report
 // only needs the list-row shape and the per-row variation figure.
 
+const NEW_BOQ_DOOR_ID = "scope.new_boq";
+const newBoqDoorLabel = doorById(NEW_BOQ_DOOR_ID)?.label ?? "New BOQ";
+
 export default function ScopeClient({ projectId, listColumns }: { projectId: string; listColumns?: RegistryColumn[] | null }) {
   const router = useRouter();
+  const openDoor = useOpenDoor();
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : DEFAULT_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,8 +190,12 @@ export default function ScopeClient({ projectId, listColumns }: { projectId: str
     <div className="space-y-4">
       <div className="flex justify-end">
         {/* Real screen navigation (2026-08-30) -- replaces the old "New BOQ"
-            Dialog popup with a real create route. */}
-        <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
+            Dialog popup with a real create route.
+            R67 C-06: it is a door -- one label, one destination, and the
+            control strip fills in with "<project> > Scope > New BOQ". */}
+        <Button onClick={() => openDoor(NEW_BOQ_DOOR_ID, { projectId })}>
+          <Plus className="size-4" /> {newBoqDoorLabel}
+        </Button>
       </div>
 
       <Card className="shadow-card">

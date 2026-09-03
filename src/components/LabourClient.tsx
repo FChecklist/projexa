@@ -29,6 +29,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
+// R67 C-06: "+ Mark Attendance" is a DOOR. Its words and its destination both
+// come from src/lib/card-catalogue.ts's DOORS table, and pressing it fills the
+// control strip -- which used to go on reading "Select a module to begin" on
+// the very screen the button had just opened.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
@@ -121,8 +127,14 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
+// R67 C-06: one door id, one label, read from the catalogue -- so the button,
+// the composer chip and any KPI tile that opens this door say the same words.
+const ATTENDANCE_DOOR_ID = "labour.mark_attendance";
+const attendanceDoorLabel = doorById(ATTENDANCE_DOOR_ID)?.label ?? "Mark Attendance";
+
 export default function LabourClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
   const router = useRouter();
+  const openDoor = useOpenDoor();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
   const [roster, setRoster] = useState<RosterEntry[]>([]);
@@ -229,10 +241,22 @@ export default function LabourClient({ projectId, registryColumns, initialTab }:
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
-              Attendance" Dialog popup with a real create route. */}
-          <Button disabled={roster.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
+              Attendance" Dialog popup with a real create route.
+              R67 C-06: DISABLED-WITH-REASON. The button was disabled on an
+              empty roster with no words at all, so the one thing the user
+              needed to know -- add a worker first -- was the one thing the
+              screen did not say. */}
+          {roster.length === 0 && (
+            <span className="text-xs text-px-muted">Add a worker to the roster first</span>
+          )}
+          <Button
+            disabled={roster.length === 0}
+            onClick={() => openDoor(ATTENDANCE_DOOR_ID, { projectId })}
+          >
+            <Plus className="size-4" /> {attendanceDoorLabel}
+          </Button>
         </div>
         <Card className="shadow-card">
           <CardContent className="p-0">

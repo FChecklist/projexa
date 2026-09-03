@@ -30,6 +30,10 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+// R67 C-06: the module's primary button is a DOOR -- one label and one
+// destination, both from src/lib/card-catalogue.ts, and it fills the strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Loader2, NotebookText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -79,8 +83,12 @@ function renderMeetingCell(field: string, m: Meeting) {
   }
 }
 
+const NEW_MEETING_DOOR_ID = "moms.new_meeting";
+const newMeetingDoorLabel = doorById(NEW_MEETING_DOOR_ID)?.label ?? "New Meeting";
+
 export default function MoMsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
   const router = useRouter();
+  const openDoor = useOpenDoor();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
@@ -104,8 +112,12 @@ export default function MoMsClient({ projectId, registryColumns }: { projectId: 
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">Minutes of Meeting for this project — live notes, AI summary, PDF export.</p>
         {/* Real screen navigation (2026-08-30) -- replaces the old "New
-            Meeting" Dialog popup with a real create route. */}
-        <Button size="sm" onClick={() => router.push(`/moms/new?projectId=${projectId}`)}><Plus className="size-4" /> New Meeting</Button>
+            Meeting" Dialog popup with a real create route.
+            R67 C-06: it is a door -- the strip reads
+            "<project> > Minutes of Meeting > New meeting" on arrival. */}
+        <Button size="sm" onClick={() => openDoor(NEW_MEETING_DOOR_ID, { projectId })}>
+          <Plus className="size-4" /> {newMeetingDoorLabel}
+        </Button>
       </div>
 
       <Card className="shadow-card">

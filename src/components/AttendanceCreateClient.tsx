@@ -12,12 +12,17 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write's would.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type RosterEntry = { id: string; name: string; isActive: boolean };
 
 export default function AttendanceCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const { pushReceipt } = useShellChain();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterId, setRosterId] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -42,6 +47,11 @@ export default function AttendanceCreateClient({ projectId }: { projectId: strin
         body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
       });
       toast.success("Attendance recorded");
+      const worker = roster.find((r) => r.id === rosterId);
+      pushReceipt({
+        text: `Marked ${worker?.name ?? "this worker"} ${status.replace("_", " ")} on ${attendanceDate}`,
+        href: `/labour?projectId=${projectId}&tab=attendance`,
+      });
       router.push(`/labour?projectId=${projectId}&tab=attendance`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't record attendance"));

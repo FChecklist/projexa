@@ -4,6 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+// R67 C-06: every KPI value and every project row is a DOOR -- a real link
+// that also fills the control strip. Correction C-14 recorded these four
+// tiles as "do not navigate at all"; they were plain cards.
+import { ChainDoor } from "@/components/shell/ChainDoor";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -174,10 +178,34 @@ export default function DashboardHomeView({
         {data && (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+              {/* R67 C-06: "EVERY NUMBER IS A DOOR". Each tile carries its
+                  own chain sentence and its own destination, both from the
+                  DOORS table, and a tile with nothing behind it says so in
+                  words instead of rendering a dead zero. */}
+              <ChainDoor
+                doorId="dashboard.active_projects"
+                disabledReason={data.totalProjects === 0 ? "No active projects yet" : undefined}
+              >
+                <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
+              </ChainDoor>
+              <ChainDoor
+                doorId="dashboard.total_budget"
+                disabledReason={data.totalBudget === 0 ? "No budgets set up yet" : undefined}
+              >
+                <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
+              </ChainDoor>
+              <ChainDoor
+                doorId="dashboard.total_revenue"
+                disabledReason={data.totalRevenue === 0 ? "No sales invoices yet" : undefined}
+              >
+                <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
+              </ChainDoor>
+              <ChainDoor
+                doorId="dashboard.total_expenses"
+                disabledReason={data.totalExpenses === 0 ? "No expenses recorded yet" : undefined}
+              >
+                <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+              </ChainDoor>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -237,7 +265,12 @@ export default function DashboardHomeView({
                         <TableRow key={p.id}>
                           {/* R42 seq24: the real per-project DASHBOARD.PROJECT screen this org table had no link to before -- was a dead end otherwise. */}
                           <TableCell className="font-medium">
-                            <Link href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink hover:underline">{p.name}</Link>
+                            {/* R67 C-06: still a real link -- it now also
+                                fills the strip with
+                                "<project> > Dashboard > Project". */}
+                            <ChainDoor doorId="dashboard.project" projectId={p.id} className="text-px-ink hover:underline">
+                              {p.name}
+                            </ChainDoor>
                           </TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
                           <TableCell className={MONEY_CELL_CLASS}>
