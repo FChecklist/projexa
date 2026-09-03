@@ -27,10 +27,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  // R67 J-01 (audit R-246): the two statically prerendered marketing routes
-  // get an explicit shared-cache header. The list and the header value live
-  // in src/lib/public-page-cache.ts so they are testable; see that file for
-  // why the route list is exact rather than a pattern.
+  // R67 J-01 (audit R-246): every statically prerendered marketing document
+  // -- the two public pages, one document per locale -- gets an explicit
+  // shared-cache header. The list and the header value live in
+  // src/lib/public-page-cache.ts so they are testable; see that file for why
+  // the route list is exact rather than a pattern, and middleware.ts for why
+  // none of these responses may carry a Set-Cookie.
   async headers() {
     return publicPageHeaderRules();
   },

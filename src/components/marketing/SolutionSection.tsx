@@ -3,6 +3,7 @@ import {
   FileSignature, Wallet, Bot, ClipboardList, FileCheck2,
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 const MODULE_KEYS = [
@@ -21,8 +22,8 @@ const MORE_MODULE_KEYS = [
   "moodBoards", "ffe", "floorPlans", "manpower", "materials", "vendors", "documents", "kpis", "reports",
 ] as const;
 
-export async function SolutionSection() {
-  const t = await getTranslations("Marketing.solution");
+export async function SolutionSection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.solution" });
 
   return (
     <section className="border-b border-border bg-muted/40 py-20 sm:py-28">

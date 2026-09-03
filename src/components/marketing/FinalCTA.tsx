@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "./Reveal";
 import { ContactForm } from "./ContactForm";
 
-export async function FinalCTA({ sourcePage = "home" }: { sourcePage?: "home" | "how-it-works" }) {
-  const t = await getTranslations("Marketing.finalCta");
+export async function FinalCTA({
+  locale,
+  sourcePage = "home",
+}: MarketingLocaleProps & { sourcePage?: "home" | "how-it-works" }) {
+  const t = await getTranslations({ locale, namespace: "Marketing.finalCta" });
 
   return (
     <section id="contact" className="relative overflow-hidden bg-px-ink py-20 sm:py-28">

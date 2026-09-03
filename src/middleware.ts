@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getClaimsWithRetry } from "./lib/supabase/get-claims-with-retry";
 import { checkApiWriteAccess, MUTATING_METHODS } from "./lib/authz/api-write-policy";
 import { requiresAuthenticatedPage } from "./lib/authz/page-access";
+import { isLandingRoute, isStaticPublicRoute, localisedMarketingPath } from "./lib/public-page-cache";
+import { LOCALE_COOKIE, localeFromAcceptLanguage, resolveLocale as resolveLocaleFromCookie } from "./i18n/locales";
 
 // CONFIRMED ROOT CAUSE of the random mid-session logouts + silent write
 // failures (investigated 2026-07-13, see auth-guard.ts for the full
@@ -28,31 +30,23 @@ import { requiresAuthenticatedPage } from "./lib/authz/page-access";
 // stops the redundant-refresh fan-out.
 
 // PLATFORM-01 Wave 2 (Workstream 5, i18n): locale resolution, added
-// alongside the auth logic above rather than replacing any of it. Cookie/
-// header-based only -- deliberately NOT a URL-prefix routing scheme
-// ([locale]/dashboard etc.), since that would rewrite every path this
-// middleware's PROTECTED_PREFIXES check matches against and would be a much
-// bigger structural change than this wave should attempt. Kept in sync
-// manually with src/i18n/request.ts's copy of the same two constants (see
-// that file's comment for why it isn't a shared import).
-const SUPPORTED_LOCALES = ["en", "hi"] as const;
-const DEFAULT_LOCALE = "en";
-const LOCALE_COOKIE = "NEXT_LOCALE";
-
+// alongside the auth logic above rather than replacing any of it. For the
+// AUTHENTICATED app it stays cookie/header-based -- deliberately NOT a
+// URL-prefix routing scheme ([locale]/dashboard etc.), since that would
+// rewrite every path this middleware's page-access check matches against and
+// would be a much bigger structural change than this wave should attempt.
+//
+// The vocabulary itself now comes from src/i18n/locales.ts, which is a leaf
+// module with no imports (safe in the Edge runtime), instead of the
+// hand-synced copy of SUPPORTED_LOCALES/DEFAULT_LOCALE/LOCALE_COOKIE that
+// used to live here beside the same constants in src/i18n/request.ts.
 function resolveLocale(request: NextRequest): string {
   const cookieLocale = request.cookies.get(LOCALE_COOKIE)?.value;
-  if (cookieLocale && (SUPPORTED_LOCALES as readonly string[]).includes(cookieLocale)) {
-    return cookieLocale;
-  }
-  // Accept-Language, e.g. "hi-IN,hi;q=0.9,en;q=0.8" -- take the first tag's
-  // primary subtag only, no q-value weighting; a full negotiation algorithm
-  // is more than a first-visit default needs.
-  const acceptLanguage = request.headers.get("accept-language");
-  const preferred = acceptLanguage?.split(",")[0]?.split("-")[0]?.trim().toLowerCase();
-  if (preferred && (SUPPORTED_LOCALES as readonly string[]).includes(preferred)) {
-    return preferred;
-  }
-  return DEFAULT_LOCALE;
+  if (cookieLocale) return resolveLocaleFromCookie(cookieLocale);
+  // Accept-Language, e.g. "hi-IN,hi;q=0.9,en;q=0.8" -- first tag's primary
+  // subtag only; a full negotiation algorithm is more than a first-visit
+  // default needs.
+  return localeFromAcceptLanguage(request.headers.get("accept-language")) ?? resolveLocaleFromCookie(undefined);
 }
 
 // Only writes the cookie when the incoming request didn't already have one
@@ -60,6 +54,8 @@ function resolveLocale(request: NextRequest): string {
 // refresh. Applied to whichever response this middleware ends up returning
 // (redirect or pass-through) so locale detection works no matter which
 // branch below fires.
+//
+// NEVER applied to a cacheable public route -- see the final return.
 function withLocaleCookie(response: NextResponse, request: NextRequest, locale: string): NextResponse {
   if (!request.cookies.get(LOCALE_COOKIE)) {
     response.cookies.set(LOCALE_COOKIE, locale, {
@@ -224,7 +220,12 @@ export async function middleware(request: NextRequest) {
   // exception below: the marketing page has no resume logic to reach, and
   // the previous in-page redirect had no such exception either, so this is
   // byte-for-byte the behaviour that shipped before.
-  if (userId && pathname === "/") {
+  //
+  // isLandingRoute rather than `pathname === "/"` so the Hindi landing
+  // document (/hi) behaves identically for a logged-in visitor who reaches it
+  // directly -- the rewrite below never sends one there, because this
+  // redirect fires first.
+  if (userId && isLandingRoute(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return withLocaleCookie(NextResponse.redirect(url), request, locale);
@@ -259,6 +260,47 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/dashboard";
     return withLocaleCookie(NextResponse.redirect(url), request, locale);
   }
+
+  // R67 J-01 fix pass (audit R-246): serve the marketing page in the
+  // visitor's locale by REWRITING to that locale's prerendered document,
+  // rather than by making the page read a cookie.
+  //
+  // Making "/" and /how-it-works static means one HTML document per URL, and
+  // a cached document cannot vary by cookie -- the first cut of J-01
+  // therefore served English to everyone and silently retired the complete
+  // Hindi marketing translation that ships in messages/hi.json. A rewrite is
+  // what static rendering does permit: /hi and /hi/how-it-works are separately
+  // prerendered documents, the rewrite target is what the CDN keys its cache
+  // on, and the canonical URL the visitor sees stays "/" either way. Neither
+  // page regains a request-time read.
+  //
+  // A rewrite, never a redirect: a redirect would put a locale in the URL bar
+  // and change every shared link.
+  const localisedPath = localisedMarketingPath(pathname, locale);
+  if (localisedPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = localisedPath;
+    const rewrite = NextResponse.rewrite(url);
+    // Carry over any auth cookie Supabase refreshed while checking claims
+    // above (rare on a public page, but dropping it would silently discard a
+    // rotated refresh token). Deliberately NOT withLocaleCookie -- see below.
+    for (const cookie of supabaseResponse.cookies.getAll()) rewrite.cookies.set(cookie);
+    return rewrite;
+  }
+
+  // R67 J-01 fix pass: a cacheable public route must never leave here with a
+  // Set-Cookie on it. withLocaleCookie() writes NEXT_LOCALE whenever the
+  // request arrived without one -- which is exactly the cold first visit to
+  // "/" and /how-it-works, the visit the s-maxage header was added for. Two
+  // real consequences if it did: a shared cache that stored the response
+  // would replay one visitor's NEXT_LOCALE to the next (and it would then
+  // follow them into every authenticated route), and Vercel's edge refuses to
+  // cache any response carrying Set-Cookie at all, so the header would be
+  // inert on precisely the request it exists for. The cookie buys nothing on
+  // these four routes anyway -- they no longer vary by it, the rewrite above
+  // reads the request's own cookie/Accept-Language directly, and /login (the
+  // next hop for anyone who acts on the page) still sets it.
+  if (isStaticPublicRoute(pathname)) return supabaseResponse;
 
   return withLocaleCookie(supabaseResponse, request, locale);
 }

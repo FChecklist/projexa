@@ -149,6 +149,13 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // so a sidebar entry would be meaningless.
   "/",
   "/how-it-works",
+  // The same two marketing pages prerendered in Hindi (R67 J-01). They are
+  // never linked from anywhere: middleware.ts REWRITES a Hindi visitor's
+  // request for "/" or /how-it-works to them, so the canonical URL a person
+  // sees and shares stays the one above. A nav entry -- or any link -- would
+  // be wrong, not merely unnecessary.
+  "/hi",
+  "/hi/how-it-works",
   "/login",
   "/signup",
   "/auth/callback",

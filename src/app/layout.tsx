@@ -70,6 +70,18 @@ export default async function RootLayout({
   // middleware.ts sets (see src/i18n/request.ts) -- no [locale] URL segment
   // exists in this app, so <html lang> is set from the resolved locale here
   // rather than from a route param.
+  //
+  // R67 J-01 fix pass, stated rather than left to be discovered: on the four
+  // statically prerendered marketing documents this resolves to the DEFAULT
+  // locale, including on the Hindi ones. A layout renders before the page it
+  // wraps, so nothing a page does can reach this line, and under
+  // `force-static` there is no cookie to read either -- one <html lang> is
+  // baked into every prerendered route. The Hindi documents therefore declare
+  // their language on their own wrapper element (see LandingPage /
+  // HowItWorksContent), which is the standards-correct way to mark a subtree's
+  // language and is what assistive tech and search engines read for the
+  // content they are in. Every authenticated route is dynamic and gets the
+  // cookie's locale here as before.
   const locale = await getLocale();
   const messages = await getMessages();
 

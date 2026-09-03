@@ -21,7 +21,9 @@ const APP_DIR = import.meta.dir;
 
 const ROUTE_FILES: Record<(typeof STATIC_PUBLIC_ROUTES)[number], string> = {
   "/": join(APP_DIR, "page.tsx"),
+  "/hi": join(APP_DIR, "hi", "page.tsx"),
   "/how-it-works": join(APP_DIR, "how-it-works", "page.tsx"),
+  "/hi/how-it-works": join(APP_DIR, "hi", "how-it-works", "page.tsx"),
 };
 
 // Imported once at module scope rather than inside each test: pulling in a
@@ -29,14 +31,15 @@ const ROUTE_FILES: Record<(typeof STATIC_PUBLIC_ROUTES)[number], string> = {
 // through the transpiler, which takes longer than bun's default 5 s
 // per-test timeout on a cold run.
 type RouteSegmentConfig = { dynamic?: unknown; revalidate?: unknown };
-const ROUTE_MODULES: Record<string, RouteSegmentConfig> = {
-  "/": (await import(ROUTE_FILES["/"])) as RouteSegmentConfig,
-  "/how-it-works": (await import(ROUTE_FILES["/how-it-works"])) as RouteSegmentConfig,
-};
+const ROUTE_MODULES: Record<string, RouteSegmentConfig> = Object.fromEntries(
+  await Promise.all(
+    Object.entries(ROUTE_FILES).map(async ([route, file]) => [route, (await import(file)) as RouteSegmentConfig])
+  )
+);
 
 describe("the statically prerendered public routes", () => {
-  test("STATIC_PUBLIC_ROUTES names exactly the two marketing pages", () => {
-    expect([...STATIC_PUBLIC_ROUTES]).toEqual(["/", "/how-it-works"]);
+  test("STATIC_PUBLIC_ROUTES names exactly the marketing documents, one per locale", () => {
+    expect([...STATIC_PUBLIC_ROUTES].sort()).toEqual(["/", "/hi", "/hi/how-it-works", "/how-it-works"]);
   });
 
   for (const route of STATIC_PUBLIC_ROUTES) {
@@ -63,11 +66,13 @@ describe("the statically prerendered public routes", () => {
     });
   }
 
-  test("middleware still sends a logged-in visitor from / to /dashboard", () => {
+  test("middleware still sends a logged-in visitor from the landing page to /dashboard", () => {
     // The redirect moved out of src/app/page.tsx; if it did not land here the
     // behaviour is simply gone, and nothing else in the app would notice.
+    // isLandingRoute() rather than a literal "/" since the fix pass added the
+    // Hindi landing document, which must behave identically.
     const middleware = readFileSync(join(APP_DIR, "..", "middleware.ts"), "utf8");
-    expect(middleware).toContain('userId && pathname === "/"');
+    expect(middleware).toContain("userId && isLandingRoute(pathname)");
     expect(middleware).toContain('url.pathname = "/dashboard"');
   });
 });

@@ -1,5 +1,6 @@
 import { Bot, Sparkles, Search, ShieldCheck } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 const CAPABILITY_KEYS = [
@@ -8,8 +9,8 @@ const CAPABILITY_KEYS = [
   { key: "workflow", icon: ShieldCheck },
 ] as const;
 
-export async function CopilotSpotlight() {
-  const t = await getTranslations("Marketing.copilot");
+export async function CopilotSpotlight({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.copilot" });
 
   return (
     <section id="veri" className="border-b border-border bg-background py-20 sm:py-28">
