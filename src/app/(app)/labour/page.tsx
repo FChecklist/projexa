@@ -45,6 +45,9 @@ import {
   resolveProjectForModule,
 } from "@/lib/module-list-source";
 import { timeUpstream } from "@/lib/debug-latency";
+// R67 D-32: WS-A's `source` read as "was this chosen FOR the user?". Derived
+// through the one shared helper so the rail and this screen cannot disagree.
+import { fellBackFrom } from "@/lib/project-selection";
 import LabourClient, { type RosterEntry, type RosterFilterState } from "@/components/LabourClient";
 
 const SKELETON = (
@@ -75,10 +78,21 @@ function summaryDate(requested?: string): string {
 
 async function resolveLanding(requestedProjectId: string | undefined, date: string) {
   const organizationId = await getCachedServerOrganizationId();
-  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return { organizationId, projectId: null as string | null, errorMessage, landing: null };
+  // R67 D-32: `source` and `projectName` come back from the same resolution
+  // that produced the id, so naming the project costs no extra hop. On the fast
+  // path projectName is null BY DESIGN -- and the fast path is a `?projectId=`
+  // or the rail's own cookie, which is a choice the user made, so there is
+  // nothing for D-32 to admit to there either. The two nulls agree.
+  const { projectId, errorMessage, source, projectName } = await resolveProjectForModule(
+    requestedProjectId,
+    organizationId
+  );
+  const resolvedByFallback = fellBackFrom(source);
+  if (!projectId) {
+    return { organizationId, projectId: null as string | null, errorMessage, projectName, resolvedByFallback, landing: null };
+  }
   const landing = await getLabourLanding<RosterEntry>(organizationId, projectId, date);
-  return { organizationId, projectId, errorMessage, landing };
+  return { organizationId, projectId, errorMessage, projectName, resolvedByFallback, landing };
 }
 
 async function AttendanceSummarySection({
@@ -107,7 +121,10 @@ async function LabourSection({
   date: string;
   initialFilter: Partial<RosterFilterState>;
 }) {
-  const { organizationId, projectId, errorMessage, landing } = await resolveLanding(requestedProjectId, date);
+  const { organizationId, projectId, errorMessage, projectName, resolvedByFallback, landing } = await resolveLanding(
+    requestedProjectId,
+    date
+  );
   if (!projectId || !landing) return <ModuleProjectNotice errorMessage={errorMessage} />;
 
   const registryColumns = await timeUpstream("labour:screen-definitions", () =>
@@ -126,6 +143,10 @@ async function LabourSection({
       // R67 D-53: the Daily Summary opens on the day the URL names, which is
       // the same day the strip above it is about.
       initialSummaryDate={date}
+      // R67 D-32: the page's own answer to "which project, and did anyone
+      // actually choose it?" -- so the screen can admit to a guess.
+      projectName={projectName}
+      resolvedByFallback={resolvedByFallback}
     />
   );
 }

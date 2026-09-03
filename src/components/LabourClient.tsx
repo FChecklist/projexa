@@ -249,6 +249,8 @@ export default function LabourClient({
   initialRoster = null,
   initialFilter,
   initialSummaryDate,
+  projectName: projectNameProp,
+  resolvedByFallback = false,
 }: {
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
@@ -261,6 +263,23 @@ export default function LabourClient({
   initialFilter?: Partial<RosterFilterState>;
   /** R67 D-53: the day the Daily Summary tab opens on. */
   initialSummaryDate?: string;
+  /**
+   * R67 D-32. The project's name when the SERVER already resolved it, which on
+   * this page it always has (LabourSection awaits resolveProjectForModule
+   * before rendering). Falls back to D-66's ProjectContext for any caller that
+   * does not have it. A prop rather than context alone because the context is
+   * the RAIL's answer and this is the PAGE's, and D-32 exists precisely because
+   * those two were allowed to disagree.
+   */
+  projectName?: string | null;
+  /**
+   * R67 D-32 (audit R-084). True when no one chose this project -- it was
+   * picked because nothing said which. The screen then says so, rather than
+   * printing a project name as though the user had asked for it. Derived by the
+   * page from resolveProjectForModule's `source` through project-selection's
+   * own fellBackFrom(), so the rail and this screen cannot disagree about it.
+   */
+  resolvedByFallback?: boolean;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
@@ -277,7 +296,8 @@ export default function LabourClient({
   // render the bare number behind a warning glyph instead of guessing.
   const orgMoney = useOrgMoney();
   const { project } = useProjectScope();
-  const projectName = project?.name ?? null;
+  // The page's answer wins over the rail's: see the prop's own note.
+  const projectName = projectNameProp ?? project?.name ?? null;
   // F-25: roster and attendance are each their own Pane, so a failed
   // attendance read can no longer read as an empty roster, and the tab the
   // user is on never waits on the tab they are not.
@@ -456,6 +476,17 @@ export default function LabourClient({
 
   return (
     <>
+    {/* R67 D-32 (audit R-084). The screen used to print a project name with no
+        hint that nobody had chosen it -- the rail could still read "All
+        projects" while every call underneath carried exactly one projectId. It
+        now admits to the guess, and says where to change it. A project the user
+        actually picked, and an org with exactly one project, get no such line:
+        there is nothing to admit to. */}
+    {resolvedByFallback && projectName ? (
+      <p className="mb-3 text-[12px] text-[color:var(--color-veri-status-context)]">
+        Showing {projectName} — pick a project in the top rail to change
+      </p>
+    ) : null}
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
       {/* R67 D-79: the header trio, once, ABOVE the tabs. Each tab used to
           carry exactly one create button -- its own -- so marking attendance

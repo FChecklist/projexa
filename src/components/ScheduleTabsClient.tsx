@@ -253,7 +253,11 @@ export function ScheduleTabsClient({
             boundary (F-30). This band carries the trail and the actions, which
             both need the project's name and a client handler. Two "Schedule"
             headings on one screen is what dropping it here avoids. */}
-        <p className="text-[12px] text-px-muted">{breadcrumb}</p>
+        {/* Carries its own testid because the trail is no longer identifiable
+            by position: it used to be the element before the band's <h1>, and
+            after the F-30 merge the title is the PAGE's, painted outside every
+            Suspense boundary, so there is no <h1> in this header to be before. */}
+        <p data-testid="schedule-breadcrumb" className="text-[12px] text-px-muted">{breadcrumb}</p>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <ListHeaderActions

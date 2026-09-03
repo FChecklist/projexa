@@ -120,8 +120,11 @@ describe("D-44 header band", () => {
     await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
     // The breadcrumb is the trail ABOVE the title, so it is read from its own
     // element rather than from the heading block, which also contains "Schedule"
-    // as the title.
-    const breadcrumb = container.querySelector("header h1")!.previousElementSibling!;
+    // as the title. It is addressed by testid rather than by position: after the
+    // F-30 merge the <h1> belongs to the PAGE (painted at TTFB outside every
+    // Suspense boundary), so "the element before the header's h1" no longer
+    // names anything.
+    const breadcrumb = container.querySelector('[data-testid="schedule-breadcrumb"]')!;
     expect(breadcrumb.textContent!.replace(/\s+/g, " ").trim()).toBe(`Schedule > ${PROJECT_NAME}`);
   });
 
