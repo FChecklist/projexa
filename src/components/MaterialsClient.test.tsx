@@ -256,7 +256,7 @@ describe("MaterialsClient -- the master finally carries a quantity (D-40)", () =
   test("the Issues tab lists what left the store and offers Record Issue", async () => {
     const { getByText, getByTestId } = renderClient({
       "/api/materials/issues": () => jsonRes({
-        issues: [{ id: "iss-1", materialId: "mat-cement", issuedDate: "2026-09-01", quantity: "80", boqItemId: null, issuedTo: "Falcon gang 3", note: null }],
+        issues: [{ id: "iss-1", materialId: "mat-cement", issuedDate: "2026-09-01", quantity: "80", boqLineItemId: null, issuedTo: "Falcon gang 3", note: null }],
       }),
     }, "issues");
 

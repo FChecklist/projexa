@@ -70,7 +70,7 @@ type Material = {
 };
 type Issue = {
   id: string; materialId: string; issuedDate: string; quantity: string;
-  boqItemId: string | null; issuedTo: string | null; note: string | null;
+  boqLineItemId: string | null; issuedTo: string | null; note: string | null;
 };
 type Receipt = {
   id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null;
@@ -821,7 +821,7 @@ export default function MaterialsClient({
                       <TableCell className="text-px-muted">{formatDateNumeric(issue.issuedDate)}</TableCell>
                       <TableCell className="font-medium">{materialName(issue.materialId)}</TableCell>
                       <TableCell className="text-px-muted">{issue.issuedTo ?? "—"}</TableCell>
-                      <TableCell className="text-px-muted">{issue.boqItemId ?? "—"}</TableCell>
+                      <TableCell className="text-px-muted">{issue.boqLineItemId ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatQty(issue.quantity)}</TableCell>
                     </TableRow>
                   ))}

@@ -56,7 +56,7 @@ export default function MaterialIssueCreateClient({
   const [materialId, setMaterialId] = useState(initialMaterialId ?? "");
   const [issuedDate, setIssuedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [quantity, setQuantity] = useState("");
-  const [boqItemId, setBoqItemId] = useState("");
+  const [boqLineItemId, setBoqLineItemId] = useState("");
   const [issuedTo, setIssuedTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -113,7 +113,7 @@ export default function MaterialIssueCreateClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, materialId, issuedDate, quantity: Number(quantity),
-          boqItemId: boqItemId || undefined,
+          boqLineItemId: boqLineItemId || undefined,
           issuedTo: issuedTo.trim() || undefined,
         }),
       });
@@ -198,7 +198,7 @@ export default function MaterialIssueCreateClient({
         >
           {(f) => (
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={boqItemId} onValueChange={setBoqItemId}>
+              <Select value={boqLineItemId} onValueChange={setBoqLineItemId}>
                 <SelectTrigger {...f} className="min-w-64" disabled={boqLines.length === 0}>
                   <SelectValue placeholder={boqLines.length === 0 ? "No BOQ lines on this project yet" : "Select a BOQ line"} />
                 </SelectTrigger>
