@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
@@ -15,6 +15,7 @@ import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
 import { projexaReportDestination } from "@/lib/work-progress-report-params";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
@@ -138,6 +139,23 @@ function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: un
 // report/analysis type across the whole platform (ERP, compliance,
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
+// R67 F-10 (R-134). A report run is a full round trip that replaces whatever is
+// on screen with a spinner -- including when the user re-runs the SAME report on
+// the SAME project a moment later, or comes back to /reports having just looked
+// at it. Three changes, none of which can make the screen show a figure it did
+// not receive from the server:
+//
+//   1. RESULTS ARE CACHED per (report, project, params) in sessionStorage and
+//      painted immediately while a fresh run replaces them. The reader gets
+//      something to read at once; the number they end up with is still current.
+//      A cached result is LABELLED as such until the live one lands, so nobody
+//      mistakes a remembered figure for a just-computed one.
+//   2. CHANGING THE PICKER PREFETCHES that report, so Run Report is usually
+//      instant instead of starting the round trip on the click.
+//   3. A 20 s ABORT BUDGET, so a hung upstream ends in a message and a usable
+//      screen rather than an indefinite spinner.
+const REPORT_REQUEST_BUDGET_MS = 20_000;
+
 function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
   const router = useRouter();
   const [reportName, setReportName] = useState("project-status");
@@ -147,6 +165,7 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   const [ranOnce, setRanOnce] = useState(false);
   const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const orgMoney = useOrgMoney();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
@@ -161,15 +180,66 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   // latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
+  // The params that identify THIS run, in one place, so the cache key, the
+  // request and the prefetch cannot drift apart.
+  const currentParams = useCallback(
+    (name: string): Record<string, string> => (name === "weekly-project" ? { weekStart } : {}),
+    [weekStart]
+  );
+
+  const requestUrl = useCallback(
+    (name: string) => {
+      const params = new URLSearchParams({ projectId, ...currentParams(name) });
+      return `/api/reports/${encodeURIComponent(name)}?${params.toString()}`;
+    },
+    [projectId, currentParams]
+  );
+
+  const cacheKeyFor = useCallback(
+    (name: string) => reportCacheKey(name, projectId, currentParams(name)),
+    [projectId, currentParams]
+  );
+
+  // Paint from cache the moment the selection changes. Safe: the value is
+  // labelled as remembered, and a live run overwrites it with the server's own
+  // answer.
+  useEffect(() => {
+    const cached = readCachedReport(cacheKeyFor(reportName));
+    if (cached !== null) {
+      setResult(cached);
+      setFromCache(true);
+      setRanOnce(true);
+      setRunError(null);
+    }
+  }, [reportName, cacheKeyFor]);
+
+  // Changing the picker warms the next report, so Run Report is usually
+  // instant. Failures are swallowed: a prefetch must never surface an error,
+  // and the real Run that follows reports properly.
+  const prefetchReport = useCallback(
+    (name: string) => {
+      const key = cacheKeyFor(name);
+      if (readCachedReport(key) !== null) return;
+      void fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data !== null) writeCachedReport(key, data);
+        })
+        .catch(() => {});
+    },
+    [cacheKeyFor, requestUrl]
+  );
+
   async function runReport() {
     const myGeneration = ++requestGeneration.current;
+    const key = cacheKeyFor(reportName);
     setLoading(true);
     setRunError(null);
     setStartedAt(Date.now());
     try {
-      const params = new URLSearchParams({ projectId });
-      if (reportName === "weekly-project") params.set("weekStart", weekStart);
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
+      // A hung upstream must end in a message and a usable screen, not an
+      // indefinite spinner on a page whose whole content is this one panel.
+      const res = await fetch(requestUrl(reportName), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const reason = typeof data?.error === "string" ? data.error : null;
@@ -179,7 +249,9 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
       }
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
+      setFromCache(false);
       setRanOnce(true);
+      writeCachedReport(key, data);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
       // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
@@ -188,11 +260,20 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
       // says WHICH report failed and why -- faded with the notification. The
       // failure is now stated in the panel, through the same dictionary
       // every other pane uses, with a Retry that re-runs it.
+      const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
       setRunError({
         status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
-        message: err instanceof Error && err.message ? err.message : null,
+        message: aborted
+          ? "The report did not finish in time. Try a narrower range, or run it again."
+          : err instanceof Error && err.message
+            ? err.message
+            : null,
       });
-      setResult(null);
+      // R67 F-10: a previously cached result is deliberately LEFT on screen
+      // when a fresh run fails. It is still the last real answer the server
+      // gave, and it is still labelled as remembered, so nothing is presented
+      // as current that is not. Only a panel with nothing real to show clears.
+      if (!fromCache) setResult(null);
     } finally {
       if (myGeneration === requestGeneration.current) setLoading(false);
     }
@@ -212,7 +293,15 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5">
             <Label>Report</Label>
-            <Select value={reportName} onValueChange={setReportName}>
+            <Select
+              value={reportName}
+              onValueChange={(name) => {
+                setReportName(name);
+                // R67 F-10: warm the next report on SELECTION, so Run Report is
+                // usually instant instead of starting the round trip on click.
+                prefetchReport(name);
+              }}
+            >
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -239,13 +328,13 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
               The Work Progress Report opens in the Work Progress module, where the date range, the view and the
               BOQ version live in the URL and the report runs as soon as it opens.
             </p>
-          ) : runError ? (
+          ) : runError && result === null ? (
             <PaneErrorCard
               entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
               error={runError}
               onRetry={runReport}
             />
-          ) : loading ? (
+          ) : loading && result === null ? (
             <PaneWaitingCaption
               startedAt={startedAt}
               entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
@@ -256,11 +345,37 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           ) : result === null ? (
             <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
           ) : (
-            <ReportOutput
-              data={result}
-              fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
-            />
+            // R67 D-65 x F-10. Both lanes' rules apply here at once, and the
+            // ORDER of the two branches above is what makes them compatible:
+            // a failure or a wait with NOTHING real on screen still gets D-65's
+            // error card or waiting caption, but neither is allowed to REPLACE
+            // a remembered answer the reader is already reading. When there is
+            // one, the failure is stated above it and the answer stays, still
+            // labelled as remembered -- so nothing is ever shown as current
+            // that is not, and nothing true is thrown away to say so.
+            <>
+              {runError && (
+                <div className="mb-3">
+                  <PaneErrorCard
+                    entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+                    error={runError}
+                    onRetry={runReport}
+                  />
+                </div>
+              )}
+              {(fromCache || loading) && (
+                <p role="status" className="mb-3 text-[12.5px] text-px-muted">
+                  {loading
+                    ? "Showing the last result while this run finishes…"
+                    : "Showing the last result. Click Run Report for current figures."}
+                </p>
+              )}
+              <ReportOutput
+                data={result}
+                fieldLabels={REPORT_FIELD_LABELS[reportName]}
+                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+              />
+            </>
           )}
         </CardContent>
       </Card>

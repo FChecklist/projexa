@@ -201,6 +201,53 @@ describe("readWorkProgress -- a failed entry read can never become zero rows", (
   });
 });
 
+// R67 F-05 (lane F1, ported here by the integration train). THE REGRESSION
+// GUARD THIS FILE WAS MISSING.
+//
+// The 7.4 s /work-progress load was a SERIAL CHAIN: entries and activities,
+// then /api/scope, then /api/scope/{id} -- pulling a whole BOQ's line items
+// across the wire to translate one column, and still printing a raw id when
+// the translation missed. VERIDIAN now LEFT JOINs the names onto the progress
+// query, so that chain is gone.
+//
+// Nothing above would notice it coming back: every assertion in this file is
+// about the OUTCOME of the entry read, and the fan-out could be reinstated
+// underneath them with every one still green. This asserts the request set
+// itself, which is the only thing that can catch it.
+//
+// Lane F1 asserted the same property through the rendered component. It is
+// asserted here instead because this is where the reads live and because a
+// plain async function needs no DOM to prove it -- the component-level version
+// could not survive the merge, since the merged screen is built on this module.
+describe("readWorkProgress -- the BOQ fan-out stays gone", () => {
+  test("reads entries and activities ONLY -- never /api/scope, at any depth", async () => {
+    const requested: string[] = [];
+    const realFetchLocal = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      requested.push(url);
+      const body = url.includes("/activities")
+        ? { activities: [{ id: "act-1", name: "Blockwork" }] }
+        : { entries: [entry("e1", "40")] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    try {
+      const result = await readWorkProgress("p-1");
+      expect(result.entries.status).toBe("ready");
+
+      // The two that remain are ONE parallel batch, not a chain.
+      expect(requested).toHaveLength(2);
+      expect(requested.some((u) => u.startsWith("/api/work-progress?"))).toBe(true);
+      expect(requested.some((u) => u.startsWith("/api/work-progress/activities"))).toBe(true);
+      // The expensive half, in either of its two forms.
+      expect(requested.some((u) => u.includes("/api/scope"))).toBe(false);
+    } finally {
+      globalThis.fetch = realFetchLocal;
+    }
+  });
+});
+
 describe("readCategoryProgress -- the chart's failure is the chart's own", () => {
   test("a 500 is an error outcome, not an empty bar set", async () => {
     stubFetch({ "/api/reports/category-progress": { status: 500, body: { error: "no categories service" } } });

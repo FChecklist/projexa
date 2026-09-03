@@ -51,8 +51,12 @@ function installMocks() {
     revalidateTag: () => {},
   }));
   mock.module("@/lib/veridian-client", () => ({
+    // R67 F-03 (integration): the project list read is GET /projects, one
+    // indexed read upstream. It was GET /dashboard -- the earned-value
+    // aggregate -- until lane F1 merged; asserting the old path here would
+    // have gone on describing a call this module no longer makes.
     callVeridian: async (path: string) => {
-      if (path === "/dashboard") {
+      if (path === "/projects") {
         projectsCalls += 1;
         if (projectsResult instanceof Error) throw projectsResult;
         return projectsResult;

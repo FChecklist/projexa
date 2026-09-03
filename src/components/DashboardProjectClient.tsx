@@ -112,6 +112,15 @@ type ProjectDashboard = {
   // "Permits Expiring" tile no longer costs its own request.
   permitsExpiringCount: number;
   permitsExpiredCount: number;
+  // R67 F-14/F-27 (lane F1): the two PANELS this screen used to fetch for
+  // itself, computed in the same statement -- and the same transaction -- as
+  // every figure above. Both optional because a VERIDIAN that predates the
+  // fields simply omits them, and this screen must keep working against one:
+  // see the fallbacks in load().
+  categories?: CategoryRow[];
+  // The five newest progress entries, with each activity's name already
+  // resolved, so the screen no longer reads the whole progress log for five rows.
+  recentEntries?: RecentEntry[];
 };
 type Currency = { code: string; isBaseCurrency: boolean };
 type CategoryRow = { categoryId: string; name: string; percentComplete: number };
@@ -181,10 +190,12 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
 
   const load = useCallback(
     (signal: AbortSignal) => {
-      // FOUR INDEPENDENT PROMISES, not one Promise.all with a serial tail.
-      // Nothing here awaits anything else: each setState fires on its own
-      // answer, so the fastest tile is on screen while the slowest is still in
-      // flight.
+      // TWO INDEPENDENT PROMISES, not one Promise.all with a serial tail.
+      // Neither awaits the other: each setState fires on its own answer, so the
+      // fastest tile is on screen while the slower is still in flight. (It was
+      // four until R67 F-14/F-27 folded the two panels into the dashboard
+      // payload; their old reads survive as legacy fallbacks, chained off that
+      // payload rather than raced, so they cost nothing on a current backend.)
       void readJson<ProjectDashboard>(
         `/api/dashboard/project/${encodeURIComponent(projectId)}`,
         signal,
@@ -193,11 +204,61 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         .then((data) => {
           setDashboard({ state: "ready", data, error: null });
           setDashboardStatus(null);
+          // R67 F-27 (lane F1) -- THE PANEL COMES WITH THE PAYLOAD. The recent
+          // progress entries used to be their own /api/work-progress round
+          // trip, which pulled the project's whole progress log to show five
+          // rows. VERIDIAN now computes those five in the same statement as
+          // every figure above, with each activity's name already resolved, so
+          // in the normal case this screen makes one request fewer.
+          //
+          // The old read survives as a FALLBACK, not as a second opinion: it
+          // fires only when the payload does not carry the field, which is what
+          // a VERIDIAN older than F-27 looks like. Chaining it here rather than
+          // racing it is deliberate -- racing would re-introduce exactly the
+          // request this item removes, on every load, to serve the rare case.
+          if (data.categories) {
+            setCategories({ state: "ready", data: data.categories, error: null });
+          } else {
+            // Legacy VERIDIAN only. The category breakdown is still computed
+            // server-side either way (D-4: never summed in the browser); this
+            // path just asks the already-registered "category-progress" report
+            // for it separately.
+            void readJson<{ categories?: CategoryRow[] }>(
+              `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`,
+              signal,
+              "Couldn't load the category breakdown"
+            )
+              .then((cat) => setCategories({ state: "ready", data: cat.categories ?? [], error: null }))
+              .catch((err) => {
+                if (signal.aborted) return;
+                setCategories({ state: "error", data: null, error: reasonText(err, "Couldn't load the category breakdown.") });
+              });
+          }
+
+          if (data.recentEntries) {
+            setRecent({ state: "ready", data: data.recentEntries.slice(0, 5), error: null });
+          } else {
+            void readJson<{ entries?: RecentEntry[] }>(
+              `/api/work-progress?projectId=${encodeURIComponent(projectId)}`,
+              signal,
+              "Couldn't load recent progress"
+            )
+              .then((wp) => setRecent({ state: "ready", data: (wp.entries ?? []).slice(0, 5), error: null }))
+              .catch((err) => {
+                if (signal.aborted) return;
+                setRecent({ state: "error", data: null, error: reasonText(err, "Couldn't load recent progress.") });
+              });
+          }
         })
         .catch((err) => {
           if (signal.aborted) return;
           setDashboardStatus(err instanceof ReadFailed ? err.status : null);
           setDashboard({ state: "error", data: null, error: reasonText(err, "Couldn't load the project dashboard.") });
+          // Neither panel can arrive on a payload that never came, and neither
+          // has an unconditional reader of its own any more, so they say so
+          // rather than spinning for ever.
+          setCategories({ state: "error", data: null, error: reasonText(err, "Couldn't load the category breakdown.") });
+          setRecent({ state: "error", data: null, error: reasonText(err, "Couldn't load recent progress.") });
         });
 
       // The currency is a label, not a figure: if it never answers, the money
@@ -206,32 +267,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         .then((data) => setCurrency((data.currencies ?? []).find((c) => c.isBaseCurrency)))
         .catch(() => {});
 
-      // Category breakdown (RIGHT COLUMN, sorted horizontal bar) reuses the
-      // ALREADY-REGISTERED "category-progress" report (REPORT_REGISTRY,
-      // construction-reports-service.ts) computed server-side (D-4: never
-      // summed in the browser). R67 F-27 moved it into this batch -- it used to
-      // run only after the other five had all resolved.
-      void readJson<{ categories?: CategoryRow[] }>(
-        `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`,
-        signal,
-        "Couldn't load the category breakdown"
-      )
-        .then((data) => setCategories({ state: "ready", data: data.categories ?? [], error: null }))
-        .catch((err) => {
-          if (signal.aborted) return;
-          setCategories({ state: "error", data: null, error: reasonText(err, "Couldn't load the category breakdown.") });
-        });
-
-      void readJson<{ entries?: RecentEntry[] }>(
-        `/api/work-progress?projectId=${encodeURIComponent(projectId)}`,
-        signal,
-        "Couldn't load recent progress"
-      )
-        .then((data) => setRecent({ state: "ready", data: (data.entries ?? []).slice(0, 5), error: null }))
-        .catch((err) => {
-          if (signal.aborted) return;
-          setRecent({ state: "error", data: null, error: reasonText(err, "Couldn't load recent progress.") });
-        });
+      // (The category breakdown and the recent-entries read used to be two more
+      // independent promises here. R67 F-14/F-27 moved both PANELS onto the
+      // dashboard payload -- one transaction upstream instead of three -- so on
+      // a current VERIDIAN this screen makes two requests, not four. Each keeps
+      // its old read as a legacy fallback; see the branches above.)
     },
     [projectId]
   );

@@ -1,56 +1,51 @@
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
-type OrgDashboard = { projects: { id: string; name: string }[] };
-type ProjectDashboard = { projectId: string; progressPercent: number };
+type OrgDashboard = { projects: { id: string; name: string; progressPercent?: number | null }[] };
 
 /**
- * R67 D-03 (R-002 / R-019): `progressPercent` is `number | null`, and null is
- * not a synonym for zero.
+ * R67 D-03 (R-002 / R-019) x F-01 (R-006/R-011), reconciled by the integration
+ * train. Two lanes changed the same function for two different reasons and
+ * BOTH answers are kept.
  *
- * THE DEFECT. The per-project catch below used to `return { ..., progressPercent: 0 }`.
- * The outer catch was already handled correctly -- a failed ORG call produces
- * an errorMessage and ProjectsOverviewClient renders a Retry -- but a failed
- * PER-PROJECT call was silently converted into the number 0. The portfolio
- * screen then printed "0%" beside the project's name and drew a full-width
- * empty progress bar, so a project that is 80 % complete reported 0 % complete
- * to the owner, with nothing anywhere on the page indicating that anything had
- * failed. A false zero is worse than a visible error, because a figure reads
- * as an answer: "we have no figure for this project" and "this project has
- * made no progress" are different facts and must not render the same.
+ * F-01 -- ONE CALL, NOT N. This used to fetch the org dashboard and then call
+ * GET /dashboard/{id} once PER PROJECT, in a Promise.all, purely to read each
+ * project's progressPercent. Every one of those ran getProjectDashboard()
+ * -- budget, revenue, expenses, tasks, photos, earned value -- and opened its
+ * own transaction on tenant-scoped.ts's FIVE-connection app_runtime pool, so an
+ * org with more than a handful of active projects asked for more simultaneous
+ * connections than the pool has and the excess queued: the exact exhaustion the
+ * R66 audit reproduced live (all five sessions "idle in transaction" for 25
+ * minutes). getOrgDashboard() now carries progressPercent per project, computed
+ * by one grouped query inside the transaction it already holds.
  *
- * Making the field nullable rather than dropping the row is deliberate: the
- * project EXISTS and is known by name (that came from the org call, which
- * succeeded), so it belongs on the list. Only its number is missing.
+ * D-03 -- NULL IS NOT ZERO. The per-project catch used to return
+ * `progressPercent: 0`, so the portfolio screen printed "0%" and an empty bar
+ * for a project that is 80 % complete, with nothing indicating a failure. That
+ * fan-out is gone with F-01, but the rule it established is KEPT and still
+ * load-bearing: a project whose row carries no numeric progressPercent reports
+ * null, never a fabricated 0. "We have no figure for this project" and "this
+ * project has made no progress" are different facts and must not render the
+ * same. The project still appears -- it exists and is named -- only its number
+ * is missing.
  */
 export type ProgressBar = { id: string; name: string; progressPercent: number | null };
 
-// R46 P8 seq124: factored out of dashboard/overview/page.tsx verbatim (no
-// behavior change) so the route file can stay thin per the M28
-// registry-model convention. Real percentComplete per project, sourced the
-// same way the /dashboard/hierarchy drill-down Details view's Progress figure
-// is (getProjectDashboard's "latest logged entry per activity, averaged").
+// R46 P8 seq124: factored out of dashboard/overview/page.tsx verbatim so the
+// route file can stay thin per the M28 registry-model convention. Real
+// percentComplete per project, sourced the same way the /dashboard/hierarchy
+// drill-down Details view's Progress figure is ("latest logged entry per
+// activity, averaged").
 export async function fetchProjectProgressBars(organizationId: string | null): Promise<{ bars: ProgressBar[]; errorMessage: string | null }> {
   try {
     const orgDashboard = await callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined });
-    const bars = await Promise.all(
-      orgDashboard.projects.map(async (p) => {
-        try {
-          const detail = await callVeridian<ProjectDashboard>(`/dashboard/${p.id}`, { organizationId: organizationId ?? undefined });
-          // A response that carries no numeric progressPercent is also "no
-          // figure" -- coercing undefined through `?? 0` would reintroduce
-          // exactly the fabricated zero this function exists to remove.
-          return {
-            id: p.id,
-            name: p.name,
-            progressPercent: typeof detail?.progressPercent === "number" && Number.isFinite(detail.progressPercent)
-              ? detail.progressPercent
-              : null,
-          };
-        } catch {
-          return { id: p.id, name: p.name, progressPercent: null };
-        }
-      })
-    );
+    const bars = (orgDashboard.projects ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      // `?? 0` here would reintroduce exactly the fabricated zero D-03 removed.
+      progressPercent: typeof p.progressPercent === "number" && Number.isFinite(p.progressPercent)
+        ? p.progressPercent
+        : null,
+    }));
     return { bars, errorMessage: null };
   } catch (err) {
     return { bars: [], errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load project progress" };

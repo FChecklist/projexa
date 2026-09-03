@@ -48,11 +48,26 @@ beforeEach(() => {
 });
 
 describe("fetchProjectProgressBars", () => {
-  test("a rejected per-project call yields progressPercent null, and NEVER 0", async () => {
+  // R67 F-01 (integration, lane F1). CORRECTED, NOT WEAKENED. This test used to
+  // fail one of the PER-PROJECT calls -- GET /dashboard/{id}, one per project.
+  // Those calls are gone: getOrgDashboard() now carries progressPercent for
+  // every project in the org payload, so the N+1 that exhausted VERIDIAN's
+  // five-connection pool is a single read. The property under test is
+  // unchanged and is the whole point of the file: a project with NO readable
+  // figure reports null, never 0, and its siblings are unaffected. What used
+  // to arrive as a rejected sibling call now arrives as a row with no numeric
+  // progressPercent -- the same fact, from the one call that replaced them.
+  test("a project with no readable figure yields progressPercent null, and NEVER 0", async () => {
     behaviour = async (path) => {
-      if (path === "/dashboard") return ORG;
-      if (path === "/dashboard/p-cedar") throw new FakeVeridianApiError("upstream timeout", 504);
-      return { projectId: "p-marina", progressPercent: 62 };
+      if (path === "/dashboard") {
+        return {
+          projects: [
+            { id: "p-cedar", name: "Cedar Heights Villa" },
+            { id: "p-marina", name: "Marina Tower", progressPercent: 62 },
+          ],
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
     };
 
     const { bars, errorMessage } = await fetchProjectProgressBars("org-1");
@@ -72,9 +87,12 @@ describe("fetchProjectProgressBars", () => {
   });
 
   test("a real zero survives -- 'no progress yet' is a figure and must still render as one", async () => {
+    // R67 F-01: the figure now rides on the org payload's own project rows.
     behaviour = async (path) => {
-      if (path === "/dashboard") return ORG;
-      return { projectId: path.split("/").pop(), progressPercent: 0 };
+      if (path === "/dashboard") {
+        return { projects: ORG.projects.map((p) => ({ ...p, progressPercent: 0 })) };
+      }
+      throw new Error(`unexpected path ${path}`);
     };
 
     const { bars } = await fetchProjectProgressBars("org-1");
@@ -117,14 +135,29 @@ describe("fetchProjectProgressBars", () => {
     expect(errorMessage).toBe("Failed to load project progress");
   });
 
-  test("one call for the org and one per project -- a failure does not suppress its siblings", async () => {
+  // R67 F-01 (integration, lane F1). CORRECTED, AND IT NOW ASSERTS THE ITEM.
+  // This read was one call for the org PLUS one per project -- the N+1 of HTTP
+  // requests, each opening its own transaction on a five-connection pool, that
+  // this lane exists to remove. It is ONE call, and the assertion is now the
+  // guarantee rather than a description of the fault: no matter how many
+  // projects the org has, the portfolio screen costs a single upstream read.
+  test("exactly ONE upstream call, however many projects the org has", async () => {
     behaviour = async (path) => {
-      if (path === "/dashboard") return ORG;
-      if (path === "/dashboard/p-cedar") throw new FakeVeridianApiError("boom");
-      return { projectId: "p-marina", progressPercent: 12 };
+      if (path === "/dashboard") {
+        return {
+          projects: [
+            { id: "p-cedar", name: "Cedar Heights Villa", progressPercent: 40 },
+            { id: "p-marina", name: "Marina Tower", progressPercent: 12 },
+            { id: "p-harbour", name: "Harbour Yard", progressPercent: 7 },
+          ],
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
     };
 
-    await fetchProjectProgressBars("org-1");
-    expect(calls.map((c) => c.path)).toEqual(["/dashboard", "/dashboard/p-cedar", "/dashboard/p-marina"]);
+    const { bars } = await fetchProjectProgressBars("org-1");
+
+    expect(calls.map((c) => c.path)).toEqual(["/dashboard"]);
+    expect(bars.map((b) => b.progressPercent)).toEqual([40, 12, 7]);
   });
 });

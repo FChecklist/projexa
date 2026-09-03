@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import ScheduleGanttClient, { type RegistryColumn } from "@/components/ScheduleGanttClient";
+import ScheduleGanttClient, { type RegistryColumn, type GanttPayload } from "@/components/ScheduleGanttClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
 import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
@@ -122,6 +122,7 @@ export function ScheduleTabsClient({
   initialQuery = "",
   highlightEntryId,
   timelineColumns,
+  initialGantt = null,
 }: {
   projectId: string;
   projectName: string;
@@ -131,6 +132,12 @@ export function ScheduleTabsClient({
   /** R67 D-50: `?highlight=` -- the time entry just written, to mark and to receipt. */
   highlightEntryId?: string;
   timelineColumns: RegistryColumn[] | null;
+  /**
+   * R67 F-09 (lane F1): the Timeline payload page.tsx prefetched on the server,
+   * passed straight through to the tab that needs it. null when it was not
+   * prefetched or the prefetch failed, in which case the tab reads it itself.
+   */
+  initialGantt?: GanttPayload | null;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<ScheduleTab>(initialTab);
@@ -328,6 +335,7 @@ export function ScheduleTabsClient({
             <ScheduleGanttClient
               projectId={projectId}
               registryColumns={timelineColumns}
+              initialGantt={initialGantt}
               titleFilter={query}
               onMessage={onBaselineMessage}
             />

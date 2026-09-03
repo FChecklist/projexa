@@ -91,9 +91,28 @@ export function formatDateTime(value: Date | string | number): string {
   return new Date(value).toLocaleString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
 
-/** e.g. "2:30 PM" -- identical on server and client, any visitor. */
+/** e.g. "2:30:45 PM" -- identical on server and client, any visitor. */
 export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
+}
+
+/**
+ * e.g. "02:30 PM" -- hours and minutes only, identical on server and client.
+ *
+ * R67 F-01 asks for an "Updated HH:MM" line under the dashboard KPI band, and
+ * formatTime() above cannot give it: with no options, toLocaleTimeString
+ * includes SECONDS ("2:30:45 PM"). A seconds-precise stamp on a figure that is
+ * only refreshed per request reads as a live clock, which is the opposite of
+ * what the line is for -- it exists to say how old these numbers are, to the
+ * minute. Same pinned locale and time zone as its siblings, for the same
+ * hydration reason.
+ */
+export function formatHourMinute(value: Date | string | number): string {
+  return new Date(value).toLocaleTimeString(FIXED_LOCALE, {
+    timeZone: FIXED_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /**

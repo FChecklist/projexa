@@ -233,13 +233,22 @@ export async function getScreenColumns(
 // ---------------------------------------------------------------------------
 //
 // The fast path gives an id, not a name, and /schedule prints the name as a
-// subheading. Rather than putting the /dashboard hop back on the critical path
+// subheading. Rather than putting a whole aggregate back on the critical path
 // for one string, the name is resolved from a 60 s per-org cache and rendered
 // inside its own nested <Suspense>, so it fills in beside a frame that is
 // already on screen.
+//
+// R67 F-03 (integration, lane F1 onto main). This read was GET /dashboard --
+// getOrgDashboard(), the earned-value/BOQ/invoice aggregate measured at
+// 1.4-4.0 s -- for a list of {id, name}. It is now GET /projects, one indexed
+// read server-side, which returns exactly that shape. The 60 s cache meant the
+// aggregate was not paid on every navigation, but it was still paid: on the
+// first hit, on every revalidation, and on the cookie path below, which calls
+// this to check an id still belongs to the caller. Same reasoning as
+// listProjects() in project-selection.ts, and the same endpoint.
 const cachedProjects = unstable_cache(
   (organizationId: string | null) =>
-    callVeridian<{ projects: { id: string; name: string }[] }>("/dashboard", {
+    callVeridian<{ projects: { id: string; name: string }[] }>("/projects", {
       organizationId: organizationId ?? undefined,
     }),
   ["veridian-projects"],

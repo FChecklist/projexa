@@ -32,7 +32,7 @@
 // dashboard read rather than before it, and therefore inside the boundary.
 import { Suspense } from "react";
 import { cookies } from "next/headers";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { getScreenColumns } from "@/lib/module-list-source";
 import { dashboardScope, PROJECT_COOKIE } from "@/lib/project-selection";
@@ -61,6 +61,23 @@ function DashboardSkeleton() {
   );
 }
 
+// R67 F-01 (integration, lane F1 onto main). The currency master list is not a
+// live figure -- it is a lookup table that changes when someone adds a currency,
+// not between two page views -- and the home screen re-requested it on every
+// visit. It now comes from a 5-minute per-org server cache, so the only
+// uncached call left in the block below is the one that carries real numbers.
+//
+// The wrapper is created ONCE at module scope, not per request: see
+// createCachedVeridianGet's own comment. The org id is both an explicit key
+// part and the fetcher's sole argument, so one org's currency list can never be
+// served to another (AR-04 / E-45).
+const DASHBOARD_LOOKUP_TTL_SECONDS = 300;
+const readCachedCurrencies = createCachedVeridianGet<{ currencies: CurrencyRow[] }>(
+  "dashboard-currencies",
+  "/currencies",
+  DASHBOARD_LOOKUP_TTL_SECONDS
+);
+
 async function DashboardHome({ requestedProjectId }: { requestedProjectId?: string }) {
   const authCtx = await requireAuth();
   const organizationId = authCtx.organizationId;
@@ -72,7 +89,9 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
   const columnsPromise = getScreenColumns("dashboard.dashboard", organizationId); // never rejects
   const [dashboardResult, currencyResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
-    callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
+    organizationId
+      ? readCachedCurrencies(organizationId)
+      : callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
   ]);
   const registryColumns = await columnsPromise;
 

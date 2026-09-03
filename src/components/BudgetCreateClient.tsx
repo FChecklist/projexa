@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson } from "@/lib/fetch-json";
@@ -29,6 +30,7 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
 import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
+import type { BudgetLookups } from "@/lib/budget-lookups";
 import type { CreateField } from "@/lib/create-screen";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 
@@ -72,15 +74,15 @@ function canSetUpAccounting(role: string | null | undefined): boolean {
   return !!role && (ROLE_GROUPS.ORG_ADMIN as readonly string[]).includes(role);
 }
 
-export default function BudgetCreateClient() {
+export default function BudgetCreateClient({ initialLookups }: { initialLookups?: BudgetLookups } = {}) {
   const router = useRouter();
   const orgMoney = useOrgMoney();
-  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [lookupsLoading, setLookupsLoading] = useState(true);
-  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(initialLookups?.fiscalYears ?? []);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialLookups?.costCenters ?? []);
+  const [accounts, setAccounts] = useState<Account[]>(initialLookups?.accounts ?? []);
+  const [companies, setCompanies] = useState<Company[]>(initialLookups?.companies ?? []);
+  const [lookupsLoading, setLookupsLoading] = useState(!initialLookups);
+  const [lookupError, setLookupError] = useState<string | null>(initialLookups?.errorMessage ?? null);
 
   const [values, setValues] = useState<Record<string, string>>({});
   // R67 D-42: the viewer's own role, for the branch below. A failed or missing
@@ -135,9 +137,24 @@ export default function BudgetCreateClient() {
   // allSettled keeps each outcome separate: a lookup that answered fills its
   // field, and only the ones that did not answer are named in the banner. The
   // AbortController stops a form the user has already left from setting state.
-  useEffect(() => {
-    const controller = new AbortController();
-    void (async () => {
+  //
+  // R67 F-04 (lane F1). When page.tsx has already resolved these four lists in
+  // the SERVER component -- resolveBudgetLookups(), which reads them under the
+  // org's API key and keeps the same per-lookup errorMessage this branch
+  // produces -- the form opens with its controls already correct and makes no
+  // client lookup at all. That is four round trips removed from a create screen
+  // whose whole job is to be usable immediately, and it is why the form no
+  // longer flips from enabled-looking to disabled a second after it appears.
+  // The client path below is kept intact for any caller that does not prefetch.
+  //
+  // R67 INTEGRATION (lane F1's Reload). A failed lookup is TRANSIENT -- that is
+  // the whole reason its banner says a different thing from the blocked one --
+  // so the screen owes the reader a way to act on it. Without a retry the only
+  // recovery from a stuttering upstream is a full page reload, which throws
+  // away anything already typed into the form. Extracted from the effect so
+  // the mount and the button run exactly the same read.
+  const loadLookups = useCallback((controller: AbortController) => {
+    return (async () => {
       setLookupsLoading(true);
       const [fyR, ccR, acR, coR] = await Promise.allSettled([
         fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years", { signal: controller.signal }),
@@ -163,8 +180,21 @@ export default function BudgetCreateClient() {
       setLookupError(failed.length > 0 ? `${failed.join(", ")} could not be loaded` : null);
       setLookupsLoading(false);
     })();
-    return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (initialLookups) return;
+    const controller = new AbortController();
+    void loadLookups(controller);
+    return () => controller.abort();
+  }, [initialLookups, loadLookups]);
+
+  // The retry is deliberately NOT gated on `initialLookups`: a prefetch that
+  // failed upstream is exactly the case the button exists for, and the client
+  // read is the only way left to recover it.
+  const reloadLookups = useCallback(() => {
+    void loadLookups(new AbortController());
+  }, [loadLookups]);
 
   const missingLookups = [
     fiscalYears.length === 0 ? "fiscal years" : null,
@@ -197,6 +227,14 @@ export default function BudgetCreateClient() {
       kind: "select",
       required: !blocked,
       placeholder: fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN",
+      // R67 F-04 (lane F1): a picker with nothing to pick is DISABLED, and its
+      // placeholder says why. An enabled select that opens onto an empty list
+      // is a control that fails after the click -- the exact pattern the
+      // programme's "disabled by condition, never hidden, never
+      // fail-after-click" rule exists to remove. Combined with the server-side
+      // prefetch above, this is also what removes the enabled-then-disabled
+      // FLIP: the control is right on the first painted frame, not a second later.
+      disabled: fiscalYears.length === 0,
       options: fiscalYears.map((fy) => ({ value: fy.id, label: `${fy.yearName}${fy.isClosed ? " (closed)" : ""}` })),
     },
     {
@@ -204,6 +242,7 @@ export default function BudgetCreateClient() {
       label: "Cost Center",
       kind: "select",
       placeholder: costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN",
+      disabled: costCenters.length === 0,
       options: costCenters.map((cc) => ({ value: cc.id, label: cc.name })),
     },
     {
@@ -212,6 +251,7 @@ export default function BudgetCreateClient() {
       kind: "select",
       required: !blocked,
       placeholder: accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN",
+      disabled: accounts.length === 0,
       options: accounts.map((a) => ({
         value: a.id,
         label: `${a.accountNumber ? `${a.accountNumber} — ` : ""}${a.accountName}`,
@@ -341,6 +381,11 @@ export default function BudgetCreateClient() {
             <div role="alert" className="max-w-3xl rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
               Could not load fiscal years, cost centres or accounts from VERIDIAN: {lookupError}. This screen cannot
               tell whether they exist, so nothing here is a statement about your setup.
+              <div className="mt-3">
+                <Button size="sm" variant="outline" onClick={reloadLookups} disabled={lookupsLoading}>
+                  {lookupsLoading ? "Reloading…" : "Reload lists"}
+                </Button>
+              </div>
             </div>
           )}
         </>

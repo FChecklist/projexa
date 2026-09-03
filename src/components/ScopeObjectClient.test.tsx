@@ -31,11 +31,21 @@ mock.module("next/navigation", () => ({
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
 const ScopeObjectClient = (await import("./ScopeObjectClient")).default;
+// R67 F-10 (integration). The currency list is now memoised for the lifetime of
+// the tab -- one /api/currencies request per session instead of one per screen.
+// `bun test` runs every file in ONE process, so that memo is shared across test
+// FILES too: without this reset, whichever suite ran first decided the currency
+// for this one, and these cells rendered with no code at all. The seam is the
+// module's own, provided for exactly this.
+const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
 
+const realFetch = globalThis.fetch;
 afterEach(() => {
   cleanup();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
+  __resetCurrenciesCacheForTests();
+  // RESTORED, not deleted: a later render in this process still needs a real
+  // fetch to exist, even when its result is irrelevant.
+  globalThis.fetch = realFetch;
 });
 
 function jsonRes(body: unknown, status = 200) {

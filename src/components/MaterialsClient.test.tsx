@@ -91,8 +91,17 @@ function renderClient(over: Partial<Record<string, Handler>> = {}, initialTab?: 
   );
 }
 
+// R67 F-10 (integration). The currency list is memoised for the lifetime of the
+// tab -- one /api/currencies request per session instead of one per screen --
+// and `bun test` runs every file in ONE process, so that memo outlives a test.
+// This file already clears sessionStorage below for the same reason; the memo's
+// in-flight promise lives in module scope and needs its own reset, or the
+// second test in the file renders against the first test's fetch stub.
+const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
+
 afterEach(() => {
   cleanup();
+  __resetCurrenciesCacheForTests();
   push.mockClear();
   prefetch.mockClear();
   // @ts-expect-error -- test-only global fetch stub cleanup

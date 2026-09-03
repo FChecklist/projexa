@@ -143,6 +143,13 @@ describe("BudgetsClient -- the standard header trio (D-43)", () => {
 });
 
 describe("BudgetsClient -- the list is meaningful once rows exist (D-43)", () => {
+  // R67 D-43 x F-08 (integration). This fixture is the LEGACY path: a row that
+  // carries fiscalYearId but no fiscalYearName, i.e. a VERIDIAN older than the
+  // change that resolves the name upstream. The id-to-name lookup still runs
+  // for it, so the assertion is unchanged -- but it is now awaited, because the
+  // lookup is no longer fired on mount for every visit. It is fired only when a
+  // loaded row turns out to lack a name, which is the whole point of F-08 and
+  // is asserted directly by the test below.
   test("Fiscal Year is resolved to its NAME, not left as an opaque id", async () => {
     const { getByText } = renderClient({
       "/api/project-budgets": () => jsonRes({ projectBudgets: [BUDGET] }),
@@ -150,7 +157,29 @@ describe("BudgetsClient -- the list is meaningful once rows exist (D-43)", () =>
 
     await waitFor(() => expect(getByText("Site budget 2026")).toBeDefined());
     expect(getByText("Fiscal Year")).toBeDefined();
-    expect(getByText("FY 2026")).toBeDefined();
+    await waitFor(() => expect(getByText("FY 2026")).toBeDefined());
+  });
+
+  // R67 F-08. THE ROUND TRIP THIS ITEM REMOVES. /budgets used to fetch the
+  // whole fiscal-year list on every visit purely to turn one id per row into
+  // one string. listBudgets now resolves the name inside the transaction it
+  // already holds, so when the row carries it, that request is not made at all.
+  test("a row that carries its own year name costs NO /api/fiscal-years request", async () => {
+    const requested: string[] = [];
+    const inner = router(handlers({
+      "/api/project-budgets": () =>
+        jsonRes({ projectBudgets: [{ ...BUDGET, fiscalYearName: "FY 2026" }] }),
+    }));
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requested.push(typeof input === "string" ? input : input.toString());
+      return inner(input, init);
+    }) as typeof fetch;
+
+    const { getByText } = render(<BudgetsClient registryColumns={null} />);
+
+    await waitFor(() => expect(getByText("Site budget 2026")).toBeDefined());
+    await waitFor(() => expect(getByText("FY 2026")).toBeDefined());
+    expect(requested.some((u) => u.includes("/api/fiscal-years"))).toBe(false);
   });
 
   test("an Annual Amount the list DTO carries is formatted in the org currency", async () => {

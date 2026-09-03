@@ -115,6 +115,15 @@ type GanttTask = {
 type GanttDependency = { predecessorId: string; successorId: string; lagDays: number };
 type Milestone = { id: string; name: string; targetDate: string | null };
 
+// R67 F-09 (lane F1): the Timeline tab's payload, as page.tsx prefetches it on
+// the server. Every field optional because the prefetch is an OPTIMISATION --
+// a partial or absent answer must leave the client's own read in charge.
+export type GanttPayload = {
+  tasks?: GanttTask[];
+  dependencies?: GanttDependency[];
+  milestones?: Milestone[];
+};
+
 // R67 D-45. pms_schedule_baselines + pms_baseline_issue_snapshots have been
 // written since Wave 140 and BOTH GET routes have shipped with zero UI callers,
 // so no screen has ever compared a planned date to an actual one. This
@@ -145,12 +154,20 @@ export function baselineSaveLabel(name: string, capturing: boolean): string {
 export default function ScheduleGanttClient({
   projectId,
   registryColumns,
+  initialGantt = null,
   titleFilter = "",
   onMessage,
   today,
 }: {
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-09. When the server component has already read the gantt, the tab
+   * opens with its bars drawn and makes no request of its own. null means "not
+   * prefetched, or the prefetch failed" -- in both cases the client reads it
+   * itself, exactly as it did before, including its own error and Retry.
+   */
+  initialGantt?: GanttPayload | null;
   /** R67 D-44: the header's Filter bar, applied to the authoritative table. */
   titleFilter?: string;
   /**
@@ -164,10 +181,10 @@ export default function ScheduleGanttClient({
 }) {
   const router = useRouter();
   const labelColumns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
-  const [tasks, setTasks] = useState<GanttTask[]>([]);
-  const [dependencies, setDependencies] = useState<GanttDependency[]>([]);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<GanttTask[]>(initialGantt?.tasks ?? []);
+  const [dependencies, setDependencies] = useState<GanttDependency[]>(initialGantt?.dependencies ?? []);
+  const [milestones, setMilestones] = useState<Milestone[]>(initialGantt?.milestones ?? []);
+  const [loading, setLoading] = useState(initialGantt === null);
   const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -273,12 +290,18 @@ export default function ScheduleGanttClient({
     // D-45: "fetch GET /api/schedule/baselines?projectId in parallel with the
     // gantt call". Two independent awaits would have made the slowest screen in
     // the module slower still.
-    void Promise.all([loadGantt(), loadBaselines()]);
+    //
+    // R67 F-09: when page.tsx prefetched the gantt on the server, the bars are
+    // already drawn and re-reading them here would be the very request that
+    // item removes, arriving a second time. The BASELINES are still read --
+    // they are not part of the prefetch, and D-45's parallelism is what keeps
+    // skipping one of the two from making the other serial.
+    void Promise.all([initialGantt === null ? loadGantt() : Promise.resolve(), loadBaselines()]);
     // loadGantt is stable-by-construction (it closes over projectId only); the
     // baseline loader is the memoised one, and its own chain bottoms out at
     // emitMessage, which has no dependencies at all -- so this effect runs once
     // per project, not once per render.
-  }, [projectId, loadBaselines]);
+  }, [projectId, loadBaselines, initialGantt]);
 
   useEffect(() => {
     // The role decides whether the action is offered at all -- refusing AFTER
