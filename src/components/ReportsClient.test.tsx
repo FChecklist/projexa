@@ -45,6 +45,9 @@ afterEach(() => {
   pushed.length = 0;
   replacedUrls.length = 0;
   searchParams = new URLSearchParams();
+  // A test that overrode the breakup must not leak it into the next one -- the
+  // suite runs in one process and in file order.
+  breakupResponse = defaultBreakupResponse;
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });
@@ -75,7 +78,7 @@ function stubFetch(calls: string[], reportHandler?: () => Promise<Response>) {
 }
 
 /** The BOQ budget breakup the Project Status document prints, overridable per test. */
-let breakupResponse: () => Promise<Response> | Response = () =>
+const defaultBreakupResponse: () => Promise<Response> | Response = () =>
   jsonRes({
     boqId: "b-1",
     totalBudget: 6240,
@@ -84,6 +87,8 @@ let breakupResponse: () => Promise<Response> | Response = () =>
       { lineItemId: "l-2", boqId: "b-1", isRootLine: true, category: "Paint", code: "2.1", description: "Emulsion", budget: 1920, vendorName: null, vendorAmount: null },
     ],
   });
+
+let breakupResponse: () => Promise<Response> | Response = defaultBreakupResponse;
 
 describe("ReportsClient: Work Progress navigates, it is never fetched here (R67 E-04 / D-02)", () => {
   test("pressing the primary for Work Progress pushes its own screen and fetches nothing", async () => {
@@ -499,5 +504,81 @@ describe("ReportsClient: the report document (R67 E-12)", () => {
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(opened[0]).toStartWith("https://wa.me/?text=");
     expect(decodeURIComponent(opened[0])).toContain("http://localhost/share/report/tok-1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-13 (R-131 / R-138): the Project Status card
+// ---------------------------------------------------------------------------
+describe("ReportsClient: the Project Status card (R67 E-13)", () => {
+  const PAYLOAD = {
+    projectId: "cm3x9k2p40001abcd1234wxyz",
+    projectName: "Cedar Heights Villa - Phase 1",
+    contractValue: 475000,
+    projectValue: 475000,
+    budget: 6240,
+    ledgerBudget: 0,
+    revenue: 0,
+    expenses: 6500,
+    earnedValue: null,
+    percentByValue: 62,
+    progressPercent: 41,
+    taskCount: 12,
+    delayedTaskCount: 3,
+    photoCount: 8,
+  };
+
+  test("ONE money format on the card -- the three that used to sit side by side are gone", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes(PAYLOAD));
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    expect((await findByTestId("project-status-contractValue")).textContent).toBe("AED 475,000");
+    expect((await findByTestId("project-status-expenses")).textContent).toBe("AED 6,500");
+    expect((await findByTestId("project-status-revenue")).textContent).toBe("AED 0");
+  });
+
+  test("an absent figure is the en dash carrying 'not recorded', never a zero", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes(PAYLOAD));
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    const earned = await findByTestId("project-status-earnedValue");
+    expect(earned.textContent).toBe("–");
+    expect(earned.getAttribute("title")).toBe("not recorded");
+  });
+
+  test("the two progress figures are relabelled and carry the reason they disagree", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes(PAYLOAD));
+    const { findByTestId, container } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    await findByTestId("project-status-percentByValue");
+    expect(container.textContent).toContain("% complete (by BOQ value)");
+    expect(container.textContent).toContain("% complete (by activity log)");
+    expect(container.textContent).toContain("differs because activity logs are not weighted by BOQ value");
+    // Neither camelCase key survives as a label.
+    expect(container.textContent).not.toContain("percentByValue");
+    expect(container.textContent).not.toContain("progressPercent");
+  });
+
+  test("the project's raw cuid is NOT printed on the card -- it stays in the URL, where it is an address", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes(PAYLOAD));
+    const { findByTestId, container } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    await findByTestId("project-status-card");
+    expect((await findByTestId("project-status-card")).textContent).not.toContain(PAYLOAD.projectId);
+  });
+
+  test("a project with no BOQ budget lines gets a next step, not a blank table", async () => {
+    const calls: string[] = [];
+    breakupResponse = () => jsonRes({ boqId: null, totalBudget: null, lines: [] });
+    stubFetch(calls, async () => jsonRes(PAYLOAD));
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    const empty = await findByTestId("report-empty");
+    expect(empty.textContent).toContain("No budget lines yet — set budgets on the BOQ screen");
+    expect(empty.querySelector("a")?.getAttribute("href")).toBe("/scope");
   });
 });

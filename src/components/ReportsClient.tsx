@@ -48,7 +48,14 @@ import {
   WHOLE_PROJECT_PERIOD,
 } from "@/lib/report-parameters";
 import { ReportDocument } from "@/components/reports/ReportDocument";
-import { noRowsMessage, reportSchema, schemaRows } from "@/lib/report-schema";
+import { ProjectStatusCard } from "@/components/reports/ProjectStatusCard";
+import { isPlainObject, noRowsMessage, reportSchema } from "@/lib/report-schema";
+
+/**
+ * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
+ * with a real next step, not a blank table.
+ */
+const NO_BUDGET_LINES_MESSAGE = "No budget lines yet — set budgets on the BOQ screen";
 import {
   BREAKUP_SOURCE_REPORT,
   exportDisabledReason,
@@ -122,46 +129,23 @@ function buildReports(registryColumns: RegistryColumn[] | null | undefined): { v
 // here either, so the same raw-camelCase-key-as-label defect applied to
 // all of them, not just the two percent fields above. Adding real labels
 // for the rest closes that gap the same way.
-const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
-  "project-status": {
-    percentByValue: "% Complete by BOQ Value",
-    progressPercent: "% Complete by Activity Log",
-    contractValue: "Contract Value",
-    budget: "Budget",
-    revenue: "Revenue",
-    expenses: "Expenses",
-    projectValue: "Project Value",
-    earnedValue: "Earned Value",
-    delayedTaskCount: "Delayed Tasks",
-    photoCount: "Site Photos",
-    taskCount: "Tasks",
-    projectId: "Project ID",
-    projectName: "Project Name",
-  },
-};
-
-// R55_REPORTS_CONTRACTVALUE_NO_AED_01: contractValue rendered as a bare
-// number with no currency token -- same defect class as
-// R55_LABOUR_RATE_NO_AED_01/R55_MATERIALS_UNITCOST_NO_AED_01 (PR #182/#183),
-// fixed there with the shared currencyLabel()+useCurrencies() helper.
-// contractValue has no per-row currencyId of its own (same "org base
-// currency" case those two used), so the value-formatter override just
-// prefixes the same live label ReportOutput's cellValue() would otherwise
-// skip. Built inside ProjectReportsPanel (below) since it needs the live
-// `currencies` list from useCurrencies().
 //
-// R67 G-05 (R-260): the fix above prefixed the currency label onto the RAW
-// value, so a contract value came back "AED 4500000" on one report and
-// "AED 4500000.5" on another -- the same column, two precisions, no
-// grouping. It also rendered the em-dash for an absent value while the rest
-// of the app renders the en-dash. Both now come from the one money
-// formatter, which also means an org with NO currency gets the warning glyph
-// and the footer notice instead of an unexplained bare number.
-function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: unknown) => string> {
-  return {
-    contractValue: (v) => orgMoney.money(v as number | string | null | undefined),
-  };
-}
+// R67 E-13 (R-131/R-138): the project-status entry MOVED, it was not deleted.
+// A label map alone could not fix what R-131 records -- the fields still had no
+// ORDER, no bands, three money formats, a raw cuid printed as a field, and two
+// percentages whose disagreement was explained only in a code comment. All of
+// that now lives in src/components/report-format.ts, rendered by
+// reports/ProjectStatusCard.tsx. This map stays for any other report that wants
+// labels without a card of its own.
+const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {};
+
+// R55_REPORTS_CONTRACTVALUE_NO_AED_01 / R67 G-05 (R-260): contractValue used to
+// render as a bare number with no currency token, and the first fix prefixed the
+// label onto the RAW value, so the same figure came back "AED 4500000" on one
+// report and "AED 4500000.5" on another. Both are now handled by
+// report-format.ts's one formatter -- bound to the org's currency, one shape per
+// FIELD -- so the per-key formatter override this file used to build is gone
+// rather than left as a second way to format the same number.
 
 // Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16, Owner: "look at the PROJEXA reports
@@ -764,7 +748,14 @@ function ProjectReportsPanel({
                   not blank the screen the reader is still reading. */}
               {shownResult !== null && (
                 <div className="opacity-50" data-testid="reports-previous-result">
-                  <ReportOutput data={shownResult} fieldLabels={REPORT_FIELD_LABELS[run.report]} fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined} />
+                  {/* The SAME renderer as the live result -- a dimmed copy that
+                      looked different from what it is a copy of would be a
+                      second document, not a previous one. */}
+                  {run.report === "project-status" && isPlainObject(shownResult) ? (
+                    <ProjectStatusCard data={shownResult} format={orgMoney.format} financialsRedacted={shownResult.financialsRedacted === true} />
+                  ) : (
+                    <ReportOutput data={shownResult} fieldLabels={REPORT_FIELD_LABELS[run.report]} omitKeys={schema ? [schema.rowsKey] : undefined} />
+                  )}
                 </div>
               )}
             </div>
@@ -797,12 +788,23 @@ function ProjectReportsPanel({
               {filterNote && (
                 <p className="text-[12px] text-px-muted" data-testid="reports-filter-note">{filterNote}</p>
               )}
-              <ReportOutput
-                data={shownResult}
-                fieldLabels={REPORT_FIELD_LABELS[run.report]}
-                fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
-                omitKeys={schema ? [schema.rowsKey] : undefined}
-              />
+              {/* R67 E-13 (R-131/R-138): Project Status has an ORDER, three
+                  bands and two figures that need a sentence -- none of which
+                  survives ReportOutput's Object.entries. Every other report
+                  keeps the generic renderer. */}
+              {run.report === "project-status" && isPlainObject(shownResult) ? (
+                <ProjectStatusCard
+                  data={shownResult}
+                  format={orgMoney.format}
+                  financialsRedacted={shownResult.financialsRedacted === true}
+                />
+              ) : (
+                <ReportOutput
+                  data={shownResult}
+                  fieldLabels={REPORT_FIELD_LABELS[run.report]}
+                  omitKeys={schema ? [schema.rowsKey] : undefined}
+                />
+              )}
               {/* R67 E-12 (R-136): the report's own document, rendered from the
                   schema rather than from whatever keys the payload happened to
                   carry -- and from the SAME description the exported file is
@@ -812,7 +814,12 @@ function ProjectReportsPanel({
                   schema={schema}
                   payload={shownResult}
                   format={orgMoney.format}
-                  emptyMessage={noRowsMessage(dayLabel(run.from), dayLabel(run.to), projectName)}
+                  emptyMessage={
+                    run.report === "project-status"
+                      ? NO_BUDGET_LINES_MESSAGE
+                      : noRowsMessage(dayLabel(run.from), dayLabel(run.to), projectName)
+                  }
+                  emptyAction={run.report === "project-status" ? { href: "/scope", label: "Open the BOQ screen" } : undefined}
                   onTieMessage={setTieMessage}
                 />
               )}

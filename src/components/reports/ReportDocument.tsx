@@ -82,6 +82,8 @@ export function ReportDocument({
   format,
   /** Printed when the report ran and returned no rows -- see noRowsMessage(). */
   emptyMessage,
+  /** Where a reader goes to FIX an empty table, when there is somewhere to go. */
+  emptyAction,
   /** Reported to the caller so the header can disable Export with this exact reason. */
   onTieMessage,
 }: {
@@ -89,6 +91,7 @@ export function ReportDocument({
   payload: unknown;
   format: MoneyFormat;
   emptyMessage: string;
+  emptyAction?: { href: string; label: string };
   onTieMessage?: (message: string | null) => void;
 }) {
   const [showChart, setShowChart] = useState(false);
@@ -114,7 +117,18 @@ export function ReportDocument({
   }, [tieMessage, onTieMessage]);
 
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-sm text-px-muted" data-testid="report-empty">{emptyMessage}</p>;
+    return (
+      <div className="space-y-2 py-8 text-center" data-testid="report-empty">
+        <p className="text-sm text-px-muted">{emptyMessage}</p>
+        {/* An empty table that names where to fix it beats one that only says
+            it is empty. */}
+        {emptyAction && (
+          <Link href={emptyAction.href} className="text-[12.5px] text-px-teal underline underline-offset-2">
+            {emptyAction.label}
+          </Link>
+        )}
+      </div>
+    );
   }
 
   const totalKeys = new Set(schema.totals ?? []);
