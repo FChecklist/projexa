@@ -55,6 +55,7 @@ import {
 import { Composer } from "@/components/shell/Composer";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
+import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
@@ -745,7 +746,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {children}
+      {/* R67 E-10 (R-133): the shell's persistent message area. A screen that
+          fails publishes ONE sentence here, where it stays until the reader
+          dismisses it or the screen withdraws it -- unlike the toast it
+          replaces, which took the only explanation of a failure away on a
+          timer. See shell-messages.tsx for why this is not merged into the
+          Task Master pane's own shellErrors box. */}
+      <ShellMessageProvider>
+        {children}
+        <ShellMessageStrip />
+      </ShellMessageProvider>
     </AppShell>
   );
 }

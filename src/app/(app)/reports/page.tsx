@@ -28,7 +28,16 @@ async function resolveReportsListColumns(organizationId: string | null): Promise
   }
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+// R67 E-09 (R-128): every parameter a run is made of is read here and handed
+// to the panel as its initial state, so a link to a run OPENS on that run.
+// They stay a QUERY on /reports rather than becoming /reports/<slug> dynamic
+// segments -- src/lib/nav-routes.ts's SHIPPED_ROUTES stays exact, and the
+// deep-link contract is what the recommendation needs, not a new route shape.
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; report?: string; from?: string; to?: string; weekStart?: string }>;
+}) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
@@ -53,7 +62,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             words and adds the retry, the same control the other 23
             project-scoped pages already got. */}
         {errorMessage && <ProjectLoadError message={`Could not load projects: ${errorMessage}`} />}
-        <ReportsClient key={project?.id ?? "no-project"} projectId={project?.id ?? null} registryColumns={registryColumns} />
+        <ReportsClient
+          key={project?.id ?? "no-project"}
+          projectId={project?.id ?? null}
+          projectName={project?.name ?? null}
+          registryColumns={registryColumns}
+        />
       </div>
     </>
   );

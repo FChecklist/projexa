@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,14 +9,32 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Play, RotateCcw } from "lucide-react";
+import { Download, FileText, Link2, Loader2, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
-import { isHostedReport, monthToDate, reportDestination } from "@/lib/report-destinations";
+import { isHostedReport, reportDestination } from "@/lib/report-destinations";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { useShellMessage } from "@/components/shell/shell-messages";
+import { taskErrorSentence } from "@/lib/task-errors";
+import {
+  readReportRunParams,
+  reportRunSearchParams,
+  reportTitleBlock,
+  reportResultToCsv,
+  isStaleRun,
+  runningLine,
+  CANCEL_VISIBLE_AFTER_MS,
+  RUN_BUDGET_MS,
+  RUN_TIMEOUT_MESSAGE,
+  NO_PROJECT_MESSAGE,
+  UNKNOWN_REPORT_MESSAGE,
+  PDF_NOT_YET_REASON,
+  type ReportRunParams,
+} from "@/lib/report-run";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -143,31 +162,55 @@ export const DEFAULT_REPORT_NAME = "project-status";
 
 function ProjectReportsPanel({
   projectId,
+  projectName,
   reports,
-  initialReportName = DEFAULT_REPORT_NAME,
+  initialRun,
+  unknownReportSlug = null,
 }: {
   projectId: string;
+  /** So the title block and the running line can name the project, not its cuid. */
+  projectName: string | null;
   reports: { value: string; label: string }[];
-  /** R67 E-04: the selected report comes from ?report= so a run is addressable and Back restores it. */
-  initialReportName?: string;
+  /** R67 E-09: the whole run comes from the URL -- report, period, week start. */
+  initialRun: ReportRunParams;
+  /** The ?report= slug the URL named when this screen does not have it. */
+  unknownReportSlug?: string | null;
 }) {
   const router = useRouter();
-  const [reportName, setReportName] = useState(initialReportName);
-  const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
-  // R67 E-04 (R-079): an EXPLICIT status, replacing the ranOnce/loading pair.
-  // The old pair tested ranOnce BEFORE loading, so on a first run the panel
-  // kept showing "Pick a report and click Run Report." while the button was
-  // already spinning -- the running state was literally unreachable. That
-  // string is deleted from this file, so it can never sit on screen during a
-  // request again.
-  const [status, setStatus] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [run, setRun] = useState<ReportRunParams>(initialRun);
+  // R67 E-04 (R-079) and E-10 (R-129): an EXPLICIT status, replacing the
+  // ranOnce/loading pair. The old pair tested ranOnce BEFORE loading, so on a
+  // first run the panel kept showing "Pick a report and click Run Report."
+  // while the button was already spinning -- the running state was literally
+  // unreachable. That string is deleted from this file, so it can never sit on
+  // screen during a request again. `timeout` is its own state because "it is
+  // still going" and "we stopped waiting" are different things to be told.
+  const [status, setStatus] = useState<"idle" | "running" | "success" | "error" | "timeout">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
+  const [ranAt, setRanAt] = useState<Date | null>(null);
+  const [stale, setStale] = useState(false);
+  // R67 E-09: Filter reopens the parameter card. It is open until a run
+  // succeeds, then folds away -- the reader came for the result, not the form.
+  const [parametersOpen, setParametersOpen] = useState(true);
   const orgMoney = useOrgMoney();
   const abortRef = useRef<AbortController | null>(null);
 
-  const currentLabel = reports.find((r) => r.value === reportName)?.label ?? reportName;
+  const currentLabel = reports.find((r) => r.value === run.report)?.label ?? run.report;
+  const hosted = isHostedReport(run.report);
+  const titleBlock = ranAt
+    ? reportTitleBlock({ reportLabel: currentLabel, projectName, from: run.from, to: run.to, ranAt })
+    : null;
+
+  // R67 E-10 (R-133): the failure lives in the shell's message area, which
+  // does not vanish on a timer the way the toast this replaces did.
+  useShellMessage(
+    "reports.run",
+    status === "error" || status === "timeout"
+      ? { tone: "error", text: `Could not run ${currentLabel}: ${errorText ?? RUN_TIMEOUT_MESSAGE}` }
+      : null
+  );
 
   // The elapsed-seconds counter. A reader watching a spinner cannot tell a slow
   // report from a hung one; a number that keeps moving can.
@@ -179,16 +222,23 @@ function ProjectReportsPanel({
     return () => clearInterval(id);
   }, [status]);
 
+  // R67 E-09: a result older than five minutes is still shown and is no longer
+  // presented as current -- the reader decides whether to re-run it.
+  useEffect(() => {
+    if (!ranAt) return;
+    setStale(isStaleRun(ranAt));
+    const id = setInterval(() => setStale(isStaleRun(ranAt)), 30000);
+    return () => clearInterval(id);
+  }, [ranAt]);
+
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
   // recent one's state -- e.g. the user switches the report type and clicks
   // "Run Report" again before the first request resolves; without this, a
   // slower first response landing after a faster second one would silently
-  // clobber the correct, more recent result (or vice versa, a slow response
-  // for a report the user has since navigated away from could still commit
-  // state after the fact). Bumped at the start of every runReport() call;
-  // any resolving fetch whose captured generation no longer matches the
-  // latest is dropped instead of touching state.
+  // clobber the correct, more recent result. Bumped at the start of every
+  // runReport() call; any resolving fetch whose captured generation no longer
+  // matches the latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
   function cancelRun() {
@@ -200,98 +250,233 @@ function ProjectReportsPanel({
     setStatus(result === null ? "idle" : "success");
   }
 
-  async function runReport() {
+  const runReport = useCallback(async (next: ReportRunParams = run) => {
     // R67 E-04 (R-079) and binding decision D-02: a report with a screen of
     // its own NAVIGATES; it must not be fetched here. Fetching the Work
     // Progress report from this panel is the 24.3 s spinner that renders
     // nothing, measured in the audit -- the same report renders in 2.7 s with
     // exports at /work-progress?tab=report.
-    const period = monthToDate();
-    const destination = reportDestination(reportName, { projectId, from: period.from, to: period.to, weekStart });
+    const destination = reportDestination(next.report, { projectId, from: next.from, to: next.to, weekStart: next.weekStart });
     if (destination.kind === "navigate") {
       router.push(destination.href);
       return;
     }
 
+    // R67 E-09: the URL IS the state, so a run survives navigation, sharing
+    // and Back. replace, not push -- a re-run is not a new place.
+    router.replace(`?${reportRunSearchParams({ ...next, projectId }).toString()}`, { scroll: false });
+
     const myGeneration = ++requestGeneration.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    // R67 E-10: the 20 s client budget. A request still in flight then is
+    // aborted and SAID SO, rather than spinning until the reader gives up.
+    const budget = setTimeout(() => controller.abort(new DOMException("budget", "TimeoutError")), RUN_BUDGET_MS);
     setStatus("running");
     setErrorText(null);
     try {
       const res = await fetch(destination.path, { signal: controller.signal });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
+      setRanAt(new Date());
+      setStale(false);
       setStatus("success");
+      setParametersOpen(false);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      // An abort is the reader own decision, not a failure to report back at
+      if (err instanceof DOMException && err.name === "TimeoutError") {
+        setErrorText(RUN_TIMEOUT_MESSAGE);
+        setStatus("timeout");
+        return;
+      }
+      // An abort is the reader's own decision, not a failure to report back at
       // them.
       if (err instanceof DOMException && err.name === "AbortError") return;
-      const message = err instanceof Error && err.message ? err.message : "Could not generate report";
-      setErrorText(message);
-      setResult(null);
+      // D-03: whatever came back, the reader is shown a SENTENCE -- never a
+      // code, a parameter name or a host:port.
+      setErrorText(taskErrorSentence(err instanceof Error ? err.message : null, "The report service didn't answer"));
       setStatus("error");
-      toast.error(message);
     } finally {
+      clearTimeout(budget);
       if (myGeneration === requestGeneration.current) abortRef.current = null;
+    }
+  }, [projectId, router, run]);
+
+  // R67 E-10 (R-129): the report runs ON ARRIVAL with month-to-date
+  // parameters. A report that lives on its own screen is the one exception --
+  // pushing a reader to another route the instant they open Reports would take
+  // the decision away from them, so its own hint and Open Report stay.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || hosted) return;
+    autoRan.current = true;
+    void runReport(initialRun);
+    // Deliberately once, on arrival: runReport's identity changes with every
+    // parameter edit, and depending on it here would re-run the report on
+    // every keystroke in the date fields. The `autoRan` ref is what makes that
+    // safe and visible, rather than an omitted dependency nobody can see.
+  }, [hosted, initialRun, runReport]);
+
+  function updateRun(patch: Partial<ReportRunParams>) {
+    setRun((prev) => ({ ...prev, ...patch }));
+  }
+
+  function exportCsv() {
+    if (result === null) return;
+    const blob = new Blob([reportResultToCsv(result, titleBlock ?? currentLabel)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${run.report}-${projectId}-${run.from}-to-${run.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}${window.location.pathname}?${reportRunSearchParams({ ...run, projectId }).toString()}`
+      );
+      toast.success("Link copied — it opens this report, with these parameters, for anyone signed in to your organisation.");
+    } catch {
+      toast.error("Couldn't copy the link");
     }
   }
 
+  const exportReason = result === null ? "Run the report first" : null;
+
   return (
     <div className="space-y-4">
-      <Card className="shadow-card">
-        <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div className="space-y-1.5">
-            <Label>Report</Label>
-            <Select value={reportName} onValueChange={setReportName}>
-              <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-              <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          {reportName === "weekly-project" && (
-            <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
-          )}
-          <Button onClick={runReport} disabled={status === "running"} data-testid="reports-run">
-            {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-            {/* The primary says what pressing it does. For a report that lives
-                on its own screen, that is opening the screen -- not running
-                something here. */}
-            {isHostedReport(reportName) ? "Open Report" : "Run Report"}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* R67 E-09: the shell's right-pane header actions, with "+ New"
+          suppressed -- there is nothing to create here. Every disabled control
+          carries its reason in words beside it; none of them is hidden. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setParametersOpen((v) => !v)} data-testid="reports-filter">
+          <SlidersHorizontal className="size-4" /> Filter
+        </Button>
+        <Button variant="outline" size="sm" disabled={Boolean(exportReason)} onClick={exportCsv} data-testid="reports-export-csv">
+          <Download className="size-4" /> Export CSV
+        </Button>
+        <Button variant="outline" size="sm" disabled title={PDF_NOT_YET_REASON} data-testid="reports-export-pdf">
+          <FileText className="size-4" /> Export PDF
+        </Button>
+        <span className="text-[12px] text-px-muted" data-testid="reports-export-pdf-reason">{PDF_NOT_YET_REASON}</span>
+        <Button variant="outline" size="sm" onClick={copyLink} data-testid="reports-share">
+          <Link2 className="size-4" /> Share
+        </Button>
+        {exportReason && <span className="text-[12px] text-px-muted">{exportReason}</span>}
+      </div>
+
+      {unknownReportSlug && (
+        <p role="alert" className="text-[12.5px] text-px-error" data-testid="reports-unknown-slug">{UNKNOWN_REPORT_MESSAGE}</p>
+      )}
+
+      {parametersOpen && (
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label>Report</Label>
+              <Select value={run.report} onValueChange={(v) => updateRun({ report: v })}>
+                <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="report-from">From</Label>
+              <Input id="report-from" type="date" value={run.from} onChange={(e) => updateRun({ from: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="report-to">To</Label>
+              <Input id="report-to" type="date" value={run.to} onChange={(e) => updateRun({ to: e.target.value })} />
+            </div>
+            {run.report === "weekly-project" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="report-week-start">Week Start</Label>
+                <Input id="report-week-start" type="date" value={run.weekStart} onChange={(e) => updateRun({ weekStart: e.target.value })} />
+              </div>
+            )}
+            <Button onClick={() => runReport()} disabled={status === "running"} data-testid="reports-run">
+              {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+              {/* The primary says what pressing it does. For a report that lives
+                  on its own screen, that is opening the screen -- not running
+                  something here. */}
+              {hosted ? "Open Report" : "Run Report"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-card">
-        <CardContent className="p-4">
-          {/* The status is evaluated in ONE order -- running, then error, then
-              a result, then idle -- so no combination of flags can put an idle
-              prompt on screen while a request is in flight. */}
+        <CardContent className="space-y-3 p-4">
+          {/* R67 E-09: the title block, above the result, naming what this run
+              IS -- so a screenshot of it is self-describing. */}
+          {titleBlock && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[12.5px] font-medium text-px-ink" data-testid="reports-title-block">{titleBlock}</p>
+              {stale && (
+                <span className="rounded-full border border-px-border px-2 py-0.5 text-[11px] text-px-muted" data-testid="reports-stale">
+                  More than 5 minutes old — re-run to refresh
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* The status is evaluated in ONE order -- running, then timeout,
+              then error, then a result, then idle -- so no combination of
+              flags can put an idle prompt on screen while a request is in
+              flight. */}
           {status === "running" ? (
-            <div className="space-y-3 py-6 text-center" data-testid="reports-running">
-              <p className="text-sm text-px-ink">Running {currentLabel}... {elapsed} s</p>
-              <p className="text-xs text-px-muted">Usually 2-3 s.</p>
-              <Button variant="ghost" size="sm" onClick={cancelRun} data-testid="reports-cancel">Cancel</Button>
+            <div className="space-y-3">
+              <div className="space-y-2 py-4 text-center" data-testid="reports-running">
+                <p className="text-sm text-px-ink">{runningLine(currentLabel, projectName)}</p>
+                <p className="text-xs text-px-muted">{elapsed} s</p>
+                {/* Cancel appears only once the run has outlasted a normal one. */}
+                {elapsed * 1000 >= CANCEL_VISIBLE_AFTER_MS && (
+                  <Button variant="ghost" size="sm" onClick={cancelRun} data-testid="reports-cancel">Cancel</Button>
+                )}
+              </div>
+              <div className="space-y-2" data-testid="reports-skeleton">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
+              {/* The last good result stays visible, dimmed -- a re-run must
+                  not blank the screen the reader is still reading. */}
+              {result !== null && (
+                <div className="opacity-50" data-testid="reports-previous-result">
+                  <ReportOutput data={result} fieldLabels={REPORT_FIELD_LABELS[run.report]} fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined} />
+                </div>
+              )}
+            </div>
+          ) : status === "timeout" ? (
+            <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-timeout">
+              <p className="text-sm text-px-error">{RUN_TIMEOUT_MESSAGE}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => runReport()} data-testid="reports-retry">
+                  <RotateCcw className="size-4" /> Retry
+                </Button>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/work-progress?tab=report&projectId=${encodeURIComponent(projectId)}`}>Open Work Progress &gt; Report</Link>
+                </Button>
+              </div>
             </div>
           ) : status === "error" ? (
-            // The BACKEND own sentence, and a way to try again -- never a
+            // The BACKEND's own sentence, and a way to try again -- never a
             // generic "could not generate this report" that says nothing about
             // what failed.
             <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-error">
               <p className="text-sm text-px-error">Could not run {currentLabel}: {errorText}</p>
-              <Button variant="outline" size="sm" onClick={runReport} data-testid="reports-retry">
+              <Button variant="outline" size="sm" onClick={() => runReport()} data-testid="reports-retry">
                 <RotateCcw className="size-4" /> Retry
               </Button>
             </div>
           ) : result !== null ? (
             <ReportOutput
               data={result}
-              fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+              fieldLabels={REPORT_FIELD_LABELS[run.report]}
+              fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
             />
-          ) : isHostedReport(reportName) ? (
+          ) : hosted ? (
             <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-hosted-hint">
               {currentLabel} runs on its own screen -- press Open Report.
             </p>
@@ -316,14 +501,29 @@ function ProjectReportsPanel({
 // (compliance.screen_definitions, function_id "reports.report", archetype
 // REPORT) and only relabels the report picker -- null/missing is not fatal,
 // buildReports() falls back to DEFAULT_REPORT_COLUMNS.
-export default function ReportsClient({ projectId, registryColumns }: { projectId: string | null; registryColumns?: RegistryColumn[] | null }) {
+export default function ReportsClient({
+  projectId,
+  projectName = null,
+  registryColumns,
+}: {
+  projectId: string | null;
+  /** R67 E-09: so the title block and the running line can name the project, never its cuid. */
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const reports = buildReports(registryColumns);
-  // R67 E-04: which report is selected is part of the URL, not private React
-  // state -- so a link to a run opens on that run, and Back restores it. An
-  // unknown slug falls back to the default rather than selecting nothing.
+  // R67 E-04 / E-09: the WHOLE run is part of the URL, not private React state
+  // -- so a link opens on that run, Back restores it, and a run survives
+  // navigation. An unknown slug still selects a real report (selecting nothing
+  // would be a dead screen) AND says so, rather than silently pretending the
+  // reader asked for the default.
   const searchParams = useSearchParams();
   const requested = searchParams.get("report");
-  const initialReportName = requested && reports.some((r) => r.value === requested) ? requested : DEFAULT_REPORT_NAME;
+  const known = Boolean(requested && reports.some((r) => r.value === requested));
+  const initialRun = readReportRunParams(new URLSearchParams(searchParams.toString()), {
+    report: known ? requested! : DEFAULT_REPORT_NAME,
+    projectId,
+  });
   return (
     <Tabs defaultValue={projectId ? "project" : "catalog"} className="space-y-4">
       <TabsList>
@@ -332,11 +532,21 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
       </TabsList>
       <TabsContent value="project">
         {projectId ? (
-          <ProjectReportsPanel projectId={projectId} reports={reports} initialReportName={initialReportName} />
+          <ProjectReportsPanel
+            projectId={projectId}
+            projectName={projectName}
+            reports={reports}
+            initialRun={{ ...initialRun, report: known ? initialRun.report : DEFAULT_REPORT_NAME }}
+            unknownReportSlug={requested && !known ? requested : null}
+          />
         ) : (
           <Card className="shadow-card">
-            <CardContent className="p-8 text-center text-sm text-px-muted">
-              No active projects yet -- the 17 project-scoped construction reports need one. The Full Catalog tab works org-wide, no project required.
+            <CardContent className="space-y-1 p-8 text-center text-sm text-px-muted">
+              {/* R67 E-09: the reader is told what to DO, at the control that
+                  does it -- the top rail -- rather than being handed a count
+                  of reports they cannot run. */}
+              <p data-testid="reports-no-project">{NO_PROJECT_MESSAGE}</p>
+              <p className="text-[12px]">The Full Catalog tab works org-wide, no project required.</p>
             </CardContent>
           </Card>
         )}
