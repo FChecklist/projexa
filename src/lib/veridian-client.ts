@@ -213,7 +213,32 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN's PUT /currencies/base (compliance-tracker PR #1391) -- every
 // prior caller in this file used POST/PATCH for writes, so PUT was simply
 // never needed here before.
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+// R67 WS-H / PROGRAMME DECISION D-05 (identity bridge). Every call in this
+// file authenticates as the ORGANISATION -- one shared per-org Bearer key,
+// never a per-user VERIDIAN identity (see this file's own header and
+// auth-guard.ts's OrgRole comment). That is correct for authorisation and
+// wrong for ATTRIBUTION: a timesheet entry, a work-progress entry and an
+// approval all have to name a person, and without one VERIDIAN could only
+// record "the org API key" -- which is why self-approval could not be
+// detected and manager validation was meaningless.
+//
+// `actingUserId` is that person: the logged-in PROJEXA user's Supabase id,
+// taken from requireAuth()'s ctx.user.id at the call site and sent as the
+// `X-Acting-User` header. VERIDIAN's resolveActingUser() maps it to a real,
+// org-scoped, active compliance.users row and refuses an unmapped id with
+// the code USER_NOT_LINKED.
+//
+// It is a HEADER and not a body field on purpose: a GET has no body, and
+// "whose timesheet is this?" is a read question as much as a write one.
+// It is also never a URL parameter -- a user id in a query string ends up in
+// access logs and Referer headers.
+export const ACTING_USER_HEADER = "X-Acting-User";
+
+function actingUserHeaders(actingUserId?: string): Record<string, string> {
+  return actingUserId ? { [ACTING_USER_HEADER]: actingUserId } : {};
+}
+
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; actingUserId?: string };
 
 // Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
 // route (a real binary response, not JSON) can reuse the exact same
@@ -228,6 +253,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
     method: options.method ?? "GET",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
+      ...actingUserHeaders(options.actingUserId),
       ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -253,14 +279,14 @@ export async function callVeridian<T = unknown>(path: string, options: CallVerid
 // assuming JSON.
 export async function callVeridianBinary(
   path: string,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; actingUserId?: string } = {}
 ): Promise<{ body: ArrayBuffer; contentType: string }> {
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
   const res = await fetchWithTimeout(`${base}${path}`, {
     method: "GET",
-    headers: { "Authorization": `Bearer ${apiKey}` },
+    headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId) },
     cache: "no-store",
   });
 
@@ -280,13 +306,13 @@ export async function callVeridianBinary(
 export async function callVeridianUpload<T = unknown>(
   path: string,
   formData: FormData,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; actingUserId?: string } = {}
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
   const res = await fetchWithTimeout(`${base}${path}`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}` },
+    headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId) },
     body: formData,
     cache: "no-store",
   });

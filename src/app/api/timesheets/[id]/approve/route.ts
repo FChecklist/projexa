@@ -20,6 +20,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const data = await callVeridian(`/timesheets/${encodeURIComponent(id)}/approve`, {
       organizationId: ctx.organizationId!,
+      // R67 WS-H (D-05): the acting user rides as a header so VERIDIAN can
+      // refuse self-approval against a real person rather than an API key.
+      actingUserId: ctx.user?.id,
       method: "POST",
       body: { actorEmail: ctx.user?.email ?? null },
     });
