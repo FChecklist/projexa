@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { formatNumber } from "@/lib/format-number";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 import { countCell, headlineSentence, tradeLabel, type AttendanceSummary } from "@/lib/attendance-summary";
 
@@ -14,8 +15,17 @@ import { countCell, headlineSentence, tradeLabel, type AttendanceSummary } from 
 // Money is formatted without a currency code, matching the work-progress share
 // page's own money(): the org's currency is a per-org setting a page with no
 // session cannot resolve, and inventing one would be worse than omitting it.
+//
+// R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03): this used
+// `n.toLocaleString(undefined, ...)`, and `undefined` means THE RUNTIME'S OWN
+// locale -- the exact defect D-61's lint rule exists to catch. On a
+// server-rendered public page that is the server's locale on first paint and the
+// visitor's in the browser, so the grouping separator can change under hydration
+// (1,234.50 vs 1.234,50). formatNumber() pins the locale and keeps the same two
+// fraction digits, so the string is identical on both sides. The rule is D1's
+// and did not exist on main, which is why this file arrived unswept.
 function money(n: number) {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatNumber(n, { fractionDigits: 2 });
 }
 
 async function fetchSharedSummary(token: string): Promise<AttendanceSummary | null> {

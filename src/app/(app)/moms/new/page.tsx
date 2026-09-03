@@ -19,6 +19,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeading } from "@/components/PageHeading";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { MOMS_TEXT } from "@/lib/moms-list";
 import MoMCreateClient from "@/components/MoMCreateClient";
@@ -48,12 +49,28 @@ async function MoMNewSection({ requestedProjectId }: { requestedProjectId?: stri
     allProjectsWhenUnset: true,
   });
 
+  // R67 MERGE (lane D1's D-70 x lane D0's D-20). The two branches below answer
+  // two different questions and BOTH lanes were right about their own:
+  //
+  //  * The read FAILED -- D-70 (audit R-262). This used to `return` a bare Card
+  //    holding resolveSelectedProject's raw message, so an upstream failure
+  //    replaced the whole right pane with a bare HTTP status phrase: no title,
+  //    no Back, no Retry, and no statement of what had failed. The screen's own
+  //    frame is rendered now, with the failure reported inside it and a Retry
+  //    that re-runs the server fetch.
+  //  * The read SUCCEEDED and no project is in scope -- D-20. That is not an
+  //    error and must not be dressed as one; the answer is the question itself
+  //    plus the list to answer it with, which is lane D0's branch, kept whole.
   if (errorMessage) {
     return (
-      <div className="flex-1 p-6">
-        <Card className="border-px-error-border bg-px-error-light">
-          <CardContent className="p-4 text-sm text-px-error">{errorMessage}</CardContent>
-        </Card>
+      <div className="flex-1">
+        <CreateScreenUnavailable
+          breadcrumb="Minutes of Meeting / New MoM"
+          title="New Meeting"
+          backHref="/moms"
+          backLabel="Back to Minutes of Meeting"
+          message={errorMessage}
+        />
       </div>
     );
   }

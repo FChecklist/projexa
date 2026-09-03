@@ -42,6 +42,30 @@
 // copy and D-28's pure one were the same rule twice, so this file delegates to
 // the pure module's boqLineLabel() -- the one place the list cell, the object
 // page's facet and its subtitle all read.
+// R67 MERGE (lane D1, folded onto that canonical data layer). Lane D1 rewrote
+// this same pane against its own `SourceStatus` per-source state (D-29). Under
+// decision D-11 main's data layer is canonical and D-29's THREE substantive
+// complaints are already answered by it, better than lane D1 answered them:
+//
+//   * "the loading state is the bare word 'Loading…'" -- PaneState renders a
+//     skeleton carrying the real column headers (skeletonColumns below), so
+//     lane D1's own LoadingRows table is a second copy of a component that
+//     already exists and is dropped rather than duplicated (D-09).
+//   * "no error state at all, a failed read leaves 'Loading…' forever" --
+//     PaneState's error branch, with the shared dictionary's words and Retry.
+//   * "nothing tells you it is still going" -- PaneState's loadingCaption()
+//     counts the elapsed seconds off `startedAt`, which is the same 5 s
+//     threshold lane D1's slowLoadNotice() used.
+//
+// What lane D1 had that main does NOT, and which therefore survives here:
+// `framed`. This component is reused wholesale as the table half of
+// WorkProgressAnalyticalClient's AnalyticalScreen (ANALYTICAL.GLOBAL: "if it
+// diverges, the same data renders two ways and users will notice"), and that
+// screen draws its OWN Filter | Export header. Without `framed` the analytics
+// tab shows TWO disabled Filter buttons and TWO disabled Export buttons, one
+// pair from AnalyticalScreen and one from the ScreenFrame below, both saying
+// the same thing. It defaults to true, so WorkProgressPageClient -- which
+// wants the frame -- passes nothing and is unaffected.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, StatusBadge, type ScreenColumn, type StatusTone } from "@fchecklist/veridian-ui-kit/screens";
@@ -106,6 +130,7 @@ export default function WorkProgressListClient({
   startedAt,
   projectId,
   projectName,
+  framed = true,
 }: {
   entries: Entry[];
   /**
@@ -126,6 +151,12 @@ export default function WorkProgressListClient({
   startedAt?: number | null;
   projectId?: string;
   projectName?: string | null;
+  /**
+   * R67 D-29. False when this list is the table half of AnalyticalScreen,
+   * which draws the Filter | Export header itself. See the merge note at the
+   * top of the file.
+   */
+  framed?: boolean;
 }) {
   const router = useRouter();
   const rows = entries.map((e) => ({
@@ -139,6 +170,64 @@ export default function WorkProgressListClient({
     // page cannot render the same entry two ways.
     boqLineDescription: e.boqLineItemId ? boqLineLabel(e.boqItemCode, e.boqDescription) : null,
   }));
+
+  const body = (
+    <div className="px-4 py-3">
+      {/* The count is an en-dash until a read has actually established it --
+          "0 records" over a failure is a claim nobody made. */}
+      <p className="pb-2 text-[12px] text-px-muted">{recordCountLabel(status, rows.length)}</p>
+      <PaneState
+        status={status}
+        entity="progress entries"
+        projectName={projectName}
+        startedAt={startedAt}
+        error={error}
+        rowCount={rows.length}
+        skeletonColumns={COLUMNS.map((c) => c.label)}
+        emptyMessage="No progress entries logged yet."
+        lastLoadedAt={loadedAt}
+        onRetry={onRetry}
+      >
+        <ListScreen
+          functionId="work-progress.list"
+          columns={COLUMNS}
+          rows={rows as unknown as Record<string, unknown>[]}
+          getRowId={(row) => row.id as string}
+          // R67 D-67: a Daily Entry row used to do nothing at all when
+          // clicked. It now opens the entry, where the site photo lives.
+          onRowClick={
+            projectId
+              ? (row) =>
+                  router.push(
+                    `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
+                  )
+              : undefined
+          }
+          // Unreachable by construction -- PaneState only renders these
+          // children when rowCount > 0 -- but the kit requires the prop,
+          // and a sentence that can never be shown is safer than one that
+          // could be shown over a failure.
+          emptyStateLabel="No progress entries logged yet."
+          renderCell={{
+            // R67 D-74: the kit's ListScreen formats a `type: "date"` column
+            // with `d.toLocaleDateString()` and NO arguments -- the runtime's
+            // own locale, which is the deployment's on the server pass and
+            // the visitor's in the browser. Per D-09 the kit is not changed;
+            // renderCell is its own supported way for the app to say what a
+            // cell shows, and the column's raw ISO value is left in the row
+            // so the kit's sort still orders by date rather than by "02-".
+            entryDate: (row) => <>{formatDate((row as unknown as Entry).entryDate)}</>,
+            percentComplete: (row) => {
+              const pct = Number((row as unknown as Entry).percentComplete);
+              return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
+            },
+          }}
+        />
+      </PaneState>
+    </div>
+  );
+
+  if (!framed) return body;
 
   return (
     // R42 seq23 live-user finding: same GLOBAL rule as PermitsListClient's
@@ -157,80 +246,13 @@ export default function WorkProgressListClient({
       // by the time the list finishes loading.
       messages={notice ? [{ level: "info", text: notice }] : []}
     >
-      <div className="px-4 py-3">
-        {/* The count is an en-dash until a read has actually established it --
-            "0 records" over a failure is a claim nobody made. */}
-        <p className="pb-2 text-[12px] text-px-muted">{recordCountLabel(status, rows.length)}</p>
-        <PaneState
-          status={status}
-          entity="progress entries"
-          projectName={projectName}
-          startedAt={startedAt}
-          error={error}
-          rowCount={rows.length}
-          skeletonColumns={COLUMNS.map((c) => c.label)}
-          emptyMessage="No progress entries logged yet."
-          lastLoadedAt={loadedAt}
-          onRetry={onRetry}
-        >
-          <ListScreen
-            functionId="work-progress.list"
-            columns={COLUMNS}
-            rows={rows as unknown as Record<string, unknown>[]}
-            getRowId={(row) => row.id as string}
-            // R67 D-67 x D-28: a Daily Entry row used to do nothing at all
-            // when clicked. It now opens the entry, where the site photo
-            // lives. The project no longer has to travel with it -- the object
-            // page reads the entry from its own endpoint -- but it is still
-            // passed when known, so Back on that page returns to this list
-            // scoped to the project the user was actually in.
-            onRowClick={(row) =>
-              router.push(
-                projectId
-                  ? `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
-                  : `/work-progress/${row.id as string}`
-              )
-            }
-            // Unreachable by construction -- PaneState only renders these
-            // children when rowCount > 0 -- but the kit requires the prop,
-            // and a sentence that can never be shown is safer than one that
-            // could be shown over a failure.
-            emptyStateLabel="No progress entries logged yet."
-            renderCell={{
-              // R67 D-74: the kit's ListScreen formats a `type: "date"` column
-              // with `d.toLocaleDateString()` and NO arguments -- the runtime's
-              // own locale, which is the deployment's on the server pass and
-              // the visitor's in the browser. Per D-09 the kit is not changed;
-              // renderCell is its own supported way for the app to say what a
-              // cell shows, and the column's raw ISO value is left in the row
-              // so the kit's sort still orders by date rather than by "02-".
-              //
-              // R67 D-28: the cell is additionally a REAL anchor, so a row can
-              // be middle-clicked or opened in a new tab like every other link
-              // in this product -- the kit's own row handler gives Enter/Space
-              // and a focus ring, but not that.
-              entryDate: (row) => (
-                <Link
-                  href={
-                    projectId
-                      ? `/work-progress/${row.id as string}?projectId=${encodeURIComponent(projectId)}`
-                      : `/work-progress/${row.id as string}`
-                  }
-                  prefetch
-                  onClick={(e) => e.stopPropagation()}
-                  className="underline underline-offset-2 decoration-ct-border hover:decoration-ct-navy"
-                >
-                  {formatDate((row as unknown as Entry).entryDate)}
-                </Link>
-              ),
-              percentComplete: (row) => {
-                const pct = Number((row as unknown as Entry).percentComplete);
-                return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
-              },
-            }}
-          />
-        </PaneState>
-      </div>
+      {/* R67 merge (D-11, D1 x D3): the pane is rendered ONCE, from the "body"
+          const above. D3 inlined the same PaneState/ListScreen block here;
+          keeping both would have been two copies of one table, and the
+          unframed path ("if (!framed) return body") would have returned a
+          different tree from the framed one. D3's cells are already inside
+          "body" -- git merged them there -- so nothing of D3's is lost. */}
+      {body}
     </ScreenFrame>
   );
 }

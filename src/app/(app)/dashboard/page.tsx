@@ -87,13 +87,37 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
   // errored registry row is NOT fatal -- DashboardHomeView falls back to its
   // own hardcoded labels when this is null.
   const columnsPromise = getScreenColumns("dashboard.dashboard", organizationId); // never rejects
-  const [dashboardResult, currencyResult] = await Promise.allSettled([
+  // R67 D-02: the "Permits expiring" KPI's own count, org-wide, read
+  // concurrently with the other two. VERIDIAN's /permits treats projectId as
+  // optional, so omitting it is the org-wide list -- the same withinDays=30
+  // window the card's own destination (/permits?withinDays=30) then applies,
+  // so the number and the screen it opens can never disagree.
+  const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
+    // R67 F1: the currencies read is memoised per org now -- same value, one
+    // fewer round trip on every dashboard navigation.
     organizationId
       ? readCachedCurrencies(organizationId)
       : callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+    // R67 MERGE: this third read is lane D1's, and a PREVIOUS merge had kept its
+    // comment above, its destructuring below and the KPI that consumes it while
+    // dropping the CALL -- so `permitsResult` was index 2 of a two-element
+    // tuple. It survives this merge too: lane F1 rewrote the element ABOVE it,
+    // which is exactly the shape of edit that silently truncated the tuple last
+    // time. The tile it feeds is on screen and would otherwise read a permanent
+    // en-dash that no failure caused.
+    callVeridian<{ permits?: unknown[] }>("/permits?withinDays=30", {
+      organizationId: organizationId ?? undefined,
+    }),
   ]);
   const registryColumns = await columnsPromise;
+
+  // R67 D-02: null, not 0, when that read failed -- "no permits are expiring"
+  // and "we could not find out" must not render the same.
+  const permitsExpiring =
+    permitsResult.status === "fulfilled" && Array.isArray(permitsResult.value.permits)
+      ? permitsResult.value.permits.length
+      : null;
 
   let data: OrgDashboard | null = null;
   let errorMessage: string | null = null;
@@ -131,6 +155,7 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
       currencies={currencies}
       errorMessage={errorMessage}
       registryColumns={registryColumns}
+      permitsExpiring={permitsExpiring}
     />
   );
 }

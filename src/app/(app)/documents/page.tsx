@@ -15,9 +15,22 @@ import DocumentsClient, { type Doc } from "@/components/DocumentsClient";
 
 const SKELETON = <ModuleListSkeletonBody columns={DOCUMENTS_LIST_COLUMNS} actions={["Upload"]} />;
 
+// R67 D-13 (lane D1, folded into lane F2's streamed structure). The project was
+// already resolved on this route and everything but its id was thrown away,
+// which is why the screen below could never name the project it had queried.
+// The heading now carries it -- and says so when the project was chosen FOR the
+// user rather than by them, because "Documents - Cedar Heights" and "Documents -
+// Cedar Heights (auto-selected)" are different claims.
+//
+// The heading is rendered in BOTH the Suspense fallback and here, with the same
+// text at the same position, so F-18's "the frame paints at TTFB" still holds:
+// the title is on screen immediately and only gains its scope when the project
+// is known. No layout jump, and no second heading.
+const HEADING_TITLE = "Documents";
+
 async function DocumentsSection({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { projectId, projectName: resolvedName, errorMessage, mode } = await resolveProjectForModule(
+  const { projectId, projectName: resolvedName, errorMessage, mode, source } = await resolveProjectForModule(
     requestedProjectId,
     organizationId,
     // R67 D-20 + D-66: this module is per-project, so it OPTS IN to the honest
@@ -27,12 +40,33 @@ async function DocumentsSection({ requestedProjectId }: { requestedProjectId?: s
     // chose.
     { allProjectsWhenUnset: true }
   );
-  if (errorMessage) return <ModuleProjectNotice errorMessage={errorMessage} />;
+  if (errorMessage) {
+    return (
+      <>
+        <PageHeading title={HEADING_TITLE} />
+        <ModuleProjectNotice errorMessage={errorMessage} />
+      </>
+    );
+  }
   // Two different answers, told apart at last: "you are looking at the whole
   // org and this module needs one project" is not the same as "this org has no
   // projects".
-  if (!projectId && mode === "all") return <ProjectRequiredCard module="Documents" />;
-  if (!projectId) return <ModuleProjectNotice errorMessage={null} />;
+  if (!projectId && mode === "all") {
+    return (
+      <>
+        <PageHeading title={HEADING_TITLE} />
+        <ProjectRequiredCard module="Documents" />
+      </>
+    );
+  }
+  if (!projectId) {
+    return (
+      <>
+        <PageHeading title={HEADING_TITLE} />
+        <ModuleProjectNotice errorMessage={null} />
+      </>
+    );
+  }
 
   const [registryColumns, list, name] = await Promise.all([
     getScreenColumns("documents.list", organizationId),
@@ -44,7 +78,17 @@ async function DocumentsSection({ requestedProjectId }: { requestedProjectId?: s
 
   // R67 D-65: the name travels with the id so the waiting caption and the
   // empty sentence can both name the project the user chose.
-  return <DocumentsClient projectId={projectId} projectName={name} registryColumns={registryColumns} initial={list} />;
+  return (
+    <>
+      {/* R67 D-13: the title band names the project this screen queried. */}
+      <PageHeading
+        title={HEADING_TITLE}
+        context={name}
+        contextNote={source === "auto" ? "auto-selected" : null}
+      />
+      <DocumentsClient projectId={projectId} projectName={name} registryColumns={registryColumns} initial={list} />
+    </>
+  );
 }
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
@@ -52,8 +96,14 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Documents" />
-      <Suspense fallback={SKELETON}>
+      <Suspense
+        fallback={
+          <>
+            <PageHeading title={HEADING_TITLE} />
+            {SKELETON}
+          </>
+        }
+      >
         <DocumentsSection requestedProjectId={projectId} />
       </Suspense>
     </div>

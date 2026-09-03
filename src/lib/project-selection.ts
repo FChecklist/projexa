@@ -74,6 +74,12 @@ export type ProjectSelection = {
    */
   source: ProjectSource | null;
   /**
+   * R67 D-70: the upstream HTTP status when the read failed, or null. Returned
+   * for the CALLER's logging and branching only -- it is never rendered; see
+   * describeProjectListFailure() below for what a user is shown instead.
+   */
+  status: number | null;
+  /**
    * R67 D-20. "project" means a specific project is in scope. "all" means the
    * org as a whole is in scope and `project` is null ON PURPOSE -- the caller
    * must query org-wide rather than pick one.
@@ -214,6 +220,33 @@ export function chooseProject(
   };
 }
 
+/**
+ * R67 D-70 (audit R-262). What a user is told when the project list does not
+ * load.
+ *
+ * THE DEFECT. Every create page in this app returned early with this outcome's
+ * raw `errorMessage` in a bare Card, so a failing VERIDIAN /dashboard replaced
+ * the entire right pane with the words "Internal Server Error" -- no title, no
+ * Back, no Retry, and no statement of what had failed. That string is not the
+ * backend's words about anything: it is the HTTP status phrase, it names no
+ * subject, and it is what an upstream 500 with no JSON body degrades into.
+ *
+ * The standing rule in this codebase is to show the backend's OWN words (see
+ * DataLoadError's header), and this keeps them -- with that one exception. A
+ * message that says nothing is replaced by one that says which call failed and
+ * who answered; every real VERIDIAN message, including its timeout wording,
+ * passes through untouched.
+ */
+// R67 D1 CI FIX (2026-09-03): moved to project-selection-banners.ts, which has zero
+// imports and is therefore safe for "use client" components -- this file is not (it
+// pulls in next/headers + @/lib/veridian-client's DB chain). Re-exported here so every
+// existing server-side importer of these three symbols is unaffected.
+export {
+  describeProjectListFailure,
+  projectListFailureBanner,
+  PROJECT_LIST_UNAVAILABLE_REASON,
+} from "./project-selection-banners";
+
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
 // so they don't each re-implement the same project fetch + fallback. (The
 // fetch was GET /dashboard until R67 F-03 moved it to GET /projects; see
@@ -257,14 +290,30 @@ export async function resolveSelectedProject(
     return {
       projects,
       errorMessage: null,
+      // R67 D-70: null on a successful read -- there is no failure to report.
+      status: null,
       ...chooseProject(projects, requestedProjectId, options, preferred),
     };
   } catch (err) {
+    // R67 D-70: the RAW error, with the upstream status, is logged here and only
+    // here. Callers render describeProjectListFailure(errorMessage) -- never the
+    // exception, never a stack, never the internal URL (VeridianApiError already
+    // keeps that in `detail`, which is logged by veridian-client and never
+    // returned). Without this line a create-route failure left nothing at all in
+    // the server log: the page swallowed it into a card and moved on, which is
+    // why correction C-06 records that the cause of the /drawings/new failure
+    // was never established.
+    const status = err instanceof VeridianApiError ? err.status : null;
+    console.error(
+      `[project-selection] resolveSelectedProject failed (upstream status ${status ?? "none"}):`,
+      err instanceof Error ? err.message : err
+    );
     return {
       project: null,
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      status,
       // Nothing was resolved, so nothing was fallen back to -- and with no
       // project there is no project in scope, whatever the caller asked for.
       // "project mode with no project" is the contradictory state
@@ -319,6 +368,9 @@ export async function resolveRouteProject(
       projects,
       errorMessage: null,
       source: picked.source,
+      // R67 D-70: the upstream status, for the caller's logging only. null on a
+      // successful read -- there is no failure to report.
+      status: null,
       // A-13's strict resolution never picks for the user, so it can never
       // have fallen back; with no project the screen IS org-wide, and asks.
       mode: picked.project ? "project" : "all",
@@ -332,6 +384,9 @@ export async function resolveRouteProject(
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      // R67 D-70: carried for the caller's own logging, never rendered -- see
+      // describeProjectListFailure() for what a user is shown instead.
+      status: err instanceof VeridianApiError ? err.status : null,
       mode: "all",
       fellBack: false,
       // A failed read says nothing about the URL, and must not be reported as

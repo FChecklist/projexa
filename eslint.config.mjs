@@ -2,6 +2,10 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 import { dirname } from "path";
 import { fileURLToPath } from "url";
+// R67 D-61: the one money/number/date formatting rule, defined once in
+// eslint-rules/money-format.mjs and consumed both here (as the lint error) and
+// by src/lib/money-format-rule.test.ts (which keeps NOT_YET_SWEPT honest).
+import { BANNED_METHODS, NOT_YET_SWEPT, RULE_FILES, RULE_MESSAGE } from "./eslint-rules/money-format.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +119,26 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, saffronDiscipline, marketingSaffronTextAllowed, {
+  // R67 D-61 (audit R-198/R-226): "One money, date and number format across
+  // every screen", made enforceable.
+  //
+  // Scoped to the two directories that RENDER -- src/lib/format-money.ts and
+  // src/lib/format-date.ts are the modules that legitimately call these
+  // methods, and they are the only ones that should. `ignores` here narrows
+  // this block only: it is the shrinking list of screens the sweep has not
+  // reached, not a set of approved exceptions -- see the file it comes from.
+  files: RULE_FILES,
+  ignores: NOT_YET_SWEPT,
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      ...BANNED_METHODS.map((name) => ({
+        selector: `CallExpression > MemberExpression.callee > Identifier.property[name='${name}']`,
+        message: RULE_MESSAGE,
+      })),
+    ],
+  },
+}, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
 }];
 

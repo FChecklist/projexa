@@ -62,7 +62,7 @@
 // lives in a tested module instead of being re-typed per screen.
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { ListScreen, ScreenFrame, type FieldMessage, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { PaneState } from "@/components/PaneState";
@@ -70,6 +70,9 @@ import { useListRead } from "@/lib/use-list-read";
 import { PERMITS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import { recordCountLabel } from "@/lib/pane-state";
+import { useEffect, useState } from "react";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { takeScreenMessage } from "@/lib/screen-message";
 import { StatusPillTone } from "@/components/ui/status-pill";
 import {
   parseWithinDays,
@@ -88,12 +91,36 @@ export type Permit = {
   issueDate: string | null;
   endDate: string | null;
   daysToExpiry: number | null;
+  // R67 D-05: C01-15 removes the per-row signed URL from the list response
+  // and replaces it with this boolean (a signed URL per row is a Storage
+  // round-trip per row, and they expire in 300s anyway). Both shapes are
+  // read here so the Document column is correct before and after that lands.
+  hasDocument?: boolean;
+  documentUrl?: string | null;
 };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // intentionally the same fields as ScreenColumn so a registry row can be
 // passed straight to ListScreen with no reshaping.
 export type RegistryColumn = ScreenColumn;
+
+// R67 D-05 (lane D1, folded in). Affordance columns, appended to whichever
+// column set is in force (registry row or the shared fallback) because they are
+// not data the registry describes -- they are how a row says what it can do.
+// Deliberately NOT importance "High": ListScreen caps High columns at 7 and
+// silently drops the overflow, which would make these two vanish exactly when
+// the registry row is fully populated.
+const DOCUMENT_COLUMN: ScreenColumn = { label: "Document", field: "__document", type: "text", importance: "Medium" };
+const OPEN_COLUMN: ScreenColumn = { label: "Open", field: "__open", type: "text", importance: "Medium" };
+
+/** R67 D-05: does this row have a permit PDF behind it? Tolerates both the
+ *  current response (a signed `documentUrl` per row) and C01-15's `hasDocument`
+ *  boolean, so the column never silently renders "-" for every row during the
+ *  changeover. */
+export function rowHasDocument(row: { hasDocument?: boolean; documentUrl?: string | null }): boolean {
+  if (typeof row.hasDocument === "boolean") return row.hasDocument;
+  return Boolean(row.documentUrl);
+}
 
 
 export default function PermitsListClient({
@@ -117,7 +144,44 @@ export default function PermitsListClient({
   initial?: ModuleListInitial<Permit>;
 }) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : PERMITS_LIST_COLUMNS;
+  const base = registryColumns && registryColumns.length > 0 ? registryColumns : PERMITS_LIST_COLUMNS;
+  // R67 D-05: the two affordance columns, appended to whichever set is in force.
+  const columns = useMemo(
+    () => [
+      ...base,
+      ...(base.some((c) => c.field === DOCUMENT_COLUMN.field) ? [] : [DOCUMENT_COLUMN]),
+      ...(base.some((c) => c.field === OPEN_COLUMN.field) ? [] : [OPEN_COLUMN]),
+    ],
+    [base]
+  );
+
+  // R67 D-05: the receipt handed over by a delete on the object page. It is a
+  // persistent message in this screen's own band, not a toast, and it is read
+  // once (see screen-message.ts).
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
+  useEffect(() => {
+    const handed = takeScreenMessage("permits.list");
+    if (handed) setMessages([handed]);
+  }, []);
+
+  // R67 D-05: the PDF behind a row, opened in a tab that is opened
+  // SYNCHRONOUSLY -- a window.open() after an await is a popup a browser blocks.
+  async function openDocument(permitId: string) {
+    const tab = window.open("", "_blank");
+    try {
+      const permit = await fetchJson<Permit>(`/api/permits/${permitId}`);
+      if (!permit.documentUrl) {
+        tab?.close();
+        setMessages([{ level: "error", text: "This permit has no document link on it." }]);
+        return;
+      }
+      if (tab) tab.location.href = permit.documentUrl;
+      else window.location.href = permit.documentUrl;
+    } catch (err) {
+      tab?.close();
+      setMessages([{ level: "error", text: errorMessage(err, "Couldn't open the permit document") }]);
+    }
+  }
 
   const params = new URLSearchParams({ projectId });
   if (withinDays) params.set("withinDays", withinDays);
@@ -161,8 +225,16 @@ export default function PermitsListClient({
 
   return (
     <ScreenFrame
-      breadcrumb="Permits"
-      newAction={{ label: "+ New", onClick: () => router.push(`/permits/new?projectId=${projectId}`) }}
+      // R67 D-07: the module already names itself in the page heading above.
+      // The frame band names the PROJECT this list queried instead, so the
+      // module is not printed twice one line apart.
+      breadcrumb={projectName ?? "Permits"}
+      // R67 D-07 / C01-13 (lane D1, folded in at the merge). The label was
+      // "+ New", and ScreenFrame's HeaderActionButton already renders a Plus
+      // ICON before it -- so this one button read "+ + New" while every other
+      // list screen in the product (DrawingsClient's own comment states the
+      // same rule) passed the plain word. The frame draws the plus.
+      newAction={{ label: "New", onClick: () => router.push(`/permits/new?projectId=${projectId}`) }}
       // R42 seq23 live-user finding: these rendered as live, enabled,
       // no-op buttons -- clickable but silently did nothing, no error, no
       // feedback. GLOBAL: "ACTIONS ARE DISABLED BY CONDITION, NEVER HIDDEN,
@@ -215,7 +287,8 @@ export default function PermitsListClient({
           </div>
         )
       }
-      messages={[]}
+      // R67 D-05: the receipt handed over by a delete on the object page.
+      messages={messages}
     >
       <div className="px-1 pb-1">
         {/* The record count is an en-dash until a read has actually
@@ -250,6 +323,46 @@ export default function PermitsListClient({
             onRowClick={(row) => router.push(`/permits/${row.id}`)}
             emptyStateLabel="No permits yet for this project."
             renderCell={{
+              __document: (row) => {
+                const permit = row as unknown as Permit;
+                if (!rowHasDocument(permit)) return <span className="text-ct-muted">-</span>;
+                // Every action is a word, never an icon alone. stopPropagation
+                // so opening the PDF does not also open the row behind it.
+                return permit.documentUrl ? (
+                  <a
+                    href={permit.documentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="underline underline-offset-2"
+                  >
+                    PDF
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openDocument(permit.id);
+                    }}
+                    className="underline underline-offset-2"
+                  >
+                    PDF
+                  </button>
+                );
+              },
+              __open: (row) => (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/permits/${(row as unknown as Permit).id}`);
+                  }}
+                  className="underline underline-offset-2"
+                >
+                  Open
+                </button>
+              ),
               daysToExpiry: (row) => {
                 const rowStatus = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
                 return <StatusPillTone tone={rowStatus.tone} label={rowStatus.label} />;

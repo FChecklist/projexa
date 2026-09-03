@@ -5,6 +5,7 @@ import { resolveProjectIdFast } from "@/lib/module-list-source";
 // Studio's real create route, carrying ?taskId= through so a link from a task
 // still lands with that task preselected.
 //
+
 // WHY AN ALIAS AND NOT A DELETE: this path is linked from the Schedule
 // module's Timesheet tab and from any bookmark a designer already has, and a
 // 404 on a URL that worked yesterday is worse than a redirect.
@@ -33,6 +34,7 @@ export default async function ScheduleLogTimeAliasPage({
   const { projectId, taskId, issueId } = await searchParams;
   const query = new URLSearchParams();
   // No network: the query string, else the cookie the top rail wrote (F-19).
+
   const known = await resolveProjectIdFast(projectId);
   if (known) query.set("projectId", known);
   // The Schedule module calls the same thing `issueId` on its own links;

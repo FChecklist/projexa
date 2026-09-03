@@ -15,6 +15,19 @@ import { withTiming } from "@/lib/with-timing";
 // which compliance-tracker answers from one indexed read inside one
 // transaction, with its own 60 s per-org cache. Same reason
 // resolveSelectedProject() moved: the shell fetches this on every navigation.
+//
+// R67 MERGE (D-11, lane D1 x lane F1, 2026-09-03). D-69 had widened this SAME
+// route the other way: it passed VERIDIAN's rows through WHOLE, because the new
+// /projects landing needs each project's money and task counts and this route
+// was throwing them away. Both lanes were right about their own caller and the
+// two cannot be reconciled in one endpoint -- a dropdown refetched on every
+// navigation must not pay for an earned-value aggregate, and a list of project
+// figures cannot be served from {id, name, status}.
+//
+// So they are two endpoints now, and F-03 keeps this one. The rich read moved
+// to ./overview/route.ts, which is what ProjectsListClient reads; the switcher
+// and every create screen's background project resolve keep this cheap one.
+// Nothing was dropped -- see that file's header.
 export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -27,7 +40,8 @@ export const GET = withTiming("GET", async function GET() {
   }
 });
 
-// Backs CreateProjectDialog -- the one entity in PROJEXA's full CRUD
+// Backs /projects/new (ProjectCreateClient.tsx, which replaced
+// CreateProjectDialog in R67 D-01) -- the one entity in PROJEXA's full CRUD
 // surface that previously had no create path at all (2026-07-18
 // production-readiness pass).
 export const POST = withTiming("POST", async function POST(request: NextRequest) {

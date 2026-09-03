@@ -223,6 +223,19 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/accounting/journal-entries/new",
   "/budgets/[id]",
   "/budgets/new",
+
+  // R67 D-62 (audit R-202). The ERP's fiscal-year budget and the redirects that
+  // used to be its address. Deliberately not in the sidebar: PROJEXA's one entry
+  // called "Budgets" now opens the PROJECT budget (/scope?tab=budget), because
+  // that is what the word means to the person holding the sidebar, and the ERP
+  // budget cannot save anything until a finance team has created a fiscal year
+  // and a chart of accounts. It stays reachable by CLICKING, not by typing:
+  // /dashboard/project's "Budget vs Actual" tile opens /finance/budgets/new when
+  // the project has no budget, and that screen's Back reaches the list.
+  "/budgets",
+  "/finance/budgets",
+  "/finance/budgets/[id]",
+  "/finance/budgets/new",
   "/change-orders/[id]",
   "/change-orders/new",
   "/documents/[id]",
@@ -303,9 +316,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
   // R67 D-01 / correction C-01: the home screen's Create Project dialog became
-  // a real create route. Reached by the "Create Project" button on /dashboard
-  // and on /dashboard/overview -- the same class as /invoices/new above, not a
-  // standalone sidebar destination.
+  // a real create route. Reached by the "Create Project" button on /dashboard,
+  // on /dashboard/overview and from /projects' own empty state -- the same
+  // class as /invoices/new above: a create screen opened from its own parent
+  // screen, never a standalone sidebar destination.
   "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",

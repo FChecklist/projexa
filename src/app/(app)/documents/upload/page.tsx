@@ -1,43 +1,69 @@
-// R67 F-19 (audit recommendation R-245) / decision D-04.
+// Real-screen conversion (2026-08-30): replaces the old "Upload Document"
+// Dialog popup with a real create route.
 //
-// This create route awaited getServerOrganizationId() and then a VERIDIAN
-// /dashboard call BEFORE emitting a byte -- 1.5-1.65 s to first byte for a
-// form of three to seven fields, against /budgets/new's 184 ms, which skips
-// the chain. Every navigation that reaches this screen (a "+ New" button, a
-// KPI tile, a pill) already carries ?projectId=, and the projexa_project
-// cookie covers a typed or bookmarked URL, so the project is now resolved
-// with NO network call and the form renders straight away. The /dashboard hop
-// survives only for the case where neither source knows, and it happens inside
-// a Suspense boundary behind the form's own skeleton.
+// R67 MERGE (lane F2's F-19 x lane D1's D-13/D-70/D-78). See
+// /drawings/new/page.tsx's header for the full reasoning -- it is the same
+// trade, made the same way, on the other upload route.
+//
+// KEPT FROM F-19: the frame paints at TTFB behind a <Suspense> boundary
+// instead of leaving 1.5-1.65 s of blank page.
+//
+// DECLINED FROM F-19, deliberately: the zero-network fast path. D-78's storage
+// probe does not merely add a banner -- it feeds DocumentUploadClient's Save
+// `disabledReason`, so rendering the form with the default
+// `storageConfigured = true` and correcting it a moment later would make the
+// Save button live during exactly the window D-78 exists to close. Lane D0
+// declined the same optimisation on /moms/new; this follows that precedent.
+//
+// KEPT FROM D-70 (audit R-262): the failure branch is no longer a bare Card
+// carrying resolveSelectedProject's raw message -- an upstream 500 with no JSON
+// body degrades into the words "Internal Server Error", and that used to
+// replace the whole right pane with no title, no Back and no Retry.
+// CreateProjectMissing now renders the module's own frame around it.
 import { Suspense } from "react";
 import DocumentUploadClient from "@/components/DocumentUploadClient";
 import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFormSkeleton";
-import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
+import { resolveSelectedProject } from "@/lib/project-selection";
+import { getStorageStatus } from "@/lib/storage-status";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
+
+const FRAME = {
+  breadcrumb: "Documents / New Document",
+  title: "New Document",
+  backHref: "/documents",
+  backLabel: "Back to Documents",
+} as const;
 
 async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return <CreateProjectMissing message={errorMessage} />;
-  return <DocumentUploadClient projectId={projectId} />;
+  // R67 D-78: both reads at once -- the storage probe is answered from
+  // VERIDIAN's own 60 s cache, so it costs nothing and lets the screen say that
+  // no upload can succeed BEFORE the user drops a 30 MB file on the zone.
+  const [{ project, errorMessage }, storageConfigured] = await Promise.all([
+    resolveSelectedProject(requestedProjectId, organizationId),
+    getStorageStatus(organizationId),
+  ]);
+
+  if (errorMessage || !project) return <CreateProjectMissing message={errorMessage} {...FRAME} />;
+
+  // R67 D-13: the project NAME goes through too, so the create screen can show
+  // "Project: <name>" as a facet -- where the file will land, stated before the
+  // file is chosen rather than after it is filed.
+  return <DocumentUploadClient projectId={project.id} projectName={project.name} storageConfigured={storageConfigured} />;
 }
 
 export default async function DocumentsUploadPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  // No network: the query string, else the cookie the top rail wrote.
-  const known = await resolveProjectIdFast(projectId);
-
-  if (known) {
-    return (
-      <div className="flex-1">
-        <DocumentUploadClient projectId={known} />
-      </div>
-    );
-  }
 
   return (
-    <div className="flex-1 p-6">
-      <Suspense fallback={<CreateFormSkeleton fields={4} />}>
+    <div className="flex-1">
+      <Suspense
+        fallback={
+          <div className="p-6">
+            <CreateFormSkeleton fields={4} />
+          </div>
+        }
+      >
         <ResolvedForm requestedProjectId={projectId} />
       </Suspense>
     </div>

@@ -52,6 +52,52 @@
 // whole screen behind one `loading` flag; here only a FAILED dashboard read is
 // a whole-screen state, because there is genuinely nothing to draw without it.
 // Every other figure paints the moment its own answer lands.
+//
+// ─── R67 MERGE (lane D1's MONEY MODEL, folded onto that per-card rewrite) ────
+//
+// This screen is the direct consumer of the compliance-tracker change shipped
+// in the same lane (PR #1581: resolveProjectMoney() is now the single
+// implementation of Point 121, and the batched dashboard SQL returns
+// budget_lines). Its payload therefore changed shape, and the four things
+// below are what that costs on this side. None of them is a preference; each
+// is a field the backend now sends differently.
+//
+//   * D-02 -- `budget` IS NULLABLE NOW. getProjectDashboard() returns null,
+//     never 0, when this project's scope has no erp_budget_line_items row at
+//     all. "No budget set" and "a budget of zero" are different facts, and
+//     this tile rendered the first as the second: on a project nobody had
+//     budgeted, the FIRST expense made it say "over budget" in the late tone,
+//     against a target of 0, over a full red bullet bar. With no budget there
+//     is nothing to be over -- so the card states the spend, says the budget
+//     is missing, drops the bullet chart, and its click goes to the one screen
+//     that fixes it rather than to a variance view with nothing to vary
+//     against. The wording is budgetBaseline()/spendTone() from
+//     src/lib/dashboard-kpi.ts, shared with the home dashboard and unit-tested
+//     there, rather than restated here.
+//   * D-62 -- `projectValueSource` IS NEW. The card used to caption every
+//     project "manual entry, or linked POs", which is a description of the
+//     RULE and not of this project: a figure summed from purchase orders and a
+//     figure a director typed were indistinguishable. The backend now says
+//     which one it was.
+//   * D-61 -- MONEY GOES THROUGH formatMoney(). The local money() helper
+//     called n.toLocaleString directly, which is what eslint-rules/
+//     money-format.mjs bans under src/components and what
+//     src/lib/money-format-rule.test.ts asserts about THIS FILE BY NAME (it is
+//     on that suite's SWEPT list, so it may never be re-exempted). Keeping
+//     main's version here would have failed both the lint gate and that test.
+//     The visible change is the decimals: this screen rendered whole units
+//     while /scope and the reports rendered two, so one project's contract
+//     value read "AED 21,750" here and "AED 21,750.00" on the screen this tile
+//     links to.
+//   * D-62 -- the Cost Variance tab is the Budget module now, so a tile that
+//     HAS a budget lands on ?tab=budget.
+//
+// NOT folded in: lane D1's whole-screen `if (loading) return` structure and
+// its own error card. F-27's per-pane rendering supersedes both, and D-65's
+// PaneErrorCard is the shared dictionary's sentence rather than this screen's
+// own. Lane D1's forked KpiCard import is folded in ONE level down instead --
+// DashboardKpiTile now wraps the fork, so the per-tile states and D-61's
+// typography both survive without this file importing two card components.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -65,6 +111,17 @@ import {
 } from "@fchecklist/veridian-ui-kit/screens";
 import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
 import { PaneErrorCard } from "@/components/PaneState";
+// R67 D-61: one money format for the whole product.
+import { formatMoney } from "@/lib/format-money";
+// R67 D-62 / D-02: one project-money model. The same wording the home
+// dashboard uses for the same facts, so a project reads the same on both.
+import {
+  budgetBaseline,
+  formatProjectValue,
+  projectValueCaption,
+  spendTone,
+  type ProjectValueSource,
+} from "@/lib/dashboard-kpi";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -98,13 +155,23 @@ function labelFor(labels: ScreenColumn[], field: string, fallback: string): stri
 type ProjectDashboard = {
   projectId: string;
   projectName: string;
-  budget: number;
+  // R67 D-02: widened to match compliance-tracker's getProjectDashboard(),
+  // which now returns null (never 0) when this project's scope has no
+  // erp_budget_line_items row at all. See the merge note at the top.
+  budget: number | null;
   revenue: number;
   expenses: number;
   progressPercent: number;
   delayedTaskCount: number;
   taskCount: number;
   projectValue: number | null;
+  /**
+   * R67 D-62: which of the two sources projectValue came from. The card used to
+   * state "manual entry, or linked POs" for every project, which is a
+   * description of the RULE, not of this project -- so a figure summed from
+   * purchase orders and a figure a director typed were indistinguishable.
+   */
+  projectValueSource: ProjectValueSource;
   earnedValue: number | null;
   percentByValue: number | null;
   contractValue: number | null;
@@ -169,11 +236,17 @@ async function readJson<T>(url: string, signal: AbortSignal, fallbackMessage: st
   return body as T;
 }
 
-// TC-90: AED with NO rupee sign and NO lakh/crore grouping -- "en-US" gives
-// plain thousands-comma grouping regardless of locale; deliberately not
-// "en-IN" (lakh grouping) and never a hardcoded "â‚¹" fallback.
-function money(n: number, currency: Currency | undefined) {
-  return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+// TC-90: AED with NO rupee sign and NO lakh/crore grouping -- deliberately not
+// "en-IN" (lakh grouping) and never a hardcoded "₹" fallback.
+//
+// R67 D-61: that rule is now formatMoney()'s, shared with every other money
+// surface. What changes here is the decimals: this screen rendered whole units
+// (maximumFractionDigits: 0) while /scope and the reports rendered two, so the
+// same project's contract value read "AED 21,750" on the project dashboard and
+// "AED 21,750.00" on the screen the tile links to. A null renders the en-dash,
+// which is why every call site below can stop guarding for one.
+function money(n: number | null | undefined, currency: Currency | undefined) {
+  return formatMoney(n, { currency: currency?.code ?? null });
 }
 
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
@@ -369,8 +442,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             state={dashboard.state}
             error={dashboard.error}
             label={labelFor(dashboardLabels, "projectValue", "Project Value")}
-            value={d && d.projectValue !== null ? money(d.projectValue, currency) : "Not set"}
-            trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
+            value={d ? formatProjectValue(d.projectValue, (n) => money(n, currency)) : "Not set"}
+            // R67 D-62: THIS project's source, not a restatement of the rule.
+            trend={{ direction: "flat", tone: "context", label: projectValueCaption(d?.projectValueSource ?? null) }}
             baseline="overridable per project"
             onClick={() => router.push(`/scope?projectId=${projectId}`)}
           />
@@ -379,15 +453,35 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             error={dashboard.error}
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
             value={d ? money(d.expenses, currency) : ""}
-            trend={{
-              direction: d && d.expenses > d.budget ? "up" : "down",
-              tone: d && d.expenses > d.budget ? "late" : "done",
-              label: d && d.expenses > d.budget ? "over budget" : "within budget",
-            }}
-            baseline={d ? `budget ${money(d.budget, currency)}` : ""}
-            visual={d ? <BulletChart value={d.expenses} target={d.budget} lowerIsBetter unit="" /> : undefined}
-            // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
-            onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
+            /* R67 D-02: with no budget set there is nothing to be over, so the
+               card states the spend, says the budget is missing, drops the
+               bullet chart (a target of 0 rendered a full red bar) and sends
+               the user to the budget create screen for THIS project instead of
+               to a variance view with nothing to vary against. */
+            trend={
+              d && d.budget !== null
+                ? {
+                    direction: d.expenses > d.budget ? "up" : "down",
+                    tone: spendTone(d.budget, d.expenses) === "late" ? "late" : "done",
+                    label: d.expenses > d.budget ? "over budget" : "within budget",
+                  }
+                : { direction: "flat", tone: "context", label: "no budget set" }
+            }
+            baseline={d ? budgetBaseline(d.budget, (n) => money(n, currency)) : ""}
+            visual={
+              d && d.budget !== null ? (
+                <BulletChart value={d.expenses} target={d.budget} lowerIsBetter unit="" />
+              ) : undefined
+            }
+            // Budget vs actual -> the Budget module, filtered (DASHBOARD.PROJECT's
+            // own row). R67 D-62: the Cost Variance tab IS the Budget tab now.
+            onClick={() =>
+              router.push(
+                d && d.budget === null
+                  ? `/finance/budgets/new?projectId=${projectId}`
+                  : `/scope?projectId=${projectId}&tab=budget`
+              )
+            }
           />
           <DashboardKpiTile
             state={dashboard.state}

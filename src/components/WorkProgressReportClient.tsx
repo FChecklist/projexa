@@ -333,6 +333,50 @@ function VendorTable({ rows }: { rows: VendorRow[] }) {
   );
 }
 
+/**
+ * R67 D-29 (audit R-080), lane D1, folded onto lane D-02's URL-state rewrite.
+ * "Every band untouched" -- the report ran, and nothing happened on this
+ * project between those two dates. Four empty tables under four tabs is a
+ * puzzle; one sentence is an answer.
+ *
+ * `touched.current` is the flag the report already computes for exactly this
+ * distinction (see LineItemRow's own comment): money() cannot tell a real
+ * computed zero from a bucket no progress entry has ever reached, because both
+ * are the number 0.
+ *
+ * This is reached only AFTER the `reportError` branch below, so it can never
+ * be the sentence shown over a failed run -- the empty answer and the failed
+ * answer stay distinct, which is the same rule read-outcome.ts enforces for
+ * every list in the product.
+ */
+export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower" | "byVendor">): boolean {
+  return (
+    report.rows.every((r) => !r.touched.current) &&
+    report.byManpower.length === 0 &&
+    report.byVendor.length === 0
+  );
+}
+
+/** The sentence itself, so its wording is asserted rather than trusted. */
+export function noProgressText(from: string, to: string): string {
+  return `No progress recorded between ${from} and ${to}`;
+}
+
+// R67 MERGE (lane D1 x lane D-02/C-04). Both lanes rewrote this screen's run
+// path. Under decision D-11 the version on main is canonical -- D-02 holds the
+// report's whole state in the URL, runs on arrival, and already replaced
+// D-29's four-second failure TOAST with a `reportError` state rendered beside
+// a Retry (it keeps the toast as well, which is the one part of D-29's
+// complaint that is a matter of taste rather than of truth). So lane D1's own
+// `runError` is dropped as a duplicate of `reportError`, NOT as a rejected
+// idea -- the behaviour D-29 asked for is what ships.
+//
+// What lane D1 had that main did not is above: reportIsEmpty()/noProgressText().
+// A report that ran successfully over a quiet fortnight used to render four
+// empty tables under four tabs and leave the reader to work out which of
+// "nothing happened", "the filter is too narrow" and "it broke" they were
+// looking at.
+//
 // R67 D-02: the report opens with its parameters ALREADY in the URL (the page
 // resolves them through parseWprParams) and runs on arrival. Correction C-04:
 // before this, the range was pre-filled and the screen still said "Pick a date
@@ -655,6 +699,11 @@ export default function WorkProgressReportClient({
             </div>
           ) : !report ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
+          ) : reportIsEmpty(report) ? (
+            // R67 D-29: one answer instead of four empty tables under four
+            // tabs. Reachable only past the reportError branch above, so it is
+            // never shown over a run that failed.
+            <p className="py-10 text-center text-sm text-px-muted">{noProgressText(from, to)}</p>
           ) : (
             <Tabs
               value={view}

@@ -39,16 +39,21 @@ import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScopeClient, { type Boq } from "@/components/ScopeClient";
-import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
+import BudgetAnalyticalClient from "@/components/BudgetAnalyticalClient";
 
 // R67 D-23 x F-18: the heading moved INSIDE the boundary so it can name the
 // resolved project (see ScopeSection), which means the fallback has to paint
 // it too -- otherwise the title would arrive with the list instead of at TTFB,
 // which is the whole point of F-18. Same shape as moms/page.tsx.
 const SKELETON = (
+  // R67 merge (D-11, lane D1 x lane D21): D21's heading-in-the-skeleton wins the
+  // structure (F-18 -- the title must paint at TTFB, not arrive with the list),
+  // and D1's tab LABEL wins the wording, because D-62 renamed that tab from
+  // "Cost Variance" to "Budget". A skeleton that named a tab the real screen no
+  // longer has would flash the old name on every load.
   <>
     <PageHeading title="Scope of Work (BOQ)" />
-    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Budget"]} actions={["New BOQ"]} />
   </>
 );
 
@@ -114,11 +119,24 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
     <PageHeading title="Scope of Work (BOQ)" context={name} />
     {/* R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
         destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
-        screen; variance is a different, flat "which line is worst" question. */}
-    <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+        screen; the second tab is a different, flat "where is the money" question.
+
+        R67 D-62 (lane D1). That second tab was called "Cost Variance" and was
+        READ-ONLY. It is PROJEXA's project budget -- the thing Sumeet's own budget
+        sheet is -- so it is named Budget and is editable in place, which is why
+        BudgetAnalyticalClient replaces CostVarianceAnalyticalClient here and the
+        latter is deleted rather than left as a second, read-only door to the same
+        figures. ?tab=variance is still honoured: it is the URL DASHBOARD.PROJECT
+        shipped with, and the one every bookmark and older screenshot carries.
+
+        R67 merge (D-11, D1 x D21): the TabsList below has exactly two triggers,
+        "BOQ" and "Budget"; a defaultValue of "variance" would select a tab that
+        does not exist and render an empty panel, so D1's mapping of ?tab=variance
+        onto "budget" is the one that survives. */}
+    <Tabs defaultValue={tab === "budget" || tab === "variance" ? "budget" : "boq"} className="space-y-4">
       <TabsList>
         <TabsTrigger value="boq">BOQ</TabsTrigger>
-        <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+        <TabsTrigger value="budget">Budget</TabsTrigger>
       </TabsList>
       <TabsContent value="boq">
         <ScopeClient
@@ -128,8 +146,8 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
           initial={list}
         />
       </TabsContent>
-      <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]">
-        <CostVarianceAnalyticalClient projectId={projectId} />
+      <TabsContent value="budget" className="h-[calc(100vh-14rem)] min-h-[560px]">
+        <BudgetAnalyticalClient projectId={projectId} />
       </TabsContent>
     </Tabs>
     </>

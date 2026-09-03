@@ -85,13 +85,27 @@ type AttendanceRow = { id: string; attendanceDate: string; status: string; hours
 
 // Month presets, newest first. Computed from today rather than hard-coded so
 // the page is never offering a window that has not happened yet.
+// R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03). The label used
+// `start.toLocaleString("en-US", { month: "long", timeZone: "UTC" })`, which
+// D-61's lint rule bans. That call was already DETERMINISTIC -- it pinned both
+// the locale and the time zone, so it was not the hydration bug the rule hunts
+// -- but the rule is a syntactic ban on the method, and a per-call exception
+// would be indistinguishable from the ones that are real. The month names are
+// pinned as data instead, which is the pattern this repo already uses for the
+// same reason (see the note above formatDayLabel in
+// src/lib/design-studio-timesheet.ts). Same output, nothing to audit.
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
 function monthPresets(today = new Date()): { label: string; from: string; to: string }[] {
   const presets: { label: string; from: string; to: string }[] = [];
   for (let back = 0; back < 6; back++) {
     const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - back, 1));
     const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
     presets.push({
-      label: `${start.toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${start.getUTCFullYear()}`,
+      label: `${MONTH_NAMES[start.getUTCMonth()]} ${start.getUTCFullYear()}`,
       from: start.toISOString().slice(0, 10),
       to: end.toISOString().slice(0, 10),
     });

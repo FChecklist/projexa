@@ -15,6 +15,14 @@ import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFor
 import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
+// R67 merge (D-11, lane D1 x lane D3): the union of the two lanes. D3's D-53
+// date carry-through is kept in full, and so is D1's D-70 FRAME -- without the
+// frame props this call no longer compiles, because D-70 made them REQUIRED on
+// CreateProjectMissing so a create route that cannot resolve its project still
+// paints its own breadcrumb, title and Back link instead of a bare error card.
+// git merged the two halves of this file without flagging that, and D3's side
+// alone would have failed the typecheck.
+//
 // R67 D-53: the Daily Summary's empty state links here for the day it was
 // showing, so the form opens on THAT date rather than silently on today --
 // otherwise the one click from "No attendance marked for 28-08-2026" would
@@ -27,6 +35,13 @@ function validDate(date: string | undefined): string | undefined {
   return date && ISO_DATE.test(date) ? date : undefined;
 }
 
+const FRAME = {
+  breadcrumb: "Manpower / Record Attendance",
+  title: "Record Attendance",
+  backHref: "/labour",
+  backLabel: "Back to Manpower",
+} as const;
+
 async function ResolvedForm({
   requestedProjectId,
   initialDate,
@@ -36,7 +51,7 @@ async function ResolvedForm({
 }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return <CreateProjectMissing message={errorMessage} />;
+  if (!projectId) return <CreateProjectMissing message={errorMessage} {...FRAME} />;
   return <AttendanceCreateClient projectId={projectId} initialDate={initialDate} />;
 }
 

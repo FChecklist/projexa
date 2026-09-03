@@ -36,6 +36,38 @@
 // Now: the reads come from src/lib/work-progress-reads.ts, every figure goes
 // through metricLabel() (an en-dash unless a 200 established it), and the
 // chart and the table each say what happened to their own read.
+//
+// R67 MERGE (lane D1, folded onto that canonical data layer). Lane D1 filed the
+// same three defects against this same load() as D-29 (audit R-070/R-080), and
+// rewrote it against its own SourceStatus type. Under decision D-11 main's data
+// layer is canonical, and it already answers all three:
+//
+//   * "no catch anywhere" -- readWorkProgress()/readCategoryProgress() return
+//     outcomes and do not throw, and each is settled independently.
+//   * "KPI figures above a loading table" -- every tile is metricLabel()'d.
+//     Lane D1 HID the tiles until their read succeeded; main renders the label
+//     with an en-dash instead. Main's is kept on merit: the tile keeps its
+//     place (nothing on the screen moves when the figure lands) and the reader
+//     is told which figure is missing rather than being shown a shorter row and
+//     left to notice. Neither version ever prints a zero over a failure, which
+//     is the actual rule.
+//   * "the table waited on the BOQ" -- there is no BOQ read left to wait on.
+//
+// Three things lane D1 had that main did not, all folded in here:
+//
+//   * D-29's DOUBLE HEADER. Filter and Export were passed to this
+//     AnalyticalScreen AND to the nested WorkProgressListClient's own
+//     ScreenFrame, so one screen carried two disabled Filter buttons and two
+//     disabled Export buttons saying the same thing. `framed={false}` below.
+//   * D-29's KPI CAPTION. Two figures measured differently sit side by side --
+//     a flat average over entries, and a value-weighted bar per category -- and
+//     nothing on the screen said so. KPI_CAPTION is exported so the wording is
+//     asserted rather than trusted.
+//   * D-29's NON-FATAL SOURCE. An activity lookup that failed without taking
+//     the table down still owes the user its reason and a Retry; work-progress
+//     reads.ts already carries `activitiesError` for exactly this (folded there
+//     by the same merge), and this screen now says it, the same way
+//     WorkProgressPageClient does.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
@@ -52,6 +84,14 @@ import {
 } from "@/lib/work-progress-reads";
 
 type ReadError = { status: number | null; message: string | null } | null;
+
+/**
+ * R67 D-29. Two different figures are shown side by side -- a flat average over
+ * entries and a value-weighted bar per category -- and nothing on the screen
+ * said they were measured differently. This is that caption, exported so the
+ * wording is asserted rather than trusted.
+ */
+export const KPI_CAPTION = "Avg % is a flat average of entries; the bar is value-weighted per category";
 
 export default function WorkProgressAnalyticalClient({
   projectId,
@@ -72,6 +112,11 @@ export default function WorkProgressAnalyticalClient({
   const [error, setError] = useState<ReadError>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  // R67 D-29 (lane D1, folded in): the activity lookup is NOT fatal to this
+  // screen -- the entry rows carry their own activity name now -- but a lookup
+  // that failed silently is how a row ends up rendering a raw id with nothing
+  // admitting a read failed.
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
   // The chart's read is tracked separately from the table's, because they
   // are separate endpoints and one failing tells you nothing about the
@@ -93,6 +138,7 @@ export default function WorkProgressAnalyticalClient({
     ]);
 
     setActivities(main.activities);
+    setActivitiesError(main.activitiesError);
     if (main.entries.status === "error") {
       setError({ status: main.entries.httpStatus, message: main.entries.message });
       setStatus("error");
@@ -133,24 +179,40 @@ export default function WorkProgressAnalyticalClient({
       exportAction={{ label: "Export", disabledReason: "Exporting the progress analytics is not built yet" }}
       newAction={undefined}
       kpiTags={
-        <>
-          {/* Every figure below is metricLabel()'d: an en-dash unless the
-              read that would establish it actually returned 200. */}
-          <KpiTag label="Total entries" value={metricLabel(status, entries.length)} />
-          {/* CONS-01 (R46 P4 consistency sweep): this is a flat, BOQ-agnostic
-              average of percentComplete across every raw work-progress entry
-              ever logged (no value-weighting, no current-BOQ scoping) --
-              genuinely a different metric than Dashboard's "% Complete by
-              BOQ Value" (value-weighted against the current BOQ revision
-              only), which is where this screen's own kpiTags docstring
-              above says the Dashboard's KPI links to. The two are
-              intentionally distinct, not a bug to reconcile into one
-              number, so this label calls out exactly what it is measuring
-              instead of a bare "Avg % complete" that reads as the same
-              headline figure as Dashboard's when it is not. */}
-          <KpiTag label="Avg % Complete (Activity Log)" value={metricLabel(status, avgPercent, "%")} />
-          <KpiTag label="Categories" value={metricLabel(chartStatus, categories.length)} />
-        </>
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-2">
+            {/* Every figure below is metricLabel()'d: an en-dash unless the
+                read that would establish it actually returned 200. */}
+            <KpiTag label="Total entries" value={metricLabel(status, entries.length)} />
+            {/* CONS-01 (R46 P4 consistency sweep): this is a flat, BOQ-agnostic
+                average of percentComplete across every raw work-progress entry
+                ever logged (no value-weighting, no current-BOQ scoping) --
+                genuinely a different metric than Dashboard's "% Complete by
+                BOQ Value" (value-weighted against the current BOQ revision
+                only), which is where this screen's own kpiTags docstring
+                above says the Dashboard's KPI links to. The two are
+                intentionally distinct, not a bug to reconcile into one
+                number, so this label calls out exactly what it is measuring
+                instead of a bare "Avg % complete" that reads as the same
+                headline figure as Dashboard's when it is not. R67 D-29 adds
+                the caption below, because the bar chart beside it uses the
+                OTHER measure and the screen never said so. */}
+            <KpiTag label="Avg % Complete (Activity Log)" value={metricLabel(status, avgPercent, "%")} />
+            <KpiTag label="Categories" value={metricLabel(chartStatus, categories.length)} />
+          </div>
+          <p className="text-[12.5px] text-px-muted">{KPI_CAPTION}</p>
+          {activitiesError && (
+            // R67 D-29: a source that failed WITHOUT taking the table down
+            // still owes the user its reason and a way to try again. Same
+            // sentence WorkProgressPageClient shows, for the same read.
+            <p role="status" className="text-[12.5px] text-px-error">
+              {activitiesError} Activity names may show as ids below.{" "}
+              <button type="button" onClick={() => void load()} className="underline underline-offset-2">
+                Retry
+              </button>
+            </p>
+          )}
+        </div>
       }
       drillSlices={categoryFilter ? [{ label: categoryFilter, onRemove: () => router.push(`/work-progress?projectId=${projectId}&tab=analytics`) }] : []}
       chart={
@@ -178,6 +240,10 @@ export default function WorkProgressAnalyticalClient({
           onRetry={() => void load()}
           loadedAt={loadedAt}
           startedAt={startedAt}
+          // R67 D-29: this screen already drew Filter | Export above. Two
+          // frames meant two disabled Filter buttons and two disabled Export
+          // buttons on one screen, both saying the same thing.
+          framed={false}
         />
       }
     />

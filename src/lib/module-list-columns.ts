@@ -19,11 +19,16 @@
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 
 export const PERMITS_LIST_COLUMNS: ScreenColumn[] = [
-  { label: "Permit no.", field: "permitNumber", type: "text", importance: "High" },
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Authority", field: "permitAuthority", type: "text", importance: "High" },
+  // R67 D-05 (lane D1, folded in here rather than in PermitsListClient so the
+  // loading skeleton and the loaded table cannot disagree). ONE word set across
+  // the list, the create form, the object page and the API. "Expiry date" here
+  // against "End date" on the object page was the same field under two names on
+  // two screens of one module, which is what D-05 exists to end.
+  { label: "Permit number", field: "permitNumber", type: "text", importance: "High" },
+  { label: "Permit name", field: "name", type: "text", importance: "High" },
+  { label: "Issuing authority", field: "permitAuthority", type: "text", importance: "High" },
   { label: "Issue date", field: "issueDate", type: "date", importance: "High" },
-  { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
+  { label: "End date", field: "endDate", type: "date", importance: "High" },
   // R67 G-01: was "Days left", which promised a number. The cell now answers a
   // question ("Expires in 12 days", "Expired"), so the header asks one and the
   // type is text. Changed HERE rather than in PermitsListClient so the loading

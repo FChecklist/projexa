@@ -107,7 +107,19 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/documents": "FIELD",
   "/documents/[id]": "FIELD",
   "/documents/[id]/dispose": "FIELD",
+  // R67 D-15: uploading a corrected copy of a document is the same act, by the
+  // same person, as uploading the original -- a site engineer who scanned a
+  // permit crooked must be able to replace it without an admin. It is also
+  // strictly additive: a new version never overwrites or deletes the bytes
+  // already stored, so the worst case is one extra version in the list.
+  "/documents/[id]/versions": "FIELD",
   "/drawings": "FIELD",
+  // R67 D-11: same tier as /drawings and /documents/[id] -- the people who
+  // upload a drawing are the people who fix its name, its discipline, and the
+  // upload they made by mistake. The destructive half is gated far harder than
+  // by role anyway: VERIDIAN refuses a hard delete outside the 24-hour window,
+  // under a legal hold, or with anything referencing the row.
+  "/drawings/[id]": "FIELD",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",

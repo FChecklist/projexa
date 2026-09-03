@@ -2,14 +2,45 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PivotTable } from "@/components/reports/PivotTable";
 import { ReportChart } from "@/components/reports/ReportChart";
+// R67 D-61: one number and date format for the whole product. The number
+// helpers come from lane G-05's src/lib/format-number.ts -- D-61 briefly
+// shipped a second module of its own and it has been dropped in favour of
+// G-05's, which is a superset.
+import { EMPTY_VALUE, formatDecimal } from "@/lib/format-number";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function cellValue(v: unknown): string {
-  if (v === null || v === undefined) return "—";
+/**
+ * R67 D-61 (audit R-198/R-226). This renderer is generic over 17 named reports
+ * and 7 Copilot tool results, so it cannot know which key is money -- that
+ * stays opt-in through `fieldFormatters` (see ReportsClient's
+ * buildProjectStatusFormatters). What it CAN do, and did not, is render a
+ * NUMBER as a number: `String(v)` produced "1250000.5" in a key/value grid
+ * sitting one tab away from a table showing "1,250,000.50" for the same figure.
+ *
+ * Two rules, both from the shared helpers:
+ *   - a finite number renders with the pinned locale's thousands separators;
+ *   - an ISO date/timestamp renders through format-date.ts, the same as every
+ *     other date in the product, instead of leaking "2026-08-25T00:00:00.000Z"
+ *     into a report a customer reads.
+ * Everything else (booleans, ids, codes, free text) is unchanged.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
+export function cellValue(v: unknown): string {
+  if (v === null || v === undefined) return EMPTY_VALUE;
   if (typeof v === "object") return JSON.stringify(v);
+  // formatDecimal, not formatNumber: this renderer sees quantities, counts and
+  // amounts through the same branch and cannot tell them apart, so it groups
+  // the thousands and keeps up to two decimals without inventing ".00" on a
+  // count. A key that really is money opts in through fieldFormatters.
+  if (typeof v === "number") return formatDecimal(v);
+  if (typeof v === "string" && ISO_DATE.test(v)) {
+    return v.length === 10 ? formatDate(v) : formatDateTime(v);
+  }
   return String(v);
 }
 
@@ -97,7 +128,9 @@ export function ReportOutput({
             {scalarEntries.map(([k, v]) => (
               <div key={k}>
                 <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
-                <div className="font-medium text-px-ink">{fieldFormatters?.[k] ? fieldFormatters[k](v) : cellValue(v)}</div>
+                {/* R67 D-61: tabular figures, so two stacked values in this
+                    grid have digits of the same width and can be compared. */}
+                <div className="font-medium text-px-ink tabular-nums">{fieldFormatters?.[k] ? fieldFormatters[k](v) : cellValue(v)}</div>
               </div>
             ))}
           </div>

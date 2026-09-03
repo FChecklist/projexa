@@ -4,7 +4,8 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
-// Feeds the Product picker in CreateProjectDialog -- a Project row requires
+// Feeds the Product picker on /projects/new (ProjectCreateClient.tsx, which
+// replaced CreateProjectDialog in R67 D-01) -- a Project row requires
 // a productId (VERIDIAN's schema), so the dialog needs the org's real
 // product list (business lines like "Villa Projects", "Commercial &
 // Office Fit-outs") before it can create one.

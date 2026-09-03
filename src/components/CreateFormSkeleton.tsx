@@ -10,6 +10,7 @@
 // for forms of three to seven fields.
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 
 export function CreateFormSkeleton({ fields = 5 }: { fields?: number }) {
   return (
@@ -34,16 +35,49 @@ export function CreateFormSkeleton({ fields = 5 }: { fields?: number }) {
  * What a create route says when no project can be established at all.
  *
  * Unlike the list screens this is a hard stop -- there is nothing to create
- * against -- so it names the reason (the backend's own words when there are
- * any) rather than showing an empty form that cannot be saved.
+ * against -- so it names the reason rather than showing an empty form that
+ * cannot be saved.
+ *
+ * R67 MERGE (lane D1's D-70, audit R-262, folded into lane F-19's component).
+ * This used to render `message` on its own in a bare Card. That is the exact
+ * defect D-70 names: resolveSelectedProject's message is the raw upstream one,
+ * and an upstream 500 with no JSON body degrades into the words "Internal
+ * Server Error" -- so the whole right pane became a status phrase with no
+ * title, no Back, no Retry and no statement of what had failed. The frame now
+ * comes from CreateScreenUnavailable, which keeps the backend's own words when
+ * they say anything, replaces them when they do not, and always gives the user
+ * a Retry and a way back. Every one of the ten create routes that renders this
+ * gets that fix from one place, which is why it was folded here rather than
+ * branched into each route.
  */
-export function CreateProjectMissing({ message }: { message?: string | null }) {
+export function CreateProjectMissing({
+  message,
+  breadcrumb,
+  title,
+  backHref,
+  backLabel,
+}: {
+  message?: string | null
+  /** "Permits / New Permit" -- the same breadcrumb the working screen shows. */
+  breadcrumb: string
+  /** "New Permit" -- likewise. */
+  title: string
+  /** "/permits" */
+  backHref: string
+  /** "Back to Permits" */
+  backLabel: string
+}) {
   return (
-    <Card>
-      <CardContent className="p-8 text-center text-sm text-px-muted">
-        {message ?? "No active project selected."}
-      </CardContent>
-    </Card>
+    <CreateScreenUnavailable
+      breadcrumb={breadcrumb}
+      title={title}
+      backHref={backHref}
+      backLabel={backLabel}
+      // null is the real "the read succeeded and this org has no projects yet"
+      // case, which CreateScreenUnavailable renders as an invitation rather
+      // than an error. undefined reaches here the same way, so it maps to null.
+      message={message ?? null}
+    />
   );
 }
 

@@ -15,10 +15,17 @@ import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFor
 import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
+const FRAME = {
+  breadcrumb: "Schedule / New Task",
+  title: "New Task",
+  backHref: "/schedule",
+  backLabel: "Back to Schedule",
+} as const;
+
 async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return <CreateProjectMissing message={errorMessage} />;
+  if (!projectId) return <CreateProjectMissing message={errorMessage} {...FRAME} />;
   return <ScheduleTaskCreateClient projectId={projectId} />;
 }
 

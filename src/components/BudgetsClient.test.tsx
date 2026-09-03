@@ -98,7 +98,12 @@ describe("BudgetsClient -- the landing copy (D-43)", () => {
     expect(boq.disabled).toBe(true);
   });
 
-  test("with a project on the rail it is enabled and opens that project's Cost Variance", async () => {
+  // R67 merge (D-11, D1 x D3): RESTATED. D-62 renamed the Scope module's
+  // second tab from "Cost Variance" to "Budget" and made it editable, and the
+  // scope page maps only ?tab=budget / ?tab=variance onto it. The old
+  // ?tab=cost-variance fell through to the BOQ tab, so this button used to
+  // land on the wrong screen. Same behaviour asserted, corrected destination.
+  test("with a project on the rail it is enabled and opens that project's Budget tab", async () => {
     window.localStorage.setItem(PROJECT_PREFERENCE_KEY, "proj-cedar");
     const { getByTestId } = renderClient();
 
@@ -106,14 +111,17 @@ describe("BudgetsClient -- the landing copy (D-43)", () => {
     expect((getByTestId("budgets-boq") as HTMLButtonElement).textContent).toBe("Open BOQ budget →");
 
     fireEvent.click(getByTestId("budgets-boq"));
-    expect(push).toHaveBeenCalledWith("/scope?tab=cost-variance&projectId=proj-cedar");
+    expect(push).toHaveBeenCalledWith("/scope?tab=budget&projectId=proj-cedar");
   });
 
   test("'+ New Budget' opens the create route", async () => {
     const { getByTestId } = renderClient();
     await waitFor(() => expect(getByTestId("budgets-new")).toBeDefined());
     fireEvent.click(getByTestId("budgets-new"));
-    expect(push).toHaveBeenCalledWith("/budgets/new");
+    // R67 merge (D-11, D1 x D3): RESTATED. D-62 moved the ERP fiscal-year
+    // budget to /finance/budgets/*; /budgets/new is now only a redirect shim,
+    // so pushing it would cost every create a needless redirect hop.
+    expect(push).toHaveBeenCalledWith("/finance/budgets/new");
   });
 });
 

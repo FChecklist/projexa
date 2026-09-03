@@ -370,7 +370,15 @@ export const fetchDrawingsList = createModuleList(
 // /api/v1/documents was never re-exported under /api/v1/projexa/*, hence root.
 export const fetchDocumentsList = createModuleList(
   MODULE_TAGS.documents,
-  (projectId) => `/documents?linkedEntityType=project&linkedEntityId=${q(projectId)}`,
+  // R67 D-14 (lane D1): by project SCOPE, not by "linked directly to this
+  // project" -- a document filed against one of this project's permits, RFIs
+  // or meetings still belongs on the project's Documents screen. The parameter
+  // is real on both sides (compliance-tracker src/app/api/v1/documents/route.ts
+  // and document-service.ts#buildDocumentFilterConditions). It MUST stay
+  // identical to the URL DocumentsClient builds, or the server-prefetched
+  // `initial` no longer matches the client's first read and F-18's zero-round-
+  // trip first paint is silently lost.
+  (projectId) => `/documents?projectScopeId=${q(projectId)}`,
   (p) => p.documents as unknown[] | undefined,
   { root: true }
 );
