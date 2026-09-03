@@ -194,8 +194,8 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
         draft.title.trim() !== meeting.title ||
         draft.meetingType !== meeting.meetingType ||
         new Date(draft.scheduledAt).toISOString() !== new Date(meeting.scheduledAt).toISOString() ||
-        draft.attendees.join(" ") !== meeting.attendees.join(" ") ||
-        agenda.join(" ") !== meeting.agenda.join(" ");
+        JSON.stringify(draft.attendees) !== JSON.stringify(meeting.attendees) ||
+        JSON.stringify(agenda) !== JSON.stringify(meeting.agenda);
 
       if (detailsChanged) {
         const res = await fetch(`/api/moms/${meetingId}`, {
