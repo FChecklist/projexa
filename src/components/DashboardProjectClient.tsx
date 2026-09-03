@@ -147,8 +147,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       // DASHBOARD.PROJECT: "+ New suppressed" -- documented override, this
       // screen answers a question, it doesn't create records.
       newAction={undefined}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      // R67 E-18 (R-178): both reasons name a real destination. A dashboard is
+      // not a document, so its Export is genuinely elsewhere -- and saying
+      // WHERE is the difference between a limitation and a dead end.
+      filterAction={{ label: "Filter", disabledReason: "This screen is one project — change it in the top rail, or filter the portfolio on the home dashboard" }}
+      exportAction={{ label: "Export", disabledReason: "Export from Reports — run Project Status for this project" }}
       oneNumber={
         <KpiCard
           size="primary"

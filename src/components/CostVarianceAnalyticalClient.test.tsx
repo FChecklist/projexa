@@ -118,6 +118,10 @@ describe("CostVarianceAnalyticalClient: real filters, in the URL (R67 E-07)", ()
     expect(getByText("Clear filters")).toBeDefined();
   });
 
+  // R67 E-18 (R-178) rewired these three: the four separate header buttons are
+  // now the ONE shared ExportShareActions control, so the formats live inside
+  // its menu. The FACTS being asserted are unchanged -- the reason is readable,
+  // all three formats are reachable, and a tie failure blocks the lot.
   test("Export is never a bare '(Not yet available)': with no rows it is disabled WITH its reason in words", async () => {
     const calls: string[] = [];
     stubFetch(calls, report({ lines: [], totalBudget: null }));
@@ -125,7 +129,7 @@ describe("CostVarianceAnalyticalClient: real filters, in the URL (R67 E-07)", ()
 
     const reason = await findByTestId("variance-export-reason");
     expect(reason.textContent).toBe("No lines to export");
-    expect((await findByTestId("variance-export-csv")).hasAttribute("disabled")).toBe(true);
+    expect((await findByTestId("export-menu-button")).hasAttribute("disabled")).toBe(true);
     expect(queryByText(/Not yet available/i)).toBeNull();
   });
 
@@ -134,19 +138,31 @@ describe("CostVarianceAnalyticalClient: real filters, in the URL (R67 E-07)", ()
     stubFetch(calls, report());
     const { findByTestId } = render(<CostVarianceAnalyticalClient projectId="p-1" />);
 
-    expect((await findByTestId("variance-export-csv")).hasAttribute("disabled")).toBe(false);
-    expect((await findByTestId("variance-export-pdf")).hasAttribute("disabled")).toBe(false);
-    expect((await findByTestId("variance-export-xlsx")).hasAttribute("disabled")).toBe(false);
+    const exportButton = await findByTestId("export-menu-button");
+    expect(exportButton.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(exportButton);
+
+    // PDF and XLSX are real links into the relay -- projexa builds neither
+    // format itself -- and the CSV is built here from the rows on screen.
+    expect((await findByTestId("export-pdf")).getAttribute("href")).toContain("/api/reports/budget-variance/export");
+    expect((await findByTestId("export-pdf")).getAttribute("href")).toContain("format=pdf");
+    expect((await findByTestId("export-xlsx")).getAttribute("href")).toContain("format=xlsx");
+    expect((await findByTestId("export-csv")).tagName).toBe("BUTTON");
   });
 
   test("a totals mismatch blocks Export with the discrepancy named, because a wrong file outlives a wrong screen", async () => {
     const calls: string[] = [];
     stubFetch(calls, report({ totalBudget: 9999 }));
-    const { findByTestId } = render(<CostVarianceAnalyticalClient projectId="p-1" />);
+    const { findByTestId, queryByTestId } = render(<CostVarianceAnalyticalClient projectId="p-1" />);
 
     const reason = await findByTestId("variance-export-reason");
     expect(reason.textContent).toContain("Totals do not tie");
-    expect((await findByTestId("variance-export-pdf")).hasAttribute("disabled")).toBe(true);
+    const exportButton = await findByTestId("export-menu-button");
+    expect(exportButton.hasAttribute("disabled")).toBe(true);
+    // And the menu cannot be opened past it: a disabled control that still
+    // hands over the link is not disabled.
+    fireEvent.click(exportButton);
+    expect(queryByTestId("export-menu-button-menu")).toBeNull();
   });
 
   test("a project with no BOQ says so, rather than showing an empty filter message about filters nobody set", async () => {

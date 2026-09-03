@@ -52,6 +52,22 @@ export function emptyRangeMessage(from: string | null, to: string | null): strin
 }
 
 /**
+ * R67 E-18 (R-178): what this document is CALLED in a WhatsApp message, in a
+ * copied-link toast and in the "PDF ready" line -- so the recipient can tell
+ * one exported cost report from another without opening it. The period is part
+ * of the name because two files with the same name and different windows is
+ * exactly how a wrong figure gets quoted in a meeting.
+ */
+export function costReportTitle(from: string | null, to: string | null): string {
+  const f = dmy(from);
+  const t = dmy(to);
+  if (f && t) return `Material Cost Report ${f} to ${t}`;
+  if (f) return `Material Cost Report from ${f}`;
+  if (t) return `Material Cost Report to ${t}`;
+  return "Material Cost Report — every receipt on record";
+}
+
+/**
  * The arithmetic identity a QS checks by hand: the rows on screen must sum to
  * the Grand Total under them. If they do not, the report is wrong and must say
  * so LOUDLY rather than render quietly -- and Export is disabled with that as

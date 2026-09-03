@@ -32,7 +32,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Download, FileText, Filter, Link2, X } from "lucide-react";
+import { Filter, X } from "lucide-react";
+import { ExportShareActions } from "@/components/ExportShareActions";
 import { AnalyticalScreen, KpiTag } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -143,19 +144,13 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
     URL.revokeObjectURL(url);
   }
 
-  function openServerExport(format: "pdf" | "xlsx") {
-    // The relay is handed the SAME parameters this screen ran with, so the
-    // file and the table can never disagree.
-    window.open(`/api/reports/budget-variance/export?${query}&format=${format}`, "_blank", "noopener");
-  }
-
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?${varianceSearchParams(filters, { projectId, tab: "variance" }).toString()}`);
-      toast.success("Link copied — it opens this report with these filters.");
-    } catch {
-      toast.error("Couldn't copy the link");
-    }
+  /**
+   * R67 E-18: ONE link, whether it is copied or sent to WhatsApp. It carries
+   * the FILTERS as well as the project, so what the recipient opens is the
+   * table the sender was looking at rather than the unfiltered report.
+   */
+  async function shareUrlFactory(): Promise<string | null> {
+    return `${window.location.origin}${window.location.pathname}?${varianceSearchParams(filters, { projectId, tab: "variance" }).toString()}`;
   }
 
   const filterSummary = filters.categories.length > 0 || filters.vendorId
@@ -184,18 +179,22 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
             <Button variant="outline" size="sm" onClick={() => setDrawerOpen((v) => !v)} data-testid="variance-filter-toggle">
               <Filter className="size-4" /> {drawerOpen ? "Hide filters" : "Filter"}
             </Button>
-            <Button variant="outline" size="sm" disabled={Boolean(exportReason)} onClick={exportCsv} data-testid="variance-export-csv">
-              <Download className="size-4" /> Export CSV
-            </Button>
-            <Button variant="outline" size="sm" disabled={Boolean(exportReason)} onClick={() => openServerExport("pdf")} data-testid="variance-export-pdf">
-              <FileText className="size-4" /> Export PDF
-            </Button>
-            <Button variant="outline" size="sm" disabled={Boolean(exportReason)} onClick={() => openServerExport("xlsx")} data-testid="variance-export-xlsx">
-              <Download className="size-4" /> Export XLSX
-            </Button>
-            <Button variant="outline" size="sm" onClick={copyLink}>
-              <Link2 className="size-4" /> Share link
-            </Button>
+            {/* R67 E-18 (R-178): the SAME Export / Share control as the Work
+                Progress Report, the Reports frame, the Materials Cost Report,
+                the Budget screen, the MoM object page and Design Studio. Item
+                E-07 unstubbed these actions on this screen; this is the step
+                that stops them being a fifth private opinion about what
+                "Export" looks like. */}
+            <ExportShareActions
+              canExport={!exportReason}
+              exportReason={exportReason}
+              title={filterSummary ? `Cost Variance — ${filterSummary}` : "Cost Variance"}
+              pdfHref={`/api/reports/budget-variance/export?${query}&format=pdf`}
+              xlsxHref={`/api/reports/budget-variance/export?${query}&format=xlsx`}
+              onCsv={exportCsv}
+              shareUrlFactory={shareUrlFactory}
+              onMessage={(message) => toast.success(message)}
+            />
             {exportReason && <span className="text-[12px] text-px-muted" data-testid="variance-export-reason">{exportReason}</span>}
           </div>
 

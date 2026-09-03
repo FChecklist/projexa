@@ -28,6 +28,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, FileSpreadsheet, FileText, Link2, MessageCircle, Share2 } from "lucide-react";
+// R67 E-18: the WhatsApp message is built by the ONE rule item E-12 already
+// wrote, not a second one beside it -- the same reason this component exists.
+import { whatsappHref, type ExportFormat } from "@/lib/report-document-actions";
 
 export type ExportShareActionsProps = {
   /** False disables Export and shows `exportReason` beside it. */
@@ -43,6 +46,14 @@ export type ExportShareActionsProps = {
   /** A CSV built in the browser from the rows on screen. Wins over csvHref when both are given. */
   onCsv?: (() => void) | null;
   /**
+   * Why a format this report does NOT have is missing, in words. A format with
+   * neither an href nor a reason is simply absent; one with a reason appears in
+   * the menu, disabled, carrying it -- so a reader who came looking for the
+   * spreadsheet is told why there isn't one instead of hunting for a control
+   * that was quietly removed.
+   */
+  formatReasons?: Partial<Record<ExportFormat, string>> | null;
+  /**
    * Mints (or returns) the shareable link. Returning null means the link could
    * not be made, and the control says so rather than opening an empty share.
    * Absent entirely means this screen has no share link, and the Share button
@@ -55,10 +66,21 @@ export type ExportShareActionsProps = {
   onMessage?: (message: string) => void;
 };
 
-/** The WhatsApp share, the same wa.me pattern the MoM object page already ships. */
-export function whatsappShareHref(title: string, link: string): string {
-  return `https://wa.me/?text=${encodeURIComponent(`${title}: ${link}`)}`;
+/**
+ * The share target for a phone. Opening a second tab to hand off to another
+ * app leaves an empty one behind, so a narrow viewport navigates in place.
+ * Exported so the rule is assertable without a window.
+ */
+export function whatsappTarget(viewportWidth: number): "_self" | "_blank" {
+  return viewportWidth < 768 ? "_self" : "_blank";
 }
+
+/** The formats, in the one order every screen offers them. */
+const EXPORT_MENU: { format: ExportFormat; icon: typeof FileText }[] = [
+  { format: "pdf", icon: FileText },
+  { format: "xlsx", icon: FileSpreadsheet },
+  { format: "csv", icon: Download },
+];
 
 /** A small menu anchored under its own word-button. Plain React state, so it works in a test and needs no portal. */
 function MenuButton({
@@ -127,15 +149,29 @@ function MenuItem({
   icon,
   children,
   testId,
+  disabledReason = null,
 }: {
   onSelect?: () => void;
   href?: string;
   icon: React.ReactNode;
   children: React.ReactNode;
   testId: string;
+  /** Present = this entry cannot be chosen, and this is why, on the entry itself. */
+  disabledReason?: string | null;
 }) {
   const className =
     "flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12.5px] text-px-ink hover:bg-px-cloud/60";
+  if (disabledReason) {
+    return (
+      <span role="menuitem" aria-disabled="true" data-testid={testId} className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-[12.5px] text-px-muted">
+        {icon}
+        <span>
+          {children}
+          <span className="block text-[11.5px]">{disabledReason}</span>
+        </span>
+      </span>
+    );
+  }
   if (href) {
     return (
       <a role="menuitem" href={href} target="_blank" rel="noopener noreferrer" className={className} data-testid={testId} onClick={onSelect}>
@@ -158,6 +194,7 @@ export function ExportShareActions({
   xlsxHref = null,
   csvHref = null,
   onCsv = null,
+  formatReasons = null,
   shareUrlFactory = null,
   shareReason = null,
   onMessage,
@@ -189,48 +226,46 @@ export function ExportShareActions({
       >
         {(close) => (
           <>
-            {pdfHref && (
-              <MenuItem
-                href={pdfHref}
-                icon={<FileText className="size-3.5" />}
-                testId="export-pdf"
-                onSelect={() => {
-                  onMessage?.(`PDF ready — ${title}`);
-                  close();
-                }}
-              >
-                PDF
-              </MenuItem>
-            )}
-            {xlsxHref && (
-              <MenuItem
-                href={xlsxHref}
-                icon={<FileSpreadsheet className="size-3.5" />}
-                testId="export-xlsx"
-                onSelect={() => {
-                  onMessage?.(`XLSX ready — ${title}`);
-                  close();
-                }}
-              >
-                XLSX
-              </MenuItem>
-            )}
-            {onCsv ? (
-              <MenuItem
-                icon={<Download className="size-3.5" />}
-                testId="export-csv"
-                onSelect={() => {
-                  onCsv();
-                  close();
-                }}
-              >
-                CSV
-              </MenuItem>
-            ) : csvHref ? (
-              <MenuItem href={csvHref} icon={<Download className="size-3.5" />} testId="export-csv" onSelect={close}>
-                CSV
-              </MenuItem>
-            ) : null}
+            {/* One loop over the three formats, in the order the header offers
+                them, so a screen cannot end up with PDF above XLSX here and
+                below it there. Each entry is either a real relay link, the
+                browser-built CSV, or -- when this report has no such document
+                -- a disabled entry carrying the reason. */}
+            {EXPORT_MENU.map(({ format, icon: Icon }) => {
+              const href = format === "pdf" ? pdfHref : format === "xlsx" ? xlsxHref : csvHref;
+              const build = format === "csv" ? onCsv : null;
+              const icon = <Icon className="size-3.5" />;
+              const label = format.toUpperCase();
+              if (build) {
+                return (
+                  <MenuItem key={format} icon={icon} testId={`export-${format}`} onSelect={() => { build(); close(); }}>
+                    {label}
+                  </MenuItem>
+                );
+              }
+              if (href) {
+                return (
+                  <MenuItem
+                    key={format}
+                    href={href}
+                    icon={icon}
+                    testId={`export-${format}`}
+                    onSelect={() => {
+                      onMessage?.(`${label} ready — ${title}`);
+                      close();
+                    }}
+                  >
+                    {label}
+                  </MenuItem>
+                );
+              }
+              const reason = formatReasons?.[format];
+              return reason ? (
+                <MenuItem key={format} icon={icon} testId={`export-${format}`} disabledReason={reason}>
+                  {label}
+                </MenuItem>
+              ) : null;
+            })}
           </>
         )}
       </MenuButton>
@@ -266,10 +301,11 @@ export function ExportShareActions({
                 testId="share-whatsapp"
                 onSelect={() => {
                   void withLink((url) => {
-                    // Same tab on a phone -- opening a second tab to hand off to
-                    // another app leaves an empty one behind.
-                    const target = typeof window !== "undefined" && window.innerWidth < 768 ? "_self" : "_blank";
-                    window.open(whatsappShareHref(title, url), target, "noopener,noreferrer");
+                    window.open(
+                      whatsappHref(title, url),
+                      whatsappTarget(typeof window === "undefined" ? 1024 : window.innerWidth),
+                      "noopener,noreferrer"
+                    );
                   });
                   close();
                 }}

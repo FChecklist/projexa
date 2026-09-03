@@ -108,8 +108,11 @@ export default function PermitsListClient({
       // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
       // Filter/Export aren't built for this module yet -- say so instead of
       // faking availability.
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      // R67 E-18 (R-178): "(Not yet available)" is a stub, not a reason -- it
+      // tells a reader nothing about why, and nothing about where the thing
+      // they wanted actually is. Both now name a real destination.
+      exportAction={{ label: "Export", disabledReason: "No permits export yet — Reports lists every report that can be exported" }}
+      filterAction={{ label: "Filter", disabledReason: "No filters on this list yet — the expiring-soon view is reached from the Dashboard" }}
       // R67 G-01: status at HEADER level as well as item level. Same three
       // glyphs, same three tones, same counts as the rows beneath -- so the
       // answer to "is anything wrong here" costs no scanning.

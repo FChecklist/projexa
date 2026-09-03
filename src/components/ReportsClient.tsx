@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, FileSpreadsheet, FileText, Link2, Loader2, MessageCircle, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { Loader2, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
@@ -56,11 +56,12 @@ import { isPlainObject, noRowsMessage, reportSchema } from "@/lib/report-schema"
 
 import {
   BREAKUP_SOURCE_REPORT,
+  NO_DOCUMENT_REASON,
   exportDisabledReason,
   reportExportHref,
   shareDisabledReason,
-  whatsappHref,
 } from "@/lib/report-document-actions";
+import { ExportShareActions } from "@/components/ExportShareActions";
 
 /**
  * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
@@ -525,27 +526,11 @@ function ProjectReportsPanel({
     }
   }
 
-  async function shareLink() {
-    const url = await createShareLink();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Public link copied — it is read-only and expires in 7 days.");
-    } catch {
-      toast.success(url);
-    }
-  }
-
-  async function shareOnWhatsApp() {
-    const url = (await createShareLink()) ?? runUrl();
-    window.open(whatsappHref(titleBlock ?? currentLabel, url), "_blank", "noopener,noreferrer");
-  }
-
-  const exportReason = exportDisabledReason({
-    hasResult: shownResult !== null,
-    serverExport: schema?.serverExport === true,
-    tieMessage,
-  });
+  // R67 E-18: whether VERIDIAN can render this report as a DOCUMENT. False
+  // does not mean "no export" -- it means no PDF and no XLSX; the CSV is built
+  // here from the rows on screen either way.
+  const serverExport = schema?.serverExport === true;
+  const exportReason = exportDisabledReason({ hasResult: shownResult !== null, tieMessage });
   const shareReason = shareDisabledReason(run.report, shownResult !== null);
   const exportParams = { projectId: projectId ?? "", category: run.category, vendorId: run.vendorId };
 
@@ -558,69 +543,45 @@ function ProjectReportsPanel({
         <Button variant="outline" size="sm" onClick={() => setParametersOpen((v) => !v)} data-testid="reports-filter">
           <SlidersHorizontal className="size-4" /> Filter
         </Button>
-        {/* R67 E-12 (R-136): Export is SERVER-SIDE. PROJEXA has no PDF or XLSX
-            library and must not gain one -- VERIDIAN builds the bytes from the
-            same schema this screen renders the table from, so the file and the
-            table cannot disagree. Each format is a real link, disabled with its
-            reason in words when the document is not exportable. */}
-        {(["pdf", "xlsx", "csv"] as const).map((format) => {
-          const Icon = format === "pdf" ? FileText : format === "xlsx" ? FileSpreadsheet : Download;
-          const label = `Export ${format.toUpperCase()}`;
-          // A report with no schema still gets its CSV, built in the browser
-          // from the rows on screen (item E-09) -- taking that away would leave
-          // fifteen reports with no export at all, which is not a fix.
-          if (format === "csv" && schema?.serverExport !== true) {
-            return (
-              <Button
-                key={format}
-                variant="outline"
-                size="sm"
-                disabled={shownResult === null}
-                title={shownResult === null ? "Run the report first" : undefined}
-                onClick={exportCsv}
-                data-testid="reports-export-csv"
-              >
-                <Icon className="size-4" /> {label}
-              </Button>
-            );
-          }
-          return exportReason ? (
-            <Button key={format} variant="outline" size="sm" disabled title={exportReason} data-testid={`reports-export-${format}`}>
-              <Icon className="size-4" /> {label}
-            </Button>
-          ) : (
-            <Button key={format} variant="outline" size="sm" asChild data-testid={`reports-export-${format}`}>
-              <a href={reportExportHref(run.report, format, exportParams)}>
-                <Icon className="size-4" /> {label}
-              </a>
-            </Button>
-          );
-        })}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={Boolean(shareReason) || sharing}
-          title={shareReason ?? undefined}
-          onClick={shareLink}
-          data-testid="reports-share"
-        >
-          <Link2 className="size-4" /> Share
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={shownResult === null || sharing}
-          onClick={shareOnWhatsApp}
-          data-testid="reports-whatsapp"
-        >
-          <MessageCircle className="size-4" /> Send to WhatsApp
-        </Button>
+        {/* R67 E-18 (R-178): the SAME Export / Share control the Work Progress
+            Report, the Materials Cost Report, the Budget screen, the Manpower
+            Daily Summary, the MoM object page and Design Studio use. This
+            header carried six separate buttons -- three Export formats, Share,
+            Send to WhatsApp and "Copy link instead" -- which is the row of
+            words R-178 is about; the formats are now a detail inside one
+            "Export", and the two ways to share a link are a detail inside one
+            "Share".
+
+            Export stays SERVER-SIDE: PROJEXA has no PDF or XLSX library and
+            must not gain one -- VERIDIAN builds the bytes from the same schema
+            this screen renders the table from, so the file and the table
+            cannot disagree. A report with no document schema still gets its
+            CSV, built in the browser from the rows on screen (item E-09);
+            taking that away would leave fifteen reports with no export at all,
+            which is not a fix, so PDF and XLSX carry their reason in the menu
+            rather than vanishing from it. */}
+        <ExportShareActions
+          canExport={!exportReason}
+          exportReason={exportReason}
+          title={titleBlock ?? currentLabel}
+          pdfHref={serverExport ? reportExportHref(run.report, "pdf", exportParams) : null}
+          xlsxHref={serverExport ? reportExportHref(run.report, "xlsx", exportParams) : null}
+          csvHref={serverExport ? reportExportHref(run.report, "csv", exportParams) : null}
+          onCsv={serverExport ? null : exportCsv}
+          formatReasons={serverExport ? null : { pdf: NO_DOCUMENT_REASON, xlsx: NO_DOCUMENT_REASON }}
+          shareUrlFactory={createShareLink}
+          shareReason={sharing ? "Creating the link…" : shareReason}
+          onMessage={(message) => toast.success(message)}
+        />
+        {/* A report with no public renderer cannot be Shared, so the in-app
+            link -- which opens this exact run for a colleague already signed in
+            -- is offered by its own name rather than pretending to be it. */}
+        {shareReason && shownResult !== null && (
+          <Button variant="ghost" size="sm" onClick={copyLink} data-testid="reports-copy-link">Copy link instead</Button>
+        )}
         {/* Every disabled control carries its reason in words beside it, never
             only in a tooltip nobody hovers. */}
         {exportReason && <span className="text-[12px] text-px-muted" data-testid="reports-export-reason">{exportReason}</span>}
-        {shareReason && (
-          <Button variant="ghost" size="sm" onClick={copyLink} data-testid="reports-copy-link">Copy link instead</Button>
-        )}
       </div>
 
       {unknownReportSlug && (

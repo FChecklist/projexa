@@ -131,9 +131,11 @@ describe("Materials > Cost Report (R67 E-05 / R-103)", () => {
 
     const banner = await findByTestId("cost-report-tie-error");
     expect(banner.textContent).toContain("Export is disabled");
-    for (const id of ["cost-report-export-csv", "cost-report-export-pdf", "cost-report-export-xlsx"]) {
-      expect((getByTestId(id) as HTMLButtonElement).disabled).toBe(true);
-    }
+    // R67 E-18 (R-178): the four separate export buttons are now the ONE
+    // shared control, so "every format is blocked" is one assertion rather
+    // than three -- and the reason is still readable beside it.
+    expect((getByTestId("export-menu-button") as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId("cost-report-export-reason").textContent).toContain("Export is disabled until this is fixed.");
     // The table is STILL rendered -- a reader needs the rows to find the
     // discrepancy the banner is about.
     expect(getByTestId("cost-report-grand-total")).toBeDefined();

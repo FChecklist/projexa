@@ -58,21 +58,34 @@ export function whatsappHref(title: string, link: string): string {
 }
 
 /**
- * Why Export cannot be pressed, in words, or null when it can. Order matters:
- * the reader is told the FIRST thing that stops them, and "the numbers
- * disagree" outranks "this report has no document" because it is the one that
- * would produce a wrong file rather than no file.
+ * Why Export cannot be pressed AT ALL, in words, or null when it can. Order
+ * matters: the reader is told the FIRST thing that stops them, and "the numbers
+ * disagree" outranks everything else because it is the one that would produce a
+ * WRONG file rather than no file.
+ *
+ * R67 E-18 (R-178) narrowed this from three clauses to two. It used to disable
+ * the whole control for a report with no server-rendered document -- but such a
+ * report still has its browser-built CSV (item E-09), so disabling Export took
+ * away the one file it really could produce. "This report has no PDF" is a fact
+ * about a FORMAT, not about the button, and it now travels with the format:
+ * NO_DOCUMENT_REASON is rendered on the disabled PDF and XLSX entries inside the
+ * menu, where a reader looking for the spreadsheet will actually meet it.
  */
 export function exportDisabledReason(input: {
   hasResult: boolean;
-  serverExport: boolean;
   tieMessage: string | null;
 }): string | null {
   if (!input.hasResult) return "Run the report first";
   if (input.tieMessage) return input.tieMessage;
-  if (!input.serverExport) return "This report has no document export yet";
   return null;
 }
+
+/**
+ * What the PDF and XLSX entries say for a report VERIDIAN has no document
+ * schema for. It names the format that DOES work, because a reader told only
+ * "no" goes looking for another way out of the screen.
+ */
+export const NO_DOCUMENT_REASON = "Not available for this report yet — export CSV instead";
 
 /** Why Share cannot be pressed, in words, or null when it can. */
 export function shareDisabledReason(reportName: string, hasResult: boolean): string | null {

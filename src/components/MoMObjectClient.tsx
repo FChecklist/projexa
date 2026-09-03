@@ -31,7 +31,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Download, Sparkles, Send, Link2, Ban } from "lucide-react";
+import { Loader2, Sparkles, Send, Link2, Ban } from "lucide-react";
+import { ExportShareActions } from "@/components/ExportShareActions";
+
+/**
+ * R67 E-18: why the minutes have no spreadsheet. Said in words on the menu
+ * entry rather than by the entry quietly not being there.
+ */
+const MINUTES_ARE_PROSE = "Minutes are prose, not a table — use PDF";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateTime } from "@/lib/format-date";
 
@@ -195,16 +202,25 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     }
   }
 
-  async function createShareLink() {
+  /**
+   * R67 E-18 (R-178): ONE link, handed to the shared control, which decides
+   * whether it is copied or sent to WhatsApp. This used to be a button that
+   * could ONLY open WhatsApp -- a reader who wanted to paste the link into an
+   * email had no way to get at it, even though the route had returned it all
+   * along as `shareUrl` beside the wa.me href it was using.
+   */
+  async function shareUrlFactory(): Promise<string | null> {
     setBusy("share");
     try {
       const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.whatsappHref) throw new Error(data?.error ?? "Failed to create a share link");
-      window.open(data.whatsappHref, "_blank", "noopener,noreferrer");
+      if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Failed to create a share link");
+      // The new link joins the list below, where it can be revoked.
       await load();
+      return data.shareUrl as string;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to share to WhatsApp");
+      toast.error(err instanceof Error ? err.message : "Failed to create a share link");
+      return null;
     } finally {
       setBusy(null);
     }
@@ -315,9 +331,23 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
               <Button size="sm" variant="outline" onClick={generateSummary} disabled={busy === "ai"}>
                 {busy === "ai" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Summary
               </Button>
-              <Button size="sm" variant="ghost" asChild>
-                <a href={`/api/moms/${meeting.id}/pdf`} target="_blank" rel="noopener noreferrer"><Download className="size-3.5" /> PDF</a>
-              </Button>
+              {/* R67 E-18 (R-178): the SAME Export / Share control as every
+                  report screen. The PDF was a lone ghost button here and the
+                  share link lived in a different card three sections down, so
+                  "give me this meeting as a file" and "send this meeting to
+                  someone" were in two unrelated places. XLSX and CSV carry
+                  their reason rather than being silently absent: minutes are
+                  prose, and a spreadsheet of prose is not a document anyone
+                  asked for. */}
+              <ExportShareActions
+                canExport
+                title={meeting.title}
+                pdfHref={`/api/moms/${meeting.id}/pdf`}
+                formatReasons={{ xlsx: MINUTES_ARE_PROSE, csv: MINUTES_ARE_PROSE }}
+                shareUrlFactory={shareUrlFactory}
+                shareReason={busy === "share" ? "Creating the link…" : null}
+                onMessage={(message) => toast.success(message)}
+              />
             </div>
             {meeting.aiSummary && (
               <div className="mt-3 space-y-2 rounded-md border border-ct-border bg-ct-cloud/30 p-3 text-sm">
@@ -396,9 +426,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 })}
               </ul>
             )}
-            <Button size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
-              {busy === "share" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Create Share Link &amp; Send via WhatsApp
-            </Button>
+            {/* R67 E-18: there is now exactly ONE way to make a share link,
+                and it is Share on the minutes card above -- so a link that
+                exists here is always a link somebody really sent. */}
+            <p className="text-[12px] text-ct-muted">
+              <Send className="mr-1 inline size-3.5" aria-hidden />
+              Links are created by <strong>Share</strong> on the minutes above, and appear here so they can be revoked.
+            </p>
           </div>
         </div>
       )}

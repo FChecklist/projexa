@@ -227,15 +227,17 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
     const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
 
     await findByTestId("reports-title-block");
-    // Real links into the relay, not disabled stubs: PROJEXA gains no PDF or
-    // XLSX library, VERIDIAN builds the bytes from the same schema.
+    // R67 E-18 (R-178): the three formats moved from three buttons in the
+    // header into ONE Export menu. Real links into the relay, not disabled
+    // stubs: PROJEXA gains no PDF or XLSX library, VERIDIAN builds the bytes
+    // from the same schema this screen renders the table from.
+    fireEvent.click(await findByTestId("export-menu-button"));
     for (const [format, expected] of [
       ["pdf", "/api/reports/project-status/export?projectId=p-1&format=pdf"],
       ["xlsx", "/api/reports/project-status/export?projectId=p-1&format=xlsx"],
       ["csv", "/api/reports/project-status/export?projectId=p-1&format=csv"],
     ] as const) {
-      const button = await findByTestId(`reports-export-${format}`);
-      expect(button.querySelector("a")?.getAttribute("href") ?? button.getAttribute("href")).toBe(expected);
+      expect((await findByTestId(`export-${format}`)).getAttribute("href")).toBe(expected);
     }
   });
 
@@ -475,7 +477,8 @@ describe("ReportsClient: the report document (R67 E-12)", () => {
     const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
 
     expect((await findByTestId("report-totals-banner")).textContent).toContain("Totals do not tie (difference AED 120.00)");
-    expect((await findByTestId("reports-export-xlsx")).hasAttribute("disabled")).toBe(true);
+    // R67 E-18: one control, so one assertion -- every format is behind it.
+    expect((await findByTestId("export-menu-button")).hasAttribute("disabled")).toBe(true);
     expect((await findByTestId("reports-export-reason")).textContent).toBe("Totals do not tie (difference AED 120.00)");
   });
 
@@ -502,11 +505,16 @@ describe("ReportsClient: the report document (R67 E-12)", () => {
     const { findByTestId, getByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
     await findByTestId("report-document-title");
 
-    fireEvent.click(getByTestId("reports-share"));
+    // R67 E-18: Copy link and Send via WhatsApp are two entries in ONE Share
+    // menu now, and they mint the SAME link through one factory rather than
+    // each calling the share route itself.
+    fireEvent.click(getByTestId("share-menu-button"));
+    fireEvent.click(getByTestId("share-copy-link"));
     await waitFor(() => expect(written).toContain("http://localhost/share/report/tok-1"));
     expect(calls.some((u) => u.includes("/api/reports/project-status/share"))).toBe(true);
 
-    fireEvent.click(getByTestId("reports-whatsapp"));
+    fireEvent.click(getByTestId("share-menu-button"));
+    fireEvent.click(getByTestId("share-whatsapp"));
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(opened[0]).toStartWith("https://wa.me/?text=");
     expect(decodeURIComponent(opened[0])).toContain("http://localhost/share/report/tok-1");

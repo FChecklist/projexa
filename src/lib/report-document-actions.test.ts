@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import {
   BREAKUP_SOURCE_REPORT,
   EXPORT_FORMATS,
+  NO_DOCUMENT_REASON,
   SHAREABLE_REPORTS,
   exportDisabledReason,
   reportExportHref,
@@ -30,25 +31,27 @@ describe("the export link (R67 E-12)", () => {
   });
 });
 
-describe("why Export cannot be pressed, in words (R67 E-12)", () => {
+describe("why Export cannot be pressed, in words (R67 E-12, narrowed by E-18)", () => {
   test("nothing has been run yet", () => {
-    expect(exportDisabledReason({ hasResult: false, serverExport: true, tieMessage: null })).toBe("Run the report first");
+    expect(exportDisabledReason({ hasResult: false, tieMessage: null })).toBe("Run the report first");
   });
 
   test("the numbers disagree -- and THAT reason outranks every other, because it is the one that would produce a WRONG file", () => {
     expect(
-      exportDisabledReason({ hasResult: true, serverExport: false, tieMessage: "Totals do not tie (difference AED 120.00)" })
+      exportDisabledReason({ hasResult: true, tieMessage: "Totals do not tie (difference AED 120.00)" })
     ).toBe("Totals do not tie (difference AED 120.00)");
   });
 
-  test("the report has no document yet", () => {
-    expect(exportDisabledReason({ hasResult: true, serverExport: false, tieMessage: null })).toBe(
-      "This report has no document export yet"
-    );
+  // R67 E-18 (R-178). A report with no server-rendered document still has its
+  // browser-built CSV, so "no PDF" must NOT disable the whole control -- that
+  // took away the one file the screen really could produce. The fact did not
+  // disappear; it moved onto the format it is about.
+  test("a report with no document schema can still export: the button stays live", () => {
+    expect(exportDisabledReason({ hasResult: true, tieMessage: null })).toBeNull();
   });
 
-  test("nothing is wrong: no reason, and the control is live", () => {
-    expect(exportDisabledReason({ hasResult: true, serverExport: true, tieMessage: null })).toBeNull();
+  test("...and the missing formats say so themselves, naming the one that works", () => {
+    expect(NO_DOCUMENT_REASON).toBe("Not available for this report yet — export CSV instead");
   });
 });
 

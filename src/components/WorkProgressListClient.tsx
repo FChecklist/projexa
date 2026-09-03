@@ -60,8 +60,10 @@ export default function WorkProgressListClient({
     // separate "+ New" would just duplicate what's already on screen.
     <ScreenFrame
       breadcrumb="Work Progress"
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      // R67 E-18 (R-178): the reason, in words, naming where the capability
+      // really is -- never a bare "(Not yet available)".
+      exportAction={{ label: "Export", disabledReason: "Export from the Report tab — PDF, XLSX and CSV of these entries against the BOQ" }}
+      filterAction={{ label: "Filter", disabledReason: "Filter by period and category on the Report tab" }}
       messages={[]}
     >
       {loading ? (

@@ -28,7 +28,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, X } from "lucide-react";
+import { X } from "lucide-react";
+import { toast } from "sonner";
+import { ExportShareActions } from "@/components/ExportShareActions";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
@@ -79,6 +81,16 @@ export default function BudgetActualClient({ projectId }: { projectId: string })
     );
   }
 
+  /**
+   * R67 E-18: the link carries the GROUPING and the category filter as well as
+   * the project, so what the recipient opens is the view that was sent -- not
+   * the scope-wise default under a category-wise sentence.
+   */
+  async function shareUrlFactory(): Promise<string | null> {
+    const qs = varianceSearchParams(filters, { projectId, tab: searchParams.get("tab") ?? "budget" });
+    return `${window.location.origin}${window.location.pathname}?${qs.toString()}`;
+  }
+
   const view = report?.revenueBudgetActual;
   const rows = view?.rows ?? [];
   const totals = view?.totals;
@@ -116,17 +128,23 @@ export default function BudgetActualClient({ projectId }: { projectId: string })
               <X className="size-4" /> Clear {filters.categories.join(", ")}
             </Button>
           )}
-          {/* Export is the SAME control the Cost Variance tab uses, against the
-              same relay and the same filters -- one implementation, not two. */}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rows.length === 0}
-            onClick={() => window.open(`/api/reports/budget-variance/export?${query}&format=xlsx`, "_blank", "noopener")}
-            data-testid="budget-export"
-          >
-            <Download className="size-4" /> Export XLSX
-          </Button>
+          {/* R67 E-18 (R-178): the Budget screen's Export and Share, through the
+              SAME control every other report screen now uses, against the same
+              relay and the same filters -- one implementation, not two. The CSV
+              is not offered here because this screen's grouping (scope-wise or
+              category-wise) is a fold the browser does not hold the rows for;
+              the relay renders the document VERIDIAN describes, and offering a
+              CSV that quietly meant something else is the drift item E-12
+              exists to prevent. */}
+          <ExportShareActions
+            canExport={rows.length > 0}
+            exportReason={rows.length === 0 ? "No budget lines to export" : null}
+            title={`Budget vs Actual — ${filters.groupBy === "scope" ? "Scope-wise" : "Category-wise"}`}
+            pdfHref={`/api/reports/budget-variance/export?${query}&format=pdf`}
+            xlsxHref={`/api/reports/budget-variance/export?${query}&format=xlsx`}
+            shareUrlFactory={shareUrlFactory}
+            onMessage={(message) => toast.success(message)}
+          />
         </div>
       </div>
 

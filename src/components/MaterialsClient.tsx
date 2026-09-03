@@ -49,7 +49,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Download, FileText, Link2, Loader2, Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
@@ -64,11 +64,13 @@ import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import {
   buildMaterialCostCsv,
   checkMaterialCostTies,
+  costReportTitle,
   defaultCostReportRange,
   emptyRangeMessage,
   type MaterialCostReport,
   type MaterialCostReportGroupBy,
 } from "@/lib/material-cost-report";
+import { ExportShareActions } from "@/components/ExportShareActions";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
@@ -205,14 +207,17 @@ export default function MaterialsClient({
     URL.revokeObjectURL(url);
   }
 
-  async function copyLink() {
+  /**
+   * R67 E-18 (R-178): ONE link, whether the reader copies it or sends it to
+   * WhatsApp -- the shared control mints it once through this factory rather
+   * than each action building its own. This report has no public renderer, so
+   * the link is the in-app URL carrying these exact parameters: it opens this
+   * run for a colleague already signed in, which is what it says it does.
+   */
+  async function shareUrlFactory(): Promise<string | null> {
     setSharing(true);
     try {
-      const url = `${window.location.origin}/materials?tab=cost-report&${costReportQuery()}`;
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied — paste it into WhatsApp or email.");
-    } catch {
-      toast.error("Couldn't copy the link");
+      return `${window.location.origin}/materials?tab=cost-report&${costReportQuery()}`;
     } finally {
       setSharing(false);
     }
@@ -339,20 +344,24 @@ export default function MaterialsClient({
               {loading ? <Loader2 className="size-4 animate-spin" /> : null} Apply
             </Button>
 
-            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={exportCsv} data-testid="cost-report-export-csv">
-              <Download className="size-4" /> Export CSV
-            </Button>
-            {/* PDF and XLSX are SERVER-rendered and relayed -- projexa gains no
-                PDF or XLSX library. */}
-            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={() => window.open(`/api/construction-materials/cost-report/export?${costReportQuery({ format: "pdf" })}`, "_blank", "noopener")} data-testid="cost-report-export-pdf">
-              <FileText className="size-4" /> Export PDF
-            </Button>
-            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={() => window.open(`/api/construction-materials/cost-report/export?${costReportQuery({ format: "xlsx" })}`, "_blank", "noopener")} data-testid="cost-report-export-xlsx">
-              <Download className="size-4" /> Export XLSX
-            </Button>
-            <Button variant="outline" disabled={sharing} onClick={copyLink} data-testid="cost-report-share">
-              {sharing ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Share link
-            </Button>
+            {/* R67 E-18 (R-178): the SAME Export / Share control as the Work
+                Progress Report, the Reports frame, the Budget screen, the
+                Manpower Daily Summary, the MoM object page and Design Studio.
+                Four buttons in a row became two word-buttons with menus.
+                PDF and XLSX stay SERVER-rendered and relayed -- projexa gains
+                no PDF or XLSX library -- and the CSV is still built here from
+                the rows on screen, which is the trust feature it always was. */}
+            <ExportShareActions
+              canExport={!exportReason}
+              exportReason={exportReason}
+              title={costReportTitle(from || null, to || null)}
+              pdfHref={`/api/construction-materials/cost-report/export?${costReportQuery({ format: "pdf" })}`}
+              xlsxHref={`/api/construction-materials/cost-report/export?${costReportQuery({ format: "xlsx" })}`}
+              onCsv={exportCsv}
+              shareUrlFactory={shareUrlFactory}
+              shareReason={sharing ? "Creating the link…" : null}
+              onMessage={(message) => toast.success(message)}
+            />
             {exportReason && <span className="text-xs text-px-muted" data-testid="cost-report-export-reason">{exportReason}</span>}
           </CardContent>
         </Card>
