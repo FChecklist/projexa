@@ -6,9 +6,10 @@
 // control and no reason, and a user could not tell a withheld action from a
 // broken one.
 //
-// These tests render the real component against the PROJEXA-local ObjectScreen
-// fork (src/components/screens/ObjectScreen.tsx) and assert the visible
-// outcome, not the props.
+// These tests render the real component against the PROJEXA-local kit fork
+// (src/components/screens/KitObjectScreen.tsx -- decision D-11's addendum put
+// D-22's fork there rather than at screens/ObjectScreen.tsx, which lane D0's
+// PROJEXA-native archetype owns) and assert the visible outcome, not the props.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in
 // ONE process -- same guard PayrollClient.test.tsx documents.
