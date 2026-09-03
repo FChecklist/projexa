@@ -29,6 +29,7 @@ import {
   PillStrip,
   TopRail,
   cutChainFrom,
+  loadChain,
   resetChain,
   DEFAULT_CHAIN_MODE,
   UNIVERSAL_PILLS,
@@ -72,6 +73,17 @@ import {
 // "Select a module to begin" on the very screen it is docked to.
 import { ChainOptionsPanel } from "@/components/shell/ChainOptionsPanel";
 import { ConfirmCard } from "@/components/shell/ConfirmCard";
+import { AnswerBlock } from "@/components/shell/AnswerBlock";
+import {
+  TIMING_ELAPSED_MS,
+  answerRowsFrom,
+  previewSteps,
+  progressReceiptLine,
+  readPreviewSegments,
+  timingState,
+  understoodLine,
+  type AnswerRowDto,
+} from "@/lib/composer-turns";
 import {
   DEFAULT_PERIOD,
   PERIOD_OPTIONS,
@@ -96,7 +108,7 @@ import {
   type PeriodId,
   type ProjectTask,
 } from "@/lib/card-catalogue";
-import { maskTechnical } from "@/lib/task-errors";
+import { maskTechnical, resolveTaskError } from "@/lib/task-errors";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -247,6 +259,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // The scalar value the last step asks for, when it asks for one.
   const [scalarValue, setScalarValue] = useState("");
   const [scalarError, setScalarError] = useState<string | null>(null);
+  // R67 C-05: THE PROPOSAL. What the server read the sentence as, held in
+  // band 2 with NOTHING WRITTEN, until the user confirms it. The params are
+  // editable in place, which is what makes "Understood: ..." a check rather
+  // than an announcement.
+  const [proposal, setProposal] = useState<{
+    typed: string;
+    steps: string[];
+    functionId: string | null;
+    params: Record<string, unknown>;
+    missingParams: string[];
+    verdict: "task" | "chat" | "gap";
+    message: string | null;
+  } | null>(null);
+  const [answer, setAnswer] = useState<{ heading: string; rows: AnswerRowDto[] } | null>(null);
+  // The timing states, which C-05 makes mandatory. `startedAt` lives in a ref
+  // so "Keep waiting" can move the clock back a phase without a re-render
+  // race, and the controller is what makes Stop and Cancel real rather than
+  // cosmetic -- a Stop that leaves the request running is a lie.
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   // R67 C-01: the selected project's NAME, for D-03's BOQ_LINE_NOT_FOUND
   // sentence ("There is no line 1.02 on Cedar Heights Villa - Phase 1 v3").
@@ -892,6 +925,126 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     }
   }, [timesheetDraft, cardBusy, projectTasks, projectId, router, loadTasks]);
 
+  // R67 C-05: the clock behind the timing states. It ticks only while a
+  // request is actually in flight, and it is reset by the request finishing --
+  // never by a render.
+  useEffect(() => {
+    if (!submitting) {
+      setElapsedMs(0);
+      return;
+    }
+    const id = setInterval(() => {
+      if (startedAtRef.current !== null) setElapsedMs(Date.now() - startedAtRef.current);
+    }, 250);
+    return () => clearInterval(id);
+  }, [submitting]);
+
+  /** Stop / Cancel. A real abort, so the word means what it says. */
+  const onStopRequest = useCallback(() => {
+    abortRef.current?.abort();
+    setSubmitError("Stopped. Nothing was saved.");
+  }, []);
+
+  /** Keep waiting: move the clock back one phase rather than muting it. */
+  const onKeepWaiting = useCallback(() => {
+    startedAtRef.current = Date.now() - TIMING_ELAPSED_MS;
+    setElapsedMs(TIMING_ELAPSED_MS);
+  }, []);
+
+  /**
+   * R67 C-05 -- THE COMMIT. The ONLY path from a proposal to a write.
+   *
+   * The preview showed what the sentence was read as; this is the user saying
+   * yes to it. It posts exactly the function and params on screen -- edited or
+   * not -- so what was confirmed and what runs cannot differ.
+   */
+  const onConfirmProposal = useCallback(async () => {
+    const p = proposal;
+    if (!p || submitting) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    startedAtRef.current = Date.now();
+    setSubmitting(true);
+    setSubmitError(null);
+    setBandNote(null);
+    try {
+      const body = p.functionId
+        ? { functionId: p.functionId, params: p.params, mode, projectId }
+        : { rawInput: p.typed, mode, projectId };
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        setSubmitError(
+          d && typeof d.error === "string" && d.error.trim() ? d.error : `Submit failed (HTTP ${res.status})`
+        );
+        return;
+      }
+      const task = Array.isArray(d?.tasks) ? (d.tasks[0] as Record<string, unknown> | undefined) : undefined;
+      const messages = Array.isArray(d?.chatMessages) ? (d.chatMessages as unknown[]) : [];
+
+      if (task && task.status === "blocked") {
+        // The pipeline refused. D-03's sentence, never the raw string, and the
+        // card stays so the user can correct the value and try again.
+        const resolved = resolveTaskError({
+          raw: typeof task.error === "string" ? task.error : null,
+          itemCode: typeof p.params.itemCode === "string" ? p.params.itemCode : null,
+          projectName: project?.name ?? null,
+        });
+        setSubmitError(resolved.sentence);
+        return;
+      }
+
+      if (p.functionId === "record_work_progress" && task?.status === "done") {
+        const result = (task.result ?? {}) as Record<string, unknown>;
+        // A cuid is a real id but not a readable one; C-05's example receipt
+        // carries a short human code. Only a short id is printed, so the
+        // receipt never trades readability for a 25-character string -- and
+        // never invents a code the row does not have.
+        const rawId = typeof result.id === "string" ? result.id : null;
+        setReceipt({
+          text: progressReceiptLine({
+            lineLabel: p.steps[p.steps.length - 1] ?? String(p.params.itemCode ?? "this line"),
+            itemCode: typeof p.params.itemCode === "string" ? p.params.itemCode : null,
+            percent: Number(p.params.percent),
+            date:
+              typeof result.entryDate === "string" ? result.entryDate : new Date().toISOString().slice(0, 10),
+            recordId: rawId && rawId.length <= 12 ? rawId : null,
+          }),
+          href: `/work-progress${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+        });
+      } else if (p.verdict === "chat" || (task && task.status === "done" && p.functionId !== "record_work_progress")) {
+        // ROWS FIRST. The heading is the pipeline's own sentence when it wrote
+        // one; the rows are the result, and only when the result really has
+        // rows (answerRowsFrom returns nothing for a shape nobody checked).
+        const rows = answerRowsFrom(task?.result);
+        const heading =
+          typeof messages[0] === "string" && messages[0].trim()
+            ? maskTechnical(messages[0])
+            : `Here is what I found for ${p.steps[p.steps.length - 1] ?? "that"}`;
+        setAnswer({ heading, rows });
+      } else if (typeof messages[0] === "string") {
+        setBandNote(maskTechnical(messages[0]));
+      }
+
+      setProposal(null);
+      setDraft("");
+      await loadTasks();
+    } catch (err) {
+      if ((err as { name?: string })?.name !== "AbortError") {
+        setSubmitError("Couldn't reach the task service.");
+      }
+    } finally {
+      abortRef.current = null;
+      startedAtRef.current = null;
+      setSubmitting(false);
+    }
+  }, [proposal, submitting, mode, projectId, project, loadTasks]);
+
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.
   //
@@ -906,6 +1059,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // R67 C-02: a third runnable shape -- a report leaf chosen in band 2.
     const runningReport = reportsChainActive && reportId ? reportId : null;
     if (!typed && !pendingFunctionId && !runningReport && !chainRun) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    startedAtRef.current = Date.now();
     setSubmitting(true);
     setSubmitError(null);
     setBandNote(null);
@@ -926,22 +1082,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ rawInput: typed, mode, projectId }),
+          signal: controller.signal,
         });
         const p = await preview.json().catch(() => null);
-        const segs: {
-          verdict?: string;
-          functionId?: string | null;
-          params?: Record<string, unknown>;
-          derivedChain?: { full?: string } | null;
-        }[] = preview.ok && Array.isArray(p?.segments) ? p.segments : [];
-        const timesheet = segs.find((s) => s.functionId === "record_timesheet");
-        if (timesheet) {
-          const params = timesheet.params ?? {};
-          const hours = typeof params.hours === "number" ? String(params.hours) : String(params.hours ?? "");
+        const segs = readPreviewSegments(p);
+        // R53: the verdict is PER SEGMENT. A message may carry a task AND a
+        // question; the task is the one that needs confirming, so it is the
+        // one band 2 proposes.
+        const seg = segs.find((s) => s.verdict === "task") ?? segs[0] ?? null;
+
+        if (seg?.functionId === "record_timesheet") {
+          const params = seg.params;
           setTimesheetDraft({
-            sentence: timesheet.derivedChain?.full ?? "Timesheet › New entry",
+            sentence: understoodLine(previewSteps(seg)),
             issueId: "",
-            hours,
+            hours: params.hours === undefined || params.hours === null ? "" : String(params.hours),
             spentOn:
               typeof params.spentOn === "string" ? params.spentOn : new Date().toISOString().slice(0, 10),
             activityType: typeof params.activityType === "string" ? params.activityType : "",
@@ -953,8 +1108,32 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           setCardError(projectId ? null : "Pick a project in the top rail before logging time.");
           return;
         }
-        // A preview that could not be reached is not a reason to refuse: the
-        // submit below is the authority and re-runs the same ladder.
+
+        if (seg) {
+          // *** NOTHING IS WRITTEN HERE. *** The proposal sits in band 2 with
+          // "Yes, continue" / "No, start over"; only the first of those posts.
+          setProposal({
+            typed,
+            steps: previewSteps(seg),
+            functionId: seg.functionId,
+            params: seg.params,
+            missingParams: seg.missingParams,
+            verdict: seg.verdict,
+            message: seg.message ? maskTechnical(seg.message) : null,
+          });
+          setAnswer(null);
+          // A WRITE THAT IS SHORT A SLOT GETS A PICKER, NOT A BLOCKED ROW.
+          // This is the whole point of C-05: "record 50% progress on
+          // excavation" used to mint a row reading "itemCode is required".
+          if (seg.functionId === "record_work_progress" && seg.missingParams.length > 0) {
+            setLevelPath(["work_progress", "record_progress"]);
+            if (typeof seg.params.percent === "number") setScalarValue(String(seg.params.percent));
+          }
+          return;
+        }
+        // A preview that resolved nothing is not a reason to refuse: the
+        // submit below is the authority and re-runs the same ladder, and the
+        // gap it records is how the product learns what it cannot do.
       }
 
       const range = runningReport ? resolvePeriod(periodId, new Date()) : null;
@@ -979,6 +1158,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       // Status before body: an error body parses fine and is truthy.
       const d = await res.json().catch(() => null);
@@ -1031,9 +1211,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
       await loadTasks();
-    } catch {
-      setSubmitError("Couldn't reach the task service.");
+    } catch (err) {
+      // An abort is the user's own Stop, and it already said what happened.
+      if ((err as { name?: string })?.name !== "AbortError") {
+        setSubmitError("Couldn't reach the task service.");
+      }
     } finally {
+      abortRef.current = null;
+      startedAtRef.current = null;
       setSubmitting(false);
     }
   }, [
@@ -1218,6 +1403,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             ? "pick a date"
             : undefined;
 
+  // R67 C-05: what band 2 says about the wait, from one pure function.
+  const timing = timingState(submitting ? elapsedMs : 0);
+
   const fieldClass = "rounded border px-2 py-1 text-[12px]";
   const fieldStyle = { borderColor: "var(--color-ct-border2)", color: "var(--color-ct-navy)" } as const;
 
@@ -1389,8 +1577,102 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // question the chain is asking (the kit's OptionChain, mounted at
           // last) and the receipt for what was just run.
           conversation={
-            bandLevel || receipt || bandNote || timesheetDraft || levelPath.length > 0 || actionLevel ? (
+            bandLevel ||
+            receipt ||
+            bandNote ||
+            timesheetDraft ||
+            proposal ||
+            answer ||
+            timing.text ||
+            levelPath.length > 0 ||
+            actionLevel ? (
               <div className="space-y-2">
+                {/* R67 C-05: THE TIMING STATES ARE MANDATORY. Nothing for the
+                    first 300 ms, then a promise, then the real elapsed
+                    seconds, then -- at 20 s -- the service we are waiting on
+                    and the user's own choice. Every one carries a word button
+                    that really aborts the request. */}
+                {timing.text && (
+                  <p role="status" className="flex flex-wrap items-center gap-2 text-[12px]">
+                    <span style={{ color: "var(--color-ct-muted)" }}>{timing.text}</span>
+                    {timing.actions.includes("stop") && (
+                      <button type="button" className="veri-view-tab" onClick={onStopRequest}>
+                        Stop
+                      </button>
+                    )}
+                    {timing.actions.includes("keep") && (
+                      <button type="button" className="veri-view-tab" onClick={onKeepWaiting}>
+                        Keep waiting
+                      </button>
+                    )}
+                    {timing.actions.includes("cancel") && (
+                      <button type="button" className="veri-view-tab" onClick={onStopRequest}>
+                        Cancel
+                      </button>
+                    )}
+                  </p>
+                )}
+
+                {/* THE PROPOSAL. What the server read the sentence as, with
+                    nothing written until the user says yes to it. */}
+                {proposal && (
+                  <div className="space-y-1.5">
+                    <p className="text-[12.5px]" style={{ color: "var(--color-ct-navy)" }}>
+                      {understoodLine(proposal.steps)}
+                    </p>
+                    {proposal.message && (
+                      <p className="text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
+                        {proposal.message}
+                      </p>
+                    )}
+                    {proposal.missingParams.length === 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
+                          style={{ background: "var(--color-ct-saffron)", color: "var(--color-ct-navy)" }}
+                          disabled={submitting}
+                          onClick={() => void onConfirmProposal()}
+                        >
+                          Yes, continue
+                        </button>
+                        <button
+                          type="button"
+                          className="veri-view-tab"
+                          disabled={submitting}
+                          onClick={() => {
+                            // Nothing was written, so starting over costs the
+                            // user only their own sentence back.
+                            setDraft(proposal.typed);
+                            setProposal(null);
+                            setLevelPath([]);
+                            setScalarValue("");
+                          }}
+                        >
+                          No, start over
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {answer && (
+                  <AnswerBlock
+                    heading={answer.heading}
+                    rows={answer.rows}
+                    // EVERY ROW LOADS A CHAIN AND STOPS. Opening the screen is
+                    // a read; nothing here runs anything.
+                    onOpenRow={(row) => {
+                      onLoadChain(
+                        loadChain(
+                          { mode, segments: [...segments, { id: row.id, label: row.label, kind: "step" }] },
+                          undefined
+                        )
+                      );
+                    }}
+                  />
+                )}
+
                 {timesheetDraft && (
                   <ConfirmCard
                     title={timesheetDraft.sentence}
@@ -1511,15 +1793,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                     onEmptyAction={(route) => router.push(route)}
                   />
                 )}
+                {/* THE RECEIPT PERSISTS UNTIL IT IS DISMISSED. A message that
+                    disappears on its own is a message the user has to have
+                    been looking at, which is exactly what a person recording
+                    progress on site is not doing. */}
                 {receipt && (
-                  <p className="text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
-                    {receipt.text}{" "}
-                    <button
-                      type="button"
-                      className="veri-view-tab"
-                      onClick={() => router.push(receipt.href)}
-                    >
+                  <p className="flex flex-wrap items-center gap-2 text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                    <span>{receipt.text}</span>
+                    <button type="button" className="veri-view-tab" onClick={() => router.push(receipt.href)}>
                       Open
+                    </button>
+                    <button type="button" className="veri-view-tab" onClick={() => setReceipt(null)}>
+                      Dismiss
                     </button>
                   </p>
                 )}
@@ -1599,7 +1884,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             submitError ??
             (submitting
               ? "Sending…"
-              : levelPath.length >= 2 && !chainRun
+              : proposal && proposal.missingParams.length === 0
+                ? "Answer the question above first"
+                : levelPath.length >= 2 && !chainRun
                 ? // R67 C-04: the chain is half-built. Say which answer is
                   // still missing rather than letting Send fire a submission
                   // that can only come back blocked.
