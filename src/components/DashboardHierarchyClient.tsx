@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,10 +54,21 @@ async function getJson<T>(url: string): Promise<T | null> {
   return res.json();
 }
 
+// R67 E-37 (R-269): what the companies call answered, as three separable
+// facts. "The request failed", "you belong to no company" and "this
+// organisation has no company row" all rendered as the SAME sentence before
+// this -- and the first of them is not an empty list at all.
+type EmptyReason = "none" | "no-company" | "not-a-member";
+type CompaniesState =
+  | { status: "loading" }
+  | { status: "failed" }
+  | { status: "ready"; companies: Company[]; emptyReason: EmptyReason };
+
 export function DashboardHierarchyClient() {
   const router = useRouter();
   const currencies = useCurrencies();
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesState, setCompaniesState] = useState<CompaniesState>({ status: "loading" });
+  const companies = companiesState.status === "ready" ? companiesState.companies : [];
   const [companyId, setCompanyId] = useState<string>("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentId, setDepartmentId] = useState<string>("__all__");
@@ -77,14 +89,28 @@ export function DashboardHierarchyClient() {
   const [filterOpen, setFilterOpen] = useState(false);
   const orgMoney = useOrgMoney();
 
-  // Company level: load the current user's real memberships once.
-  useEffect(() => {
-    getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((data) => {
-      if (!data) return;
-      setCompanies(data.companies);
-      if (data.companies.length > 0) setCompanyId(data.companies[0].id);
-    });
+  // Company level: the current user's real memberships, or the one company the
+  // server synthesised from their own organisation when no membership row
+  // names one (R67 E-37 -- see resolveHierarchyCompanies).
+  const loadCompanies = useCallback(async () => {
+    setCompaniesState({ status: "loading" });
+    const data = await getJson<{ companies: Company[]; emptyReason?: EmptyReason }>(
+      "/api/dashboard-hierarchy/companies"
+    );
+    if (!data) {
+      // A failed request is NOT an empty list, and saying "no company
+      // memberships" here was the screen confidently reporting a fact it did
+      // not have.
+      setCompaniesState({ status: "failed" });
+      return;
+    }
+    setCompaniesState({ status: "ready", companies: data.companies, emptyReason: data.emptyReason ?? "none" });
+    if (data.companies.length > 0) setCompanyId(data.companies[0].id);
   }, []);
+
+  useEffect(() => {
+    void loadCompanies();
+  }, [loadCompanies]);
 
   // Department level: real HR departments for the selected company.
   useEffect(() => {
@@ -219,8 +245,32 @@ export function DashboardHierarchyClient() {
         </Card>
       )}
 
-      {companies.length === 0 && (
-        <p className="text-sm text-px-muted">No company memberships found for this account.</p>
+      {/* R67 E-37 (R-269 / R-298). ONE SENTENCE USED TO COVER FOUR SITUATIONS.
+          "No company memberships found for this account." was printed when the
+          request FAILED, when the user genuinely belonged to nowhere, and when
+          the organisation had no company row -- three different facts with
+          three different next actions, and the first of them was not an empty
+          list at all. Each now says what happened and who can fix it. */}
+      {companiesState.status === "failed" && (
+        <div className="space-y-2" role="alert">
+          <p className="text-sm text-px-error">Couldn&apos;t load your companies</p>
+          <Button size="sm" variant="outline" onClick={() => void loadCompanies()}>Retry</Button>
+        </div>
+      )}
+      {companiesState.status === "ready" && companiesState.emptyReason === "no-company" && (
+        <div className="space-y-2" data-testid="hierarchy-no-company">
+          <p className="text-sm text-px-ink">This organisation is not set up as a company yet</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" asChild><Link href="/settings">Set up company</Link></Button>
+            <Button size="sm" variant="outline" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+          </div>
+        </div>
+      )}
+      {companiesState.status === "ready" && companiesState.emptyReason === "not-a-member" && (
+        <p className="text-sm text-px-ink" data-testid="hierarchy-not-a-member">
+          Your account is not a member of any company yet. Ask an administrator to add you under{" "}
+          <Link href="/settings" className="underline">Settings › Companies</Link>.
+        </p>
       )}
 
       {/* R67 E-23 (R-206, C-07): Sumeet's company chart. One row per project
