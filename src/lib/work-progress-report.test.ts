@@ -732,4 +732,60 @@ describe("R67 I-05: category resolution order and the server-side Category filte
     expect(parentFiltered.amt).toEqual(parentUnfiltered.amt);
     expect(parentFiltered.qty).toEqual(parentUnfiltered.qty);
   });
-})
+});
+
+// ── R67 B-09: entries no BOQ line can claim are counted, and said out loud ─
+// This report has always silently dropped them -- entryBelongsToLine() claims
+// an entry by boq_line_item_id or, failing that, by activity, and an entry
+// matching neither never appears in any row. On a project with no BOQ at all
+// that is the whole day's work.
+import { countUnlinkedEntries, unlinkedEntriesNote } from "./work-progress-report";
+
+describe("countUnlinkedEntries / unlinkedEntriesNote -- R67 B-09", () => {
+  const LINES: BoqLineItem[] = [
+    { id: "line_1", activityId: "act_1", itemCode: "C-101", description: "Excavation", unit: "cum", quantity: 100, rate: 10, amount: 1000 },
+  ];
+
+  test("an entry that resolves to a real line is NOT counted as unlinked", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 10 }];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(0);
+  });
+
+  test("an entry naming a line item id no BOQ line has IS counted", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", boqLineItemId: "line_gone", entryDate: "2026-07-15", quantityDone: 10 },
+    ];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(1);
+  });
+
+  test("a project with NO BOQ at all: every entry in the window is unlinked", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_9", entryDate: "2026-07-15", quantityDone: 10 },
+      { id: "e2", activityId: "act_9", entryDate: "2026-07-16", quantityDone: 4 },
+    ];
+    expect(countUnlinkedEntries({ lineItems: [], entries, from: "2026-07-10", to: "2026-07-20" })).toBe(2);
+  });
+
+  test("entries outside the window are not counted -- the note describes THIS report", () => {
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_9", entryDate: "2026-06-01", quantityDone: 10 }];
+    expect(countUnlinkedEntries({ lineItems: LINES, entries, from: "2026-07-10", to: "2026-07-20" })).toBe(0);
+  });
+
+  test("buildWorkProgressReport carries the count, so the screen needs no second pass", () => {
+    const entries: ProgressEntry[] = [
+      { id: "e1", activityId: "act_1", entryDate: "2026-07-15", quantityDone: 10 },
+      { id: "e2", activityId: "act_9", entryDate: "2026-07-15", quantityDone: 3 },
+    ];
+    const report = buildWorkProgressReport({
+      lineItems: LINES, entries, activities: ACTIVITIES, categories: CATEGORIES, from: "2026-07-10", to: "2026-07-20",
+    });
+    expect(report.unlinkedEntryCount).toBe(1);
+  });
+
+  test("the note is the exact sentence, and says nothing at all when there is nothing to say", () => {
+    expect(unlinkedEntriesNote(0)).toBeNull();
+    expect(unlinkedEntriesNote(-1)).toBeNull();
+    expect(unlinkedEntriesNote(1)).toBe("1 entry not linked to a BOQ line is not counted");
+    expect(unlinkedEntriesNote(4)).toBe("4 entries not linked to a BOQ line are not counted");
+  });
+});

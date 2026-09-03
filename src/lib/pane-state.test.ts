@@ -13,7 +13,7 @@ import {
   metricLabel,
   recordCountLabel,
 } from "./pane-state";
-import { READ_ERROR_CODES, classifyReadError, describeReadError } from "./task-errors";
+import { READ_ERROR_CODES, classifyReadError, describeReadError, sanitiseBackendMessage } from "./task-errors";
 
 describe("loadingCaption -- waiting is narrated, late", () => {
   test("a fast read shows the skeleton and NO text -- a line that appears and vanishes is noise", () => {
@@ -195,5 +195,44 @@ describe("describeReadError / paneError -- the sentence a failed pane shows", ()
 
   test("no backend message at all leaves the sentence standing alone", () => {
     expect(describeReadError("permits", { status: 500 }).detail).toBeNull();
+  });
+});
+
+// R67 D-03's leak rule, asserted here because the read half of the dictionary
+// is what still uses it: WS-B's own task-errors.test.ts proves the rule for
+// the pipeline sentences it composes, and this proves it for the backend prose
+// a failed READ passes through. Both halves of one file, both covered.
+describe("sanitiseBackendMessage -- the backend's words, only when they are safe", () => {
+  const GENERIC = "That didn't run. Nothing was saved.";
+
+  test("real human prose is passed through, because the reason is what a user can act on", () => {
+    expect(sanitiseBackendMessage("The construction data service did not respond in time.")).toBe(
+      "The construction data service did not respond in time."
+    );
+  });
+
+  test("an address, a URL or a host:port is replaced WHOLESALE, never half-redacted", () => {
+    // The R66 walkthrough's worst case, on a site engineer's screen.
+    expect(sanitiseBackendMessage("write CONNECT_TIMEOUT 3.109.171.244:6543")).toBe(GENERIC);
+    expect(sanitiseBackendMessage("could not reach https://internal.veridian.local/api")).toBe(GENERIC);
+    expect(sanitiseBackendMessage("db-primary:5432 refused the connection")).toBe(GENERIC);
+  });
+
+  test("a camelCase parameter name or a function id never reaches a screen", () => {
+    expect(sanitiseBackendMessage("itemCode is required")).toBe(GENERIC);
+    expect(sanitiseBackendMessage(`no executor is registered for "list_leads" yet`)).toBe(GENERIC);
+    expect(sanitiseBackendMessage("function_id not recognised")).toBe(GENERIC);
+  });
+
+  test("an empty or absent message is the generic sentence, never a blank", () => {
+    expect(sanitiseBackendMessage(null)).toBe(GENERIC);
+    expect(sanitiseBackendMessage(undefined)).toBe(GENERIC);
+    expect(sanitiseBackendMessage("   ")).toBe(GENERIC);
+  });
+
+  test("describeReadError drops a message it replaced, rather than repeating the generic twice", () => {
+    const described = describeReadError("permits", { status: 500, message: "itemCode is required" });
+    expect(described.detail).toBeNull();
+    expect(described.sentence).toContain("Couldn't load permits");
   });
 });

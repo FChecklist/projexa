@@ -40,6 +40,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backendMessage } from "@/lib/fetch-json";
+import { isTaskErrorCode, messageFor } from "@/lib/task-errors";
 
 /** The ceiling on a write. Ten seconds, per R-277. */
 export const SUBMIT_TIMEOUT_MS = 10_000;
@@ -49,6 +50,18 @@ export const SUBMIT_TIMEOUT_MS = 10_000;
  * button is handed back rather than left saying "Saving…" over nothing.
  */
 export const SUBMIT_WATCHDOG_MS = 100;
+
+/**
+ * The reason a refusal states: the dictionary's sentence when the server sent
+ * a code it knows, and the backend's own words otherwise. An unrecognised
+ * code falls through to the prose rather than to a blank, because a message
+ * nobody can read is still better than no message at all.
+ */
+function refusalReason(body: unknown, status: number): string {
+  const code = body && typeof body === "object" ? (body as { code?: unknown }).code : undefined;
+  if (typeof code === "string" && isTaskErrorCode(code)) return messageFor(code);
+  return backendMessage(body, status);
+}
 
 export type SubmitState = "idle" | "saving" | "saved";
 
@@ -316,7 +329,14 @@ export function useSubmit<T = unknown>({
         if (!res.ok) {
           inFlight.current = false;
           if (!live.current) return;
-          setFailure(submitFailure("refused", label, backendMessage(body, res.status)));
+          // R67 B-09 (D-03): a route that refuses on a RULE answers with a
+          // CODE, and the client owns the wording. Rendering it through the
+          // same dictionary the composer uses is what makes both paths
+          // produce the same words -- "Pick a BOQ line", never "itemCode"
+          // and never "boqLineItemId". Applied HERE rather than in one
+          // screen's handler, so every create form gets it and none of them
+          // can render a coded refusal as prose.
+          setFailure(submitFailure("refused", label, refusalReason(body, res.status)));
           setState("idle");
           return;
         }

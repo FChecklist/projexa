@@ -134,7 +134,14 @@ import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
-import { describeReadError, taskRowDetail } from "@/lib/task-errors";
+import {
+  LEGACY_FALLBACK_MESSAGE,
+  describeReadError,
+  fixChainFor,
+  legacyToCode,
+  messageFor,
+  rowDetailFor,
+} from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
 
 // R67 A-14 -- THE PINS, AND ONLY THE PINS.
@@ -227,7 +234,16 @@ type ApiTask = {
   derivedChain?: { full?: string; mode?: string; root?: string; steps?: string[] } | null;
   functionId?: string | null;
   status?: string | null;
-  error?: string | null;
+  /**
+   * R67 FIX PASS -- the row's stored English, for rows written before the
+   * pipeline returned codes. It replaces the old `error` field: GET
+   * /api/v1/projexa/tasks no longer returns pipeline_tasks.error verbatim,
+   * because a legacy row could hold the R66 driver string with its internal
+   * host:port and shipping that to a browser is the leak B-01 exists to
+   * close. The server now converts any such string into a real failure code
+   * itself, and only prose that discloses nothing arrives here.
+   */
+  legacyError?: string | null;
   rawInput?: string | null;
   mode?: string | null;
   // R67 D-03's 'needs_input' payload, added additively by
@@ -240,7 +256,30 @@ type ApiTask = {
   /** Real column on compliance.pipeline_tasks, selected by the route's own
    *  query and already ordered desc -- used by the History tab's dedup. */
   createdAt?: string | null;
+  // R67 B-06/B-01: the server now sends the function's HUMAN LABEL ("Record
+  // progress") beside the id, so a row title never has to fall back to
+  // "Record record_work_progress".
+  label?: string | null;
+  // R67 B-01/B-08 (D-03): the STRUCTURED failure. The sentence is composed
+  // here, from src/lib/task-errors.ts, never sent by the server.
+  failure?: { code?: string | null; missing?: string[]; context?: Record<string, string | number | null> | null } | null;
 };
+// R67 B-07's verdict envelope, from POST /api/v1/projexa/tasks. `status`
+// 'ready' means nothing has run yet and the client must confirm; the server
+// mints no task until it does.
+type SubmissionVerdict = {
+  verdict?: "task" | "chat" | "gap";
+  status?: "ready" | "needs_input" | "answered" | "gap" | "chat";
+  understood?: { functionId?: string; label?: string; projectId?: string | null; params?: Record<string, unknown> } | null;
+  missing?: { name: string; field: string; label: string; code: string; options?: { id: string; label: string }[] }[];
+  answer?: { rows?: unknown; text?: string | null; chain?: string } | null;
+  links?: { label: string; route: string }[];
+  chain?: string | null;
+  message?: string;
+  confirmable?: boolean;
+  submissionId?: string | null;
+};
+
 type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
@@ -259,6 +298,35 @@ function verbFor(functionId?: string | null): TaskRow["verb"] {
   if (f.includes("confirm")) return "Confirm";
   if (f.includes("sign")) return "Sign off";
   return "Review";
+}
+
+/**
+ * R67 B-08/B-10 -- line 2 of a Task Master row, in the closed vocabulary.
+ *
+ * Three sources, in order of how much the server knows:
+ *   1. the TYPED failure (D-03): {code, context} -> the dictionary sentence.
+ *   2. a LEGACY row, written before the pipeline returned codes: its stored
+ *      English is mapped back to a code by legacyToCode() and then rendered
+ *      through the SAME dictionary, so an old row reads like a new one and
+ *      never shows its original text.
+ *   3. no failure at all -> what the user typed.
+ */
+export function detailFor(t: ApiTask): string | undefined {
+  const code = codeFor(t);
+  if (code) return rowDetailFor(code, (t.failure?.context ?? {}) as Record<string, string | number | null>);
+  if (t.legacyError) return LEGACY_FALLBACK_MESSAGE;
+  return t.rawInput ?? undefined;
+}
+
+/**
+ * R67 B-10: the code for a row, whichever way the server could give it --
+ * the typed failure first, then a legacy row's stored English mapped back
+ * into the vocabulary. Null means "nothing failed", not "we do not know".
+ */
+export function codeFor(t: ApiTask): string | null {
+  if (t.failure?.code) return t.failure.code;
+  if (t.legacyError) return legacyToCode(t.legacyError);
+  return null;
 }
 
 function toTaskRow(
@@ -293,27 +361,43 @@ function toTaskRow(
     state,
     verb: verbFor(t.functionId),
     // The chain's steps read as the object of the sentence: "Record Work
-    // Progress > New entry". Falling back to the functionId is deliberate --
-    // a row with no label at all would be worse than a technical one.
-    object: steps.length ? steps.join(" > ") : (t.functionId ?? "task"),
+    // Progress > New entry".
+    //
+    // R67 B-06: the fallback was `t.functionId`, which rendered rows reading
+    // "Record record_work_progress" -- a function id on a site engineer's
+    // screen. The server now resolves the id through the function catalogue
+    // and sends its human label, so the fallback is a real name; "task" is
+    // only reached when there is genuinely no function at all (an
+    // unresolved segment), and is still a word rather than an identifier.
+    object: steps.length ? steps.join(" > ") : (t.label ?? "task"),
     // M24: "line 2 is the DECIDING information - without it the user clicks in
     // to find out, which is the load being removed."
     //
-    // R67 D-03: it used to be `t.error ?? t.rawInput`, which put the executor's
-    // developer text on screen -- "itemCode is required", "no project resolved
-    // for this task", and (until the R66 fix) an internal IP:port. The
-    // dictionary in src/lib/task-errors.ts turns the server's {code, missing}
-    // into one closed-vocabulary sentence and, where the row failed for a
-    // reason outside that set, passes the backend's own words through ONLY
-    // when they are safe to show. The rawInput fallback for a healthy row is
-    // unchanged.
-    detail: taskRowDetail(
-      { code: t.code, missing: t.missing, errorContext: t.errorContext, error: t.error, projectName: projectNameById(t.projectId) },
-      t.rawInput
-    ),
+    // R67 B-08/B-10 (D-03): this used to be `t.error ?? t.rawInput` -- the
+    // server's own words, rendered verbatim. That is how "itemCode is
+    // required", "no project resolved for this task" and "write
+    // CONNECT_TIMEOUT 3.109.171.244:6543" reached a site engineer's screen
+    // in the R66 walkthrough. The server now sends a CODE and this composes
+    // the sentence from src/lib/task-errors.ts, which cannot emit a
+    // camelCase parameter, a function id or an address. A row with no
+    // failure at all still shows what the user typed.
+    detail: detailFor(t),
     urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
     urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
-    route,
+    // TWO LANES, ONE DESTINATION, and the more specific one wins.
+    //
+    // A-01 gives every row its MODULE's route, so loading a chain from the
+    // History tab opens the screen it belongs to instead of restoring segments
+    // over whatever screen happens to be on show.
+    //
+    // R67 B-10: a FAILED row has a better answer than "the module". Clicking it
+    // does not just re-open it -- it LOADS THE FIX. The chain below is restored
+    // into the composer (the kit's onLoad -> onLoadChain path, which loads and
+    // stops, never executes) and this route puts the right pane on the screen
+    // that can answer the same question with a form: one click from "Pick a BOQ
+    // line" to the picker. A row that did not fail, or a code with no screen of
+    // its own, falls back to A-01's module route rather than losing one.
+    route: fixChainFor(codeFor(t))?.route ?? route,
     chain: {
       mode: (t.mode?.toLowerCase() as ChainMode) ?? DEFAULT_CHAIN_MODE,
       segments: [
@@ -472,6 +556,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // module's own words, instead of navigating to a screen that would then have
   // to explain itself.
   const [projectPrompt, setProjectPrompt] = useState<string | null>(null);
+  // R67 B-07: band 2 (CONVERSATION). What the server understood, and what it
+  // still needs -- in the closed vocabulary, never a parameter name.
+  const [notice, setNotice] = useState<{ chain: string | null; text: string | null } | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   // The top rail's DOM, so a click that needs a project can send the user to
   // the control that chooses one (A-03) instead of only saying "no".
@@ -1287,6 +1374,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setAwaitingText(false);
       setPlatformNotice(null);
       setProjectPrompt(null);
+      // R67 B-07: band 2 is shared with the verdict, and picking a module is a
+      // NEW request -- leaving the previous answer up would pin "Understood:
+      // <some other chain>" over the verbs of the module just chosen.
+      setNotice(null);
       setLoaded(null);
     },
     [setLoaded]
@@ -1328,6 +1419,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // A-12: one entity segment, replaced rather than chained -- a card IS the
       // whole verb+object, so a second card is a change of mind, not a step.
       setSegments([{ id: card.id, label: card.label, kind: "action" as const }]);
+      // B-07: arming a card is a new request, so the previous verdict stands
+      // down from band 2 (same reason as selectEntity above).
+      setNotice(null);
       if (knownFunctionId) return;
       const href = cardHref(card, card.needsProject ? projectId : null);
       if (!href) return;
@@ -1585,6 +1679,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     if (!typed && !pendingFunctionId) return;
     setSubmitting(true);
     setSubmitError(null);
+    setNotice(null);
     try {
       // R67 A-03 -- THE MODULE HINT TRAVELS WITH THE SUBMISSION. When the user
       // types inside a module, the module is a fact about what they meant, and
@@ -1640,6 +1735,62 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         );
         return;
       }
+
+      // R67 B-07: the TYPED path no longer executes on Send. It answers with
+      // a VERDICT -- what the server understood, and what it still needs --
+      // and mints nothing. Only a second POST {confirm:true, submissionId}
+      // runs it. The PILL path is unchanged: the user already chose the
+      // function, so there is nothing left to confirm.
+      const verdict = pendingFunctionId ? null : (d as SubmissionVerdict | null);
+      if (verdict && typeof verdict.status === "string") {
+        if (verdict.status === "needs_input") {
+          // The question, in the closed vocabulary. NEVER the parameter name.
+          const gap = verdict.missing?.[0];
+          setNotice({
+            chain: verdict.chain ?? null,
+            text: gap ? messageFor(gap.code) : "That needs a little more detail",
+          });
+          // The words the user typed stay in the box: they are most of the
+          // answer, and clearing them would make them type it all again.
+          return;
+        }
+        if (verdict.status === "gap" || verdict.status === "answered" || verdict.status === "chat") {
+          setNotice({ chain: verdict.chain ?? null, text: verdict.message ?? verdict.answer?.text ?? null });
+          setDraft("");
+          await loadTasks();
+          return;
+        }
+        if (verdict.confirmable && verdict.submissionId) {
+          const confirmRes = await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              confirm: true,
+              submissionId: verdict.submissionId,
+              functionId: verdict.understood?.functionId,
+              params: {},
+            }),
+          });
+          const confirmed = await confirmRes.json().catch(() => null);
+          if (!confirmRes.ok) {
+            setSubmitError(
+              confirmed && typeof confirmed.error === "string" && confirmed.error.trim()
+                ? confirmed.error
+                : `Submit failed (HTTP ${confirmRes.status})`
+            );
+            return;
+          }
+          setNotice({ chain: verdict.chain ?? null, text: null });
+        } else if (verdict.status === "ready" && verdict.links?.[0]?.route) {
+          // A COMMAND verb ("Run the Work Progress Report") does not execute
+          // anything server-side -- it opens the screen that already does the
+          // thing, with its parameters attached. Navigating IS the action, so
+          // there is nothing to confirm.
+          setNotice({ chain: verdict.chain ?? null, text: null });
+          router.push(verdict.links[0].route);
+        }
+      }
+
       setDraft("");
       setPendingFunctionId(null);
       setArmedCard(null);
@@ -1652,7 +1803,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks]);
+  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks, router]);
 
   // A-07: pinning is how a user defeats the 7-day decay for work they know is
   // periodic (a month-end report used heavily on the 30th and invisible from
@@ -1828,6 +1979,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSegments([]);
     setPendingFunctionId(null);
     setArmedCard(null);
+    // B-07: an answer about the chain that was just cleared has nothing left to
+    // describe, and band 2 would otherwise carry it onto an unrelated screen.
+    setNotice(null);
     if (outcome === "clear-all") {
       setDraft("");
       setLoaded(null);
@@ -2297,8 +2451,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           onReset={onReset}
           value={draft}
           onChange={setDraft}
-          // BAND 2 -- the picked module's own verbs (A-12).
-          conversation={optionLevel}
+          // BAND 2 -- CONVERSATION. Two lanes land here and they are sequential,
+          // not competing: A-12 gives the band the picked module's own verbs
+          // while the user is still ASSEMBLING a request, and B-07 gives it the
+          // server's answer once they have SENT one ("Understood: <chain>" plus
+          // whatever is still missing). So a live verdict takes the band and the
+          // module's verbs hold it the rest of the time. Picking a module clears
+          // the verdict (onOptionLevel below), so the band always describes the
+          // user's most recent action rather than stacking two conversations.
+          //
+          // The B-07 sentence comes from src/lib/task-errors.ts, so this band
+          // can never print a camelCase parameter, a function id or an address.
+          conversation={
+            notice ? (
+              <div className="px-1 py-0.5 text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                {notice.chain && (
+                  <p style={{ color: "var(--color-ct-muted)" }}>Understood: {notice.chain}</p>
+                )}
+                {notice.text && <p>{notice.text}</p>}
+              </div>
+            ) : (
+              optionLevel
+            )
+          }
           // BAND 3 -- the screen's own verbs first, then six role-ranked cards
           // and "All modules". M24 shows "their top five or six ... That IS the
           // load reduction"; D-10 makes those six verb+object CARDS rather than
