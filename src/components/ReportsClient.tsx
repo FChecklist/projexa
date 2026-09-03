@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -156,13 +156,37 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   // latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
-  async function runReport() {
+  // R67 C-02: THE COMPOSER LEAF AND THE PICKER REACH THE SAME PLACE. Sending
+  // a report from the composer navigates here with ?report=<value>&run=1, so
+  // the picker arrives already set to what the user asked for and the report
+  // runs on arrival instead of making them choose it a second time.
+  //
+  // window.location.search rather than useSearchParams(): this component is
+  // rendered inside the app shell on a route that is not otherwise a
+  // search-param consumer, and reading it on mount keeps the whole page off
+  // Next's client-side-rendering-bailout path for one query string.
+  const arrivalHandled = useRef(false);
+  useEffect(() => {
+    if (arrivalHandled.current) return;
+    arrivalHandled.current = true;
+    const url = new URLSearchParams(window.location.search);
+    const requested = url.get("report");
+    if (!requested || !reports.some((r) => r.value === requested)) return;
+    setReportName(requested);
+    if (url.get("run") === "1") void runReport(requested);
+    // Runs exactly once per mount, guarded by arrivalHandled: this reads the
+    // URL the user ARRIVED on, so re-running it on any later change would
+    // re-run a report the user has since moved away from.
+  }, []);
+
+  async function runReport(overrideName?: string) {
+    const name = overrideName ?? reportName;
     const myGeneration = ++requestGeneration.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ projectId });
-      if (reportName === "weekly-project") params.set("weekStart", weekStart);
-      const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
+      if (name === "weekly-project") params.set("weekStart", weekStart);
+      const res = await fetch(`/api/reports/${encodeURIComponent(name)}?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
@@ -191,7 +215,10 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           {reportName === "weekly-project" && (
             <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
           )}
-          <Button onClick={runReport} disabled={loading}>
+          {/* R67 C-02: wrapped, not passed by reference -- runReport now takes
+              an optional report name, and a bare onClick would hand it the
+              MouseEvent as that argument. */}
+          <Button onClick={() => void runReport()} disabled={loading}>
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
         </CardContent>

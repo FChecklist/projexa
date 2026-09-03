@@ -22,7 +22,7 @@
 // is still required by this layout.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
@@ -66,6 +66,27 @@ import {
   type RowAction,
   type TaskTabId,
 } from "@/components/shell/task-row";
+// R67 C-02: band 2 of the composer, where the chain is built. The kit's
+// OptionChain is mounted here (it had zero consumers), so the leaf the user
+// clicks fills the strip in front of them instead of the strip reading
+// "Select a module to begin" on the very screen it is docked to.
+import { ChainOptionsPanel } from "@/components/shell/ChainOptionsPanel";
+import {
+  DEFAULT_PERIOD,
+  PERIOD_OPTIONS,
+  REPORTS_ENTITY_SEGMENT,
+  REPORTS_PILL_KEY,
+  periodLabel,
+  periodOptionsLevel,
+  reportLeafById,
+  reportOptionsLevel,
+  reportReceiptLine,
+  reportRoute,
+  resolvePeriod,
+  type ChainOptionsLevel,
+  type PeriodId,
+} from "@/lib/card-catalogue";
+import { maskTechnical } from "@/lib/task-errors";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -114,8 +135,15 @@ const FIX_PROMPT: Readonly<Record<string, string>> = {
 
 type Project = { id: string; name: string };
 
+// R67 C-02: the chain segments the Reports level owns, so choosing a second
+// report REPLACES the first rather than appending a second sentence.
+const REPORT_SEGMENT_PREFIX = "report:";
+const PERIOD_SEGMENT_PREFIX = "period:";
+const REPORTS_ROUTE = "/reports";
+
 export default function M24Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
 
   const [mode, setMode] = useState<ChainMode>(DEFAULT_CHAIN_MODE);
   const [segments, setSegments] = useState<Chain["segments"]>([]);
@@ -153,8 +181,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // ever. When null, the typed path { rawInput } is used and the server
   // classifies. Both are the same endpoint.
   const [pendingFunctionId, setPendingFunctionId] = useState<string | null>(null);
+  // R67 C-02: what a pill click means when the server has never seen this
+  // user run that pill, so pillFnRef has no functionId for it. It used to be
+  // written straight into the textarea (":485-487"), which is the one thing a
+  // card or a pill must never do -- M24's box is the user's sentence, not the
+  // product's. The label is carried HERE instead and is used as the typed
+  // path's rawInput on Send, so "click Customers" still reaches exactly where
+  // "type customers" reaches, with the textarea left alone.
+  const [pendingRawInput, setPendingRawInput] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // R67 C-02: the Reports chain -- which report leaf and which period the
+  // user has picked. Neither is armed to run: Send is still a separate,
+  // deliberate act.
+  const [reportId, setReportId] = useState<string | null>(null);
+  const [periodId, setPeriodId] = useState<PeriodId>(DEFAULT_PERIOD);
+  // Band 2's receipt: what was just run, and the link to look at it.
+  const [receipt, setReceipt] = useState<{ text: string; href: string } | null>(null);
+  // The pipeline's own words when it could not record the run. Kept separate
+  // from the receipt because they are different facts and hiding either one
+  // would be the silent-failure defect this programme is removing.
+  const [bandNote, setBandNote] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   // R67 C-01: the selected project's NAME, for D-03's BOQ_LINE_NOT_FOUND
   // sentence ("There is no line 1.02 on Cedar Heights Villa - Phase 1 v3").
@@ -402,6 +449,83 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     projectNameRef.current = project?.name ?? null;
   }, [project]);
 
+  // R67 C-02: THE STRIP STOPS READING "Select a module to begin" ON THE
+  // SCREEN IT IS DOCKED TO. Arriving on /reports seeds the entity segment
+  // after the project, so the sentence already reads
+  // "Projects > Cedar Heights Villa - Phase 1 > Reports" before a click, and
+  // pins the Reports pill so the module the user is standing in is not
+  // ranked off the strip.
+  useEffect(() => {
+    if (pathname !== REPORTS_ROUTE) return;
+    setSegments((prev) =>
+      prev.some((s) => s.id === REPORTS_ENTITY_SEGMENT.id) ? prev : [...prev, REPORTS_ENTITY_SEGMENT]
+    );
+    setPillUsage((prev) => {
+      if (prev.some((r) => r.pillKey === REPORTS_PILL_KEY && r.pinned)) return prev;
+      const existing = prev.find((r) => r.pillKey === REPORTS_PILL_KEY);
+      const next = existing
+        ? prev.map((r) => (r.pillKey === REPORTS_PILL_KEY ? { ...r, pinned: true } : r))
+        : [...prev, { pillKey: REPORTS_PILL_KEY, useCount: 0, lastUsedAt: Date.now(), pinned: true }];
+      try {
+        localStorage.setItem(PILL_USAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [pathname]);
+
+  const onReportsRoute = pathname === REPORTS_ROUTE;
+  const reportsChainActive = useMemo(
+    () => segments.some((s) => s.id === REPORTS_ENTITY_SEGMENT.id),
+    [segments]
+  );
+
+  // WHICH QUESTION BAND 2 IS ASKING. One level at a time, in the order the
+  // sentence is built: the report, then the period it covers.
+  const bandLevel: ChainOptionsLevel | null = useMemo(() => {
+    if (!reportsChainActive) return null;
+    return reportId ? periodOptionsLevel() : reportOptionsLevel();
+  }, [reportsChainActive, reportId]);
+
+  const bandSelectedId = reportId ? periodId : null;
+
+  // *** A LEAF CLICK LOADS THE CHAIN AND STOPS. *** It appends segments and
+  // nothing else: no POST, no navigation, and -- the rule C-02 exists to
+  // restore -- no write into the textarea.
+  const onChainAdvance = useCallback((seg: { id: string; label: string }) => {
+    const leaf = reportLeafById(seg.id);
+    if (leaf) {
+      setReportId(leaf.id);
+      setPeriodId(DEFAULT_PERIOD);
+      setSegments((prev) => [
+        // Choosing a second report REPLACES the first: the strip is one
+        // sentence, and two report names in it read as neither.
+        ...prev.filter(
+          (s) => !s.id.startsWith(REPORT_SEGMENT_PREFIX) && !s.id.startsWith(PERIOD_SEGMENT_PREFIX)
+        ),
+        { id: `${REPORT_SEGMENT_PREFIX}${leaf.id}`, label: leaf.label, kind: "step" as const },
+        // C-02: the period step is appended with the default already chosen,
+        // so the sentence is complete and runnable in one click.
+        {
+          id: `${PERIOD_SEGMENT_PREFIX}${DEFAULT_PERIOD}`,
+          label: periodLabel(DEFAULT_PERIOD),
+          kind: "step" as const,
+        },
+      ]);
+      return;
+    }
+    const period = PERIOD_OPTIONS.find((p) => p.id === seg.id);
+    if (period) {
+      setPeriodId(period.id);
+      setSegments((prev) =>
+        prev.map((s) =>
+          s.id.startsWith(PERIOD_SEGMENT_PREFIX)
+            ? { ...s, id: `${PERIOD_SEGMENT_PREFIX}${period.id}`, label: period.label }
+            : s
+        )
+      );
+    }
+  }, []);
+
   // THE CHAIN. The root segment IS the project, which is what makes the kit's
   // cutChainFrom() protection meaningful: it refuses to cut into a "root"
   // segment, so (x) can never leave the user without a project.
@@ -414,7 +538,15 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // segment array itself -- the whole point of the rule living in chain.ts.
   const onCutFrom = useCallback(
     (index: number) => {
-      setSegments(cutChainFrom(chain, index).segments.filter((s) => s.kind !== "root"));
+      const kept = cutChainFrom(chain, index).segments.filter((s) => s.kind !== "root");
+      setSegments(kept);
+      // R67 C-02: the strip and the composer's own state are ONE sentence. An
+      // (x) that removes the report segment must also un-choose the report,
+      // or Send would still run a report the strip no longer shows.
+      if (!kept.some((s) => s.id.startsWith(REPORT_SEGMENT_PREFIX))) {
+        setReportId(null);
+        setPeriodId(DEFAULT_PERIOD);
+      }
     },
     [chain]
   );
@@ -425,6 +557,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // click was asking goes with it -- leaving it armed would ask about a
     // chain that is no longer on the strip.
     setFixTarget(null);
+    setReportId(null);
+    setPeriodId(DEFAULT_PERIOD);
   }, [chain]);
 
   // LOADS AND STOPS. Sets the mode, restores the chain, navigates. Navigation
@@ -467,27 +601,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // for this would blur exactly what that type exists to guarantee.
     const knownFunctionId = pillFnRef.current[sel.pillKey] ?? null;
     setPendingFunctionId(knownFunctionId);
-    // Sumeet audit fix (2026-08-30): the 14 universal pills (Customers,
-    // Analysis, Reports, ...) are CATEGORY entry points, not single
-    // zero-param functions -- pillFnRef is only ever populated from
-    // /api/pill-usage's response, which returns a user's PAST usage
-    // history (compliance.pill_usage rows), never a static catalog. The
-    // FIRST time anyone clicks a given pill, knownFunctionId is genuinely
-    // null. Before this fix, onSubmit's own guard
-    // (`if (!typed && !pendingFunctionId) return`) made Send a SILENT
-    // no-op in exactly that case -- reproduced by tracing pillConfig.ts ->
-    // the real pill-usage route -> this handler, not guessed. M24's own
-    // rule ("THE SAME NAME MUST REACH THE SAME DESTINATION... WHICHEVER
-    // PATH YOU TOOK") means clicking "Customers" should behave the same as
-    // TYPING "customers" and sending -- so a first-time pill click now
-    // seeds the draft with the pill's own label (only when the draft is
-    // still empty, so it never clobbers something the user already typed),
-    // making the existing typed-path classifier the real destination
-    // instead of a dead end. The "add detail first" placeholder text below
-    // was already promising this was possible; it just never happened.
-    if (!knownFunctionId) {
-      setDraft((prev) => (prev.trim() ? prev : sel.label));
-    }
+    // R67 C-02: THE SAME NAME MUST STILL REACH THE SAME DESTINATION, WITHOUT
+    // WRITING INTO THE BOX.
+    //
+    // The 14 universal pills are CATEGORY entry points, not zero-param
+    // functions, and pillFnRef is only ever populated from /api/pill-usage --
+    // this user's PAST usage. The first time anyone clicks a given pill,
+    // knownFunctionId is genuinely null, and onSubmit's guard used to make
+    // Send a silent no-op in exactly that case. The previous fix seeded the
+    // TEXTAREA with the pill's label, which restored the destination at the
+    // cost of the rule M24 is most explicit about: a card or a pill never
+    // types for the user. The label is carried in state instead and becomes
+    // the typed path's rawInput on Send, so clicking "Customers" behaves
+    // exactly like typing "customers" -- and the box stays the user's.
+    setPendingRawInput(knownFunctionId ? null : sel.label);
   }, []);
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
@@ -500,14 +627,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // outcome here; the minted tasks are re-read from the list instead.
   const onSubmit = useCallback(async () => {
     if (submitting) return;
-    const typed = draft.trim();
-    if (!typed && !pendingFunctionId) return;
+    const typed = draft.trim() || pendingRawInput?.trim() || "";
+    // R67 C-02: a third runnable shape -- a report leaf chosen in band 2.
+    const runningReport = reportsChainActive && reportId ? reportId : null;
+    if (!typed && !pendingFunctionId && !runningReport) return;
     setSubmitting(true);
     setSubmitError(null);
+    setBandNote(null);
     try {
-      const body = pendingFunctionId
-        ? { functionId: pendingFunctionId, params: {}, mode, projectId }
-        : { rawInput: typed, mode, projectId };
+      const range = runningReport ? resolvePeriod(periodId, new Date()) : null;
+      const body = runningReport
+        ? {
+            // The REPORT archetype's own registry function id -- the same one
+            // compliance.screen_definitions carries for this screen.
+            functionId: "reports.report",
+            params: { report: runningReport, projectId, from: range!.from, to: range!.to },
+            mode,
+            projectId,
+          }
+        : pendingFunctionId
+          ? { functionId: pendingFunctionId, params: {}, mode, projectId }
+          : { rawInput: typed, mode, projectId };
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -521,8 +661,33 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         );
         return;
       }
+      if (runningReport && range) {
+        const leaf = reportLeafById(runningReport);
+        const href = reportRoute({ report: runningReport, projectId, from: range.from, to: range.to });
+        // ONE RECEIPT LINE, in band 2, naming what ran, for which project and
+        // over which dates -- so the answer to "did that do anything?" is on
+        // screen instead of inferred from a pane that changed.
+        setReceipt({
+          text: reportReceiptLine({
+            reportLabel: leaf?.label ?? "report",
+            projectName: project?.name ?? null,
+            from: range.from,
+            to: range.to,
+          }),
+          href,
+        });
+        // If the pipeline could not RECORD the run, say so in its own words
+        // rather than letting a clean receipt imply an audit row that does
+        // not exist. The screen still opens: opening it is a read.
+        const messages = Array.isArray(d?.chatMessages) ? (d.chatMessages as unknown[]) : [];
+        if (d?.status === "failed" && typeof messages[0] === "string") {
+          setBandNote(maskTechnical(messages[0]));
+        }
+        router.push(href);
+      }
       setDraft("");
       setPendingFunctionId(null);
+      setPendingRawInput(null);
       // The minted task must APPEAR. That is the last step of R-80 and the
       // only part of the path a unit test cannot stand in for.
       await loadTasks();
@@ -531,7 +696,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, submitting, loadTasks]);
+  }, [
+    draft,
+    pendingRawInput,
+    pendingFunctionId,
+    reportsChainActive,
+    reportId,
+    periodId,
+    project,
+    mode,
+    projectId,
+    submitting,
+    loadTasks,
+    router,
+  ]);
 
   const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
     setPillUsage((prev) => {
@@ -830,6 +1008,41 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           }
+          // BAND 2 -- THE CONVERSATION BAND. Declared by the kit's Composer
+          // since it shipped and never rendered by anything. It carries the
+          // question the chain is asking (the kit's OptionChain, mounted at
+          // last) and the receipt for what was just run.
+          conversation={
+            bandLevel || receipt || bandNote ? (
+              <div className="space-y-2">
+                {bandLevel && (
+                  <ChainOptionsPanel
+                    level={bandLevel}
+                    selectedId={bandSelectedId}
+                    onAdvance={onChainAdvance}
+                    onEmptyAction={(route) => router.push(route)}
+                  />
+                )}
+                {receipt && (
+                  <p className="text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                    {receipt.text}{" "}
+                    <button
+                      type="button"
+                      className="veri-view-tab"
+                      onClick={() => router.push(receipt.href)}
+                    >
+                      Open
+                    </button>
+                  </p>
+                )}
+                {bandNote && (
+                  <p className="text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
+                    {bandNote}
+                  </p>
+                )}
+              </div>
+            ) : undefined
+          }
           onSubmit={onSubmit}
           // R67 G-04: EXACTLY ONE INSTRUCTION PER STATE. The order is
           // most-specific-first, so a real server refusal is never hidden
@@ -840,22 +1053,32 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // The fourth state -- nothing typed yet -- is the one the kit left
           // silent, and the fork's emptyInputReason below now covers it, so
           // there is no state in which Send is dead and unexplained.
+          // R67 C-02: on the Reports screen the sentence that is true is the
+          // one about REPORTS -- "Pick a project or a module first" is
+          // neither, on the screen the module is already open.
           disabledReason={
             submitError ??
-            (submitting ? "Sending…" : projectId || pendingFunctionId ? undefined : "Pick a project or a module first")
+            (submitting
+              ? "Sending…"
+              : projectId || pendingFunctionId || pendingRawInput || reportId
+                ? undefined
+                : onReportsRoute
+                  ? "Choose a report or type what you need"
+                  : "Pick a project or a module first")
           }
-          // With a module armed there is something to run, so an empty
-          // input is a real submission and Send stays live -- which is what
-          // the placeholder has always claimed. Without one, the empty input
-          // is genuinely blocking and gets the sentence that says so.
-          allowEmptySubmit={Boolean(pendingFunctionId)}
+          // With a module armed -- or a report leaf chosen -- there is
+          // something to run, so an empty input is a real submission and Send
+          // stays live, which is what the placeholder has always claimed.
+          // Without one, the empty input is genuinely blocking and gets the
+          // sentence that says so.
+          allowEmptySubmit={Boolean(pendingFunctionId || pendingRawInput || (reportsChainActive && reportId))}
           emptyInputReason="Type what you need, then press Send."
           placeholder={
             // A Fix click loaded a chain and stopped; the box then asks the
             // ONE question that row was blocked on, rather than repeating the
             // generic prompt and leaving the user to work it out.
             (fixTarget?.missingStep ? FIX_PROMPT[fixTarget.missingStep] : undefined) ??
-            (pendingFunctionId
+            (pendingFunctionId || pendingRawInput || (reportsChainActive && reportId)
               ? "Press send to run this, or add detail first…"
               : "Describe what you need, or pick a module above.")
           }
