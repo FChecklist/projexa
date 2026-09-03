@@ -45,7 +45,10 @@ import {
   resolveProjectForModule,
 } from "@/lib/module-list-source";
 import { timeUpstream } from "@/lib/debug-latency";
-import LabourClient, { type RosterEntry } from "@/components/LabourClient";
+// R67 D-32: WS-A's `source` read as "was this chosen FOR the user?". Derived
+// through the one shared helper so the rail and this screen cannot disagree.
+import { fellBackFrom } from "@/lib/project-selection";
+import LabourClient, { type RosterEntry, type RosterFilterState } from "@/components/LabourClient";
 
 const SKELETON = (
   <ModuleListSkeletonBody
@@ -75,10 +78,21 @@ function summaryDate(requested?: string): string {
 
 async function resolveLanding(requestedProjectId: string | undefined, date: string) {
   const organizationId = await getCachedServerOrganizationId();
-  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return { organizationId, projectId: null as string | null, errorMessage, landing: null };
+  // R67 D-32: `source` and `projectName` come back from the same resolution
+  // that produced the id, so naming the project costs no extra hop. On the fast
+  // path projectName is null BY DESIGN -- and the fast path is a `?projectId=`
+  // or the rail's own cookie, which is a choice the user made, so there is
+  // nothing for D-32 to admit to there either. The two nulls agree.
+  const { projectId, errorMessage, source, projectName } = await resolveProjectForModule(
+    requestedProjectId,
+    organizationId
+  );
+  const resolvedByFallback = fellBackFrom(source);
+  if (!projectId) {
+    return { organizationId, projectId: null as string | null, errorMessage, projectName, resolvedByFallback, landing: null };
+  }
   const landing = await getLabourLanding<RosterEntry>(organizationId, projectId, date);
-  return { organizationId, projectId, errorMessage, landing };
+  return { organizationId, projectId, errorMessage, projectName, resolvedByFallback, landing };
 }
 
 async function AttendanceSummarySection({
@@ -100,12 +114,26 @@ async function LabourSection({
   requestedProjectId,
   tab,
   date,
+  // D3 x D21 MERGE (decision D-11): both lanes widened this section's props
+  // for different features -- D3's restored filter, D21's import receipt --
+  // and neither reads the other's, so both are passed through.
+  initialFilter,
+  importedNotice,
 }: {
   requestedProjectId?: string;
   tab?: string;
   date: string;
+  initialFilter: Partial<RosterFilterState>;
+  // R67 D-34: `imported` is the confirmation the bulk-import screen hands
+  // over; that screen unmounts with the navigation, so it cannot carry its
+  // own. It travels down here rather than being read in the client so the
+  // receipt is part of the first painted section, not a second render.
+  importedNotice?: string | null;
 }) {
-  const { organizationId, projectId, errorMessage, landing } = await resolveLanding(requestedProjectId, date);
+  const { organizationId, projectId, errorMessage, projectName, resolvedByFallback, landing } = await resolveLanding(
+    requestedProjectId,
+    date
+  );
   if (!projectId || !landing) return <ModuleProjectNotice errorMessage={errorMessage} />;
 
   const registryColumns = await timeUpstream("labour:screen-definitions", () =>
@@ -118,6 +146,19 @@ async function LabourSection({
       registryColumns={registryColumns}
       initialTab={tab}
       initialRoster={{ rows: landing.roster, errorMessage: landing.errorMessage }}
+      // R67 D-32: read server-side so browser Back restores the filter before
+      // the first paint rather than after it.
+      initialFilter={initialFilter}
+      // R67 D-53: the Daily Summary opens on the day the URL names, which is
+      // the same day the strip above it is about.
+      initialSummaryDate={date}
+      // R67 D-32: the page's own answer to "which project, and did anyone
+      // actually choose it?" -- so the screen can admit to a guess.
+      projectName={projectName}
+      resolvedByFallback={resolvedByFallback}
+      // R67 D-34 (lane D21): the bulk-import receipt, carried down rather than
+      // re-read in the client. Orthogonal to D-32's filter above.
+      importedNotice={importedNotice ?? null}
     />
   );
 }
@@ -125,10 +166,32 @@ async function LabourSection({
 export default async function LabourPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string; date?: string }>;
+  // D3 x D21 MERGE: the union of both lanes' query parameters. D3 reads the
+  // four filter keys (D-32), D21 reads `imported` (D-34); the URL carries all
+  // of them and this screen is the only reader of either set.
+  searchParams: Promise<{
+    projectId?: string;
+    tab?: string;
+    date?: string;
+    q?: string;
+    trade?: string;
+    company?: string;
+    status?: string;
+    imported?: string;
+  }>;
 }) {
-  const { projectId, tab, date } = await searchParams;
+  const { projectId, tab, date, q, trade, company, status, imported } = await searchParams;
   const day = summaryDate(date);
+
+  // R67 D-32: only what the URL actually says. An absent parameter must not
+  // become an empty string, or "no filter" and "filter for nothing" would be
+  // the same request.
+  const initialFilter: Partial<RosterFilterState> = {
+    ...(q ? { q } : {}),
+    ...(trade ? { trade } : {}),
+    ...(company ? { company } : {}),
+    ...(status === "active" || status === "inactive" || status === "all" ? { status } : {}),
+  };
 
   return (
     <div className="flex-1 space-y-6 p-6">
@@ -140,7 +203,13 @@ export default async function LabourPage({
       </Suspense>
 
       <Suspense fallback={SKELETON}>
-        <LabourSection requestedProjectId={projectId} tab={tab} date={day} />
+        <LabourSection
+          requestedProjectId={projectId}
+          tab={tab}
+          date={day}
+          initialFilter={initialFilter}
+          importedNotice={imported ?? null}
+        />
       </Suspense>
     </div>
   );

@@ -84,7 +84,7 @@ import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import { fetchJson } from "@/lib/fetch-json";
 import { DOCUMENT_CATEGORIES, describeFileSize, relatesToWord } from "@/lib/document-intake";
-import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
+import { downloadCsv, toCsv } from "@/lib/csv-export";
 
 // Exported so documents/page.tsx can type the rows it fetches server-side.
 export type Doc = {
@@ -358,7 +358,7 @@ export default function DocumentsClient({
   }
 
   function exportVisible() {
-    const csv = rowsToCsv(
+    const csv = toCsv(
       ["Name", "Category", "Type", "Size", "Relates to", "Expiry", "Added"],
       visible.map((d) => [
         d.name,

@@ -33,7 +33,7 @@ import DataLoadError from "@/components/DataLoadError";
 import { MONEY_CELL_CLASS } from "@/lib/format-money";
 import { formatNumber } from "@/lib/format-number";
 import { useOrgMoney } from "@/lib/use-org-money";
-import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
+import { downloadCsv, toCsv } from "@/lib/csv-export";
 import {
   PROJECT_EXPORT_HEADERS,
   PROJECT_STATUS_OPTIONS,
@@ -103,7 +103,7 @@ export default function ProjectsListClient() {
       filterAction={{ label: "Filter", onClick: () => setFilterOpen((open) => !open) }}
       exportAction={{
         label: "Export",
-        onClick: () => downloadCsv("projects.csv", rowsToCsv(PROJECT_EXPORT_HEADERS, projectExportRows(shown))),
+        onClick: () => downloadCsv("projects.csv", toCsv(PROJECT_EXPORT_HEADERS, projectExportRows(shown))),
         disabledReason: loading ? "Still loading" : shown.length === 0 ? "No rows to export" : undefined,
       }}
       // The frame draws the plus (C01-13), so the label is the plain word.

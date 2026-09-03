@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { MoneyInput } from "@/components/ui/money-input";
+import EntityCombobox from "@/components/EntityCombobox";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 import { createSaveLabel, missingCreateFields, type CreateField, type CreateFiles, type CreateValues } from "@/lib/create-screen";
@@ -196,7 +197,7 @@ export function CreateScreen({
                           setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
                         }
                       />
-                    ) : field.kind === "select" && field.loading ? (
+                    ) : (field.kind === "select" || field.kind === "combobox") && field.loading ? (
                       /* R67 G-04 (R-231): while the options are in flight the
                          control is a disabled skeleton in the select's own
                          shape. It cannot be opened onto an empty menu (which
@@ -235,6 +236,44 @@ export function CreateScreen({
                           </option>
                         ))}
                       </select>
+                    ) : field.kind === "checkbox" ? (
+                      /* R67 D-56: the label sits BESIDE the box and is the
+                         box's own label element, so the whole phrase is the
+                         click target and the accessible name. */
+                      <label className="flex items-center gap-2 text-[13px] text-ct-navy">
+                        <input
+                          id={field.name}
+                          name={field.name}
+                          type="checkbox"
+                          checked={value === "true"}
+                          disabled={field.disabled}
+                          data-testid={field.testId}
+                          aria-describedby={describedBy || undefined}
+                          onChange={(e) => onChange(field.name, e.target.checked ? "true" : "")}
+                          className="size-4 rounded border-px-border"
+                        />
+                        {field.placeholder ?? field.label}
+                      </label>
+                    ) : field.kind === "combobox" ? (
+                      /* R67 D-80: a picker that costs one click. Typing filters
+                         over the label AND the hint, a list of exactly one is
+                         preselected, and the last choice is offered back when it
+                         is still on the list. The value contract is the select's,
+                         so the Save label counts it the same way. */
+                      <EntityCombobox
+                        id={field.name}
+                        options={field.options ?? []}
+                        value={value}
+                        onChange={(next) => onChange(field.name, next)}
+                        placeholder={field.placeholder}
+                        disabled={field.disabled}
+                        loading={field.loading}
+                        storedValue={field.storedValue ?? null}
+                        aria-label={field.label}
+                        onBlur={() =>
+                          setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
+                        }
+                      />
                     ) : field.kind === "money" ? (
                       /* R67 G-05 (R-260): the currency sits inside the box,
                          beside the caret, so it is still visible while the
@@ -248,6 +287,8 @@ export function CreateScreen({
                           currency={money?.currency ?? null}
                           pending={money ? money.loaded === false : true}
                           value={value}
+                          disabled={field.disabled}
+                          title={field.disabledReason}
                           placeholder={field.placeholder}
                           aria-describedby={describedBy || undefined}
                           onChange={(e) => onChange(field.name, e.target.value)}
@@ -286,13 +327,26 @@ export function CreateScreen({
                         name={field.name}
                         type={field.kind}
                         value={value}
+                        disabled={field.disabled}
+                        title={field.disabledReason}
                         placeholder={field.placeholder}
+                        list={field.suggestions?.length ? `${field.name}-suggestions` : undefined}
                         aria-describedby={describedBy || undefined}
                         onChange={(e) => onChange(field.name, e.target.value)}
                         onBlur={() =>
                           setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
                         }
                       />
+                    )}
+
+                    {/* R67 D-34: the shared vocabulary, offered but not
+                        enforced -- see CreateField.suggestions. */}
+                    {field.suggestions && field.suggestions.length > 0 && (
+                      <datalist id={`${field.name}-suggestions`}>
+                        {field.suggestions.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
                     )}
 
                     {field.help && (

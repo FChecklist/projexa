@@ -1,4 +1,3 @@
-import { PageHeading } from "@/components/PageHeading";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import BudgetsClient, { type RegistryColumn } from "@/components/BudgetsClient";
@@ -29,12 +28,17 @@ export default async function BudgetsPage() {
   const organizationId = await getServerOrganizationId();
   const registryColumns = await resolveBudgetsListColumns(organizationId);
 
+  // R67 D-43, carried here at the D1 x D3 merge: the bare
+  // <PageHeading title="Budgets" /> is gone -- BudgetsClient renders the kit's
+  // own ScreenFrame header (breadcrumb + Filter | Export | + New in that fixed
+  // order), the same way PermitsListClient does, so this module's header cannot
+  // drift from every other module's. D3 made this change on
+  // src/app/(app)/budgets/page.tsx; D-62 had already moved the screen here, so
+  // without this the moved page would have rendered TWO stacked headers and the
+  // merge would have shown no conflict at all.
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Budgets" />
-        <BudgetsClient registryColumns={registryColumns} />
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <BudgetsClient registryColumns={registryColumns} />
+    </div>
   );
 }

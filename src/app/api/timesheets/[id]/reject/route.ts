@@ -18,8 +18,12 @@ export const POST = withTiming("POST", async function POST(request: NextRequest,
     const body = await request.json().catch(() => ({}));
     const data = await callVeridian(`/timesheets/${encodeURIComponent(id)}/reject`, {
       organizationId: ctx.organizationId!,
+      // R67 WS-H (D-05): the acting user rides as a header so VERIDIAN can
+      // refuse self-approval against a real person rather than an API key.
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
       method: "POST",
-      body: { ...body, actorEmail: ctx.user?.email ?? null },
+      body,
     });
     return NextResponse.json(data);
   } catch (err) {

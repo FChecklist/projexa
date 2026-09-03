@@ -36,6 +36,26 @@ export type CreateFieldKind =
   | "time"
   | "datetime-local"
   | "select"
+  /**
+   * R67 D-80 merge: a select you can TYPE INTO. Same value contract as
+   * "select" -- one of `options`, or "" -- so missingCreateFields() and the
+   * Save label treat the two identically and a screen can change its mind
+   * about which it uses without anything else moving.
+   *
+   * It exists as a distinct kind rather than as a flag on "select" because a
+   * native <select> and a filtering listbox are different CONTROLS to a screen
+   * reader, not one control with an option. Reach for it where the list is
+   * long enough that scanning it is the slow part -- a roster, a material
+   * master, a task list -- and leave short fixed lists as "select".
+   */
+  | "combobox"
+  /**
+   * R67 D-56 merge: a boolean. The value is "true" or "", so CreateValues
+   * stays Record<string,string> and every existing helper (missingCreateFields,
+   * the Save label) keeps working unchanged. Never mark one `required` -- an
+   * unticked box is an answer, so "required checkbox" has no honest meaning.
+   */
+  | "checkbox"
   | "file";
 
 export type CreateField = {
@@ -53,7 +73,30 @@ export type CreateField = {
    * growing a second error region for one control.
    */
   help?: ReactNode;
-  options?: { value: string; label: string }[];
+  /**
+   * `hint` is the second line on a "combobox" option -- an employee code, a
+   * trade, a spec -- and is matched by the filter as well as the label, so
+   * "mas" finds the mason and two people with one name stay distinguishable.
+   * Ignored by "select", which has nowhere to put it.
+   */
+  options?: { value: string; label: string; hint?: string }[];
+  /**
+   * R67 D-80: the choice this picker remembered from last time, resolved by
+   * the caller (src/lib/last-choice.ts owns the storage and its failure
+   * modes). Offered back only when it is still in `options`. "combobox" only.
+   */
+  storedValue?: string | null;
+  /**
+   * R67 D-34, added by the integration train. A text field whose value SHOULD
+   * come from a shared vocabulary but must not be locked to one: the roster's
+   * Trade is the case that forced it. Free text split every trade-wise total
+   * three ways ("Mason", "mason", "Masonry"), and a plain select would refuse
+   * a trade this org genuinely has and the seed list does not. A native
+   * datalist offers the vocabulary as the user types and still accepts a new
+   * word -- one mechanism, in the archetype, rather than a hand-built combo
+   * box on one screen. Only meaningful for `kind: "text"`.
+   */
+  suggestions?: string[];
   /**
    * R67 G-04 (R-231) merge: a select whose options are still arriving renders
    * a disabled skeleton in the control's own shape rather than putting a word
@@ -62,6 +105,14 @@ export type CreateField = {
   loading?: boolean;
   /** A control there is nothing to choose in yet. It still shows its placeholder. */
   disabled?: boolean;
+  /**
+   * R67 D-42: WHY the control is disabled, shown on the control itself. A form
+   * whose precondition is not met must not leave its inputs live -- a user can
+   * type a budget name and an amount into a form that was never going to accept
+   * them, and lose both. Disabled WITH a reason is the product's rule; disabled
+   * in silence is the defect.
+   */
+  disabledReason?: string;
   /** Stable hook for the browser-level specs that assert this control's states. */
   testId?: string;
   accept?: string;

@@ -20,9 +20,15 @@ import {
   DEFAULT_ORG_LOCALE,
   DEFAULT_ORG_TIME_ZONE,
   formatDate,
+  formatDateNumeric,
   formatDateOrg,
   formatDateTime,
   formatDateTimeOrg,
+  // R67 D-23 / D-28: the BOQ list's "28 Aug 2026" and the work-progress
+  // row's numeric "25-08-2026" are two named helpers, not two inline
+  // toLocaleDateString() calls, so both stay pinned here.
+  formatDayMonthYear,
+  formatDayMonthYearNumeric,
   formatOrgDate,
   formatTime,
 } from "./format-date";
@@ -47,6 +53,20 @@ describe("formatDate", () => {
     const iso = "2026-01-01T12:00:00.000Z";
     expect(formatDate(new Date(iso))).toBe(formatDate(iso));
     expect(formatDate(new Date(iso).getTime())).toBe(formatDate(iso));
+  });
+});
+
+describe("formatDayMonthYear (R67 D-23)", () => {
+  test("renders the BOQ list's unambiguous day-month-year form", () => {
+    expect(formatDayMonthYear("2026-08-28T00:00:00.000Z")).toBe("28 Aug 2026");
+  });
+
+  test("is zero-padded, so a column of dates stays aligned", () => {
+    expect(formatDayMonthYear("2026-01-05T00:00:00.000Z")).toBe("05 Jan 2026");
+  });
+
+  test("does not shift across a UTC day boundary", () => {
+    expect(formatDayMonthYear(new Date("2026-08-28T00:00:00.000Z"))).toBe("28 Aug 2026");
   });
 });
 
@@ -168,5 +188,62 @@ describe("formatDateTimeMedium (the meeting / MoM shape)", () => {
     const iso = "2026-08-25T14:30:00.000Z";
     expect(formatDateTimeMedium(new Date(iso))).toBe(formatDateTimeMedium(iso));
     expect(formatDateTimeMedium(new Date(iso).getTime())).toBe(formatDateTimeMedium(iso));
+  });
+});
+
+// R67: the two day-first forms the product's own copy uses. Pinned here for
+// the same reason as the three above -- an accidental switch to Intl's short
+// month would silently turn "02 Sep 2026" into "02 Sept 2026" in every
+// sentence that quotes it.
+//
+// That is not hypothetical: the D3 x D21 merge left TWO implementations of
+// formatDayMonthYear in format-date.ts, and the Intl-based one really did
+// return "02 Sept 2026" and the literal "Invalid Date". These assertions are
+// what identified which implementation had to survive. Do not relax them.
+describe("formatDayMonthYear", () => {
+  test("renders the three-letter month form the product's sentences use", () => {
+    expect(formatDayMonthYear("2026-09-02")).toBe("02 Sep 2026");
+    expect(formatDayMonthYear("2026-01-31")).toBe("31 Jan 2026");
+  });
+
+  test("is UTC-pinned, so a date-only value never slips a day for a non-UTC visitor", () => {
+    expect(formatDayMonthYear("2026-08-25T00:00:00.000Z")).toBe("25 Aug 2026");
+  });
+
+  test("an unparseable value is the en-dash, never the string 'Invalid Date'", () => {
+    expect(formatDayMonthYear("not-a-date")).toBe(EMPTY_VALUE);
+  });
+});
+
+describe("formatDateNumeric", () => {
+  test("is day-first and zero-padded, unlike formatDate's en-US month-first output", () => {
+    expect(formatDateNumeric("2026-08-28")).toBe("28-08-2026");
+    expect(formatDate("2026-08-28")).toBe("8/28/2026");
+    expect(formatDateNumeric("2026-01-02")).toBe("02-01-2026");
+  });
+
+  test("an unparseable value is the en-dash", () => {
+    expect(formatDateNumeric("nope")).toBe(EMPTY_VALUE);
+  });
+});
+
+// Lane D21's equivalent numeric helper. It and formatDateNumeric above render
+// the same string by different means and both keep their own call sites -- see
+// the "KNOWN DUPLICATION" note in format-date.ts. Both suites are kept.
+describe("formatDayMonthYearNumeric (R67 D-28)", () => {
+  test("renders Work Progress's numeric day-first form", () => {
+    expect(formatDayMonthYearNumeric("2026-08-25T00:00:00.000Z")).toBe("25-08-2026");
+  });
+
+  test("zero-pads both day and month, so a column of dates stays aligned", () => {
+    expect(formatDayMonthYearNumeric("2026-01-05T00:00:00.000Z")).toBe("05-01-2026");
+  });
+
+  test("accepts a plain date-only string, which is what entryDate actually is", () => {
+    expect(formatDayMonthYearNumeric("2026-12-31")).toBe("31-12-2026");
+  });
+
+  test("uses hyphens, never a locale's own separator -- the string is fixed, not formatted by the runtime", () => {
+    expect(formatDayMonthYearNumeric("2026-08-25")).not.toContain("/");
   });
 });

@@ -135,6 +135,7 @@ export default function MoMsClient({
   defaultFilter,
   registryColumns,
   initial = null,
+  deletedTitle = null,
 }: {
   /** null in "all projects" mode -- an explicit state, not a missing value. */
   projectId: string | null;
@@ -157,6 +158,13 @@ export default function MoMsClient({
    * seeded rows can never be shown under a narrower question than they answer.
    */
   initial?: ModuleListInitial<MeetingListRow>;
+  /**
+   * R67 D-17: the confirmation for a delete that happened on the object page,
+   * carried here in ?deleted= because the screen that performed it unmounts.
+   * A persistent notice, not a toast -- the object page's own message band
+   * would have vanished with the navigation.
+   */
+  deletedTitle?: string | null;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<MeetingListRow[]>(
@@ -280,6 +288,15 @@ export default function MoMsClient({
 
   return (
     <div className="space-y-4">
+      {/* R67 D-17: the receipt for a delete that happened on the object page.
+          A persistent notice, not a toast -- the screen that performed the
+          delete unmounted with the navigation, so the only place this can be
+          said is here. */}
+      {deletedTitle && (
+        <Card className="border-px-border bg-px-cloud">
+          <CardContent className="p-3 text-sm text-px-ink" role="status">Deleted meeting &ldquo;{deletedTitle}&rdquo;</CardContent>
+        </Card>
+      )}
       {/* ── The header trio, in the fixed order Filter | Export | + New ── */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-px-muted">

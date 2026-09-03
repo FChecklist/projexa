@@ -103,7 +103,11 @@ export const NOT_YET_SWEPT = [
   "src/components/SalesOrderObjectClient.tsx",
   "src/components/SalesOrdersClient.tsx",
   "src/components/SalesQuotationObjectClient.tsx",
-  "src/components/ScheduleGanttClient.tsx",
+  // src/components/ScheduleGanttClient.tsx -- SWEPT by R67 lane D3's schedule
+  // work, which moved its figures onto the shared money/number formatters. The
+  // exemption died with the defect, which is the rule this list is held to
+  // ("every listed file must still OFFEND"); D1's own money-format-rule test
+  // caught the stale entry when the two lanes met.
   "src/components/ScheduleTimesheetClient.tsx",
   "src/components/reports/pivot-utils.ts",
   // The two vendored shadcn/ui primitives. Both format for a chart axis or a

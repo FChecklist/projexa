@@ -52,7 +52,19 @@ const SKELETON = (
   />
 );
 
-async function ScheduleSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
+async function ScheduleSection({
+  requestedProjectId,
+  tab,
+  query,
+  highlight,
+}: {
+  requestedProjectId?: string;
+  tab?: string;
+  /** R67 D-44: the `?q=` filter, read server-side so Back restores it. */
+  query?: string;
+  /** R67 D-50: `?highlight=` -- the time entry just written, to mark and to receipt. */
+  highlight?: string;
+}) {
   const organizationId = await getServerOrganizationId();
   // A-13: the URL, or nothing. No cookie fallback and no "first project".
   const { project, errorMessage, source, missing, unreachable } = await resolveRouteProject(
@@ -93,23 +105,36 @@ async function ScheduleSection({ requestedProjectId, tab }: { requestedProjectId
         </Card>
       )}
       {project && (
-        <>
-          <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
-          <ScheduleTabsClient projectId={project.id} initialTab={initialTab} timelineColumns={timelineColumns} />
-        </>
+        // R67 D-44: no <h2>{project.name}</h2> here -- the module's header band
+        // (breadcrumb "Schedule > {project}" plus Filter | Export | Import |
+        // + New in that fixed order) names the project, and every one of those
+        // actions needs a client handler. Two places naming the same project is
+        // how the rail and the pane came to disagree in the first place.
+        <ScheduleTabsClient
+          projectId={project.id}
+          projectName={project.name}
+          initialTab={initialTab}
+          initialQuery={query ?? ""}
+          highlightEntryId={highlight}
+          timelineColumns={timelineColumns}
+        />
       )}
     </>
   );
 }
 
-export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; tab?: string; q?: string; highlight?: string }>;
+}) {
+  const { projectId, tab, q, highlight } = await searchParams;
 
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Schedule" />
       <Suspense fallback={SKELETON}>
-        <ScheduleSection requestedProjectId={projectId} tab={tab} />
+        <ScheduleSection requestedProjectId={projectId} tab={tab} query={q} highlight={highlight} />
       </Suspense>
     </div>
   );

@@ -146,9 +146,14 @@ describe("DrawingObjectClient", () => {
     stubDrawing({ ...FRESH, isRecent: false, createdAt: "2026-01-04T10:00:00.000Z" });
     const view = render(<DrawingObjectClient drawingId="d1" projectId="p1" />);
     await waitFor(() => expect(view.getByRole("heading", { name: "AR-101 Ground floor plan" })).toBeTruthy());
-    const dispose = view.getByRole("button", { name: "Dispose" }) as HTMLButtonElement;
+    // R67 merge (D-11, D1 x D21): the name is matched by PREFIX because D-21
+    // now renders the disabled reason as visible text beside the verb, so it is
+    // part of the button's accessible name. The reason is still asserted below,
+    // in both the title and the visible text.
+    const dispose = view.getByRole("button", { name: /^Dispose/ }) as HTMLButtonElement;
     expect(dispose.disabled).toBe(true);
     expect(dispose.title).toBe("Kept under the retention policy - ask an admin to dispose");
+    expect(dispose.textContent).toContain("Kept under the retention policy");
     // The old wording, straight out of the schema, is gone.
     expect(document.body.textContent).not.toContain("No retention policy set");
   });

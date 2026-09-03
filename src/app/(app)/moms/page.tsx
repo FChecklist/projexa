@@ -37,7 +37,10 @@ import { defaultMomsRange, parseMomsFilter, type MomsFilter } from "@/lib/moms-l
 import MoMsClient, { type Meeting } from "@/components/MoMsClient";
 import { ScreenContext } from "@/components/shell/shell-screen-context";
 
-type MoMsSearchParams = { projectId?: string; status?: string; from?: string; to?: string; attendee?: string };
+// R67 D-17: `deleted` is the receipt the object page hands over when a draft
+// meeting is soft-deleted -- that page unmounts with the navigation, so it
+// cannot carry its own confirmation.
+type MoMsSearchParams = { projectId?: string; status?: string; from?: string; to?: string; attendee?: string; deleted?: string };
 
 const SKELETON = (
   <>
@@ -108,6 +111,9 @@ async function MoMsSection({ params }: { params: MoMsSearchParams }) {
           defaultFilter={defaultFilter}
           registryColumns={registryColumns}
           initial={list}
+          // R67 D-17: the soft-delete receipt, carried across the navigation
+          // the object page made on its way out.
+          deletedTitle={params.deleted ?? null}
         />
       )}
     </>

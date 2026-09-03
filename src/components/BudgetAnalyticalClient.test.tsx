@@ -33,7 +33,10 @@ const LINES = [
     vendorId: "sup-1",
     vendorName: "Al Noor Trading",
     vendorAmount: 30000,
-    variance: 5000,
+    // R67 D-26 contract: committed is vendor + material + manpower (105,000)
+    // against a 25,000 budget, so 80,000 OVER -- i.e. -80,000 remaining.
+    committed: 105000,
+    variance: -80000,
   },
   {
     // The line nobody has split or quoted. Every one of its null figures must
@@ -50,17 +53,22 @@ const LINES = [
     vendorId: null,
     vendorName: null,
     vendorAmount: null,
+    committed: null,
     variance: null,
   },
 ];
 
 const REPORT = {
   lines: LINES,
+  boqId: "boq-1",
   totalBudget: 35000,
   totalVendorAmount: 30000,
-  totalVariance: 5000,
+  totalCommitted: 105000,
+  totalVariance: -80000,
   totalMaterialAmount: 60000,
   totalManpowerAmount: 15000,
+  linesOverBudget: 1,
+  lineCount: 2,
 };
 
 const CURRENCIES = [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }];
@@ -145,7 +153,7 @@ describe("BudgetAnalyticalClient (R67 D-62)", () => {
 
   test("Export names its reason at zero rows instead of downloading an empty file", async () => {
     budgetResponse = () =>
-      ok({ lines: [], totalBudget: 0, totalVendorAmount: 0, totalVariance: 0, totalMaterialAmount: 0, totalManpowerAmount: 0 });
+      ok({ lines: [], boqId: null, totalBudget: 0, totalVendorAmount: 0, totalCommitted: null, totalVariance: null, linesOverBudget: 0, lineCount: 0, totalMaterialAmount: 0, totalManpowerAmount: 0 });
     const view = render(<BudgetAnalyticalClient projectId="proj-1" />);
     await waitFor(() => expect(view.getByText("No BOQ line items yet.")).toBeTruthy());
     // The frame appends the reason to the label when a header action is
@@ -256,5 +264,101 @@ describe("BudgetAnalyticalClient (R67 D-62)", () => {
     const view = render(<BudgetAnalyticalClient projectId="proj-1" />);
     await waitFor(() => expect(view.getByText("Blockwork")).toBeTruthy());
     expect(view.getByLabelText("Budget percent for 1.01")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03) -- RESTATED, NOT DELETED.
+//
+// Lane D21 shipped these five assertions against CostVarianceAnalyticalClient,
+// the screen D-62 replaces with this one. That component and its test file are
+// deleted (their subject is gone), so the assertions move here and are restated
+// against BudgetAnalyticalClient. The BEHAVIOUR each one pins down is
+// unchanged; only the mounting component and, where D-62 renamed a control, the
+// wording differ. Deleting them because they no longer compiled would have
+// silently dropped every check on D-26's cost tiles and variance chart.
+// ---------------------------------------------------------------------------
+describe("D-26 cost tiles and variance chart (restated from CostVarianceAnalyticalClient)", () => {
+  const UNCOSTED = {
+    boqId: "boq-1",
+    lines: LINES.map((l) => ({ ...l, vendorAmount: null, materialAmount: null, manpowerAmount: null, committed: null, variance: null })),
+    totalBudget: 35000,
+    totalVendorAmount: 0,
+    totalCommitted: null,
+    totalVariance: null,
+    totalMaterialAmount: 0,
+    totalManpowerAmount: 0,
+    linesOverBudget: 0,
+    lineCount: 2,
+  };
+
+  test("with nothing costed, Committed reads as an en dash rather than a fabricated zero", async () => {
+    budgetResponse = () => ok(UNCOSTED);
+    const view = await renderLoaded();
+    const tile = view.getByText("Committed (vendor + material + manpower)").parentElement;
+    expect(tile?.textContent).toContain("–");
+    expect(tile?.textContent).not.toContain("AED 0");
+  });
+
+  test("'Lines over budget' is counted OF the visible lines, not left as a bare number", async () => {
+    budgetResponse = () => ok(UNCOSTED);
+    const view = await renderLoaded();
+    expect(view.getByText("0 of 2")).toBeTruthy();
+  });
+
+  test("with no committed cost the chart slot says so and links to the current BOQ", async () => {
+    budgetResponse = () => ok(UNCOSTED);
+    const view = await renderLoaded();
+    expect(
+      view.getByText(/No committed cost yet - enter vendor, material or manpower amounts on a BOQ line to see variance\./)
+    ).toBeTruthy();
+    expect(view.getByRole("link", { name: "Open the current BOQ" }).getAttribute("href")).toBe("/scope/boq-1");
+  });
+
+  test("Filter and Export are REAL header actions -- neither carries 'Not yet available'", async () => {
+    const view = await renderLoaded();
+    expect(view.queryByText(/Not yet available/)).toBeNull();
+  });
+
+  test("a costed, over-budget line makes the tiles real and counts itself", async () => {
+    const view = await renderLoaded();
+    // The default REPORT has li-1 committed at 105,000 against a 25,000 budget
+    // and li-2 uncosted, so exactly one of the two lines is over budget.
+    await waitFor(() => expect(view.getByText("1 of 2")).toBeTruthy());
+    const tile = view.getByText("Committed (vendor + material + manpower)").parentElement;
+    expect(tile?.textContent).toContain("105,000");
+  });
+
+  // The defect the auto-merge hid: D-26 flipped `variance` to mean budget
+  // REMAINING, so a NEGATIVE figure is the overrun. Before this merge the cell
+  // painted `variance > 0` red, which coloured every healthy line as a problem
+  // and every real overrun as fine.
+  test("an over-budget line is coloured as late, and an under-budget line is not", async () => {
+    budgetResponse = () =>
+      ok({
+        ...UNCOSTED,
+        lines: [
+          { ...LINES[0], vendorAmount: 30000, materialAmount: null, manpowerAmount: null, committed: 30000, variance: -5000 },
+          { ...LINES[1], vendorAmount: 2000, materialAmount: null, manpowerAmount: null, committed: 2000, variance: 8000 },
+        ],
+        totalCommitted: 32000,
+        totalVariance: 3000,
+        linesOverBudget: 1,
+        lineCount: 2,
+      });
+    const view = await renderLoaded();
+    // Found by the status class rather than by a formatted string: the money
+    // helper prefixes the code and then the sign ("AED -5,000"), and pinning
+    // that exact spelling here would make this a test of the formatter.
+    const varianceCells = [...view.container.querySelectorAll("span")].filter((s) =>
+      s.className.includes("--color-veri-status")
+    );
+    expect(varianceCells).toHaveLength(2);
+    const over = varianceCells.find((s) => s.textContent!.includes("5,000"))!;
+    const under = varianceCells.find((s) => s.textContent!.includes("8,000"))!;
+    expect(over).toBeDefined();
+    expect(under).toBeDefined();
+    expect(over.className).toContain("late");
+    expect(under.className).toContain("done");
   });
 });

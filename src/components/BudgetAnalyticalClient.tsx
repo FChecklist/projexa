@@ -20,7 +20,31 @@
 // budgetPercentage, vendorId, vendorAmount, materialAmount and manpowerAmount are all
 // real, long-standing columns on construction_boq_line_items. They had a write
 // path and a report; what they did not have was a screen.
+//
+// R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03) -- WHAT WAS FOLDED IN HERE.
+// D21 landed on main first and rewrote the screen this one replaces
+// (CostVarianceAnalyticalClient) rather than deleting it, adding D-26's cost
+// tiles and variance chart. Both lanes were right about different halves, so:
+//
+//   - THIS screen survives, because it is the genuine superset: D21's version
+//     was still read-only, and the whole point of D-62 is that these figures
+//     must be editable in place.
+//   - D21's D-26 work FOLDED IN rather than being lost: the "Committed
+//     (vendor + material + manpower)" tile, the "Lines over budget: n of m"
+//     count, and the no-committed-cost empty state that links to the current
+//     BOQ. Its five assertions were RESTATED against this screen in
+//     BudgetAnalyticalClient.test.tsx; none was dropped.
+//   - CostVarianceAnalyticalClient.tsx and its test are deleted, since their
+//     subject is gone. Two doors onto one set of figures, one of them
+//     read-only, is the confusion D-62 exists to remove.
+//   - A REAL DEFECT the auto-merge hid: D-26 flipped `variance` from overspend
+//     to budget REMAINING in compliance-tracker, and git merged this file
+//     without a conflict because D21 never touched it. The row colouring and
+//     the tile label here both read the old sign, so every under-budget line
+//     rendered red. Fixed at the cell, and budget-lines.ts's type now states
+//     the new meaning. See the note on BudgetLine.committed.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AnalyticalScreen, KpiTag } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -33,7 +57,7 @@ import DataLoadError from "@/components/DataLoadError";
 import { MONEY_CELL_CLASS } from "@/lib/format-money";
 import { formatNumber } from "@/lib/format-number";
 import { useOrgMoney } from "@/lib/use-org-money";
-import { downloadCsv, rowsToCsv } from "@/lib/csv-export";
+import { downloadCsv, toCsv } from "@/lib/csv-export";
 import {
   BUDGET_EXPORT_HEADERS,
   budgetExportRows,
@@ -149,7 +173,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   }
 
   function exportVisible() {
-    downloadCsv(`budget-${projectId}.csv`, rowsToCsv(BUDGET_EXPORT_HEADERS, budgetExportRows(shown)));
+    downloadCsv(`budget-${projectId}.csv`, toCsv(BUDGET_EXPORT_HEADERS, budgetExportRows(shown)));
   }
 
   const editable = view === "budget";
@@ -176,7 +200,18 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
           <KpiTag label="Material" value={totals.material === null ? "Not set" : money(totals.material)} />
           <KpiTag label="Manpower" value={totals.labour === null ? "Not set" : money(totals.labour)} />
           <KpiTag label="Vendor amount" value={totals.vendorAmount === null ? "Not quoted yet" : money(totals.vendorAmount)} />
-          <KpiTag label="Variance" value={totals.variance === null ? "Not quoted yet" : money(totals.variance)} />
+          {/* R67 merge (D-11, D1 x D21): D-26's two tiles, folded in from the
+              deleted CostVarianceAnalyticalClient. "Committed" is the figure
+              that made D-26 worth doing -- a budget compared only against the
+              subcontract understated every line costed through material and
+              manpower. The en dash (never "AED 0") is load-bearing: nothing
+              costed is not the same as costed at zero. */}
+          <KpiTag label="Committed (vendor + material + manpower)" value={totals.committed === null ? "–" : money(totals.committed)} />
+          <KpiTag label="Lines over budget" value={`${totals.overBudgetLines} of ${shown.length}`} />
+          {/* Named "Budget remaining", not "Variance": D-26 flipped the sign so
+              the number means what is LEFT, and the old one-word label would
+              have kept reading as overspend. */}
+          <KpiTag label="Budget remaining" value={totals.variance === null ? "Not quoted yet" : money(totals.variance)} />
         </>
       }
       chart={
@@ -243,6 +278,22 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
                 </button>
               )}
             </div>
+          )}
+          {/* R67 merge (D-11, D1 x D21): D-26's empty state, folded in from the
+              deleted CostVarianceAnalyticalClient. Without it the three cost
+              tiles read as an en dash with nothing saying why, or what to do
+              about it. The link is the shortest route to the only screen where
+              the missing figures can actually be entered. */}
+          {!loading && !loadError && totals.committed === null && lines.length > 0 && (
+            <p className="text-[12.5px] text-ct-muted">
+              No committed cost yet - enter vendor, material or manpower amounts on a BOQ line to see variance.
+              {report?.boqId && (
+                <>
+                  {" "}
+                  <Link href={`/scope/${report.boqId}`} className="underline">Open the current BOQ</Link>
+                </>
+              )}
+            </p>
           )}
           {saveError && (
             <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{saveError}</p>
@@ -409,7 +460,14 @@ function BudgetRow({
         {line.variance === null ? (
           <span className="text-ct-muted">Not quoted</span>
         ) : (
-          <span className={line.variance > 0 ? "text-[color:var(--color-veri-status-late)]" : "text-[color:var(--color-veri-status-done)]"}>
+          // R67 MERGE DEFECT FIX (D-11, lane D1 x lane D21, 2026-09-03). This
+          // test read `variance > 0` as OVERSPENT, which was right while
+          // variance meant vendorAmount - budget. D-26 flipped the backend to
+          // budget REMAINING without touching this file, and git auto-merged it
+          // with no conflict -- leaving every under-budget line red and every
+          // overrun green. Negative remaining is the overrun now, and
+          // budgetTotals().overBudgetLines counts it the same way.
+          <span className={line.variance < 0 ? "text-[color:var(--color-veri-status-late)]" : "text-[color:var(--color-veri-status-done)]"}>
             {money(line.variance)}
           </span>
         )}

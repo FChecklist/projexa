@@ -70,6 +70,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review/certifications/[id]": "ORG_ADMIN",
   "/assistant": "ANY_MEMBER",
   "/attendance": "FIELD",
+  // R67 D-30: the whole-roster daily sheet. Same tier as the one-worker
+  // write it batches -- marking a site's attendance is field work, and a
+  // batch of the same act is not a more privileged one.
+  "/attendance/bulk": "FIELD",
+  // R67 D-31: minting a public, unauthenticated link to this project's
+  // attendance and labour cost is a commercial disclosure, not a site record --
+  // same tier as /work-progress/report/share, which shares the identical
+  // mechanism.
+  "/attendance/summary/share": "PM_OR_ABOVE",
   "/audit-engagements": "ORG_ADMIN",
   "/audit-findings": "ORG_ADMIN",
   "/audit-findings/[id]": "ORG_ADMIN",
@@ -137,6 +146,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/kpis": "PM_OR_ABOVE",
   "/labour-roster": "FIELD",
   "/labour-roster/[id]": "FIELD",
+  // R67 D-34: bulk roster load. Same tier as adding one worker -- it is the
+  // same write, thirty-eight times, done by the same person on site.
+  "/labour-roster/import": "FIELD",
   "/leads": "PM_OR_ABOVE",
   "/leads/[id]": "PM_OR_ABOVE",
   "/leads/bulk-reassign": "PM_OR_ABOVE",
@@ -145,6 +157,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/leave/requests": "ANY_MEMBER",
   "/leave/requests/[id]/decision": "PM_OR_ABOVE",
   "/materials": "FIELD",
+  // R67 D-36: the receipt's soft void. Same tier as recording the receipt --
+  // correcting a mis-keyed delivery is the same site work as entering it,
+  // and the void keeps the row rather than destroying it.
+  "/materials/[id]": "FIELD",
+  // R67 D-40: issuing material to site is the storekeeper's own job, the same
+  // site work as recording what arrived -- so the same tier as /materials.
+  "/materials/issues": "FIELD",
   "/materials/master": "FIELD",
   "/materials/master/[id]": "FIELD",
   "/meetings": "FIELD",
@@ -286,6 +305,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/timesheets/[id]/approve": "PM_OR_ABOVE",
   "/timesheets/[id]/reject": "PM_OR_ABOVE",
   "/timesheets/[id]/submit": "ANY_MEMBER",
+  // R67 WS-H (item H-01): submitting a whole day is the same self-action as
+  // submitting one entry -- a designer submitting their OWN hours -- so it
+  // carries the same policy as /timesheets/[id]/submit, not a stricter one.
+  // VERIDIAN independently refuses to move anyone else's rows.
+  "/timesheets/submit-day": "ANY_MEMBER",
+  // R67 WS-H (item H-03): deciding a whole day at once is the same authority as
+  // deciding one entry -- PM and above -- so it matches /timesheets/[id]/approve
+  // rather than the designer-side submit-day beside it.
+  "/timesheets/review-day": "PM_OR_ABOVE",
   // R52: the composer's submit target. Same class as /discuss and /todos --
   // any member may ask the assistant to do something, and what they are
   // ALLOWED to do is re-checked server-side at execution, per R53's rule that
@@ -310,6 +338,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",
+  // R67 D-28: correcting or deleting one progress entry. Same tier as logging
+  // it -- the site engineer who mis-keyed a quantity is the person who has to
+  // be able to fix it, and VERIDIAN re-runs the create path's own validation on
+  // both.
+  "/work-progress/[id]": "FIELD",
   "/work-progress/activities": "FIELD",
   "/work-progress/photos": "FIELD",
   "/work-progress/report/share": "PM_OR_ABOVE",

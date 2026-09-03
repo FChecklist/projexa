@@ -45,15 +45,102 @@ import {
   type ScheduleTypesState,
 } from "@/lib/schedule-type-state";
 import type { CreateField } from "@/lib/create-screen";
+import { dueDateError, dueDateFromDuration, durationFieldValue } from "@/lib/schedule-activity";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
+type ScheduleTask = { id: string; number?: number; title: string };
+type BoqLine = { id: string; description?: string | null; itemCode?: string | null };
+type Boq = { lineItems?: BoqLine[] };
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
+
+type Lookup<T> = { rows: T[]; loading: boolean; error: string | null };
+function emptyLookup<T>(): Lookup<T> {
+  return { rows: [], loading: true, error: null };
+}
 
 export default function ScheduleTaskCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [types, setTypes] = useState<IssueType[]>([]);
   const [typesState, setTypesState] = useState<ScheduleTypesState>("loading");
   const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
+  // R67 D-47: the four things the form could not send at all -- a START, a
+  // DURATION, what the activity FOLLOWS, and which BOQ line it earns its value
+  // against -- which is why the Timeline it feeds could not draw a bar, could
+  // not draw a dependency line, and had nothing to compare against a baseline.
+  const [predecessors, setPredecessors] = useState<Lookup<ScheduleTask>>(emptyLookup<ScheduleTask>());
+  const [boqLines, setBoqLines] = useState<Lookup<BoqLine>>(emptyLookup<BoqLine>());
+
+  const loadPredecessors = useCallback(async () => {
+    setPredecessors((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const data = await fetchJson<{ tasks?: ScheduleTask[] }>(
+        `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`
+      );
+      setPredecessors({ rows: data.tasks ?? [], loading: false, error: null });
+    } catch (err) {
+      setPredecessors({
+        rows: [],
+        loading: false,
+        error: err instanceof Error && err.message ? err.message : "Could not load this project's activities",
+      });
+    }
+  }, [projectId]);
+
+  const loadBoqLines = useCallback(async () => {
+    setBoqLines((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
+      setBoqLines({ rows: (data.boqs ?? []).flatMap((b) => b.lineItems ?? []), loading: false, error: null });
+    } catch (err) {
+      setBoqLines({
+        rows: [],
+        loading: false,
+        error: err instanceof Error && err.message ? err.message : "Could not load this project's BOQ lines",
+      });
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadPredecessors();
+    void loadBoqLines();
+  }, [loadPredecessors, loadBoqLines]);
+
+  const isMilestone = values.isMilestone === "true";
+
+  /**
+   * R67 D-47/D-56. Start, Duration and Finish are three views of ONE window,
+   * so editing any of them re-derives the others rather than letting the form
+   * hold three facts that disagree. Ticking Milestone collapses the window
+   * onto the start date (a milestone IS a zero-length activity) and unticking
+   * hands the finish date back.
+   */
+  const handleChange = useCallback((name: string, value: string) => {
+    setValues((v) => {
+      const next = { ...v, [name]: value };
+      if (name === "isMilestone") {
+        if (value === "true") next.dueDate = next.startDate ?? "";
+        return next;
+      }
+      if (v.isMilestone === "true") {
+        // A milestone has no duration to preserve: its finish IS its start.
+        if (name === "startDate") next.dueDate = value;
+        return next;
+      }
+      if (name === "durationDays") {
+        const derived = dueDateFromDuration(next.startDate ?? "", value);
+        if (derived) next.dueDate = derived;
+      } else if (name === "dueDate") {
+        next.durationDays = durationFieldValue(next.startDate ?? "", value);
+      } else if (name === "startDate") {
+        if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
+        else if (next.durationDays) {
+          const derived = dueDateFromDuration(value, next.durationDays);
+          if (derived) next.dueDate = derived;
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const loadTypes = useCallback(async () => {
     setTypesState("loading");
@@ -119,7 +206,98 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       required: true,
       options: PRIORITY_OPTIONS.map((p) => ({ value: p, label: p.replace(/_/g, " ") })),
     },
-    { name: "dueDate", label: "Due Date", kind: "date" },
+    {
+      // R67 D-47: a programme needs a START. Required, and it is what the
+      // duration and the finish are both derived from.
+      name: "startDate",
+      label: "Start Date",
+      kind: "date",
+      required: true,
+    },
+    {
+      name: "durationDays",
+      label: "Duration (days)",
+      kind: "number",
+      placeholder: "e.g. 5",
+      disabled: isMilestone,
+      help: isMilestone ? "A milestone has no duration" : "Or set the finish date - each derives the other",
+    },
+    {
+      name: "dueDate",
+      label: "Due Date",
+      kind: "date",
+      disabled: isMilestone,
+      help: isMilestone ? "Follows the start date" : undefined,
+      validate: (value) => dueDateError(values.startDate ?? "", value),
+    },
+    {
+      // R67 D-56: a milestone is an activity with a zero-length window
+      // (Finish = Start) rather than a flag column -- pms_issues already
+      // carries both dates, and "no duration" IS what a milestone means.
+      name: "isMilestone",
+      label: "Milestone",
+      kind: "checkbox",
+      placeholder: "Milestone (finish is the same day as start)",
+    },
+    {
+      name: "predecessorId",
+      label: "Predecessor",
+      kind: "select",
+      loading: predecessors.loading,
+      placeholder: predecessors.error ? "Predecessors didn't load" : "None",
+      options: predecessors.rows.map((t) => ({
+        value: t.id,
+        label: t.number ? `#${t.number} ${t.title}` : t.title,
+      })),
+      help: predecessors.error ? (
+        <>
+          {predecessors.error}{" "}
+          <button
+            type="button"
+            onClick={() => void loadPredecessors()}
+            className="font-medium underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </>
+      ) : predecessors.loading ? (
+        "The activity this one follows"
+      ) : predecessors.rows.length === 0 ? (
+        // D-47: an empty dropdown says nothing. This one says why it is empty.
+        "No other activities on this project yet - this will be the first"
+      ) : (
+        "The activity this one follows"
+      ),
+    },
+    {
+      name: "boqLineItemId",
+      label: "BOQ item",
+      kind: "select",
+      loading: boqLines.loading,
+      placeholder: boqLines.error ? "BOQ lines didn't load" : "None",
+      options: boqLines.rows.map((l) => ({
+        value: l.id,
+        label: [l.itemCode, l.description].filter(Boolean).join(" - ") || l.id,
+      })),
+      help: boqLines.error ? (
+        <>
+          {boqLines.error}{" "}
+          <button
+            type="button"
+            onClick={() => void loadBoqLines()}
+            className="font-medium underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </>
+      ) : boqLines.loading ? (
+        "The scope line this activity earns its value against"
+      ) : boqLines.rows.length === 0 ? (
+        "No BOQ lines on this project yet - add a BOQ to earn value against it"
+      ) : (
+        "The scope line this activity earns its value against"
+      ),
+    },
   ];
 
   const submit = useSubmit<{ id?: unknown }>({
@@ -134,7 +312,14 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
           title: (values.title ?? "").trim(),
           typeId: values.typeId || undefined,
           priority: values.priority,
+          startDate: values.startDate,
           dueDate: values.dueDate || undefined,
+          // Only one of the two is sent: the finish date is authoritative
+          // when the user set it, and the duration is what the service
+          // derives it from when they did not.
+          durationDays: values.dueDate ? undefined : values.durationDays ? Number(values.durationDays) : undefined,
+          predecessorId: values.predecessorId || undefined,
+          boqLineItemId: values.boqLineItemId || undefined,
         }),
       },
     }),
@@ -153,7 +338,7 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       title="New Task"
       fields={fields}
       values={values}
-      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      onChange={handleChange}
       failure={submit.failure}
       onRetry={submit.submit}
       saving={submit.saving}

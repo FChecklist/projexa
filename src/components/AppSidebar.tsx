@@ -10,6 +10,7 @@ import {
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
+  Clock,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
 import { filterShippedNav } from "@/lib/nav-routes";
@@ -71,6 +72,11 @@ const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.design",
     items: [
+      // R67 WS-H (item H-01): the Design Studio joins the DESIGN group beside
+      // Mood Boards, FF&E Specification and Floor Plans. Its Review and Cost
+      // analysis tabs are deliberately NOT separate nav entries -- see
+      // nav-routes.test.ts's allowlist for that reasoning.
+      { labelKey: "items.designStudio", href: "/design-studio", icon: Clock },
       { labelKey: "items.moodBoards", href: "/mood-boards", icon: Palette },
       { labelKey: "items.ffe", href: "/ffe", icon: Sofa },
       { labelKey: "items.floorPlans", href: "/floor-plans", icon: LayoutPanelLeft },

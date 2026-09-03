@@ -25,12 +25,18 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
 import { getShellVendors } from "@/lib/shell-store";
 import type { CreateField } from "@/lib/create-screen";
-
-type Vendor = { id: string; vendorName: string };
+// R67 D-34 (R-085), folded in by the integration train: the org's trade
+// vocabulary. Trade was free text, so the same job arrived as "Mason", "mason"
+// and "Masonry" and split every trade-wise total downstream. useTrades() reads
+// the merged list (seed trades plus every trade this org has actually used)
+// from /api/labour-roster/trades and never blocks the form -- a failed lookup
+// leaves the field as plain free text, which is what it was before.
+import { useTrades, type Vendor } from "@/components/RosterFields";
 
 export default function RosterCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const orgMoney = useOrgMoney();
+  const trades = useTrades();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsError, setVendorsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -72,7 +78,46 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
   const fields: CreateField[] = [
     { name: "employeeCode", label: "ID", kind: "text", placeholder: "e.g. EMP-001" },
     { name: "name", label: "Name", kind: "text", required: true, placeholder: "e.g. Ramesh Kumar" },
-    { name: "trade", label: "Trade", kind: "text", placeholder: "e.g. Mason, Electrician" },
+    {
+      name: "trade",
+      label: "Trade",
+      kind: "text",
+      // D3 x D21 MERGE (decision D-11). The two lanes changed this ONE field
+      // for two different reasons, and the reasons do not collide -- so both
+      // survive, and nothing here is a compromise between them.
+      //
+      // D3 / D-53: Trade is REQUIRED. It used to be optional, and the cost of
+      // that was only visible once the Daily Summary existed: every un-traded
+      // worker fell into an "Uncategorised trade" bucket on the one report the
+      // site manager reads each morning, so the trade-wise cost he is looking
+      // for was silently spread across a bucket that means nothing. The point
+      // of entry is the only place that can be fixed -- the summary can only
+      // report what was recorded. Existing rows are untouched and still group
+      // under the bucket; this stops the bucket growing. Marking it required
+      // here is also what puts it in the button: "Save (Name, Trade, Daily
+      // Rate)", through the same archetype that produced "Save (Name, Daily
+      // Rate)" before it.
+      required: true,
+      placeholder: "e.g. Mason, Electrician",
+      // D21 / D-34: the suggestion list is OFFERED, not enforced. Picking from
+      // it is what stops "Mason"/"mason"/"Masonry" splitting the same crew
+      // three ways; typing a trade the org genuinely has and the list does not
+      // is still allowed. `required` and `suggestions` are orthogonal in the
+      // archetype -- required is checked by missingCreateFields() against the
+      // typed value, and suggestions only renders a <datalist> -- so "must be
+      // answered" and "here are the answers we already know" compose exactly
+      // as a user would expect.
+      suggestions: trades,
+      // Both help sentences said something true and neither said the other's,
+      // so the merged line keeps D3's REASON (why the field is mandatory) and
+      // adds D21's ADVICE (prefer an existing trade) only when there is a list
+      // to prefer. On a cold or failed /trades lookup the field degrades to
+      // required free text, which is exactly what D3 shipped.
+      help:
+        trades.length > 0
+          ? "Groups this worker on the Daily Summary's trade-wise cost -- pick an existing trade where you can, so the totals stay together."
+          : "Groups this worker on the Daily Summary's trade-wise cost",
+    },
     {
       name: "vendorId",
       label: "Company",
@@ -106,7 +151,7 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
           projectId,
           name: values.name,
           employeeCode: values.employeeCode || undefined,
-          trade: values.trade || undefined,
+          trade: values.trade,
           vendorId: values.vendorId || undefined,
           dailyRate: Number(values.dailyRate),
         }),
@@ -124,7 +169,11 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       module="Labour"
       moduleHref={moduleHref}
       objectLabel="Worker"
-      title="Add Worker to Roster"
+      // R67 D-34, folded in by the integration train: the title override is
+      // GONE, so the archetype's own `New ${objectLabel}` applies. "Add Worker
+      // to Roster" was the one create screen not reading "New <Object>", and
+      // it is also the label the create menu uses for this route
+      // (module-create-routes.ts: "Worker"). One name, one destination.
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}

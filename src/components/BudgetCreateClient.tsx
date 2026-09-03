@@ -56,7 +56,7 @@
 //         resolves the real origin, but it is server-only, so the page passes
 //         it in. No origin means NO link: a link to nowhere is worse than
 //         none, and that is a case the hardcoded fallback could not express.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { CreateScreen } from "@/components/screens/CreateScreen";
@@ -67,6 +67,7 @@ import { useSubmit } from "@/lib/use-submit";
 import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
 import type { CreateField } from "@/lib/create-screen";
+import { ROLE_GROUPS } from "@/lib/authz/roles";
 
 /** D-62: the ERP budget's real home. /budgets/* are redirect shims onto it. */
 const MODULE_HREF = "/finance/budgets";
@@ -112,6 +113,41 @@ type FiscalYear = { id: string; yearName: string; startDate: string; endDate: st
 type CostCenter = { id: string; name: string; projectId: string | null };
 type Account = { id: string; accountName: string; accountNumber: string | null };
 
+// R67 merge (D-11, D1 x D3): D3 built this link from NEXT_PUBLIC_VERIDIAN_APP_URL
+// with a PRODUCTION HOST as its fallback. That is wrong for any deployment
+// pointed at a different VERIDIAN -- it would send the user to another
+// company's ERP, and could never render no link at all. D1's erpSetupHref()
+// above takes the origin the server actually resolved and answers null when
+// there is none, so the two constants D3 declared here are gone.
+
+/** C-15's exact wording for the shortened primary. */
+export const BUDGET_PRECONDITION_LABEL = "needs a fiscal year and an account";
+
+// ─── R67 D-42 merge: WHO can act on the block ────────────────────────────
+//
+// C-15's "Set up in VERIDIAN" is the right destination, and it is kept -- it
+// goes to the real ERP provisioning screen, which is better than the guess
+// this lane originally shipped (/accounting, PROJEXA's read-only surface onto
+// it). What it does not answer is D-42's other half: only an org admin can
+// provision a fiscal year, so for everyone else that link opens a screen they
+// cannot use. A site engineer gets a way to ASK instead, and the asking files
+// a real task rather than telling them to go and do something their role
+// forbids.
+//
+// The group is ROLE_GROUPS.ORG_ADMIN (owner | admin) -- the real group in
+// src/lib/authz/roles.ts. D-42's own wording says "ROLE_GROUPS.ADMIN", which
+// does not exist in this repo.
+export const NON_ADMIN_ACTION_LABEL = "Ask your administrator";
+
+// The task filed on a non-admin's behalf. Deliberately the sentence a person
+// would write, because it is read by a person in the left pane.
+export const ADMIN_TASK_TEXT = "Set up fiscal year — needs admin";
+
+/** Only the org's own admins can provision an ERP fiscal year. */
+function canSetUpAccounting(role: string | null | undefined): boolean {
+  return !!role && (ROLE_GROUPS.ORG_ADMIN as readonly string[]).includes(role);
+}
+
 export default function BudgetCreateClient({ veridianOrigin }: { veridianOrigin?: string | null }) {
   const router = useRouter();
   const orgMoney = useOrgMoney();
@@ -123,6 +159,45 @@ export default function BudgetCreateClient({ veridianOrigin }: { veridianOrigin?
   const [lookupError, setLookupError] = useState<string | null>(null);
 
   const [values, setValues] = useState<Record<string, string>>({});
+  // R67 D-42: the viewer's own role, for the branch below. A failed or missing
+  // role read leaves `role` null, which is treated as NOT an admin -- the
+  // "ask" path is safe to offer to an admin, whereas sending someone who
+  // cannot act to a provisioning screen is not.
+  const [role, setRole] = useState<string | null>(null);
+  const [askState, setAskState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [askError, setAskError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchJson<{ role?: string | null }>("/api/organization")
+      .then((d) => {
+        if (live) setRole(d.role ?? null);
+      })
+      .catch(() => {
+        if (live) setRole(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const askAdministrator = useCallback(async () => {
+    setAskState("sending");
+    setAskError(null);
+    try {
+      // A real pipeline task, on the same surface the left pane reads, so the
+      // request appears under "Waiting on others" rather than evaporating.
+      await fetchJson("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawInput: ADMIN_TASK_TEXT, mode: "projects", projectId: null }),
+      });
+      setAskState("sent");
+    } catch (err) {
+      setAskState("failed");
+      setAskError(err instanceof Error && err.message ? err.message : "Could not send that request");
+    }
+  }, []);
 
   // R67 MERGE (lane F2's F-19, audit R-245). THIS WAS Promise.all, AND THAT
   // WAS THE BUG: one failed lookup rejected the whole batch, so a 500 on
@@ -178,6 +253,15 @@ export default function BudgetCreateClient({ veridianOrigin }: { veridianOrigin?
   // for the two fields that DID answer.
   const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
   const setupHref = erpSetupHref(veridianOrigin);
+
+  // R67 D-42: the two text inputs used to stay LIVE while the form could not be
+  // saved, so a user could type a budget name and an amount into a form that was
+  // never going to accept them. Every field is disabled while blocked -- and
+  // disabled from the FIRST paint, while the lookups are still in flight, so the
+  // form only ever RELAXES and never flips from enabled to blocked in front of
+  // someone mid-keystroke.
+  const fieldsDisabled = lookupsLoading || blocked;
+  const fieldsDisabledReason = lookupsLoading ? "Loading…" : blocked ? BUDGET_PRECONDITION_LABEL : undefined;
 
   const fields: CreateField[] = [
     // While blocked, no field is marked required: the primary must read
@@ -240,6 +324,11 @@ export default function BudgetCreateClient({ veridianOrigin }: { veridianOrigin?
       : []),
   ];
 
+  for (const field of fields) {
+    field.disabled = field.disabled || fieldsDisabled;
+    field.disabledReason = field.disabledReason ?? fieldsDisabledReason;
+  }
+
   const submit = useSubmit<{ id?: unknown }>({
     objectLabel: "Budget",
     buildRequest: () => ({
@@ -285,19 +374,46 @@ export default function BudgetCreateClient({ veridianOrigin }: { veridianOrigin?
       onSubmit={submit.submit}
       onCancel={() => router.push(MODULE_HREF)}
       secondaryAction={
-        blocked && setupHref ? (
-          // C-15: the block names itself AND opens the screen that clears it.
-          // Rendered only when a VERIDIAN origin was actually resolved -- a
-          // link to nowhere is worse than no link.
-          <a
-            href={setupHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
-          >
-            Set up in VERIDIAN
-            <ExternalLink className="size-3.5" aria-hidden />
-          </a>
+        // R67 merge (D-11, D1 x D3): D3's role split is kept whole -- an admin
+        // gets the link, everyone else gets a way to ASK, because the fix is not
+        // theirs to make. D1's rule rides on top of the admin branch: the link
+        // renders only when a VERIDIAN origin was actually resolved, since a link
+        // to nowhere is worse than none.
+        // R67 D-42: an admin is sent to the screen that fixes this. Everyone
+        // else is given a way to ASK, because the fix is not theirs to make.
+        blocked ? (
+          canSetUpAccounting(role) ? (setupHref ? (
+            <a
+              href={setupHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
+            >
+              Set up in VERIDIAN
+              <ExternalLink className="size-3.5" aria-hidden />
+            </a>
+            ) : undefined
+          ) : askState === "sent" ? (
+            <span role="status" className="text-sm text-px-muted">
+              Sent — your administrator has been asked to set this up.
+            </span>
+          ) : (
+            <span className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void askAdministrator()}
+                disabled={askState === "sending"}
+                className="text-sm font-medium text-ct-navy underline disabled:opacity-60"
+              >
+                {askState === "sending" ? "Sending…" : NON_ADMIN_ACTION_LABEL}
+              </button>
+              {askState === "failed" && askError && (
+                <span role="alert" className="text-sm text-px-error">
+                  {askError}
+                </span>
+              )}
+            </span>
+          )
         ) : undefined
       }
       banner={

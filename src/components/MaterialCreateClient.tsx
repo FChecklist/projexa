@@ -12,6 +12,15 @@
 // save lands on the object page with a persistent "Created material Cement
 // OPC 43" rather than a four-second notification.
 //
+// R67 D-37 (audit R-096): the title said "Add Material" while its own
+// breadcrumb said "New Material" and the button that opens it says
+// "+ New Material" -- three names for one screen. It is "New Material"
+// everywhere now. D-37's other two points are answered by the archetype
+// itself: the required fields are marked, and the primary counts them
+// ("Save (Name, Unit)"). Its "Unit is required - e.g. bag" blur message is
+// deliberately NOT carried over -- see the note below, a closed vocabulary
+// means there is no wrong unit left to type.
+//
 // R67 G-05 (R-260), merged in from main rather than reverted: Unit is a
 // SELECT over the closed vocabulary in src/lib/material-units.ts, and Unit
 // Cost is a money box carrying the org's currency code as a fixed prefix.
@@ -41,6 +50,16 @@ const FIELDS: CreateField[] = [
     options: MATERIAL_UNITS,
   },
   { name: "unitCost", label: "Unit Cost", kind: "money", placeholder: "e.g. 28.50" },
+  {
+    // R67 D-40: the threshold the master flags "▲ Low" against. Optional, and
+    // deliberately three-valued: blank means "no threshold", 0 means "flag me
+    // the moment it runs out", and those are different instructions.
+    name: "reorderLevel",
+    label: "Reorder level",
+    kind: "number",
+    placeholder: "e.g. 50",
+    help: "Leave blank for no threshold. 0 flags this material the moment it runs out.",
+  },
 ];
 
 export default function MaterialCreateClient({ projectId }: { projectId: string }) {
@@ -65,6 +84,9 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
           spec: values.spec || undefined,
           unit: values.unit,
           unitCost: values.unitCost ? Number(values.unitCost) : undefined,
+          // D-40: "" and "0" are different instructions, so an empty string
+          // must not become 0 and 0 must not become undefined.
+          reorderLevel: values.reorderLevel === "" || values.reorderLevel === undefined ? undefined : Number(values.reorderLevel),
         }),
       },
     }),
@@ -80,7 +102,7 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
       module="Materials"
       moduleHref={moduleHref}
       objectLabel="Material"
-      title="Add Material"
+      title="New Material"
       fields={FIELDS}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}

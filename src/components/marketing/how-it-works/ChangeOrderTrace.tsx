@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "../marketing-locale";
 import { Reveal } from "../Reveal";
 
 const STEP_KEYS = ["step1", "step2", "step3", "step4", "step5"] as const;
@@ -9,8 +10,8 @@ const STEP_KEYS = ["step1", "step2", "step3", "step4", "step5"] as const;
 // approval flow that ships in this app today (a real signature-progress
 // summary, no one-click override button exists on purpose, see that
 // component's own comment). Nothing in this sequence is aspirational.
-export async function ChangeOrderTrace() {
-  const t = await getTranslations("Marketing.howItWorks.trace");
+export async function ChangeOrderTrace({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.howItWorks.trace" });
 
   return (
     <section className="border-b border-border bg-muted/40 py-20 sm:py-28">

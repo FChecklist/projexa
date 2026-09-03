@@ -39,6 +39,12 @@ export const MODULE_CREATE_ACTIONS: Record<CreateMenuModule, ModuleCreateAction[
   labour: [
     { label: "Worker", route: "/labour/new" },
     { label: "Attendance", route: "/labour/attendance/new" },
+    // R67 D-34 (R-091), added by the integration train. Adding 38 workers one
+    // form at a time is why real rosters never got entered, so the bulk import
+    // is a create action of this module -- not a button that only existed on
+    // the Roster tab, which is where D-34 first put it and which is exactly
+    // the per-tab scattering D-79 exists to end.
+    { label: "Workers from Excel", route: "/labour/import" },
   ],
   materials: [
     { label: "Material", route: "/materials/new" },

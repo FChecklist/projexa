@@ -15,6 +15,26 @@ import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFor
 import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 
+// R67 merge (D-11, lane D1 x lane D3): the union of the two lanes. D3's D-53
+// date carry-through is kept in full, and so is D1's D-70 FRAME -- without the
+// frame props this call no longer compiles, because D-70 made them REQUIRED on
+// CreateProjectMissing so a create route that cannot resolve its project still
+// paints its own breadcrumb, title and Back link instead of a bare error card.
+// git merged the two halves of this file without flagging that, and D3's side
+// alone would have failed the typecheck.
+//
+// R67 D-53: the Daily Summary's empty state links here for the day it was
+// showing, so the form opens on THAT date rather than silently on today --
+// otherwise the one click from "No attendance marked for 28-08-2026" would
+// record the mark against the wrong day. A malformed value is ignored rather
+// than forwarded, and the client then falls back to today, which beats
+// fetching a sheet for "2026-13-45".
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validDate(date: string | undefined): string | undefined {
+  return date && ISO_DATE.test(date) ? date : undefined;
+}
+
 const FRAME = {
   breadcrumb: "Manpower / Record Attendance",
   title: "Record Attendance",
@@ -22,22 +42,32 @@ const FRAME = {
   backLabel: "Back to Manpower",
 } as const;
 
-async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
+async function ResolvedForm({
+  requestedProjectId,
+  initialDate,
+}: {
+  requestedProjectId?: string;
+  initialDate?: string;
+}) {
   const organizationId = await getServerOrganizationId();
   const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
   if (!projectId) return <CreateProjectMissing message={errorMessage} {...FRAME} />;
-  return <AttendanceCreateClient projectId={projectId} />;
+  return <AttendanceCreateClient projectId={projectId} initialDate={initialDate} />;
 }
 
-export default async function LabourAttendanceNewPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
-  const { projectId } = await searchParams;
+export default async function LabourAttendanceNewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; date?: string }>;
+}) {
+  const { projectId, date } = await searchParams;
   // No network: the query string, else the cookie the top rail wrote.
   const known = await resolveProjectIdFast(projectId);
 
   if (known) {
     return (
       <div className="flex-1">
-        <AttendanceCreateClient projectId={known} />
+        <AttendanceCreateClient projectId={known} initialDate={validDate(date)} />
       </div>
     );
   }
@@ -45,7 +75,7 @@ export default async function LabourAttendanceNewPage({ searchParams }: { search
   return (
     <div className="flex-1 p-6">
       <Suspense fallback={<CreateFormSkeleton fields={5} />}>
-        <ResolvedForm requestedProjectId={projectId} />
+        <ResolvedForm requestedProjectId={projectId} initialDate={validDate(date)} />
       </Suspense>
     </div>
   );

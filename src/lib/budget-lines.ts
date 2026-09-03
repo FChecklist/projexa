@@ -29,17 +29,38 @@ export type BudgetLine = {
   vendorName: string | null;
   /** null until this line has actually been quoted -- never 0. */
   vendorAmount: number | null;
-  /** vendorAmount - budget, or null while there is no quote to compare. */
+  /**
+   * R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03). CONTRACT CHANGED UNDER
+   * THIS TYPE -- git auto-merged this file without a conflict because lane D21
+   * never touched it, but the BACKEND it describes was rewritten by D-26.
+   *
+   * `committed` is vendor + material + manpower, not the subcontract alone, and
+   * `variance` is now BUDGET REMAINING (budget - committed), the OPPOSITE SIGN
+   * of the `vendorAmount - budget` this field used to carry. A POSITIVE
+   * variance now means under budget. Reading it the old way turns every
+   * healthy line red and every overrun green, which is exactly what the
+   * unreviewed auto-merge left this module doing.
+   *
+   * Both are null -- never 0 -- while nothing at all has been costed on the
+   * line: "nothing quoted yet" and "quoted at zero" are different facts.
+   */
+  committed: number | null;
   variance: number | null;
 };
 
 export type BudgetReport = {
   lines: BudgetLine[];
+  /** The BOQ these lines belong to, so an empty state can link to it. null when the project has no BOQ. */
+  boqId: string | null;
   totalBudget: number;
   totalVendorAmount: number;
-  totalVariance: number;
+  /** null when NO line carries any committed cost -- see the note on BudgetLine.committed. */
+  totalCommitted: number | null;
+  totalVariance: number | null;
   totalMaterialAmount: number;
   totalManpowerAmount: number;
+  linesOverBudget: number;
+  lineCount: number;
 };
 
 /** The Budget Report's two filters. An empty string means "all". */
@@ -93,8 +114,10 @@ export function budgetTotals(lines: readonly BudgetLine[]): {
   material: number | null;
   labour: number | null;
   vendorAmount: number | null;
+  committed: number | null;
   variance: number | null;
   quotedLines: number;
+  overBudgetLines: number;
 } {
   const sum = (values: (number | null)[]): number | null => {
     const real = values.filter((v): v is number => v !== null);
@@ -105,8 +128,16 @@ export function budgetTotals(lines: readonly BudgetLine[]): {
     material: sum(lines.map((l) => l.materialAmount)),
     labour: sum(lines.map((l) => l.manpowerAmount)),
     vendorAmount: sum(lines.map((l) => l.vendorAmount)),
+    // R67 D-26, folded in at the D1 x D21 merge: committed cost is vendor PLUS
+    // material PLUS manpower. null when NOTHING on screen has been costed.
+    committed: sum(lines.map((l) => l.committed)),
     variance: sum(lines.map((l) => l.variance)),
     quotedLines: lines.filter((l) => l.vendorAmount !== null).length,
+    // R67 D-26: a line is over budget when its committed cost EXCEEDS its
+    // budget -- i.e. a NEGATIVE remaining variance. Mirrors
+    // isLineOverBudget() in compliance-tracker's construction-reports-service,
+    // which is the single definition this must not drift from.
+    overBudgetLines: lines.filter((l) => l.variance !== null && l.variance < 0).length,
   };
 }
 

@@ -182,15 +182,25 @@ describe("KitObjectScreen -- the destructive control names its own act (D-11)", 
     expect(view.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
+  // R67 merge (D-11, D1 x D21, 2026-09-03): RESTATED, and the fact it pins down
+  // got stronger. D1 asserted the reason was carried in the button's `title`
+  // only, so the accessible name was exactly "Dispose". D-21 additionally
+  // renders the reason as VISIBLE text beside the verb -- a title-only tooltip
+  // is invisible to touch and to most screen readers -- which makes it part of
+  // the accessible name. Both halves are now asserted: the verb still leads, the
+  // reason is still on the control, and it is now readable without a hover.
   test("a reason disables the control and is carried on it, whatever it is called", () => {
+    const reason = "Kept under the retention policy - ask an admin to dispose";
     const view = renderScreen({
       onDelete: () => {},
       deleteLabel: "Dispose",
-      deleteDisabledReason: "Kept under the retention policy - ask an admin to dispose",
+      deleteDisabledReason: reason,
     });
-    const button = view.getByRole("button", { name: "Dispose" }) as HTMLButtonElement;
+    const button = view.getByRole("button", { name: /^Dispose/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("Kept under the retention policy - ask an admin to dispose");
+    expect(button.title).toBe(reason);
+    expect(button.textContent).toContain("Dispose");
+    expect(button.textContent).toContain(reason);
   });
 
   test("no destructive control at all when the screen offers none", () => {
