@@ -1,192 +1,292 @@
 "use client";
 
-// Real-screen conversion (2026-08-30) -- replaces BudgetsClient.tsx's old
-// "New Budget" Dialog popup with a real create screen, same fields, same
-// live VERIDIAN lookups, same blocked-reason honesty when fiscal
-// years/chart of accounts aren't provisioned.
+// Real-screen conversion (2026-08-30) -- replaced BudgetsClient.tsx's old
+// "New Budget" Dialog popup with a real create screen, same fields, same live
+// VERIDIAN lookups, same blocked-reason honesty when fiscal years / chart of
+// accounts aren't provisioned.
 //
-// R67 F-08 (R-112) -- NO ENABLED-THEN-DISABLED FLIP. This form used to render
-// four ENABLED selects and then, once its own client-side Promise.all
-// returned, flip them to disabled with "No fiscal years found in VERIDIAN"
-// inside them. A form that offers a control and then withdraws it is worse
-// than one that never offered it: the user has already decided to click.
+// â”€â”€â”€ R67 D-67 + correction C-15 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// The four lookups now arrive as props, resolved server-side in
-// budgets/new/page.tsx behind a 300 s per-org cache (D-04: the VERIDIAN key
-// stays server-side, which is why the browser could not do this itself). So
-// the first rendered frame already knows whether the org is set up.
+// C-15's finding, in full: "the block is an org-setup precondition surfaced
+// correctly (disabled-with-reason), but THE REASON IS A PARAGRAPH INSIDE A
+// BUTTON." The Save control's own label carried 200 characters of
+// explanation. Its resolution: "keep the banner, shorten the button to 'Save
+// (needs a fiscal year and an account)', and add a 'Set up in VERIDIAN' link
+// that opens the ERP setup screen."
 //
-// The only client-side fetch left is behind "Reload lists", for the case the
-// server lookups reported a FAILURE rather than an empty org -- those are
-// different facts and the form says which one it is.
-import { useState } from "react";
+// So: the paragraph stays, once, in the banner where a paragraph belongs; the
+// button says the short thing; and the link goes to VERIDIAN's real
+// /erp/periods screen -- the page that actually creates fiscal years -- so
+// the dead end has an exit. The asterisks are gone with it: D-67's convention
+// is that a required field is named in the Save label and nowhere else.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import { fetchJson } from "@/lib/fetch-json";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { useSubmit } from "@/lib/use-submit";
+import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
-import type { Account, BudgetLookups, CostCenter, FiscalYear } from "@/lib/budget-lookups";
+import type { BudgetLookups } from "@/lib/budget-lookups";
+import type { CreateField } from "@/lib/create-screen";
 
-export default function BudgetCreateClient({ initialLookups }: { initialLookups: BudgetLookups }) {
+type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
+type CostCenter = { id: string; name: string; projectId: string | null };
+type Account = { id: string; accountName: string; accountNumber: string | null };
+
+// The ERP that owns fiscal years and the chart of accounts is a different
+// deployment, so its address is configuration. The fallback is the same
+// production host veridian-client.ts already defaults its API base to.
+const VERIDIAN_APP_URL = (
+  process.env.NEXT_PUBLIC_VERIDIAN_APP_URL ?? "https://veridian-compliance-ai.vercel.app"
+).replace(/\/+$/, "");
+const FISCAL_SETUP_URL = `${VERIDIAN_APP_URL}/erp/periods`;
+
+/** C-15's exact wording for the shortened primary. */
+export const BUDGET_PRECONDITION_LABEL = "needs a fiscal year and an account";
+
+export default function BudgetCreateClient({ initialLookups }: { initialLookups?: BudgetLookups } = {}) {
   const router = useRouter();
-  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(initialLookups.fiscalYears);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialLookups.costCenters);
-  const [accounts, setAccounts] = useState<Account[]>(initialLookups.accounts);
-  const [companies, setCompanies] = useState<Company[]>(initialLookups.companies);
-  const [lookupError, setLookupError] = useState<string | null>(initialLookups.errorMessage);
-  const [reloading, setReloading] = useState(false);
+  const orgMoney = useOrgMoney();
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(initialLookups?.fiscalYears ?? []);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>(initialLookups?.costCenters ?? []);
+  const [accounts, setAccounts] = useState<Account[]>(initialLookups?.accounts ?? []);
+  const [companies, setCompanies] = useState<Company[]>(initialLookups?.companies ?? []);
+  const [lookupsLoading, setLookupsLoading] = useState(!initialLookups);
+  const [lookupError, setLookupError] = useState<string | null>(initialLookups?.errorMessage ?? null);
 
-  const [name, setName] = useState("");
-  const [fiscalYearId, setFiscalYearId] = useState("");
-  const [costCenterId, setCostCenterId] = useState("");
-  const [accountId, setAccountId] = useState("");
-  const [annualAmount, setAnnualAmount] = useState("");
-  const [budgetCompanyId, setBudgetCompanyId] = useState<string>("__none__");
-  const [errors, setErrors] = useState<FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount">>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
 
-  // Only reachable when the server-side lookups actually FAILED -- an org that
-  // simply has no fiscal years has nothing to reload.
-  async function reloadLists() {
-    setReloading(true);
-    try {
-      const [fyData, ccData, acData, coData] = await Promise.all([
-        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
-        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
-        fetchJson<{ accounts?: Account[] }>("/api/accounts"),
-        fetchJson<{ companies?: Company[] }>("/api/companies"),
+  // R67 MERGE (lane F2's F-19, audit R-245). THIS WAS Promise.all, AND THAT
+  // WAS THE BUG: one failed lookup rejected the whole batch, so a 500 on
+  // /api/companies -- a field that is OPTIONAL on this form -- blanked the
+  // fiscal years and the chart of accounts too, and the screen then told the
+  // user this organisation HAS no fiscal years. That is a failed read reported
+  // as a fact about their data, which is exactly what src/lib/read-outcome.ts
+  // exists to prevent, and what lane D0's own `lookupError` branch below is
+  // written to avoid -- it just could not see which lookup failed.
+  //
+  // allSettled keeps each outcome separate: a lookup that answered fills its
+  // field, and only the ones that did not answer are named in the banner. The
+  // AbortController stops a form the user has already left from setting state.
+  //
+  // R67 F-04 (lane F1). When page.tsx has already resolved these four lists in
+  // the SERVER component -- resolveBudgetLookups(), which reads them under the
+  // org's API key and keeps the same per-lookup errorMessage this branch
+  // produces -- the form opens with its controls already correct and makes no
+  // client lookup at all. That is four round trips removed from a create screen
+  // whose whole job is to be usable immediately, and it is why the form no
+  // longer flips from enabled-looking to disabled a second after it appears.
+  // The client path below is kept intact for any caller that does not prefetch.
+  //
+  // R67 INTEGRATION (lane F1's Reload). A failed lookup is TRANSIENT -- that is
+  // the whole reason its banner says a different thing from the blocked one --
+  // so the screen owes the reader a way to act on it. Without a retry the only
+  // recovery from a stuttering upstream is a full page reload, which throws
+  // away anything already typed into the form. Extracted from the effect so
+  // the mount and the button run exactly the same read.
+  const loadLookups = useCallback((controller: AbortController) => {
+    return (async () => {
+      setLookupsLoading(true);
+      const [fyR, ccR, acR, coR] = await Promise.allSettled([
+        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years", { signal: controller.signal }),
+        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers", { signal: controller.signal }),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts", { signal: controller.signal }),
+        fetchJson<{ companies?: Company[] }>("/api/companies", { signal: controller.signal }),
       ]);
-      setFiscalYears(fyData.fiscalYears ?? []);
-      setCostCenters(ccData.costCenters ?? []);
-      setAccounts(acData.accounts ?? []);
-      setCompanies(coData.companies ?? []);
-      setLookupError(null);
-    } catch (err) {
-      setLookupError(errorMessage(err, "Couldn't load fiscal years / cost centers / accounts from VERIDIAN"));
-    } finally {
-      setReloading(false);
-    }
-  }
+      if (controller.signal.aborted) return;
+
+      const failed: string[] = [];
+      if (fyR.status === "fulfilled") setFiscalYears(fyR.value.fiscalYears ?? []);
+      else if (!isAbortError(fyR.reason, controller.signal)) failed.push("fiscal years");
+      if (ccR.status === "fulfilled") setCostCenters(ccR.value.costCenters ?? []);
+      else if (!isAbortError(ccR.reason, controller.signal)) failed.push("cost centres");
+      if (acR.status === "fulfilled") setAccounts(acR.value.accounts ?? []);
+      else if (!isAbortError(acR.reason, controller.signal)) failed.push("the chart of accounts");
+      if (coR.status === "fulfilled") setCompanies(coR.value.companies ?? []);
+      else if (!isAbortError(coR.reason, controller.signal)) failed.push("companies");
+
+      // A FAILED lookup is not the same fact as "this org has none", and the
+      // banner below must not accuse the org of a setup gap that is really a
+      // backend error. Naming WHICH read failed is the part allSettled adds.
+      setLookupError(failed.length > 0 ? `${failed.join(", ")} could not be loaded` : null);
+      setLookupsLoading(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (initialLookups) return;
+    const controller = new AbortController();
+    void loadLookups(controller);
+    return () => controller.abort();
+  }, [initialLookups, loadLookups]);
+
+  // The retry is deliberately NOT gated on `initialLookups`: a prefetch that
+  // failed upstream is exactly the case the button exists for, and the client
+  // read is the only way left to recover it.
+  const reloadLookups = useCallback(() => {
+    void loadLookups(new AbortController());
+  }, [loadLookups]);
 
   const missingLookups = [
     fiscalYears.length === 0 ? "fiscal years" : null,
     accounts.length === 0 ? "a chart of accounts" : null,
   ].filter(Boolean) as string[];
-  // A failed lookup and an unconfigured org are DIFFERENT facts and must not
-  // share a message: the first is a retry, the second is a setup task.
-  const blockedReason = lookupError
-    ? `${lookupError}. Nothing has been saved — use Reload lists to try again.`
-    : missingLookups.length
-      ? `This organisation has no ${missingLookups.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`
-      : null;
+  // Only a SUCCESSFUL lookup may claim the org has none -- the same rule
+  // src/lib/read-outcome.ts states for every list in this product. With
+  // allSettled, `lookupError` is now set only when a read genuinely failed, so
+  // a single optional lookup's 500 no longer suppresses this real precondition
+  // for the two fields that DID answer.
+  const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
 
-  async function createBudget() {
-    const errs: FieldErrors<"name" | "fiscalYearId" | "accountId" | "annualAmount"> = {};
-    if (!name.trim()) errs.name = "Budget name is required.";
-    if (!fiscalYearId) errs.fiscalYearId = fiscalYears.length ? "Select a fiscal year." : "No fiscal years exist in VERIDIAN for this organisation.";
-    if (!accountId.trim()) errs.accountId = accounts.length ? "Select an account." : "No chart of accounts exists in VERIDIAN for this organisation.";
-    if (!annualAmount) errs.annualAmount = "Annual amount is required.";
-    else if (Number.isNaN(Number(annualAmount))) errs.annualAmount = "Annual amount must be a number.";
-    setErrors(errs);
-    if (hasErrors(errs)) return;
-    setSubmitting(true);
-    try {
-      const data = await fetchJson<{ id: string }>("/api/project-budgets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+  const fields: CreateField[] = [
+    // While blocked, no field is marked required: the primary must read
+    // exactly "Save (needs a fiscal year and an account)" per C-15, not that
+    // sentence plus four field names the user cannot fill in anyway.
+    { name: "name", label: "Budget Name", kind: "text", required: !blocked, placeholder: "e.g. FY2026 Site Overheads" },
+    {
+      name: "fiscalYearId",
+      label: "Fiscal Year",
+      kind: "select",
+      required: !blocked,
+      placeholder: fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN",
+      // R67 F-04 (lane F1): a picker with nothing to pick is DISABLED, and its
+      // placeholder says why. An enabled select that opens onto an empty list
+      // is a control that fails after the click -- the exact pattern the
+      // programme's "disabled by condition, never hidden, never
+      // fail-after-click" rule exists to remove. Combined with the server-side
+      // prefetch above, this is also what removes the enabled-then-disabled
+      // FLIP: the control is right on the first painted frame, not a second later.
+      disabled: fiscalYears.length === 0,
+      options: fiscalYears.map((fy) => ({ value: fy.id, label: `${fy.yearName}${fy.isClosed ? " (closed)" : ""}` })),
+    },
+    {
+      name: "costCenterId",
+      label: "Cost Center",
+      kind: "select",
+      placeholder: costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN",
+      disabled: costCenters.length === 0,
+      options: costCenters.map((cc) => ({ value: cc.id, label: cc.name })),
+    },
+    {
+      name: "accountId",
+      label: "Account",
+      kind: "select",
+      required: !blocked,
+      placeholder: accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN",
+      disabled: accounts.length === 0,
+      options: accounts.map((a) => ({
+        value: a.id,
+        label: `${a.accountNumber ? `${a.accountNumber} — ` : ""}${a.accountName}`,
+      })),
+    },
+    {
+      name: "annualAmount",
+      label: "Annual Amount",
+      // R67 D-39 / G-05: a money box carries the org's currency CODE inside
+      // it, beside the caret, for as long as the number is being typed. This
+      // was kind "number", so the amount was entered with nothing on screen
+      // saying what unit it was in -- and the cell that reads it back is
+      // labelled.
+      kind: "money",
+      required: !blocked,
+      placeholder: "e.g. 250000",
+      validate: (value) =>
+        value.trim() && Number.isNaN(Number(value)) ? "Annual amount must be a number." : null,
+    },
+    ...(companies.length > 0
+      ? [
+          {
+            name: "companyId",
+            label: "Company / Office",
+            kind: "select" as const,
+            placeholder: "Org-wide (no specific company)",
+            options: companies.map((c) => ({
+              value: c.id,
+              label: `${c.abbr ? `${c.abbr} — ` : ""}${c.companyName}`,
+            })),
+          },
+        ]
+      : []),
+  ];
+
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Budget",
+    buildRequest: () => ({
+      input: "/api/project-budgets",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name, fiscalYearId, costCenterId: costCenterId || undefined,
-          companyId: budgetCompanyId === "__none__" ? undefined : budgetCompanyId,
-          lineItems: [{ accountId, annualAmount: Number(annualAmount) }],
+          name: (values.name ?? "").trim(),
+          fiscalYearId: values.fiscalYearId,
+          costCenterId: values.costCenterId || undefined,
+          companyId: values.companyId || undefined,
+          lineItems: [{ accountId: values.accountId, annualAmount: Number(values.annualAmount) }],
         }),
-      });
-      toast.success("Budget created");
-      router.push(`/budgets/${data.id}`);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't create budget"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved budget");
+      router.replace(createdHref("/budgets", id, (values.name ?? "").trim()));
+    },
+  });
 
   return (
-    <ObjectScreen
-      breadcrumb="Budgets / New Budget"
-      title="New Budget"
-      mode="create"
-      hasDraft={false}
-      onSave={createBudget}
+    <CreateScreen
+      module="Budgets"
+      moduleHref="/budgets"
+      objectLabel="Budget"
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
+      // C-15: the short label. The paragraph lives in the banner.
+      extraMissing={blocked ? [BUDGET_PRECONDITION_LABEL] : []}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving || lookupsLoading}
+      saved={submit.saved}
+      onSubmit={submit.submit}
       onCancel={() => router.push("/budgets")}
-      onBack={() => router.push("/budgets")}
-      saveDisabled={submitting || reloading || blockedReason !== null}
-      saveDisabledReason={submitting ? "Creating…" : reloading ? "Reloading lists…" : blockedReason ?? undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        {blockedReason && (
-          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
-            {blockedReason}
-            {lookupError && (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  onClick={reloadLists}
-                  disabled={reloading}
-                  className="underline underline-offset-2 disabled:opacity-60"
-                >
-                  {reloading ? "Reloading…" : "Reload lists"}
-                </button>
-              </>
-            )}
-          </p>
-        )}
-        <FormField label="Budget Name" required error={errors.name}>
-          {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
-        </FormField>
-        <FormField label="Fiscal Year" required error={errors.fiscalYearId}>
-          {(f) => (
-            <Select value={fiscalYearId} onValueChange={setFiscalYearId}>
-              <SelectTrigger {...f} disabled={fiscalYears.length === 0}><SelectValue placeholder={fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN"} /></SelectTrigger>
-              <SelectContent>{fiscalYears.map((fy) => <SelectItem key={fy.id} value={fy.id}>{fy.yearName}{fy.isClosed ? " (closed)" : ""}</SelectItem>)}</SelectContent>
-            </Select>
+      secondaryAction={
+        blocked ? (
+          <a
+            href={FISCAL_SETUP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
+          >
+            Set up in VERIDIAN
+            <ExternalLink className="size-3.5" aria-hidden />
+          </a>
+        ) : undefined
+      }
+      banner={
+        <>
+          {blocked && (
+            <div role="alert" className="max-w-3xl rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
+              This organisation has no {missingLookups.join(" and ")} in VERIDIAN&apos;s ERP module yet, and both are
+              required to create a budget. They must be set up in VERIDIAN before a budget can be created here.
+            </div>
           )}
-        </FormField>
-        <FormField label="Cost Center (optional)">
-          {(f) => (
-            <Select value={costCenterId} onValueChange={setCostCenterId}>
-              <SelectTrigger {...f} disabled={costCenters.length === 0}><SelectValue placeholder={costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN"} /></SelectTrigger>
-              <SelectContent>{costCenters.map((cc) => <SelectItem key={cc.id} value={cc.id}>{cc.name}</SelectItem>)}</SelectContent>
-            </Select>
+          {lookupError && (
+            <div role="alert" className="max-w-3xl rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
+              Could not load fiscal years, cost centres or accounts from VERIDIAN: {lookupError}. This screen cannot
+              tell whether they exist, so nothing here is a statement about your setup.
+              <div className="mt-3">
+                <Button size="sm" variant="outline" onClick={reloadLookups} disabled={lookupsLoading}>
+                  {lookupsLoading ? "Reloading…" : "Reload lists"}
+                </Button>
+              </div>
+            </div>
           )}
-        </FormField>
-        <FormField label="Account" required error={errors.accountId}>
-          {(f) => (
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger {...f} disabled={accounts.length === 0}><SelectValue placeholder={accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN"} /></SelectTrigger>
-              <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
-            </Select>
-          )}
-        </FormField>
-        <FormField label="Annual Amount" required error={errors.annualAmount}>
-          {(f) => <Input {...f} type="number" value={annualAmount} onChange={(e) => setAnnualAmount(e.target.value)} />}
-        </FormField>
-        {companies.length > 0 && (
-          <div className="space-y-1.5">
-            <Label>Company / Office (optional)</Label>
-            <Select value={budgetCompanyId} onValueChange={setBudgetCompanyId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Org-wide (no specific company)</SelectItem>
-                {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.abbr ? `${c.abbr} — ` : ""}{c.companyName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
-    </ObjectScreen>
+        </>
+      }
+    />
   );
 }

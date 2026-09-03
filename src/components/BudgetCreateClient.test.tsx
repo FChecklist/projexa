@@ -34,10 +34,15 @@ mock.module("next/navigation", () => ({
 const BudgetCreateClient = (await import("./BudgetCreateClient")).default;
 const { EMPTY_BUDGET_LOOKUPS } = await import("@/lib/budget-lookups");
 
+// R67 INTEGRATION: RESTORE the real fetch, never `delete` it. The merged form
+// formats its Annual Amount through useOrgMoney, which reads /api/currencies --
+// so a suite that removed globalThis.fetch outright left every test after the
+// first throwing "fetch is not defined" from inside render(). The stub is still
+// fully undone between tests; it is just undone to the real function.
+const realFetch = globalThis.fetch;
 afterEach(() => {
   cleanup();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
+  globalThis.fetch = realFetch;
 });
 
 const READY_LOOKUPS = {
@@ -54,7 +59,13 @@ describe("BudgetCreateClient — no enabled-then-disabled flip", () => {
     // the test would fail on an undefined global rather than pass silently.
     const { getByText } = render(<BudgetCreateClient initialLookups={EMPTY_BUDGET_LOOKUPS} />);
 
-    const trigger = getByText("No fiscal years found in VERIDIAN").closest("button");
+    // R67 INTEGRATION (lane F1 onto main). CORRECTED, NOT WEAKENED: the merged
+    // form is built on CreateScreen, which renders a NATIVE <select> rather
+    // than lane F1's Radix trigger <button>. That is the better control here --
+    // it is keyboard- and screen-reader-native, and it is why this suite can
+    // assert the first frame at all. The property is identical: the control is
+    // disabled, with its reason readable, before anything has been fetched.
+    const trigger = getByText("No fiscal years found in VERIDIAN").closest("select");
     expect(trigger).not.toBeNull();
     expect(trigger!.hasAttribute("disabled")).toBe(true);
   });
@@ -62,7 +73,8 @@ describe("BudgetCreateClient — no enabled-then-disabled flip", () => {
   test("for a set-up org the same select is enabled on the first frame, with the real year in it", () => {
     const { getByText } = render(<BudgetCreateClient initialLookups={READY_LOOKUPS} />);
 
-    const trigger = getByText("Select a fiscal year").closest("button");
+    // Same correction as above: a native <select>, not a Radix trigger.
+    const trigger = getByText("Select a fiscal year").closest("select");
     expect(trigger).not.toBeNull();
     expect(trigger!.hasAttribute("disabled")).toBe(false);
   });

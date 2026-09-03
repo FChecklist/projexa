@@ -1,34 +1,57 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // Wave 143 (Drawings & 3D module): DWG file uploads + 3D walkthrough
 // files/links, per project -- same Card/Table/Dialog primitives as
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
 // (category='drawing'|'drawing_3d').
-import { useEffect, useState } from "react";
+//
+// R67 D-65 / D-59 / D-71: the failure path used to be a toast.error() inside
+// the catch, which left `drawings` at [] and so rendered "No drawings or 3D
+// walkthroughs yet." over a 504 -- and once the toast faded, that sentence
+// was the only thing left on screen. The outcome is now held and PaneState
+// decides what may be said; the empty sentence needs a 200. D-71 replaces
+// this screen's copy of the load-state bookkeeping with the one shared list
+// hook, so permits and drawings cannot drift apart again.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { PaneState } from "@/components/PaneState";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
+import { useListRead } from "@/lib/use-list-read";
+import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
+import { recordCountLabel } from "@/lib/pane-state";
 
-type Drawing = {
+// Exported so drawings/page.tsx can type the rows it fetches server-side.
+export type Drawing = {
   id: string;
   name: string;
   kind: "dwg" | "3d_walkthrough";
   discipline: string | null;
   isExternalLink: boolean;
-  // R67 F-02: documentUrl is now present ONLY for external links (a stored
-  // URL string, free to return). A storage-backed drawing reports
-  // hasDocument and its signed URL is minted on click -- see openDrawing().
   documentUrl: string | null;
-  hasDocument: boolean;
   createdAt: string;
 };
 
@@ -43,17 +66,6 @@ export type RegistryColumn = ScreenColumn;
 // compliance.screen_definitions row for drawings.list doesn't exist yet
 // (404) or the call errors -- the "Open" action column is intentionally
 // NOT part of it and is always rendered separately below.
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Kind", field: "kind", type: "text", importance: "High" },
-  { label: "Discipline", field: "discipline", type: "text", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
-
-// R67 F-02: the labels drawings/page.tsx paints in its Suspense fallback (plus
-// the always-present "Open" action column), so the header row on screen while
-// loading is the header row that stays there when rows arrive.
-export const DRAWINGS_FALLBACK_COLUMN_LABELS = [...COLUMNS.map((c) => c.label), "Open"];
 
 function renderDrawingCell(column: ScreenColumn, d: Drawing) {
   switch (column.field) {
@@ -84,60 +96,37 @@ function renderDrawingCell(column: ScreenColumn, d: Drawing) {
 
 export default function DrawingsClient({
   projectId,
+  projectName,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
+  projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what drawings/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
+  initial?: ModuleListInitial<Drawing>;
 }) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [openingId, setOpeningId] = useState<string | null>(null);
-
-  // R67 F-02. The register no longer carries a signed URL per row, so this
-  // asks for one drawing's URL at click time. The blank tab is opened
-  // SYNCHRONOUSLY, before the await: a browser only treats window.open() as
-  // user-initiated inside the click handler's own turn, so opening it after
-  // the fetch resolves is what a popup blocker kills.
-  async function openDrawing(drawing: Drawing) {
-    if (drawing.documentUrl) {
-      window.open(drawing.documentUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const tab = window.open("", "_blank", "noopener,noreferrer");
-    setOpeningId(drawing.id);
-    try {
-      const data = await fetchJson(`/api/drawings/${encodeURIComponent(drawing.id)}/document-url`);
-      if (!data?.documentUrl) throw new Error("No file link came back for this drawing");
-      if (tab) tab.location.href = data.documentUrl;
-      // If the popup was blocked, honour the click with a real link the
-      // browser treats as user-initiated. (window.location.href is assigned
-      // via window.open on the current frame here rather than mutated
-      // directly: the React Compiler lint rule forbids writing to a value
-      // defined outside the component, and this achieves the same navigation.)
-      else window.open(data.documentUrl, "_self");
-    } catch (err) {
-      tab?.close();
-      toast.error(errorMessage(err, "Couldn't open this drawing"));
-    } finally {
-      setOpeningId(null);
-    }
-  }
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchJson(`/api/drawings?projectId=${encodeURIComponent(projectId)}`);
-      setDrawings(data.drawings ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load drawings"));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, [projectId]);
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
+  // Rows already held survive a failed refresh -- see PaneState.
+  const {
+    rows: drawings,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Drawing>({
+    url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
+    select: (body) => (body as { drawings?: Drawing[] } | null)?.drawings,
+    initial,
+  });
 
   return (
     <div className="space-y-4">
@@ -149,27 +138,30 @@ export default function DrawingsClient({
           </Button>
           {/* Real screen navigation (2026-08-30) -- replaces the old "Add
               Drawing" Dialog popup with a real create route. */}
-          {/* R67 F-02: warm the create route on hover/focus. */}
-          <Button
-            size="sm"
-            onMouseEnter={() => router.prefetch(`/drawings/new?projectId=${projectId}`)}
-            onFocus={() => router.prefetch(`/drawings/new?projectId=${projectId}`)}
-            onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}
-          >
-            <Plus className="size-4" /> Add Drawing
-          </Button>
+          <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Drawing</Button>
         </div>
       </div>
 
-      {/* R67 F-02: the real column headers while loading, not a bare spinner. */}
-      {loading ? (
-        <TableLoadingRows headers={[...columns.map((c) => c.label), "Open"]} rows={3} caption="Loading drawings..." />
-      ) : (
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {drawings.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No drawings or 3D walkthroughs yet.</p>
-          ) : (
+        <CardContent className="p-2">
+          <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(status, drawings.length)}</p>
+          <PaneState
+            status={status}
+            entity="drawings"
+            projectName={projectName}
+            startedAt={startedAt}
+            error={error}
+            rowCount={drawings.length}
+            lastLoadedAt={loadedAt}
+            skeletonColumns={[...columns.map((c) => c.label), "Open"]}
+            emptyMessage="No drawings yet for this project."
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}>
+                <Plus className="size-4" aria-hidden /> New
+              </Button>
+            }
+            onRetry={reload}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -182,17 +174,12 @@ export default function DrawingsClient({
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of only a bare "Open" link (no
                   // detail view existed before this).
-                  <TableRow
-                    key={d.id}
-                    className="cursor-pointer hover:bg-px-cloud/40"
-                    onMouseEnter={() => router.prefetch(`/drawings/${d.id}?projectId=${projectId}`)}
-                    onClick={() => router.push(`/drawings/${d.id}?projectId=${projectId}`)}
-                  >
+                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/drawings/${d.id}?projectId=${projectId}`)}>
                     {columns.map((c) => renderDrawingCell(c, d))}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {d.documentUrl || d.hasDocument ? (
-                        <Button variant="ghost" size="sm" disabled={openingId === d.id} onClick={() => openDrawing(d)}>
-                          {openingId === d.id ? "Opening…" : <>Open <ExternalLink className="size-3.5" /></>}
+                      {d.documentUrl ? (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={d.documentUrl} target="_blank" rel="noopener noreferrer">Open <ExternalLink className="size-3.5" /></a>
                         </Button>
                       ) : "—"}
                     </TableCell>
@@ -200,10 +187,9 @@ export default function DrawingsClient({
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
-      )}
     </div>
   );
 }

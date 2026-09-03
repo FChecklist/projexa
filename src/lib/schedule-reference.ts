@@ -1,4 +1,4 @@
-import { callVeridian, VERIDIAN_PAGE_BUDGET_MS } from "@/lib/veridian-client";
+import { callVeridian, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 
 // R67 F-09 (R-122), D-04. The two schedule create screens fetched their
 // reference lists AFTER hydration: /schedule/tasks/new fetched the task types,
@@ -29,7 +29,7 @@ export async function resolveIssueTypesLookup(organizationId: string | null): Pr
   try {
     const data = await callVeridian<{ types?: IssueType[] }>("/schedule/types", {
       organizationId: organizationId ?? undefined,
-      timeoutMs: VERIDIAN_PAGE_BUDGET_MS,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
     });
     return { types: data.types ?? [], unavailable: false };
   } catch (err) {
@@ -52,7 +52,7 @@ export async function resolveScheduleTaskLookup(projectId: string, organizationI
   try {
     const data = await callVeridian<{ tasks?: ScheduleTask[] }>(`/schedule?projectId=${encodeURIComponent(projectId)}`, {
       organizationId: organizationId ?? undefined,
-      timeoutMs: VERIDIAN_PAGE_BUDGET_MS,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
     });
     return { tasks: data.tasks ?? [], unavailable: false };
   } catch (err) {

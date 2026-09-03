@@ -143,9 +143,18 @@ export function writeStoredProjectId(projectId: string | null): void {
     // Storage can be blocked. The cookie below is the one that matters.
   }
   try {
+    // R67 F-18: `Secure` on HTTPS so the value cannot be planted over a
+    // plaintext downgrade. Omitted on http:// because a Secure cookie is
+    // silently dropped there, which would break local development rather than
+    // protect it. Not HttpOnly, deliberately: this is a UI preference the
+    // client itself writes and it carries no authority -- every read is still
+    // scoped by the caller's own session and org, and a forged value can only
+    // ask for a project the caller is already entitled to see.
+    const secure =
+      typeof location !== "undefined" && location.protocol === "https:" ? "; secure" : "";
     document.cookie = projectId
-      ? `${PROJECT_PREFERENCE_KEY}=${encodeURIComponent(projectId)}; path=/; max-age=31536000; samesite=lax`
-      : `${PROJECT_PREFERENCE_KEY}=; path=/; max-age=0; samesite=lax`;
+      ? `${PROJECT_PREFERENCE_KEY}=${encodeURIComponent(projectId)}; path=/; max-age=31536000; samesite=lax${secure}`
+      : `${PROJECT_PREFERENCE_KEY}=; path=/; max-age=0; samesite=lax${secure}`;
   } catch {
     // Non-fatal: the preference is a convenience, never authority.
   }

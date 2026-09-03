@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client";
+import { createCachedVeridianGet } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 17 Wave 1 (multi-currency Selling & Buying): thin proxy over
 // VERIDIAN's new /api/v1/projexa/currencies -- lets the Quotations, Sales
@@ -18,13 +20,13 @@ import { VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client
 // appear in these dropdowns instead of being instant.
 const getCachedCurrencies = createCachedVeridianGet("veridian-currencies", "/currencies", 60);
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
     const data = await getCachedCurrencies(ctx.organizationId!);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load currencies" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load currencies");
   }
-}
+});

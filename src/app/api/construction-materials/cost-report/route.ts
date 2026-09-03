@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 F-07 (R-100/R-106). This route is deliberately KEPT although /materials
 // no longer calls it: the on-screen Cost Report tab now derives its rows from
@@ -8,7 +10,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // arithmetic identical to the server's), which removes a third request from
 // the landing path. The EXPORTABLE report has no loaded page to derive from,
 // so it runs here -- one grouped SQL aggregate in one transaction.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -17,6 +19,6 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/construction/materials/cost-report?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId!, root: true });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load material cost report" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load material cost report");
   }
-}
+});

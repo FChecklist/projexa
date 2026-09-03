@@ -1,102 +1,113 @@
 /// <reference types="bun-types" />
-// R67 F-14 (R-215) -- the projexa half of the item, asserted where it can be.
+// R67 D-65 -- the project dashboard stops minting numbers from failed reads.
 //
-// THE FAULT. This screen made SIX calls for one project's dashboard. Three of
-// them -- the category-progress report, the work-progress entries and the
-// activity names that labelled those entries -- re-read data the first call had
-// already read, and each opened its own transaction on VERIDIAN's five-
-// connection app_runtime pool. That fan-out is what exhausted the pool.
+// Two real faults, both on the screen a PM opens every morning:
 //
-// The backend now folds categories and recentEntries into the project dashboard
-// payload (construction-dashboard-service.ts, one transaction), so what is
-// asserted here is the consequence: three requests, and NONE of them to the two
-// endpoints this item removed.
+//   * the dashboard call's status was never read, so a 500's error body was
+//     assigned to `dashboard` and money(dashboard.expenses) then called
+//     .toLocaleString on an undefined. There is no error.tsx under
+//     /dashboard/project, so that throw took the route down.
+//   * the permits call ended in `.catch(() => ({ permits: [] }))`, so a
+//     failure rendered "Permits Expiring: 0 — none due soon" in the sage
+//     done tone: a confident all-clear from the one tile whose purpose is to
+//     warn.
+//
+// R67 MERGE (lane F2's F-27). The permits FIGURE no longer comes from its own
+// /api/permits call: VERIDIAN's dashboard payload carries
+// permitsExpiringCount / permitsExpiredCount, computed in the same statement
+// as everything else (compliance-tracker #1579), so that tile costs no request
+// at all. The two permit assertions below are therefore CORRECTED to the read
+// that now supplies the figure rather than deleted -- each keeps exactly the
+// property it was written to protect: a failed read may not render the
+// all-clear, and a successful read with genuinely none still may.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-// Registering twice in one process throws, and `bun test` runs every file in
-// ONE process -- see src/components/ui/form-field.test.tsx's own note.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
 
 mock.module("next/navigation", () => ({
-  useRouter: () => ({ push: mock(() => {}), prefetch: mock(() => {}) }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
+  usePathname: () => "/dashboard/project",
 }));
 
 const DashboardProjectClient = (await import("./DashboardProjectClient")).default;
 
-const DASHBOARD = {
-  projectId: "p1",
-  projectName: "Skyline Tower",
-  budget: 100,
-  revenue: 50,
-  expenses: 40,
-  progressPercent: 45,
-  delayedTaskCount: 0,
-  taskCount: 3,
-  projectValue: 1000,
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = realFetch;
+});
+
+const DASHBOARD_OK = {
+  projectName: "Cedar Heights Villa - Phase 1",
+  budget: 1000000,
+  expenses: 250000,
+  projectValue: null,
   earnedValue: null,
   percentByValue: null,
   contractValue: null,
-  categories: [{ categoryId: "c1", name: "Substructure", percentComplete: 30 }],
-  recentEntries: [
-    { id: "e1", activityId: "a1", activityName: "Excavation", entryDate: "2026-09-02", quantityDone: "12", percentComplete: "60" },
-    { id: "e2", activityId: "a9", activityName: null, entryDate: "2026-09-01", quantityDone: "4", percentComplete: "10" },
-  ],
+  // F-27: the permit counts ride on this payload now.
+  permitsExpiringCount: 0,
+  permitsExpiredCount: 0,
 };
 
-let requested: string[] = [];
-
-function stubFetch() {
-  requested = [];
+/** Answers each url with a status and body chosen by the caller. */
+function routeFetch(handler: (url: string) => { status: number; body: unknown }) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = typeof input === "string" ? input : input.toString();
-    requested.push(url);
-    const body = url.includes("/api/currencies")
-      ? { currencies: [{ code: "AED", isBaseCurrency: true }] }
-      : url.includes("/api/permits")
-        ? { permits: [] }
-        : DASHBOARD;
-    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-  }) as typeof fetch;
+    const { status, body } = handler(String(input));
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
 }
 
-afterEach(() => {
-  cleanup();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
-});
+describe("DashboardProjectClient", () => {
+  test("a 500 on the dashboard read shows the failure instead of crashing the route", async () => {
+    routeFetch((url) =>
+      url.includes("/api/dashboard/project")
+        ? { status: 500, body: { error: "The construction data service returned an error." } }
+        : { status: 200, body: {} }
+    );
 
-describe("DashboardProjectClient: one dashboard call carries the panels it used to fetch", () => {
-  test("exactly three requests, and none to category-progress or work-progress", async () => {
-    stubFetch();
-
-    render(<DashboardProjectClient projectId="p1" />);
-
-    await waitFor(() => expect(requested.length).toBeGreaterThanOrEqual(3));
-    expect(requested).toHaveLength(3);
-    expect(requested.some((u) => u.includes("/api/reports/category-progress"))).toBe(false);
-    expect(requested.some((u) => u.includes("/api/work-progress"))).toBe(false);
-    expect(requested.some((u) => u.includes("/api/dashboard/project/p1"))).toBe(true);
+    const { container } = render(<DashboardProjectClient projectId="p-cedar" />);
+    await waitFor(() => {
+      expect(container.textContent).toContain("Couldn't load this project's dashboard");
+    });
+    expect(container.textContent).toContain("Retry");
   });
 
-  test("the recent-entries panel renders the activity NAME that came with the payload", async () => {
-    stubFetch();
+  test("a failed read never renders the permits all-clear -- the specific lie this fixes", async () => {
+    // The figure now rides on the dashboard payload (F-27), so THAT is the
+    // read whose failure must not produce "0 — none due soon". The permits
+    // endpoint is answered 504 as well, to prove nothing on this screen asks
+    // it any more.
+    let askedPermits = false;
+    routeFetch((url) => {
+      if (url.includes("/api/permits")) askedPermits = true;
+      if (url.includes("/api/dashboard/project")) return { status: 504, body: { error: "upstream gone" } };
+      return { status: 200, body: {} };
+    });
 
-    const { container } = render(<DashboardProjectClient projectId="p1" />);
-
-    await waitFor(() => expect(container.textContent).toContain("Excavation"));
-    // An entry whose activity row is gone says so, rather than printing the id.
-    expect(container.textContent).toContain("Unknown activity");
-    expect(container.textContent).not.toContain("a9");
+    const { container } = render(<DashboardProjectClient projectId="p-cedar" />);
+    await waitFor(() => {
+      expect(container.textContent).toContain("Couldn't load this project's dashboard");
+    });
+    expect(container.textContent).not.toContain("none due soon");
+    expect(askedPermits).toBe(false);
   });
 
-  test("the category chart renders from the same payload", async () => {
-    stubFetch();
+  test("a SUCCESSFUL read with genuinely no permits due still says so -- the honest all-clear survives", async () => {
+    routeFetch((url) => {
+      if (url.includes("/api/dashboard/project")) return { status: 200, body: DASHBOARD_OK };
+      return { status: 200, body: {} };
+    });
 
-    const { container } = render(<DashboardProjectClient projectId="p1" />);
-
-    await waitFor(() => expect(container.textContent).toContain("Substructure"));
+    const { container } = render(<DashboardProjectClient projectId="p-cedar" />);
+    await waitFor(() => {
+      expect(container.textContent).toContain("none due soon");
+    });
+    expect(container.textContent).not.toContain("Couldn't load this project's dashboard");
   });
 });

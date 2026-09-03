@@ -1,70 +1,154 @@
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale. /labour was one of the two worst offenders: two serial VERIDIAN
+// hops (/dashboard, then /screen-definitions/manpower.list) before the first
+// byte, and then three more client fetches -- about 6 s to a usable screen for
+// SQL the audit measured as trivial. The frame now streams first and the
+// roster, which is the tab this screen opens on, is fetched here on the server
+// and handed to LabourClient as props.
+//
+// R67 F-30 (audit recommendation R-274) restructures what remained.
+//
+//   THE FRAME STREAMS FIRST. The title is outside every boundary, so the
+//   breadcrumb "Manpower & Attendance" is painted at TTFB whatever the backend
+//   is doing.
+//
+//   TWO BOUNDARIES, NOT ONE. The attendance summary and the roster each sit in
+//   their own <Suspense>, so neither waits on the other's render and each
+//   shows its own skeleton -- with DE-17's "Still loading roster… <n> s" at
+//   3 s and "This is taking longer than usual" at 8 s, the same words the
+//   client-side panes use (R67 F-31), because a user cannot tell a server wait
+//   from a client one and should not have to.
+//
+//   ...AND STILL ONE ROUND TRIP. Both boundaries call getLabourLanding(),
+//   which is React-cache()'d per request, so the second returns the first's
+//   promise. Upstream, `includeAttendanceSummary=1` answers the roster AND the
+//   day's summary from ONE transaction. Splitting the page without those two
+//   things would have doubled its network cost -- the opposite of this item.
+//
+//   AND IT IS MEASURED. Every upstream call on this page runs inside
+//   timeUpstream(), which is a plain pass-through unless DEBUG_LATENCY=1 is
+//   set. R-274's first instruction is to profile before restructuring; this is
+//   the instrument that makes a second opinion possible without a rebuild.
+//
+// The org API key never leaves the server (D-04 option A): every call here is
+// a server component's, and LabourClient receives rows, not credentials.
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { resolveRegistryColumns } from "@/lib/screen-definitions";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
-import LabourClient, { LABOUR_FALLBACK_COLUMN_LABELS, type RegistryColumn } from "@/components/LabourClient";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { AttendanceSummaryStrip, AttendanceSummaryStripSkeleton } from "@/components/AttendanceSummaryStrip";
+import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
+import {
+  getCachedServerOrganizationId,
+  getLabourLanding,
+  getScreenColumns,
+  resolveProjectForModule,
+} from "@/lib/module-list-source";
+import { timeUpstream } from "@/lib/debug-latency";
+import LabourClient, { type RosterEntry } from "@/components/LabourClient";
 
-// R67 F-06 (R-088/R-094). This page measured TTFB 2006 ms for a roster that
-// the backend answers in milliseconds. None of that was the data: page.tsx
-// awaited resolveSelectedProject() and THEN the manpower.list
-// screen-definitions lookup, serially, before sending a single byte of HTML.
-//
-// Three changes, in the order they matter:
-//   1. the heading is outside <Suspense>, so the frame streams immediately and
-//      the reader sees the screen they navigated to, not a blank tab;
-//   2. the two lookups run in ONE Promise.all -- neither depends on the other;
-//   3. both are memoised per org (Next's Data Cache): the project list for
-//      60 s, the registry row for 60 s. Per D-04 the fetch stays in the server
-//      component, so the VERIDIAN API key never reaches the browser.
-//
-// The <Suspense> fallback carries the REAL column headers, so nothing on
-// screen moves when the roster lands.
-const LABOUR_LOOKUP_TTL_SECONDS = 60;
+const SKELETON = (
+  <ModuleListSkeletonBody
+    columns={MANPOWER_LIST_COLUMNS}
+    tabs={["Roster", "Attendance"]}
+    actions={["Add Worker"]}
+    // R67 F-30 / F-31: the words this wait acquires at 3 s. "roster" is the
+    // user's own noun for what is in flight -- not a route, not an endpoint.
+    label="roster"
+  />
+);
 
-export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+/**
+ * The day the attendance summary is about.
+ *
+ * The URL wins, because the browser knows the SITE's today and this render
+ * does not: a summary computed from the server's own date is the wrong day for
+ * a site in Mumbai for five and a half hours out of every twenty-four. The
+ * strip always prints the date it is showing, so even the fallback is legible
+ * rather than merely assumed.
+ */
+function summaryDate(requested?: string): string {
+  if (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested)) return requested;
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+async function resolveLanding(requestedProjectId: string | undefined, date: string) {
+  const organizationId = await getCachedServerOrganizationId();
+  const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
+  if (!projectId) return { organizationId, projectId: null as string | null, errorMessage, landing: null };
+  const landing = await getLabourLanding<RosterEntry>(organizationId, projectId, date);
+  return { organizationId, projectId, errorMessage, landing };
+}
+
+async function AttendanceSummarySection({
+  requestedProjectId,
+  date,
+}: {
+  requestedProjectId?: string;
+  date: string;
+}) {
+  const { projectId, landing } = await resolveLanding(requestedProjectId, date);
+  // No project resolved is NOT this strip's error to report -- the roster
+  // section below says so once, with the backend's own words. A second copy of
+  // the same message would just be noise.
+  if (!projectId || !landing) return null;
+  return <AttendanceSummaryStrip summary={landing.attendanceSummary} errorMessage={landing.errorMessage} />;
+}
+
+async function LabourSection({
+  requestedProjectId,
+  tab,
+  date,
+  importedNotice,
+}: {
+  requestedProjectId?: string;
+  tab?: string;
+  date: string;
+  // R67 D-34: `imported` is the confirmation the bulk-import screen hands
+  // over; that screen unmounts with the navigation, so it cannot carry its
+  // own. It travels down here rather than being read in the client so the
+  // receipt is part of the first painted section, not a second render.
+  importedNotice?: string | null;
+}) {
+  const { organizationId, projectId, errorMessage, landing } = await resolveLanding(requestedProjectId, date);
+  if (!projectId || !landing) return <ModuleProjectNotice errorMessage={errorMessage} />;
+
+  const registryColumns = await timeUpstream("labour:screen-definitions", () =>
+    getScreenColumns("manpower.list", organizationId)
+  );
 
   return (
-    <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Manpower & Attendance" />
-      <Suspense
-        fallback={
-          <TableLoadingRows
-            headers={LABOUR_FALLBACK_COLUMN_LABELS}
-            rows={4}
-            caption="Loading the roster…"
-            // 0, not 150: this fallback only shows while the server component
-            // is genuinely still fetching, so there is nothing to debounce --
-            // delaying it would just mean a blank card instead.
-            delayMs={0}
-          />
-        }
-      >
-        <LabourSection projectId={projectId} tab={tab} />
-      </Suspense>
-    </div>
+    <LabourClient
+      projectId={projectId}
+      registryColumns={registryColumns}
+      initialTab={tab}
+      initialRoster={{ rows: landing.roster, errorMessage: landing.errorMessage }}
+      importedNotice={importedNotice ?? null}
+    />
   );
 }
 
-async function LabourSection({ projectId, tab }: { projectId?: string; tab?: string }) {
-  const organizationId = await getServerOrganizationId();
-  const [{ project, errorMessage }, registryColumns] = await Promise.all([
-    resolveSelectedProject(projectId, organizationId, { cacheSeconds: LABOUR_LOOKUP_TTL_SECONDS }),
-    resolveRegistryColumns("manpower.list", organizationId, LABOUR_LOOKUP_TTL_SECONDS) as Promise<RegistryColumn[] | null>,
-  ]);
+export default async function LabourPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; tab?: string; date?: string; imported?: string }>;
+}) {
+  const { projectId, tab, date, imported } = await searchParams;
+  const day = summaryDate(date);
 
-  if (errorMessage) {
-    return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-      </Card>
-    );
-  }
-  if (!project) {
-    return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
-  }
-  return <LabourClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />;
+  return (
+    <div className="flex-1 space-y-6 p-6">
+      {/* Outside every boundary: painted at TTFB, whatever the backend does. */}
+      <PageHeading title="Manpower & Attendance" />
+
+      <Suspense fallback={<AttendanceSummaryStripSkeleton />}>
+        <AttendanceSummarySection requestedProjectId={projectId} date={day} />
+      </Suspense>
+
+      <Suspense fallback={SKELETON}>
+        <LabourSection requestedProjectId={projectId} tab={tab} date={day} importedNotice={imported ?? null} />
+      </Suspense>
+    </div>
+  );
 }

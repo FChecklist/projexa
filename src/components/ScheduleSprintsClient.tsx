@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Priority 17 Wave 1: Sprints/cycles view for the Schedule module, over the
 // previously-unexposed VERIDIAN pms-sprint-service.ts (Plane's CycleIssue
 // parity). New tab alongside the existing Timeline/Board views. Sprint
@@ -13,8 +23,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { invalidateScheduleProject, loadSchedule } from "@/lib/schedule-cache";
 
 type Sprint = {
   id: string; name: string; goal: string | null; startDate: string | null; endDate: string | null;
@@ -30,20 +42,25 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
   const router = useRouter();
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sprintIssues, setSprintIssues] = useState<Record<string, SprintIssue[]>>({});
 
-  // R67 F-09 (R-122): reads through the shared 60 s schedule session cache, so
-  // returning to this tab -- or hovering it first -- costs no request.
-  const load = useCallback(async (options: { force?: boolean } = {}) => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
-      const data = await loadSchedule<{ sprints?: Sprint[] }>("sprints", projectId, options);
-      setSprints(data.sprints ?? []);
+      const res = await fetch(`/api/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setSprints(Array.isArray(data?.sprints) ? data.sprints : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sprints");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -73,10 +90,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to close sprint");
       toast.success("Sprint closed");
-      // Closing a sprint moves its issues, so every schedule read for this
-      // project is now stale -- not just this panel's.
-      invalidateScheduleProject(projectId);
-      load({ force: true });
+      load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't close sprint");
     }
@@ -88,20 +102,42 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     <Button onClick={() => router.push(`/schedule/sprints/new?projectId=${projectId}`)}><Plus className="size-4" /> New Sprint</Button>
   );
 
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+  // R67 D-46: three phase cards in the real shape.
+  if (loading) {
+    return (
+      <ListStateRegion state="loading" className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the phases" onRetry={() => void load()} />
+        {[0, 1, 2].map((i) => (
+          <Card key={i}>
+            <CardContent className="space-y-2 p-4">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-3 w-72" />
+            </CardContent>
+          </Card>
+        ))}
+      </ListStateRegion>
+    );
+  }
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load sprints: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the phases" error={error} onRetry={() => void load()} />
+      </ListStateRegion>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">{newSprintButton}</div>
+    <ListStateRegion state={sprints.length > 0 ? "ready" : "empty"} className="space-y-4">
       {sprints.length === 0 ? (
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No sprints yet.</CardContent></Card>
+        // R67 D-79: the module header carries "+ New" on every tab now, so
+        // this button is no longer duplicated in a header row -- it stays
+        // where it is the only way forward.
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+            No sprints yet.
+            {newSprintButton}
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-3">
           {sprints.map((sprint) => (
@@ -114,7 +150,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
                     <Badge variant={STATUS_VARIANT[sprint.status] ?? "outline"} className="text-[10px]">{sprint.status}</Badge>
                   </span>
                   <span className="flex items-center gap-2 text-xs font-normal text-px-muted">
-                    {sprint.startDate && sprint.endDate ? `${sprint.startDate} → ${sprint.endDate}` : null}
+                    {sprint.startDate && sprint.endDate ? `${sprint.startDate} â†’ ${sprint.endDate}` : null}
                     {sprint.status !== "completed" && (
                       <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); closeSprint(sprint.id); }}>
                         Close Sprint
@@ -158,6 +194,6 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
           ))}
         </div>
       )}
-    </div>
+    </ListStateRegion>
   );
 }

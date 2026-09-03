@@ -45,8 +45,18 @@ function routeFilesOnDisk(): RouteFile[] {
       const rel = file.slice(API_ROOT.length).split(sep).join("/");
       const route = rel.replace(/\/route\.tsx?$/, "");
       const source = readFileSync(file, "utf8");
-      const verbs = MUTATING_VERBS.filter((v) =>
-        new RegExp(`export\\s+(async\\s+)?function\\s+${v}\\b`).test(source)
+      // R67 F-28 STRENGTHENS this detector rather than working around it.
+      // Route handlers are now wrapped for Server-Timing, so a mutating route
+      // is exported as `export const POST = withTiming("POST", async function
+      // POST(...))` as well as the original `export async function POST(...)`.
+      // A detector that only knew the first shape would have reported ZERO
+      // mutating routes -- i.e. this guard would have gone silently blind
+      // exactly when a new ungated write route was added. It now recognises
+      // BOTH shapes, so it fails if either kind is left out of the policy.
+      const verbs = MUTATING_VERBS.filter(
+        (v) =>
+          new RegExp(`export\\s+(async\\s+)?function\\s+${v}\\b`).test(source) ||
+          new RegExp(`export\\s+const\\s+${v}\\s*=`).test(source)
       );
       return { route, source, verbs: [...verbs] };
     })

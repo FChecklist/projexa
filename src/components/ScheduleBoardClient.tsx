@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Wave 141 (PROJEXA gap analysis): Kanban/backlog board view over the same
 // pms_issues/pms_issue_statuses data already powering the Schedule/Gantt
 // timeline -- a missing UI, not missing data. No new drag-and-drop
@@ -19,11 +29,13 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { invalidateScheduleProject, loadSchedule, seedScheduleTasks } from "@/lib/schedule-cache";
 
 type BoardIssue = {
   id: string; number: number; title: string; priority: string; statusId: string; completionPercentage: number;
@@ -40,28 +52,26 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   const router = useRouter();
   const [columns, setColumns] = useState<BoardColumn[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // R67 D-46: the transport's own answer, so the shared dictionary writes the
+  // sentence instead of this screen re-printing a string.
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
 
-  // R67 F-09 (R-122): reads through the shared 60 s schedule session cache, so
-  // a tab the user has already opened -- or hovered -- comes back with no
-  // request at all. `force` is for Retry and for a re-read after a write.
-  const load = useCallback(async (options: { force?: boolean } = {}) => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
-      const data = await loadSchedule<{ columns?: BoardColumn[] }>("board", projectId, options);
-      setColumns(data.columns ?? []);
-      // R67 F-11 (R-146): the board's cards already ARE the project's task list
-      // in exactly the shape /schedule/log-time's Task select needs, so seeding
-      // it here costs nothing and means arriving at Log Time from the Board has
-      // a filled select even if that screen's own lookup fails.
-      seedScheduleTasks(
-        projectId,
-        (data.columns ?? []).flatMap((c) => c.issues.map((i) => ({ id: i.id, number: i.number, title: i.title })))
-      );
+      const res = await fetch(`/api/board?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setColumns(Array.isArray(data?.columns) ? data.columns : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load board");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -90,15 +100,9 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      // A write invalidates this project's cached schedule reads: the Gantt and
-      // the sprints panels must not be able to show a user their own move as
-      // not-yet-happened when they switch tab.
-      invalidateScheduleProject(projectId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't move issue");
-      // force: this reload exists precisely to replace the optimistic state
-      // with the server's truth, so it must go past the cache.
-      load({ force: true });
+      load();
     } finally {
       setMovingId(null);
     }
@@ -112,32 +116,56 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
 
   // Real screen navigation (2026-08-30) -- replaces the old "New Task"
   // Dialog popup with a real create route.
+  //
+  // R67 D-79: this no longer sits in a header row of its own. The module's
+  // header now carries Filter | Export | + New on EVERY tab, and two controls
+  // that create the same object on one screen is the duplicate-control fault
+  // the audit records elsewhere. It stays where it is the only way forward --
+  // inside the empty state.
   const newTaskButton = (
     <Button onClick={() => router.push(`/schedule/tasks/new?projectId=${projectId}`)}><Plus className="size-4" /> New Task</Button>
   );
 
+  // R67 D-46: three board columns, the width they will really be, instead of
+  // a spinner centred in an empty pane.
   if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+    return (
+      <ListStateRegion state="loading" className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the board" onRetry={() => void load()} />
+        <div className="flex gap-4 overflow-x-auto">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="w-72 shrink-0 space-y-2">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ))}
+        </div>
+      </ListStateRegion>
+    );
   }
   if (error) {
     return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load board: {error}</CardContent>
-      </Card>
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the board" error={error} onRetry={() => void load()} />
+      </ListStateRegion>
     );
   }
   if (columns.length === 0 || columns.every((c) => c.issues.length === 0)) {
     return (
-      <div className="space-y-4">
-        <div className="flex justify-end">{newTaskButton}</div>
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
-      </div>
+      <ListStateRegion state="empty">
+      <Card>
+        <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+          No issues yet.
+          {newTaskButton}
+        </CardContent>
+      </Card>
+      </ListStateRegion>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">{newTaskButton}</div>
+    <ListStateRegion state={columns.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
           <div
@@ -207,6 +235,6 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
           </div>
         ))}
       </div>
-    </div>
+    </ListStateRegion>
   );
 }

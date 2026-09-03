@@ -67,7 +67,18 @@ function stubFetch() {
     const url = typeof input === "string" ? input : input.toString();
     calls.push(url);
     if (url.includes("/api/materials/master")) return jsonRes({ materials: MATERIALS });
-    if (url.includes("/api/construction-materials/cost-report")) return jsonRes({ report: [] });
+    // R67 INTEGRATION: the cost report is a SERVER read on the merged screen
+    // (D-4: never summed in the browser), so the suite stubs it like any other
+    // endpoint. Its figure is the same 3,725.00 the old client-side derivation
+    // produced -- 100 x 24.5 + 50 x 25.5 -- so the arithmetic under test is
+    // unchanged; only who does it moved, back to where D-4 says it belongs.
+    if (url.includes("/api/construction-materials/cost-report")) {
+      return jsonRes({
+        report: [
+          { materialId: "m1", name: "OPC 53 Cement", spec: null, unit: "bag", totalQuantityReceived: 150, totalCost: 3725, averageUnitCost: 24.833333 },
+        ],
+      });
+    }
     if (url.includes("/api/materials")) return jsonRes({ receipts: RECEIPTS });
     if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
     return jsonRes({});
@@ -93,38 +104,57 @@ describe("MaterialsClient — one data call on landing", () => {
     expect(data[0]).toContain("/api/materials/master");
   });
 
-  test("the server cost-report endpoint is never called by the screen -- the tab derives it", async () => {
+  // R67 INTEGRATION (lane F1 onto main). CORRECTED, AND THE CORRECTION IS THE
+  // POINT. Lane F1 derived the Cost Report in the browser from the receipts it
+  // had already fetched, and asserted the server endpoint was never called.
+  // That is the opposite of decision D-4 -- "computed server-side, never summed
+  // in the browser" -- which the merged screen follows, and which matters here
+  // because a total the browser computes from one page of receipts is a
+  // DIFFERENT number from the one the ledger holds. So the assertion is
+  // inverted: the report comes from the server, and it is fetched ONCE, only
+  // when its tab is opened. F1's real property -- the landing does not pay for
+  // a tab nobody opened -- is asserted above and below, and is unchanged.
+  test("the Cost Report tab reads the server report, once, and only when opened", async () => {
     const calls = stubFetch();
 
     const { getByText, getByRole } = render(<MaterialsClient projectId="p1" />);
     await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
 
+    // Nothing is paid for a tab that has not been opened.
+    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(0);
+
     activateTab(getByRole("tab", { name: "Cost Report" }));
 
-    // 3725 = 100 x 24.5 + 50 x 25.5, the same figure getMaterialCostReport()
+    // 3725 = 100 x 24.5 + 50 x 25.5, the figure getMaterialCostReport()
     // produces server-side. Matched on the DIGITS rather than the whole
     // rendered string: R67 G-05 owns how a money cell is presented (grouping,
     // the currency code, the warning glyph when the org has none), and this
-    // test is about the arithmetic, not that presentation.
+    // test is about the figure, not that presentation.
     await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
-    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(0);
+    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(1);
   });
 
-  test("the receipts ledger is fetched once and shared by the Inbound and Cost Report tabs", async () => {
+  // CORRECTED alongside the test above: the two tabs no longer SHARE one
+  // receipts read, because the Cost Report has its own server read. What must
+  // still hold -- and is what F1 was protecting -- is that each pane is fetched
+  // exactly once and is not re-fetched when the user comes back to it.
+  test("each tab is fetched once, and returning to one does not re-fetch it", async () => {
     const calls = stubFetch();
+    const receiptsCalls = () => calls.filter((u) => u.includes("/api/materials") && !u.includes("master"));
 
     const { getByText, getByRole } = render(<MaterialsClient projectId="p1" />);
     await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
 
     activateTab(getByRole("tab", { name: "Inbound Receipts" }));
-    await waitFor(() =>
-      expect(calls.filter((u) => u.includes("/api/materials") && !u.includes("master"))).toHaveLength(1)
-    );
+    await waitFor(() => expect(receiptsCalls()).toHaveLength(1));
 
     activateTab(getByRole("tab", { name: "Cost Report" }));
     await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
 
-    expect(calls.filter((u) => u.includes("/api/materials") && !u.includes("master"))).toHaveLength(1);
+    // Back to a pane that has already answered: no second read.
+    activateTab(getByRole("tab", { name: "Inbound Receipts" }));
+    expect(receiptsCalls()).toHaveLength(1);
+    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(1);
   });
 
   test("a failing receipts ledger shows its own error and leaves the master table intact", async () => {

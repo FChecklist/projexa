@@ -25,7 +25,7 @@ let respond: (path: string) => Promise<unknown> = async () => ({});
 
 mock.module("@/lib/veridian-client", () => ({
   VeridianApiError: FakeVeridianApiError,
-  VERIDIAN_PAGE_BUDGET_MS: 8_000,
+  VERIDIAN_SCREEN_BUDGET_MS: 8_000,
   callVeridian: async (path: string, options: { timeoutMs?: number } = {}) => {
     requestedPaths.push(path);
     requestedOptions.push(options);

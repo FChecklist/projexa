@@ -33,8 +33,16 @@ function walkPageFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// Walked ONCE per test file, not once per test. Three tests below ask for it,
+// and on Windows a recursive readdir of src/app costs real time -- enough that
+// under `bun test --isolate`'s parallel load the first of them exceeded bun's
+// default 5 s and failed a branch whose routes were perfectly correct. The
+// assertion is unchanged; only the number of times the disk is read is.
+let routesOnDiskCache: string[] | null = null;
+
 function routesOnDisk(): string[] {
-  return walkPageFiles(APP_ROOT)
+  if (routesOnDiskCache) return routesOnDiskCache;
+  routesOnDiskCache = walkPageFiles(APP_ROOT)
     .map((file) => {
       const rel = file.slice(APP_ROOT.length).split(sep).join("/");
       // "/(app)/rfis/page.tsx" -> "/rfis": strip the file, then the route
@@ -43,6 +51,7 @@ function routesOnDisk(): string[] {
       return route === "" ? "/" : route;
     })
     .sort();
+  return routesOnDiskCache;
 }
 
 function sidebarHrefs(): string[] {
@@ -51,9 +60,17 @@ function sidebarHrefs(): string[] {
 }
 
 describe("SHIPPED_ROUTES", () => {
-  test("matches the real src/app/**/page.tsx routes exactly, in both directions", () => {
-    expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
-  });
+  test(
+    "matches the real src/app/**/page.tsx routes exactly, in both directions",
+    () => {
+      expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
+    },
+    // The one test that pays for the walk. 30 s is not a licence to be slow --
+    // it takes ~2 s alone -- it is headroom for a Windows filesystem competing
+    // with fifty other test files, which is a property of the runner, not of
+    // the routes being checked.
+    30_000
+  );
 
   test("lists no route twice", () => {
     expect(new Set(SHIPPED_ROUTES).size).toBe(SHIPPED_ROUTES.length);
@@ -132,11 +149,36 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // so a sidebar entry would be meaningless.
   "/",
   "/how-it-works",
+  // The same two marketing pages prerendered in Hindi (R67 J-01). They are
+  // never linked from anywhere: middleware.ts REWRITES a Hindi visitor's
+  // request for "/" or /how-it-works to them, so the canonical URL a person
+  // sees and shares stays the one above. A nav entry -- or any link -- would
+  // be wrong, not merely unnecessary.
+  "/hi",
+  "/hi/how-it-works",
   "/login",
   "/signup",
   "/auth/callback",
   "/invite/[token]",
   "/share/report/[token]",
+  // R67 D-31: the public, read-only trade-wise attendance summary a Share token
+  // resolves to. Same class as /share/report/[token] -- opened by someone with
+  // no PROJEXA account, so a sidebar entry would be meaningless.
+  "/share/attendance/[token]",
+  // R67 D-21: the public, read-only Minutes of Meeting a WhatsApp share token
+  // resolves to. Same class as /share/report/[token] -- opened by a client who
+  // has no PROJEXA account, so a sidebar entry would be meaningless.
+  "/shared/mom/[token]",
+
+  // R67 WS-H. The Design Studio is ONE nav entry (/design-studio, in the
+  // DESIGN group beside Mood Boards, FF&E and Floor Plans). Its Review and
+  // Cost analysis halves are TABS of that module -- they are real routes so
+  // a manager can be sent a link straight to the review queue, but putting
+  // all three in the sidebar would advertise one module as three.
+  "/design-studio/review",
+  "/design-studio/cost-analysis",
+  "/design-studio/timesheets/[id]",
+  "/design-studio/timesheets/new",
 
   // Reached from their own parent flow, never from the top-level nav: you
   // open a customer from the customers list, a permit from the permits list,
@@ -144,8 +186,21 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // href with no id in it into the sidebar.
   "/customers/[id]",
   "/customers/new",
+  // R67 D-07 / WS-H MERGE: /design-studio is NO LONGER excused here, because it
+  // is now in the nav for real. Lane D0 listed it as reachable only from the
+  // "Open in Design Studio" control on Schedule > Timesheet; item H-01 requires
+  // "a 'Design Studio' entry to the All-modules DESIGN group beside Mood
+  // Boards, FF&E Specification and Floor Plans", so it is a sidebar item AND
+  // still reachable from that control -- D0's entry point is kept, only its
+  // "not a top-level nav entry" reason is superseded.
   "/permits/[id]",
   "/permits/new",
+  // R67 D-67: a logged progress entry's own page, reached by clicking its row
+  // on Work Progress > Daily Entry. It is where the site photo attached to
+  // that entry lives -- which was reachable from nowhere in the UI before --
+  // and it needs the entry id and the project, so a sidebar href for it could
+  // not be written.
+  "/work-progress/[id]",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",
@@ -207,6 +262,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/new",
   "/labour/[id]",
   "/labour/attendance/new",
+  // R67 D-34: the bulk roster load. Same class as "/scope/import" -- reached by
+  // the "Import from Excel" action on /labour, which passes the ?projectId= it
+  // needs, never by a standalone sidebar item that could not carry one.
+  "/labour/import",
   "/labour/new",
   "/materials/[id]",
   "/materials/new",
@@ -232,6 +291,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01 / correction C-01: the home screen's Create Project dialog became
+  // a real create route. Reached by the "Create Project" button on /dashboard
+  // and on /dashboard/overview -- the same class as /invoices/new above, not a
+  // standalone sidebar destination.
+  "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",
   "/purchase-orders/new",
@@ -257,6 +321,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/[id]",
   "/scope/[id]/compare",
   "/scope/[id]/revise",
+  // R67 D-25: the BOQ Excel import screen. Same class as "/scope/new" -- it is
+  // reached by the "Import" header action and by the empty state on /scope,
+  // both of which pass the ?projectId= it needs, never by a standalone sidebar
+  // item that could not carry one.
+  "/scope/import",
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",
@@ -266,6 +335,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/vendors/new",
   "/wiki/[id]",
   "/wiki/new",
+  // R67 D-28: one work-progress entry, opened by clicking its row on
+  // /work-progress. Same class as "/permits/[id]" -- an href with no id in it
+  // would be meaningless in the sidebar.
+  "/work-progress/[id]",
 ]);
 
 describe("every module route is reachable by clicking (C01 REACHABLE)", () => {

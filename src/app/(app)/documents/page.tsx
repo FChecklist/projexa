@@ -1,32 +1,51 @@
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale: the three serial round-trips that ran before the first byte are
+// gone, the frame streams first, and the unfiltered document list -- what the
+// screen's default "All categories" shows -- is fetched here on the server
+// inside the Suspense boundary and handed to DocumentsClient as props.
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { ProjectRequiredCard } from "@/components/ProjectRequiredCard";
+import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { fetchDocumentsList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { resolveRegistryColumns } from "@/lib/screen-definitions";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
-import DocumentsClient, { DOCUMENTS_FALLBACK_COLUMN_LABELS, type RegistryColumn } from "@/components/DocumentsClient";
+import DocumentsClient, { type Doc } from "@/components/DocumentsClient";
 
-// R67 F-03 (R-041/R-046/R-052/R-057). This page measured TTFB 1951 ms for a
-// simple document register, and none of it was the register: page.tsx awaited
-// resolveSelectedProject() -- which called VERIDIAN's 1.4-4.0 s /dashboard
-// aggregate -- and THEN awaited the screen-definitions lookup, serially,
-// before sending a single byte of HTML.
-//
-// Three changes, in the order they matter:
-//   1. resolveSelectedProject() now hits the cheap /projects endpoint (see
-//      src/lib/project-selection.ts);
-//   2. the two remaining lookups run in ONE Promise.all instead of serially --
-//      neither depends on the other;
-//   3. the whole data-dependent subtree is behind <Suspense>, so the heading
-//      streams first and the reader sees the real column headers, not a blank
-//      page, while the project resolves. Per D-04 the fetch stays in the
-//      server component: the VERIDIAN API key never reaches the browser.
-//
-// The screen-definitions row is a registry row that changes when somebody
-// edits the registry, so it is cached for 10 minutes per org (documents.list
-// is actively being edited; moms.list, which is not, uses an hour).
-const DOCUMENTS_COLUMNS_TTL_SECONDS = 600;
+const SKELETON = <ModuleListSkeletonBody columns={DOCUMENTS_LIST_COLUMNS} actions={["Upload"]} />;
+
+async function DocumentsSection({ requestedProjectId }: { requestedProjectId?: string }) {
+  const organizationId = await getServerOrganizationId();
+  const { projectId, projectName: resolvedName, errorMessage, mode } = await resolveProjectForModule(
+    requestedProjectId,
+    organizationId,
+    // R67 D-20 + D-66: this module is per-project, so it OPTS IN to the honest
+    // mode. Without the flag, arriving with no ?projectId= silently resolved
+    // the org's FIRST project and rendered its rows under a rail reading "All
+    // projects" -- and a write made on that screen went to a project nobody
+    // chose.
+    { allProjectsWhenUnset: true }
+  );
+  if (errorMessage) return <ModuleProjectNotice errorMessage={errorMessage} />;
+  // Two different answers, told apart at last: "you are looking at the whole
+  // org and this module needs one project" is not the same as "this org has no
+  // projects".
+  if (!projectId && mode === "all") return <ProjectRequiredCard module="Documents" />;
+  if (!projectId) return <ModuleProjectNotice errorMessage={null} />;
+
+  const [registryColumns, list, name] = await Promise.all([
+    getScreenColumns("documents.list", organizationId),
+    fetchDocumentsList<Doc>(organizationId, projectId, "documents"),
+    // R67 D-65 x F-18: the name rides in the SAME batch as the list read, so
+    // it costs no serial hop; getProjectName never throws and never blocks.
+    resolvedName ? Promise.resolve(resolvedName) : getProjectName(projectId, organizationId),
+  ]);
+
+  // R67 D-65: the name travels with the id so the waiting caption and the
+  // empty sentence can both name the project the user chose.
+  return <DocumentsClient projectId={projectId} projectName={name} registryColumns={registryColumns} initial={list} />;
+}
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
@@ -34,43 +53,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Documents" />
-      <Suspense
-        fallback={
-          <TableLoadingRows
-            headers={DOCUMENTS_FALLBACK_COLUMN_LABELS}
-            rows={3}
-            caption="Loading documents..."
-            // 0, not 150: this fallback only ever shows while a server
-            // component is genuinely still fetching, so there is nothing to
-            // debounce -- delaying it would just mean a blank card instead.
-            delayMs={0}
-          />
-        }
-      >
-        <DocumentsSection projectId={projectId} />
+      <Suspense fallback={SKELETON}>
+        <DocumentsSection requestedProjectId={projectId} />
       </Suspense>
     </div>
   );
-}
-
-async function DocumentsSection({ projectId }: { projectId?: string }) {
-  const organizationId = await getServerOrganizationId();
-  // Parallel, not serial: the column labels do not depend on which project is
-  // selected, and the project does not depend on the labels.
-  const [{ project, errorMessage }, registryColumns] = await Promise.all([
-    resolveSelectedProject(projectId, organizationId),
-    resolveRegistryColumns("documents.list", organizationId, DOCUMENTS_COLUMNS_TTL_SECONDS) as Promise<RegistryColumn[] | null>,
-  ]);
-
-  if (errorMessage) {
-    return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-      </Card>
-    );
-  }
-  if (!project) {
-    return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
-  }
-  return <DocumentsClient projectId={project.id} registryColumns={registryColumns} />;
 }

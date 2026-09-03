@@ -1,31 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
-  // R67 F-06 (R-088/R-094): the attendance log grows as workers x days, and
-  // /labour used to ask for the whole history of the project on every page
-  // load. `from`/`to` are forwarded to VERIDIAN's listAttendance, which gained
-  // the matching range filter in the same change. Both are optional here so
-  // every other caller of this proxy keeps its previous behaviour.
-  const from = request.nextUrl.searchParams.get("from");
-  const to = request.nextUrl.searchParams.get("to");
-  const query = new URLSearchParams({ projectId });
-  if (from) query.set("from", from);
-  if (to) query.set("to", to);
+  // R67 F-25 (R-241) x F-06 (R-088/R-094) -- the same fault, found by two
+  // lanes. The attendance log grows as workers x days and this proxy used to
+  // forward projectId alone, so the Manpower screen pulled a project's whole
+  // history on every landing for a tab it opens closed. ?date= asks for one
+  // day; ?from=/?to= for an inclusive range. Each is validated as a plain ISO
+  // date here rather than concatenated blind into the upstream URL, and
+  // VERIDIAN's listAttendance validates them again on its own side.
+  const params = new URLSearchParams({ projectId });
+  for (const key of ["date", "from", "to"] as const) {
+    const value = request.nextUrl.searchParams.get(key);
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) params.set(key, value);
+  }
   try {
-    const data = await callVeridian(`/attendance?${query.toString()}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/attendance?${params.toString()}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load attendance" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load attendance");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -33,6 +37,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/attendance", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to record attendance" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to record attendance");
   }
-}
+});

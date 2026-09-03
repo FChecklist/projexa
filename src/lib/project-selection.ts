@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { cookies } from "next/headers";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 import {
   PROJECT_PREFERENCE_KEY,
   pickProject,
@@ -8,7 +8,57 @@ import {
   type ProjectSource,
 } from "@/lib/project-preference";
 
+// R67 F-03: `status` rides along because GET /projects returns it and two
+// screens read it; it is optional so every existing caller is unaffected.
 export type SelectableProject = { id: string; name: string; status?: string };
+
+/**
+ * R67 D-20/D-66 -- the cookie holding the user's last project choice.
+ *
+ * ONE COOKIE, NOT TWO. This lane introduced "px_project" and WS-A shipped
+ * "veri.rail.project" (PROJECT_PREFERENCE_KEY) for the same purpose, and
+ * WS-A's is the one the SERVER already reads in resolveSelectedProject below,
+ * so it is the one that survives. Two cookies remembering one preference is
+ * precisely the duplication both items existed to remove -- and the failure
+ * mode is not cosmetic: whichever the shell wrote last would decide, so the
+ * rail and the first server render could disagree again.
+ *
+ * The name is kept as an alias because this lane's readers and writers import
+ * it from here, and because naming it in the one server-safe module both
+ * halves already import is what stops them drifting apart on a string literal.
+ */
+export const PROJECT_COOKIE = PROJECT_PREFERENCE_KEY;
+
+/**
+ * R67 D-66 -- what /dashboard shows.
+ *
+ * "/dashboard renders the portfolio when the context is All and the project
+ * dashboard when a project is set." The order is the WS-A root rule's: the
+ * URL first, then the remembered choice, and a remembered id that is no
+ * longer in the org's list is discarded rather than followed -- a deleted or
+ * reassigned project must not pin a user to a blank screen forever.
+ *
+ * Note what this does NOT do: it never falls back to projects[0]. That is
+ * the exact fault D-20 removed, and re-introducing it on the home screen
+ * would be the loudest possible place to make it.
+ */
+export function dashboardScope(
+  projects: SelectableProject[],
+  fromUrl?: string | null,
+  fromCookie?: string | null
+): { project: SelectableProject | null; mode: ProjectSelectionMode } {
+  for (const candidate of [fromUrl, fromCookie]) {
+    if (!candidate) continue;
+    const found = projects.find((p) => p.id === candidate);
+    if (found) return { project: found, mode: "project" };
+  }
+  return { project: null, mode: "all" };
+}
+
+// R67 D-20. "all" is a REAL, explicit state -- the user is looking at the
+// whole org, and the screen is allowed to say so -- not the absence of a
+// choice. Every screen that opts in must handle both.
+export type ProjectSelectionMode = "project" | "all";
 
 export type ProjectSelection = {
   project: SelectableProject | null;
@@ -23,24 +73,151 @@ export type ProjectSelection = {
    * user made. null when there is no project at all.
    */
   source: ProjectSource | null;
+  /**
+   * R67 D-20. "project" means a specific project is in scope. "all" means the
+   * org as a whole is in scope and `project` is null ON PURPOSE -- the caller
+   * must query org-wide rather than pick one.
+   */
+  mode: ProjectSelectionMode;
+  /**
+   * R67 D-20. True when `project` is NOT one the user asked for or chose -- it
+   * was picked for them because nothing said which. Callers render
+   * "(auto-selected)" beside the name so a user is never silently shown, and
+   * never silently WRITES TO, a project they did not pick.
+   *
+   * DERIVED from `source`, never stored beside it: WS-A's "auto" and this
+   * lane's `fellBack` are the same fact, and two fields that can disagree
+   * about one fact is how the rail and the pane came to disagree in the first
+   * place. "only" is deliberately NOT a fallback -- a user with exactly one
+   * project was not offered a choice, so there is nothing to admit to.
+   */
+  fellBack: boolean;
 };
 
-// R67 F-03 named its own px_project cookie for "the project the user was last
-// looking at". R67 A-05 then shipped the real one -- PROJECT_PREFERENCE_KEY
-// ("veri.rail.project"), which the top rail actually WRITES (see
-// project-preference.ts). px_project had no writer, so it is gone rather than
-// left as a second, always-empty answer to the same question.
+/** WS-A's `source`, read as this lane's "was this chosen FOR the user?". */
+export function fellBackFrom(source: ProjectSource | null): boolean {
+  return source === "auto";
+}
+
+// R67 D-20 + F-06/F-07/F-09. Two lanes gave this function an options bag for
+// two unrelated reasons, so the bag carries both: D-20 decides WHICH project
+// is chosen, F-03/F-06 decides how the project LIST is read. They are
+// independent by construction -- see the note on `cacheSeconds`.
+export type ResolveProjectOptions = {
+  /**
+   * R67 D-20. The opt-in the item requires: without it this function behaves
+   * exactly as it did before (first-project fallback), so the ~50 module pages
+   * that call it compile AND behave unchanged and adopt the honest mode in
+   * their own items. With it, "nothing was asked for" resolves to the org-wide
+   * mode instead of quietly picking a project for the user.
+   */
+  allProjectsWhenUnset?: boolean;
+  /**
+   * R67 F-06/F-07/F-09. When set, the PROJECT LIST read is memoised per org
+   * for this many seconds (Next's Data Cache), so a run of navigations across
+   * project-scoped pages costs one round trip rather than one per page.
+   *
+   * Only the LIST is cached. Which project is selected -- the ?projectId=
+   * param, the remembered rail choice, the first-project fallback, D-20's
+   * refusal -- is decided by chooseProject() outside the cache on every call,
+   * so switching project is still instant and a cached list can never pin the
+   * wrong selection.
+   *
+   * Omitted by default: ~50 callers share this function and a page that has
+   * just created a project must be able to see it immediately.
+   */
+  cacheSeconds?: number;
+};
+
+export function projectsCacheTag(organizationId: string | null): string {
+  return `projects:${organizationId ?? "shared"}`;
+}
+
+// R67 F-03 -- WHAT CHANGED AND WHY IT MATTERED. Both resolvers below used to
+// read the project list from VERIDIAN's GET /dashboard: getOrgDashboard(), the
+// earned-value/BOQ/invoice aggregate, measured at 1.4-4.0 s. Fifty page.tsx
+// files call them, and every one awaited that aggregate BEFORE sending a byte
+// of HTML, purely to learn a project's id and name. That is why /documents
+// measured TTFB 1951 ms and /moms 1983 ms while /budgets -- which does not do
+// this -- painted at 580 ms.
+//
+// GET /projects is answered by compliance-tracker from one indexed read of
+// `projects` inside one transaction, with its own 60 s per-org cache. This
+// fixes all fifty callers, not the two pages the audit happened to measure.
+//
+// The D-04 screen budget is kept on the call: this read gates ~50 module pages,
+// so a hung upstream costs 8 s and an honest error, not 20 s of blank frame.
+//
+// A failure is deliberately NOT cached -- caching "this org has no projects"
+// for a minute would turn one blip into a minute of "No active projects yet."
+async function listProjects(organizationId: string | null, cacheSeconds?: number): Promise<SelectableProject[]> {
+  const read = async (orgId: string | null) => {
+    const data = await callVeridian<{ projects: SelectableProject[] }>("/projects", {
+      organizationId: orgId ?? undefined,
+      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
+    });
+    return data.projects ?? [];
+  };
+  if (!cacheSeconds || cacheSeconds <= 0) return read(organizationId);
+  // organizationId is both an explicit key part and the wrapped function's
+  // argument, so the entry is org-scoped two independent ways -- callVeridian
+  // attaches a PER-ORG bearer token and Next keys its fetch cache on URL only
+  // (see createCachedVeridianGet's comment on that cross-tenant leak).
+  const cached = unstable_cache(read, ["projects", organizationId ?? "shared"], {
+    revalidate: cacheSeconds,
+    tags: [projectsCacheTag(organizationId)],
+  });
+  return cached(organizationId);
+}
+
+/**
+ * R67 D-20 -- the whole decision, extracted from the fetch so it is unit
+ * testable without a database or a network.
+ *
+ * THE DEFECT: this used to be one line --
+ *   `(requestedProjectId && projects.find(...)) || projects[0] || null`
+ * -- so a screen reached with no ?projectId= silently resolved to the org's
+ * FIRST project while the top rail still said "All projects". Minutes typed
+ * into a Villa 21 meeting could be saved, and then locked by Publish, under
+ * Cedar Heights. The fallback is kept (old links must not break) but it is
+ * no longer silent, and a caller can now refuse it outright.
+ *
+ * THE RULE ITSELF IS NOT HERE. WS-A's pickProject() owns it -- the URL, then
+ * the user's own remembered rail choice, then their only project, then a pick
+ * -- and the browser shell applies the same function, which is what stops the
+ * rail and the pane disagreeing. This adds the one thing WS-A's rule has no
+ * opinion about: a screen may DECLINE the last resort entirely and take the
+ * org-wide mode instead.
+ */
+export function chooseProject(
+  projects: SelectableProject[],
+  requestedProjectId?: string,
+  options?: ResolveProjectOptions,
+  preferredProjectId?: string | null
+): { project: SelectableProject | null; mode: ProjectSelectionMode; fellBack: boolean; source: ProjectSource | null } {
+  const picked = pickProject({ requested: requestedProjectId, preferred: preferredProjectId, projects });
+
+  // Nothing the user asked for or ever chose. Either the URL carried no
+  // projectId at all, or it carried one this org cannot see (a stale bookmark,
+  // a link pasted from another org). Both are the same question -- "which
+  // project did you mean?" -- and neither is an invitation to answer it on the
+  // user's behalf, which is what opting in refuses.
+  if (options?.allProjectsWhenUnset && picked.source === "auto") {
+    return { project: null, mode: "all", fellBack: false, source: null };
+  }
+
+  return {
+    project: picked.project,
+    mode: picked.project ? "project" : "all",
+    fellBack: fellBackFrom(picked.source),
+    source: picked.source,
+  };
+}
 
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
-// so they don't each re-implement the same project fetch + fallback.
-//
-// R67 F-03 -- WHAT CHANGED AND WHY IT MATTERED. This used to resolve the
-// project by calling VERIDIAN's GET /dashboard: getOrgDashboard(), the
-// earned-value/BOQ/invoice aggregate, measured at 1.4-4.0 s. Fifty page.tsx
-// files call this function, and every one of them awaited that aggregate
-// BEFORE sending a single byte of HTML, purely to learn a project's id and
-// name. That is why /documents measured TTFB 1951 ms and /moms 1983 ms while
-// /budgets -- which does not do this -- painted at 580 ms.
+// so they don't each re-implement the same project fetch + fallback. (The
+// fetch was GET /dashboard until R67 F-03 moved it to GET /projects; see
+// listProjects() above.)
 //
 // R67 A-05 -- THE RAIL AND THE PANE NOW AGREE, because they apply ONE rule.
 //
@@ -57,87 +234,44 @@ export type ProjectSelection = {
 // choose for them. That last case is kept deliberately: without it every
 // multi-project org would land on "No active projects yet" on 50 pages. It is
 // no longer silent, though -- it comes back as source: "auto" and the rail says
-// so.
+// so. R67 D-20 adds the refusal: a screen may pass allProjectsWhenUnset and
+// take the org-wide mode rather than have a project chosen for it.
 //
-// It now calls GET /projects, which compliance-tracker answers from one
-// indexed read of `projects` inside one transaction, with its own 60 s
-// per-org cache. This fixes all fifty callers, not the two pages the audit
-// happened to measure.
-//
-// Resolution order for WHICH project: the explicitly requested id (the
-// ?projectId= search param) wins; then the px_project cookie; then the org's
-// first project, which is the behaviour every one of these pages had before
-// the switcher existed, so old URLs keep working unchanged.
-//
-// `organizationId` (Priority 17 platform provisioning) scopes the call to the
-// caller's own org -- see getServerOrganizationId() in
-// src/lib/supabase/auth-guard.ts, which every page.tsx caller uses to obtain
-// it. Optional/nullable so a page that somehow calls this before resolving
-// auth still gets the same demo-key fallback callVeridian() has always had,
-// rather than a hard failure.
-export type ResolveProjectOptions = {
-  /**
-   * R67 F-06/F-07/F-09. When set, the PROJECT LIST read is memoised per org
-   * for this many seconds (Next's Data Cache), so a run of navigations across
-   * project-scoped pages costs one round trip rather than one per page.
-   *
-   * Only the LIST is cached. Which project is selected -- the ?projectId=
-   * param, the px_project cookie, the first-project fallback -- is decided
-   * outside the cache on every call, so switching project is still instant and
-   * a cached list can never pin the wrong selection.
-   *
-   * Omitted by default: ~50 callers share this function and a page that has
-   * just created a project must be able to see it immediately.
-   */
-  cacheSeconds?: number;
-};
-
-export function projectsCacheTag(organizationId: string | null): string {
-  return `projects:${organizationId ?? "shared"}`;
-}
-
-// The read itself, optionally wrapped in Next's Data Cache. Split out so the
-// caching decision is one place and the selection logic below is unaffected by
-// it. A failure is deliberately NOT cached -- see screen-definitions.ts for the
-// same reasoning: caching "this org has no projects" for a minute would turn
-// one blip into a minute of "No active projects yet."
-async function listProjects(organizationId: string | null, cacheSeconds?: number): Promise<SelectableProject[]> {
-  const read = async (orgId: string | null) => {
-    const data = await callVeridian<{ projects: SelectableProject[] }>("/projects", {
-      organizationId: orgId ?? undefined,
-    });
-    return data.projects ?? [];
-  };
-  if (!cacheSeconds || cacheSeconds <= 0) return read(organizationId);
-  // organizationId is both an explicit key part and the wrapped function's
-  // argument, so the entry is org-scoped two independent ways -- callVeridian
-  // attaches a PER-ORG bearer token and Next keys its fetch cache on URL only
-  // (see createCachedVeridianGet's comment on that cross-tenant leak).
-  const cached = unstable_cache(read, ["projects", organizationId ?? "shared"], {
-    revalidate: cacheSeconds,
-    tags: [projectsCacheTag(organizationId)],
-  });
-  return cached(organizationId);
-}
-
+// `organizationId` (Priority 17 platform provisioning) scopes the VERIDIAN
+// call to the caller's own org -- see getServerOrganizationId() in
+// src/lib/supabase/auth-guard.ts, which every page.tsx caller uses to
+// obtain it. Optional/nullable so a page that somehow calls this before
+// resolving auth still gets the same demo-key fallback callVeridian() has
+// always had, rather than a hard failure.
 export async function resolveSelectedProject(
   requestedProjectId?: string,
   organizationId?: string | null,
-  options: ResolveProjectOptions = {}
+  options?: ResolveProjectOptions
 ): Promise<ProjectSelection> {
   try {
-    // F-03: the cheap GET /projects, never the /dashboard aggregate.
-    const projects = await listProjects(organizationId ?? null, options.cacheSeconds);
+    // R67 F-03: the cheap GET /projects, never the /dashboard aggregate. The
+    // D-04 screen budget rides inside listProjects().
+    const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
     // A-05: and ONE selection rule, shared with the shell's own rail.
     const preferred = await readPreferredProjectId();
-    const { project, source } = pickProject({ requested: requestedProjectId, preferred, projects });
-    return { project, projects, errorMessage: null, source };
+    return {
+      projects,
+      errorMessage: null,
+      ...chooseProject(projects, requestedProjectId, options, preferred),
+    };
   } catch (err) {
     return {
       project: null,
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      // Nothing was resolved, so nothing was fallen back to -- and with no
+      // project there is no project in scope, whatever the caller asked for.
+      // "project mode with no project" is the contradictory state
+      // ProjectScopeProvider refuses to represent, so it is not produced here
+      // either; the errorMessage is what an opted-in screen branches on.
+      mode: "all",
+      fellBack: false,
     };
   }
 }
@@ -163,20 +297,18 @@ export type RouteProjectSelection = ProjectSelection & {
  *
  * `missing` and `unreachable` are separate because they are different
  * sentences: one asks for a decision, the other reports a fact.
- *
- * R67 F-03: reads the same cheap GET /projects listProjects() uses above --
- * this resolver was written against /dashboard, the aggregate F-03 exists to
- * get off the render path, and it is on the render path of every screen that
- * belongs to one project.
  */
 export async function resolveRouteProject(
   searchParams: { projectId?: string | null } | undefined,
   objectProjectId?: string | null,
   organizationId?: string | null,
-  options: ResolveProjectOptions = {}
+  options?: ResolveProjectOptions
 ): Promise<RouteProjectSelection> {
   try {
-    const projects = await listProjects(organizationId ?? null, options.cacheSeconds);
+    // R67 F-03: this resolver was written against /dashboard, the aggregate
+    // F-03 exists to get off the render path -- and it is on the render path
+    // of every screen that belongs to one project.
+    const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
     const picked = pickRouteProject({
       requested: searchParams?.projectId ?? null,
       objectProjectId: objectProjectId ?? null,
@@ -187,6 +319,10 @@ export async function resolveRouteProject(
       projects,
       errorMessage: null,
       source: picked.source,
+      // A-13's strict resolution never picks for the user, so it can never
+      // have fallen back; with no project the screen IS org-wide, and asks.
+      mode: picked.project ? "project" : "all",
+      fellBack: false,
       missing: picked.missing,
       unreachable: picked.unreachable,
     };
@@ -196,6 +332,8 @@ export async function resolveRouteProject(
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      mode: "all",
+      fellBack: false,
       // A failed read says nothing about the URL, and must not be reported as
       // "you did not pick a project" -- the error is the sentence to show.
       missing: false,
@@ -210,10 +348,9 @@ export async function resolveRouteProject(
  * preference the server cannot read would still leave the first render
  * disagreeing with the rail.
  *
- * Never fatal -- a request with no cookie store (which is also how a unit test
- * calling these resolvers directly reaches this line), or a cookie naming a
- * project the user can no longer reach (pickProject() then ignores it), simply
- * means no preference.
+ * Never fatal -- a request with no cookie store (or a cookie for a project the
+ * user can no longer reach, which pickProject() then ignores) simply means no
+ * preference.
  */
 async function readPreferredProjectId(): Promise<string | null> {
   try {

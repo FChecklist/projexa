@@ -17,13 +17,15 @@
 // null (404/error), same "keep the hardcoded version behind a flag until
 // verified" contract as permits/documents/change-orders.
 //
-// Real screen navigation (2026-08-30): the "Add Material"/"Record Receipt"
+// Real-screen conversion (2026-08-30): the "Add Material"/"Record Receipt"
 // Dialog popups are gone -- Add Material routes to a real create screen
 // (MaterialCreateClient.tsx), master rows route to a real Object Page
 // (MaterialObjectClient.tsx, which gained real Edit/Deactivate this
 // conversion -- updateMaterial() didn't exist before). Record Receipt
 // routes to a real create screen (MaterialReceiptCreateClient.tsx) -- no
-// Object Page for receipt rows, a write-once transaction log.
+// Object Page for receipt rows, a write-once transaction log. Also fixes
+// the same uncontrolled-Tabs-no-URL-sync bug found and fixed repeatedly
+// this session.
 //
 // Same conversion also folds in module #31 (Site Materials, the duplicate
 // module found at /site-materials): its Catalog tab was this same
@@ -33,67 +35,80 @@
 // screen, /site-materials now redirects here (see site-materials/page.tsx)
 // and this file gains its one genuinely new capability, Cost Report, backed
 // by a real getMaterialCostReport() aggregation added this same conversion
-// (construction-materials-service.ts).
+// (construction-materials-service.ts) -- the proxy it calls
+// (api/construction-materials/cost-report/route.ts) had been calling a
+// VERIDIAN path that 502'd for the same reason as Inbound: nothing
+// implemented it on the other side either, until now.
 //
-// R67 F-07 (R-100/R-106) -- THREE CALLS ON LANDING BECAME ONE. Warm /materials
-// measured TTFB 2006 ms and LCP 3244 ms for a TWO-ROW table, and the client's
-// share of that was three requests fired together behind a single `loading`
-// flag: the master, the receipts ledger, and the server cost report. Only the
-// first is on screen when the page opens.
+// R67 MERGE (lane D0 x lane F2). Both lanes rebuilt this screen's reads.
 //
-//   * the master is the only thing fetched on mount;
-//   * the receipts ledger is fetched on first activation of the Inbound tab,
-//     and warmed on hover of that tab or the Cost Report tab;
-//   * the Cost Report is DERIVED from those same receipts
-//     (src/lib/material-cost-report.ts, arithmetic identical to the server's
-//     so the on-screen figure and the exportable one cannot disagree) -- the
-//     server endpoint stays for the export, which has no loaded page to
-//     derive from.
+//   * Lane F2 (item F-25, audit R-241) made each TAB its own read. The screen
+//     used to fetch the material master, the inbound receipts AND the cost
+//     report on landing, under one shared flag, although only Material Master
+//     is open -- so the tab the user is looking at waited on two answers they
+//     had not asked for, and a failure in any of them looked like a failure in
+//     all three. That is the defect this file existed to fix and it is kept:
+//     the landing tab is the only request on arrival, the others fill on the
+//     first idle callback, and a ?tab= deep link costs ONE request.
+//   * Lane D0 (item D-65) gave every pane the shared PaneState presentation --
+//     the named waiting caption, the empty sentence that needs a 200, rows
+//     kept and dated through a failed refresh -- plus D-79's tab-aware header
+//     actions. Under decision D-11 that presentation is canonical.
 //
-// Each panel also has its own state now, so a failing receipts ledger cannot
-// blank a working master table, and a wait crossing 3 s says so.
-import { useCallback, useEffect, useState } from "react";
+// So: F2's per-tab state machine PRODUCES the state (src/lib/pane-state.ts's
+// Pane<T>), and D0's PaneState DECIDES WHAT THE SCREEN SAYS about it. That is
+// exactly the union D-11's addendum describes for these two modules.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
+import PaneState from "@/components/PaneState";
+import { MATERIAL_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
+import {
+  errorPane,
+  idlePane,
+  loadingPane,
+  needsLoad,
+  readyPane,
+  seededPane,
+  type Pane,
+} from "@/lib/pane-state";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
-import { buildMaterialCostReport } from "@/lib/material-cost-report";
-import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+// R67 D-74 keeps the ORG's date form here (dd-MM-yyyy for a UAE org);
+// R67 G-05 owns the money, through the one formatter in format-money.ts.
+import { formatDate } from "@/lib/format";
+import { EMPTY_VALUE, MONEY_CELL_CLASS, formatQty } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { materialUnitLabel } from "@/lib/material-units";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
-type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+// Exported so materials/page.tsx can type the master it fetches server-side (F-18).
+export type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
+type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const MASTER_COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Spec", field: "spec", type: "text", importance: "Medium" },
-  { label: "Unit", field: "unit", type: "text", importance: "High" },
-  { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
-];
+// R67 F-18: MASTER_COLUMNS moved to src/lib/module-list-columns.ts as
+// MATERIAL_LIST_COLUMNS, so this table and the page's loading skeleton draw
+// the same fallback heads and cannot disagree.
 
-// Exported so materials/page.tsx's <Suspense> fallback shows the SAME headers
-// the real table will show -- nothing on screen moves when the data lands.
-export const MATERIALS_FALLBACK_COLUMN_LABELS = MASTER_COLUMNS.map((c) => c.label);
-const RECEIPT_COLUMN_LABELS = ["Date", "Material", "Quantity", "Unit Cost"];
-const COST_REPORT_COLUMN_LABELS = ["Material", "Unit", "Total Qty Received", "Total Cost", "Avg Unit Cost"];
+const TAB_IDS = ["master", "receipts", "cost-report"] as const;
+type TabId = (typeof TAB_IDS)[number];
+const VALID_TABS = new Set<string>(TAB_IDS);
 
-const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
-
-/** Money columns: the header carries the currency, the cell is right-aligned. */
+// R67 D-74/G-05: money columns, named by FIELD -- the master's columns come
+// from the registry and can be reordered live. The header carries the
+// currency, the cell is right-aligned with tabular figures.
 const MONEY_FIELDS = new Set(["unitCost"]);
 
 // Per-field cell renderer for the Material Master table -- same reasoning
@@ -130,249 +145,365 @@ function renderMaterialCell(field: string, m: Material, money: (v: number | stri
   }
 }
 
-// D-04's visible budget, client side: a wait that crosses 3 s stops being
-// "fast", and the reader is told the request is still running rather than
-// left to guess.
-function useSlowRequestFlag(pending: boolean, afterMs = 3_000): boolean {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!pending) {
-      setSlow(false);
-      return;
-    }
-    const timer = setTimeout(() => setSlow(true), afterMs);
-    return () => clearTimeout(timer);
-  }, [pending, afterMs]);
-  return slow;
+// R67 D-65 asked for per-tab state; R67 F-25 built it as a state machine with
+// no React in it, in src/lib/pane-state.ts, where the rules are unit tests.
+// This is the small amount left over: where each tab reads from, and what it
+// is called when a wait has to be narrated.
+
+/** Each tab's own endpoint, in one place, so a pane can never be loaded from
+ *  another tab's URL. */
+function paneUrl(tab: TabId, projectId: string): string {
+  const p = encodeURIComponent(projectId);
+  if (tab === "master") return `/api/materials/master?projectId=${p}`;
+  if (tab === "receipts") return `/api/materials?projectId=${p}`;
+  return `/api/construction-materials/cost-report?projectId=${p}`;
 }
 
-export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+/** The plural noun each pane names itself with while it waits. */
+const PANE_ENTITY: Record<TabId, string> = {
+  master: "the material master",
+  receipts: "inbound receipts",
+  "cost-report": "the cost report",
+};
+
+/** The key each endpoint returns its rows under. */
+const PANE_ROWS_KEY: Record<TabId, string> = {
+  master: "materials",
+  receipts: "receipts",
+  "cost-report": "report",
+};
+
+/** PaneState wants the transport's own status and message; Pane keeps one
+ *  sentence, which is all any of these three endpoints gives us. */
+function paneReadError(pane: Pane<unknown>): { status: number | null; message: string | null } | null {
+  return pane.error ? { status: null, message: pane.error } : null;
+}
+
+export default function MaterialsClient({
+  projectId,
+  projectName,
+  registryColumns,
+  initialTab,
+  initialMaster = null,
+}: {
+  projectId: string;
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  /** R67 F-18: the material master, already fetched by materials/page.tsx on
+   *  the server. The landing tab therefore paints filled with no round trip. */
+  initialMaster?: ModuleListInitial<Material>;
+}) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MATERIAL_LIST_COLUMNS;
   const orgMoney = useOrgMoney();
-  const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
+  const [activeTab, setActiveTab] = useState<TabId>(
+    initialTab && VALID_TABS.has(initialTab) ? (initialTab as TabId) : "master"
+  );
 
-  // null means "not resolved yet"; [] is a real, confirmed empty list. The
-  // single `loading` boolean this replaces could not tell those apart, per
-  // panel or at all.
-  const [materials, setMaterials] = useState<Material[] | null>(null);
-  const [materialsError, setMaterialsError] = useState<string | null>(null);
-  const [receipts, setReceipts] = useState<Receipt[] | null>(null);
-  const [receiptsError, setReceiptsError] = useState<string | null>(null);
-  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  // F-25: the shared `loading` flag and single error bag are gone -- each tab
+  // is its own Pane with its own rows, status, as-of time and error, so a
+  // failure in the cost report can no longer read as a failure in the master.
+  const [master, setMaster] = useState<Pane<Material>>(() =>
+    initialMaster ? seededPane(initialMaster.rows, initialMaster.errorMessage, Date.now()) : idlePane<Material>()
+  );
+  const [receiptsPane, setReceiptsPane] = useState<Pane<Receipt>>(idlePane<Receipt>);
+  const [reportPane, setReportPane] = useState<Pane<CostReportRow>>(idlePane<CostReportRow>);
+  // When each pane's CURRENT read was issued, for D-65's elapsed caption.
+  const [startedAt, setStartedAt] = useState<Record<TabId, number | null>>({
+    master: null,
+    receipts: null,
+    "cost-report": null,
+  });
 
-  const materialsSlow = useSlowRequestFlag(materials === null && materialsError === null);
-  const receiptsSlow = useSlowRequestFlag(receiptsLoading);
-
-  // The FIRST load shows its skeleton immediately: this component mounts
-  // directly after the page's own <Suspense> fallback (which already had the
-  // headers on screen), so a 150 ms anti-flash delay here would produce
-  // 150 ms of nothing between the two. A later Retry does use the delay,
-  // because that one can genuinely come back instantly.
-  //
-  // State, not a ref: this value is READ DURING RENDER, and a ref read in
-  // render is exactly the "your component will not update as expected" case
-  // React's own lint rule names.
-  const [skeletonDelayMs, setSkeletonDelayMs] = useState(0);
-
-  const loadMaterials = useCallback(async () => {
-    setMaterials(null);
-    setMaterialsError(null);
-    try {
-      const data = await fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`);
-      setMaterials(data.materials ?? []);
-    } catch (err) {
-      setMaterials([]);
-      setMaterialsError(errorMessage(err, "Material master"));
-    } finally {
-      setSkeletonDelayMs(150);
-    }
-  }, [projectId]);
-
-  const loadReceipts = useCallback(async () => {
-    setReceiptsLoading(true);
-    setReceiptsError(null);
-    try {
-      const data = await fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`);
-      setReceipts(data.receipts ?? []);
-    } catch (err) {
-      setReceipts([]);
-      setReceiptsError(errorMessage(err, "Inbound receipts"));
-    } finally {
-      setReceiptsLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => { void loadMaterials(); }, [loadMaterials]);
-
-  // The receipts ledger backs BOTH the Inbound tab and the derived Cost
-  // Report, and is fetched the first time either is opened -- never on
-  // landing, which is the third call this item removes.
-  const warmReceipts = useCallback(() => {
-    if (receipts !== null || receiptsLoading) return;
-    void loadReceipts();
-  }, [receipts, receiptsLoading, loadReceipts]);
-
+  const panes: Record<TabId, Pane<unknown>> = {
+    master,
+    receipts: receiptsPane,
+    "cost-report": reportPane,
+  };
+  // Synced in an effect, never during render: loadPane() reads this to decide
+  // whether a tab has already answered, and an effect runs before any click
+  // that could ask.
+  const panesRef = useRef(panes);
   useEffect(() => {
-    if (activeTab === "receipts" || activeTab === "cost-report") warmReceipts();
-  }, [activeTab, warmReceipts]);
+    panesRef.current = panes;
+  });
 
-  const materialName = (id: string) => (materials ?? []).find((m) => m.id === id)?.name ?? id;
-  const report = buildMaterialCostReport(materials ?? [], receipts ?? []);
+  // One update path for all three panes, so loadPane() below is one function
+  // rather than three near-identical ones. The casts are safe because each
+  // branch only ever receives the transition applied to its own pane.
+  const applyPane = useCallback((tab: TabId, update: (prev: Pane<unknown>) => Pane<unknown>) => {
+    if (tab === "master") setMaster((prev) => update(prev) as Pane<Material>);
+    else if (tab === "receipts") setReceiptsPane((prev) => update(prev) as Pane<Receipt>);
+    else setReportPane((prev) => update(prev) as Pane<CostReportRow>);
+  }, []);
+
+  // One controller for the whole component: every in-flight pane is dropped on
+  // unmount and on a project switch, and a cancellation is never an error.
+  const abortRef = useRef<AbortController | null>(null);
+
+  const loadPane = useCallback(
+    async (tab: TabId, force = false) => {
+      // A tab that has already answered is never re-read by a click. `force` is
+      // the Retry beside a failed pane, which is the user asking explicitly.
+      if (!force && !needsLoad(panesRef.current[tab])) return;
+      const controller = abortRef.current;
+      applyPane(tab, loadingPane);
+      setStartedAt((prev) => ({ ...prev, [tab]: Date.now() }));
+      try {
+        const payload = await fetchJson<Record<string, unknown>>(paneUrl(tab, projectId), {
+          signal: controller?.signal,
+        });
+        if (controller?.signal.aborted) return;
+        applyPane(tab, () => readyPane((payload[PANE_ROWS_KEY[tab]] as unknown[]) ?? [], Date.now()));
+      } catch (err) {
+        if (isAbortError(err, controller?.signal)) return;
+        // The transport's own words survive: PaneState renders them under the
+        // closed-vocabulary sentence (C19 ERROR_TRUTHFUL).
+        const message =
+          err instanceof ApiError || (err instanceof Error && err.message)
+            ? (err as Error).message
+            : `Couldn't load ${PANE_ENTITY[tab]}.`;
+        applyPane(tab, (prev) => errorPane(prev, message));
+      }
+    },
+    [projectId, applyPane]
+  );
+
+  // Landing: only the tab the user is actually on. A ?tab=receipts deep link
+  // therefore costs one request, not three.
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void loadPane(activeTab);
+    return () => {
+      controller.abort();
+      abortRef.current = null;
+    };
+    // activeTab is handled by goToTab (which loads on demand); re-running this
+    // on every tab change would abort the pane that is already in flight.
+  }, [loadPane]);
+
+  // A project switch invalidates every pane -- the rows on screen belong to the
+  // project the user just left.
+  const projectRef = useRef(projectId);
+  useEffect(() => {
+    if (projectRef.current === projectId) return;
+    projectRef.current = projectId;
+    setMaster(idlePane<Material>());
+    setReceiptsPane(idlePane<Receipt>());
+    setReportPane(idlePane<CostReportRow>());
+  }, [projectId]);
+
+  // Once the landing tab has answered, fill the others on the first IDLE
+  // callback, so switching feels instant without any of it landing on the
+  // first paint. requestIdleCallback is not in Safari, hence the timeout
+  // fallback -- which still yields a frame, which is the point.
+  const activePaneStatus = panes[activeTab].status;
+  useEffect(() => {
+    if (activePaneStatus !== "ready") return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const prefetch = () => {
+      for (const tab of TAB_IDS) if (tab !== activeTab) void loadPane(tab);
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(prefetch, { timeout: 3000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(prefetch, 300);
+    return () => clearTimeout(timer);
+  }, [activePaneStatus, activeTab, loadPane]);
+
+  const materials = master.rows;
+  const receipts = receiptsPane.rows;
+  const report = reportPane.rows;
+
+  const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
-    setActiveTab(tab);
+    if (!VALID_TABS.has(tab)) return;
+    setActiveTab(tab as TabId);
+    void loadPane(tab as TabId);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
-  const receiptsPending = receipts === null && !receiptsError;
-
   return (
     <>
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="master">Material Master</TabsTrigger>
-        {/* Hovering a tab warms the one request both of these panels share, so
-            the click usually lands on a filled table. */}
-        <TabsTrigger value="receipts" onMouseEnter={warmReceipts} onFocus={warmReceipts}>Inbound Receipts</TabsTrigger>
-        <TabsTrigger value="cost-report" onMouseEnter={warmReceipts} onFocus={warmReceipts}>Cost Report</TabsTrigger>
-      </TabsList>
+      {/* R67 D-79: the header trio, once, ABOVE the tabs. The Cost Report tab
+          had NO create action at all, and the other two each offered only
+          their own object. This is tab-aware, so every tab now reaches every
+          create route of the module. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="master">Material Master</TabsTrigger>
+          <TabsTrigger value="receipts">Inbound Receipts</TabsTrigger>
+          <TabsTrigger value="cost-report">Cost Report</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="materials"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering materials is not built yet"
+          exportDisabledReason="Exporting materials is not built yet"
+          // A receipt is written against a material master row, so the entry
+          // states the precondition rather than vanishing.
+          createDisabledReasons={materials.length === 0 ? { Receipt: "Add a material to the master first" } : {}}
+        />
+      </div>
 
       <TabsContent value="master" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Material" Dialog popup with a real create route; hover prefetches
-              its chunk so the click is instant. */}
-          <Button
-            onMouseEnter={() => router.prefetch(`/materials/new?projectId=${projectId}`)}
-            onFocus={() => router.prefetch(`/materials/new?projectId=${projectId}`)}
-            onClick={() => router.push(`/materials/new?projectId=${projectId}`)}
-          >
-            <Plus className="size-4" /> Add Material
-          </Button>
-        </div>
-        {materials === null && !materialsError ? (
-          <TableLoadingRows
-            headers={columns.map((c) => c.label)}
-            rows={3}
-            caption={materialsSlow ? "Still loading…" : "Loading materials…"}
-            delayMs={skeletonDelayMs}
-          />
-        ) : (
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              {materialsError ? (
-                <div className="p-4"><DataLoadError messages={[materialsError]} onRetry={loadMaterials} /></div>
-              ) : (materials ?? []).length === 0 ? (
-                <p className="py-10 text-center text-sm text-px-muted">No materials in the master yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow>{columns.map((col) => <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>{col.label}{MONEY_FIELDS.has(col.field) ? orgMoney.unitSuffix : ""}</TableHead>)}</TableRow></TableHeader>
-                  <TableBody>
-                    {/* Real screen navigation (2026-08-30) -- rows open the
-                        real Object Page, where Edit/Deactivate now live. */}
-                    {(materials ?? []).map((m) => (
-                      <TableRow
-                        key={m.id}
-                        className="cursor-pointer hover:bg-px-cloud/40"
-                        onMouseEnter={() => router.prefetch(`/materials/${m.id}`)}
-                        onClick={() => router.push(`/materials/${m.id}`)}
-                      >
-                        {columns.map((col) => <TableCell key={col.field} className={MONEY_FIELDS.has(col.field) ? MONEY_CELL_CLASS : undefined}>{renderMaterialCell(col.field, m, orgMoney.money)}</TableCell>)}
-                      </TableRow>
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <PaneState
+              status={master.status}
+              entity={PANE_ENTITY.master}
+              projectName={projectName}
+              startedAt={startedAt.master}
+              error={paneReadError(master)}
+              rowCount={materials.length}
+              skeletonColumns={columns.map((col) => col.label)}
+              emptyMessage="No materials in the master yet."
+              emptyAction={
+                <Button size="sm" onClick={() => router.push(`/materials/new?projectId=${projectId}`)}>
+                  <Plus className="size-4" /> Add Material
+                </Button>
+              }
+              lastLoadedAt={master.asOf ? new Date(master.asOf) : null}
+              onRetry={() => void loadPane("master", true)}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {columns.map((col) => (
+                      <TableHead key={col.field} className={MONEY_FIELDS.has(col.field) ? "text-right" : undefined}>
+                        {col.label}
+                        {MONEY_FIELDS.has(col.field) ? orgMoney.unitSuffix : ""}
+                      </TableHead>
                     ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {/* Real screen navigation (2026-08-30) -- rows open the
+                      real Object Page, where Edit/Deactivate now live. */}
+                  {materials.map((m) => (
+                    <TableRow key={m.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/materials/${m.id}`)}>
+                      {columns.map((col) => (
+                        <TableCell
+                          key={col.field}
+                          className={MONEY_FIELDS.has(col.field) ? MONEY_CELL_CLASS : undefined}
+                        >
+                          {renderMaterialCell(col.field, m, orgMoney.money)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </PaneState>
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="receipts" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old
-              "Record Receipt" Dialog popup with a real create route. */}
-          <Button
-            disabled={(materials ?? []).length === 0}
-            onMouseEnter={() => router.prefetch(`/materials/receipts/new?projectId=${projectId}`)}
-            onFocus={() => router.prefetch(`/materials/receipts/new?projectId=${projectId}`)}
-            onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}
-          >
-            <Plus className="size-4" /> Record Receipt
-          </Button>
-        </div>
-        {receiptsPending ? (
-          <TableLoadingRows
-            headers={RECEIPT_COLUMN_LABELS}
-            rows={3}
-            caption={receiptsSlow ? "Still loading…" : "Loading receipts…"}
-          />
-        ) : (
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              {receiptsError ? (
-                <div className="p-4"><DataLoadError messages={[receiptsError]} onRetry={loadReceipts} /></div>
-              ) : (receipts ?? []).length === 0 ? (
-                <p className="py-10 text-center text-sm text-px-muted">No material movements recorded yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Material</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead className="text-right">Unit Cost{orgMoney.unitSuffix}</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {(receipts ?? []).map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
-                        <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.quantity}</TableCell>
-                        {/* R67 G-05: a receipt booked with no price is EMPTY, not
-                            a formatted zero -- "we were not told" and "it cost
-                            nothing" are different facts. */}
-                        <TableCell className={MONEY_CELL_CLASS}>{r.unitCost === null ? EMPTY_VALUE : orgMoney.money(r.unitCost)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <PaneState
+              status={receiptsPane.status}
+              entity={PANE_ENTITY.receipts}
+              projectName={projectName}
+              startedAt={startedAt.receipts}
+              error={paneReadError(receiptsPane)}
+              rowCount={receipts.length}
+              skeletonColumns={["Date", "Material", "Quantity", "Unit Cost"]}
+              emptyMessage="No material movements recorded yet."
+              emptyAction={
+                <Button
+                  size="sm"
+                  disabled={materials.length === 0}
+                  title={materials.length === 0 ? "Add a material to the master first" : undefined}
+                  onClick={() => router.push(`/materials/receipts/new?projectId=${projectId}`)}
+                >
+                  <Plus className="size-4" /> Record Receipt
+                </Button>
+              }
+              lastLoadedAt={receiptsPane.asOf ? new Date(receiptsPane.asOf) : null}
+              onRetry={() => void loadPane("receipts", true)}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Material</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Unit Cost{orgMoney.unitSuffix}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {receipts.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-px-muted">{formatDate(r.receivedDate)}</TableCell>
+                      <TableCell className="font-medium">{materialName(r.materialId)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQty(r.quantity)}</TableCell>
+                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.unitCost)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </PaneState>
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="cost-report" className="space-y-4">
-        {receiptsPending ? (
-          <TableLoadingRows
-            headers={COST_REPORT_COLUMN_LABELS}
-            rows={3}
-            caption={receiptsSlow ? "Still loading…" : "Loading receipts…"}
-          />
-        ) : (
-          <Card className="shadow-card">
-            <CardContent className="p-0">
-              {receiptsError ? (
-                <div className="p-4"><DataLoadError messages={[receiptsError]} onRetry={loadReceipts} /></div>
-              ) : report.length === 0 ? (
-                <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead className="text-right">Total Qty Received</TableHead><TableHead className="text-right">Total Cost{orgMoney.unitSuffix}</TableHead><TableHead className="text-right">Avg Unit Cost{orgMoney.unitSuffix}</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {report.map((r) => (
-                      <TableRow key={r.materialId}>
-                        <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
-                        <TableCell>{materialUnitLabel(r.unit)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.totalQuantityReceived}</TableCell>
-                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.totalCost)}</TableCell>
-                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.averageUnitCost)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <PaneState
+              status={reportPane.status}
+              entity={PANE_ENTITY["cost-report"]}
+              projectName={projectName}
+              startedAt={startedAt["cost-report"]}
+              error={paneReadError(reportPane)}
+              rowCount={report.length}
+              skeletonColumns={["Material", "Unit", "Total Qty Received", "Total Cost", "Avg Unit Cost"]}
+              emptyMessage="No receipts to report yet."
+              lastLoadedAt={reportPane.asOf ? new Date(reportPane.asOf) : null}
+              onRetry={() => void loadPane("cost-report", true)}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Material</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Total Qty Received</TableHead>
+                    <TableHead className="text-right">Total Cost{orgMoney.unitSuffix}</TableHead>
+                    <TableHead className="text-right">Avg Unit Cost{orgMoney.unitSuffix}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.map((r) => (
+                    <TableRow key={r.materialId}>
+                      <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
+                      <TableCell>{materialUnitLabel(r.unit)}</TableCell>
+                      {/* R67 D-39: a quantity is not money -- up to three
+                          decimals and no trailing zeros, so "50 m3" does not
+                          read "50.000 m3", but still right-aligned with
+                          tabular figures so the column reads as a column. */}
+                      <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
+                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.totalCost)}</TableCell>
+                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.averageUnitCost)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </PaneState>
+          </CardContent>
+        </Card>
       </TabsContent>
     </Tabs>
     {/* R67 G-05: all three tabs prefix their figures with the warning glyph

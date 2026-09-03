@@ -73,7 +73,14 @@ function stubFetch(budgets: unknown[] = BUDGETS, options: { never?: boolean } = 
     calls.push(url);
     if (options.never) return new Promise<Response>(() => {}); // never resolves
     if (url.includes("/api/project-budgets")) return jsonRes({ projectBudgets: budgets });
-    if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
+    // R67 G-05 (integration): a REAL base-currency row. The merged screen
+    // formats money through useOrgMoney, and with `currencies: []` these rows
+    // render through the "no currency set" path -- a warning glyph and no code
+    // -- which is a degraded state, not the one a user normally sees. Same
+    // reasoning ScopeClient.test.tsx states for its own fixture.
+    if (url.includes("/api/currencies")) {
+      return jsonRes({ currencies: [{ id: "c-1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] });
+    }
     return jsonRes({});
   }) as typeof fetch;
   return calls;
@@ -99,7 +106,12 @@ describe("BudgetsClient", () => {
 
     await waitFor(() => expect(getByText("FY26 Site Works")).toBeDefined());
     expect(getByText("FY 2026")).toBeDefined();
-    expect(getByText("125,000.50")).toBeDefined();
+    // R67 G-05 (integration): the amount is formatted by the ONE money
+    // formatter every list in this product now uses -- "AED 125,000.50", the
+    // same shape LabourClient renders. It was a bare "125,000.50" while this
+    // screen formatted money itself. The fact asserted is unchanged: the
+    // payload's own amount, to two places, with no per-row request.
+    expect(getByText("AED 125,000.50")).toBeDefined();
 
     // Exactly one budgets request for two rows.
     expect(calls.filter((u) => u.includes("/api/project-budgets"))).toHaveLength(1);

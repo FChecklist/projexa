@@ -1,5 +1,22 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // R46 P8 seq128: registry-driven LIST archetype, same pattern R43 seq2
 // established for permits.list and R46 P8 seq134 established for
 // variations.list (see PermitsListClient.tsx's and ChangeOrdersClient.tsx's
@@ -12,9 +29,18 @@
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
-import { useEffect, useState } from "react";
+// R67 D-55 / D-65 -- THE FAULT THIS SCREEN CARRIED. load() caught its
+// failure into a TOAST and left `docs` at [], so a 504 produced
+//
+//     No documents found for this project.
+//
+// on a project with forty documents, with the only contradiction being a
+// notification that faded after four seconds. R-184's words for it: "'No
+// documents found for this project.' after a 504". The empty sentence is
+// now reachable only through PaneState's mayShowEmptyState(), which takes
+// the read's OUTCOME and not the row count.
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -23,10 +49,14 @@ import { Button } from "@/components/ui/button";
 import { FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel } from "@/lib/pane-state";
+import { useListRead } from "@/lib/use-list-read";
+import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 
-type Doc = {
+// Exported so documents/page.tsx can type the rows it fetches server-side.
+export type Doc = {
   id: string;
   name: string;
   category: string;
@@ -42,19 +72,6 @@ type Doc = {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Category", field: "category", type: "text", importance: "High" },
-  { label: "Type", field: "fileType", type: "text", importance: "High" },
-  { label: "Size", field: "fileSize", type: "number", importance: "High" },
-  { label: "Expiry", field: "expiryDate", type: "date", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
-
-// R67 F-03: the same labels documents/page.tsx paints in its Suspense
-// fallback, so the header row on screen while loading is the header row that
-// stays there when the rows arrive -- no reflow, no second set of words.
-export const DOCUMENTS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
@@ -94,28 +111,50 @@ function renderDocumentCell(field: string, d: Doc) {
   }
 }
 
-export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function DocumentsClient({
+  projectId,
+  projectName,
+  registryColumns,
+  initial = null,
+}: {
+  projectId: string;
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what documents/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
+  initial?: ModuleListInitial<Doc>;
+}) {
   const router = useRouter();
-  const [docs, setDocs] = useState<Doc[]>([]);
-  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DOCUMENTS_LIST_COLUMNS;
 
-  async function load() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
-      if (category !== "all") params.set("category", category);
-      const data = await fetchJson(`/api/documents?${params.toString()}`);
-      setDocs(data.documents ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load documents"));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const url = useMemo(() => {
+    const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
+    if (category !== "all") params.set("category", category);
+    return `/api/documents?${params.toString()}`;
+  }, [projectId, category]);
 
-  useEffect(() => { load(); }, [projectId, category]);
+  const read = useListRead<Doc>({
+    url,
+    select: (body) => (body as { documents?: Doc[] })?.documents,
+    // The page prefetches the DEFAULT ("all categories") read only; changing
+    // the category is exactly the case that should go to the network.
+    initial,
+  });
+  const docs = read.rows;
+
+  // A filtered read that comes back empty is NOT "this project has no
+  // documents" -- it is "no permits, in this project". Saying the first over
+  // the second is how a user concludes the upload never landed.
+  const emptyMessage =
+    category === "all"
+      ? `No documents yet for ${projectName ?? "this project"}.`
+      : `No ${category.replace(/_/g, " ")} documents in ${projectName ?? "this project"}. Clear the category filter to see the rest.`;
 
   return (
     <div className="space-y-4">
@@ -131,29 +170,31 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
           </Select>
           {/* Real screen navigation (2026-08-30) -- replaces the old
               "Upload Document" Dialog popup with a real create route. */}
-          {/* R67 F-03: warm the create route's chunk on hover/focus so the
-              click itself is instant instead of starting the download. */}
-          <Button
-            size="sm"
-            onMouseEnter={() => router.prefetch(`/documents/upload?projectId=${projectId}`)}
-            onFocus={() => router.prefetch(`/documents/upload?projectId=${projectId}`)}
-            onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}
-          >
-            <Plus className="size-4" /> Upload
-          </Button>
+          <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}><Plus className="size-4" /> Upload</Button>
         </div>
       </div>
 
-      {/* R67 F-03: a centred spinner told the reader nothing and made the page
-          reflow when rows landed. The real headers are on screen instead. */}
-      {loading ? (
-        <TableLoadingRows headers={columns.map((c) => c.label)} rows={3} caption="Loading documents..." />
-      ) : (
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(read.status, docs.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {docs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
-          ) : (
+        <CardContent className="p-4">
+          <PaneState
+            status={read.status}
+            entity="documents"
+            projectName={projectName}
+            startedAt={read.startedAt}
+            error={read.error}
+            rowCount={docs.length}
+            skeletonColumns={columns.map((col) => col.label)}
+            emptyMessage={emptyMessage}
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}>
+                <Plus className="size-4" /> Upload
+              </Button>
+            }
+            lastLoadedAt={read.loadedAt}
+            onRetry={read.reload}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -165,12 +206,7 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
                   // Real screen navigation (2026-08-30) -- rows now open the
                   // real Object Page instead of nothing (no way to view/
                   // download an uploaded file again existed before this).
-                  <TableRow
-                    key={d.id}
-                    className="cursor-pointer hover:bg-px-cloud/40"
-                    onMouseEnter={() => router.prefetch(`/documents/${d.id}`)}
-                    onClick={() => router.push(`/documents/${d.id}`)}
-                  >
+                  <TableRow key={d.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/documents/${d.id}`)}>
                     {columns.map((col) => (
                       <TableCell key={col.field}>{renderDocumentCell(col.field, d)}</TableCell>
                     ))}
@@ -178,10 +214,9 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
-      )}
     </div>
   );
 }

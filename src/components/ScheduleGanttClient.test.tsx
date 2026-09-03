@@ -95,16 +95,24 @@ describe("ScheduleGanttClient — server-prefetched first paint", () => {
     expect(calls.filter((u) => u.includes("/api/schedule/gantt"))).toHaveLength(1);
   });
 
+  // R67 INTEGRATION (lane F1 onto main). CORRECTED, NOT WEAKENED. This used a
+  // 403 to provoke the error card. The merged screen renders through
+  // PaneErrorCard, whose dictionary makes NOT_AUTHORISED and NOT_FOUND
+  // deliberately NON-retryable -- offering "Retry" on a permission error is an
+  // invitation to click something that cannot work. So the retryable property
+  // is asserted with a retryable failure (504), which is the case the Retry
+  // button exists for. The assertion itself -- the backend's own words, and a
+  // working Retry that then succeeds -- is unchanged.
   test("a failed load shows the backend's own words AND a Retry -- not an inert error card", async () => {
     let attempt = 0;
     stubFetch(() => {
       attempt += 1;
-      return attempt === 1 ? jsonRes({ error: "Schedule is not enabled for this project" }, 403) : jsonRes(GANTT);
+      return attempt === 1 ? jsonRes({ error: "The construction data service did not respond" }, 504) : jsonRes(GANTT);
     });
 
     const { getByText } = render(<ScheduleGanttClient projectId="p1" initialGantt={null} />);
 
-    await waitFor(() => expect(getByText(/Schedule is not enabled for this project/)).toBeDefined());
+    await waitFor(() => expect(getByText(/did not respond/)).toBeDefined());
 
     fireEvent.click(getByText("Retry"));
     await waitFor(() => expect(getByText("Pour foundation slab")).toBeDefined());

@@ -4,17 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
-import { formatHourMinute } from "@/lib/format-date";
-import { Skeleton } from "@/components/ui/skeleton";
+import { DashboardSpeculation } from "@/components/DashboardSpeculation";
 import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 /** Money column headers align with their cells. */
 const MONEY_HEAD_CLASS = "text-right";
-import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -122,14 +121,6 @@ export default function DashboardHomeView({
   registryColumns?: RegistryColumn[] | null;
 }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
-  // R67 F-01: an "as of" line under the KPI band. These figures are computed
-  // at request time, so without it a reader has no way to tell a fresh number
-  // from one their browser restored from the back/forward cache. Rendered with
-  // format-date.ts's pinned en-US/UTC HH:MM formatter so the server's HTML and
-  // the client's hydration produce the same string -- a locale-dependent time
-  // here would be a guaranteed hydration mismatch on every request outside UTC
-  // -- and labelled UTC rather than pretending to be the reader's local clock.
-  const updatedAt = formatHourMinute(new Date());
   const currencySet = hasCurrency({ currency: orgCurrency(currencies) });
   const unitSuffix = currencyUnitSuffix({ currency: orgCurrency(currencies) }) ?? "";
 
@@ -143,6 +134,11 @@ export default function DashboardHomeView({
 
   return (
     <>
+      {/* R67 F-22: renders nothing. It spends the seconds the user spends
+          READING this screen prefetching the two lists they are most likely
+          to open next (Scope, Work Progress), so that click lands on data
+          instead of on a spinner. Every guard lives in prefetch-store.ts. */}
+      <DashboardSpeculation fallbackProjectId={data?.projects?.[0]?.id ?? null} />
       {/* No PageHeading here -- this is PROJEXA's designated home route
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
           already renders a real "Good morning, {name}." heading; a second
@@ -177,8 +173,16 @@ export default function DashboardHomeView({
           </Card>
         )}
 
+        {/* R67 D-01 / correction C-01: this was the one popup left in
+            PROJEXA (CreateProjectDialog). It is now a real route --
+            /projects/new -- with its own breadcrumb, Back control and a
+            Save that names the fields still missing, the same create
+            archetype /labour/new already uses. The dialog component is
+            deleted rather than left behind, so the two forms cannot drift. */}
         <div className="flex justify-end">
-          <CreateProjectDialog />
+          <Button size="sm" asChild>
+            <Link href="/projects/new"><Plus className="size-4" /> Create Project</Link>
+          </Button>
         </div>
 
         {data && (
@@ -189,8 +193,6 @@ export default function DashboardHomeView({
               <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
               <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>
-
-            <p className="text-[12.5px] text-px-muted">Updated {updatedAt} UTC</p>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
@@ -288,39 +290,6 @@ export default function DashboardHomeView({
             <CurrencyNotSetNotice currencySet={currencySet} />
           </>
         )}
-      </div>
-    </>
-  );
-}
-
-
-// R67 F-01 (R-006/R-011). The home route used to send NO HTML at all until the
-// VERIDIAN org dashboard, the currencies list and the registry row had every
-// one of them resolved -- a blank page for the duration of the slowest.
-//
-// This is what the first flush paints instead, as dashboard/page.tsx's
-// <Suspense> fallback: the SAME HomeGreeting, with the same userName, so the
-// heading never moves or changes when the data lands (only its summary line
-// goes from "Loading your projects…" to the real sentence), above four card
-// skeletons in the exact grid the real KPI band uses. No number, not even a
-// zero, appears before the real one -- a placeholder digit on a financial
-// dashboard is a figure the reader may act on.
-export function DashboardKpiSkeleton({ userName }: { userName: string }) {
-  return (
-    <>
-      <HomeGreeting userName={userName} summary="Loading your projects…" stats={[]} />
-      <div className="flex-1 space-y-6 p-6" aria-busy="true">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {DEFAULT_COLUMNS.slice(0, 4).map((column) => (
-            <div key={column.field} className="rounded-lg border border-px-border p-4">
-              {/* The real title, from the first frame -- the reader can see
-                  WHICH number is coming, not just that something is. */}
-              <p className="text-[12.5px] text-px-muted">{column.label}</p>
-              <Skeleton className="mt-2 h-7 w-28" />
-            </div>
-          ))}
-        </div>
-        <p role="status" className="text-[12.5px] text-px-muted">Loading your dashboard…</p>
       </div>
     </>
   );

@@ -37,12 +37,64 @@
 // no per-org/per-user time zone preference anywhere in this codebase to
 // prefer instead. Existing numeric `.toLocaleString("en-US", ...)` call
 // sites are unaffected by this file; they were already hydration-safe.
+import { EMPTY_VALUE } from "@/lib/format-number";
+
 const FIXED_LOCALE = "en-US";
 const FIXED_TIME_ZONE = "UTC";
 
 /** e.g. "8/25/2026" -- identical on server and client, any visitor. */
 export function formatDate(value: Date | string | number): string {
   return new Date(value).toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
+}
+
+/**
+ * R67 D-23: e.g. "28 Aug 2026" -- the unambiguous day-month-year form the BOQ
+ * list uses, because "8/25/2026" reads as 8 May to half of this product's
+ * users (a UAE contractor's site team) and as 25 August to the other half.
+ * Same pinned locale/time zone as every other helper here, so it is equally
+ * hydration-safe.
+ */
+export function formatDayMonthYear(value: Date | string | number): string {
+  // "en-GB", not the FIXED_LOCALE above, is deliberate and is the ONE
+  // exception in this file: en-US orders these parts month-first ("Aug 28,
+  // 2026"), and the required reading is day-first. It is still a HARDCODED
+  // locale -- pinned exactly like the others, so the string is byte-identical
+  // on the server and in every visitor's browser. It is never the runtime
+  // default.
+  return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * R67 D-28: e.g. "25-08-2026" -- the numeric day-first form Work Progress uses
+ * across its list, its form and its report, because the module's three surfaces
+ * previously each formatted the same stored date their own way ("8/25/2026" in
+ * the list, the raw ISO "2026-08-25" in the form's date control, and a third
+ * reading in the report), and a site engineer comparing them cannot tell
+ * whether they are looking at one entry or three.
+ *
+ * Deliberately NOT formatDayMonthYear()'s "25 Aug 2026": that helper is the BOQ
+ * list's format (R67 D-23), and this is the format D-28 specifies for Work
+ * Progress. Both are day-first and unambiguous; they are two REGISTERS of the
+ * same reading, and each module uses exactly one.
+ *
+ * Built from Intl parts rather than a locale string, so no runtime's locale
+ * data can reorder or re-separate it -- the output is byte-identical on the
+ * server and in every visitor's browser, like every other helper here.
+ */
+export function formatDayMonthYearNumeric(value: Date | string | number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")}-${part("month")}-${part("year")}`;
 }
 
 /** e.g. "8/25/2026, 2:30 PM" -- identical on server and client, any visitor. */
@@ -92,4 +144,112 @@ export function formatDateTimeMedium(value: Date | string | number): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+// ─── R67 D-16: the ORG's date, not the server's ──────────────────────────
+//
+// The three helpers above are pinned to en-US/UTC for one reason only: they
+// must produce the same bytes on the server's SSR pass and in the visitor's
+// browser. That fixed the hydration mismatch and is not being changed --
+// their constants and their tests stay exactly as they are.
+//
+// What it did NOT fix is the SECOND defect the same call sites carry: a UAE
+// construction org reading "8/25/2026, 2:30:00 PM" -- an American date order,
+// a 12-hour clock and a seconds field nobody scheduled a meeting to. The fix
+// is not "unpin the locale" (that reintroduces the mismatch); it is to pin it
+// to the ORGANISATION's locale and time zone instead of the runtime's, which
+// is just as deterministic because both are explicit arguments.
+//
+// The defaults are the demo org's own settings. They are parameters rather
+// than constants because the org-level locale/timeZone/dateFormat columns do
+// not exist yet -- they ship with the org date-format work in another lane --
+// and a caller that has them (from /api/organization) can pass them today
+// without this file changing again.
+export const DEFAULT_ORG_LOCALE = "en-GB";
+export const DEFAULT_ORG_TIME_ZONE = "Asia/Dubai";
+
+/**
+ * e.g. "28 Aug 2026, 10:00" -- the org's date order and a 24-hour clock,
+ * with NO seconds. Deterministic for a given (locale, timeZone) pair, so it
+ * is hydration-safe exactly the way formatDateTime is.
+ *
+ * An unparseable or empty value renders an en-dash rather than "Invalid
+ * Date": a cell that cannot say when something is scheduled must not claim
+ * a date, and "Invalid Date" is a developer's string, not a user's.
+ */
+export function formatDateTimeOrg(
+  value: Date | string | number | null | undefined,
+  locale: string = DEFAULT_ORG_LOCALE,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return EMPTY_VALUE;
+  return new Intl.DateTimeFormat(locale, {
+    timeZone,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+/** e.g. "28 Aug 2026" -- the date half of {@link formatDateTimeOrg}. */
+export function formatDateOrg(
+  value: Date | string | number | null | undefined,
+  locale: string = DEFAULT_ORG_LOCALE,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return EMPTY_VALUE;
+  return new Intl.DateTimeFormat(locale, { timeZone, day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+// ─── R67 D-46: the ORG's date PATTERN ────────────────────────────────────
+//
+// formatDateOrg above takes a locale; this takes a pattern, because that is
+// what the org-level setting actually is ("dd-MM-yyyy" for the UAE and
+// Indian orgs this product serves). The Schedule module used two date forms
+// on one screen -- the Gantt grid's en-US strings beside date inputs the
+// browser renders in its own locale -- and neither was the org's.
+//
+// Only three tokens are supported, and an unrecognised pattern falls back to
+// the default rather than printing the pattern itself. Inventing a general
+// date-pattern engine here would be a second Intl, badly.
+export const DEFAULT_ORG_DATE_FORMAT = "dd-MM-yyyy";
+
+const SUPPORTED_ORG_DATE_FORMATS = new Set(["dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy"]);
+
+/**
+ * e.g. formatOrgDate("2026-10-15", "dd-MM-yyyy") === "15-10-2026".
+ *
+ * The calendar day is resolved in the org's time zone, so a stored timestamp
+ * and a date-only value agree about which day they are on.
+ */
+export function formatOrgDate(
+  value: Date | string | number | null | undefined,
+  dateFormat: string = DEFAULT_ORG_DATE_FORMAT,
+  timeZone: string = DEFAULT_ORG_TIME_ZONE
+): string {
+  const date = toValidDate(value);
+  if (!date) return EMPTY_VALUE;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const pattern = SUPPORTED_ORG_DATE_FORMATS.has(dateFormat) ? dateFormat : DEFAULT_ORG_DATE_FORMAT;
+  // One pass, so a substituted value can never be re-matched by a later token.
+  return pattern.replace(/yyyy|MM|dd/g, (token) =>
+    token === "yyyy" ? get("year") : token === "MM" ? get("month") : get("day")
+  );
+}
+
+function toValidDate(value: Date | string | number | null | undefined): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

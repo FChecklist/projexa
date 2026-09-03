@@ -1,52 +1,60 @@
 "use client";
 
-// Real-screen conversion (2026-08-30): roster entries never had a detail
-// view or any way to edit/deactivate a worker short of re-creating them --
-// updateRosterEntry() didn't exist in construction-labour-service.ts at all
-// before this conversion. Real Object Page on the kit's ObjectScreen. Real
-// Delete = real Deactivate (isActive: false, a real pre-existing column
-// nothing ever set outside its insert-time default), matching Budget's
-// Cancel-as-Delete / Documents' Dispose-as-Delete convention. No Object
-// Page for Attendance -- it's a write-once daily transaction log (dailyCost
-// computed at write time), same class as Expenses/Stock Entries.
+// Real-screen conversion (2026-08-30): roster entries never had a detail view
+// or any way to edit/deactivate a worker short of re-creating them. Real
+// Delete = real Deactivate (isActive: false), matching Budget's
+// Cancel-as-Delete / Documents' Dispose-as-Delete convention.
+//
+// R67 D-34 (R-085): the edit fields were a second, independent copy of the
+// create form's -- refusing an empty name with a toast where the create screen
+// refused it silently, with free-text Trade and an unmarked, uncurrencied Daily
+// Rate. They are now the SAME component (RosterFields) reading the SAME
+// validation model (src/lib/roster-form.ts), on the D-09 ObjectScreen fork so
+// Deactivate is rendered-with-a-reason on an already-inactive worker rather
+// than silently absent.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09) + D-22, reconciled by the integration train: the FORKED
+// ObjectScreen, which carries the `loading` variant AND the
+// disabled-with-reason Edit/Delete this screen needs.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import RosterFields, { useTrades, type RosterFieldValues, type Vendor } from "@/components/RosterFields";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { loadVendors, type Vendor } from "@/lib/reference-lookups";
+import { missingRosterFields, missingRosterReason, rosterFieldMessage, type RosterFieldKey } from "@/lib/roster-form";
 
 type RosterEntry = { id: string; projectId: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 
-export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
+const EMPTY: RosterFieldValues = { employeeCode: "", name: "", trade: "", vendorId: "", dailyRate: "" };
+
+export default function RosterObjectClient({ rosterId, createdNotice }: { rosterId: string; createdNotice?: string | null }) {
   const router = useRouter();
   const currencies = useCurrencies();
-  const label = currencyLabel(undefined, currencies);
+  const currency = currencyLabel(undefined, currencies);
+  const trades = useTrades();
   const [entry, setEntry] = useState<RosterEntry | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
-  const [draft, setDraft] = useState({ name: "", employeeCode: "", trade: "", skillLevel: "", vendorId: "", dailyRate: "" });
+  const [draft, setDraft] = useState<RosterFieldValues>(EMPTY);
+  const [touched, setTouched] = useState<Partial<Record<RosterFieldKey, boolean>>>({});
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
   async function load() {
     try {
-      // R67 F-06: the vendor list is shared across /labour, /labour/new and
-      // this screen (src/lib/reference-lookups.ts) -- arriving here from the
-      // roster costs no vendor request at all.
-      const [data, vendorList] = await Promise.all([
+      const [data, vendorData] = await Promise.all([
         fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`),
-        loadVendors(),
+        fetchJson<{ vendors?: Vendor[] }>("/api/vendors").catch(() => ({ vendors: [] })),
       ]);
       setEntry(data);
-      setVendors(vendorList);
+      setVendors(vendorData.vendors ?? []);
       setLoadError(null);
     } catch (err) {
       setEntry(null);
@@ -55,30 +63,58 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   }
   useEffect(() => { load(); }, [rosterId]);
 
+  // The create screen's confirmation arrives here, in the band, because that
+  // screen unmounts with the navigation.
+  useEffect(() => {
+    if (createdNotice) setMessages([{ level: "info", text: createdNotice }]);
+  }, [createdNotice]);
+
   function startEdit() {
     if (!entry) return;
-    setDraft({ name: entry.name, employeeCode: entry.employeeCode ?? "", trade: entry.trade ?? "", skillLevel: entry.skillLevel ?? "", vendorId: entry.vendorId ?? "", dailyRate: entry.dailyRate });
+    setDraft({
+      employeeCode: entry.employeeCode ?? "",
+      name: entry.name,
+      trade: entry.trade ?? "",
+      vendorId: entry.vendorId ?? "",
+      dailyRate: entry.dailyRate,
+    });
+    setTouched({});
+    setMessages([]);
     setMode("edit");
   }
 
+  function blurField(field: RosterFieldKey) {
+    setTouched((t) => ({ ...t, [field]: true }));
+    const message = rosterFieldMessage(field, draft, currency);
+    setMessages(message ? [{ field, level: "error", text: message }] : []);
+  }
+
+  const missing = mode === "edit" ? missingRosterFields(draft) : [];
+
   async function saveEdit() {
-    if (!draft.name.trim() || !draft.dailyRate) { toast.error("Name and daily rate are required"); return; }
+    if (missing.length > 0) {
+      setTouched({ name: true, dailyRate: true });
+      setMessages(missing.map((field) => ({ field, level: "error" as const, text: rosterFieldMessage(field, draft, currency)! })));
+      return;
+    }
     setSaving(true);
+    setMessages([]);
     try {
-      const res = await fetch(`/api/labour-roster/${rosterId}`, {
+      const data = await fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: draft.name.trim(), employeeCode: draft.employeeCode || null, trade: draft.trade || null,
-          skillLevel: draft.skillLevel || null, vendorId: draft.vendorId || null, dailyRate: Number(draft.dailyRate),
+          name: draft.name.trim(),
+          employeeCode: draft.employeeCode.trim() || null,
+          trade: draft.trade.trim() || null,
+          vendorId: draft.vendorId || null,
+          dailyRate: Number(draft.dailyRate),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save worker");
-      toast.success("Worker saved");
-      setMode("display");
       setEntry(data);
+      setMode("display");
+      setMessages([{ level: "info", text: "Worker saved" }]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save worker");
+      setMessages([{ level: "error", text: errorMessage(err, "Couldn't save this worker") }]);
     } finally {
       setSaving(false);
     }
@@ -87,16 +123,14 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   async function deactivate() {
     setDeactivating(true);
     try {
-      const res = await fetch(`/api/labour-roster/${rosterId}`, {
+      const data = await fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: false }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to deactivate worker");
-      toast.success("Worker deactivated");
       setEntry(data);
+      setMessages([{ level: "info", text: "Worker deactivated" }]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't deactivate worker");
+      setMessages([{ level: "error", text: errorMessage(err, "Couldn't deactivate this worker") }]);
     } finally {
       setDeactivating(false);
     }
@@ -110,9 +144,20 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       </div>
     );
   }
-  if (!entry) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!entry) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
+      label={LABOUR_OBJECT_BREADCRUMB.label}
+      actions={LABOUR_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
-  const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
+  const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "Direct hire";
 
   return (
     <>
@@ -120,8 +165,8 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         "<project> › Worker Ramesh Kumar" -- instead of the module. Published
         after the fetch, which is when this page first knows either. */}
     <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
-    <ObjectScreen
-      breadcrumb="Labour / Worker"
+    <KitObjectScreen
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
       hasDraft={false}
@@ -130,34 +175,37 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         { label: "ID", value: entry.employeeCode ?? "—" },
         { label: "Trade", value: entry.trade ?? "—" },
         { label: "Company", value: vendorName },
-        { label: "Daily Rate", value: `${label}${entry.dailyRate}` },
+        { label: "Daily Rate", value: `${currency}${entry.dailyRate} / day` },
       ]}
-      onEdit={entry.isActive && mode === "display" ? startEdit : undefined}
+      onEdit={mode === "display" ? startEdit : undefined}
+      editDisabledReason={mode === "display" && !entry.isActive ? "This worker is inactive" : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
-      onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={entry.isActive && mode === "display" ? deactivate : undefined}
-      deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
+      onCancel={mode === "edit" ? () => { setMode("display"); setMessages([]); } : undefined}
+      onDelete={mode === "display" ? deactivate : undefined}
+      // Rendered-with-a-reason rather than absent (the D-09 fork's whole
+      // point): on an already-inactive worker the control stays visible and
+      // says why it is not offered.
+      deleteDisabledReason={deactivating ? "Deactivating…" : !entry.isActive ? "Already inactive" : mode === "edit" ? "Finish editing first" : undefined}
       onBack={() => router.push(`/labour?projectId=${entry.projectId}`)}
-      saveDisabled={saving || !draft.name.trim() || !draft.dailyRate}
-      saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.dailyRate ? "Name and daily rate are required" : undefined}
-      messages={[]}
+      saveDisabled={saving || missing.length > 0}
+      saveDisabledReason={saving ? "Saving…" : missingRosterReason(draft)}
+      messages={messages}
     >
       {mode === "edit" && (
-        <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={draft.employeeCode} onChange={(e) => setDraft((d) => ({ ...d, employeeCode: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={draft.trade} onChange={(e) => setDraft((d) => ({ ...d, trade: e.target.value }))} /></div>
-          <div className="space-y-1.5">
-            <Label>Company (optional)</Label>
-            <Select value={draft.vendorId} onValueChange={(v) => setDraft((d) => ({ ...d, vendorId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select subcontractor" /></SelectTrigger>
-              <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={draft.dailyRate} onChange={(e) => setDraft((d) => ({ ...d, dailyRate: e.target.value }))} /></div>
-        </div>
+        <RosterFields
+          values={draft}
+          onChange={(field, value) => {
+            setDraft((d) => ({ ...d, [field]: value }));
+            setMessages([]);
+          }}
+          vendors={vendors}
+          trades={trades}
+          currency={currency}
+          touched={touched}
+          onBlurField={blurField}
+        />
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
@@ -41,7 +43,7 @@ type BoqResponse = { id: string; status: string; version: number; title: string;
 //      `d >= from && d <= to`, `d <= to`), so it is now capped at `to`. The
 //      LOWER bound is deliberately NOT sent: the "previous" column IS the
 //      entries before `from`, and windowing them away would silently zero it.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -139,9 +141,6 @@ export async function GET(request: NextRequest) {
       byVendor,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to generate work progress report");
   }
-}
+});

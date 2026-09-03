@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ScheduleGanttClient, { type GanttPayload, type RegistryColumn } from "@/components/ScheduleGanttClient";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
+import ScheduleGanttClient, { type RegistryColumn, type GanttPayload } from "@/components/ScheduleGanttClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
 import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
-import { warmSchedule, type ScheduleResource } from "@/lib/schedule-cache";
 import { SCHEDULE_TABS, isScheduleTab, type ScheduleTab } from "@/lib/schedule-tabs";
 
 // F_016 fix (2026-08-27): SCHEDULE_TABS / ScheduleTab / isScheduleTab used to
@@ -35,21 +36,6 @@ export { SCHEDULE_TABS, isScheduleTab, type ScheduleTab };
 // Component (and its callVeridian calls) on every tab click. The tab
 // switch itself stays exactly as instant and client-side as before; only
 // the URL bar changes.
-//
-// R67 F-09 (R-122) -- HOVERING A TAB WARMS IT. Radix unmounts the inactive
-// panel, so every tab switch used to start a fresh full-pane spinner, even
-// back to a tab the user had already seen. Each trigger now warms its panel's
-// request on hover/focus into the shared 60 s session cache
-// (src/lib/schedule-cache.ts), and every panel reads through that same cache,
-// so the click usually lands on data that is already there -- and a hover
-// followed by a click costs ONE request, not two.
-const RESOURCE_BY_TAB: Record<ScheduleTab, ScheduleResource> = {
-  timeline: "gantt",
-  board: "board",
-  sprints: "sprints",
-  timesheet: "timesheets",
-};
-
 export function ScheduleTabsClient({
   projectId,
   initialTab,
@@ -59,10 +45,24 @@ export function ScheduleTabsClient({
   projectId: string;
   initialTab: ScheduleTab;
   timelineColumns: RegistryColumn[] | null;
+  /**
+   * R67 F-09 (lane F1): the Timeline payload page.tsx prefetched on the server,
+   * passed straight through to the tab that needs it. null when it was not
+   * prefetched or the prefetch failed, in which case the tab reads it itself.
+   */
   initialGantt?: GanttPayload | null;
 }) {
+  // R67 D-79: the Tabs value is CONTROLLED now. It was uncontrolled
+  // (`defaultValue`), so this component could not name the tab the user was
+  // on -- and the header's "+ New" has to, because which object it offers
+  // first is the whole point. The URL sync below is unchanged: still
+  // history.replaceState, never router.push, so a tab click does not re-run
+  // the page's Server Component and its VERIDIAN calls.
+  const [activeTab, setActiveTab] = useState<ScheduleTab>(initialTab);
+
   function handleTabChange(value: string) {
     if (!isScheduleTab(value)) return;
+    setActiveTab(value);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", value);
     // R67 A-13: this screen renders strictly from the URL's projectId, so every
@@ -74,25 +74,26 @@ export function ScheduleTabsClient({
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
-  // Never warms the Timeline when the server already supplied it -- that would
-  // reintroduce the request this item removed.
-  function warm(tab: ScheduleTab) {
-    if (tab === "timeline" && initialGantt !== null) return;
-    warmSchedule(RESOURCE_BY_TAB[tab], projectId);
-  }
-
-  function triggerProps(tab: ScheduleTab) {
-    return { value: tab, onMouseEnter: () => warm(tab), onFocus: () => warm(tab) };
-  }
-
   return (
-    <Tabs defaultValue={initialTab} onValueChange={handleTabChange}>
-      <TabsList>
-        <TabsTrigger {...triggerProps("timeline")}>Timeline</TabsTrigger>
-        <TabsTrigger {...triggerProps("board")}>Board</TabsTrigger>
-        <TabsTrigger {...triggerProps("sprints")}>Sprints</TabsTrigger>
-        <TabsTrigger {...triggerProps("timesheet")}>Timesheet</TabsTrigger>
-      </TabsList>
+    <Tabs value={activeTab} onValueChange={handleTabChange}>
+      {/* R67 D-79: the Schedule module had NO header action on any of its
+          four tabs, so logging time from the Gantt meant leaving the module
+          entirely even though /schedule/log-time has existed all along. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="board">Board</TabsTrigger>
+          <TabsTrigger value="sprints">Sprints</TabsTrigger>
+          <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="schedule"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering the schedule is not built yet"
+          exportDisabledReason="Exporting the schedule is not built yet"
+        />
+      </div>
       <TabsContent value="timeline">
         <ScheduleGanttClient projectId={projectId} registryColumns={timelineColumns} initialGantt={initialGantt} />
       </TabsContent>

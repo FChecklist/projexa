@@ -1,5 +1,22 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // R42 seq21/22 built this against the kit's ListScreen but its COLUMNS
 // below was always a hardcoded const, DESPITE this file's own prior comment
 // claiming it "reads structurally" from a screen_definitions row -- that
@@ -17,9 +34,42 @@
 // changed and why; this file only renders what that module decides, and adds
 // the two things a pure function cannot: the header band (status at header
 // level as well as item level) and the filtered-view banner.
-import { useCallback, useEffect, useMemo, useState } from "react";
+//
+// â”€â”€â”€ R67 D-65 / D-59 / D-71: THE READ IS NO LONGER ALLOWED TO LIE â”€â”€â”€â”€â”€â”€â”€
+//
+// BEFORE, in full:
+//
+//   fetch(`/api/permits?...`)
+//     .then((r) => r.json())            // status never read
+//     .then((data) => setPermits(data.permits ?? []))   // error body -> []
+//     .finally(() => setLoading(false));
+//
+// A 500 parsed cleanly as JSON, `data.permits` came back undefined, `?? []`
+// produced an empty array, and the kit's ListScreen then rendered "0
+// records" and "No permits yet for this project." -- on a project with
+// permits, with no error anywhere on screen and no way to tell a broken
+// backend from an empty one. There was not even a catch: a network failure
+// left the spinner up forever.
+//
+// AFTER: the outcome is held (loading | error | ready) and PaneState decides
+// what may be said. The empty sentence is reachable only from a 200. The
+// kit's ListScreen is rendered ONLY when there are rows to put in it --
+// per D-09 the kit stays unchanged, and handing it rows:[] is precisely how
+// its own "0 records" got onto a failed screen.
+//
+// D-71 finishes the job: the twenty lines of load-state bookkeeping that
+// stood here are now useListRead(), the one shared list hook, so the rule
+// lives in a tested module instead of being re-typed per screen.
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { PaneState } from "@/components/PaneState";
+import { useListRead } from "@/lib/use-list-read";
+import { PERMITS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
+import { recordCountLabel } from "@/lib/pane-state";
 import { StatusPillTone } from "@/components/ui/status-pill";
 import {
   parseWithinDays,
@@ -28,11 +78,9 @@ import {
   permitStatusCounts,
   sortByExpiryAscending,
 } from "@/components/permit-status";
-import { TableLoadingRows } from "@/components/TableLoadingRows";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
 
-type Permit = {
+// Exported so permits/page.tsx can type the rows it fetches server-side.
+export type Permit = {
   id: string;
   name: string;
   permitNumber: string | null;
@@ -40,10 +88,6 @@ type Permit = {
   issueDate: string | null;
   endDate: string | null;
   daysToExpiry: number | null;
-  // R67 F-02: the register no longer mints a Supabase Storage signed URL per
-  // row. It says whether the permit has a file; the URL is minted on click,
-  // by the object screen the row already opens.
-  hasDocument: boolean;
 };
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
@@ -51,68 +95,50 @@ type Permit = {
 // passed straight to ListScreen with no reshaping.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Permit no.", field: "permitNumber", type: "text", importance: "High" },
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Authority", field: "permitAuthority", type: "text", importance: "High" },
-  { label: "Issue date", field: "issueDate", type: "date", importance: "High" },
-  { label: "Expiry date", field: "endDate", type: "date", importance: "High" },
-  // R67 G-01: was "Days left", which promised a number. The cell now answers
-  // a question, so the header asks one.
-  { label: "Status", field: "daysToExpiry", type: "text", importance: "High" },
-];
-
-// R67 F-02: the labels permits/page.tsx paints in its Suspense fallback, so
-// the header row on screen while loading is the header row that stays.
-export const PERMITS_FALLBACK_COLUMN_LABELS = COLUMNS.map((c) => c.label);
 
 export default function PermitsListClient({
   projectId,
+  projectName,
   withinDays,
+  initial = null,
   registryColumns,
 }: {
   projectId: string;
+  projectName?: string | null;
   withinDays?: string;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what permits/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
+  initial?: ModuleListInitial<Permit>;
 }) {
   const router = useRouter();
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : PERMITS_LIST_COLUMNS;
 
-  // R67 F-02: this used to be a bare fetch().then().then() with no status
-  // check, so an error body parsed fine, `data.permits` came back undefined
-  // and `?? []` reported a FAILED request as "no permits yet" -- the exact
-  // R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01 defect fetchJson() exists to
-  // kill (see src/lib/fetch-json.ts). A failure now shows the backend's own
-  // words, with Retry.
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const params = new URLSearchParams({ projectId });
-      if (withinDays) params.set("withinDays", withinDays);
-      else params.set("all", "true");
-      const data = await fetchJson(`/api/permits?${params.toString()}`);
-      setPermits(data.permits ?? []);
-    } catch (err) {
-      setLoadError(errorMessage(err, "Couldn't load permits"));
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, withinDays]);
+  const params = new URLSearchParams({ projectId });
+  if (withinDays) params.set("withinDays", withinDays);
+  else params.set("all", "true");
 
-  useEffect(() => { load(); }, [load]);
-
-  // R67 F-02: warm the create route's chunk so "+ New" opens instantly rather
-  // than starting the download on click. Deliberately on MOUNT, not on hover:
-  // the header button is the kit's ScreenFrame HeaderActionState, whose type
-  // is { label, onClick, disabledReason } with no hover hook, and D-09 rules
-  // out both editing @fchecklist/veridian-ui-kit in node_modules and forking
-  // ScreenFrame for something this small. One idle prefetch of a route the
-  // user is on the list page for is the honest trade.
-  useEffect(() => { router.prefetch(`/permits/new?projectId=${projectId}`); }, [router, projectId]);
+  // Rows already held are deliberately NOT cleared by a failed refresh -- the
+  // hook keeps them and dates them; see PaneState's "as of 14:32" band.
+  const {
+    rows: permits,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Permit>({
+    url: `/api/permits?${params.toString()}`,
+    select: (body) => (body as { permits?: Permit[] } | null)?.permits,
+    // The page prefetches the UNFILTERED list only, so a ?withinDays= arrival
+    // reads its own filtered set rather than painting the wrong rows.
+    initial,
+  });
 
   // R67 G-01: "Default the sort to endDate ascending so the most urgent
   // permit is first." Done here rather than asking the API for an order,
@@ -143,13 +169,25 @@ export default function PermitsListClient({
       // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
       // Filter/Export aren't built for this module yet -- say so instead of
       // faking availability.
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      // R67 D-59: "(Not yet available)" was the placeholder on both, and the
+      // shared ListHeaderActions on Labour/Materials/Schedule says something
+      // real. Two conventions for the same disabled control is the finding.
+      // Export names the honest reason it has TODAY -- an empty list has
+      // nothing to export -- and falls back to the not-built sentence.
+      exportAction={{
+        label: "Export",
+        disabledReason: permits.length === 0 ? "Export — no rows to export" : "Exporting permits is not built yet",
+      }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering permits is not built yet" }}
       // R67 G-01: status at HEADER level as well as item level. Same three
       // glyphs, same three tones, same counts as the rows beneath -- so the
       // answer to "is anything wrong here" costs no scanning.
+      // Gated on a SUCCESSFUL read, not merely on "not loading": over a 500
+      // the counts are all zero, and this band would then assert "No permits
+      // on this project yet." -- the same false-empty claim D-65 removed from
+      // the list itself.
       headerMessageStrip={
-        loading ? null : (
+        status !== "ready" ? null : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {filtered && (
               <span className="flex flex-wrap items-center gap-2">
@@ -179,31 +217,47 @@ export default function PermitsListClient({
       }
       messages={[]}
     >
-      {/* R67 F-02: the real column headers while loading, not the word
-          "Loading…" over an empty pane. */}
-      {loading ? (
-        <TableLoadingRows headers={columns.map((c) => c.label)} rows={3} caption="Loading permits..." />
-      ) : loadError ? (
-        <DataLoadError messages={[loadError]} onRetry={load} />
-      ) : (
-        <ListScreen
-          functionId="permits.list"
-          columns={columns}
-          rows={rows as unknown as Record<string, unknown>[]}
-          getRowId={(row) => row.id as string}
-          // The permit's own document link is minted here, once, by the
-          // object screen -- see the register's DTO comment in
-          // compliance-tracker's v1/projexa/permits/route.ts.
-          onRowClick={(row) => router.push(`/permits/${row.id}`)}
-          emptyStateLabel="No permits yet for this project."
-          renderCell={{
-            daysToExpiry: (row) => {
-              const status = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
-              return <StatusPillTone tone={status.tone} label={status.label} />;
-            },
-          }}
-        />
-      )}
+      <div className="px-1 pb-1">
+        {/* The record count is an en-dash until a read has actually
+            succeeded -- "0 records" over a 500 is a claim nobody made. */}
+        <p className="px-3 py-2 text-[12px] text-px-muted">{recordCountLabel(status, permits.length)}</p>
+        <PaneState
+          status={status}
+          entity="permits"
+          projectName={projectName}
+          startedAt={startedAt}
+          error={error}
+          rowCount={permits.length}
+          lastLoadedAt={loadedAt}
+          skeletonColumns={columns.map((c) => c.label)}
+          emptyMessage="No permits yet for this project."
+          emptyAction={
+            <Button size="sm" onClick={() => router.push(`/permits/new?projectId=${projectId}`)}>
+              <Plus className="size-4" aria-hidden /> New
+            </Button>
+          }
+          onRetry={reload}
+        >
+          {/* R67 G-01: the rows are the SORTED ones, so the list and the
+              header counts above are computed from one array and cannot
+              disagree. The cell renders what permit-status.ts decides -- a
+              glyph and words, never a bare signed number in a chip. */}
+          <ListScreen
+            functionId="permits.list"
+            columns={columns}
+            rows={rows as unknown as Record<string, unknown>[]}
+            getRowId={(row) => row.id as string}
+            onRowClick={(row) => router.push(`/permits/${row.id}`)}
+            emptyStateLabel="No permits yet for this project."
+            renderCell={{
+              daysToExpiry: (row) => {
+                const rowStatus = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
+                return <StatusPillTone tone={rowStatus.tone} label={rowStatus.label} />;
+              },
+            }}
+          />
+        </PaneState>
+      </div>
     </ScreenFrame>
   );
 }
