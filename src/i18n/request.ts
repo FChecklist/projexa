@@ -20,13 +20,32 @@ export const SUPPORTED_LOCALES = ["en", "hi"] as const;
 export const DEFAULT_LOCALE = "en" as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
+export const LOCALE_COOKIE = "NEXT_LOCALE";
+
+/**
+ * The whole locale decision, as a pure function of the cookie value, so it
+ * can be asserted without a request.
+ *
+ * R67 J-01 (audit R-246): this is also where the statically prerendered
+ * public pages land. src/app/page.tsx and src/app/how-it-works/page.tsx
+ * declare `dynamic = "force-static"`, under which Next's `cookies()` returns
+ * an EMPTY cookie store instead of throwing a DynamicServerError (see
+ * next/dist/server/request/cookies.js -- `if (workStore.forceStatic)`
+ * returns empty, untracked cookies). So on those two routes this function is
+ * called with `undefined` and returns DEFAULT_LOCALE, by design: one cached
+ * HTML document cannot vary by cookie. Every authenticated route is
+ * unaffected and still follows NEXT_LOCALE.
+ */
+export function resolveLocale(cookieValue: string | undefined): SupportedLocale {
+  if (cookieValue && (SUPPORTED_LOCALES as readonly string[]).includes(cookieValue)) {
+    return cookieValue as SupportedLocale;
+  }
+  return DEFAULT_LOCALE;
+}
+
 export default getRequestConfig(async () => {
   const cookieStore = await cookies();
-  const cookieLocale = cookieStore.get("NEXT_LOCALE")?.value;
-  const locale: SupportedLocale =
-    cookieLocale && (SUPPORTED_LOCALES as readonly string[]).includes(cookieLocale)
-      ? (cookieLocale as SupportedLocale)
-      : DEFAULT_LOCALE;
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
 
   return {
     locale,

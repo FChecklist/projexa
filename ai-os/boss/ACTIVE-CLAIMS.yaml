@@ -70,6 +70,22 @@ active:
       hardcoded COLUMNS const as the fallback when the registry call 404s or
       errors, never a hard crash). Not touching permits/[id]/page.tsx or
       permits/new/page.tsx (PERMITS.OBJECT is a separate r43_queue row).
+  - session_label: "Claude Opus 5 (laptop) -- R67 programme, workstream J (public-site), branch r67/j-public-site"
+    claimed_at: "2026-09-03T (this session)"
+    claim: |
+      R67 items J-01 (audit R-246), J-02 (R-279) and J-03 (R-280): make the
+      two PUBLIC marketing routes static and light. File scope, PROJEXA
+      only: src/app/page.tsx, src/app/how-it-works/page.tsx,
+      src/app/layout.tsx, src/middleware.ts (the "/" logged-in redirect
+      moves here out of the page), src/i18n/request.ts,
+      src/i18n/client-messages.ts (new), src/lib/public-page-cache.ts (new),
+      next.config.ts (headers()), src/components/marketing/Reveal.tsx, plus
+      sibling tests, ai-os/scripts/measure-public-page-transfer.mjs and
+      ai-os/audit/public_pages_transfer.json. NOT touching any authenticated
+      route, any (app)/ page, veridian-client.ts, the schema, or
+      compliance-tracker. J-04 is measurement on a Vercel preview and is NOT
+      being done -- the owner's 2026-09-02 directive forbids any Vercel
+      deploy until credits are bought.
 recently_completed:
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"

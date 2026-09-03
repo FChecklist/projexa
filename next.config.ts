@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { publicPageHeaderRules } from "./src/lib/public-page-cache";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
@@ -25,6 +26,13 @@ const nextConfig: NextConfig = {
   // directory as root, serving/watching its files instead of this one's.
   turbopack: {
     root: __dirname,
+  },
+  // R67 J-01 (audit R-246): the two statically prerendered marketing routes
+  // get an explicit shared-cache header. The list and the header value live
+  // in src/lib/public-page-cache.ts so they are testable; see that file for
+  // why the route list is exact rather than a pattern.
+  async headers() {
+    return publicPageHeaderRules();
   },
 };
 

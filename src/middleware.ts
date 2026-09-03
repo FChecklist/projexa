@@ -214,6 +214,22 @@ export async function middleware(request: NextRequest) {
     return withLocaleCookie(NextResponse.redirect(url), request, locale);
   }
 
+  // R67 J-01 (audit R-246): the "already logged in -> go to the app, not the
+  // marketing page" redirect moved here out of src/app/page.tsx. It is the
+  // same rule, evaluated against the same `userId` this middleware already
+  // computed above -- but doing it here instead of inside the page render is
+  // what lets "/" be statically prerendered and cached (a page that reads
+  // cookies is server-rendered on every request, which is the whole finding
+  // R-246 reports). Deliberately NOT given /login's deferred-provisioning
+  // exception below: the marketing page has no resume logic to reach, and
+  // the previous in-page redirect had no such exception either, so this is
+  // byte-for-byte the behaviour that shipped before.
+  if (userId && pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    return withLocaleCookie(NextResponse.redirect(url), request, locale);
+  }
+
   if (userId && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
     // Deferred-provisioning gap (Priority 17 platform provisioning): an
     // authenticated user with NO organization yet -- signup required email
