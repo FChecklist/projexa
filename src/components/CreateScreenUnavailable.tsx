@@ -26,7 +26,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
-import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection";
+import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection-banners";
 
 export default function CreateScreenUnavailable({
   breadcrumb,

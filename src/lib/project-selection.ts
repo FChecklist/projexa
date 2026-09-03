@@ -237,23 +237,15 @@ export function chooseProject(
  * who answered; every real VERIDIAN message, including its timeout wording,
  * passes through untouched.
  */
-export function describeProjectListFailure(raw: string): string {
-  return /^(internal server error|internal error|error|500|bad gateway|502|service unavailable|503)\.?$/i.test(raw.trim())
-    ? "VERIDIAN answered with an internal error."
-    : raw;
-}
-
-/** The one sentence every create screen leads its failure banner with. */
-export function projectListFailureBanner(raw: string): string {
-  return `Couldn't load your project list: ${describeProjectListFailure(raw)}`;
-}
-
-/**
- * The one reason a create screen's Save states while there is no project list to
- * write against. It outranks every field-level reason: there is nothing to write
- * to, whatever the form says.
- */
-export const PROJECT_LIST_UNAVAILABLE_REASON = "project list unavailable";
+// R67 D1 CI FIX (2026-09-03): moved to project-selection-banners.ts, which has zero
+// imports and is therefore safe for "use client" components -- this file is not (it
+// pulls in next/headers + @/lib/veridian-client's DB chain). Re-exported here so every
+// existing server-side importer of these three symbols is unaffected.
+export {
+  describeProjectListFailure,
+  projectListFailureBanner,
+  PROJECT_LIST_UNAVAILABLE_REASON,
+} from "./project-selection-banners";
 
 // Shared by every project-scoped page (RFIs, Scope, Labour, Schedule, ...)
 // so they don't each re-implement the same project fetch + fallback. (The
