@@ -730,3 +730,34 @@ export function describeGroups(view: WorkProgressReportView, groups: WorkProgres
 export function hasRecordedProgress(rows: Pick<LineItemProgress, "touched">[]): boolean {
   return rows.some((r) => r.touched.prev || r.touched.current || r.touched.total);
 }
+/**
+ * R67 E-36 (R-268). The suggested filename for every Work Progress export:
+ * <project>-work-progress-<from>-<to>.<ext>.
+ *
+ * DELIBERATELY THE SAME RULE THE SERVER USES (compliance-tracker
+ * src/app/api/v1/projexa/work-progress/report/pdf/route.ts, pdfFileName). The
+ * server's Content-Disposition WINS over an <a download> attribute, so for the
+ * PDF and the XLSX this string is only a fallback -- but the CSV is built in
+ * the browser and has no server header at all, so if the two rules differed a
+ * QS would find one report saved under two naming conventions. One rule.
+ *
+ * NFKD then delete the combining marks: without that step the squeeze below
+ * turns each accent into its own separator, so "Villa Aguas" (acute on the A)
+ * would save as "villa-a-guas". ASCII only, because the server's own header
+ * parameter must be, and the two must agree.
+ */
+export function workProgressExportFileName(
+  projectName: string | null | undefined,
+  from: string,
+  to: string,
+  extension: string
+): string {
+  const slug = (projectName ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${slug || "project"}-work-progress-${from}-${to}.${extension}`;
+}

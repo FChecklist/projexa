@@ -23,6 +23,7 @@ import {
   groupRows,
   hasRecordedProgress,
   normaliseWorkProgressView,
+  workProgressExportFileName,
   workProgressParamSignature,
   type WorkProgressReportParams,
   type WorkProgressReportView,
@@ -556,6 +557,15 @@ export default function WorkProgressReportClient({
   const effectiveFrom = report?.from ?? from;
   const period = effectiveFrom ? `${formatDate(effectiveFrom)} to ${formatDate(to)}` : `up to ${formatDate(to)}`;
   const exportQuery = `projectId=${encodeURIComponent(projectId)}&from=${encodeURIComponent(effectiveFrom || to)}&to=${encodeURIComponent(to)}&mode=${thirdColumnMode}`;
+  /**
+   * R67 E-36 (R-268): every export of this report is saved under the same
+   * name, built by the same rule the server uses for its Content-Disposition
+   * -- so a QS with three projects' reports in a Downloads folder can tell
+   * them apart, and the CSV (browser-built, no server header) cannot drift
+   * into a second convention.
+   */
+  const exportFileName = (extension: string) =>
+    workProgressExportFileName(projectName, effectiveFrom || to, to, extension);
 
   /**
    * R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
@@ -580,7 +590,9 @@ export default function WorkProgressReportClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `wpr-${projectId}-${effectiveFrom || to}-to-${to}.csv`;
+    // R67 E-36: the same name the PDF and the XLSX get -- this one used to
+    // carry the raw project id, the very string E-22 removed from the screen.
+    a.download = exportFileName("csv");
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -612,9 +624,11 @@ export default function WorkProgressReportClient({
     }
   }
 
-  // R67 E-28 (R-254): the same expiring link, handed to WhatsApp with the
-  // report named and the period spelled out -- a bare URL in a site foreman's
-  // chat says nothing about what it is.
+  // R67 E-28 (R-254) / E-36 (R-268): the same expiring link, handed to
+  // WhatsApp with the report named and the period spelled out -- a bare URL in
+  // a site foreman's chat says nothing about what it is. It creates the link
+  // through the SAME createShareLink() Copy link uses (the MoM object page's
+  // pattern), so there is one share-link path and one expiry rule, not two.
   async function shareOnWhatsApp() {
     setSharing(true);
     try {
@@ -866,9 +880,17 @@ export default function WorkProgressReportClient({
         disabledReason: sharing ? "Share (creating a link…)" : report ? undefined : "Share (run the report first)",
       }}
       shareWhatsAppAction={{
-        label: "Send on WhatsApp",
+        // R67 E-36 names this control "Share via WhatsApp"; E-28 shipped it as
+        // "Send on WhatsApp". Two items of the same audit, one control -- E-36
+        // is the later item and the one that fixes the whole action group's
+        // order, so its wording wins and the earlier one is retired here.
+        label: "Share via WhatsApp",
         onClick: () => void shareOnWhatsApp(),
-        disabledReason: sharing ? "Send on WhatsApp (creating a link…)" : report ? undefined : "Send on WhatsApp (run the report first)",
+        disabledReason: sharing
+          ? "Share via WhatsApp (creating a link…)"
+          : report
+            ? undefined
+            : "Share via WhatsApp (run the report first)",
       }}
       exportCsvAction={{
         label: "Export CSV",
@@ -878,13 +900,13 @@ export default function WorkProgressReportClient({
       exportXlsxAction={{
         label: "Export XLSX",
         href: report && !tieError ? `/api/work-progress/report/xlsx?${exportQuery}` : undefined,
-        downloadName: `work-progress-${effectiveFrom || to}-to-${to}.xlsx`,
+        downloadName: exportFileName("xlsx"),
         disabledReason: !report ? "Export XLSX (run the report first)" : (tieError ?? undefined),
       }}
       exportPdfAction={{
         label: "Export PDF",
         href: report && !tieError ? `/api/work-progress/report/pdf?${exportQuery}` : undefined,
-        downloadName: `work-progress-${effectiveFrom || to}-to-${to}.pdf`,
+        downloadName: exportFileName("pdf"),
         disabledReason: !report ? "Export PDF (run the report first)" : (tieError ?? undefined),
       }}
     >

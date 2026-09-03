@@ -11,6 +11,7 @@ import {
   groupRows,
   hasRecordedProgress,
   sumRootAmtTotal,
+  workProgressExportFileName,
   workProgressParamSignature,
   UNCATEGORIZED_LABEL,
   type Activity,
@@ -883,5 +884,32 @@ describe("hasRecordedProgress (R67 E-34: the empty-range sentence's own test)", 
 
   test("no rows at all is not 'nothing was recorded' -- it is 'there is no BOQ', a different sentence", () => {
     expect(hasRecordedProgress([])).toBe(false);
+  });
+});
+describe("workProgressExportFileName (R67 E-36: one filename rule for CSV, XLSX and PDF)", () => {
+  test("the project name, the report, then the range", () => {
+    expect(
+      workProgressExportFileName("Cedar Heights Villa - Phase 1", "2026-08-01", "2026-09-03", "pdf")
+    ).toBe("cedar-heights-villa-phase-1-work-progress-2026-08-01-2026-09-03.pdf");
+  });
+
+  test("it MATCHES the server's own Content-Disposition rule, which is the point", () => {
+    // compliance-tracker src/app/api/v1/projexa/work-progress/report/pdf/route.ts
+    // pdfFileName() produces exactly this string for the same inputs; its own
+    // test asserts the same literal. The PDF and XLSX take their name from the
+    // server header, the CSV from here -- one report must not be saved under
+    // two conventions.
+    expect(workProgressExportFileName("Cedar Heights Villa - Phase 1", "2026-08-01", "2026-09-03", "csv"))
+      .toBe("cedar-heights-villa-phase-1-work-progress-2026-08-01-2026-09-03.csv");
+  });
+
+  test("an accent becomes its base letter, never a separator", () => {
+    expect(workProgressExportFileName("Villa Águas", "2026-01-01", "2026-01-31", "xlsx"))
+      .toBe("villa-aguas-work-progress-2026-01-01-2026-01-31.xlsx");
+  });
+
+  test("a missing project name still yields a usable filename, never a leading dash", () => {
+    expect(workProgressExportFileName(null, "2026-01-01", "2026-01-31", "pdf"))
+      .toBe("project-work-progress-2026-01-01-2026-01-31.pdf");
   });
 });

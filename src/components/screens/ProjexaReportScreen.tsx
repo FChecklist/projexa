@@ -61,7 +61,7 @@ export type ProjexaReportScreenProps = {
   /** null = the subtotals tie. A mismatch renders LOUDLY and the caller must disable export. */
   tieError?: string | null;
   shareAction?: HeaderActionState;
-  /** R67 E-28 (R-254): beside Share, never instead of it -- two different ways to hand the same link over. */
+  /** R67 E-28 (R-254) / E-36 (R-268): beside Share, never instead of it -- two different ways to hand the same link over. */
   shareWhatsAppAction?: HeaderActionState;
   exportCsvAction?: HeaderActionState;
   /** R67 E-28: server-rendered, streamed through a relay -- projexa gains no spreadsheet library. */
@@ -98,6 +98,15 @@ function FooterButton({ action }: { action?: HeaderActionState | ProjexaDownload
       onClick={isDownloadAction(action) ? undefined : action.onClick}
       disabled={disabled}
       title={action.disabledReason}
+      // R67 E-36 (R-268): the reason has to be in the ACCESSIBLE NAME, not only
+      // in the tooltip. The accessible-name algorithm prefers an element's own
+      // text content over its `title`, so a disabled button carrying
+      // title="Export PDF (run the report first)" is still named just
+      // "Export PDF" to a screen reader -- and a reader who cannot hover (touch,
+      // keyboard, assistive tech) got a dead control with no stated reason,
+      // which is the whole thing disabled-with-reason exists to prevent.
+      // aria-label wins over both, so the name becomes the reason itself.
+      aria-label={action.disabledReason}
       className={FOOTER_BUTTON_CLASS}
     >
       {action.label}
@@ -123,9 +132,12 @@ export function ProjexaReportScreen({
       // REPORT.GLOBAL: "+ New not applicable -- SUPPRESSED, not greyed."
       filterAction={undefined}
       messages={[]}
-      // R67 E-28: ONE fixed order, so the same five controls are never in two
-      // orders on two reports: Share | Send on WhatsApp | Export CSV | Export
-      // XLSX | Export PDF.
+      // R67 E-28, order fixed by E-36 (R-268): "Share | Share via WhatsApp |
+      // Export CSV | Export PDF". E-28 had already built the XLSX export that
+      // E-36's list does not mention; it sits between CSV and PDF, which keeps
+      // every pair E-36 names in the order it names them while not deleting a
+      // working export a sibling item shipped. ONE fixed order, so the same
+      // controls are never in two orders on two reports.
       footerActions={
         <>
           <FooterButton action={shareAction} />
