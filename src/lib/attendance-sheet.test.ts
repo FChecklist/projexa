@@ -5,12 +5,15 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError } from "./fetch-json";
 import {
+  ATTENDANCE_STATUSES,
+  ATTENDANCE_STATUS_GLYPH,
   ATTENDANCE_STATUS_KEY,
   ATTENDANCE_STATUS_LABEL,
   UNSPECIFIED_TRADE,
   loadFailureSentence,
   rowCost,
   saveFailureSentence,
+  shiftIsoDate,
   summariseByTrade,
 } from "./attendance-sheet";
 
@@ -122,5 +125,39 @@ describe("status vocabulary", () => {
     expect(ATTENDANCE_STATUS_KEY.p).toBe("present");
     expect(ATTENDANCE_STATUS_KEY.h).toBe("half_day");
     expect(ATTENDANCE_STATUS_KEY.a).toBe("absent");
+  });
+});
+
+describe("shiftIsoDate (D-53 day navigation)", () => {
+  test("moves exactly one day in each direction", () => {
+    expect(shiftIsoDate("2026-09-02", -1)).toBe("2026-09-01");
+    expect(shiftIsoDate("2026-09-02", 1)).toBe("2026-09-03");
+  });
+
+  test("crosses month and year boundaries", () => {
+    expect(shiftIsoDate("2026-09-01", -1)).toBe("2026-08-31");
+    expect(shiftIsoDate("2026-12-31", 1)).toBe("2027-01-01");
+    expect(shiftIsoDate("2026-03-01", -1)).toBe("2026-02-28");
+    // A leap year: 2028-02-29 must exist, and 2027 must not have one.
+    expect(shiftIsoDate("2028-03-01", -1)).toBe("2028-02-29");
+  });
+
+  test("is UTC-pinned, so it cannot land on the previous day for a western visitor", () => {
+    // Same assertion twice with a day-long span: 365 single steps forward from
+    // 2026-01-01 must be 2027-01-01 exactly, with no DST drift anywhere.
+    let iso = "2026-01-01";
+    for (let i = 0; i < 365; i++) iso = shiftIsoDate(iso, 1);
+    expect(iso).toBe("2027-01-01");
+  });
+
+  test("an unparseable date is returned unchanged rather than becoming NaN in the URL", () => {
+    expect(shiftIsoDate("not-a-date", 1)).toBe("not-a-date");
+  });
+});
+
+describe("ATTENDANCE_STATUS_GLYPH (D-53)", () => {
+  test("every status has a distinct glyph, so the word is never the only signal", () => {
+    const glyphs = ATTENDANCE_STATUSES.map((s) => ATTENDANCE_STATUS_GLYPH[s]);
+    expect(new Set(glyphs).size).toBe(ATTENDANCE_STATUSES.length);
   });
 });

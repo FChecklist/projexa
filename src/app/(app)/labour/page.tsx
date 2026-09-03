@@ -37,8 +37,14 @@ async function resolveLabourListColumns(organizationId: string | null): Promise<
 // resolvedByFallback is passed straight through: it is the difference between
 // "the user picked this project" and "this is simply the org's first project",
 // and the screen has to say which.
-export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; q?: string; trade?: string; company?: string; status?: string }> }) {
-  const { projectId, tab, q, trade, company, status } = await searchParams;
+// R67 D-53: `date` belongs to the Daily Summary tab and is read here so the
+// first paint already knows which day it is showing. A malformed value is
+// ignored rather than forwarded -- the client then falls back to today, which
+// beats fetching a report for "2026-13-45".
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export default async function LabourPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; q?: string; trade?: string; company?: string; status?: string; date?: string }> }) {
+  const { projectId, tab, q, trade, company, status, date } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage, resolvedByFallback } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveLabourListColumns(organizationId);
@@ -69,6 +75,7 @@ export default async function LabourPage({ searchParams }: { searchParams: Promi
           registryColumns={registryColumns}
           initialTab={tab}
           initialFilter={initialFilter}
+          initialSummaryDate={date && ISO_DATE.test(date) ? date : undefined}
         />
       )}
     </div>

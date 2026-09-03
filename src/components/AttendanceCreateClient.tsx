@@ -16,11 +16,12 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type RosterEntry = { id: string; name: string; isActive: boolean };
 
-export default function AttendanceCreateClient({ projectId }: { projectId: string }) {
+export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterId, setRosterId] = useState("");
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // R67 D-53: opens on the day the caller was looking at, not silently on today.
+  const [attendanceDate, setAttendanceDate] = useState(() => initialDate ?? new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState("present");
   const [hoursWorked, setHoursWorked] = useState("");
   const [submitting, setSubmitting] = useState(false);

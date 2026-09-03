@@ -27,7 +27,19 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
     fetchJson<{ vendors?: Vendor[] }>("/api/vendors").then((d) => setVendors(d.vendors ?? [])).catch(() => {});
   }, []);
 
-  const missing = [...(name.trim() ? [] : ["Name"]), ...(dailyRate ? [] : ["Daily Rate"])];
+  // R67 D-53: Trade is now REQUIRED. It used to be optional, and the cost of
+  // that was only visible once the Daily Summary existed: every un-traded
+  // worker fell into an "Uncategorised trade" bucket on the one report the
+  // site manager reads each morning, so the trade-wise cost he is looking for
+  // was silently spread across a bucket that means nothing. Making it required
+  // at the point of entry is the only place that can be fixed -- the summary
+  // itself can only report what was recorded. The existing rows are untouched
+  // and still group under the bucket; this stops the bucket growing.
+  const missing = [
+    ...(name.trim() ? [] : ["Name"]),
+    ...(trade.trim() ? [] : ["Trade"]),
+    ...(dailyRate ? [] : ["Daily Rate"]),
+  ];
 
   async function createRoster() {
     if (missing.length) return;
@@ -62,7 +74,11 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. EMP-001" /></div>
         <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Mason, Electrician" /></div>
+        <div className="space-y-1.5">
+          <Label htmlFor="roster-trade">Trade *</Label>
+          <Input id="roster-trade" value={trade} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Mason, Electrician" />
+          <p className="text-[12px] text-px-muted">Groups this worker on the Daily Summary&apos;s trade-wise cost</p>
+        </div>
         <div className="space-y-1.5">
           <Label>Company (optional)</Label>
           <Select value={vendorId} onValueChange={setVendorId}>

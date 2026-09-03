@@ -44,6 +44,33 @@ export function rowCost(dailyRate: string | number | null | undefined, status: A
   return Math.round(rate * COST_MULTIPLIER[status] * 100) / 100;
 }
 
+/**
+ * R67 D-53: the three states as a glyph AND the word, never colour alone.
+ * The glyph is the shape, the word is the meaning; a colour-blind or
+ * monochrome-printed sheet still reads correctly.
+ */
+export const ATTENDANCE_STATUS_GLYPH: Record<AttendanceStatus, string> = {
+  present: "●",
+  half_day: "◐",
+  absent: "○",
+};
+
+/**
+ * R67 D-53: the previous / next day for the summary tab's day navigation.
+ *
+ * Pinned to UTC for the same reason format-date.ts pins its own formatters: a
+ * `new Date("2026-09-02")` is midnight UTC, and adding a day through local-time
+ * getters lands on the WRONG DATE for every visitor west of Greenwich for part
+ * of the year. An unparseable input is returned unchanged rather than becoming
+ * "NaN-NaN-NaN" in the URL.
+ */
+export function shiftIsoDate(iso: string, days: number): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return iso;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 /** A worker with no trade recorded is grouped under this, not under a blank heading. */
 export const UNSPECIFIED_TRADE = "Unspecified";
 

@@ -54,6 +54,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import DataLoadError from "@/components/DataLoadError";
 import SkeletonTable from "@/components/SkeletonTable";
+import LabourDailySummaryClient from "@/components/LabourDailySummaryClient";
 import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
 import { fetchJson } from "@/lib/fetch-json";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -83,7 +84,10 @@ const COLUMNS: ScreenColumn[] = [
 
 const SHEET_HEADERS = ["Date", "Workers marked", "Present", "Half day", "Absent", "Cost", "Status"];
 
-const VALID_TABS = new Set(["roster", "attendance"]);
+// R67 D-53: "summary" is Sumeet's report 4 -- trade-wise attendance and daily
+// cost for ONE date, which is the number a site manager reads every morning
+// and the module had nowhere to show.
+const VALID_TABS = new Set(["roster", "attendance", "summary"]);
 
 type StatusFilter = "active" | "inactive" | "all";
 
@@ -170,6 +174,7 @@ export default function LabourClient({
   registryColumns,
   initialTab,
   initialFilter,
+  initialSummaryDate,
 }: {
   projectId: string;
   projectName: string;
@@ -177,6 +182,8 @@ export default function LabourClient({
   registryColumns?: RegistryColumn[] | null;
   initialTab?: string;
   initialFilter?: Partial<RosterFilterState>;
+  /** R67 D-53: ?date= for the Daily Summary tab. Resolved on the server so the first paint already has a day. */
+  initialSummaryDate?: string;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
@@ -194,6 +201,11 @@ export default function LabourClient({
   const [filter, setFilter] = useState<RosterFilterState>({ ...EMPTY_FILTER, ...initialFilter });
   const [filterOpen, setFilterOpen] = useState(
     Boolean(initialFilter && Object.keys(initialFilter).length > 0)
+  );
+  // R67 D-53: the summary's date is screen state AND a URL param -- Back has to
+  // return the user to the day they were reading, not to today.
+  const [summaryDate, setSummaryDate] = useState(
+    () => initialSummaryDate ?? new Date().toISOString().slice(0, 10)
   );
 
   const load = useCallback(async () => {
@@ -243,25 +255,34 @@ export default function LabourClient({
 
   // Both the tab and the filter live in the URL, so Back restores the screen
   // as the user left it rather than resetting it to "Roster, no filter".
-  const writeUrl = useCallback((tab: string, next: RosterFilterState) => {
+  const writeUrl = useCallback((tab: string, next: RosterFilterState, date?: string) => {
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     for (const [key, value] of [["q", next.q], ["trade", next.trade], ["company", next.company]] as const) {
       if (value) params.set(key, value); else params.delete(key);
     }
     if (next.status === EMPTY_FILTER.status) params.delete("status"); else params.set("status", next.status);
+    // R67 D-53: the date is only meaningful on the summary tab, so it is
+    // written there and cleared elsewhere rather than trailing the user around
+    // the screen as a stale parameter.
+    if (tab === "summary" && date) params.set("date", date); else params.delete("date");
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }, []);
 
   function goToTab(tab: string) {
     setActiveTab(tab);
-    writeUrl(tab, filter);
+    writeUrl(tab, filter, summaryDate);
   }
 
   function updateFilter(patch: Partial<RosterFilterState>) {
     const next = { ...filter, ...patch };
     setFilter(next);
-    writeUrl(activeTab, next);
+    writeUrl(activeTab, next, summaryDate);
+  }
+
+  function changeSummaryDate(nextDate: string) {
+    setSummaryDate(nextDate);
+    writeUrl("summary", filter, nextDate);
   }
 
   function exportRoster() {
@@ -365,7 +386,7 @@ export default function LabourClient({
                 <option value="all">All</option>
               </select>
             </div>
-            <Button variant="outline" size="sm" onClick={() => { setFilter(EMPTY_FILTER); writeUrl(activeTab, EMPTY_FILTER); }}>
+            <Button variant="outline" size="sm" onClick={() => { setFilter(EMPTY_FILTER); writeUrl(activeTab, EMPTY_FILTER, summaryDate); }}>
               Clear filter
             </Button>
           </CardContent>
@@ -376,6 +397,8 @@ export default function LabourClient({
         <TabsList>
           <TabsTrigger value="roster">Roster</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          {/* R67 D-53 */}
+          <TabsTrigger value="summary">Daily Summary</TabsTrigger>
         </TabsList>
 
         <TabsContent value="roster" className="space-y-4">
@@ -499,6 +522,20 @@ export default function LabourClient({
           <p className="text-[12px] text-px-muted">
             A sheet row opens that day&apos;s {ATTENDANCE_STATUS_LABEL.present}/{ATTENDANCE_STATUS_LABEL.half_day}/{ATTENDANCE_STATUS_LABEL.absent} marks for the whole roster.
           </p>
+        </TabsContent>
+
+        {/* R67 D-53. Mounted only while it is the active tab: its fetch is
+            per-date, and pre-loading a day the user has not asked for would add
+            a third hop to a screen whose whole problem is serial hops. */}
+        <TabsContent value="summary" className="space-y-4">
+          {activeTab === "summary" && (
+            <LabourDailySummaryClient
+              projectId={projectId}
+              projectName={projectName}
+              date={summaryDate}
+              onDateChange={changeSummaryDate}
+            />
+          )}
         </TabsContent>
       </Tabs>
     </div>
