@@ -12,6 +12,8 @@
 // so every sentence and every date range below is asserted in
 // card-catalogue.test.ts rather than eyeballed in a screenshot.
 
+import { MB, type AttachPolicy } from "./attachments";
+
 // ---------------------------------------------------------------------------
 // A LEVEL OF THE OPTION CHAIN
 // ---------------------------------------------------------------------------
@@ -288,6 +290,24 @@ export type CardDef = {
   actions?: readonly CardAction[];
   /** Whether this card renders as a chip beside the kit's ranked pill strip. */
   chipInPillsBand: boolean;
+  /**
+   * R67 C-07: what this module will accept as an attachment, and what its
+   * word-button says. The accept list comes from HERE, so the input's filter,
+   * the browser-side refusal and the button's own label are one fact.
+   * Absent means this module takes no attachments from the composer.
+   */
+  attach?: AttachPolicy;
+  /**
+   * R67 C-07: where an attachment goes when the tasks pipeline cannot take
+   * it. The label says so plainly rather than implying the composer will save
+   * the file itself -- "Upload — opens the Documents form".
+   */
+  uploadAction?: { label: string; route: string };
+  /**
+   * R67 C-07: the module whose attachment the composer CAN finish itself,
+   * because a shipped endpoint accepts it. Scope's BOQ importer is the one.
+   */
+  uploadEndpoint?: { label: string; url: string; busyLabel: string };
 };
 
 export const DESIGN_STUDIO_CARD: CardDef = {
@@ -323,9 +343,128 @@ export const WORK_PROGRESS_CARD: CardDef = {
   coldStartRoles: [],
   actions: [{ id: "record_progress", label: "Record progress", functionId: "record_work_progress" }],
   chipInPillsBand: false,
+  // R67 C-07, verbatim.
+  attach: {
+    label: "Attach photos, JPG/PNG, up to 10",
+    accept: [".jpg", ".jpeg", ".png"],
+    acceptWords: "a JPG or PNG",
+    maxBytes: 10 * MB,
+    maxFiles: 10,
+  },
+  uploadAction: { label: "Upload — opens the Documents form", route: "/documents/upload" },
 };
 
-export const CARD_CATALOGUE: readonly CardDef[] = [DESIGN_STUDIO_CARD, WORK_PROGRESS_CARD];
+// ---------------------------------------------------------------------------
+// R67 C-07 -- THE MODULES THAT TAKE A FILE
+// ---------------------------------------------------------------------------
+//
+// Each card carries its OWN limits, in its OWN button label, and the honest
+// destination for the file. Only Scope can be finished by the composer: its
+// importer is already shipped end to end (service + POST
+// /api/v1/projexa/scope/import + the projexa proxy /api/scope/import), so its
+// leaf really does post the spreadsheet. Permits, Documents and Drawings have
+// no upload the tasks pipeline accepts, so their action says exactly that --
+// "Upload — opens the Permits form" -- and hands the user to the module's own
+// create route with the project already filled in. Promising a save the
+// product cannot make is the defect this programme exists to remove.
+
+export const PERMITS_CARD: CardDef = {
+  id: "permits",
+  label: "Permits",
+  kind: "action",
+  functionId: null,
+  route: "/permits",
+  entitySegment: { id: "permits", label: "Permits", kind: "action" },
+  routes: ["/permits"],
+  placeholder: "e.g. attach the DEWA permit renewal",
+  coldStartRoles: [],
+  chipInPillsBand: false,
+  attach: {
+    label: "Attach PDF, up to 25 MB",
+    accept: [".pdf"],
+    acceptWords: "a PDF",
+    maxBytes: 25 * MB,
+    maxFiles: 5,
+  },
+  uploadAction: { label: "Upload — opens the Permits form", route: "/permits/new" },
+};
+
+export const DOCUMENTS_CARD: CardDef = {
+  id: "documents",
+  label: "Documents",
+  kind: "action",
+  functionId: null,
+  route: "/documents",
+  entitySegment: { id: "documents", label: "Documents", kind: "action" },
+  routes: ["/documents"],
+  placeholder: "e.g. attach the signed contract",
+  coldStartRoles: [],
+  chipInPillsBand: false,
+  attach: {
+    label: "Attach PDF, up to 25 MB",
+    accept: [".pdf"],
+    acceptWords: "a PDF",
+    maxBytes: 25 * MB,
+    maxFiles: 5,
+  },
+  uploadAction: { label: "Upload — opens the Documents form", route: "/documents/upload" },
+};
+
+export const DRAWINGS_CARD: CardDef = {
+  id: "drawings",
+  label: "Drawings",
+  kind: "action",
+  functionId: null,
+  route: "/drawings",
+  entitySegment: { id: "drawings", label: "Drawings", kind: "action" },
+  routes: ["/drawings"],
+  placeholder: "e.g. attach revision C of the ground-floor plan",
+  coldStartRoles: [],
+  chipInPillsBand: false,
+  attach: {
+    label: "Attach DWG, DXF, PDF or GLB",
+    accept: [".dwg", ".dxf", ".pdf", ".glb"],
+    acceptWords: "a DWG, DXF, PDF or GLB file",
+    maxBytes: 50 * MB,
+    maxFiles: 5,
+  },
+  uploadAction: { label: "Upload — opens the Drawings form", route: "/drawings/new" },
+};
+
+export const SCOPE_CARD: CardDef = {
+  id: "scope",
+  label: "Scope",
+  kind: "action",
+  functionId: null,
+  route: "/scope",
+  entitySegment: { id: "scope", label: "Scope", kind: "action" },
+  routes: ["/scope"],
+  placeholder: "e.g. import the September BOQ",
+  coldStartRoles: [],
+  chipInPillsBand: false,
+  actions: [{ id: "import_boq", label: "Import BOQ from Excel", functionId: null }],
+  attach: {
+    label: "Attach Excel (.xlsx)",
+    accept: [".xlsx"],
+    acceptWords: "an Excel (.xlsx) file",
+    // THE IMPORTER'S OWN LIMIT, not one we chose: VERIDIAN's
+    // v1/projexa/scope/import route refuses anything over 10 MB
+    // (MAX_FILE_SIZE there). A larger number in this label would be a promise
+    // the server breaks after the upload.
+    maxBytes: 10 * MB,
+    maxFiles: 1,
+  },
+  uploadEndpoint: { label: "Import BOQ from Excel", url: "/api/scope/import", busyLabel: "Importing…" },
+};
+
+export const CARD_CATALOGUE: readonly CardDef[] = [
+  DESIGN_STUDIO_CARD,
+  WORK_PROGRESS_CARD,
+  PERMITS_CARD,
+  DOCUMENTS_CARD,
+  DRAWINGS_CARD,
+  SCOPE_CARD,
+];
 
 /** "What do you want to do?" -- band 2's ACTION level for a card. */
 export function actionLevelFor(card: CardDef): ChainOptionsLevel | null {

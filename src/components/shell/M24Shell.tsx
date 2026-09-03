@@ -75,6 +75,10 @@ import { ChainOptionsPanel } from "@/components/shell/ChainOptionsPanel";
 // R67 C-06: the handle every page uses to fill the strip. The three doors --
 // a module's header button, a KPI number, a composer card -- now share one.
 import { ShellChainProvider, type ShellChainApi } from "@/components/shell/shell-chain-context";
+// R67 C-07: the attach control the kit's Composer has always had a slot for
+// and PROJEXA never filled.
+import { DropZone, type AttachedFile } from "@/components/shell/DropZone";
+import { checkBatch, formatSize, importSummaryLine, importWarnings } from "@/lib/attachments";
 import { ConfirmCard } from "@/components/shell/ConfirmCard";
 import { AnswerBlock } from "@/components/shell/AnswerBlock";
 import {
@@ -170,6 +174,9 @@ const PERIOD_SEGMENT_PREFIX = "period:";
 // R67 C-04: a segment produced by walking the option chain. The depth is in
 // the id so cutting the strip can cut the level path to match.
 const LEVEL_SEGMENT_PREFIX = "lvl:";
+// R67 C-07: an attached file is a chain step chip under the action, so the
+// strip says what is about to be sent as plainly as it says where.
+const ATTACH_SEGMENT_PREFIX = "file:";
 const REPORTS_ROUTE = "/reports";
 
 /**
@@ -266,6 +273,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  // R67 C-07: the composer's own attachment tray. `attachments` is what the
+  // chips render; the browser's File objects live in a ref beside it, because
+  // a File is not state -- it never re-renders anything and putting it in
+  // state only invites a needless deep compare.
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [importNote, setImportNote] = useState<{ line: string; warnings: string[] } | null>(null);
+  const attachFilesRef = useRef<Map<string, File>>(new Map());
+  const attachXhrRef = useRef<Map<string, XMLHttpRequest>>(new Map());
+  const attachSeqRef = useRef(0);
   // R67 C-04: the ENTITY > ACTION > STEP walk. `levelPath` is the server's
   // own addressing for "which question comes next"; the segments on the strip
   // are its human rendering. They move together, and an (x) that cuts the
@@ -305,6 +322,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Held in a ref, not read from state inside loadTasks, so switching project
   // does not re-enter the task read.
   const projectNameRef = useRef<string | null>(null);
+  // R67 C-07: declared here, above onReset and openDoor, because both of
+  // them clear the tray and a useCallback dependency array is evaluated at
+  // RENDER time -- a later const would be a temporal-dead-zone crash, not a
+  // lint warning.
+  const clearAttachments = useCallback(() => {
+    for (const xhr of attachXhrRef.current.values()) xhr.abort();
+    attachXhrRef.current.clear();
+    attachFilesRef.current.clear();
+    setAttachments([]);
+    setAttachError(null);
+    setSegments((prev) => prev.filter((seg) => !seg.id.startsWith(ATTACH_SEGMENT_PREFIX)));
+  }, []);
   const [showAllPills, setShowAllPills] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -790,6 +819,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setLevelPath((prev) => (depth === 0 ? [] : prev.slice(0, depth + 1)));
       setScalarValue("");
       setScalarError(null);
+      // R67 C-07: an (x) on a file chip removes the FILE, not just its words.
+      // A tray holding something the strip no longer names is the same defect
+      // as a strip naming something the tray no longer holds.
+      const keptFileIds = new Set(
+        kept.filter((s) => s.id.startsWith(ATTACH_SEGMENT_PREFIX)).map((s) => s.id.slice(ATTACH_SEGMENT_PREFIX.length))
+      );
+      setAttachments((prev) =>
+        prev.filter((f) => {
+          const keep = Boolean(f.error) || keptFileIds.has(f.id);
+          if (!keep) {
+            attachXhrRef.current.get(f.id)?.abort();
+            attachXhrRef.current.delete(f.id);
+            attachFilesRef.current.delete(f.id);
+          }
+          return keep;
+        })
+      );
     },
     [chain]
   );
@@ -805,7 +851,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setLevelPath([]);
     setScalarValue("");
     setScalarError(null);
-  }, [chain]);
+    clearAttachments();
+    setImportNote(null);
+  }, [chain, clearAttachments]);
 
   // LOADS AND STOPS. Sets the mode, restores the chain, navigates. Navigation
   // is a read. It calls no action endpoint, and the ChainLoad it receives has
@@ -851,6 +899,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingRawInput(null);
       setFixTarget(null);
       setSubmitError(null);
+      clearAttachments();
+      setImportNote(null);
       // A door whose screen is already open fills the strip and stops: a
       // push back into the route the user is standing on would drop the query
       // that route arrived with (the report's own from/to, for one).
@@ -858,7 +908,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       const route = doorRoute(door, nextProjectId);
       if (route) router.push(route);
     },
-    [projectId, router]
+    [projectId, router, clearAttachments]
   );
 
   // C-06: a multi-field create route IS the card -- band 2 stays empty while
@@ -1002,6 +1052,220 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setCardBusy(false);
     }
   }, [timesheetDraft, cardBusy, projectTasks, projectId, router, loadTasks]);
+
+
+  // -------------------------------------------------------------------------
+  // R67 C-07 -- ATTACHMENTS
+  // -------------------------------------------------------------------------
+
+  /** What THIS module will take, from its own CardDef. Null: no attach here. */
+  const attachPolicy = routeCard?.attach ?? null;
+
+  /** The files that passed the check and could actually be sent. */
+  const readyAttachments = useMemo(() => attachments.filter((f) => !f.error), [attachments]);
+
+  /**
+   * *** THE REFUSAL HAPPENS HERE, BEFORE ANY BYTES MOVE. ***
+   *
+   * checkBatch carries the running count, so the file that breaks a limit is
+   * the one refused, and every refusal is the sentence the chip shows -- not
+   * a 413 discovered after a two-minute upload on site LTE.
+   */
+  const onAddFiles = useCallback(
+    (incoming: File[]) => {
+      if (!attachPolicy || incoming.length === 0) return;
+      setAttachError(null);
+      setImportNote(null);
+      const alreadyAttached = attachments.filter((f) => !f.error).length;
+      const checked = checkBatch(
+        incoming.map((f) => ({ name: f.name, size: f.size })),
+        attachPolicy,
+        alreadyAttached
+      );
+      const added: AttachedFile[] = [];
+      const newSegments: { id: string; label: string; kind: "step" }[] = [];
+      checked.forEach((result, i) => {
+        const file = incoming[i];
+        attachSeqRef.current += 1;
+        const id = `att-${attachSeqRef.current}`;
+        if (!result.error) {
+          attachFilesRef.current.set(id, file);
+          newSegments.push({ id: `${ATTACH_SEGMENT_PREFIX}${id}`, label: file.name, kind: "step" });
+        }
+        added.push({
+          id,
+          name: file.name,
+          size: file.size,
+          status: result.error ? "error" : "ready",
+          progress: 0,
+          error: result.error ?? undefined,
+        });
+      });
+      setAttachments((prev) => [...prev, ...added]);
+      if (newSegments.length > 0) setSegments((prev) => [...prev, ...newSegments]);
+    },
+    [attachPolicy, attachments]
+  );
+
+  const onRemoveAttachment = useCallback((id: string) => {
+    attachXhrRef.current.get(id)?.abort();
+    attachXhrRef.current.delete(id);
+    attachFilesRef.current.delete(id);
+    setAttachments((prev) => prev.filter((f) => f.id !== id));
+    // The chip on the strip and the file in the tray are one thing, so they
+    // leave together -- a strip naming a file nobody is sending is a lie.
+    setSegments((prev) => prev.filter((seg) => seg.id !== `${ATTACH_SEGMENT_PREFIX}${id}`));
+    setAttachError(null);
+    setImportNote(null);
+  }, []);
+
+  /** A REAL abort. A Cancel that leaves the upload running is a lie. */
+  const onCancelUpload = useCallback((id: string) => {
+    attachXhrRef.current.get(id)?.abort();
+  }, []);
+
+
+  /**
+   * R67 C-07 -- THE ONE ATTACHMENT THE COMPOSER CAN FINISH ITSELF.
+   *
+   * VERIDIAN's BOQ importer is shipped end to end (service + POST
+   * /api/v1/projexa/scope/import + this repo's own proxy), so Scope's leaf
+   * really does post the spreadsheet rather than handing the user to a form.
+   * XMLHttpRequest, not fetch, because it is the only browser API that
+   * reports UPLOAD progress -- and C-07 asks for per-file progress with a
+   * Cancel that means it.
+   */
+  const onUploadAttachment = useCallback(() => {
+    const endpoint = routeCard?.uploadEndpoint;
+    const target = attachments.find((f) => !f.error && f.status !== "done");
+    const file = target ? attachFilesRef.current.get(target.id) : undefined;
+    if (!endpoint || !target || !file || !projectId) return;
+
+    setAttachError(null);
+    setImportNote(null);
+    setAttachments((prev) =>
+      prev.map((f) => (f.id === target.id ? { ...f, status: "uploading", progress: 0, error: undefined } : f))
+    );
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("projectId", projectId);
+
+    const xhr = new XMLHttpRequest();
+    attachXhrRef.current.set(target.id, xhr);
+    xhr.open("POST", endpoint.url);
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable || e.total === 0) return;
+      const pct = (e.loaded / e.total) * 100;
+      setAttachments((prev) => prev.map((f) => (f.id === target.id ? { ...f, progress: pct } : f)));
+    };
+
+    const settleBack = () => {
+      attachXhrRef.current.delete(target.id);
+      setAttachments((prev) =>
+        prev.map((f) => (f.id === target.id ? { ...f, status: "ready", progress: 0 } : f))
+      );
+    };
+
+    xhr.onabort = () => {
+      settleBack();
+      setAttachError("Cancelled. Nothing was imported.");
+    };
+
+    xhr.onerror = () => {
+      settleBack();
+      // A transport failure is a storage failure from where the user sits.
+      setAttachError("Uploads are unavailable right now");
+    };
+
+    xhr.onload = () => {
+      attachXhrRef.current.delete(target.id);
+      let body: Record<string, unknown> | null = null;
+      try {
+        body = JSON.parse(xhr.responseText) as Record<string, unknown>;
+      } catch {
+        body = null;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        // THE BACKEND'S OWN WORDS, masked -- never a bare status code, and
+        // never a false success.
+        const raw = body && typeof body.error === "string" && body.error.trim() ? body.error : "";
+        const message = raw ? maskTechnical(raw) : "Uploads are unavailable right now";
+        setAttachError(message);
+        setAttachments((prev) =>
+          prev.map((f) => (f.id === target.id ? { ...f, status: "error", error: message, progress: 0 } : f))
+        );
+        return;
+      }
+      setAttachments((prev) =>
+        prev.map((f) => (f.id === target.id ? { ...f, status: "done", progress: 100 } : f))
+      );
+      const summary = (body?.importSummary ?? null) as Parameters<typeof importSummaryLine>[0];
+      const line = importSummaryLine(summary);
+      setImportNote({ line, warnings: importWarnings(summary) });
+      const boq = (body?.boq ?? null) as { id?: unknown } | null;
+      const boqId = typeof boq?.id === "string" ? boq.id : null;
+      setReceipt({
+        text: `${line} from ${file.name}`,
+        href: boqId ? `/scope/${boqId}` : `/scope?projectId=${encodeURIComponent(projectId)}`,
+      });
+    };
+
+    xhr.send(form);
+  }, [routeCard, attachments, projectId]);
+
+  /** The other half of the fork: hand the user to the module's own form. */
+  const onOpenUploadForm = useCallback(() => {
+    const upload = routeCard?.uploadAction;
+    if (!upload) return;
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    router.push(`${upload.route}${qs}`);
+  }, [routeCard, projectId, router]);
+
+  /**
+   * What band 2 offers once a file is attached.
+   *
+   * WHERE THE PIPELINE CANNOT TAKE THE FILE, THE LABEL SAYS SO. "Upload —
+   * opens the Permits form" is the honest sentence: the composer is not about
+   * to save this file, it is about to hand the user to the screen that can.
+   *
+   * PURE DATA, NO HANDLER. The two handlers read refs (the File objects and
+   * the in-flight XHR), and a memo that CARRIES one makes every read of this
+   * object a ref read during render as far as the React compiler is
+   * concerned -- which is exactly what react-hooks/refs refuses. The mode is
+   * carried instead, and the call site picks the handler.
+   */
+  const attachCard = useMemo(() => {
+    if (!routeCard || readyAttachments.length === 0) return null;
+    const names = readyAttachments.map((f) => f.name).join(", ");
+    const endpoint = routeCard.uploadEndpoint;
+    const busy = attachments.some((f) => f.status === "uploading");
+    if (endpoint) {
+      const done = readyAttachments.every((f) => f.status === "done");
+      return {
+        mode: "endpoint" as const,
+        title: `Import ${names} into ${project?.name ?? "this project"}`,
+        primaryLabel: busy ? endpoint.busyLabel : done ? "Imported" : endpoint.label,
+        disabledReason: attachError
+          ? "uploads are unavailable"
+          : !projectId
+            ? "pick a project"
+            : done
+              ? "already imported"
+              : undefined,
+        busy,
+      };
+    }
+    const upload = routeCard.uploadAction;
+    return {
+      mode: "form" as const,
+      title: `Attach ${names} — ${routeCard.label}`,
+      primaryLabel: upload?.label ?? "Open the form",
+      disabledReason: upload ? undefined : "this module has no upload form yet",
+      busy: false,
+    };
+  }, [routeCard, readyAttachments, attachments, attachError, projectId, project]);
 
   // R67 C-05: the clock behind the timing states. It ticks only while a
   // request is actually in flight, and it is reset by the request finishing --
@@ -1658,6 +1922,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             bandLevel ||
             receipt ||
             bandNote ||
+            attachCard ||
+            importNote ||
             timesheetDraft ||
             proposal ||
             answer ||
@@ -1871,6 +2137,53 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                     onEmptyAction={(route) => router.push(route)}
                   />
                 )}
+                {/* R67 C-07: what is about to happen to the attached file,
+                    named, before it happens. The primary label is the honest
+                    one -- "Upload — opens the Permits form" where the tasks
+                    pipeline cannot take the file at all. */}
+                {attachCard && (
+                  <ConfirmCard
+                    title={attachCard.title}
+                    error={attachError}
+                    busy={attachCard.busy}
+                    primaryLabel={
+                      attachCard.disabledReason
+                        ? `${attachCard.primaryLabel} (${attachCard.disabledReason})`
+                        : attachCard.primaryLabel
+                    }
+                    primaryDisabledReason={attachCard.disabledReason}
+                    onPrimary={attachCard.mode === "endpoint" ? onUploadAttachment : onOpenUploadForm}
+                    secondaryLabel="Remove"
+                    onSecondary={clearAttachments}
+                    fields={readyAttachments.map((f) => ({
+                      id: f.id,
+                      label: "File",
+                      control: (
+                        <span className="text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                          {f.name}
+                        </span>
+                      ),
+                      note: formatSize(f.size),
+                    }))}
+                  />
+                )}
+
+                {/* THE IMPORTER'S OWN ANSWER: the row count, and every row it
+                    could not use. A partial import that reads as a success is
+                    the silent-failure defect this programme is removing. */}
+                {importNote && (
+                  <div className="text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
+                    <p style={{ color: "var(--color-ct-navy)" }}>{importNote.line}</p>
+                    {importNote.warnings.length > 0 && (
+                      <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                        {importNote.warnings.map((w) => (
+                          <li key={w}>{w}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
                 {/* THE RECEIPT PERSISTS UNTIL IT IS DISMISSED. A message that
                     disappears on its own is a message the user has to have
                     been looking at, which is exactly what a person recording
@@ -1943,6 +2256,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </label>
+            ) : undefined
+          }
+          // BAND 4 -- THE ATTACH CONTROL. The kit's Composer has had this
+          // slot since it shipped and PROJEXA never filled it, so the only
+          // way to get a file into the product was to find the module's own
+          // create form first (R-163).
+          attachSlot={
+            attachPolicy ? (
+              <DropZone
+                policy={attachPolicy}
+                files={attachments}
+                onAdd={onAddFiles}
+                onRemove={onRemoveAttachment}
+                onCancel={onCancelUpload}
+                storageError={attachError}
+                // Retry only where there is something to retry: the one
+                // module the composer can finish itself.
+                onRetry={routeCard?.uploadEndpoint ? onUploadAttachment : undefined}
+              />
             ) : undefined
           }
           onSubmit={onSubmit}
