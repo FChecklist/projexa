@@ -6,8 +6,37 @@
 // "435" and "AED 21750.00" on three tabs of the SAME module.
 //
 // This module is deliberately NOT "use client": it is imported by server
-// components, by client components and by tests alike. currency.ts now takes
-// its fallback constant from here rather than defining a second one.
+// components, by client components and by tests alike.
+//
+// ─── SAME-PATH COLLISION WITH LANE G, AND HOW IT IS TO BE SETTLED ───────────
+// Lane G shipped its own src/lib/format-money.ts for the same recommendation
+// (G-05 / R-260) and it is ALREADY ON MAIN. Two modules, one path, no common
+// ancestor: an add/add conflict on the next integration of this branch.
+//
+// THE RESOLUTION IS DECIDED, so nobody has to re-litigate it mid-merge:
+// LANE G's VERSION WINS, by decision D-11's rule of thumb (the version already
+// on main is canonical; the arriving lane folds its capability in and adapts
+// its callers). G's is also the better module on the merits -- it distinguishes
+// "not answered yet" from "this org has no currency", which this one does not,
+// and it ships useOrgMoney() to bind the org's currency once per screen.
+//
+// WHAT THE INTEGRATION PASS MUST DO, concretely:
+//   * delete this file and format-money.test.ts in favour of main's;
+//   * repoint the 11 call sites listed by `grep -rl '@/lib/format-money' src/`
+//     from formatMoney(value, currencies) to useOrgMoney()'s money(value);
+//   * formatQty exists on BOTH sides with the same contract, so it needs no
+//     change beyond the import;
+//   * D-57's own acceptance -- formatMoney(21750, AED) === "AED 21,750.00" --
+//     must survive as an assertion in whichever test file remains.
+//
+// This was NOT done in the fix pass that wrote this comment, deliberately: it
+// cannot be done honestly without the merge, and that merge is a 22-file,
+// ~85-hunk reconciliation of two independent rewrites of the same ten screens
+// -- an integration task in its own right, not a footnote to a formatter.
+// What WAS done is to remove the one hazard the review named: currency.ts no
+// longer re-exports this module's two constants (it defines its own again,
+// byte-identical to main's), so nothing outside this file breaks whichever
+// version wins.
 //
 // The locale is pinned to "en-US" for the same reason src/lib/format-date.ts
 // pins its own: a bare toLocaleString() resolves to the RUNTIME's locale, so

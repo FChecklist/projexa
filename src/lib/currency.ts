@@ -40,13 +40,9 @@ export type Currency = { id: string; code: string; name: string; symbol: string 
 // This is deliberately a CODE ("AED ") and never a symbol, matching the
 // resolved path below, so the fallback can never be mistaken for a
 // confirmed per-org value at a glance.
-// R67: this constant used to be defined here, but this module is "use client"
-// so a server component could not reach it -- which is how the product ended
-// up with several private money formatters. The single definition now lives in
-// the server-safe src/lib/format-money.ts and is re-exported here so every
-// existing client call site is unchanged.
-export { DEFAULT_CURRENCY_CODE, CURRENCY_FALLBACK_LABEL } from "./format-money";
-import { CURRENCY_FALLBACK_LABEL } from "./format-money";
+const DEFAULT_CURRENCY_CODE = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY_CODE ?? "").trim();
+
+export const CURRENCY_FALLBACK_LABEL = DEFAULT_CURRENCY_CODE ? `${DEFAULT_CURRENCY_CODE} ` : "";
 
 // id null/undefined means "org base currency" (see erp-selling-service.ts's
 // resolveDocumentCurrency() comment) -- looks up the base-currency row in
@@ -56,15 +52,52 @@ export function currencyLabel(id: string | null | undefined, currencies: Currenc
   return c ? `${c.code} ` : CURRENCY_FALLBACK_LABEL;
 }
 
+/**
+ * R67 G-05 fix. `[]` used to mean TWO different things and a caller had no way
+ * to tell them apart: "the /api/currencies request has not answered yet" and
+ * "this org genuinely has no currency row". currencyLabel() above did not care
+ * -- it fell back to CURRENCY_FALLBACK_LABEL in both cases -- but useOrgMoney()
+ * does: it must say "Currency not set → Settings" in the second case and must
+ * NOT say it in the first, because for an org that HAS a currency that sentence
+ * is simply false, and it would flash on every page load.
+ *
+ * `loaded` is set in BOTH the .then and the .catch: a failed fetch is still a
+ * settled question as far as the UI is concerned -- we asked, we have no
+ * currency, so the honest render is the bare-number one, not a permanent
+ * loading state.
+ */
+export type CurrenciesState = { currencies: Currency[]; loaded: boolean };
+
 // Wraps the fetch-once-on-mount pattern every fixed file used to duplicate
 // by hand (`useEffect(() => { fetch("/api/currencies")... }, [])`). Safe to
 // call from multiple components on the same page -- each mounts its own
 // independent fetch, matching how these components already independently
 // fetch their own report/list data.
-export function useCurrencies(): Currency[] {
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+export function useCurrenciesState(): CurrenciesState {
+  const [state, setState] = useState<CurrenciesState>({ currencies: [], loaded: false });
   useEffect(() => {
-    fetch("/api/currencies").then((r) => r.json()).then((d) => setCurrencies(d.currencies ?? [])).catch(() => {});
+    let cancelled = false;
+    fetch("/api/currencies")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setState({ currencies: d.currencies ?? [], loaded: true });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ currencies: [], loaded: true });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-  return currencies;
+  return state;
+}
+
+/**
+ * The list alone, for the ~30 call sites that pair it with currencyLabel() and
+ * have no use for the settled flag. A thin wrapper, deliberately: the two must
+ * share ONE fetch shape, or the "loading" window would differ between the
+ * screens that check it and the screens that do not.
+ */
+export function useCurrencies(): Currency[] {
+  return useCurrenciesState().currencies;
 }
