@@ -55,7 +55,8 @@ function mount(revisionResponse: () => Response) {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/revisions")) return revisionResponse();
     if (url.includes("/api/site-instructions")) return jsonRes({ siteInstruction: { id: "si-1", siNumber: 14 }, fileName: "SI-2026-014.pdf" }, 201);
-    if (url.includes("/api/scope/categories")) return jsonRes({ categories: ["Civil"] });
+    // The org's editable list, in the row shape lane I's route really returns.
+    if (url.includes("/api/scope/categories")) return jsonRes({ categories: [{ id: "cat-1", name: "Civil", isActive: true }] });
     if (url.includes("/api/scope/boq-1")) return jsonRes(BOQ);
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
