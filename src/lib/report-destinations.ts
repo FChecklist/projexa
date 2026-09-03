@@ -21,6 +21,14 @@ export type ReportParams = {
   to?: string;
   /** Only the weekly report needs it; carried through so one signature serves every entry. */
   weekStart?: string;
+  /**
+   * R67 E-11 (R-130): the parameter card's Category and Vendor choices. A
+   * hosted report only receives the ones its own screen understands -- handing
+   * /materials a `vendorId` it ignores would put a parameter in the URL that
+   * describes nothing.
+   */
+  category?: string | null;
+  vendorId?: string | null;
 };
 
 /**
@@ -31,10 +39,14 @@ export type ReportParams = {
 const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
   // D-02: the WPR is /work-progress?tab=report, it reads its parameters from
   // the URL, and it runs on arrival (see WorkProgressReportClient).
-  "work-progress": ({ projectId, from, to }) => {
+  "work-progress": ({ projectId, from, to, category }) => {
     const qs = new URLSearchParams({ tab: "report", projectId });
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
+    // The WPR screen's own Category multi-select reads repeatable `category`
+    // params (R67 I-05), so one chosen on the Reports card arrives applied
+    // rather than being silently dropped at the door.
+    if (category) qs.append("category", category);
     return `/work-progress?${qs.toString()}`;
   },
   // R67 E-05 (R-103): "Material Consumption" in the picker and the Materials
@@ -54,7 +66,14 @@ const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
   // ledger one under this name is what let three screens disagree. The ledger
   // report stays available to API callers under its own name; the SCREEN named
   // "Budget Summary" is the one that shows Sumeet 6.png II(iii)'s columns.
-  "budget-summary": ({ projectId }) => `/scope?tab=variance&projectId=${encodeURIComponent(projectId)}`,
+  "budget-summary": ({ projectId, category, vendorId }) => {
+    const qs = new URLSearchParams({ tab: "variance", projectId });
+    // The Cost Variance screen's filter drawer reads exactly these two, and
+    // keeps them in its own URL -- so a filter chosen here survives the hop.
+    if (category) qs.append("category", category);
+    if (vendorId) qs.set("vendorId", vendorId);
+    return `/scope?${qs.toString()}`;
+  },
 };
 
 /** True when this report has a screen of its own. */
@@ -75,6 +94,12 @@ export function reportDestination(reportName: string, params: ReportParams): Rep
   if (reportName === "weekly-project" && params.weekStart) qs.set("weekStart", params.weekStart);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);
+  // R67 E-11: forwarded, not applied here. The projexa proxy passes every param
+  // through, so a handler that already filters (work-progress, budget-variance)
+  // does the real thing; the ones that do not are filtered client-side, and the
+  // screen says which of the two happened.
+  if (params.category) qs.append("category", params.category);
+  if (params.vendorId) qs.set("vendorId", params.vendorId);
   return { kind: "fetch", path: `/api/reports/${encodeURIComponent(reportName)}?${qs.toString()}` };
 }
 

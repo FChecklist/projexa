@@ -35,6 +35,18 @@ import {
   PDF_NOT_YET_REASON,
   type ReportRunParams,
 } from "@/lib/report-run";
+import {
+  ALL_OPTION_LABEL,
+  ALL_OPTION_VALUE,
+  applyClientFilters,
+  missingPrerequisites,
+  periodNote,
+  reportParameters,
+  runButtonLabel,
+  unappliedFilterNote,
+  weekStartFieldError,
+  WHOLE_PROJECT_PERIOD,
+} from "@/lib/report-parameters";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -160,6 +172,14 @@ function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: un
 /** The report the panel opens on when the URL names none. */
 export const DEFAULT_REPORT_NAME = "project-status";
 
+/** R67 E-11: the two lookups the Category and Vendor selects are populated from. */
+type CategoryOption = { id: string; name: string };
+type VendorOption = { id: string; vendorName?: string | null; name?: string | null; supplierName?: string | null };
+
+function vendorLabel(v: VendorOption): string {
+  return v.vendorName || v.name || v.supplierName || v.id;
+}
+
 function ProjectReportsPanel({
   projectId,
   projectName,
@@ -167,7 +187,13 @@ function ProjectReportsPanel({
   initialRun,
   unknownReportSlug = null,
 }: {
-  projectId: string;
+  /**
+   * R67 E-11: nullable. The card renders WITH the rail on "All projects" -- the
+   * primary reads "Run Report (select a project)" and is disabled, which is what
+   * tells the reader what to fix. Hiding the whole card behind a sentence left
+   * them with a fact and no control.
+   */
+  projectId: string | null;
   /** So the title block and the running line can name the project, not its cuid. */
   projectName: string | null;
   reports: { value: string; label: string }[];
@@ -178,6 +204,8 @@ function ProjectReportsPanel({
 }) {
   const router = useRouter();
   const [run, setRun] = useState<ReportRunParams>(initialRun);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
   // R67 E-04 (R-079) and E-10 (R-129): an EXPLICIT status, replacing the
   // ranOnce/loading pair. The old pair tested ranOnce BEFORE loading, so on a
   // first run the panel kept showing "Pick a report and click Run Report."
@@ -199,9 +227,34 @@ function ProjectReportsPanel({
 
   const currentLabel = reports.find((r) => r.value === run.report)?.label ?? run.report;
   const hosted = isHostedReport(run.report);
+  // R67 E-11: what THIS report takes -- read off the real handler, not guessed.
+  const spec = reportParameters(run.report);
+  const missing = missingPrerequisites(run.report, { projectId, weekStart: run.weekStart });
+  const weekStartError = weekStartFieldError(run.report, run.weekStart);
+  const blockedReason = missing.length > 0 || weekStartError !== null;
   const titleBlock = ranAt
-    ? reportTitleBlock({ reportLabel: currentLabel, projectName, from: run.from, to: run.to, ranAt })
+    ? reportTitleBlock({
+        reportLabel: currentLabel,
+        projectName,
+        from: run.from,
+        to: run.to,
+        ranAt,
+        // A report the period does not touch must not be captioned with one.
+        periodText: spec.needsDateRange ? undefined : WHOLE_PROJECT_PERIOD,
+      })
     : null;
+  const chosenVendor = run.vendorId ? vendors.find((v) => v.id === run.vendorId) ?? null : null;
+  const filterState = {
+    category: run.category,
+    vendorId: run.vendorId,
+    vendorName: chosenVendor ? vendorLabel(chosenVendor) : null,
+  };
+  // R67 E-11: applied HERE for every handler that does not filter yet -- and the
+  // outcome says which filters actually found a field, so an unchanged table is
+  // never left looking like a broken control.
+  const filtered = result === null ? null : applyClientFilters(result, filterState);
+  const shownResult = filtered ? filtered.result : null;
+  const filterNote = filtered ? unappliedFilterNote(filterState, filtered) : null;
 
   // R67 E-10 (R-133): the failure lives in the shell's message area, which
   // does not vanish on a timer the way the toast this replaces did.
@@ -211,6 +264,24 @@ function ProjectReportsPanel({
       ? { tone: "error", text: `Could not run ${currentLabel}: ${errorText ?? RUN_TIMEOUT_MESSAGE}` }
       : null
   );
+
+  // R67 E-11: the Category and Vendor selects are populated from the org's real
+  // lists -- GET /api/scope/categories and GET /api/vendors -- so the card can
+  // never offer a category nobody uses or a vendor nobody has. Either lookup
+  // failing costs the reader that one FILTER, never the report: the select
+  // simply offers "All" and nothing else.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/scope/categories")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("categories"))))
+      .then((d) => { if (!cancelled) setCategories(Array.isArray(d.categories) ? d.categories : []); })
+      .catch(() => { if (!cancelled) setCategories([]); });
+    fetch("/api/vendors")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("vendors"))))
+      .then((d) => { if (!cancelled) setVendors(Array.isArray(d.vendors) ? d.vendors : []); })
+      .catch(() => { if (!cancelled) setVendors([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   // The elapsed-seconds counter. A reader watching a spinner cannot tell a slow
   // report from a hung one; a number that keeps moving can.
@@ -251,12 +322,28 @@ function ProjectReportsPanel({
   }
 
   const runReport = useCallback(async (next: ReportRunParams = run) => {
+    // R67 E-11 (R-130): a run the backend would answer 400 to never leaves this
+    // function. The primary that would have started it is disabled and says
+    // what is missing, so this is a belt-and-braces guard for the programmatic
+    // callers (Retry, the catalog's "Open in Project Reports"), not the reader's
+    // only protection.
+    if (!projectId) return;
+    if (missingPrerequisites(next.report, { projectId, weekStart: next.weekStart }).length > 0) return;
+    if (weekStartFieldError(next.report, next.weekStart)) return;
+
     // R67 E-04 (R-079) and binding decision D-02: a report with a screen of
     // its own NAVIGATES; it must not be fetched here. Fetching the Work
     // Progress report from this panel is the 24.3 s spinner that renders
     // nothing, measured in the audit -- the same report renders in 2.7 s with
     // exports at /work-progress?tab=report.
-    const destination = reportDestination(next.report, { projectId, from: next.from, to: next.to, weekStart: next.weekStart });
+    const destination = reportDestination(next.report, {
+      projectId,
+      from: next.from,
+      to: next.to,
+      weekStart: next.weekStart,
+      category: next.category,
+      vendorId: next.vendorId,
+    });
     if (destination.kind === "navigate") {
       router.push(destination.href);
       return;
@@ -311,6 +398,10 @@ function ProjectReportsPanel({
   const autoRan = useRef(false);
   useEffect(() => {
     if (autoRan.current || hosted) return;
+    // R67 E-11: and not when a prerequisite is missing -- an automatic run into
+    // a 400 would put a rose error card in front of a reader who has not yet
+    // done anything wrong.
+    if (blockedReason) return;
     autoRan.current = true;
     void runReport(initialRun);
     // Deliberately once, on arrival: runReport's identity changes with every
@@ -324,8 +415,10 @@ function ProjectReportsPanel({
   }
 
   function exportCsv() {
-    if (result === null) return;
-    const blob = new Blob([reportResultToCsv(result, titleBlock ?? currentLabel)], { type: "text/csv" });
+    // The rows ON SCREEN, filters and all -- an exported file that disagrees
+    // with the table it came from is worse than no export.
+    if (shownResult === null) return;
+    const blob = new Blob([reportResultToCsv(shownResult, titleBlock ?? currentLabel)], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -345,7 +438,7 @@ function ProjectReportsPanel({
     }
   }
 
-  const exportReason = result === null ? "Run the report first" : null;
+  const exportReason = shownResult === null ? "Run the report first" : null;
 
   return (
     <div className="space-y-4">
@@ -375,35 +468,109 @@ function ProjectReportsPanel({
 
       {parametersOpen && (
         <Card className="shadow-card">
-          <CardContent className="flex flex-wrap items-end gap-3 p-4">
-            <div className="space-y-1.5">
-              <Label>Report</Label>
-              <Select value={run.report} onValueChange={(v) => updateRun({ report: v })}>
-                <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-                <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="report-from">From</Label>
-              <Input id="report-from" type="date" value={run.from} onChange={(e) => updateRun({ from: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="report-to">To</Label>
-              <Input id="report-to" type="date" value={run.to} onChange={(e) => updateRun({ to: e.target.value })} />
-            </div>
-            {run.report === "weekly-project" && (
+          <CardContent className="space-y-3 p-4">
+            {/* R67 E-11 (R-130): the project is READ-ONLY here and says where it
+                is changed. The card used to carry no project at all while the
+                top rail carried one, so the two could -- and did -- disagree
+                about which project a run described. One source, named. */}
+            <p
+              className="inline-flex items-center rounded-full border border-px-teal/30 bg-px-teal/10 px-3 py-1 text-[12px] text-px-ink"
+              data-testid="reports-project-chip"
+            >
+              {projectName
+                ? `Project: ${projectName} — change in the top rail`
+                : "No project selected — choose one in the top rail"}
+            </p>
+
+            <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="report-week-start">Week Start</Label>
-                <Input id="report-week-start" type="date" value={run.weekStart} onChange={(e) => updateRun({ weekStart: e.target.value })} />
+                <Label>Report</Label>
+                <Select value={run.report} onValueChange={(v) => updateRun({ report: v })}>
+                  <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                  <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-from">From</Label>
+                <Input id="report-from" type="date" value={run.from} onChange={(e) => updateRun({ from: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-to">To</Label>
+                <Input id="report-to" type="date" value={run.to} onChange={(e) => updateRun({ to: e.target.value })} />
+              </div>
+              {spec.needsWeekStart && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="report-week-start">Week Start</Label>
+                  <Input
+                    id="report-week-start"
+                    type="date"
+                    value={run.weekStart}
+                    aria-invalid={weekStartError !== null}
+                    aria-describedby={weekStartError ? "report-week-start-error" : undefined}
+                    onChange={(e) => updateRun({ weekStart: e.target.value })}
+                  />
+                  {/* The message AT the field, where the value was typed -- not
+                      in a tooltip and not only on the button. */}
+                  {weekStartError && (
+                    <p id="report-week-start-error" role="alert" className="text-[12px] text-px-error" data-testid="reports-week-start-error">
+                      {weekStartError}
+                    </p>
+                  )}
+                </div>
+              )}
+              {spec.supportsCategory && (
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <Select
+                    value={run.category ?? ALL_OPTION_VALUE}
+                    onValueChange={(v) => updateRun({ category: v === ALL_OPTION_VALUE ? null : v })}
+                  >
+                    <SelectTrigger className="w-48" data-testid="reports-category"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_OPTION_VALUE}>{ALL_OPTION_LABEL}</SelectItem>
+                      {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {spec.supportsVendor && (
+                <div className="space-y-1.5">
+                  <Label>Vendor</Label>
+                  <Select
+                    value={run.vendorId ?? ALL_OPTION_VALUE}
+                    onValueChange={(v) => updateRun({ vendorId: v === ALL_OPTION_VALUE ? null : v })}
+                  >
+                    <SelectTrigger className="w-48" data-testid="reports-vendor"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_OPTION_VALUE}>{ALL_OPTION_LABEL}</SelectItem>
+                      {vendors.map((v) => <SelectItem key={v.id} value={v.id}>{vendorLabel(v)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <Button
+                onClick={() => runReport()}
+                disabled={status === "running" || blockedReason}
+                data-testid="reports-run"
+              >
+                {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                {/* The primary says what pressing it does -- and, when it cannot
+                    be pressed, what is missing. For a report that lives on its
+                    own screen, that is opening THAT screen, named. */}
+                {runButtonLabel(run.report, missing, hosted)}
+              </Button>
+            </div>
+
+            {/* One line, under the select, that changes with the selection: a
+                report name is a slug until something says what it answers. */}
+            {spec.description && (
+              <p className="text-[12px] text-px-muted" data-testid="reports-description">{spec.description}</p>
             )}
-            <Button onClick={() => runReport()} disabled={status === "running"} data-testid="reports-run">
-              {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-              {/* The primary says what pressing it does. For a report that lives
-                  on its own screen, that is opening the screen -- not running
-                  something here. */}
-              {hosted ? "Open Report" : "Run Report"}
-            </Button>
+            {/* Most of these reports take a projectId and nothing else. Saying
+                so beats leaving two date fields that quietly do nothing. */}
+            {periodNote(currentLabel, spec) && (
+              <p className="text-[12px] text-px-muted" data-testid="reports-period-note">{periodNote(currentLabel, spec)}</p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -442,9 +609,9 @@ function ProjectReportsPanel({
               </div>
               {/* The last good result stays visible, dimmed -- a re-run must
                   not blank the screen the reader is still reading. */}
-              {result !== null && (
+              {shownResult !== null && (
                 <div className="opacity-50" data-testid="reports-previous-result">
-                  <ReportOutput data={result} fieldLabels={REPORT_FIELD_LABELS[run.report]} fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined} />
+                  <ReportOutput data={shownResult} fieldLabels={REPORT_FIELD_LABELS[run.report]} fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined} />
                 </div>
               )}
             </div>
@@ -456,7 +623,7 @@ function ProjectReportsPanel({
                   <RotateCcw className="size-4" /> Retry
                 </Button>
                 <Button variant="ghost" size="sm" asChild>
-                  <Link href={`/work-progress?tab=report&projectId=${encodeURIComponent(projectId)}`}>Open Work Progress &gt; Report</Link>
+                  <Link href={`/work-progress?tab=report&projectId=${encodeURIComponent(projectId ?? "")}`}>Open Work Progress &gt; Report</Link>
                 </Button>
               </div>
             </div>
@@ -470,15 +637,27 @@ function ProjectReportsPanel({
                 <RotateCcw className="size-4" /> Retry
               </Button>
             </div>
-          ) : result !== null ? (
-            <ReportOutput
-              data={result}
-              fieldLabels={REPORT_FIELD_LABELS[run.report]}
-              fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
-            />
+          ) : shownResult !== null ? (
+            <>
+              {/* A filter that had nothing to bite on is SAID, so an unchanged
+                  table never reads as a broken control. */}
+              {filterNote && (
+                <p className="text-[12px] text-px-muted" data-testid="reports-filter-note">{filterNote}</p>
+              )}
+              <ReportOutput
+                data={shownResult}
+                fieldLabels={REPORT_FIELD_LABELS[run.report]}
+                fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+              />
+            </>
+          ) : !projectId ? (
+            // R67 E-09/E-11: the reader is told what to DO, at the control that
+            // does it -- the top rail -- with the card above still on screen so
+            // they can see what they will get once they have.
+            <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-no-project">{NO_PROJECT_MESSAGE}</p>
           ) : hosted ? (
             <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-hosted-hint">
-              {currentLabel} runs on its own screen -- press Open Report.
+              {currentLabel} runs on its own screen -- press {runButtonLabel(run.report, [], true)}.
             </p>
           ) : (
             <p className="py-10 text-center text-sm text-px-muted">Choose a report above.</p>
@@ -531,25 +710,19 @@ export default function ReportsClient({
         <TabsTrigger value="catalog">Full Catalog</TabsTrigger>
       </TabsList>
       <TabsContent value="project">
-        {projectId ? (
-          <ProjectReportsPanel
-            projectId={projectId}
-            projectName={projectName}
-            reports={reports}
-            initialRun={{ ...initialRun, report: known ? initialRun.report : DEFAULT_REPORT_NAME }}
-            unknownReportSlug={requested && !known ? requested : null}
-          />
-        ) : (
-          <Card className="shadow-card">
-            <CardContent className="space-y-1 p-8 text-center text-sm text-px-muted">
-              {/* R67 E-09: the reader is told what to DO, at the control that
-                  does it -- the top rail -- rather than being handed a count
-                  of reports they cannot run. */}
-              <p data-testid="reports-no-project">{NO_PROJECT_MESSAGE}</p>
-              <p className="text-[12px]">The Full Catalog tab works org-wide, no project required.</p>
-            </CardContent>
-          </Card>
-        )}
+        {/* R67 E-11 (R-130): the panel renders WITHOUT a project too. It used to
+            be replaced by a sentence, which left the reader a fact and no
+            control; now the parameter card is there, the project chip says
+            there is no project, and the primary reads "Run Report (select a
+            project)" and is disabled -- the same disabled-with-reason pattern
+            /labour/new uses. The sentence is still there, in the result area. */}
+        <ProjectReportsPanel
+          projectId={projectId}
+          projectName={projectName}
+          reports={reports}
+          initialRun={{ ...initialRun, report: known ? initialRun.report : DEFAULT_REPORT_NAME }}
+          unknownReportSlug={requested && !known ? requested : null}
+        />
       </TabsContent>
       <TabsContent value="catalog">
         <ReportCatalogSection projectId={projectId} />

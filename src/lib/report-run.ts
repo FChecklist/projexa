@@ -15,6 +15,14 @@ export type ReportRunParams = {
   from: string;
   to: string;
   weekStart: string;
+  /**
+   * R67 E-11 (R-130): the parameter card's Category and Vendor choices. null is
+   * "All" -- a real choice with a name, not an empty control. They ride in the
+   * URL with the rest of the run, so a filtered run is as shareable as any
+   * other.
+   */
+  category: string | null;
+  vendorId: string | null;
 };
 
 /** Month-to-date -- the period a report runs with when the reader has chosen none. */
@@ -32,13 +40,18 @@ export function readReportRunParams(
   defaults: { report: string; projectId: string | null; today?: Date }
 ): ReportRunParams {
   const period = monthToDateRange(defaults.today);
-  const today = (defaults.today ?? new Date()).toISOString().slice(0, 10);
   return {
     report: params.get("report")?.trim() || defaults.report,
     projectId: params.get("projectId")?.trim() || defaults.projectId,
     from: params.get("from")?.trim() || period.from,
     to: params.get("to")?.trim() || period.to,
-    weekStart: params.get("weekStart")?.trim() || today,
+    // R67 E-11: NOT defaulted to today. The weekly report's backend rejects a
+    // week start that is not a Monday, and inventing one here would make the
+    // primary pressable into that 400 -- which is the defect R-130 is about.
+    // Absent means absent, and the card says so on the button.
+    weekStart: params.get("weekStart")?.trim() || "",
+    category: params.get("category")?.trim() || null,
+    vendorId: params.get("vendorId")?.trim() || null,
   };
 }
 
@@ -46,7 +59,9 @@ export function readReportRunParams(
 export function reportRunSearchParams(run: ReportRunParams): URLSearchParams {
   const qs = new URLSearchParams({ report: run.report, from: run.from, to: run.to });
   if (run.projectId) qs.set("projectId", run.projectId);
-  if (run.report === "weekly-project") qs.set("weekStart", run.weekStart);
+  if (run.report === "weekly-project" && run.weekStart) qs.set("weekStart", run.weekStart);
+  if (run.category) qs.set("category", run.category);
+  if (run.vendorId) qs.set("vendorId", run.vendorId);
   return qs;
 }
 
@@ -87,8 +102,16 @@ export function reportTitleBlock(input: {
   from: string;
   to: string;
   ranAt: Date;
+  /**
+   * R67 E-11: what to print in the period's place. Most of these reports take a
+   * projectId and nothing else, so printing the From/To window above them said
+   * the run covered that window when it covered the whole project -- a false
+   * statement in the one line whose job is to make a screenshot self-describing.
+   * Left undefined, the period is printed exactly as before.
+   */
+  periodText?: string;
 }): string {
-  const period = periodLabel(input.from, input.to);
+  const period = input.periodText ?? periodLabel(input.from, input.to);
   const time = `${String(input.ranAt.getHours()).padStart(2, "0")}:${String(input.ranAt.getMinutes()).padStart(2, "0")}`;
   const parts = [`${input.reportLabel} Report`];
   if (input.projectName) parts.push(input.projectName);

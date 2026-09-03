@@ -61,6 +61,10 @@ function stubFetch(calls: string[], reportHandler?: () => Promise<Response>) {
     if (url.includes("/api/currencies")) return jsonRes({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] });
     if (url.includes("/api/reports/catalog")) return jsonRes({ catalog: [] });
     if (url.includes("/api/companies")) return jsonRes({ companies: [] });
+    // R67 E-11: the Category and Vendor selects are populated from the org's
+    // real lists, so the card cannot offer a category nobody uses.
+    if (url.includes("/api/scope/categories")) return jsonRes({ categories: [{ id: "cat-1", name: "Civil" }, { id: "cat-2", name: "Paint" }] });
+    if (url.includes("/api/vendors")) return jsonRes({ vendors: [{ id: "v-1", vendorName: "Alpha Contracting" }] });
     if (url.includes("/api/reports/")) return reportHandler ? reportHandler() : jsonRes({ projectName: "Cedar Heights Villa - Phase 1", budget: 0 });
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
@@ -169,7 +173,11 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
 
     const title = await findByTestId("reports-title-block");
     expect(title.textContent).toContain("Project Status Report · Cedar Heights Villa - Phase 1");
-    expect(title.textContent).toContain("01 Jan to 02 Sep 2026");
+    // R67 E-11 changed this line: projectStatusReport(ctx, projectId) takes no
+    // dates, so captioning the run "01 Jan to 02 Sep 2026" claimed a period the
+    // report does not apply. The period IS still sent and still in the URL --
+    // the caption now says what the run really covers.
+    expect(title.textContent).toContain("whole project to date");
     expect(title.textContent).toMatch(/run \d{2}:\d{2}/);
     // The run really did happen, with the URL's own period.
     const call = calls.find((u) => u.includes("/api/reports/project-status"))!;
@@ -223,6 +231,112 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
     fireEvent.mouseDown(trigger);
     fireEvent.click(trigger);
     expect((await findByTestId("reports-no-project")).textContent).toBe("Select a project in the top rail to run project reports.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-11 (R-130): the parameter card
+// ---------------------------------------------------------------------------
+describe("ReportsClient: the parameter card (R67 E-11)", () => {
+  test("ACCEPTANCE: with the rail on All projects the primary is disabled and reads exactly 'Run Report (select a project)'", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({}));
+
+    const { findByTestId, getByText } = render(<ReportsClient projectId={null} />);
+    const trigger = getByText("Project Reports");
+    fireEvent.mouseDown(trigger);
+    fireEvent.click(trigger);
+
+    const primary = await findByTestId("reports-run");
+    // The accessible name of a button with an icon and a label is its text.
+    expect(primary.textContent).toBe("Run Report (select a project)");
+    expect(primary.hasAttribute("disabled")).toBe(true);
+    // ...and nothing was fetched: the guard is real, not just visual.
+    expect(calls.filter((u) => u.includes("/api/reports/project-status"))).toHaveLength(0);
+  });
+
+  test("ACCEPTANCE: the weekly report with no week start reads exactly 'Run Report (Week Start)'", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({}));
+    searchParams = new URLSearchParams({ report: "weekly-project", projectId: "p-1" });
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    const primary = await findByTestId("reports-run");
+    expect(primary.textContent).toBe("Run Report (Week Start)");
+    expect(primary.hasAttribute("disabled")).toBe(true);
+    expect(calls.filter((u) => u.includes("/api/reports/weekly-project"))).toHaveLength(0);
+  });
+
+  test("a week start that is not a Monday is reported AT the field, and blocks the run", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({}));
+    // 02 Sep 2026 is a Wednesday.
+    searchParams = new URLSearchParams({ report: "weekly-project", projectId: "p-1", weekStart: "2026-09-02" });
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    expect((await findByTestId("reports-week-start-error")).textContent).toBe("Week Start must be a Monday");
+    expect((await findByTestId("reports-run")).hasAttribute("disabled")).toBe(true);
+  });
+
+  test("the project chip names the project and says where it is changed, so the card and the rail cannot disagree", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    expect((await findByTestId("reports-project-chip")).textContent).toBe(
+      "Project: Cedar Heights Villa - Phase 1 — change in the top rail"
+    );
+  });
+
+  test("the description under the select changes with the selection, and is prose rather than a slug", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+    searchParams = new URLSearchParams({ report: "work-progress", projectId: "p-1" });
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    expect((await findByTestId("reports-description")).textContent).toBe(
+      "Work Progress: quantities and amounts done per BOQ line, previous / this period / to date."
+    );
+  });
+
+  test("a report the period does not touch says so at the field, instead of leaving two dates that do nothing", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, () => new Promise<Response>(() => { /* held open so the card stays on screen */ }));
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    expect((await findByTestId("reports-period-note")).textContent).toBe(
+      "Project Status covers the whole project — the From and To dates are not applied to it."
+    );
+  });
+
+  test("a Category chosen for a report whose handler does not filter is applied here, and the total is left alone", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({
+      total: 1000,
+      rows: [
+        { category: "Civil", amount: 600 },
+        { category: "Paint", amount: 400 },
+      ],
+    }));
+    searchParams = new URLSearchParams({ report: "category-progress", projectId: "p-1", category: "Civil" });
+
+    const { findByText, queryByText } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    await findByText("Civil");
+    expect(queryByText("Paint")).toBeNull();
+    // The filter really did reach the backend too -- it is forwarded, then
+    // applied here only because this handler ignores it.
+    expect(calls.some((u) => u.includes("category=Civil"))).toBe(true);
+  });
+
+  test("a filter with no field to bite on leaves every row AND says why", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ rows: [{ trade: "Mason", workerDays: 4 }] }));
+    searchParams = new URLSearchParams({ report: "category-progress", projectId: "p-1", category: "Civil" });
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    expect((await findByTestId("reports-filter-note")).textContent).toBe(
+      'This report carries no category "Civil" — every row is shown.'
+    );
   });
 });
 
