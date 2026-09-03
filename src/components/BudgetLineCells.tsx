@@ -42,6 +42,77 @@ export function CellFeedback({ state }: { state: CellState | undefined }) {
   return <span role="alert" className="block text-[10px] text-px-error">{state.message}</span>;
 }
 
+/** The one key under which a cell's state is filed. Exported so a caller's remount key cannot drift from it. */
+export function cellStateKey(lineItemId: string, field: BudgetFieldKey): string {
+  return `${lineItemId}:${field}`;
+}
+
+// ─── The state machine, as four pure transitions ──────────────────────────
+//
+// R67 lane D22 (review finding): three screens now depend on this hook, and
+// none of its rules could be asserted -- they lived inside a useCallback that
+// needs a DOM to drive, and @happy-dom is declared in package.json but is not
+// installed in this environment. They are the same transitions, lifted out, so
+// the guarantees below are provable rather than merely commented.
+
+export function markCellSaving(prev: Record<string, CellState>, key: string): Record<string, CellState> {
+  return { ...prev, [key]: { status: "saving" } };
+}
+
+export function markCellSaved(prev: Record<string, CellState>, key: string): Record<string, CellState> {
+  return { ...prev, [key]: { status: "saved" } };
+}
+
+export function markCellError(prev: Record<string, CellState>, key: string, message: string): Record<string, CellState> {
+  return { ...prev, [key]: { status: "error", message } };
+}
+
+/**
+ * What the "Saved" timer does when it fires.
+ *
+ * GUARDED, not an unconditional delete: by the time a 3 s timer fires the cell
+ * may have been edited again and be mid-save, or may have failed. Clearing it
+ * then would wipe a message the reader still needs, or blank a "Saving…" that
+ * is still true. Only a cell still reading "saved" is cleared.
+ */
+export function clearSavedCell(prev: Record<string, CellState>, key: string): Record<string, CellState> {
+  if (prev[key]?.status !== "saved") return prev;
+  const next = { ...prev };
+  delete next[key];
+  return next;
+}
+
+export type LineItemSaveOutcome =
+  | { ok: true; patched: Record<string, unknown> }
+  | { ok: false; message: string };
+
+/**
+ * The write itself: one PATCH, and the backend's own sentence when it refuses.
+ *
+ * Separated from the hook so the request shape and the failure message are
+ * testable with nothing but a stubbed fetch. It never touches state.
+ */
+export async function saveLineItemField(
+  lineItemId: string,
+  field: BudgetFieldKey,
+  value: number | string | null
+): Promise<LineItemSaveOutcome> {
+  try {
+    const res = await fetch(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? "Couldn't save");
+    return { ok: true, patched: data as Record<string, unknown> };
+  } catch (err) {
+    // The BACKEND's own sentence, at the field that caused it -- not a
+    // generic "Couldn't save".
+    return { ok: false, message: errorMessage(err, "Couldn't save") };
+  }
+}
+
 /**
  * Saves one cell of one BOQ line and reports what happened, per cell.
  *
@@ -65,30 +136,17 @@ export function useLineItemSaver(
 
   const saveField = useCallback(
     async (lineItemId: string, field: BudgetFieldKey, value: number | string | null) => {
-      const key = `${lineItemId}:${field}`;
-      setCells((prev) => ({ ...prev, [key]: { status: "saving" } }));
-      try {
-        const res = await fetch(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: value }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? "Couldn't save");
-        onPatched(lineItemId, data as Record<string, unknown>);
-        setCells((prev) => ({ ...prev, [key]: { status: "saved" } }));
-        setTimeout(() => setCells((prev) => {
-          if (prev[key]?.status !== "saved") return prev;
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        }), SAVED_VISIBLE_MS);
-      } catch (err) {
-        // The BACKEND's own sentence, at the field that caused it -- not a
-        // generic "Couldn't save".
-        setCells((prev) => ({ ...prev, [key]: { status: "error", message: errorMessage(err, "Couldn't save") } }));
+      const key = cellStateKey(lineItemId, field);
+      setCells((prev) => markCellSaving(prev, key));
+      const outcome = await saveLineItemField(lineItemId, field, value);
+      if (!outcome.ok) {
+        setCells((prev) => markCellError(prev, key, outcome.message));
         onFailed?.(lineItemId, field);
+        return;
       }
+      onPatched(lineItemId, outcome.patched);
+      setCells((prev) => markCellSaved(prev, key));
+      setTimeout(() => setCells((prev) => clearSavedCell(prev, key)), SAVED_VISIBLE_MS);
     },
     [onPatched, onFailed]
   );
