@@ -1,5 +1,5 @@
 {
-  "what": "R67 J-03 (audit R-280). Cold first-load transfer for PROJEXA's two public marketing routes, read out of `next build`'s own prerendered output by ai-os/scripts/measure-public-page-transfer.mjs.",
+  "what": "R67 J-03 (audit R-280). Cold first-load transfer for every prerendered PROJEXA public marketing document -- the two routes, one document per locale -- read out of `next build`'s own prerendered output by ai-os/scripts/measure-public-page-transfer.mjs.",
   "howMeasured": [
     "gzipBytes = the gzipped HTML document + gzip of every /_next/static .js and .css it references + the raw size of every woff2 it preloads (fonts are already compressed, so gzipping them again would understate the wire).",
     "This is the cold-load sum a browser fetches before hydration. These routes fetch nothing at runtime -- they are static marketing pages with no data dependency -- so there is nothing after it.",
@@ -601,6 +601,651 @@
               "kind": "css",
               "rawBytes": 141035,
               "gzipBytes": 22866
+            },
+            {
+              "url": "/_next/static/chunks/44dojxm3-d_39.js",
+              "kind": "js",
+              "rawBytes": 54765,
+              "gzipBytes": 12879
+            },
+            {
+              "url": "/_next/static/chunks/turbopack-30b7hk68y2vlj.js",
+              "kind": "js",
+              "rawBytes": 10614,
+              "gzipBytes": 4164
+            },
+            {
+              "url": "/_next/static/media/0c8f209abc35ee02-s.p.0c0g8ifvh7k7-.woff2",
+              "kind": "font",
+              "rawBytes": 17844,
+              "gzipBytes": 17844
+            },
+            {
+              "url": "/_next/static/media/70bc3e132a0a741e-s.p.3t6q91iet4nsy.woff2",
+              "kind": "font",
+              "rawBytes": 40480,
+              "gzipBytes": 40480
+            },
+            {
+              "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+              "kind": "font",
+              "rawBytes": 48432,
+              "gzipBytes": 48432
+            }
+          ]
+        }
+      ]
+    },
+    "after J-01 fix pass -- one prerendered document per locale": {
+      "measuredAt": "2026-09-03T06:18:14.032Z",
+      "routes": [
+        {
+          "route": "/",
+          "prerendered": true,
+          "htmlBytes": 171559,
+          "assetCount": 18,
+          "rawBytes": 1203594,
+          "gzipBytes": 389349,
+          "withinBudget": true,
+          "budgetBytes": 512000,
+          "byKind": {
+            "js": {
+              "count": 13,
+              "rawBytes": 771601,
+              "gzipBytes": 231327
+            },
+            "css": {
+              "count": 2,
+              "rawBytes": 153678,
+              "gzipBytes": 24253
+            },
+            "font": {
+              "count": 3,
+              "rawBytes": 106756,
+              "gzipBytes": 106756
+            }
+          },
+          "forbiddenPackages": [],
+          "clientModules": [
+            "node_modules/next-intl/dist/esm/production/shared/NextIntlClientProvider.js",
+            "node_modules/next-themes/dist/index.mjs",
+            "node_modules/next/dist/client/app-dir/link.js",
+            "node_modules/next/dist/client/components/builtin/global-error",
+            "node_modules/next/dist/client/components/builtin/global-error.js",
+            "node_modules/next/dist/client/image-component.js",
+            "node_modules/next/dist/esm/client/components/client-page.js",
+            "node_modules/next/dist/esm/client/components/client-segment.js",
+            "node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js",
+            "node_modules/next/dist/esm/client/components/layout-router.js",
+            "node_modules/next/dist/esm/client/components/render-from-template-context.js",
+            "node_modules/next/dist/esm/lib/framework/boundary-components.js",
+            "node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js",
+            "src/app/layout",
+            "src/app/page",
+            "src/components/ServiceWorkerRegister.tsx",
+            "src/components/marketing/ContactForm.tsx",
+            "src/components/marketing/MarketingHeader.tsx",
+            "src/components/marketing/Reveal.tsx",
+            "src/components/ui/sonner.tsx"
+          ],
+          "assets": [
+            {
+              "url": "/_next/static/chunks/0-7z0rntz3mg4.js",
+              "kind": "js",
+              "rawBytes": 44024,
+              "gzipBytes": 9162
+            },
+            {
+              "url": "/_next/static/chunks/007o7i9odfpcp.js",
+              "kind": "js",
+              "rawBytes": 27419,
+              "gzipBytes": 8559
+            },
+            {
+              "url": "/_next/static/chunks/04cevx33bvk65.js",
+              "kind": "js",
+              "rawBytes": 227422,
+              "gzipBytes": 70888
+            },
+            {
+              "url": "/_next/static/chunks/07l8yaxjya9xy.js",
+              "kind": "js",
+              "rawBytes": 39774,
+              "gzipBytes": 12021
+            },
+            {
+              "url": "/_next/static/chunks/0cz1d0mv5g_q7.js",
+              "kind": "js",
+              "rawBytes": 112594,
+              "gzipBytes": 39520
+            },
+            {
+              "url": "/_next/static/chunks/0evtaflhgj8p6.js",
+              "kind": "js",
+              "rawBytes": 31937,
+              "gzipBytes": 9030
+            },
+            {
+              "url": "/_next/static/chunks/0hvj0mb5hwfw3.js",
+              "kind": "js",
+              "rawBytes": 41620,
+              "gzipBytes": 11975
+            },
+            {
+              "url": "/_next/static/chunks/13_vr6oziz-as.js",
+              "kind": "js",
+              "rawBytes": 5599,
+              "gzipBytes": 2021
+            },
+            {
+              "url": "/_next/static/chunks/1aat8esli29ge.js",
+              "kind": "js",
+              "rawBytes": 137727,
+              "gzipBytes": 37368
+            },
+            {
+              "url": "/_next/static/chunks/1o--6uynar_nu.css",
+              "kind": "css",
+              "rawBytes": 12643,
+              "gzipBytes": 1387
+            },
+            {
+              "url": "/_next/static/chunks/2jd1w_xls491q.css",
+              "kind": "css",
+              "rawBytes": 141035,
+              "gzipBytes": 22866
+            },
+            {
+              "url": "/_next/static/chunks/2opvn7nr1i0zl.js",
+              "kind": "js",
+              "rawBytes": 29266,
+              "gzipBytes": 10250
+            },
+            {
+              "url": "/_next/static/chunks/2rtnh-f_n5kan.js",
+              "kind": "js",
+              "rawBytes": 8840,
+              "gzipBytes": 3490
+            },
+            {
+              "url": "/_next/static/chunks/44dojxm3-d_39.js",
+              "kind": "js",
+              "rawBytes": 54765,
+              "gzipBytes": 12879
+            },
+            {
+              "url": "/_next/static/chunks/turbopack-30b7hk68y2vlj.js",
+              "kind": "js",
+              "rawBytes": 10614,
+              "gzipBytes": 4164
+            },
+            {
+              "url": "/_next/static/media/0c8f209abc35ee02-s.p.0c0g8ifvh7k7-.woff2",
+              "kind": "font",
+              "rawBytes": 17844,
+              "gzipBytes": 17844
+            },
+            {
+              "url": "/_next/static/media/70bc3e132a0a741e-s.p.3t6q91iet4nsy.woff2",
+              "kind": "font",
+              "rawBytes": 40480,
+              "gzipBytes": 40480
+            },
+            {
+              "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+              "kind": "font",
+              "rawBytes": 48432,
+              "gzipBytes": 48432
+            }
+          ]
+        },
+        {
+          "route": "/hi",
+          "prerendered": true,
+          "htmlBytes": 205147,
+          "assetCount": 18,
+          "rawBytes": 1237182,
+          "gzipBytes": 394912,
+          "withinBudget": true,
+          "budgetBytes": 512000,
+          "byKind": {
+            "js": {
+              "count": 13,
+              "rawBytes": 771601,
+              "gzipBytes": 231327
+            },
+            "css": {
+              "count": 2,
+              "rawBytes": 153678,
+              "gzipBytes": 24253
+            },
+            "font": {
+              "count": 3,
+              "rawBytes": 106756,
+              "gzipBytes": 106756
+            }
+          },
+          "forbiddenPackages": [],
+          "clientModules": [
+            "node_modules/next-intl/dist/esm/production/shared/NextIntlClientProvider.js",
+            "node_modules/next-themes/dist/index.mjs",
+            "node_modules/next/dist/client/app-dir/link.js",
+            "node_modules/next/dist/client/components/builtin/global-error",
+            "node_modules/next/dist/client/components/builtin/global-error.js",
+            "node_modules/next/dist/client/image-component.js",
+            "node_modules/next/dist/esm/client/components/client-page.js",
+            "node_modules/next/dist/esm/client/components/client-segment.js",
+            "node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js",
+            "node_modules/next/dist/esm/client/components/layout-router.js",
+            "node_modules/next/dist/esm/client/components/render-from-template-context.js",
+            "node_modules/next/dist/esm/lib/framework/boundary-components.js",
+            "node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js",
+            "src/app/hi/page",
+            "src/app/layout",
+            "src/components/ServiceWorkerRegister.tsx",
+            "src/components/marketing/ContactForm.tsx",
+            "src/components/marketing/MarketingHeader.tsx",
+            "src/components/marketing/Reveal.tsx",
+            "src/components/ui/sonner.tsx"
+          ],
+          "assets": [
+            {
+              "url": "/_next/static/chunks/0-7z0rntz3mg4.js",
+              "kind": "js",
+              "rawBytes": 44024,
+              "gzipBytes": 9162
+            },
+            {
+              "url": "/_next/static/chunks/007o7i9odfpcp.js",
+              "kind": "js",
+              "rawBytes": 27419,
+              "gzipBytes": 8559
+            },
+            {
+              "url": "/_next/static/chunks/04cevx33bvk65.js",
+              "kind": "js",
+              "rawBytes": 227422,
+              "gzipBytes": 70888
+            },
+            {
+              "url": "/_next/static/chunks/07l8yaxjya9xy.js",
+              "kind": "js",
+              "rawBytes": 39774,
+              "gzipBytes": 12021
+            },
+            {
+              "url": "/_next/static/chunks/0cz1d0mv5g_q7.js",
+              "kind": "js",
+              "rawBytes": 112594,
+              "gzipBytes": 39520
+            },
+            {
+              "url": "/_next/static/chunks/0evtaflhgj8p6.js",
+              "kind": "js",
+              "rawBytes": 31937,
+              "gzipBytes": 9030
+            },
+            {
+              "url": "/_next/static/chunks/0hvj0mb5hwfw3.js",
+              "kind": "js",
+              "rawBytes": 41620,
+              "gzipBytes": 11975
+            },
+            {
+              "url": "/_next/static/chunks/13_vr6oziz-as.js",
+              "kind": "js",
+              "rawBytes": 5599,
+              "gzipBytes": 2021
+            },
+            {
+              "url": "/_next/static/chunks/1aat8esli29ge.js",
+              "kind": "js",
+              "rawBytes": 137727,
+              "gzipBytes": 37368
+            },
+            {
+              "url": "/_next/static/chunks/1o--6uynar_nu.css",
+              "kind": "css",
+              "rawBytes": 12643,
+              "gzipBytes": 1387
+            },
+            {
+              "url": "/_next/static/chunks/2jd1w_xls491q.css",
+              "kind": "css",
+              "rawBytes": 141035,
+              "gzipBytes": 22866
+            },
+            {
+              "url": "/_next/static/chunks/2opvn7nr1i0zl.js",
+              "kind": "js",
+              "rawBytes": 29266,
+              "gzipBytes": 10250
+            },
+            {
+              "url": "/_next/static/chunks/2rtnh-f_n5kan.js",
+              "kind": "js",
+              "rawBytes": 8840,
+              "gzipBytes": 3490
+            },
+            {
+              "url": "/_next/static/chunks/44dojxm3-d_39.js",
+              "kind": "js",
+              "rawBytes": 54765,
+              "gzipBytes": 12879
+            },
+            {
+              "url": "/_next/static/chunks/turbopack-30b7hk68y2vlj.js",
+              "kind": "js",
+              "rawBytes": 10614,
+              "gzipBytes": 4164
+            },
+            {
+              "url": "/_next/static/media/0c8f209abc35ee02-s.p.0c0g8ifvh7k7-.woff2",
+              "kind": "font",
+              "rawBytes": 17844,
+              "gzipBytes": 17844
+            },
+            {
+              "url": "/_next/static/media/70bc3e132a0a741e-s.p.3t6q91iet4nsy.woff2",
+              "kind": "font",
+              "rawBytes": 40480,
+              "gzipBytes": 40480
+            },
+            {
+              "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+              "kind": "font",
+              "rawBytes": 48432,
+              "gzipBytes": 48432
+            }
+          ]
+        },
+        {
+          "route": "/how-it-works",
+          "prerendered": true,
+          "htmlBytes": 70470,
+          "assetCount": 18,
+          "rawBytes": 1102505,
+          "gzipBytes": 374663,
+          "withinBudget": true,
+          "budgetBytes": 512000,
+          "byKind": {
+            "js": {
+              "count": 13,
+              "rawBytes": 771601,
+              "gzipBytes": 231332
+            },
+            "css": {
+              "count": 2,
+              "rawBytes": 153678,
+              "gzipBytes": 24253
+            },
+            "font": {
+              "count": 3,
+              "rawBytes": 106756,
+              "gzipBytes": 106756
+            }
+          },
+          "forbiddenPackages": [],
+          "clientModules": [
+            "node_modules/next-intl/dist/esm/production/shared/NextIntlClientProvider.js",
+            "node_modules/next-themes/dist/index.mjs",
+            "node_modules/next/dist/client/app-dir/link.js",
+            "node_modules/next/dist/client/components/builtin/global-error",
+            "node_modules/next/dist/client/components/builtin/global-error.js",
+            "node_modules/next/dist/client/image-component.js",
+            "node_modules/next/dist/esm/client/components/client-page.js",
+            "node_modules/next/dist/esm/client/components/client-segment.js",
+            "node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js",
+            "node_modules/next/dist/esm/client/components/layout-router.js",
+            "node_modules/next/dist/esm/client/components/render-from-template-context.js",
+            "node_modules/next/dist/esm/lib/framework/boundary-components.js",
+            "node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js",
+            "src/app/how-it-works/page",
+            "src/app/layout",
+            "src/components/ServiceWorkerRegister.tsx",
+            "src/components/marketing/ContactForm.tsx",
+            "src/components/marketing/MarketingHeader.tsx",
+            "src/components/marketing/Reveal.tsx",
+            "src/components/ui/sonner.tsx"
+          ],
+          "assets": [
+            {
+              "url": "/_next/static/chunks/0-7z0rntz3mg4.js",
+              "kind": "js",
+              "rawBytes": 44024,
+              "gzipBytes": 9162
+            },
+            {
+              "url": "/_next/static/chunks/007o7i9odfpcp.js",
+              "kind": "js",
+              "rawBytes": 27419,
+              "gzipBytes": 8559
+            },
+            {
+              "url": "/_next/static/chunks/04cevx33bvk65.js",
+              "kind": "js",
+              "rawBytes": 227422,
+              "gzipBytes": 70888
+            },
+            {
+              "url": "/_next/static/chunks/07l8yaxjya9xy.js",
+              "kind": "js",
+              "rawBytes": 39774,
+              "gzipBytes": 12021
+            },
+            {
+              "url": "/_next/static/chunks/0cz1d0mv5g_q7.js",
+              "kind": "js",
+              "rawBytes": 112594,
+              "gzipBytes": 39520
+            },
+            {
+              "url": "/_next/static/chunks/0evtaflhgj8p6.js",
+              "kind": "js",
+              "rawBytes": 31937,
+              "gzipBytes": 9030
+            },
+            {
+              "url": "/_next/static/chunks/0hvj0mb5hwfw3.js",
+              "kind": "js",
+              "rawBytes": 41620,
+              "gzipBytes": 11975
+            },
+            {
+              "url": "/_next/static/chunks/13_vr6oziz-as.js",
+              "kind": "js",
+              "rawBytes": 5599,
+              "gzipBytes": 2021
+            },
+            {
+              "url": "/_next/static/chunks/1aat8esli29ge.js",
+              "kind": "js",
+              "rawBytes": 137727,
+              "gzipBytes": 37368
+            },
+            {
+              "url": "/_next/static/chunks/1o--6uynar_nu.css",
+              "kind": "css",
+              "rawBytes": 12643,
+              "gzipBytes": 1387
+            },
+            {
+              "url": "/_next/static/chunks/2_84d2zrqkw7h.js",
+              "kind": "js",
+              "rawBytes": 29266,
+              "gzipBytes": 10255
+            },
+            {
+              "url": "/_next/static/chunks/2jd1w_xls491q.css",
+              "kind": "css",
+              "rawBytes": 141035,
+              "gzipBytes": 22866
+            },
+            {
+              "url": "/_next/static/chunks/2rtnh-f_n5kan.js",
+              "kind": "js",
+              "rawBytes": 8840,
+              "gzipBytes": 3490
+            },
+            {
+              "url": "/_next/static/chunks/44dojxm3-d_39.js",
+              "kind": "js",
+              "rawBytes": 54765,
+              "gzipBytes": 12879
+            },
+            {
+              "url": "/_next/static/chunks/turbopack-30b7hk68y2vlj.js",
+              "kind": "js",
+              "rawBytes": 10614,
+              "gzipBytes": 4164
+            },
+            {
+              "url": "/_next/static/media/0c8f209abc35ee02-s.p.0c0g8ifvh7k7-.woff2",
+              "kind": "font",
+              "rawBytes": 17844,
+              "gzipBytes": 17844
+            },
+            {
+              "url": "/_next/static/media/70bc3e132a0a741e-s.p.3t6q91iet4nsy.woff2",
+              "kind": "font",
+              "rawBytes": 40480,
+              "gzipBytes": 40480
+            },
+            {
+              "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+              "kind": "font",
+              "rawBytes": 48432,
+              "gzipBytes": 48432
+            }
+          ]
+        },
+        {
+          "route": "/hi/how-it-works",
+          "prerendered": true,
+          "htmlBytes": 84268,
+          "assetCount": 18,
+          "rawBytes": 1116303,
+          "gzipBytes": 378224,
+          "withinBudget": true,
+          "budgetBytes": 512000,
+          "byKind": {
+            "js": {
+              "count": 13,
+              "rawBytes": 771601,
+              "gzipBytes": 231332
+            },
+            "css": {
+              "count": 2,
+              "rawBytes": 153678,
+              "gzipBytes": 24253
+            },
+            "font": {
+              "count": 3,
+              "rawBytes": 106756,
+              "gzipBytes": 106756
+            }
+          },
+          "forbiddenPackages": [],
+          "clientModules": [
+            "node_modules/next-intl/dist/esm/production/shared/NextIntlClientProvider.js",
+            "node_modules/next-themes/dist/index.mjs",
+            "node_modules/next/dist/client/app-dir/link.js",
+            "node_modules/next/dist/client/components/builtin/global-error",
+            "node_modules/next/dist/client/components/builtin/global-error.js",
+            "node_modules/next/dist/client/image-component.js",
+            "node_modules/next/dist/esm/client/components/client-page.js",
+            "node_modules/next/dist/esm/client/components/client-segment.js",
+            "node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js",
+            "node_modules/next/dist/esm/client/components/layout-router.js",
+            "node_modules/next/dist/esm/client/components/render-from-template-context.js",
+            "node_modules/next/dist/esm/lib/framework/boundary-components.js",
+            "node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js",
+            "src/app/hi/how-it-works/page",
+            "src/app/layout",
+            "src/components/ServiceWorkerRegister.tsx",
+            "src/components/marketing/ContactForm.tsx",
+            "src/components/marketing/MarketingHeader.tsx",
+            "src/components/marketing/Reveal.tsx",
+            "src/components/ui/sonner.tsx"
+          ],
+          "assets": [
+            {
+              "url": "/_next/static/chunks/0-7z0rntz3mg4.js",
+              "kind": "js",
+              "rawBytes": 44024,
+              "gzipBytes": 9162
+            },
+            {
+              "url": "/_next/static/chunks/007o7i9odfpcp.js",
+              "kind": "js",
+              "rawBytes": 27419,
+              "gzipBytes": 8559
+            },
+            {
+              "url": "/_next/static/chunks/04cevx33bvk65.js",
+              "kind": "js",
+              "rawBytes": 227422,
+              "gzipBytes": 70888
+            },
+            {
+              "url": "/_next/static/chunks/07l8yaxjya9xy.js",
+              "kind": "js",
+              "rawBytes": 39774,
+              "gzipBytes": 12021
+            },
+            {
+              "url": "/_next/static/chunks/0cz1d0mv5g_q7.js",
+              "kind": "js",
+              "rawBytes": 112594,
+              "gzipBytes": 39520
+            },
+            {
+              "url": "/_next/static/chunks/0evtaflhgj8p6.js",
+              "kind": "js",
+              "rawBytes": 31937,
+              "gzipBytes": 9030
+            },
+            {
+              "url": "/_next/static/chunks/0hvj0mb5hwfw3.js",
+              "kind": "js",
+              "rawBytes": 41620,
+              "gzipBytes": 11975
+            },
+            {
+              "url": "/_next/static/chunks/13_vr6oziz-as.js",
+              "kind": "js",
+              "rawBytes": 5599,
+              "gzipBytes": 2021
+            },
+            {
+              "url": "/_next/static/chunks/1aat8esli29ge.js",
+              "kind": "js",
+              "rawBytes": 137727,
+              "gzipBytes": 37368
+            },
+            {
+              "url": "/_next/static/chunks/1o--6uynar_nu.css",
+              "kind": "css",
+              "rawBytes": 12643,
+              "gzipBytes": 1387
+            },
+            {
+              "url": "/_next/static/chunks/2_84d2zrqkw7h.js",
+              "kind": "js",
+              "rawBytes": 29266,
+              "gzipBytes": 10255
+            },
+            {
+              "url": "/_next/static/chunks/2jd1w_xls491q.css",
+              "kind": "css",
+              "rawBytes": 141035,
+              "gzipBytes": 22866
+            },
+            {
+              "url": "/_next/static/chunks/2rtnh-f_n5kan.js",
+              "kind": "js",
+              "rawBytes": 8840,
+              "gzipBytes": 3490
             },
             {
               "url": "/_next/static/chunks/44dojxm3-d_39.js",

@@ -18,6 +18,7 @@ import {
   extractClientModules,
   extractNextAssets,
 } from "../../ai-os/scripts/measure-public-page-transfer.mjs";
+import { STATIC_PUBLIC_ROUTES } from "./public-page-cache";
 
 describe("extractNextAssets", () => {
   test("picks up scripts, stylesheets and font preloads, and de-duplicates", () => {
@@ -78,8 +79,11 @@ describe("extractClientModules", () => {
 });
 
 describe("the script's constants", () => {
-  test("measures exactly the two routes J-01 made prerenderable, at the audit's budget", () => {
-    expect(Object.keys(PRERENDERED_ROUTES)).toEqual(["/", "/how-it-works"]);
+  test("measures exactly the documents J-01 made prerenderable, at the audit's budget", () => {
+    // One per locale: a Hindi visitor is served /hi, so its budget matters
+    // exactly as much as "/"'s. Pinned against the same route map middleware
+    // and next.config.ts use, so a locale added there cannot go unmeasured.
+    expect(Object.keys(PRERENDERED_ROUTES).sort()).toEqual([...STATIC_PUBLIC_ROUTES].sort());
     expect(TRANSFER_BUDGET_BYTES).toBe(500 * 1024);
   });
 });

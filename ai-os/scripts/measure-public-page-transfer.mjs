@@ -30,7 +30,12 @@
 // junction to the main checkout: Turbopack refuses it ("Symlink
 // [project]/node_modules is invalid, it points out of the filesystem root").
 // Build from the main checkout, or widen next.config.ts's turbopack.root for
-// the measurement run only.
+// the measurement run only. The second workaround is CONFIRMED (R67 J-01 fix
+// pass, 2026-09-03): setting `turbopack: { root: "C:/ct" }` -- a directory
+// that contains both the junction target and the worktree -- builds the whole
+// app in this worktree, exit 0. Revert the line afterwards; the committed
+// value must stay __dirname, which is what stops root-inference picking the
+// OTHER checkout.
 
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -41,11 +46,21 @@ import { dirname, join, resolve } from "node:path";
 // Route -> the files `next build` writes for it under .next/server/app/.
 // "/" is written as index.html, not page.html; its client-reference manifest
 // is still page_client-reference-manifest.js.
+// The Hindi documents are measured too, not just the canonical two: they are
+// what a Hindi visitor is actually served (middleware rewrites "/" to "/hi"),
+// so the 500 KB budget applies to them exactly as it does to the English
+// ones, and they carry one thing the English pages do not -- a nested
+// NextIntlClientProvider with its own message payload.
 export const PRERENDERED_ROUTES = {
   "/": { html: "index.html", clientManifest: "page_client-reference-manifest.js" },
+  "/hi": { html: "hi.html", clientManifest: "hi/page_client-reference-manifest.js" },
   "/how-it-works": {
     html: "how-it-works.html",
     clientManifest: "how-it-works/page_client-reference-manifest.js",
+  },
+  "/hi/how-it-works": {
+    html: "hi/how-it-works.html",
+    clientManifest: "hi/how-it-works/page_client-reference-manifest.js",
   },
 };
 
@@ -249,8 +264,9 @@ async function main() {
       // first write
     }
     existing.what =
-      "R67 J-03 (audit R-280). Cold first-load transfer for PROJEXA's two public " +
-      "marketing routes, read out of `next build`'s own prerendered output by " +
+      "R67 J-03 (audit R-280). Cold first-load transfer for every prerendered " +
+      "PROJEXA public marketing document -- the two routes, one document per " +
+      "locale -- read out of `next build`'s own prerendered output by " +
       "ai-os/scripts/measure-public-page-transfer.mjs.";
     existing.howMeasured = [
       "gzipBytes = the gzipped HTML document + gzip of every /_next/static .js and .css it references + the raw size of every woff2 it preloads (fonts are already compressed, so gzipping them again would understate the wire).",
