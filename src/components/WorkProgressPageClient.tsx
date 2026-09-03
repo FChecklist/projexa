@@ -17,7 +17,7 @@
 
 // R42 seq22: thin composition of the FORM (WorkProgressFormClient) and LIST
 // (WorkProgressListClient) archetypes on one page, per this seq's own
-// "WORK PROGRESS (FORM+LIST)" row. Owns only the entries/lookups both need
+// "WORK PROGRESS (FORM+LIST)" row. Owns only the entries both need
 // -- no per-module UI logic lives here.
 //
 // R67 D-55 / D-65 -- WHAT CHANGED AND WHY. The load() here was:
@@ -53,9 +53,17 @@ import type { PaneStatus } from "@/lib/pane-state";
 export default function WorkProgressPageClient({
   projectId,
   projectName,
+  notice = null,
 }: {
   projectId: string;
   projectName?: string | null;
+  /**
+   * R67 D-28: the receipt a progress entry's own object page hands over when
+   * it deletes itself. That page unmounts with the navigation, so its message
+   * band cannot carry it -- this is the only place the confirmation can be
+   * said, and it is persistent rather than a toast.
+   */
+  notice?: string | null;
 }) {
   const [entries, setEntries] = useState<ProgressEntry[]>([]);
   const [activities, setActivities] = useState<ProgressActivity[]>([]);
@@ -125,6 +133,7 @@ export default function WorkProgressPageClient({
           projectName={projectName}
           entries={entries}
           activityNameById={activityNameById}
+          notice={notice}
           status={status}
           error={error}
           onRetry={() => void load()}

@@ -75,6 +75,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ApiError, fetchJson } from "@/lib/fetch-json";
+// R67 D-31 (R-090): the trade-wise attendance summary, kept through the merge.
+import AttendanceSummaryPanel from "@/components/AttendanceSummaryPanel";
 import { PaneState } from "@/components/PaneState";
 import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
@@ -200,6 +202,7 @@ export default function LabourClient({
   registryColumns,
   initialTab,
   initialRoster = null,
+  importedNotice = null,
 }: {
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
@@ -207,6 +210,9 @@ export default function LabourClient({
   /** R67 F-18 / F-30: the roster labour/page.tsx already fetched on the server,
    *  in the same upstream transaction as the day's attendance summary. */
   initialRoster?: ModuleListInitial<RosterEntry>;
+  /** R67 D-34: the bulk-import screen's confirmation, carried in the URL
+   *  because that screen unmounts with the navigation it makes. */
+  importedNotice?: string | null;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
@@ -365,6 +371,16 @@ export default function LabourClient({
       </div>
 
       <TabsContent value="roster" className="space-y-4">
+        {/* R67 D-34: the import screen's confirmation, carried in the URL
+            because that screen unmounts with the navigation.
+            R67 integration: D-34's two per-tab buttons that used to sit here
+            are GONE, not lost -- D-79's ListHeaderActions above renders the
+            module's whole create surface once, and "Workers from Excel" is an
+            entry in its menu (module-create-routes.ts), so bulk import is
+            still one click from either tab instead of only from this one. */}
+        {importedNotice && (
+          <p className="rounded-md border border-px-border2 px-3 py-2 text-[12.5px] text-px-ink">{importedNotice}</p>
+        )}
         <Card className="shadow-card">
           <CardContent className="p-2">
             <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(rosterStatus, roster.length)}</p>
@@ -418,6 +434,13 @@ export default function LabourClient({
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
+        {/* R67 D-31 (R-090): the trade-wise summary, between the tab bar and
+            the attendance log, populated by pressing nothing. Before this, the
+            only place these numbers existed was the report catalogue, which
+            PROJEXA renders as a read-only card. It reads the SAME day the
+            control below picks, so the summary and the log can never describe
+            two different dates. */}
+        <AttendanceSummaryPanel projectId={projectId} date={attendanceDay} />
         {/* R67 F-25: the day is a real, visible control, so "which day am I
             looking at?" is answered on screen rather than assumed. */}
         <div className="flex flex-wrap items-center gap-2">

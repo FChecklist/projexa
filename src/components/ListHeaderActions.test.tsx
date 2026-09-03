@@ -100,23 +100,29 @@ describe("Filter and Export are disabled with a reason, never hidden", () => {
 
 describe("+ New opens the module's whole create list", () => {
   test("from the Roster tab it offers Worker and Attendance, Worker first", () => {
-    // D-79's acceptance, verbatim: "from /labour (Roster tab) click '+ New'
-    // -> menu shows 'Worker' and 'Attendance'".
+    // D-79's acceptance: "from /labour (Roster tab) click '+ New' -> menu
+    // shows 'Worker' and 'Attendance'".
+    //
+    // R67 INTEGRATION: the menu also carries D-34's bulk import ("Workers from
+    // Excel"), which used to be a button on the Roster tab alone -- exactly the
+    // per-tab scattering this control exists to end. D-79's own two entries are
+    // still asserted to come FIRST and in its stated order; the assertion is
+    // corrected to the merged list rather than dropped.
     const { container, getByLabelText } = render(
       <ListHeaderActions module="labour" tab="roster" projectId="p-cedar" />
     );
     fireEvent.click(getByLabelText("+ New"));
 
     const items = Array.from(document.querySelectorAll('[role="menuitem"]')).map((n) => n.textContent);
-    expect(items).toEqual(["Worker", "Attendance"]);
+    expect(items).toEqual(["Worker", "Attendance", "Workers from Excel"]);
     expect(container).toBeDefined();
   });
 
-  test("from the Attendance tab the SAME two are offered, with Attendance first", () => {
+  test("from the Attendance tab the SAME entries are offered, with Attendance first", () => {
     const { getByLabelText } = render(<ListHeaderActions module="labour" tab="attendance" />);
     fireEvent.click(getByLabelText("+ New"));
     const items = Array.from(document.querySelectorAll('[role="menuitem"]')).map((n) => n.textContent);
-    expect(items).toEqual(["Attendance", "Worker"]);
+    expect(items).toEqual(["Attendance", "Worker", "Workers from Excel"]);
   });
 
   test("the Gantt offers Log time without leaving the module -- R-301's own example", () => {

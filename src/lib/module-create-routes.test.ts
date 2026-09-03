@@ -32,7 +32,12 @@ describe("every create route is a page that ships", () => {
   });
 
   test("R-301's own list is present in full -- Worker/Attendance, Material/Receipt, Task/Log time", () => {
-    expect(MODULE_CREATE_ACTIONS.labour.map((a) => a.label)).toEqual(["Worker", "Attendance"]);
+    // R67 integration: "Workers from Excel" is D-34's bulk import, which used
+    // to be a button on the Roster tab alone. It is a create route of this
+    // module, so it belongs in the one menu; the assertion is corrected to the
+    // merged reality rather than dropped, and R-301's own two entries are
+    // still asserted to come FIRST and in order.
+    expect(MODULE_CREATE_ACTIONS.labour.map((a) => a.label)).toEqual(["Worker", "Attendance", "Workers from Excel"]);
     expect(MODULE_CREATE_ACTIONS.materials.map((a) => a.label)).toEqual(["Material", "Receipt"]);
     // "plus Sprint where it exists".
     expect(MODULE_CREATE_ACTIONS.schedule.map((a) => a.label)).toEqual(["Task", "Sprint", "Log time"]);

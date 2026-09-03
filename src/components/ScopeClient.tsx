@@ -24,7 +24,29 @@
 // ?include=variation, and no per-row fan-out. F-31's machine-readable
 // data-state is not lost either -- it was folded into PaneState itself, so it
 // now covers every screen rather than the thirteen F2 had converted.
-import { useCallback, useEffect, useRef, useState } from "react";
+// R67 D-23 x F-23/F-29, reconciled by the integration train. The DATA PATH and
+// the waiting behaviour above are kept exactly as they are -- including F-23's
+// removal of the per-revision compare fan-out, which is NOT reinstated. What
+// D-23 adds on top of them is presentation over the same rows:
+//
+//   * REVISIONS GROUP UNDER THEIR ROOT. A flat list of every revision of every
+//     BOQ, ordered by nothing a reader can see, was the finding. buildLineageRows
+//     (src/lib/boq-lineage.ts, unit-tested) groups and indents them, labels the
+//     version cell "Rev0/Rev1/...", marks the lineage's original and tags the
+//     revision that is actually CURRENT.
+//   * A SECOND VARIATION COLUMN, "vs original", because a chain of small
+//     revisions each varying little from its predecessor can still have moved
+//     the contract a long way from where it started.
+//   * THE ROW IS A LINK, reachable from the keyboard.
+//
+// The one thing D-23 had that is deliberately NOT kept is its client-side
+// compare fallback for those two figures: it was one /api/scope/{id}/compare
+// per revision, which is precisely the fan-out F-23 measured at 7.6 s over 22
+// calls and removed. Where the payload does not carry a figure the cell shows
+// the honest em-dash titled "Variation unavailable" -- never a fabricated zero,
+// and never a page-load cost.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
@@ -46,6 +68,9 @@ import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+// R67 D-23: the lineage rule -- grouping, indentation, Rev labels and which
+// revision is CURRENT -- lives in its own unit-tested module, not inline here.
+import { buildLineageRows, type LineageBoq } from "@/lib/boq-lineage";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -68,13 +93,7 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
 }
 
 // Exported so scope/page.tsx can type the rows it fetches server-side.
-export type Boq = {
-  id: string;
-  version: number;
-  title: string;
-  status: string;
-  parentBoqId: string | null;
-  createdAt: string;
+export type Boq = LineageBoq & {
   // R67 F-23: sum(quantity x rate) on this revision minus the same on its
   // parent, computed by VERIDIAN in the list query. null on a baseline (there
   // is no prior to vary from); undefined only if an older backend answered
@@ -102,6 +121,11 @@ export type Boq = {
 // revision look like it had a problem. `submitted: "default"` was the saffron
 // primary fill, which made a passive state look like the screen's one action.
 // Both now come from the single status map in ui/status-pill.tsx.
+//
+// R67 D-23 adopted this map rather than keeping its own glyph vocabulary: the
+// D-23 work landed while WS-G's shared chip did not yet exist, so it carried a
+// local boqStatusChip() explicitly "for that lane to adopt". That lane has
+// landed, so the local one is gone and this is the single source.
 const BOQ_STATUS: Record<string, SemanticStatus> = {
   draft: "draft",
   submitted: "running",
@@ -243,11 +267,51 @@ export default function ScopeClient({
     return () => controller.abort();
   }, [load]);
 
+  const rows = useMemo(() => buildLineageRows(boqs), [boqs]);
+
+  /**
+   * vs prior: from the list payload only. F-29's compare aggregate first,
+   * F-23's variationVsPrior next, D-23's totalVariation last -- three names
+   * for one figure across three backend generations, resolved here rather
+   * than by asking the server again.
+   */
+  function priorVariation(boq: Boq): number | null | undefined {
+    return boq.compare?.deltaAmount ?? boq.variationVsPrior ?? boq.totalVariation;
+  }
+
+  /**
+   * vs original: the payload's own figure when present; for the FIRST revision
+   * of a lineage the parent IS the original, so "vs prior" answers it exactly.
+   * Anything else is genuinely unknown until the backend sends it -- and is
+   * shown as unknown, not fetched per row (see this file's header).
+   */
+  function originalVariation(boq: Boq, rootId: string): number | null | undefined {
+    if (typeof boq.totalVariationVsOriginal === "number") return boq.totalVariationVsOriginal;
+    if (boq.parentBoqId === rootId) return priorVariation(boq);
+    return undefined;
+  }
+
+  function openBoq(id: string) {
+    router.push(`/scope/${id}`);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        {/* Real screen navigation (2026-08-30) -- replaces the old "New BOQ"
-            Dialog popup with a real create route. */}
+      {/* R67 D-23: the header row the audit asked for -- Filter | Export |
+          Import | + New BOQ. Filter and Export are RENDERED and disabled with
+          the reason beside them (the disabled-by-condition rule) rather than
+          being absent, so a user can tell a not-yet-built feature from a
+          broken one. Import routes to the real /scope/import screen. */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" size="sm" disabled title="Not yet available">
+          Filter <span className="text-[11px] font-normal">(Not yet available)</span>
+        </Button>
+        <Button variant="outline" size="sm" disabled title="Not yet available">
+          Export <span className="text-[11px] font-normal">(Not yet available)</span>
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
+          Import
+        </Button>
         <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
       </div>
 
@@ -263,15 +327,27 @@ export default function ScopeClient({
             error={readError}
             rowCount={boqs.length}
             skeletonColumns={[...boqListColumns.map((c) => c.label), "Actions"]}
-            emptyMessage={`No BOQs yet for ${projectName ?? "this project"}.`}
+            emptyMessage={`No BOQs yet for ${projectName ?? "this project"}. Import an Excel or create one.`}
             emptyAction={
-              <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
-                <Plus className="size-4" /> New BOQ
-              </Button>
+              // R67 D-23: Import is offered HERE too, not only in the header --
+              // the empty state is exactly where a first BOQ arrives, and a
+              // spreadsheet is how it usually does.
+              <span className="inline-flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
+                  Import
+                </Button>
+                <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
+                  <Plus className="size-4" /> New BOQ
+                </Button>
+              </span>
             }
             lastLoadedAt={loadedAt}
             onRetry={() => void load()}
           >
+            {/* R67 D-23: the TABLE is the only thing allowed to scroll
+                sideways -- the page must never gain a horizontal scrollbar
+                because one action cell is wide. */}
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -287,6 +363,15 @@ export default function ScopeClient({
                     {columnLabel(boqListColumns, "total", "Total")}
                     {orgMoney.unitSuffix}
                   </TableHead>
+                  {/* R67 D-23: a chain of small revisions, each varying little
+                      from its predecessor, can still have moved the contract a
+                      long way from where it started -- so the distance from the
+                      ORIGINAL is its own column, beside the distance from the
+                      prior. */}
+                  <TableHead className="text-right">
+                    {columnLabel(boqListColumns, "variationVsOriginal", "Variation vs original")}
+                    {orgMoney.unitSuffix}
+                  </TableHead>
                   <TableHead className="text-right">
                     {columnLabel(boqListColumns, "variation", "Variation vs. prior")}
                     {orgMoney.unitSuffix}
@@ -299,16 +384,54 @@ export default function ScopeClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boqs.map((b) => {
-                  // R67 F-29: deltaAmount and variationVsPrior are the same
-                  // number from the same upstream aggregate; prefer the
-                  // compare object and fall back for an older payload.
-                  const variation = b.compare?.deltaAmount ?? b.variationVsPrior;
+                {rows.map(({ boq: b, depth, revLabel, isRoot, isCurrent, rootId }) => {
+                  // R67 F-29 x D-23: deltaAmount, variationVsPrior and
+                  // totalVariation are the same number from the same upstream
+                  // aggregate under three names; priorVariation() resolves them
+                  // in one place so no cell decides for itself.
+                  const variation = priorVariation(b);
+                  const vsOriginal = originalVariation(b, rootId);
                   const deltaPct = formatDeltaPct(b.compare?.deltaPct);
                   return (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-medium">{b.title}</TableCell>
-                      <TableCell className="text-px-muted">v{b.version}</TableCell>
+                    <TableRow
+                      key={b.id}
+                      // R67 D-23: the whole row is the link, and it is reachable
+                      // from the keyboard -- Enter or Space on the focused row
+                      // opens it, exactly as clicking does. Hovering warms the
+                      // route so the object page is already fetched by the time
+                      // the click lands.
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`${b.title} ${revLabel}`}
+                      className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-px-steel"
+                      onClick={() => openBoq(b.id)}
+                      onMouseEnter={() => router.prefetch(`/scope/${b.id}`)}
+                      onFocus={() => router.prefetch(`/scope/${b.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openBoq(b.id); }
+                      }}
+                    >
+                      {/* R67 D-23: a revision is INDENTED under its lineage
+                          root, so a list of thirty rows reads as the handful of
+                          BOQs it actually is. */}
+                      <TableCell className={depth === 1 ? "pl-8 font-medium" : "font-medium"}>
+                        <Link
+                          href={`/scope/${b.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className={isRoot ? "text-px-ink" : "text-px-slate"}
+                        >
+                          {b.title}
+                        </Link>
+                        {isRoot && <span className="ml-2 text-[11px] font-normal text-px-muted">original</span>}
+                        {isCurrent && (
+                          <span className="ml-2 rounded-sm border border-px-border2 px-1 text-[10px] font-normal uppercase tracking-wide text-px-muted">
+                            Current
+                          </span>
+                        )}
+                      </TableCell>
+                      {/* "Rev0" for the original, not "v1" -- the word a
+                          quantity surveyor uses for it. */}
+                      <TableCell className="text-px-muted tabular-nums">{revLabel}</TableCell>
                       <TableCell>
                         {BOQ_STATUS[b.status] ? (
                           <StatusPill status={BOQ_STATUS[b.status]} label={b.status} />
@@ -327,6 +450,22 @@ export default function ScopeClient({
                       <TableCell className={MONEY_CELL_CLASS}>
                         {b.compare ? orgMoney.money(b.compare.total) : <span className="text-px-muted">{EMPTY_VALUE}</span>}
                       </TableCell>
+                      {/* R67 D-23: the distance from the lineage's ORIGINAL.
+                          Unknown is an em-dash carrying the reason, never a
+                          fabricated zero -- and never a per-row fetch (F-23). */}
+                      <TableCell className={MONEY_CELL_CLASS}>
+                        {isRoot ? (
+                          // The original cannot vary from itself. The reason is
+                          // in the cell's title rather than repeating "Baseline
+                          // (Rev0)" twice across one row, which reads as two
+                          // facts when it is one.
+                          <span className="text-px-muted" title="This revision is the original">{EMPTY_VALUE}</span>
+                        ) : vsOriginal === undefined || vsOriginal === null ? (
+                          <span className="text-px-muted" title="Variation unavailable">{EMPTY_VALUE}</span>
+                        ) : (
+                          <span className="text-ct-navy">{orgMoney.signedMoney(vsOriginal)}</span>
+                        )}
+                      </TableCell>
                       {/* R67 F-23: right-aligned (it is money) and signed, with
                           an en-dash for a revision that has no prior to vary
                           from. R67 G-05 owns the FORMATTING: the org's own
@@ -336,7 +475,7 @@ export default function ScopeClient({
                         {!b.parentBoqId ? (
                           <span className="text-px-muted">Baseline (Rev0)</span>
                         ) : variation === undefined || variation === null ? (
-                          <span className="text-px-muted">{EMPTY_VALUE}</span>
+                          <span className="text-px-muted" title="Variation unavailable">{EMPTY_VALUE}</span>
                         ) : (
                           // In ink, with the direction in the glyph and the
                           // sign -- not in the colour.
@@ -353,16 +492,19 @@ export default function ScopeClient({
                       <TableCell className="w-[300px] min-w-[300px] whitespace-nowrap text-right space-x-1">
                         {/* Real screen navigation (2026-08-30) -- replaces the old
                             "View" Dialog popup with a real Object Page route,
-                            same as PermitObjectClient's proven pattern. */}
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}`)}>View</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/compare`)}><GitCompare className="size-3.5" /> Compare</Button>
-                        <Button variant="ghost" size="sm" onClick={() => router.push(`/scope/${b.id}/revise`)}><GitBranchPlus className="size-3.5" /> New Revision</Button>
+                            same as PermitObjectClient's proven pattern.
+                            stopPropagation because the ROW is a link now: a
+                            click on Compare must not also open the BOQ. */}
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); router.push(`/scope/${b.id}`); }}>View</Button>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); router.push(`/scope/${b.id}/compare`); }}><GitCompare className="size-3.5" /> Compare</Button>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); router.push(`/scope/${b.id}/revise`); }}><GitBranchPlus className="size-3.5" /> New Revision</Button>
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+            </div>
           </PaneState>
         </CardContent>
       </Card>
@@ -372,4 +514,20 @@ export default function ScopeClient({
       <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
+}
+
+/**
+ * One signed variation cell. A missing figure is the en dash, TITLED so the
+ * reason is available on hover -- never a fabricated "AED 0", which is a real
+ * and different answer (the revision changed nothing).
+ *
+ * Rendered in ink: the direction is in formatSignedMoney's glyph and explicit
+ * sign, never in the colour (R67 G-05). The green/red pair this component used
+ * to carry is exactly what that lane removed from this screen.
+ */
+function VariationText({ value, signedMoney }: { value: number | null | undefined; signedMoney: (v: number) => string }) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return <span className="text-px-muted" title="Variation unavailable">{EMPTY_VALUE}</span>;
+  }
+  return <span className="text-ct-navy">{signedMoney(value)}</span>;
 }

@@ -13,6 +13,8 @@
 //   Current% = amount done WITHIN [from, to] / total BoQ amount
 //   Total% = cumulative amount done up to and including `to` / total BoQ amount
 
+import { formatDayMonthYearNumeric } from "./format-date";
+
 export type BoqLineItem = {
   id: string;
   activityId: string | null;
@@ -607,4 +609,117 @@ export function buildVendorBreakdown(params: { roster: LabourRoster[]; attendanc
     groups.set(vendorId, g);
   }
   return Array.from(groups.values());
+}
+
+// ---------------------------------------------------------------------------
+// R67 D-28 (R-069): the blast radius of deleting one progress entry.
+//
+// Deleting a progress entry silently moves a project's completion figure. The
+// object page's confirmation therefore has to state, before the click, what
+// the running total actually becomes -- and it must state it using the SAME
+// arithmetic the report and the PDF use, not a second rule invented for a
+// dialog. So this reuses computeLineItemProgress() verbatim, twice: once over
+// the entries as they are, once over the entries with this one removed. That
+// automatically inherits the DELTA/SNAPSHOT convention, the boq_line_item_id
+// preference order, and the amount-weighted percentage, and it cannot drift
+// from them because there is nothing here to drift.
+//
+// The window is deliberately unbounded: "running total" means everything ever
+// recorded against this target, not a report period, so `total` is the reading
+// we want and every entry must fall inside [from, to].
+const ALL_TIME_FROM = "0000-01-01";
+const ALL_TIME_TO = "9999-12-31";
+
+export type ProgressDeleteImpact = {
+  /** The quantity this entry carries -- always known, even with no BOQ line. */
+  quantity: number;
+  /** BOQ line unit when the entry names a line, else the activity's, else null. */
+  unit: string | null;
+  entryDate: string;
+  /** The BOQ line's item code, or null for an activity-only entry. */
+  lineCode: string | null;
+  /**
+   * Running total before and after, as a percentage of the line's contracted
+   * amount. BOTH are null when the entry names no BOQ line (or the line
+   * carries no contracted amount): there is no denominator, so a percentage
+   * would be a fabricated number and the confirmation says so instead.
+   */
+  percentBefore: number | null;
+  percentAfter: number | null;
+};
+
+export function describeProgressDeleteImpact(params: {
+  entry: ProgressEntry;
+  /** Every entry currently known for this project -- filtering to the right target is this function's job, not the caller's. */
+  entries: ProgressEntry[];
+  /** The BOQ line the entry names, when it names one and its figures are known. */
+  line: BoqLineItem | null;
+  unit: string | null;
+}): ProgressDeleteImpact {
+  const { entry, entries, line, unit } = params;
+  const quantity = num(entry.quantityDone);
+
+  if (!line) {
+    return { quantity, unit, entryDate: entry.entryDate, lineCode: null, percentBefore: null, percentAfter: null };
+  }
+
+  const noActivities = new Map<string, Activity>();
+  const noCategories = new Map<string, Category>();
+  const before = computeLineItemProgress(line, entries, noActivities, noCategories, ALL_TIME_FROM, ALL_TIME_TO);
+  const remaining = entries.filter((e) => e.id !== entry.id);
+  const after = computeLineItemProgress(line, remaining, noActivities, noCategories, ALL_TIME_FROM, ALL_TIME_TO);
+
+  // A line with no contracted amount has no denominator: computeLineItemProgress
+  // answers 0 for every percentage in that case, which would read as a real
+  // "drops from 0% to 0%" rather than as "unknown". Say unknown.
+  const hasDenominator = (num(line.amount) || num(line.quantity) * (line.computedRate ?? num(line.rate))) > 0;
+
+  return {
+    quantity,
+    unit: unit ?? line.unit ?? null,
+    entryDate: entry.entryDate,
+    lineCode: line.itemCode ?? null,
+    percentBefore: hasDenominator ? before.percentage.total : null,
+    percentAfter: hasDenominator ? after.percentage.total : null,
+  };
+}
+
+/**
+ * R67 D-28: the delete confirmation's own sentence, in one place, so the
+ * dialog can never say something the arithmetic above does not support.
+ * `fallbackLabel` names the target when the entry has no BOQ line to name
+ * (the activity's name), because "against nothing" is not a sentence.
+ */
+export function progressDeleteConfirmSentence(impact: ProgressDeleteImpact, fallbackLabel: string): string {
+  const unit = impact.unit ? ` ${impact.unit}` : "";
+  const target = impact.lineCode ?? fallbackLabel;
+  const head = `This removes ${impact.quantity}${unit} logged on ${formatDayMonthYearNumeric(impact.entryDate)} against ${target}`;
+  // No denominator means no honest percentage. Say what IS known and stop --
+  // never print "from 0% to 0%", which reads as a real, measured reading.
+  if (impact.percentBefore === null || impact.percentAfter === null) return `${head}. This cannot be undone.`;
+  return `${head}; the running total drops from ${impact.percentBefore}% to ${impact.percentAfter}%.`;
+}
+
+/** What a row shows when the entry names no BOQ line at all. */
+export const NO_BOQ_LINE_LABEL = "–";
+
+/**
+ * R67 D-28: "R60SK-A — R60 skiphop sub", or an en-dash when the entry names no
+ * BOQ line. One function, so the list cell, the object page's facet and its
+ * subtitle cannot render the same entry three ways -- and so neither of them
+ * ever falls back to printing a raw id, which is what the list used to do for
+ * any entry recorded against a revision the screen had not fetched.
+ *
+ * R67 INTEGRATION: F-24 shipped the SAME join first, inline in
+ * WorkProgressListClient, with an EM dash. Two functions at two separators is
+ * exactly what this one exists to prevent, so the component's copy now
+ * delegates here and the em dash wins -- item codes themselves contain hyphens
+ * ("R60SK-A"), which makes a hyphen separator genuinely ambiguous. D-28's own
+ * test string is corrected to the merged separator rather than dropped.
+ */
+export function boqLineLabel(itemCode: string | null | undefined, description: string | null | undefined): string {
+  if (!itemCode && !description) return NO_BOQ_LINE_LABEL;
+  if (!itemCode) return description!;
+  if (!description) return itemCode;
+  return `${itemCode} — ${description}`;
 }

@@ -43,6 +43,10 @@ type WorkProgressSearchParams = {
   to?: string;
   view?: string;
   boqVersion?: string;
+  // R67 D-28: `deleted` is the confirmation the entry's own object page hands
+  // over when it deletes itself -- that page unmounts with the navigation, so
+  // its own message band cannot carry it.
+  deleted?: string;
 };
 
 const SKELETON = (
@@ -56,10 +60,13 @@ async function WorkProgressSection({
   requestedProjectId,
   tab,
   reportParams,
+  deletedNotice,
 }: {
   requestedProjectId?: string;
   tab?: string;
   reportParams: ReturnType<typeof parseWprParams>;
+  /** R67 D-28: the receipt the deleted entry's object page handed over. */
+  deletedNotice?: string | null;
 }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, projectName: resolvedName, errorMessage, source } = await resolveProjectForModule(
@@ -95,7 +102,7 @@ async function WorkProgressSection({
         {/* R67 D-65: the project's NAME goes down with its id, so a waiting
             pane can name what it is waiting for. */}
         <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]">
-          <WorkProgressPageClient projectId={projectId} projectName={projectName} />
+          <WorkProgressPageClient projectId={projectId} projectName={projectName} notice={deletedNotice ?? null} />
         </TabsContent>
         <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]">
           <WorkProgressAnalyticalClient projectId={projectId} projectName={projectName} />
@@ -113,7 +120,7 @@ export default async function WorkProgressPage({
 }: {
   searchParams: Promise<WorkProgressSearchParams>;
 }) {
-  const { projectId, tab, from, to, view, boqVersion } = await searchParams;
+  const { projectId, tab, from, to, view, boqVersion, deleted } = await searchParams;
   // R67 D-02: the Work Progress Report's four parameters are read from the URL
   // here, server-side. A malformed bookmark still shows the current month
   // rather than failing to run (parseWprParams's own rule).
@@ -123,7 +130,12 @@ export default async function WorkProgressPage({
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Work Progress" />
       <Suspense fallback={SKELETON}>
-        <WorkProgressSection requestedProjectId={projectId} tab={tab} reportParams={reportParams} />
+        <WorkProgressSection
+          requestedProjectId={projectId}
+          tab={tab}
+          reportParams={reportParams}
+          deletedNotice={deleted ?? null}
+        />
       </Suspense>
     </div>
   );

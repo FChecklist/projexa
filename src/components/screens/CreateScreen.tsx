@@ -287,12 +287,23 @@ export function CreateScreen({
                         type={field.kind}
                         value={value}
                         placeholder={field.placeholder}
+                        list={field.suggestions?.length ? `${field.name}-suggestions` : undefined}
                         aria-describedby={describedBy || undefined}
                         onChange={(e) => onChange(field.name, e.target.value)}
                         onBlur={() =>
                           setTouched((t) => ({ ...t, [field.name]: field.validate ? field.validate(value) : null }))
                         }
                       />
+                    )}
+
+                    {/* R67 D-34: the shared vocabulary, offered but not
+                        enforced -- see CreateField.suggestions. */}
+                    {field.suggestions && field.suggestions.length > 0 && (
+                      <datalist id={`${field.name}-suggestions`}>
+                        {field.suggestions.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
                     )}
 
                     {field.help && (

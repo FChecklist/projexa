@@ -124,6 +124,21 @@ export class VeridianApiError extends Error {
    */
   readonly ruleCode?: string;
   readonly missing?: string[];
+  /**
+   * R67 D-27 -- THE WHOLE UPSTREAM ERROR BODY, kept beside the two parsed
+   * fields because some refusals carry structured data a screen needs beyond
+   * the sentence: the scope-reduction 409's `conflicts[]` is the first, and
+   * the revise screen renders the violating lines as a table above the
+   * override, which it cannot do from a prose message.
+   *
+   * It is the SAME object the codes were parsed out of -- one constructor
+   * parameter feeds all three, so a call site cannot hand the code and the
+   * body two different objects. It is DATA FOR A PROXY TO FORWARD
+   * DELIBERATELY, never something to spill into a user-facing string:
+   * `message` stays the only thing safe to render and `detail` stays
+   * server-side-only.
+   */
+  readonly body?: unknown;
   constructor(
     message: string,
     public status: number,
@@ -136,6 +151,7 @@ export class VeridianApiError extends Error {
     this.detail = detail;
     this.code = code;
     this.durationMs = durationMs;
+    this.body = coded;
     this.ruleCode = typeof coded?.code === "string" ? coded.code : undefined;
     this.missing = Array.isArray(coded?.missing) ? coded.missing.filter((m): m is string => typeof m === "string") : undefined;
   }

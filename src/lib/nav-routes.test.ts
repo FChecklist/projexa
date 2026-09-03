@@ -161,6 +161,14 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/auth/callback",
   "/invite/[token]",
   "/share/report/[token]",
+  // R67 D-31: the public, read-only trade-wise attendance summary a Share token
+  // resolves to. Same class as /share/report/[token] -- opened by someone with
+  // no PROJEXA account, so a sidebar entry would be meaningless.
+  "/share/attendance/[token]",
+  // R67 D-21: the public, read-only Minutes of Meeting a WhatsApp share token
+  // resolves to. Same class as /share/report/[token] -- opened by a client who
+  // has no PROJEXA account, so a sidebar entry would be meaningless.
+  "/shared/mom/[token]",
 
   // R67 WS-H. The Design Studio is ONE nav entry (/design-studio, in the
   // DESIGN group beside Mood Boards, FF&E and Floor Plans). Its Review and
@@ -254,6 +262,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/kpis/new",
   "/labour/[id]",
   "/labour/attendance/new",
+  // R67 D-34: the bulk roster load. Same class as "/scope/import" -- reached by
+  // the "Import from Excel" action on /labour, which passes the ?projectId= it
+  // needs, never by a standalone sidebar item that could not carry one.
+  "/labour/import",
   "/labour/new",
   "/materials/[id]",
   "/materials/new",
@@ -309,6 +321,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/[id]",
   "/scope/[id]/compare",
   "/scope/[id]/revise",
+  // R67 D-25: the BOQ Excel import screen. Same class as "/scope/new" -- it is
+  // reached by the "Import" header action and by the empty state on /scope,
+  // both of which pass the ?projectId= it needs, never by a standalone sidebar
+  // item that could not carry one.
+  "/scope/import",
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",
@@ -318,6 +335,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/vendors/new",
   "/wiki/[id]",
   "/wiki/new",
+  // R67 D-28: one work-progress entry, opened by clicking its row on
+  // /work-progress. Same class as "/permits/[id]" -- an href with no id in it
+  // would be meaningless in the sidebar.
+  "/work-progress/[id]",
 ]);
 
 describe("every module route is reachable by clicking (C01 REACHABLE)", () => {

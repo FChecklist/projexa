@@ -100,10 +100,16 @@ async function LabourSection({
   requestedProjectId,
   tab,
   date,
+  importedNotice,
 }: {
   requestedProjectId?: string;
   tab?: string;
   date: string;
+  // R67 D-34: `imported` is the confirmation the bulk-import screen hands
+  // over; that screen unmounts with the navigation, so it cannot carry its
+  // own. It travels down here rather than being read in the client so the
+  // receipt is part of the first painted section, not a second render.
+  importedNotice?: string | null;
 }) {
   const { organizationId, projectId, errorMessage, landing } = await resolveLanding(requestedProjectId, date);
   if (!projectId || !landing) return <ModuleProjectNotice errorMessage={errorMessage} />;
@@ -118,6 +124,7 @@ async function LabourSection({
       registryColumns={registryColumns}
       initialTab={tab}
       initialRoster={{ rows: landing.roster, errorMessage: landing.errorMessage }}
+      importedNotice={importedNotice ?? null}
     />
   );
 }
@@ -125,9 +132,9 @@ async function LabourSection({
 export default async function LabourPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string; date?: string }>;
+  searchParams: Promise<{ projectId?: string; tab?: string; date?: string; imported?: string }>;
 }) {
-  const { projectId, tab, date } = await searchParams;
+  const { projectId, tab, date, imported } = await searchParams;
   const day = summaryDate(date);
 
   return (
@@ -140,7 +147,7 @@ export default async function LabourPage({
       </Suspense>
 
       <Suspense fallback={SKELETON}>
-        <LabourSection requestedProjectId={projectId} tab={tab} date={day} />
+        <LabourSection requestedProjectId={projectId} tab={tab} date={day} importedNotice={imported ?? null} />
       </Suspense>
     </div>
   );

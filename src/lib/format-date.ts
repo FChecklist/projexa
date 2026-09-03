@@ -47,6 +47,56 @@ export function formatDate(value: Date | string | number): string {
   return new Date(value).toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
 
+/**
+ * R67 D-23: e.g. "28 Aug 2026" -- the unambiguous day-month-year form the BOQ
+ * list uses, because "8/25/2026" reads as 8 May to half of this product's
+ * users (a UAE contractor's site team) and as 25 August to the other half.
+ * Same pinned locale/time zone as every other helper here, so it is equally
+ * hydration-safe.
+ */
+export function formatDayMonthYear(value: Date | string | number): string {
+  // "en-GB", not the FIXED_LOCALE above, is deliberate and is the ONE
+  // exception in this file: en-US orders these parts month-first ("Aug 28,
+  // 2026"), and the required reading is day-first. It is still a HARDCODED
+  // locale -- pinned exactly like the others, so the string is byte-identical
+  // on the server and in every visitor's browser. It is never the runtime
+  // default.
+  return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * R67 D-28: e.g. "25-08-2026" -- the numeric day-first form Work Progress uses
+ * across its list, its form and its report, because the module's three surfaces
+ * previously each formatted the same stored date their own way ("8/25/2026" in
+ * the list, the raw ISO "2026-08-25" in the form's date control, and a third
+ * reading in the report), and a site engineer comparing them cannot tell
+ * whether they are looking at one entry or three.
+ *
+ * Deliberately NOT formatDayMonthYear()'s "25 Aug 2026": that helper is the BOQ
+ * list's format (R67 D-23), and this is the format D-28 specifies for Work
+ * Progress. Both are day-first and unambiguous; they are two REGISTERS of the
+ * same reading, and each module uses exactly one.
+ *
+ * Built from Intl parts rather than a locale string, so no runtime's locale
+ * data can reorder or re-separate it -- the output is byte-identical on the
+ * server and in every visitor's browser, like every other helper here.
+ */
+export function formatDayMonthYearNumeric(value: Date | string | number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")}-${part("month")}-${part("year")}`;
+}
+
 /** e.g. "8/25/2026, 2:30 PM" -- identical on server and client, any visitor. */
 export function formatDateTime(value: Date | string | number): string {
   return new Date(value).toLocaleString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
