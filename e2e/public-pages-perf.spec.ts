@@ -123,6 +123,21 @@ test.describe("public pages -- static, light, painted", () => {
     await context.close();
   });
 
+  test("J-01: a Hindi visitor gets the Hindi document, at the same URL", async ({ browser }) => {
+    // The fix-pass half of J-01: static rendering means one document per URL,
+    // so the locale lives in the route (/hi) and middleware REWRITES to it.
+    // What a person must never see is the URL changing, or English copy.
+    const context = await browser.newContext({ locale: "hi-IN" });
+    const page = await context.newPage();
+    await page.goto("/", { waitUntil: "load" });
+
+    expect(new URL(page.url()).pathname).toBe("/");
+    await expect(page.locator('div[lang="hi"]').first()).toBeVisible();
+    await expect(page.getByText(LANDING_HEADLINE)).toHaveCount(0);
+
+    await context.close();
+  });
+
   for (const route of ["/", "/how-it-works"]) {
     for (const width of [1440, 375]) {
       test(`J-02: every section of ${route} is painted at ${width}px with no JS and reduced motion`, async ({

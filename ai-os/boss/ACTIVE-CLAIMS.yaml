@@ -83,9 +83,29 @@ active:
       sibling tests, ai-os/scripts/measure-public-page-transfer.mjs and
       ai-os/audit/public_pages_transfer.json. NOT touching any authenticated
       route, any (app)/ page, veridian-client.ts, the schema, or
-      compliance-tracker. J-04 is measurement on a Vercel preview and is NOT
-      being done -- the owner's 2026-09-02 directive forbids any Vercel
-      deploy until credits are bought.
+      compliance-tracker.
+
+      J-04 (audit R-281) IS SKIPPED, deliberately and with a reason, not
+      forgotten: it is measurement on a Vercel PREVIEW DEPLOY, and the
+      owner's 2026-09-02 directive forbids any Vercel deploy, build, unpause
+      or settings change until credits are bought. It also dependsOn F-32,
+      which belongs to another lane. It goes into the post-credits
+      measurement backlog and is re-run there; nothing in this branch
+      substitutes for it.
+
+      FIX PASS (2026-09-03, same session) widened the file scope, because
+      review found the first cut had retired the shipped Hindi marketing
+      translation as a side effect of going static. Added: src/i18n/locales.ts
+      + messages.ts (new, the vocabulary middleware and request.ts now share
+      instead of hand-syncing two copies), src/app/hi/page.tsx and
+      src/app/hi/how-it-works/page.tsx (new -- one prerendered document per
+      locale), src/components/marketing/* (every Server Component now takes an
+      explicit locale), MarketingLocaleProvider.tsx and
+      how-it-works/HowItWorksContent.tsx (new), messages/{en,hi}.json (one new
+      key for the back link that was hard-coded English JSX),
+      src/lib/authz/page-access.ts and src/lib/nav-routes.ts (the two new
+      public routes), src/middleware.test.ts (new), playwright.config.ts.
+      Still PROJEXA only, still nothing authenticated.
 recently_completed:
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
