@@ -31,7 +31,7 @@
 // reads across -- Duration, % Complete and Slip -- and every row is a real
 // keyboard-reachable link to that activity's Object Page, which is what "the
 // list opens objects" means; a row that only responds to a mouse is not a list.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -186,6 +186,21 @@ export default function ScheduleGanttClient({
     }
   }
 
+  // The footer callback is held in a ref, and NOTHING depends on its identity.
+  // A parent that passes an inline arrow (the natural way to write
+  // `onMessage={(m) => push(m, "baseline")}`) hands a NEW function on every
+  // render; if the loaders below depended on it, every message would change the
+  // callback, which would re-run the loader effect, which would fetch again and
+  // set another message -- an unbounded fetch loop. Measured, not theorised:
+  // the first version of this component did exactly that.
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
+  const emitMessage = useCallback((message: FieldMessage | null) => {
+    onMessageRef.current?.(message);
+  }, []);
+
   /** The most recent baseline's snapshots, which is what slip is measured against. */
   const loadBaselineDetail = useCallback(async (baselineId: string) => {
     try {
@@ -198,9 +213,9 @@ export default function ScheduleGanttClient({
     } catch (err) {
       setVariances([]);
       setSnapshotCounts((counts) => ({ ...counts, [baselineId]: "error" }));
-      onMessage?.({ level: "warning", text: errorMessage(err, "Couldn't load the baseline this schedule is measured against") });
+      emitMessage({ level: "warning", text: errorMessage(err, "Couldn't load the baseline this schedule is measured against") });
     }
-  }, [onMessage]);
+  }, [emitMessage]);
 
   const loadBaselines = useCallback(async () => {
     try {
@@ -216,9 +231,9 @@ export default function ScheduleGanttClient({
     } catch (err) {
       setBaselines([]);
       setVariances([]);
-      onMessage?.({ level: "warning", text: errorMessage(err, "Couldn't load this project's baselines") });
+      emitMessage({ level: "warning", text: errorMessage(err, "Couldn't load this project's baselines") });
     }
-  }, [projectId, loadBaselineDetail, onMessage]);
+  }, [projectId, loadBaselineDetail, emitMessage]);
 
   useEffect(() => {
     // D-45: "fetch GET /api/schedule/baselines?projectId in parallel with the
@@ -255,7 +270,7 @@ export default function ScheduleGanttClient({
     const name = baselineName.trim();
     if (!name) return;
     setCapturing(true);
-    onMessage?.(null);
+    emitMessage(null);
     try {
       await fetchJson("/api/schedule/baselines", {
         method: "POST",
@@ -271,7 +286,7 @@ export default function ScheduleGanttClient({
       // the old handler threw away the response entirely and showed
       // "Couldn't capture baseline — try again", which tells a PM nothing about
       // a 403, an empty project or a service that never answered.
-      onMessage?.({ level: "error", text: errorMessage(err, "The baseline was not captured") });
+      emitMessage({ level: "error", text: errorMessage(err, "The baseline was not captured") });
     } finally {
       setCapturing(false);
     }

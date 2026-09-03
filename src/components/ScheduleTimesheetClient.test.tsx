@@ -123,3 +123,24 @@ describe("D-51 the timesheet's own columns", () => {
     expect(cells[5]).toBe("—");
   });
 });
+
+describe("the footer callback must not drive a render loop", () => {
+  // REGRESSION, same defect class as ScheduleGanttClient's: `onMessage` in a
+  // useEffect dependency array plus an inline-arrow parent means every message
+  // changes the callback, re-runs the effect and emits another message.
+  test("an inline arrow parent settles instead of emitting without end", async () => {
+    globalThis.fetch = (async () => jsonRes({ error: "Timesheet service did not answer" }, 502)) as typeof fetch;
+    let emitted = 0;
+    const { findByText } = render(
+      <ScheduleTimesheetClient
+        projectId="proj-cedar"
+        projectName="Cedar Heights Villa - Phase 1"
+        onMessage={() => { emitted += 1; }}
+      />
+    );
+    await findByText("Retry");
+    await new Promise((r) => setTimeout(r, 150));
+    // One "clear" on mount plus one real error is the whole story.
+    expect(emitted).toBeLessThanOrEqual(3);
+  });
+});

@@ -210,6 +210,13 @@ export function ScheduleTabsClient({
     downloadCsv(csvFilename("schedule", projectName, new Date().toISOString().slice(0, 10)), csv);
   }
 
+  // Stable per-field callbacks. An inline arrow here would hand each child a
+  // NEW function on every render, and a child that keys an effect off it would
+  // fetch in a loop -- the children hold it in a ref for exactly that reason,
+  // and this is the other half of the same defence.
+  const onBaselineMessage = useCallback((message: FieldMessage | null) => pushMessage(message, "baseline"), [pushMessage]);
+  const onTimesheetMessage = useCallback((message: FieldMessage | null) => pushMessage(message, "timesheet"), [pushMessage]);
+
   const emptyReasonFor = (reason: string) =>
     tasksLoading ? "Loading…" : tasksError ? "Activities did not load" : tasks.length === 0 ? reason : undefined;
 
@@ -297,7 +304,7 @@ export function ScheduleTabsClient({
               projectId={projectId}
               registryColumns={timelineColumns}
               titleFilter={query}
-              onMessage={(message) => pushMessage(message, "baseline")}
+              onMessage={onBaselineMessage}
             />
           </TabsContent>
           <TabsContent value="board">
@@ -311,7 +318,7 @@ export function ScheduleTabsClient({
               projectId={projectId}
               projectName={projectName}
               highlightEntryId={highlightEntryId}
-              onMessage={(message) => pushMessage(message, "timesheet")}
+              onMessage={onTimesheetMessage}
             />
           </TabsContent>
         </Tabs>

@@ -297,3 +297,46 @@ describe("D-45 baselines disclosure", () => {
     await waitFor(() => expect(disclosure.textContent).toContain("Baselines (2)"));
   });
 });
+
+describe("the footer callback must not drive a fetch loop", () => {
+  // REGRESSION. The first version of this component put `onMessage` in the
+  // dependency array of the baseline loader's useCallback. A parent writing the
+  // natural `onMessage={(m) => push(m, "baseline")}` hands a NEW function on
+  // every render, so every message changed the callback, which re-ran the
+  // loader effect, which fetched again and set another message -- unbounded.
+  test("an inline arrow parent does not cause repeated fetches", async () => {
+    let ganttCalls = 0;
+    let baselineCalls = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/schedule/gantt")) {
+        ganttCalls += 1;
+        return jsonRes({ tasks: TASKS, dependencies: [], milestones: [] });
+      }
+      if (url.includes("/api/schedule/baselines/")) return jsonRes({ variances: VARIANCES });
+      if (url.includes("/api/schedule/baselines")) {
+        baselineCalls += 1;
+        // Always failing, so the component emits a message every single time --
+        // which is precisely the input that used to feed the loop.
+        return jsonRes({ error: "baselines unavailable" }, 502);
+      }
+      if (url.includes("/api/organization")) return jsonRes({ organization: { id: "o1" }, role: "pm" });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+
+    const { findByText } = render(
+      <ScheduleGanttClient
+        projectId="proj-cedar"
+        registryColumns={null}
+        titleFilter=""
+        today="2026-09-02"
+        onMessage={(m) => { void m; }}
+      />
+    );
+    await findByText("Joinery shop drawings");
+    const settled = ganttCalls;
+    await new Promise((r) => setTimeout(r, 150));
+    expect(ganttCalls).toBe(settled);
+    expect(baselineCalls).toBeLessThanOrEqual(2);
+  });
+});

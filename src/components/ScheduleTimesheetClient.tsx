@@ -20,7 +20,7 @@
 // loads, and a failure hands the backend's own sentence plus a Retry to the
 // persistent footer message area rather than replacing the screen with a red
 // card.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -82,11 +82,21 @@ export default function ScheduleTimesheetClient({
 
   useEffect(() => { load(); }, [load]);
 
+  // The footer callback is held in a ref and NOTHING depends on its identity.
+  // A parent that passes an inline arrow hands a NEW function on every render;
+  // with `onMessage` in the deps below, every message would change the
+  // callback, re-run the effect, and set another message -- an unbounded
+  // render loop. Measured, not theorised: the first version did exactly that.
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
+
   // The failure goes to the persistent message area, where it stays until it is
   // resolved, instead of replacing the screen.
   useEffect(() => {
-    onMessage?.(error ? { level: "error", text: error } : null);
-  }, [error, onMessage]);
+    onMessageRef.current?.(error ? { level: "error", text: error } : null);
+  }, [error]);
 
   // D-50's receipt, built from the row the SERVER stored -- "a toast alone is
   // not a receipt". It appears once the list carries the entry that was just
@@ -95,7 +105,7 @@ export default function ScheduleTimesheetClient({
     if (!highlightEntryId) return;
     const entry = entries.find((e) => e.id === highlightEntryId);
     if (!entry) return;
-    onMessage?.({
+    onMessageRef.current?.({
       level: "success",
       text: timeLoggedReceipt({
         hours: entry.hours,
@@ -104,7 +114,7 @@ export default function ScheduleTimesheetClient({
         taskTitle: entry.issue?.title ?? null,
       }),
     });
-  }, [highlightEntryId, entries, onMessage]);
+  }, [highlightEntryId, entries]);
 
   const totalHours = entries.reduce((sum, e) => sum + Number(e.hours), 0);
 
