@@ -1,10 +1,11 @@
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "../marketing-locale";
 import { Reveal } from "../Reveal";
 
 const FACT_KEYS = ["fact1", "fact2", "fact3"] as const;
 
-export async function FactsRow() {
-  const t = await getTranslations("Marketing.howItWorks.facts");
+export async function FactsRow({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.howItWorks.facts" });
 
   return (
     <section className="border-b border-border bg-background py-16 sm:py-20">

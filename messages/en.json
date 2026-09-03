@@ -453,7 +453,8 @@
         "fact1": { "value": "1", "label": "Login. Every module, every project, one place." },
         "fact2": { "value": "0", "label": "Manual re-entry between modules." },
         "fact3": { "value": "38", "label": "Real modules, one coordinated system." }
-      }
+      },
+      "backToHome": "Back to projexa-ai.com"
     }
   }
 }

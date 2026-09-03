@@ -1,9 +1,10 @@
 import { PenLine } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
-export async function ValueSection() {
-  const t = await getTranslations("Marketing.value");
+export async function ValueSection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.value" });
 
   return (
     <section id="value" className="border-b border-border bg-background py-20 sm:py-28">

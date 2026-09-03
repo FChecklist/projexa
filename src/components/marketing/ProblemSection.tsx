@@ -1,5 +1,6 @@
 import { MessageCircleQuestion, CalendarClock, FolderX, Repeat } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 const PAIN_POINT_KEYS = [
@@ -9,8 +10,8 @@ const PAIN_POINT_KEYS = [
   { key: "rework", icon: Repeat },
 ] as const;
 
-export async function ProblemSection() {
-  const t = await getTranslations("Marketing.problem");
+export async function ProblemSection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.problem" });
 
   return (
     <section id="problem" className="border-b border-border bg-background py-20 sm:py-28">

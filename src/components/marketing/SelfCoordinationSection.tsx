@@ -1,5 +1,6 @@
 import { X, Check } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 import { Reveal } from "./Reveal";
 
 const ROW_KEYS = ["chatbot", "platform"] as const;
@@ -8,8 +9,8 @@ const ROW_KEYS = ["chatbot", "platform"] as const;
 // Coordination" nav item points at -- addresses AI-branding skepticism
 // directly: what "self-coordinating AI OS" concretely means, versus (a) a
 // chatbot bolted onto a dashboard and (b) a generic business-apps platform.
-export async function SelfCoordinationSection() {
-  const t = await getTranslations("Marketing.selfCoordination");
+export async function SelfCoordinationSection({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.selfCoordination" });
 
   return (
     <section id="self-coordination" className="border-b border-border bg-muted/40 py-20 sm:py-28">

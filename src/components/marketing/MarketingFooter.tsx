@@ -1,9 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "./marketing-locale";
 
-export async function MarketingFooter() {
-  const t = await getTranslations("Marketing.footer");
+export async function MarketingFooter({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.footer" });
 
   return (
     <footer className="bg-px-ink py-10">
