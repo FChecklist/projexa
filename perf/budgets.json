@@ -1,0 +1,75 @@
+{
+  "$comment": [
+    "R67 F-28 (audit recommendation R-249) -- the per-screen latency budget.",
+    "",
+    "Every figure is the audit's own target, not an aspiration invented here:",
+    "  ttfbMs        400   warm time to first byte",
+    "  fcpMs         800   first contentful paint",
+    "  usableMs     1500   [data-state='ready'|'empty'] on the list region (F-31)",
+    "  networkIdleMs 2500  no in-flight request for 500 ms",
+    "  apiCalls       10   /api/* requests the screen makes",
+    "  slowestCallMs 2000  no SINGLE call may exceed this",
+    "",
+    "toleranceFraction is applied to every numeric budget before a row is",
+    "failed, so a busy runner does not fail a PR on noise. It does NOT apply",
+    "to apiCalls: a screen making 22 requests instead of 10 is a design fact,",
+    "not measurement jitter, and that is the exact regression this budget was",
+    "written to catch (/scope's per-row compare fan-out, R-239/F-23).",
+    "",
+    "A route is measured with a real project selected -- projectIdParam says",
+    "whether ?projectId= must be appended, since a screen with no project",
+    "resolves one over the network and is not the thing being measured."
+  ],
+  "toleranceFraction": 0.1,
+  "defaults": {
+    "ttfbMs": 400,
+    "fcpMs": 800,
+    "usableMs": 1500,
+    "networkIdleMs": 2500,
+    "apiCalls": 10,
+    "slowestCallMs": 2000
+  },
+  "routes": [
+    { "route": "/dashboard", "label": "Dashboard", "projectIdParam": false },
+    { "route": "/dashboard/project", "label": "Project dashboard", "projectIdParam": true },
+    { "route": "/scope", "label": "Scope of Work", "projectIdParam": true },
+    { "route": "/work-progress", "label": "Work Progress", "projectIdParam": true },
+    { "route": "/labour", "label": "Manpower & Attendance", "projectIdParam": true },
+    { "route": "/materials", "label": "Materials", "projectIdParam": true },
+    { "route": "/permits", "label": "Permits", "projectIdParam": true },
+    { "route": "/drawings", "label": "Drawings & 3D", "projectIdParam": true },
+    { "route": "/documents", "label": "Documents", "projectIdParam": true },
+    { "route": "/moms", "label": "Minutes of Meeting", "projectIdParam": true },
+    { "route": "/schedule", "label": "Schedule", "projectIdParam": true },
+    {
+      "route": "/reports",
+      "label": "Reports",
+      "projectIdParam": true,
+      "$comment": "Reports has no table of its own; usable is its picker being interactive, so its list region is the result panel.",
+      "usableMs": 2000
+    },
+    { "route": "/budgets", "label": "Budgets", "projectIdParam": true }
+  ],
+  "backendProbe": {
+    "$comment": [
+      "The direct backend probe. It calls PROJEXA's own proxy routes and reads",
+      "the Server-Timing header this item adds -- upstream;dur is VERIDIAN's",
+      "own cost, app;dur is the hop's. That keeps the two separable WITHOUT",
+      "putting a VERIDIAN org API key into CI, which calling the ERP directly",
+      "would require."
+    ],
+    "maxUpstreamMs": 2000,
+    "maxAppMs": 400,
+    "paths": [
+      "/api/moms?projectId={projectId}",
+      "/api/documents?projectId={projectId}",
+      "/api/drawings?projectId={projectId}",
+      "/api/schedule/gantt?projectId={projectId}",
+      "/api/schedule/board?projectId={projectId}",
+      "/api/schedule/sprints?projectId={projectId}",
+      "/api/timesheets?projectId={projectId}",
+      "/api/reports/catalog",
+      "/api/reports/category-progress?projectId={projectId}"
+    ]
+  }
+}

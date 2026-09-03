@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -13,7 +15,6 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/schedule/gantt?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    const message = err instanceof VeridianApiError ? err.message : "Failed to load schedule from VERIDIAN";
-    return NextResponse.json({ error: message }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load schedule from VERIDIAN");
   }
-}
+});

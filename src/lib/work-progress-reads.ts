@@ -61,9 +61,20 @@ export type ProgressEntry = {
   percentComplete: string;
   entryBasis: string;
   remarks: string | null;
+  // R67 F-24 (audit R-240): resolved SERVER-side and sent with the row.
+  // activityName is null only when the activity row is gone; the BOQ pair is
+  // null when the entry has no BOQ link (boq_line_item_id is nullable and
+  // ON DELETE SET NULL). Optional so an older backend, or a fixture written
+  // before #1579, still type-checks -- it renders exactly as null does.
+  activityName?: string | null;
+  boqItemCode?: string | null;
+  boqDescription?: string | null;
 };
 
-export type ProgressActivity = { id: string; name: string; categoryId?: string | null };
+// `unit` is on the wire and is what the FORM's picker labels with ("Blockwork
+// (sqm)"); it was simply never declared here, because the only consumer at
+// the time wanted the name. Optional, so a payload without it still narrows.
+export type ProgressActivity = { id: string; name: string; unit?: string | null; categoryId?: string | null };
 export type ProgressLineItem = { id: string; itemCode: string | null; description: string };
 export type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
 
@@ -74,23 +85,34 @@ export type WorkProgressReadResult = {
    */
   entries: ListOutcome<ProgressEntry>;
   /**
-   * The lookups. A failure here is NOT fatal: the list still renders, with
-   * the activity's own id in place of its name, which is what the screens
-   * already did for an id the lookup did not contain. So these are plain
-   * arrays, empty on failure, and the entry read alone decides the pane.
+   * The activity lookup, for the FORM's picker. A failure here is NOT fatal to
+   * the list -- the entry rows already carry their own activity name -- so it
+   * is a plain array, empty on failure, and the entry read alone decides the
+   * pane.
    */
   activities: ProgressActivity[];
-  lineItems: ProgressLineItem[];
 };
 
 /**
  * One read for both Work Progress screens.
  *
- * The entry list and the two lookups are issued together, because they are
- * independent and running them in series is the same serial-hop latency
- * decision D-04 measured on /scope and /labour. The BOQ line items need the
- * BOQ list first, so that pair stays sequential -- there is no way to know
- * which revision to open before the list answers.
+ * R67 MERGE (lane F2's F-24, audit R-240). THIS USED TO FETCH THE BOQ TOO, AND
+ * THAT IS WHAT COST 7.4 s. The chain was: entries and activities, then
+ * `/api/scope`, then `/api/scope/{id}` for the resolved revision -- pulling a
+ * whole BOQ's line items across the wire, in series, and holding the table
+ * behind it. All of that existed to translate ONE column, and it still
+ * rendered a raw id whenever the resolution missed.
+ *
+ * VERIDIAN now LEFT JOINs both names into the progress query and sends
+ * `activityName`, `boqItemCode` and `boqDescription` with each entry
+ * (compliance-tracker #1579), so the translation table is not needed and the
+ * two /api/scope calls are gone from this read entirely. What is left is one
+ * batch of two independent requests.
+ *
+ * pickCurrentBoq() below is unchanged and still exported: WorkProgressFormClient
+ * uses it for its own BOQ PICKER, which is a control the user operates, not a
+ * translation table -- without it a site engineer cannot record progress
+ * against a line at all.
  */
 export async function readWorkProgress(
   projectId: string,
@@ -98,10 +120,9 @@ export async function readWorkProgress(
 ): Promise<WorkProgressReadResult> {
   const q = `projectId=${encodeURIComponent(projectId)}`;
 
-  const [entriesR, activitiesR, boqsR] = await Promise.allSettled([
+  const [entriesR, activitiesR] = await Promise.allSettled([
     fetchJson<{ entries?: ProgressEntry[] }>(`/api/work-progress?${q}`, { signal }),
     fetchJson<{ activities?: ProgressActivity[] }>(`/api/work-progress/activities?${q}`, { signal }),
-    fetchJson<{ boqs?: BoqSummary[] }>(`/api/scope?${q}`, { signal }),
   ]);
 
   const entries: ListOutcome<ProgressEntry> =
@@ -111,26 +132,7 @@ export async function readWorkProgress(
 
   const activities = activitiesR.status === "fulfilled" ? (activitiesR.value.activities ?? []) : [];
 
-  let lineItems: ProgressLineItem[] = [];
-  if (boqsR.status === "fulfilled") {
-    const current = pickCurrentBoq(boqsR.value.boqs ?? []);
-    if (current) {
-      try {
-        const boq = await fetchJson<{ lineItems?: ProgressLineItem[] }>(
-          `/api/scope/${encodeURIComponent(current.id)}`,
-          { signal }
-        );
-        lineItems = boq.lineItems ?? [];
-      } catch {
-        // A missing line-item lookup degrades the BOQ column to the raw id,
-        // which the screens already handled. It must not take the entry list
-        // -- which succeeded -- down with it.
-        lineItems = [];
-      }
-    }
-  }
-
-  return { entries, activities, lineItems };
+  return { entries, activities };
 }
 
 /**

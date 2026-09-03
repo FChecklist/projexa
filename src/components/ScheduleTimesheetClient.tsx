@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Priority 17 Wave 1: Timesheet view for the Schedule module, over the
 // previously-unexposed VERIDIAN pms-time-service.ts. Lists time logged
 // against this project's tasks and lets the current user log new time
@@ -19,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
@@ -87,7 +98,7 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
   // from 3 s and offers a way out at 8 s -- see src/lib/pane-state.ts.
   if (loading) {
     return (
-      <div className="space-y-3">
+      <ListStateRegion state="loading" className="space-y-3">
         <PaneWaitingCaption startedAt={startedAt} entity="the timesheet" onRetry={() => void load()} />
         <Card className="shadow-card">
           <CardContent className="space-y-3 p-4">
@@ -96,15 +107,19 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
             ))}
           </CardContent>
         </Card>
-      </div>
+      </ListStateRegion>
     );
   }
   if (error) {
-    return <PaneErrorCard entity="the timesheet" error={error} onRetry={() => void load()} />;
+    return (
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the timesheet" error={error} onRetry={() => void load()} />
+      </ListStateRegion>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={entries.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex items-center justify-between">
         <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
           {mineOnly ? "Showing my entries" : "Show my entries only"}
@@ -160,6 +175,6 @@ export default function ScheduleTimesheetClient({ projectId }: { projectId: stri
           </CardContent>
         </Card>
       )}
-    </div>
+    </ListStateRegion>
   );
 }

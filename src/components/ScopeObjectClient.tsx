@@ -14,7 +14,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { SCOPE_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -157,7 +159,18 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       </div>
     );
   }
-  if (loading || !boq) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (loading || !boq) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCOPE_OBJECT_BREADCRUMB.label}
+      actions={SCOPE_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const total = boqTotal(rows);
   const isDraft = boq.status === "draft";
@@ -174,8 +187,8 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
         comes from src/lib/object-screens.ts so every screen showing one uses
         the same word. Renders nothing. */}
     <ObjectContext moduleId="scope" label={boq.title} projectId={boq.projectId} />
-    <ObjectScreen
-      breadcrumb="Scope / Bill of Quantities"
+    <KitObjectScreen
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
       title={boq.title}
       subtitle={`Version ${boq.version}`}
       mode="display"
@@ -342,7 +355,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
           </TableBody>
         </Table>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

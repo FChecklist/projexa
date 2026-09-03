@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Wave 140 (PROJEXA gap analysis): Gantt/critical-path view. Uses SVAR
 // React Gantt (@svar-ui/react-gantt, MIT license -- verified against the
 // package's own LICENSE file, not just its package.json field) for the
@@ -31,6 +41,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
 import "@svar-ui/react-gantt/all.css";
@@ -123,7 +134,7 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   // bars -- rather than a spinner in the middle of an empty pane.
   if (loading) {
     return (
-      <div className="space-y-4">
+      <ListStateRegion state="loading" className="space-y-4">
         <PaneWaitingCaption startedAt={startedAt} entity="the schedule" onRetry={() => void loadGantt()} />
         <div className="flex flex-wrap items-center gap-4">
           {[0, 1, 2].map((i) => (
@@ -142,11 +153,15 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
             ))}
           </CardContent>
         </Card>
-      </div>
+      </ListStateRegion>
     );
   }
   if (error) {
-    return <PaneErrorCard entity="the schedule" error={error} onRetry={() => void loadGantt()} />;
+    return (
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the schedule" error={error} onRetry={() => void loadGantt()} />
+      </ListStateRegion>
+    );
   }
 
   const criticalCount = tasks.filter((t) => t.isCritical).length;
@@ -216,7 +231,7 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
   ];
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={tasks.length > 0 ? "ready" : "empty"} className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "taskCount", "Tasks")}</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
         {/* R67 D-46: a tile that is permanently red says nothing. Zero tasks
@@ -321,6 +336,6 @@ export default function ScheduleGanttClient({ projectId, registryColumns }: { pr
           </Table>
         </CardContent>
       </Card>
-    </div>
+    </ListStateRegion>
   );
 }

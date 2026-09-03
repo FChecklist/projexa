@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2, item F-24 / audit R-240). The entries table on
+// this tab used to sit on "Loading..." indefinitely, because the read only
+// settled after a SERIAL tail of /api/scope plus one /api/scope/{id}, fetched
+// purely to translate the BOQ column. Those two calls are gone: VERIDIAN sends
+// activityName / boqItemCode / boqDescription with each entry now
+// (compliance-tracker #1579), so the table renders as soon as the entries do.
+// Lane D0's own work here -- the tested reads module, metricLabel()'s en-dash
+// over a failed read, and the chart and the table each owning their own
+// failure -- is untouched.
+
 // R42 seq24 (M28 ANALYTICAL archetype) -- the real destination
 // DASHBOARD.PROJECT's "% Complete by Value" and category-bar KPIs link to
 // (GLOBAL: "a KPI with no destination MUST NOT SHIP"). Chart above,
@@ -39,7 +49,6 @@ import {
   type CategoryProgress,
   type ProgressActivity,
   type ProgressEntry,
-  type ProgressLineItem,
 } from "@/lib/work-progress-reads";
 
 type ReadError = { status: number | null; message: string | null } | null;
@@ -57,7 +66,6 @@ export default function WorkProgressAnalyticalClient({
 
   const [entries, setEntries] = useState<ProgressEntry[]>([]);
   const [activities, setActivities] = useState<ProgressActivity[]>([]);
-  const [lineItems, setLineItems] = useState<ProgressLineItem[]>([]);
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
 
   const [status, setStatus] = useState<PaneStatus>("loading");
@@ -85,7 +93,6 @@ export default function WorkProgressAnalyticalClient({
     ]);
 
     setActivities(main.activities);
-    setLineItems(main.lineItems);
     if (main.entries.status === "error") {
       setError({ status: main.entries.httpStatus, message: main.entries.message });
       setStatus("error");
@@ -110,9 +117,6 @@ export default function WorkProgressAnalyticalClient({
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(
-    lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description])
-  );
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
@@ -169,7 +173,6 @@ export default function WorkProgressAnalyticalClient({
           projectName={projectName}
           entries={filteredEntries}
           activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
           status={status}
           error={error}
           onRetry={() => void load()}

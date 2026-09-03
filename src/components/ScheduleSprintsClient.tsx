@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-46) replaced this tab's
+// wordless spinner with a skeleton in the real shape plus a waiting caption
+// that names the module at 2 s, counts from 3 s and offers a way out at 8 s.
+// Lane F2 (item F-31, audit R-275) put a machine-readable
+// data-state="loading|ready|empty|error" and aria-busy on the region, which is
+// what the pass-2 latency script waits on to decide a screen is usable -- its
+// `usable` column was empty for all thirteen measured pages without it. Under
+// decision D-11 D0's markup is canonical, so it is kept exactly and F2's
+// attribute is added around it by ListStateRegion.
+
 // Priority 17 Wave 1: Sprints/cycles view for the Schedule module, over the
 // previously-unexposed VERIDIAN pms-sprint-service.ts (Plane's CycleIssue
 // parity). New tab alongside the existing Timeline/Board views. Sprint
@@ -15,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Sprint = {
@@ -94,7 +105,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
   // R67 D-46: three phase cards in the real shape.
   if (loading) {
     return (
-      <div className="space-y-4">
+      <ListStateRegion state="loading" className="space-y-4">
         <PaneWaitingCaption startedAt={startedAt} entity="the phases" onRetry={() => void load()} />
         {[0, 1, 2].map((i) => (
           <Card key={i}>
@@ -104,15 +115,19 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
             </CardContent>
           </Card>
         ))}
-      </div>
+      </ListStateRegion>
     );
   }
   if (error) {
-    return <PaneErrorCard entity="the phases" error={error} onRetry={() => void load()} />;
+    return (
+      <ListStateRegion state="error">
+        <PaneErrorCard entity="the phases" error={error} onRetry={() => void load()} />
+      </ListStateRegion>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion state={sprints.length > 0 ? "ready" : "empty"} className="space-y-4">
       {sprints.length === 0 ? (
         // R67 D-79: the module header carries "+ New" on every tab now, so
         // this button is no longer duplicated in a header row -- it stays
@@ -135,7 +150,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
                     <Badge variant={STATUS_VARIANT[sprint.status] ?? "outline"} className="text-[10px]">{sprint.status}</Badge>
                   </span>
                   <span className="flex items-center gap-2 text-xs font-normal text-px-muted">
-                    {sprint.startDate && sprint.endDate ? `${sprint.startDate} → ${sprint.endDate}` : null}
+                    {sprint.startDate && sprint.endDate ? `${sprint.startDate} â†’ ${sprint.endDate}` : null}
                     {sprint.status !== "completed" && (
                       <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); closeSprint(sprint.id); }}>
                         Close Sprint
@@ -179,6 +194,6 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
           ))}
         </div>
       )}
-    </div>
+    </ListStateRegion>
   );
 }

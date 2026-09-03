@@ -23,6 +23,7 @@ import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
+import { getShellVendors } from "@/lib/shell-store";
 import type { CreateField } from "@/lib/create-screen";
 
 type Vendor = { id: string; vendorName: string };
@@ -48,7 +49,21 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
     }
   }, []);
 
+  // R67 MERGE (lane F2's F-25, audit R-241): when the user reached this form
+  // from /labour, the shell bootstrap ALREADY holds the subcontractor list, so
+  // this form makes no request for it at all. getShellVendors() is a passive
+  // read of the session store -- it never subscribes and never triggers a
+  // fetch, so F-19's rule that the bootstrap stays off a create route's
+  // critical path is untouched. It is read HERE, in the effect, rather than in
+  // a ref during render, which the repo's react-hooks/refs rule rejects. On a
+  // cold arrival the seed is null and the lookup runs exactly as D0 wrote it;
+  // the Retry beside the field always goes to the network.
   useEffect(() => {
+    const seed = getShellVendors();
+    if (seed) {
+      setVendors(seed);
+      return;
+    }
     void loadVendors();
   }, [loadVendors]);
 

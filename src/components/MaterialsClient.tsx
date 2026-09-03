@@ -39,14 +39,43 @@
 // (api/construction-materials/cost-report/route.ts) had been calling a
 // VERIDIAN path that 502'd for the same reason as Inbound: nothing
 // implemented it on the other side either, until now.
-import { useEffect, useState } from "react";
+//
+// R67 MERGE (lane D0 x lane F2). Both lanes rebuilt this screen's reads.
+//
+//   * Lane F2 (item F-25, audit R-241) made each TAB its own read. The screen
+//     used to fetch the material master, the inbound receipts AND the cost
+//     report on landing, under one shared flag, although only Material Master
+//     is open -- so the tab the user is looking at waited on two answers they
+//     had not asked for, and a failure in any of them looked like a failure in
+//     all three. That is the defect this file existed to fix and it is kept:
+//     the landing tab is the only request on arrival, the others fill on the
+//     first idle callback, and a ?tab= deep link costs ONE request.
+//   * Lane D0 (item D-65) gave every pane the shared PaneState presentation --
+//     the named waiting caption, the empty sentence that needs a 200, rows
+//     kept and dated through a failed refresh -- plus D-79's tab-aware header
+//     actions. Under decision D-11 that presentation is canonical.
+//
+// So: F2's per-tab state machine PRODUCES the state (src/lib/pane-state.ts's
+// Pane<T>), and D0's PaneState DECIDES WHAT THE SCREEN SAYS about it. That is
+// exactly the union D-11's addendum describes for these two modules.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import PaneState from "@/components/PaneState";
-import type { PaneStatus } from "@/lib/pane-state";
+import { MATERIAL_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
+import {
+  errorPane,
+  idlePane,
+  loadingPane,
+  needsLoad,
+  readyPane,
+  seededPane,
+  type Pane,
+} from "@/lib/pane-state";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
 import { ListHeaderActions } from "@/components/ListHeaderActions";
@@ -59,7 +88,8 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { materialUnitLabel } from "@/lib/material-units";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
-type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+// Exported so materials/page.tsx can type the master it fetches server-side (F-18).
+export type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
 type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
 
@@ -68,14 +98,13 @@ type CostReportRow = { materialId: string; name: string; spec: string | null; un
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const MASTER_COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Spec", field: "spec", type: "text", importance: "Medium" },
-  { label: "Unit", field: "unit", type: "text", importance: "High" },
-  { label: "Unit Cost", field: "unitCost", type: "number", importance: "High" },
-];
+// R67 F-18: MASTER_COLUMNS moved to src/lib/module-list-columns.ts as
+// MATERIAL_LIST_COLUMNS, so this table and the page's loading skeleton draw
+// the same fallback heads and cannot disagree.
 
-const VALID_TABS = new Set(["master", "receipts", "cost-report"]);
+const TAB_IDS = ["master", "receipts", "cost-report"] as const;
+type TabId = (typeof TAB_IDS)[number];
+const VALID_TABS = new Set<string>(TAB_IDS);
 
 // R67 D-74/G-05: money columns, named by FIELD -- the master's columns come
 // from the registry and can be reordered live. The header carries the
@@ -116,74 +145,188 @@ function renderMaterialCell(field: string, m: Material, money: (v: number | stri
   }
 }
 
-// R67 D-65: each of the three tabs is its own read, so each gets its own
-// state. Folding them into one `loading` flag and one error map worked, but
-// it could not express the two things the shared pane needs: how long THIS
-// tab's read has been waiting, and when the rows it is showing were true.
-type PaneRead = {
-  status: PaneStatus;
-  error: { status: number | null; message: string | null } | null;
-  loadedAt: Date | null;
-};
+// R67 D-65 asked for per-tab state; R67 F-25 built it as a state machine with
+// no React in it, in src/lib/pane-state.ts, where the rules are unit tests.
+// This is the small amount left over: where each tab reads from, and what it
+// is called when a wait has to be narrated.
 
-const PENDING: PaneRead = { status: "loading", error: null, loadedAt: null };
-
-function settled<T>(result: PromiseSettledResult<T>): PaneRead {
-  if (result.status === "fulfilled") return { status: "ready", error: null, loadedAt: new Date() };
-  const err: unknown = result.reason;
-  return {
-    status: "error",
-    error: {
-      status: err instanceof ApiError ? err.status : null,
-      message: err instanceof Error && err.message ? err.message : null,
-    },
-    loadedAt: null,
-  };
+/** Each tab's own endpoint, in one place, so a pane can never be loaded from
+ *  another tab's URL. */
+function paneUrl(tab: TabId, projectId: string): string {
+  const p = encodeURIComponent(projectId);
+  if (tab === "master") return `/api/materials/master?projectId=${p}`;
+  if (tab === "receipts") return `/api/materials?projectId=${p}`;
+  return `/api/construction-materials/cost-report?projectId=${p}`;
 }
 
-export default function MaterialsClient({ projectId, projectName, registryColumns, initialTab }: { projectId: string; projectName?: string | null; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+/** The plural noun each pane names itself with while it waits. */
+const PANE_ENTITY: Record<TabId, string> = {
+  master: "the material master",
+  receipts: "inbound receipts",
+  "cost-report": "the cost report",
+};
+
+/** The key each endpoint returns its rows under. */
+const PANE_ROWS_KEY: Record<TabId, string> = {
+  master: "materials",
+  receipts: "receipts",
+  "cost-report": "report",
+};
+
+/** PaneState wants the transport's own status and message; Pane keeps one
+ *  sentence, which is all any of these three endpoints gives us. */
+function paneReadError(pane: Pane<unknown>): { status: number | null; message: string | null } | null {
+  return pane.error ? { status: null, message: pane.error } : null;
+}
+
+export default function MaterialsClient({
+  projectId,
+  projectName,
+  registryColumns,
+  initialTab,
+  initialMaster = null,
+}: {
+  projectId: string;
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  /** R67 F-18: the material master, already fetched by materials/page.tsx on
+   *  the server. The landing tab therefore paints filled with no round trip. */
+  initialMaster?: ModuleListInitial<Material>;
+}) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MATERIAL_LIST_COLUMNS;
   const orgMoney = useOrgMoney();
-  const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [report, setReport] = useState<CostReportRow[]>([]);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [masterRead, setMasterRead] = useState<PaneRead>(PENDING);
-  const [receiptsRead, setReceiptsRead] = useState<PaneRead>(PENDING);
-  const [reportRead, setReportRead] = useState<PaneRead>(PENDING);
+  const [activeTab, setActiveTab] = useState<TabId>(
+    initialTab && VALID_TABS.has(initialTab) ? (initialTab as TabId) : "master"
+  );
 
-  async function load() {
-    setStartedAt(Date.now());
-    setMasterRead(PENDING);
-    setReceiptsRead(PENDING);
-    setReportRead(PENDING);
+  // F-25: the shared `loading` flag and single error bag are gone -- each tab
+  // is its own Pane with its own rows, status, as-of time and error, so a
+  // failure in the cost report can no longer read as a failure in the master.
+  const [master, setMaster] = useState<Pane<Material>>(() =>
+    initialMaster ? seededPane(initialMaster.rows, initialMaster.errorMessage, Date.now()) : idlePane<Material>()
+  );
+  const [receiptsPane, setReceiptsPane] = useState<Pane<Receipt>>(idlePane<Receipt>);
+  const [reportPane, setReportPane] = useState<Pane<CostReportRow>>(idlePane<CostReportRow>);
+  // When each pane's CURRENT read was issued, for D-65's elapsed caption.
+  const [startedAt, setStartedAt] = useState<Record<TabId, number | null>>({
+    master: null,
+    receipts: null,
+    "cost-report": null,
+  });
 
-    const [matR, recR, repR] = await Promise.allSettled([
-      fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
-    ]);
+  const panes: Record<TabId, Pane<unknown>> = {
+    master,
+    receipts: receiptsPane,
+    "cost-report": reportPane,
+  };
+  // Synced in an effect, never during render: loadPane() reads this to decide
+  // whether a tab has already answered, and an effect runs before any click
+  // that could ask.
+  const panesRef = useRef(panes);
+  useEffect(() => {
+    panesRef.current = panes;
+  });
 
-    // Rows are only REPLACED by a successful read. A failed one keeps what is
-    // already on screen, which PaneState then labels "as of 14:32" -- better
-    // than a blank table, and impossible to mistake for a fresh answer.
-    if (matR.status === "fulfilled") setMaterials(matR.value.materials ?? []);
-    if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
-    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
+  // One update path for all three panes, so loadPane() below is one function
+  // rather than three near-identical ones. The casts are safe because each
+  // branch only ever receives the transition applied to its own pane.
+  const applyPane = useCallback((tab: TabId, update: (prev: Pane<unknown>) => Pane<unknown>) => {
+    if (tab === "master") setMaster((prev) => update(prev) as Pane<Material>);
+    else if (tab === "receipts") setReceiptsPane((prev) => update(prev) as Pane<Receipt>);
+    else setReportPane((prev) => update(prev) as Pane<CostReportRow>);
+  }, []);
 
-    setMasterRead(settled(matR));
-    setReceiptsRead(settled(recR));
-    setReportRead(settled(repR));
-  }
+  // One controller for the whole component: every in-flight pane is dropped on
+  // unmount and on a project switch, and a cancellation is never an error.
+  const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => { load(); }, [projectId]);
+  const loadPane = useCallback(
+    async (tab: TabId, force = false) => {
+      // A tab that has already answered is never re-read by a click. `force` is
+      // the Retry beside a failed pane, which is the user asking explicitly.
+      if (!force && !needsLoad(panesRef.current[tab])) return;
+      const controller = abortRef.current;
+      applyPane(tab, loadingPane);
+      setStartedAt((prev) => ({ ...prev, [tab]: Date.now() }));
+      try {
+        const payload = await fetchJson<Record<string, unknown>>(paneUrl(tab, projectId), {
+          signal: controller?.signal,
+        });
+        if (controller?.signal.aborted) return;
+        applyPane(tab, () => readyPane((payload[PANE_ROWS_KEY[tab]] as unknown[]) ?? [], Date.now()));
+      } catch (err) {
+        if (isAbortError(err, controller?.signal)) return;
+        // The transport's own words survive: PaneState renders them under the
+        // closed-vocabulary sentence (C19 ERROR_TRUTHFUL).
+        const message =
+          err instanceof ApiError || (err instanceof Error && err.message)
+            ? (err as Error).message
+            : `Couldn't load ${PANE_ENTITY[tab]}.`;
+        applyPane(tab, (prev) => errorPane(prev, message));
+      }
+    },
+    [projectId, applyPane]
+  );
+
+  // Landing: only the tab the user is actually on. A ?tab=receipts deep link
+  // therefore costs one request, not three.
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    void loadPane(activeTab);
+    return () => {
+      controller.abort();
+      abortRef.current = null;
+    };
+    // activeTab is handled by goToTab (which loads on demand); re-running this
+    // on every tab change would abort the pane that is already in flight.
+  }, [loadPane]);
+
+  // A project switch invalidates every pane -- the rows on screen belong to the
+  // project the user just left.
+  const projectRef = useRef(projectId);
+  useEffect(() => {
+    if (projectRef.current === projectId) return;
+    projectRef.current = projectId;
+    setMaster(idlePane<Material>());
+    setReceiptsPane(idlePane<Receipt>());
+    setReportPane(idlePane<CostReportRow>());
+  }, [projectId]);
+
+  // Once the landing tab has answered, fill the others on the first IDLE
+  // callback, so switching feels instant without any of it landing on the
+  // first paint. requestIdleCallback is not in Safari, hence the timeout
+  // fallback -- which still yields a frame, which is the point.
+  const activePaneStatus = panes[activeTab].status;
+  useEffect(() => {
+    if (activePaneStatus !== "ready") return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const prefetch = () => {
+      for (const tab of TAB_IDS) if (tab !== activeTab) void loadPane(tab);
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(prefetch, { timeout: 3000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(prefetch, 300);
+    return () => clearTimeout(timer);
+  }, [activePaneStatus, activeTab, loadPane]);
+
+  const materials = master.rows;
+  const receipts = receiptsPane.rows;
+  const report = reportPane.rows;
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
-    setActiveTab(tab);
+    if (!VALID_TABS.has(tab)) return;
+    setActiveTab(tab as TabId);
+    void loadPane(tab as TabId);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
@@ -218,11 +361,11 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
         <Card className="shadow-card">
           <CardContent className="p-4">
             <PaneState
-              status={masterRead.status}
-              entity="the material master"
+              status={master.status}
+              entity={PANE_ENTITY.master}
               projectName={projectName}
-              startedAt={startedAt}
-              error={masterRead.error}
+              startedAt={startedAt.master}
+              error={paneReadError(master)}
               rowCount={materials.length}
               skeletonColumns={columns.map((col) => col.label)}
               emptyMessage="No materials in the master yet."
@@ -231,8 +374,8 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
                   <Plus className="size-4" /> Add Material
                 </Button>
               }
-              lastLoadedAt={masterRead.loadedAt}
-              onRetry={load}
+              lastLoadedAt={master.asOf ? new Date(master.asOf) : null}
+              onRetry={() => void loadPane("master", true)}
             >
               <Table>
                 <TableHeader>
@@ -271,11 +414,11 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
         <Card className="shadow-card">
           <CardContent className="p-4">
             <PaneState
-              status={receiptsRead.status}
-              entity="inbound receipts"
+              status={receiptsPane.status}
+              entity={PANE_ENTITY.receipts}
               projectName={projectName}
-              startedAt={startedAt}
-              error={receiptsRead.error}
+              startedAt={startedAt.receipts}
+              error={paneReadError(receiptsPane)}
               rowCount={receipts.length}
               skeletonColumns={["Date", "Material", "Quantity", "Unit Cost"]}
               emptyMessage="No material movements recorded yet."
@@ -289,8 +432,8 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
                   <Plus className="size-4" /> Record Receipt
                 </Button>
               }
-              lastLoadedAt={receiptsRead.loadedAt}
-              onRetry={load}
+              lastLoadedAt={receiptsPane.asOf ? new Date(receiptsPane.asOf) : null}
+              onRetry={() => void loadPane("receipts", true)}
             >
               <Table>
                 <TableHeader>
@@ -321,16 +464,16 @@ export default function MaterialsClient({ projectId, projectName, registryColumn
         <Card className="shadow-card">
           <CardContent className="p-4">
             <PaneState
-              status={reportRead.status}
-              entity="the cost report"
+              status={reportPane.status}
+              entity={PANE_ENTITY["cost-report"]}
               projectName={projectName}
-              startedAt={startedAt}
-              error={reportRead.error}
+              startedAt={startedAt["cost-report"]}
+              error={paneReadError(reportPane)}
               rowCount={report.length}
               skeletonColumns={["Material", "Unit", "Total Qty Received", "Total Cost", "Avg Unit Cost"]}
               emptyMessage="No receipts to report yet."
-              lastLoadedAt={reportRead.loadedAt}
-              onRetry={load}
+              lastLoadedAt={reportPane.asOf ? new Date(reportPane.asOf) : null}
+              onRetry={() => void loadPane("cost-report", true)}
             >
               <Table>
                 <TableHeader>

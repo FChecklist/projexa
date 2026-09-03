@@ -1,5 +1,22 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // R46 P8 seq128: registry-driven LIST archetype, same pattern R43 seq2
 // established for permits.list and R46 P8 seq134 established for
 // variations.list (see PermitsListClient.tsx's and ChangeOrdersClient.tsx's
@@ -35,8 +52,11 @@ import { formatDate } from "@/lib/format-date";
 import PaneState from "@/components/PaneState";
 import { recordCountLabel } from "@/lib/pane-state";
 import { useListRead } from "@/lib/use-list-read";
+import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 
-type Doc = {
+// Exported so documents/page.tsx can type the rows it fetches server-side.
+export type Doc = {
   id: string;
   name: string;
   category: string;
@@ -52,14 +72,6 @@ type Doc = {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Category", field: "category", type: "text", importance: "High" },
-  { label: "Type", field: "fileType", type: "text", importance: "High" },
-  { label: "Size", field: "fileSize", type: "number", importance: "High" },
-  { label: "Expiry", field: "expiryDate", type: "date", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
@@ -103,14 +115,23 @@ export default function DocumentsClient({
   projectId,
   projectName,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
   projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what documents/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
+  initial?: ModuleListInitial<Doc>;
 }) {
   const router = useRouter();
   const [category, setCategory] = useState("all");
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DOCUMENTS_LIST_COLUMNS;
 
   const url = useMemo(() => {
     const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
@@ -121,6 +142,9 @@ export default function DocumentsClient({
   const read = useListRead<Doc>({
     url,
     select: (body) => (body as { documents?: Doc[] })?.documents,
+    // The page prefetches the DEFAULT ("all categories") read only; changing
+    // the category is exactly the case that should go to the network.
+    initial,
   });
   const docs = read.rows;
 

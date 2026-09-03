@@ -23,7 +23,8 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MOM_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { AUTOSAVE_IDLE_MS, autosaveIsSendable, autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
@@ -362,7 +363,18 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       </div>
     );
   }
-  if (!meeting) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!meeting) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
+      label={MOM_OBJECT_BREADCRUMB.label}
+      actions={MOM_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const isPublished = meeting.status === "published";
 
@@ -380,8 +392,8 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
           filed against no project at all -- and null is published as null
           rather than being replaced with the rail's guess. */}
       <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
-    <ObjectScreen
-      breadcrumb="Minutes of Meeting / Meeting"
+    <KitObjectScreen
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
       mode={mode}
       hasDraft={false}
@@ -552,7 +564,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
           </div>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

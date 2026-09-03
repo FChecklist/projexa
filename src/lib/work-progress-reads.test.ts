@@ -5,6 +5,16 @@
 // list must come back as an ERROR OUTCOME, not as zero rows. Both Work
 // Progress screens used to render the empty sentence and a "0" KPI from
 // exactly that response.
+//
+// R67 MERGE (lane F2's F-24). readWorkProgress() no longer fetches /api/scope
+// or /api/scope/{id}: the BOQ line names it used to resolve now arrive on the
+// entry rows themselves (compliance-tracker #1579). The assertions below that
+// stubbed those two urls and read back `result.lineItems` are CORRECTED to
+// that reality rather than deleted -- each one keeps the property it was
+// written to protect. The "a failed LOOKUP does not take the entry list down"
+// case now exercises the activities lookup, which is the lookup that is left,
+// and pickCurrentBoq keeps every one of its own tests because
+// WorkProgressFormClient still uses it for the BOQ picker.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import {
@@ -107,7 +117,6 @@ describe("readWorkProgress -- a failed entry read can never become zero rows", (
     stubFetch({
       "/api/work-progress?": { status: 500, body: { error: "The construction data service did not respond." } },
       "/api/work-progress/activities": { status: 200, body: { activities: [] } },
-      "/api/scope?": { status: 200, body: { boqs: [] } },
     });
 
     const result = await readWorkProgress("p-1");
@@ -122,41 +131,63 @@ describe("readWorkProgress -- a failed entry read can never become zero rows", (
     stubFetch({
       "/api/work-progress?": { status: 200, body: { entries: [] } },
       "/api/work-progress/activities": { status: 200, body: { activities: [] } },
-      "/api/scope?": { status: 200, body: { boqs: [] } },
     });
 
     const result = await readWorkProgress("p-1");
     expect(result.entries.status).toBe("empty");
   });
 
-  test("a 200 with rows is ready, and the lookups come with it", async () => {
+  test("a 200 with rows is ready, and the activity lookup comes with it", async () => {
     stubFetch({
       "/api/work-progress?": { status: 200, body: { entries: [entry("e1", "40")] } },
       "/api/work-progress/activities": { status: 200, body: { activities: [{ id: "act-1", name: "Blockwork" }] } },
-      "/api/scope?": { status: 200, body: { boqs: [{ id: "boq-1", version: 1, status: "approved" }] } },
-      "/api/scope/boq-1": { status: 200, body: { lineItems: [{ id: "li-1", itemCode: "A.1", description: "Walls" }] } },
     });
 
     const result = await readWorkProgress("p-1");
     expect(result.entries.status).toBe("ready");
     expect(result.activities).toEqual([{ id: "act-1", name: "Blockwork" }]);
-    expect(result.lineItems).toEqual([{ id: "li-1", itemCode: "A.1", description: "Walls" }]);
+  });
+
+  test("the BOQ is NOT read here any more -- F-24 deleted both scope calls", async () => {
+    // The assertion is the absence: anything unlisted in the stub table
+    // answers 500, so a surviving /api/scope hop would show up as a failure
+    // rather than passing silently. This is what stops the four-call chain
+    // being reintroduced by a later edit.
+    const asked: string[] = [];
+    const table: Record<string, { status: number; body: unknown }> = {
+      "/api/work-progress?": { status: 200, body: { entries: [entry("e1", "40")] } },
+      "/api/work-progress/activities": { status: 200, body: { activities: [] } },
+    };
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      asked.push(url);
+      const key = Object.keys(table).find((k) => url.startsWith(k));
+      const hit = key ? table[key] : { status: 500, body: { error: `no stub for ${url}` } };
+      return new Response(JSON.stringify(hit.body), {
+        status: hit.status,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const result = await readWorkProgress("p-1");
+    expect(result.entries.status).toBe("ready");
+    expect(asked.some((u) => u.startsWith("/api/scope"))).toBe(false);
+    expect(asked).toHaveLength(2);
   });
 
   test("a failed LOOKUP does not take the successful entry list down with it", async () => {
-    // The BOQ hop is the module's slowest and least reliable read (the /scope
-    // N+1 the repo map records). Losing the line-item COLUMN is survivable;
-    // losing the entries the user came to see is not.
+    // Losing the activity lookup costs the FORM's picker its options, which is
+    // survivable and says so on the control; losing the entries the user came
+    // to see is not. (Before F-24 this case was written against the BOQ hop,
+    // which this read no longer makes.)
     stubFetch({
       "/api/work-progress?": { status: 200, body: { entries: [entry("e1", "40")] } },
       "/api/work-progress/activities": { status: 500, body: { error: "activities are down" } },
-      "/api/scope?": { status: 500, body: { error: "scope is down" } },
     });
 
     const result = await readWorkProgress("p-1");
     expect(result.entries.status).toBe("ready");
     expect(result.activities).toEqual([]);
-    expect(result.lineItems).toEqual([]);
   });
 
   test("a thrown read -- no response at all -- is an error, not an empty list", async () => {

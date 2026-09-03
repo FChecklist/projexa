@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string; roomId: string }> };
 
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id, roomId } = await params;
@@ -13,11 +15,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/rooms/${encodeURIComponent(roomId)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to update room" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to update room");
   }
-}
+});
 
-export async function DELETE(request: NextRequest, { params }: RouteContext) {
+export const DELETE = withTiming("DELETE", async function DELETE(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id, roomId } = await params;
@@ -25,6 +27,6 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     const data = await callVeridian(`/floor-plans/${encodeURIComponent(id)}/rooms/${encodeURIComponent(roomId)}`, { organizationId: ctx.organizationId!, method: "DELETE" });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to remove room" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to remove room");
   }
-}
+});

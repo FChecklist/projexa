@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { invalidateShell } from "@/lib/shell-store";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +71,12 @@ export default function ProjectCreateClient({
         }),
       });
       toast.success(`Created project ${name.trim()}`);
+      // R67 F-21 (carried over from the deleted CreateProjectDialog, which
+      // decision D-01 replaced with this route): the shell's project list is
+      // held in a session store, so mark that ONE key stale and the new
+      // project appears in the top rail's switcher at once, without re-reading
+      // the whole bootstrap.
+      invalidateShell("projects");
       router.push(created?.id ? `/dashboard/project?projectId=${encodeURIComponent(created.id)}` : "/dashboard");
       router.refresh();
     } catch (err) {

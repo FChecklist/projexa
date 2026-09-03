@@ -1,5 +1,20 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2, item F-24 / audit R-240). WHAT THIS SCREEN
+// USED TO DO, AND WHY IT COST 7.4 s. Its read ran a SERIAL chain: entries and
+// activities, then /api/scope, then /api/scope/{id} for the resolved revision
+// -- pulling a whole BOQ's line items across the wire -- and only then could
+// the BOQ column be translated. All four calls existed to fill ONE column, and
+// it still rendered a raw id like "e5eibnze72n8u2y3aoeok" when the resolution
+// missed. VERIDIAN now LEFT JOINs both names into the progress query
+// (compliance-tracker #1579) and sends activityName / boqItemCode /
+// boqDescription with each entry, so the two scope calls and the two id->label
+// maps are gone from this screen and the cell can never fall back to an id.
+//
+// Everything lane D0 built here is untouched: the read still comes from the
+// tested src/lib/work-progress-reads.ts, the pane still branches on an OUTCOME
+// rather than a boolean, and PaneState still owns what the screen says.
+
 // R42 seq22: thin composition of the FORM (WorkProgressFormClient) and LIST
 // (WorkProgressListClient) archetypes on one page, per this seq's own
 // "WORK PROGRESS (FORM+LIST)" row. Owns only the entries/lookups both need
@@ -32,7 +47,6 @@ import {
   readWorkProgress,
   type ProgressActivity,
   type ProgressEntry,
-  type ProgressLineItem,
 } from "@/lib/work-progress-reads";
 import type { PaneStatus } from "@/lib/pane-state";
 
@@ -45,7 +59,6 @@ export default function WorkProgressPageClient({
 }) {
   const [entries, setEntries] = useState<ProgressEntry[]>([]);
   const [activities, setActivities] = useState<ProgressActivity[]>([]);
-  const [lineItems, setLineItems] = useState<ProgressLineItem[]>([]);
   const [status, setStatus] = useState<PaneStatus>("loading");
   const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -58,7 +71,6 @@ export default function WorkProgressPageClient({
 
     const result = await readWorkProgress(projectId);
     setActivities(result.activities);
-    setLineItems(result.lineItems);
 
     if (result.entries.status === "error") {
       // The rows already on screen are NOT thrown away -- PaneState labels
@@ -100,10 +112,10 @@ export default function WorkProgressPageClient({
   // flips -- which is the moment the Activity select actually exists.
   }, [focusRequest, status]);
 
+  // F-24: kept ONLY as the fallback for an entry whose row carries no
+  // activityName -- an older backend, or an activity deleted since. The list
+  // no longer depends on it, and there is no BOQ map at all any more.
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(
-    lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description])
-  );
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
@@ -113,7 +125,6 @@ export default function WorkProgressPageClient({
           projectName={projectName}
           entries={entries}
           activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
           status={status}
           error={error}
           onRetry={() => void load()}
@@ -122,7 +133,13 @@ export default function WorkProgressPageClient({
         />
       </div>
       <div ref={formRef} className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressFormClient projectId={projectId} onLogged={() => void load()} />
+        {/* F-24: the page already read this list; handing it down is one
+            request saved on a screen that made the same call twice. */}
+        <WorkProgressFormClient
+          projectId={projectId}
+          activities={activities}
+          onLogged={() => void load()}
+        />
       </div>
     </div>
   );

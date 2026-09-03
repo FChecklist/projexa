@@ -52,6 +52,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
+// R67 MERGE (lane D0 x lane F2). Lane F2 rewrote this screen too, for item
+// F-18 (the meetings arrive as props, fetched by moms/page.tsx on the server)
+// and item F-31 (a machine-readable state on the list region). Under decision
+// D-11 the version on main is canonical -- it has six honest branches where
+// F2's had three -- so BOTH of F2's capabilities are folded into it here
+// rather than the six branches being replaced by the three: `initial` seeds
+// the first paint with no client round trip, and ListStateRegion carries the
+// data-state/aria-busy the pass-2 latency script waits on.
+import { ListStateRegion } from "@/components/ListScreenFrame";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,6 +101,10 @@ import {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
+// Exported so moms/page.tsx can type the rows it fetches server-side (F-18).
+// It is an alias, not a second shape: one row type, one import path.
+export type Meeting = MeetingListRow;
+
 type ColumnKey = "title" | "project" | "scheduledAt" | "attendeesCount" | "openActionItems" | "status" | "action";
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -120,6 +134,7 @@ export default function MoMsClient({
   initialFilter,
   defaultFilter,
   registryColumns,
+  initial = null,
 }: {
   /** null in "all projects" mode -- an explicit state, not a missing value. */
   projectId: string | null;
@@ -132,12 +147,31 @@ export default function MoMsClient({
   initialFilter: MomsFilter;
   defaultFilter: MomsFilter;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what moms/page.tsx already fetched on the server for THIS
+   * project. When it is present the list paints filled on the first render and
+   * makes no round trip -- which is the whole point of moving the read to the
+   * server. A server-side FAILURE seeds the error branch, never a spinner that
+   * will never resolve and never an empty table (read-outcome.ts's rule).
+   * The page only sends it for an unfiltered, project-scoped arrival, so
+   * seeded rows can never be shown under a narrower question than they answer.
+   */
+  initial?: ModuleListInitial<MeetingListRow>;
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState<MeetingListRow[]>([]);
-  const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
+  const [rows, setRows] = useState<MeetingListRow[]>(
+    initial && !initial.errorMessage ? initial.rows : []
+  );
+  const [status, setStatus] = useState<"loading" | "error" | "ready">(
+    initial ? (initial.errorMessage ? "error" : "ready") : "loading"
+  );
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
-  const [backendMessage, setBackendMessage] = useState<string | null>(null);
+  const [backendMessage, setBackendMessage] = useState<string | null>(initial?.errorMessage ?? null);
+  // The rows the server sent answer THIS project. A switch, or any reload,
+  // still fetches. `undefined` -- not null -- means "nothing was seeded":
+  // all-projects mode has a NULL projectId, and comparing null to null would
+  // have made that mode skip its own read entirely.
+  const seededFor = useRef<string | null | undefined>(initial ? projectId : undefined);
   const [filter, setFilter] = useState<MomsFilter>(initialFilter);
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -162,6 +196,11 @@ export default function MoMsClient({
   const projectNameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
 
   const load = useCallback(async () => {
+    if (seededFor.current !== undefined && seededFor.current === projectId) {
+      // The server already answered this exact question on this render pass.
+      seededFor.current = undefined;
+      return;
+    }
     setStatus("loading");
     setHttpStatus(null);
     setBackendMessage(null);
@@ -324,6 +363,21 @@ export default function MoMsClient({
       )}
 
       <Card className="shadow-card">
+        {/* R67 F-31: data-state / aria-busy on the list region, so a latency
+            measurement can see the moment this screen becomes usable. "ready"
+            covers the empty and filtered-empty branches too -- an answer of
+            "there are none" is an answer. */}
+        <ListStateRegion
+          state={
+            state.kind === "error" || state.kind === "forbidden"
+              ? "error"
+              : state.kind === "loading"
+                ? "loading"
+                : state.kind === "empty" || state.kind === "filtered-empty" || state.kind === "no-project"
+                  ? "empty"
+                  : "ready"
+          }
+        >
         <CardContent className="p-0">
           {state.kind === "no-project" && (
             <p className="py-10 text-center text-sm text-px-muted">{MOMS_TEXT.noProject}</p>
@@ -479,6 +533,7 @@ export default function MoMsClient({
             </div>
           )}
         </CardContent>
+        </ListStateRegion>
       </Card>
 
       {/* The persistent footer message band: an error stays counted here

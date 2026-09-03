@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -11,11 +13,11 @@ export async function GET(request: NextRequest) {
     const data = await callVeridian(`/site-diary?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load site diary" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load site diary");
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.FIELD);
@@ -25,6 +27,6 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/site-diary", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to create diary entry" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to create diary entry");
   }
-}
+});

@@ -1,94 +1,104 @@
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale. /scope was the worst measured screen: this page awaited
+// getServerOrganizationId(), then a VERIDIAN /dashboard call, then a
+// /screen-definitions/boq.custom call, all in series, before the first byte --
+// and only then did ScopeClient start fetching. The frame now streams first
+// and the revision list is fetched here on the server.
+//
+// R67 F-23: the list this page fetches now asks for `include=variation`, so the
+// "Variation vs. prior" column arrives with the rows and ScopeClient's
+// one-request-per-revision compare fan-out is gone (see fetchScopeList).
+//
+// R67 MERGE (lane D0 x lane F2). Lane D0 implemented the same decision D-04 on
+// this page with resolveSelectedProject + ScreenLoading, and added two things
+// F2's version did not have. Both are kept:
+//
+//   * D-20 / D-66's HONEST MODE. A BOQ belongs to exactly one project, so this
+//     module OPTS IN with allProjectsWhenUnset. Without it, arriving with no
+//     ?projectId= silently resolved the org's FIRST project and rendered its
+//     BOQs under a rail reading "All projects" -- and a revision created there
+//     was created against a project nobody chose. "You are looking at the whole
+//     org and a BOQ needs one project" (ProjectRequiredCard) is a different
+//     answer from "this org has no projects", and they are told apart here.
+//   * D-65's PROJECT NAME, which travels with the id so the pane can name what
+//     it is waiting for and the empty sentence can name the project it is
+//     empty FOR.
+//
+// What is NOT kept is lane D0's local resolveRegistryColumns(): the identical
+// 404-tolerant lookup now lives in module-list-source's getScreenColumns(),
+// which additionally caches it for an hour per org. Nothing else imported the
+// page-local copy.
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ScreenLoading from "@/components/ScreenLoading";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
 import { ProjectRequiredCard } from "@/components/ProjectRequiredCard";
+import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
-import ScopeClient, { type RegistryColumn } from "@/components/ScopeClient";
+import ScopeClient, { type Boq } from "@/components/ScopeClient";
 import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
 
-// R44 seq3 (M28 registry-model proof, same pattern as permits/page.tsx's
-// resolvePermitsListColumns): resolved server-side so ScopeClient never
-// needs its own Bearer-key-authenticated fetch. A missing or errored
-// registry row is NOT fatal -- ScopeClient falls back to its own hardcoded
-// columns when this is null. R46 P8 seq121 factored the body out to a
-// shared helper so the new boq.custom lookup (main BOQ table's column
-// labels -- CUSTOM archetype, see below) didn't duplicate this try/catch.
-export async function resolveRegistryColumns(functionId: string, organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>(`/screen-definitions/${functionId}`, {
-      organizationId: organizationId ?? undefined,
-      // R67 D-04: a label lookup must never be what keeps a module page blank.
-      timeoutMs: VERIDIAN_SCREEN_BUDGET_MS,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error(`[scope/page] screen_definitions resolve failed for ${functionId}, falling back to hardcoded columns:`, err instanceof Error ? err.message : err);
-    return null;
-  }
-}
+const SKELETON = (
+  <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+);
 
-// R67 D-04 -- Option A, applied to the slowest page the R66 audit measured
-// (/scope, ~8 s). The project resolution and the boq.custom label lookup were
-// awaited one after the other despite being independent; they now run
-// concurrently, behind a <Suspense> boundary so the heading and the tab strip
-// stream immediately and the wait is a skeleton in the shape of the BOQ table
-// rather than a blank frame. The VERIDIAN key never leaves the server.
-async function ScopeBody({ projectId, tab }: { projectId?: string; tab?: string }) {
+async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
   const organizationId = await getServerOrganizationId();
-  const [{ project, errorMessage, mode }, boqListColumns] = await Promise.all([
+  const { projectId, projectName: resolvedName, errorMessage, mode } = await resolveProjectForModule(
+    requestedProjectId,
+    organizationId,
     // R67 D-20 + D-66: a BOQ belongs to exactly one project, so this module
-    // OPTS IN to the honest mode. Without the flag, arriving with no
-    // ?projectId= silently resolved the org's FIRST project and rendered its
-    // BOQs under a rail reading "All projects" -- and a revision created
-    // there was created against a project nobody chose.
-    resolveSelectedProject(projectId, organizationId, { allProjectsWhenUnset: true }),
-    // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays
-    // a fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks
-    // are too bespoke for a generic LIST renderer), but the main BOQ table's
-    // column LABELS now come from this registry row so they're editable with
-    // no redeploy, same as every other converted screen. Nothing about data
-    // fetching, row shape, or cell rendering is registry-driven here.
-    resolveRegistryColumns("boq.custom", organizationId), // never rejects
+    // opts in to the honest mode rather than having one chosen for it.
+    { allProjectsWhenUnset: true }
+  );
+
+  if (errorMessage) return <ModuleProjectNotice errorMessage={errorMessage} />;
+  // Two different answers, told apart at last.
+  if (!projectId && mode === "all") return <ProjectRequiredCard module="BOQs" />;
+  if (!projectId) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent>
+      </Card>
+    );
+  }
+
+  // R46 P8 seq121: boq.custom is a CUSTOM-archetype row -- ScopeClient stays a
+  // fully hand-built component (BOQ hierarchy/revisions/weighted sub-tasks are
+  // too bespoke for a generic LIST renderer), but the main BOQ table's column
+  // LABELS come from this registry row so they're editable with no redeploy.
+  const [boqListColumns, list, name] = await Promise.all([
+    getScreenColumns("boq.custom", organizationId),
+    fetchScopeList<Boq>(organizationId, projectId, "scope of work"),
+    // R67 D-65 x F-18: the name rides in the SAME batch as the list read, so
+    // it costs no serial hop; getProjectName never throws and never blocks.
+    resolvedName ? Promise.resolve(resolvedName) : getProjectName(projectId, organizationId),
   ]);
 
   return (
-    <>
-      {errorMessage && (
-        <Card className="border-px-error-border bg-px-error-light">
-          <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-        </Card>
-      )}
-      {/* Two different answers, told apart at last: "you are looking at the
-          whole org and a BOQ needs one project" is not the same as "this org
-          has no projects". */}
-      {!errorMessage && !project && mode === "all" && <ProjectRequiredCard module="BOQs" />}
-      {!errorMessage && !project && mode !== "all" && (
-        <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-      )}
-      {project && (
-        // R42 seq24: "variance" tab added -- DASHBOARD.PROJECT's own
-        // "Budget vs Actual" KPI destination (?tab=variance from
-        // DashboardProjectClient). The BOQ tab (ScopeClient) stays the
-        // CUSTOM weighted-tree screen for editing/hierarchy; variance is
-        // a different, flat "which line is worst" question.
-        <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="boq">BOQ</TabsTrigger>
-            <TabsTrigger value="variance">Cost Variance</TabsTrigger>
-          </TabsList>
-          {/* R67 D-65: the project's name travels with its id so the pane can
-              name what it is waiting for, and the empty sentence can name the
-              project it is empty FOR. */}
-          <TabsContent value="boq"><ScopeClient projectId={project.id} projectName={project.name} listColumns={boqListColumns} /></TabsContent>
-          <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]"><CostVarianceAnalyticalClient projectId={project.id} /></TabsContent>
-        </Tabs>
-      )}
-    </>
+    // R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
+    // destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
+    // screen; variance is a different, flat "which line is worst" question.
+    <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="boq">BOQ</TabsTrigger>
+        <TabsTrigger value="variance">Cost Variance</TabsTrigger>
+      </TabsList>
+      <TabsContent value="boq">
+        <ScopeClient
+          projectId={projectId}
+          projectName={name}
+          listColumns={boqListColumns}
+          initial={list}
+        />
+      </TabsContent>
+      <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]">
+        <CostVarianceAnalyticalClient projectId={projectId} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -96,13 +106,11 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
   const { projectId, tab } = await searchParams;
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Scope of Work (BOQ)" />
-        <Suspense fallback={<ScreenLoading entity="the BOQ" rows={6} columns={6} />}>
-          <ScopeBody projectId={projectId} tab={tab} />
-        </Suspense>
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <PageHeading title="Scope of Work (BOQ)" />
+      <Suspense fallback={SKELETON}>
+        <ScopeSection requestedProjectId={projectId} tab={tab} />
+      </Suspense>
+    </div>
   );
 }

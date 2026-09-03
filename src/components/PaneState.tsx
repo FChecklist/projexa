@@ -23,6 +23,19 @@
 // The four (five) branches here are exhaustive and the empty one is
 // reachable only through mayShowEmptyState(), which takes the outcome and
 // not the row count -- so a screen cannot fall through to it by accident.
+//
+// R67 MERGE (lane D0 x lane F2). Lane F2 built the same wrapper under the
+// name ListScreenFrame for item F-31 / audit R-275. Under decision D-11 the
+// version on main is canonical, so this component stays and F2's ONE
+// capability it lacked is folded in here: a MACHINE-READABLE
+// `data-state="loading|ready|empty|error"` plus `aria-busy` on the region
+// itself. That attribute is not decoration -- it is what R-275 exists for.
+// The pass-2 latency script had no way to ask "is this screen usable yet",
+// so its `usable` column was empty for all thirteen measured pages, and the
+// audit had to reconstruct per-page numbers from dev-server log lines. The
+// state is computed by listDataState() (src/lib/list-loading.ts, where it is
+// unit-tested), so the attribute a Playwright budget waits on and the words
+// this component renders cannot drift apart.
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +49,8 @@ import {
   paneError,
   type PaneStatus,
 } from "@/lib/pane-state";
+// R67 MERGE (lane F2's F-31, audit R-275) -- see the block comment below.
+import { listDataState } from "@/lib/list-loading";
 
 const DEFAULT_SKELETON_ROWS = 5;
 
@@ -172,9 +187,19 @@ export function PaneState({
   const caption = loadingCaption(elapsed, entity, projectName);
   const described = status === "error" ? paneError(entity, error ?? {}) : null;
   const staleLabel = rowCount > 0 ? asOfLabel(lastLoadedAt ?? null) : null;
+  // F-31. `ready` flips when the first row -- or the empty sentence, which is
+  // equally an answer -- is actually on screen, which is the moment a latency
+  // measurement should call this screen usable. A background revalidation
+  // under rows that are already correct stays `ready`, so a refresh never
+  // reports the screen as unusable while the user is reading it.
+  const regionState = listDataState({
+    loading,
+    error: described ? described.sentence : null,
+    rowCount,
+  });
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-state={regionState} aria-busy={regionState === "loading"}>
       {described && (
         <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-4 text-sm">
           <p className="flex items-start gap-2 font-medium text-px-error">

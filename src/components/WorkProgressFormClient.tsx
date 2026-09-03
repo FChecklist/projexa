@@ -52,7 +52,10 @@ import {
   type QueuedWorkProgressEntry,
 } from "@/lib/offline/work-progress-queue";
 
-type Activity = { id: string; name: string; unit: string | null };
+// R67 F-24: the page may hand this list down (see the `activities` prop), and
+// the shared ProgressActivity leaves `unit` optional, so this does too. A row
+// without one simply renders the bare name.
+type Activity = { id: string; name: string; unit?: string | null };
 type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
 type Boq = { id: string; version: number; status: string; title: string };
 type ReadError = { status: number | null; message: string | null } | null;
@@ -67,7 +70,19 @@ function todayIso() {
 }
 
 
-export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
+export default function WorkProgressFormClient({
+  projectId,
+  onLogged,
+  activities: providedActivities,
+}: {
+  projectId: string;
+  onLogged: () => void;
+  /**
+   * R67 F-24: the activity list the PAGE already read. Optional -- the form
+   * still fetches for itself when it is mounted without one.
+   */
+  activities?: Activity[];
+}) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
@@ -114,9 +129,21 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     }
   }, [projectId]);
 
+  // R67 MERGE (lane F2's F-24). This form used to fetch
+  // /api/work-progress/activities while WorkProgressPageClient fetched exactly
+  // the same list alongside it -- two requests, one screen, one answer. When
+  // the page hands its list down, the form uses it and asks for nothing; the
+  // fetch above still runs for the case the page cannot cover (a Retry beside
+  // the field, and any future mounting of this form on its own).
+  const suppliedActivities = providedActivities ?? null;
   useEffect(() => {
+    if (suppliedActivities) {
+      setActivities(suppliedActivities);
+      setActivitiesError(null);
+      return;
+    }
     void loadActivities();
-  }, [loadActivities]);
+  }, [suppliedActivities, loadActivities]);
 
   useEffect(() => {
     // R47-005 (fault R46M13_TC30_01, reproduced live in production 2026-08-25):

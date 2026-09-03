@@ -14,7 +14,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+// Not the kit's -- the kit is still imported for everything that was not
+// forked. R67 A-21's ObjectContext is unaffected by the fork and stays.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { DRAWING_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Button } from "@/components/ui/button";
@@ -82,7 +86,18 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       </div>
     );
   }
-  if (!d) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!d) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
+      label={DRAWING_OBJECT_BREADCRUMB.label}
+      actions={DRAWING_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const kind = d.category === "drawing_3d" ? "3D Walkthrough" : "DWG";
   const disposeDisabledReason = d.isDisposed
@@ -103,8 +118,8 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         so an empty string is published as null -- the shell then falls back to
         the rail, which is honest, instead of resolving a project id of "". */}
     <ObjectContext moduleId="drawings" label={d.name} projectId={projectId || null} />
-    <ObjectScreen
-      breadcrumb="Drawings & 3D / Drawing"
+    <KitObjectScreen
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
       title={d.name}
       mode="display"
       hasDraft={false}
@@ -135,7 +150,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
           <p className="text-sm text-ct-muted">No file link available.</p>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

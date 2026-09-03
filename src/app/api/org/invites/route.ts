@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS, ALL_ORG_ROLES } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
 // R48_NO_INVITE_UI_01: org-admin user provisioning. Ruled at L5 -- SAP,
 // Dynamics 365 and Odoo all place user provisioning under organisation admin
@@ -18,7 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 // client-only guard is a FAIL -- the Settings UI's admin check is a UX
 // affordance only; these two layers are the actual boundary.
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const forbidden = requireRole(ctx, ROLE_GROUPS.ORG_ADMIN);
@@ -33,9 +34,9 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ invites: data ?? [] });
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withTiming("POST", async function POST(req: Request) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const forbidden = requireRole(ctx, ROLE_GROUPS.ORG_ADMIN);
@@ -101,4 +102,4 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ invite: data }, { status: 201 });
-}
+});

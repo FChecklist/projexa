@@ -1,5 +1,22 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // Wave 143 (Drawings & 3D module): DWG file uploads + 3D walkthrough
 // files/links, per project -- same Card/Table/Dialog primitives as
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
@@ -23,9 +40,12 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { PaneState } from "@/components/PaneState";
 import { formatDate } from "@/lib/format-date";
 import { useListRead } from "@/lib/use-list-read";
+import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 import { recordCountLabel } from "@/lib/pane-state";
 
-type Drawing = {
+// Exported so drawings/page.tsx can type the rows it fetches server-side.
+export type Drawing = {
   id: string;
   name: string;
   kind: "dwg" | "3d_walkthrough";
@@ -46,12 +66,6 @@ export type RegistryColumn = ScreenColumn;
 // compliance.screen_definitions row for drawings.list doesn't exist yet
 // (404) or the call errors -- the "Open" action column is intentionally
 // NOT part of it and is always rendered separately below.
-const COLUMNS: ScreenColumn[] = [
-  { label: "Name", field: "name", type: "text", importance: "High" },
-  { label: "Kind", field: "kind", type: "text", importance: "High" },
-  { label: "Discipline", field: "discipline", type: "text", importance: "High" },
-  { label: "Added", field: "createdAt", type: "date", importance: "High" },
-];
 
 function renderDrawingCell(column: ScreenColumn, d: Drawing) {
   switch (column.field) {
@@ -84,13 +98,22 @@ export default function DrawingsClient({
   projectId,
   projectName,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
   projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what drawings/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
+  initial?: ModuleListInitial<Drawing>;
 }) {
   const router = useRouter();
-  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
+  const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
   // Rows already held survive a failed refresh -- see PaneState.
   const {
     rows: drawings,
@@ -102,6 +125,7 @@ export default function DrawingsClient({
   } = useListRead<Drawing>({
     url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
     select: (body) => (body as { drawings?: Drawing[] } | null)?.drawings,
+    initial,
   });
 
   return (

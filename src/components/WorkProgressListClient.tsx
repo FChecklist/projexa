@@ -1,5 +1,20 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2, item F-24 / audit R-240). WHAT THIS SCREEN
+// USED TO DO, AND WHY IT COST 7.4 s. Its read ran a SERIAL chain: entries and
+// activities, then /api/scope, then /api/scope/{id} for the resolved revision
+// -- pulling a whole BOQ's line items across the wire -- and only then could
+// the BOQ column be translated. All four calls existed to fill ONE column, and
+// it still rendered a raw id like "e5eibnze72n8u2y3aoeok" when the resolution
+// missed. VERIDIAN now LEFT JOINs both names into the progress query
+// (compliance-tracker #1579) and sends activityName / boqItemCode /
+// boqDescription with each entry, so the two scope calls and the two id->label
+// maps are gone from this screen and the cell can never fall back to an id.
+//
+// Everything lane D0 built here is untouched: the read still comes from the
+// tested src/lib/work-progress-reads.ts, the pane still branches on an OUTCOME
+// rather than a boolean, and PaneState still owns what the screen says.
+
 // R42 seq22 (M28 LIST archetype, S3 module 3/3): registry-driven Work
 // Progress history on the kit's ListScreen -- same pattern as
 // PermitsListClient.tsx (seq21). Activity/BOQ-line names are resolved
@@ -21,7 +36,28 @@ import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 import { formatDate } from "@/lib/format";
 
+/**
+ * "R60SK -- R60 skiphop root", or just the description when the line carries
+ * no item code, or null when neither came back. Exported so the rule is
+ * asserted where it lives rather than through a rendered table.
+ */
+export function boqLineLabel(entry: {
+  boqLineItemId: string | null;
+  boqItemCode?: string | null;
+  boqDescription?: string | null;
+}): string | null {
+  if (!entry.boqLineItemId) return null;
+  const code = entry.boqItemCode?.trim();
+  const description = entry.boqDescription?.trim();
+  if (code && description) return `${code} — ${description}`;
+  return description || code || null;
+}
+
 type Entry = {
+  activityName?: string | null;
+  boqItemCode?: string | null;
+  boqDescription?: string | null;
+
   id: string;
   activityId: string;
   boqLineItemId: string | null;
@@ -55,7 +91,6 @@ function progressTone(pct: number): StatusTone {
 export default function WorkProgressListClient({
   entries,
   activityNameById,
-  boqLineDescriptionById,
   status,
   error,
   onRetry,
@@ -65,8 +100,9 @@ export default function WorkProgressListClient({
   projectName,
 }: {
   entries: Entry[];
+  /** F-24: only a FALLBACK now, for a row whose activityName did not come
+   *  back (an older backend, or an activity deleted since). */
   activityNameById: Map<string, string>;
-  boqLineDescriptionById: Map<string, string>;
   /** The read's own state. There is no boolean here on purpose. */
   status: PaneStatus;
   error?: { status?: number | null; message?: string | null } | null;
@@ -79,8 +115,12 @@ export default function WorkProgressListClient({
   const router = useRouter();
   const rows = entries.map((e) => ({
     ...e,
-    activityName: activityNameById.get(e.activityId) ?? e.activityId,
-    boqLineDescription: e.boqLineItemId ? (boqLineDescriptionById.get(e.boqLineItemId) ?? e.boqLineItemId) : null,
+    activityName: e.activityName ?? activityNameById.get(e.activityId) ?? e.activityId,
+    // F-24: "R60SK -- R60 skiphop root", or just the description when the line
+    // carries no item code. NEVER the id -- an entry whose BOQ line was
+    // deleted has no name to show, and an em-dash is the honest answer;
+    // showing the raw id instead was the defect R-240 reported.
+    boqLineDescription: e.boqLineItemId ? boqLineLabel(e) : null,
   }));
 
   return (

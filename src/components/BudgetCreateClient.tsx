@@ -5,7 +5,7 @@
 // VERIDIAN lookups, same blocked-reason honesty when fiscal years / chart of
 // accounts aren't provisioned.
 //
-// ─── R67 D-67 + correction C-15 ──────────────────────────────────────────
+// â”€â”€â”€ R67 D-67 + correction C-15 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // C-15's finding, in full: "the block is an org-setup precondition surfaced
 // correctly (disabled-with-reason), but THE REASON IS A PARAGRAPH INSIDE A
@@ -27,6 +27,7 @@ import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson } from "@/lib/fetch-json";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
+import { isAbortError } from "@/lib/module-list-state";
 import { type Company } from "@/components/company-scope";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -57,29 +58,47 @@ export default function BudgetCreateClient() {
 
   const [values, setValues] = useState<Record<string, string>>({});
 
+  // R67 MERGE (lane F2's F-19, audit R-245). THIS WAS Promise.all, AND THAT
+  // WAS THE BUG: one failed lookup rejected the whole batch, so a 500 on
+  // /api/companies -- a field that is OPTIONAL on this form -- blanked the
+  // fiscal years and the chart of accounts too, and the screen then told the
+  // user this organisation HAS no fiscal years. That is a failed read reported
+  // as a fact about their data, which is exactly what src/lib/read-outcome.ts
+  // exists to prevent, and what lane D0's own `lookupError` branch below is
+  // written to avoid -- it just could not see which lookup failed.
+  //
+  // allSettled keeps each outcome separate: a lookup that answered fills its
+  // field, and only the ones that did not answer are named in the banner. The
+  // AbortController stops a form the user has already left from setting state.
   useEffect(() => {
-    (async () => {
+    const controller = new AbortController();
+    void (async () => {
       setLookupsLoading(true);
-      try {
-        const [fyData, ccData, acData, coData] = await Promise.all([
-          fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years"),
-          fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers"),
-          fetchJson<{ accounts?: Account[] }>("/api/accounts"),
-          fetchJson<{ companies?: Company[] }>("/api/companies"),
-        ]);
-        setFiscalYears(fyData.fiscalYears ?? []);
-        setCostCenters(ccData.costCenters ?? []);
-        setAccounts(acData.accounts ?? []);
-        setCompanies(coData.companies ?? []);
-      } catch (err) {
-        // A FAILED lookup is not the same fact as "this org has none", and
-        // the banner below must not accuse the org of a setup gap that is
-        // really a backend error.
-        setLookupError(err instanceof Error ? err.message : "the request did not complete");
-      } finally {
-        setLookupsLoading(false);
-      }
+      const [fyR, ccR, acR, coR] = await Promise.allSettled([
+        fetchJson<{ fiscalYears?: FiscalYear[] }>("/api/fiscal-years", { signal: controller.signal }),
+        fetchJson<{ costCenters?: CostCenter[] }>("/api/cost-centers", { signal: controller.signal }),
+        fetchJson<{ accounts?: Account[] }>("/api/accounts", { signal: controller.signal }),
+        fetchJson<{ companies?: Company[] }>("/api/companies", { signal: controller.signal }),
+      ]);
+      if (controller.signal.aborted) return;
+
+      const failed: string[] = [];
+      if (fyR.status === "fulfilled") setFiscalYears(fyR.value.fiscalYears ?? []);
+      else if (!isAbortError(fyR.reason, controller.signal)) failed.push("fiscal years");
+      if (ccR.status === "fulfilled") setCostCenters(ccR.value.costCenters ?? []);
+      else if (!isAbortError(ccR.reason, controller.signal)) failed.push("cost centres");
+      if (acR.status === "fulfilled") setAccounts(acR.value.accounts ?? []);
+      else if (!isAbortError(acR.reason, controller.signal)) failed.push("the chart of accounts");
+      if (coR.status === "fulfilled") setCompanies(coR.value.companies ?? []);
+      else if (!isAbortError(coR.reason, controller.signal)) failed.push("companies");
+
+      // A FAILED lookup is not the same fact as "this org has none", and the
+      // banner below must not accuse the org of a setup gap that is really a
+      // backend error. Naming WHICH read failed is the part allSettled adds.
+      setLookupError(failed.length > 0 ? `${failed.join(", ")} could not be loaded` : null);
+      setLookupsLoading(false);
     })();
+    return () => controller.abort();
   }, []);
 
   const missingLookups = [
@@ -87,7 +106,10 @@ export default function BudgetCreateClient() {
     accounts.length === 0 ? "a chart of accounts" : null,
   ].filter(Boolean) as string[];
   // Only a SUCCESSFUL lookup may claim the org has none -- the same rule
-  // src/lib/read-outcome.ts states for every list in this product.
+  // src/lib/read-outcome.ts states for every list in this product. With
+  // allSettled, `lookupError` is now set only when a read genuinely failed, so
+  // a single optional lookup's 500 no longer suppresses this real precondition
+  // for the two fields that DID answer.
   const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
 
   const fields: CreateField[] = [

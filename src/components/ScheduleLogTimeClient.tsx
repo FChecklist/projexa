@@ -1,5 +1,17 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane F2's item F-19 (audit R-245) asked that
+// a create form's lookup say which of its three states it is in, and that a
+// FAILED lookup never look like "this org has none". Lane D0 rebuilt this
+// screen onto the shared CreateScreen + useSubmit archetype (D-72 / D-67) and
+// implements exactly that rule -- the lookup's failure reaches the form as a
+// banner with Retry and as the primary's own disabled reason, and the empty
+// placeholder is reachable only from a successful read. Under decision D-11
+// the version on main is canonical, and F2's separate useLookup()/
+// LookupFieldError pair is not folded in beside it: that would leave two
+// mechanisms for one rule on one screen. F2's helpers stay in the repo for the
+// create forms that still use them.
+
 // Real-screen conversion (2026-08-30) -- replaces ScheduleTimesheetClient.tsx's
 // old "Log Time" Dialog popup with a real create screen. A separate screen
 // from the Task Object Page's own inline "Log Time" action (ScheduleTaskObjectClient.tsx)

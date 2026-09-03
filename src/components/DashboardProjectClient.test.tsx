@@ -11,6 +11,15 @@
 //     failure rendered "Permits Expiring: 0 — none due soon" in the sage
 //     done tone: a confident all-clear from the one tile whose purpose is to
 //     warn.
+//
+// R67 MERGE (lane F2's F-27). The permits FIGURE no longer comes from its own
+// /api/permits call: VERIDIAN's dashboard payload carries
+// permitsExpiringCount / permitsExpiredCount, computed in the same statement
+// as everything else (compliance-tracker #1579), so that tile costs no request
+// at all. The two permit assertions below are therefore CORRECTED to the read
+// that now supplies the figure rather than deleted -- each keeps exactly the
+// property it was written to protect: a failed read may not render the
+// all-clear, and a successful read with genuinely none still may.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -38,6 +47,9 @@ const DASHBOARD_OK = {
   earnedValue: null,
   percentByValue: null,
   contractValue: null,
+  // F-27: the permit counts ride on this payload now.
+  permitsExpiringCount: 0,
+  permitsExpiredCount: 0,
 };
 
 /** Answers each url with a status and body chosen by the caller. */
@@ -66,26 +78,29 @@ describe("DashboardProjectClient", () => {
     expect(container.textContent).toContain("Retry");
   });
 
-  test("a failed permits read reads as an en-dash and 'could not load', never 0 / none due soon", async () => {
+  test("a failed read never renders the permits all-clear -- the specific lie this fixes", async () => {
+    // The figure now rides on the dashboard payload (F-27), so THAT is the
+    // read whose failure must not produce "0 — none due soon". The permits
+    // endpoint is answered 504 as well, to prove nothing on this screen asks
+    // it any more.
+    let askedPermits = false;
     routeFetch((url) => {
-      if (url.includes("/api/dashboard/project")) return { status: 200, body: DASHBOARD_OK };
-      if (url.includes("/api/permits")) return { status: 504, body: { error: "upstream gone" } };
+      if (url.includes("/api/permits")) askedPermits = true;
+      if (url.includes("/api/dashboard/project")) return { status: 504, body: { error: "upstream gone" } };
       return { status: 200, body: {} };
     });
 
     const { container } = render(<DashboardProjectClient projectId="p-cedar" />);
     await waitFor(() => {
-      expect(container.textContent).toContain("Permits Expiring");
+      expect(container.textContent).toContain("Couldn't load this project's dashboard");
     });
-    expect(container.textContent).toContain("could not load");
-    // The all-clear wording must be absent: it is the specific lie this fixes.
     expect(container.textContent).not.toContain("none due soon");
+    expect(askedPermits).toBe(false);
   });
 
-  test("a SUCCESSFUL permits read with genuinely none still says so -- the honest all-clear survives", async () => {
+  test("a SUCCESSFUL read with genuinely no permits due still says so -- the honest all-clear survives", async () => {
     routeFetch((url) => {
       if (url.includes("/api/dashboard/project")) return { status: 200, body: DASHBOARD_OK };
-      if (url.includes("/api/permits")) return { status: 200, body: { permits: [] } };
       return { status: 200, body: {} };
     });
 
@@ -93,6 +108,6 @@ describe("DashboardProjectClient", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("none due soon");
     });
-    expect(container.textContent).not.toContain("could not load");
+    expect(container.textContent).not.toContain("Couldn't load this project's dashboard");
   });
 });

@@ -134,6 +134,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
+import { invalidateShell, useShell } from "@/lib/shell-store";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 import {
   LEGACY_FALLBACK_MESSAGE,
   describeReadError,
@@ -284,7 +286,46 @@ type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
   tasks?: ApiTask[];
+  /** R67 F-26: the keyset position of the next page, or null at the end. */
+  nextCursor?: string | null;
 };
+
+// R67 F-26 (audit recommendation R-242). THE THREE NUMBERS THIS CHANGES.
+//
+// Task Master shows ten rows and was fetching FIFTY, on every navigation, at
+// 590-1740 ms -- and again after every Send, which is why the composer sat
+// empty and Send sat disabled for seconds with nothing to look at.
+//
+//   TASK_PAGE_SIZE   20, with an explicit "Show 20 more" at the foot of the
+//                    pane. Twenty covers the ten visible rows plus the group
+//                    the user is most likely to scroll into.
+//   POLL_*           after a Send the minted row goes in AT ONCE from the POST
+//                    response and only THAT row is polled -- fast while the
+//                    user is still watching, then slowly, and never at all once
+//                    the row reaches a terminal status.
+//   TASK_REVALIDATE  the full list is otherwise re-read on a five-minute
+//                    background schedule or an explicit refresh, not on every
+//                    navigation.
+const TASK_PAGE_SIZE = 20;
+/** The backend's own ceiling on ?limit=. A refresh may not ask for more. */
+const TASK_MAX_LIMIT = 200;
+const POLL_FAST_MS = 1_000;
+const POLL_FAST_FOR_MS = 10_000;
+const POLL_SLOW_MS = 5_000;
+/** Give up on a row that never settles, rather than polling for the life of the tab. */
+const POLL_GIVE_UP_MS = 5 * 60_000;
+const TASK_REVALIDATE_MS = 5 * 60_000;
+
+const TERMINAL_TASK_STATUSES = new Set(["done", "blocked"]);
+
+/** Which group a task row belongs to, from its status alone -- so an optimistic
+ *  row and a listed row are always placed by the same rule. */
+function groupForStatus(status?: string | null): "needsYou" | "running" | "done" | "blocked" {
+  if (status === "done") return "done";
+  if (status === "blocked") return "blocked";
+  if (status === "in_progress") return "running";
+  return "needsYou";
+}
 
 // M24: "Line 1 must START WITH A VERB from a CLOSED SET ... Six words the user
 // learns once." Task names are system-generated, which is exactly why the
@@ -513,6 +554,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // thing as the last ranking the server sent. See applyRanking() below.
   const [rankedPills, setRankedPills] = useState<RankedEntry[] | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
+  // R67 MERGE: `tasksError` is declared below, with lane D0's richer
+  // {status, message} shape -- the shared dictionary needs the status to
+  // decide whether a Retry could help at all.
+  //
+  // R67 F-26: the keyset position of the next page (null = this is the whole
+  // list, so no "Show 20 more" control is rendered at all), whether that page
+  // is in flight, when the list was last read in full, and which rows came from
+  // a Send rather than from the server.
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // A ref, not state: nothing RENDERS from "when did the list last load" -- it
+  // only decides whether the navigation effect should go to the network -- and
+  // a ref written inside loadTasks is read by that effect without adding a
+  // render or a dependency that would re-run it.
+  const tasksFetchedAtRef = useRef<number | null>(null);
+  /** How many "Show 20 more" pages the user has pulled, so a refresh can ask
+   *  for the list they are actually looking at rather than shrinking it. */
+  const extraPagesRef = useRef(0);
+  const optimisticIdsRef = useRef<Set<string>>(new Set());
   // R67 A-16 -- WHOSE STRIP IS THIS? The ranking is a statement about one
   // person's work, so the cache that paints it before the server answers is
   // keyed by the signed-in user. Resolved from this tab's own Supabase session,
@@ -619,6 +679,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   });
   const [tasksLoaded, setTasksLoaded] = useState(false);
 
+  // R67 F-19 (audit recommendation R-245). THE SHELL YIELDS TO THE FORM ON A
+  // CREATE ROUTE.
+  //
+  // This shell refetches its organisation, projects, tasks and pill ranking on
+  // every navigation -- 3.8-4.6 s to network idle -- INCLUDING on create
+  // forms, which need none of them: /permits/new needs a project id (already
+  // in the URL) and its own field lookups, and nothing else. Those shell calls
+  // were competing with the form's own for the browser's connections and for
+  // the main thread, on exactly the screens where the user is waiting to type.
+  //
+  // So on /new, /upload and /log-time the bootstrap is deferred to the first
+  // idle callback: the form mounts, focuses its first field and issues its own
+  // lookups first, and the shell fills in behind it. requestIdleCallback is
+  // not in Safari, hence the setTimeout(0) fallback -- which still yields a
+  // frame, which is the point. The 2 s timeout guarantees the rail is never
+  // left empty on a page the user keeps open.
+  // `pathname` is already resolved above (A-01 needs it for the composer).
+  const isCreateRoute = /\/(new|upload|log-time)$/.test(pathname ?? "");
+  const [bootstrapReady, setBootstrapReady] = useState(!isCreateRoute);
+
+  useEffect(() => {
+    if (bootstrapReady) return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(() => setBootstrapReady(true), { timeout: 2000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(() => setBootstrapReady(true), 0);
+    return () => clearTimeout(timer);
+  }, [bootstrapReady]);
+
   useEffect(() => {
     try {
       // A-14: the pins, under their own name, falling back once to the key they
@@ -679,6 +773,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
+  // *** MERGE NOTE (F-21 x WS-A A-14/A-16). ***
+  //
+  // These two items rebuilt the same loading path for different reasons, so the
+  // pieces are kept apart by what each is actually about.
+  //
+  // F-21 owns WHERE the data comes from: one GET /api/shell per session instead
+  // of /api/organization, /api/projects, /api/notifications, /api/pill-usage and
+  // /api/capability-tree on every navigation.
+  //
+  // A-14 and A-16 own WHAT IS DONE WITH IT: the ranking is never repainted under
+  // a moving finger, an identical ranking is not a repaint at all, the strip can
+  // paint from a per-user cache before the server answers, a failed organisation
+  // read is stated in the rail, and only a successful projects read may say the
+  // org has none.
+  //
+  // So A-16's loadOrgInfo()/loadProjects() pair is gone -- the bootstrap answers
+  // both, and answering them twice was the cost F-21 exists to remove -- while
+  // A-16's RETRY moved with them: readJsonWithRetry() now wraps the bootstrap
+  // fetch itself in src/lib/shell-store.ts, so "each call is attempted twice"
+  // still holds for the one call that replaced the four.
+
   // R67 A-14 -- WHEN A NEW RANKING MAY REPLACE WHAT IS ON SCREEN: NEVER, WHILE
   // THE USER IS LOOKING AT IT.
   //
@@ -729,64 +844,106 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setRankedPills(entries);
   }, []);
 
-  // F_025 fix: this used to run exactly once, inline in the mount effect
-  // below, with no way to re-invoke it. That made the account menu's
-  // identity a snapshot of whoever was signed in at the moment THIS TAB
-  // first mounted -- reproduced live: sign in as user A in one tab (menu
-  // correctly shows A), then in a SEPARATE tab of the SAME browser sign in
-  // as user B (Supabase's cookie-backed session is shared per-origin, so
-  // this silently replaces A's session for every open tab). The first tab,
-  // never having re-fetched, went on showing A indefinitely -- while a
-  // fresh `fetch("/api/organization")` issued from that exact same tab
-  // (same cookies) correctly returned B, because that route always reads
-  // the CURRENT request's session fresh. The mismatch was never in
-  // /api/organization or requireAuth() (both were already correct, per
-  // that route's `email: ctx.user!.email` straight off the verified JWT) --
-  // it was this component's `info` state going stale relative to the
-  // session that now owns the tab. Extracted to a stable callback so it can
-  // be re-run below on any Supabase auth-state change, not just on mount.
-  //
-  // R67 A-16 -- AND IT IS ATTEMPTED TWICE BEFORE ANY FALLBACK. A single failed
-  // read is usually a dropped request, not a broken backend: this product runs
-  // on site connections and all four of the shell's reads happen in the same
-  // first second of a page load, which is exactly when a flaky link drops one.
-  // One retry, one second later, removes most of the degraded states the user
-  // would otherwise have to reload out of. The retry policy itself is pure and
-  // lives in src/lib/shell-resilience.ts, so "each call is attempted twice" is
-  // asserted rather than described.
-  const loadOrgInfo = useCallback(async () => {
-    const read = await readJsonWithRetry<OrgInfo>("/api/organization");
-    if (!read.ok) {
-      setOrgFailed(true);
-      noteFailure("your organisation", read.error);
-      return;
-    }
-    setOrgFailed(false);
-    if (read.data?.organization?.name) setInfo(read.data);
-  }, [noteFailure]);
 
-  const loadProjects = useCallback(async () => {
-    const read = await readJsonWithRetry<Project[] | { projects?: Project[] }>("/api/projects");
-    if (!read.ok) {
-      noteFailure("your projects", read.error);
-      return;
-    }
-    const d = read.data;
-    const list: Project[] = Array.isArray(d) ? d : ((d as { projects?: Project[] })?.projects ?? []);
-    if (!Array.isArray(list)) return;
-    setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-    // Only a REAL, successful read can say the org has no projects. An
-    // empty list before the call answers must never produce the "Create
-    // a project first" sentence -- that would be a confident empty state
-    // standing in for "not loaded yet", the exact defect this shell has
-    // been corrected for twice already.
-    setProjectsLoaded(true);
-  }, [noteFailure]);
+  // R67 F-21 (R-236). THE SHELL'S SIX LOOKUPS ARE NOW ONE CALL.
+  //
+  // This component used to fetch /api/organization (two or three times),
+  // /api/projects, /api/notifications, /api/pill-usage and, through the chat
+  // provider, /api/capability-tree ON EVERY NAVIGATION -- 3.8-4.6 s to network
+  // idle for six answers that do not change between /permits and /scope. They
+  // now come from GET /api/shell once per session, held in the store in
+  // src/lib/shell-store.ts, which revalidates in the BACKGROUND on each key's
+  // own schedule (5 min for projects and the pill ranking, 24 h for the
+  // capability tree and currencies) and only when a write says to.
+  //
+  // F_025 IS PRESERVED, and this is the part that must not be lost: the
+  // account menu's identity used to be a snapshot of whoever was signed in
+  // when the tab first mounted. Sign in as A here, then as B in another tab of
+  // the same browser (@supabase/ssr persists the session in COOKIES, which
+  // GoTrueClient's localStorage `storage`-event sync never sees), and this tab
+  // kept showing A forever. So the store is still refreshed on this tab's own
+  // auth-state change AND on focus/visibility -- the cases where the identity
+  // under us can have moved on with no event of any kind.
+  const shell = useShell({ enabled: bootstrapReady });
 
   useEffect(() => {
-    void loadOrgInfo();
-    void loadProjects();
-  }, [loadOrgInfo, loadProjects]);
+    if (!shell.loaded) return;
+    if (shell.organization?.name) {
+      setInfo({
+        organization: { id: shell.organization.id, name: shell.organization.name },
+        role: shell.role ?? undefined,
+        email: shell.email ?? undefined,
+      });
+    }
+    setProjects((shell.projects ?? []).map((p) => ({ id: p.id, name: p.name })));
+    // Only a REAL, successful read can say the org has no projects. An empty
+    // list before the call answers must never produce the "Create a project
+    // first" sentence -- that would be a confident empty state standing in for
+    // "not loaded yet", the exact defect this shell has been corrected for
+    // twice already. The bootstrap reports the projects key's own failure, so
+    // this is set from that and not merely from "the call returned".
+    if (!shell.errors.projects) setProjectsLoaded(true);
+    // A-16: the organisation read failed. The rail says so, in the band M24
+    // says is never covered, with the one control that can change it.
+    setOrgFailed(Boolean(shell.errors.organization));
+    // A-16: and the RANKING's own failure is separate -- the cached strip
+    // survives it. Setting this from the bootstrap's per-key error is what
+    // keeps "the pill ranking could not be read" distinct from "this user has
+    // earned no pills yet", which look identical on screen otherwise.
+    setRankingFailed(Boolean(shell.errors.pillUsage));
+    if (Array.isArray(shell.pillUsage)) {
+      // R67 A-14/A-16: the bootstrap's ranking goes through applyRanking(), not
+      // straight into state. That is what keeps the two rules the ranking has:
+      // an IDENTICAL list must not repaint the strip, and a list that arrives
+      // while the user is already looking at the cards is DEFERRED rather than
+      // moved under their finger. F-21 changed where the ranking comes from --
+      // one bootstrap instead of a per-navigation /api/pill-usage -- and
+      // changed nothing about when it is allowed on screen.
+      const entries = shell.pillUsage.map((p) => ({
+        pillKey: p.pillKey,
+        label: p.label ?? null,
+        pinned: Boolean(p.pinned),
+      })) as RankedEntry[];
+      // A-07/A-16: cache it BEFORE deciding whether to paint it. The cache is
+      // for the next first render, under this user's own key; A-14's rule
+      // decides whether it may replace what is on screen NOW.
+      serverAnsweredRef.current = true;
+      latestServerRankingRef.current = entries;
+      persistRanking();
+      applyRanking(entries);
+      // A-08: no recent chains is a normal first week and must render as
+      // "role cards only", never as an error and never as a placeholder.
+      setRecentChains(
+        (shell.recentChains ?? []).map((c) => ({
+          fullChain: c.fullChain,
+          label: c.label,
+          steps: (c.steps ?? []) as RecentCardView["steps"],
+          projectId: c.projectId ?? null,
+          outcome: (c.outcome ?? "ok") as RecentCardView["outcome"],
+        }))
+      );
+      // R53's payload carries functionId per pill. Held in a ref so the submit
+      // handler can read it without re-rendering the strip.
+      pillFnRef.current = Object.fromEntries(
+        shell.pillUsage.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
+      );
+    }
+    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01: a half-loaded shell
+    // says so, with the backend's own words, instead of rendering an em-dash
+    // and an empty project switcher as if that were the answer.
+    const labels: Record<string, string> = {
+      organization: "your organisation",
+      projects: "your projects",
+      pillUsage: "your ranked modules",
+      notifications: "your notifications",
+      capabilityTree: "your module list",
+      currencies: "your currencies",
+      shell: "your workspace",
+    };
+    for (const [key, detail] of Object.entries(shell.errors)) {
+      noteFailure(labels[key] ?? key, detail);
+    }
+  }, [shell.loaded, shell.organization, shell.projects, shell.pillUsage, shell.recentChains, shell.role, shell.email, shell.errors, noteFailure, applyRanking, persistRanking]);
 
   // R67 A-16 -- WHOSE RANKING IS CACHED. Read from this tab's own Supabase
   // session, which is the identity every server read above is made under. The
@@ -804,10 +961,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
-  // reports a session change -- a sign-in/sign-out in this same tab (also
-  // covers a token silently refreshing to the same user; re-fetching then
-  // is a harmless no-op, not a reason to special-case which events fire).
+  const refreshShell = shell.refresh;
+
+  // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
     const supabase = createClient();
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
@@ -816,14 +972,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // too -- a sign-in as somebody else must not leave the previous user's
         // ranking on screen.
         setUserId(session?.user?.id ?? null);
-        void loadOrgInfo();
+        // F-21: refreshing the bootstrap is what A-16's loadOrgInfo() call did
+        // here, for all six answers rather than one.
+        void refreshShell();
       } else if (event === "SIGNED_OUT") {
         setInfo(null);
         setUserId(null);
+        // Covers the sign-out that happened in ANOTHER tab as well as this
+        // one's own: the cookie is shared by every tab, so whichever tab sees
+        // the event first must clear it.
+        rememberSelectedProject(null);
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // A-16 -- THE CACHE FOLLOWS THE IDENTITY. Once the user is known, the strip
   // is repainted from THEIR cached ranking; if this browser has none for them,
@@ -862,7 +1024,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // actually looks at it again.
   useEffect(() => {
     const onFocusOrVisible = () => {
-      if (document.visibilityState === "visible") void loadOrgInfo();
+      if (document.visibilityState === "visible") void refreshShell();
     };
     window.addEventListener("focus", onFocusOrVisible);
     document.addEventListener("visibilitychange", onFocusOrVisible);
@@ -870,7 +1032,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", onFocusOrVisible);
       document.removeEventListener("visibilitychange", onFocusOrVisible);
     };
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
@@ -888,6 +1050,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
   // carry a projectId, not a name.
   //
+  // R67 D-03: BOQ_LINE_NOT_FOUND's sentence names the project ("There is no
+  // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
+  // carry a projectId, not a name.
+  //
   // A PLAIN DEPENDENCY, not a ref. This lane held the list in a ref so that
   // loadTasks could keep a stable identity; after the WS-A merge loadTasks no
   // longer builds rows at all -- it stores the groups RAW and the rows are
@@ -900,108 +1066,233 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [projects]
   );
 
-  // A-16: attempted twice, one second apart, before the pane admits a failure
-  // -- and the pane's Retry now calls THIS, not router.refresh(). The refresh
-  // re-rendered a server component that does not own this list, so the one
-  // control offered on a failed read could not actually retry the read.
+  // R67 MERGE (lane D0 x lane F2). Three items meet in this one function and
+  // all three survive:
   //
-  // R67 D-55/D-65: what a failure LEAVES BEHIND is as important as that it is
-  // reported. The status and the backend's own words are kept whole for the
-  // shared dictionary; the counts are forgotten rather than kept, because a
-  // badge left over from the last successful read asserts a number THIS read
-  // did not confirm; and the rows are NOT cleared, so a failed refresh leaves
-  // what was true a minute ago on screen, greyed and dated, instead of an
-  // empty pane.
-  const loadTasks = useCallback(async () => {
-    const read = await readJsonWithRetry<ApiTasks>("/api/tasks?limit=50");
-    if (!read.ok) {
-      setTasksError({ status: read.status, message: read.error });
-      setCounts({ home: null, approval: null, queue: null, done: null });
-      return;
+  //   * A-16 -- attempted twice, one second apart, before the pane admits a
+  //     failure, and the pane's Retry calls THIS rather than router.refresh(),
+  //     which re-rendered a server component that does not own this list.
+  //   * D-55/D-65 -- what a failure LEAVES BEHIND. The status and the
+  //     backend's own words are kept whole for the shared dictionary; the
+  //     COUNTS are forgotten rather than kept, because a badge left over from
+  //     the last successful read asserts a number THIS read did not confirm;
+  //     and the rows are NOT cleared, so a failed refresh leaves what was true
+  //     a minute ago on screen, greyed and dated, instead of an empty pane.
+  //   * F-26 -- the PAGING. A cursor appends a page instead of replacing the
+  //     pane, so "Show 20 more" grows the list the user is reading, and a
+  //     refresh asks for as many rows as they currently have rather than
+  //     collapsing sixty back to twenty under their cursor.
+  //
+  // They compose cleanly: the retry wraps whichever page is being asked for,
+  // and the failure rules apply to a first page only -- a failed APPEND leaves
+  // the list exactly as it was and says so, because the rows already on screen
+  // are still correct.
+  const loadTasks = useCallback(async (cursor?: string) => {
+    const append = Boolean(cursor);
+    if (append) setLoadingMore(true);
+    try {
+      // A REFRESH asks for as many rows as the user currently has on screen,
+      // not for one page. Otherwise a five-minute background re-read would
+      // collapse a list they had expanded to sixty rows back down to twenty,
+      // under their cursor, for no reason they could see.
+      const limit = append
+        ? TASK_PAGE_SIZE
+        : Math.min(TASK_MAX_LIMIT, TASK_PAGE_SIZE * (1 + extraPagesRef.current));
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (cursor) qs.set("cursor", cursor);
+      // readJsonWithRetry() reads the STATUS before the body, which is what
+      // stops an error body that happens to parse as JSON from becoming a
+      // confident empty list.
+      const read = await readJsonWithRetry<ApiTasks>(`/api/tasks?${qs.toString()}`);
+      if (!read.ok) {
+        // D-55: the transport's own status AND words, for the one dictionary.
+        setTasksError({ status: read.status, message: read.error });
+        // A failed APPEND must not blank the counts describing rows that are
+        // still correct on screen; a failed FULL read must, because those
+        // badges would otherwise assert a total this read did not confirm.
+        if (!append) setCounts({ home: null, approval: null, queue: null, done: null });
+        return;
+      }
+      const data = (read.data ?? {}) as ApiTasks;
+      setTasksError(null);
+      setTasksLoadedAt(new Date());
+      setNextCursor(data.nextCursor ?? null);
+      setTasksLoaded(true);
+      // Counts are refreshed on an APPENDED page too. They describe the whole
+      // set (the backend computes them from a grouped aggregate, not from the
+      // page it just returned), so a "Show 20 more" that left them alone would
+      // freeze the badges at whatever the first page happened to see -- the
+      // same disagreement between the tabs and the list under them that A-01's
+      // comment below says can never happen.
+      setCounts({
+        home: Number(data.counts?.total) || 0,
+        approval: Number(data.counts?.needsYou) || 0,
+        queue: Number(data.counts?.running) || 0,
+        done: Number(data.counts?.done) || 0,
+      });
+      const g = data.groups ?? {};
+      // R67 A-01: kept RAW. The rows a tab shows are derived per tab further
+      // down, because the five header tabs used to be pure decoration -- every
+      // one of them rendered the same two lists, so clicking "Completed"
+      // changed nothing on screen.
+      //
+      // R67 F-26: and a page is MERGED into what is already held, by id. A
+      // blind concat would render a row twice, and a blind replace would drop
+      // the optimistic row a Send just inserted -- making a successful Send
+      // look lost until the next full read.
+      const mergeRaw = (previous: ApiTask[], page: ApiTask[]) => {
+        if (append) {
+          const seen = new Set(previous.map((t) => t.id));
+          return [...previous, ...page.filter((t) => !seen.has(t.id))];
+        }
+        const pageIds = new Set(page.map((t) => t.id));
+        // A row the user just created that this page does not yet carry stays
+        // put; the server's own version replaces it as soon as it appears.
+        return [...previous.filter((t) => optimisticIdsRef.current.has(t.id) && !pageIds.has(t.id)), ...page];
+      };
+      setTaskGroups((prev) => ({
+        needsYou: mergeRaw(prev.needsYou, g.needsYou ?? []),
+        running: mergeRaw(prev.running, g.running ?? []),
+        done: mergeRaw(prev.done, g.done ?? []),
+        blocked: mergeRaw(prev.blocked, g.blocked ?? []),
+        all: mergeRaw(prev.all, data.tasks ?? []),
+      }));
+      if (append) extraPagesRef.current += 1;
+      else tasksFetchedAtRef.current = Date.now();
+    } catch {
+      setTasksError({ status: null, message: null });
+      if (!append) setCounts({ home: null, approval: null, queue: null, done: null });
+    } finally {
+      if (append) setLoadingMore(false);
     }
-    const data = read.data ?? ({} as ApiTasks);
-    setTasksError(null);
-    setTasksLoadedAt(new Date());
-    setCounts({
-      home: Number(data.counts?.total) || 0,
-      approval: Number(data.counts?.needsYou) || 0,
-      queue: Number(data.counts?.running) || 0,
-      done: Number(data.counts?.done) || 0,
-    });
-    setTasksLoaded(true);
-    const g = data.groups ?? {};
-    // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
-    // (below), because the five header tabs used to be pure decoration --
-    // every one of them rendered the same two lists, so clicking
-    // "Completed" changed nothing on screen.
-    setTaskGroups({
-      needsYou: g.needsYou ?? [],
-      running: g.running ?? [],
-      done: g.done ?? [],
-      blocked: g.blocked ?? [],
-      all: data.tasks ?? [],
+  }, []);
+
+  // R67 F-21: the pill ranking moved into the /api/shell bootstrap above --
+  // it was a separate per-navigation call for a list that changes when the
+  // user clicks a pill, not when they change route.
+  //
+  // R67 F-26: and tasks no longer re-read on every navigation either. This
+  // shell wraps all 53 app routes, so that read fired on every route change for
+  // a list that changes when the USER acts -- and a Send now puts its own row
+  // in directly. The full list is read once per mount, re-read on a navigation
+  // that finds it older than five minutes, AND on a real five-minute timer.
+  useEffect(() => {
+    if (!bootstrapReady) return;
+    if (tasksFetchedAtRef.current !== null && Date.now() - tasksFetchedAtRef.current < TASK_REVALIDATE_MS) return;
+    void loadTasks();
+  }, [loadTasks, bootstrapReady, pathname]);
+
+  // The staleness check above only runs when something re-renders this effect
+  // -- in practice, a navigation. A user who leaves Task Master open on one
+  // route never navigates, so without this timer their pane would never
+  // refresh at all, and a row another user or an executor moved would stay
+  // wrong on screen indefinitely. (Single-row polling covers only the task
+  // this user just sent.) Skipped while the tab is hidden: a background tab
+  // waking up to fetch is cost with no reader, and the focus/visibility
+  // handler above already refreshes on return.
+  useEffect(() => {
+    if (!bootstrapReady) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void loadTasks();
+    }, TASK_REVALIDATE_MS);
+    return () => clearInterval(id);
+  }, [loadTasks, bootstrapReady]);
+
+  // R67 F-26: place ONE task, by id, in whichever group its status belongs to
+  // -- used by both the optimistic insert after a Send and the single-task
+  // poll, so a task can never end up in two groups or in the wrong one.
+  //
+  // It writes the RAW task into A-01's groups rather than a rendered row: the
+  // five header tabs derive their own rows from these groups, so a row built
+  // here would be invisible to every tab but the one it was built for.
+  //
+  // `pinToNeedsYou` is the Send case: the task the user just submitted stays at
+  // the top of "Needs you" while it is still executing, because that is the row
+  // they are watching. Once it settles it takes its real group.
+  const upsertTask = useCallback((api: ApiTask, pinToNeedsYou: boolean) => {
+    const status = api.status ?? "";
+    const settled = TERMINAL_TASK_STATUSES.has(status);
+    const group = groupForStatus(status);
+    const pinned = pinToNeedsYou && !settled;
+    // A pinned task is shown under "Needs you" until it settles, whatever its
+    // status says, so that is the group it is filed under while pinned.
+    const target: keyof Omit<TaskGroups, "all"> = pinned ? "needsYou" : group;
+    setTaskGroups((prev) => {
+      const drop = (list: ApiTask[]) => list.filter((t) => t.id !== api.id);
+      const next: TaskGroups = {
+        needsYou: drop(prev.needsYou),
+        running: drop(prev.running),
+        done: drop(prev.done),
+        blocked: drop(prev.blocked),
+        all: [api, ...drop(prev.all)],
+      };
+      next[target] = [api, ...next[target]];
+      return next;
     });
   }, []);
 
-  // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-  // order, never re-sorted here. isNewUser true means "nothing earned yet",
-  // which must not look like a failed call.
-  //
-  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-  // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-  // org/projects effect above was fixed for in the first PR, just never
-  // applied here. The backend's own message is kept.
-  //
-  // A-16: attempted twice before any fallback, and THE CACHED RANKING SURVIVES
-  // A FAILURE -- what is on screen is a real answer from a previous visit, and
-  // replacing it with a shorter fallback set because one request failed would
-  // be the "two different pill sets" defect wearing an error's clothes.
-  const loadRanking = useCallback(async () => {
-    const read = await readJsonWithRetry<PillPayload>("/api/pill-usage?limit=6");
-    if (!read.ok) {
-      setRankingFailed(true);
-      noteFailure("your ranked modules", read.error);
-      return;
-    }
-    const d = read.data;
-    if (!Array.isArray(d?.pills)) return;
-    setRankingFailed(false);
-    const entries = d.pills.map((p) => ({
-      pillKey: p.pillKey,
-      label: p.label ?? null,
-      pinned: Boolean(p.pinned),
-    }));
-    // A-07/A-16: cache it BEFORE deciding whether to paint it. The cache is
-    // for the next first render, under this user's own key; A-14's rule
-    // decides whether it may replace what is on screen NOW.
-    serverAnsweredRef.current = true;
-    latestServerRankingRef.current = entries;
-    persistRanking();
-    applyRanking(entries);
-    // A-08: no recent chains is a normal first week and must render as
-    // "role cards only", never as an error and never as a placeholder.
-    setRecentChains(
-      Array.isArray(d.recentChains)
-        ? d.recentChains.map((c) => ({
-            fullChain: c.fullChain,
-            label: c.label,
-            steps: c.steps ?? [],
-            projectId: c.projectId ?? null,
-            outcome: c.outcome ?? "ok",
-          }))
-        : []
-    );
-    // R53's payload carries functionId per pill. Held in a ref so the
-    // submit handler can read it without re-rendering the strip.
-    pillFnRef.current = Object.fromEntries(
-      d.pills.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
-    );
-  }, [applyRanking, noteFailure, persistRanking]);
-
+  // Every scheduled poll, so none of them outlives the component.
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   useEffect(() => {
-    void loadTasks();
-    void loadRanking();
-  }, [loadTasks, loadRanking]);
+    const timers = pollTimersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
+  // R67 F-26: poll ONE row. Fast (1 s) while the user is still watching, then
+  // slowly (5 s), and never once the row is done or blocked. A row that never
+  // settles is abandoned after five minutes rather than polled for the life of
+  // the tab. Self-scheduling through a ref so the callback can re-arm itself
+  // without re-creating on every tick.
+  const pollTaskRef = useRef<(taskId: string, startedAt: number) => void>(() => {});
+  const pollTask = useCallback(
+    (taskId: string, startedAt: number) => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= POLL_GIVE_UP_MS) {
+        optimisticIdsRef.current.delete(taskId);
+        return;
+      }
+      const timer = setTimeout(async () => {
+        pollTimersRef.current.delete(timer);
+        try {
+          const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+          const body = await res.json().catch(() => null);
+          const task = res.ok ? (body?.task as ApiTask | undefined) : undefined;
+          if (task) {
+            upsertTask(task, true);
+            if (TERMINAL_TASK_STATUSES.has(task.status ?? "")) {
+              // Settled. Stop polling, and stop protecting it from the next
+              // full list read -- the server now has the same row.
+              optimisticIdsRef.current.delete(taskId);
+              return;
+            }
+          }
+        } catch {
+          // A poll that could not reach the service is not a failure the user
+          // needs to see -- the row is still on screen, and the next tick tries
+          // again. The list's own error surface covers a real outage.
+        }
+        pollTaskRef.current(taskId, startedAt);
+      }, elapsed < POLL_FAST_FOR_MS ? POLL_FAST_MS : POLL_SLOW_MS);
+      pollTimersRef.current.add(timer);
+    },
+    [upsertTask]
+  );
+  useEffect(() => {
+    pollTaskRef.current = pollTask;
+  }, [pollTask]);
+
+  // *** MERGE NOTE (F-21 x A-08/A-16). ***
+  //
+  // A-16's loadRanking() lived here and read /api/pill-usage?limit=6 on every
+  // navigation. F-21 folded that exact upstream call into the /api/shell
+  // bootstrap, so the function is gone and the effect above applies its result
+  // instead -- through the same applyRanking()/persistRanking() pair, so A-14's
+  // "never repaint under a moving finger" and A-16's per-user cache are
+  // untouched. `label`, `pinned` and `recentChains` were added to the bootstrap
+  // payload for this, rather than the call being made a second time.
 
   // R67 A-03 -- ONE PROJECT, AND THE SCREEN'S ANSWER WINS.
   //
@@ -1795,15 +2086,88 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(null);
       setArmedCard(null);
       setAwaitingText(false);
-      // The minted task must APPEAR. That is the last step of R-80 and the
-      // only part of the path a unit test cannot stand in for.
-      await loadTasks();
+      // R67 F-21: a Send re-ranks the pills server-side, so mark that ONE key
+      // stale rather than re-reading the whole shell.
+      invalidateShell("pillUsage");
+
+      // R67 F-26 (R-242). THE MINTED TASK MUST APPEAR -- and it now appears
+      // IMMEDIATELY, from this response, instead of after a 590-1740 ms re-read
+      // of fifty rows during which the pane showed nothing new.
+      //
+      // verdict is PER TASK, not per submission (see this function's own
+      // comment above), so every minted row is placed independently; a
+      // chat-only submission mints none and nothing is inserted.
+      //
+      // R67 MERGE (lane B x lane F2): the per-task shape is B-01's, not the
+      // one F-26 was written against. `error: string` is GONE from
+      // TaskOutcome on the VERIDIAN side -- deliberately, so no caller can
+      // render a driver message verbatim -- and the structured
+      // {code, missing, context} `failure` replaces it. The optimistic row
+      // therefore carries `failure`, which is exactly what toTaskRow() already
+      // renders through task-errors.ts. Keeping `error` here would not have
+      // compiled, and mapping it to `legacyError` would have been worse: it
+      // would route a brand-new failure through the LEGACY prose path.
+      const minted = ((d?.tasks ?? []) as {
+        taskId: string;
+        functionId?: string | null;
+        status?: string | null;
+        failure?: { code?: string | null; missing?: string[]; context?: Record<string, string | number | null> | null } | null;
+        segmentText?: string | null;
+      }[]).filter((t) => typeof t.taskId === "string" && t.taskId);
+
+      let addedNeedsYou = 0;
+      let addedRunning = 0;
+      for (const task of minted) {
+        const api: ApiTask = {
+          id: task.taskId,
+          projectId,
+          functionId: task.functionId ?? null,
+          status: task.status ?? "in_progress",
+          failure: task.failure ?? null,
+          rawInput: task.segmentText ?? typed,
+          mode,
+        };
+        optimisticIdsRef.current.add(task.taskId);
+        upsertTask(api, true);
+        const group = groupForStatus(api.status);
+        if (group === "needsYou" || group === "blocked") addedNeedsYou += 1;
+        if (group === "running") addedRunning += 1;
+        // Only a row that has not settled is worth polling. runDirectTask
+        // executes synchronously, so a pill submission is frequently already
+        // done or blocked by the time this response lands.
+        if (!TERMINAL_TASK_STATUSES.has(api.status ?? "")) pollTaskRef.current(task.taskId, Date.now());
+      }
+      // The badge counts move with the rows, from THIS response -- reading them
+      // back from a second endpoint is how tabs and list drift apart.
+      if (minted.length > 0) {
+        // R67 MERGE (D-55 x F-26): a badge is null when the last read did not
+        // establish it, and a Send does not establish it either -- adding to
+        // an unknown total would mint the very number D-55 removed. So the
+        // optimistic bump applies only where there IS a count to bump.
+        setCounts((c) => ({
+          ...c,
+          home: c.home === null ? null : c.home + minted.length,
+          approval: c.approval === null ? null : c.approval + addedNeedsYou,
+          queue: c.queue === null ? null : c.queue + addedRunning,
+          // `done` is carried through untouched: a Send mints work, it never
+          // completes any, and A-10 reads counts.done as "has this account ever
+          // finished a task".
+        }));
+      }
+      // (A-10's setArmedCard/setAwaitingText resets moved to the top of this
+      // block; A-16's `await loadTasks()` is deliberately gone -- the minted
+      // rows are inserted from THIS response above, which is F-26's whole
+      // point. "The minted task must APPEAR" still holds, sooner.)
     } catch {
       setSubmitError("Couldn't reach the task service.");
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks, router]);
+    // R67 MERGE (lane B x lane F2): the union of both lanes' dependencies. This
+    // body still calls loadTasks() (B-07's verdict branch) and router.push()
+    // (B-07's COMMAND verb) as well as upsertTask() (F-26's optimistic
+    // insert), so all three must be listed or this closure goes stale.
+  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, upsertTask, loadTasks, router]);
 
   // A-07: pinning is how a user defeats the 7-day decay for work they know is
   // periodic (a month-end report used heavily on the 30th and invisible from
@@ -2281,6 +2645,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // for the full mechanism this constant accounts for.
       composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
       topRail={
+        // MERGE NOTE: A-13's rail replaces F-18's inline cookie write here.
+        // chooseProject() already calls writeStoredProjectId() -- the one
+        // writer rememberSelectedProject() now delegates to -- and also syncs
+        // the URL, which the inline version did not. A-16's "Retry" calls
+        // refreshShell(), since F-21 replaced loadOrgInfo() with the
+        // bootstrap, and the bell renders from that same bootstrap.
+        //
         // The wrapper exists so the composer can put keyboard focus on the
         // project control when a click could not proceed without one (A-03):
         // the rail is where that decision is made, so that is where the user
@@ -2302,7 +2673,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 {orgLabel.retry && (
                   <button
                     type="button"
-                    onClick={() => void loadOrgInfo()}
+                    onClick={() => void refreshShell()}
                     className="veri-view-tab"
                     style={{ minHeight: 24 }}
                   >
@@ -2333,7 +2704,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             // switcher of their own.
             openSignal={switcherOpenSignal}
             search={<SearchTrigger />}
-            alerts={<NotificationBell />}
+            alerts={<NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />}
             account={<AccountMenu email={info?.email} />}
           />
         </div>
@@ -2430,6 +2801,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
         )}
           </div>
+          {/* R67 F-26 (R-242): the pane now loads 20 rows, not 50, and says so.
+              Rendered ONLY when the backend handed back a cursor -- a control
+              that loads nothing is a dead end, and M24 forbids dead ends. It
+              sits below the kit's TaskMaster rather than inside it, so no kit
+              file is forked for one button. */}
+          {!tasksError && nextCursor && (
+            <div className="shrink-0 border-t px-2 py-1.5" style={{ borderColor: "var(--color-ct-border)" }}>
+              <button
+                type="button"
+                className="veri-view-tab w-full"
+                onClick={() => void loadTasks(nextCursor)}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading…" : `Show ${TASK_PAGE_SIZE} more`}
+              </button>
+            </div>
+          )}
         </div>
       }
       composer={

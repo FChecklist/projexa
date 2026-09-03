@@ -10,6 +10,15 @@
 // logged yet." on its own behalf. These tests pin the replacement: the pane
 // takes the read's STATE, the empty sentence needs "ready", and the kit is
 // never handed an empty row set at all.
+//
+// R67 MERGE (lane F2's F-24, audit R-240). The BOQ-line label is no longer
+// resolved from a client-side lookup map: VERIDIAN LEFT JOINs both names into
+// the progress query and sends boqItemCode / boqDescription with each entry
+// (compliance-tracker #1579), which is what deleted the /api/scope +
+// /api/scope/{id} pair this screen used to make to fill one column. The
+// fixture below therefore carries the names ON the row, and the assertions
+// keep exactly the properties they were written for. activityNameById stays as
+// the FALLBACK it now is, for a row whose activityName did not come back.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -34,11 +43,14 @@ const ENTRY = {
   percentComplete: "40",
   entryBasis: "quantity",
   remarks: null,
+  // F-24: resolved server-side and sent with the row.
+  activityName: "Blockwork",
+  boqItemCode: "A.1",
+  boqDescription: "Walls",
 };
 
 const LOOKUPS = {
   activityNameById: new Map([["act-1", "Blockwork"]]),
-  boqLineDescriptionById: new Map([["li-1", "A.1 -- Walls"]]),
 };
 
 describe("WorkProgressListClient", () => {
@@ -91,8 +103,38 @@ describe("WorkProgressListClient", () => {
     );
 
     expect(container.textContent).toContain("Blockwork");
-    expect(container.textContent).toContain("A.1 -- Walls");
+    // F-24's join, rendered: "<code> — <description>", never the raw id.
+    expect(container.textContent).toContain("A.1 — Walls");
+    expect(container.textContent).not.toContain("li-1");
     expect(container.textContent).toContain("1 record");
+  });
+
+  test("a row whose BOQ line was deleted shows an em-dash, never the raw id (F-24)", () => {
+    const { container } = render(
+      <WorkProgressListClient
+        entries={[{ ...ENTRY, boqItemCode: null, boqDescription: null }]}
+        {...LOOKUPS}
+        status="ready"
+        projectId="p-cedar"
+        projectName="Cedar Heights Villa - Phase 1"
+      />
+    );
+
+    expect(container.textContent).not.toContain("li-1");
+  });
+
+  test("an entry whose activityName did not come back falls back to the lookup", () => {
+    const { container } = render(
+      <WorkProgressListClient
+        entries={[{ ...ENTRY, activityName: null }]}
+        {...LOOKUPS}
+        status="ready"
+        projectId="p-cedar"
+        projectName="Cedar Heights Villa - Phase 1"
+      />
+    );
+
+    expect(container.textContent).toContain("Blockwork");
   });
 
   test("rows already on screen survive a failed refresh, dated rather than blanked", () => {
