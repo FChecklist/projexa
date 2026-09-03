@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
   if (kind) forward.set("kind", kind);
   const discipline = searchParams.get("discipline");
   if (discipline) forward.set("discipline", discipline);
+  // R67 D-12: status, like kind and discipline. Dropping it here is what made
+  // the sentence above ("exactly the register on screen") untrue -- the screen
+  // filters to Current by default, so an Export that dropped `status` handed
+  // the reader a workbook of superseded revisions under the same filename.
+  const status = searchParams.get("status");
+  if (status) forward.set("status", status);
 
   try {
     const upstream = await callVeridianRaw(`/drawings/export?${forward.toString()}`, { organizationId: ctx.organizationId! });
