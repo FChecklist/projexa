@@ -12,7 +12,11 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
-mock.module("next/navigation", () => ({ useRouter: () => ({ push: () => {}, refresh: () => {} }) }));
+// usePathname: lane A's <ObjectContext> reads it to register this screen.
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: () => {}, refresh: () => {} }),
+  usePathname: () => "/labour/roster-1",
+}));
 mock.module("@/lib/currency", () => ({ currencyLabel: () => "AED ", useCurrencies: () => [] }));
 
 const RosterObjectClient = (await import("./RosterObjectClient")).default;

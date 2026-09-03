@@ -20,7 +20,13 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 // Mocked BEFORE the component is imported below. ScopeObjectClient calls
 // useRouter() for Back/Create Revision/Compare, and toasts on a failed inline
 // budget save -- neither has a real provider outside a Next.js app tree.
-mock.module("next/navigation", () => ({ useRouter: () => ({ push: mock(() => {}) }) }));
+// usePathname: lane A's <ObjectContext> (shell-screen-context) reads it to
+// register this screen with the shell. Stubbed with this screen's own real
+// route so the registration is exercised rather than skipped.
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: mock(() => {}) }),
+  usePathname: () => "/scope/boq-1",
+}));
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
 const ScopeObjectClient = (await import("./ScopeObjectClient")).default;
