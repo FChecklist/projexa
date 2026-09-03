@@ -37,16 +37,23 @@
 // 40%-complete AED 4,000,000 one. It now mounts CategoryDistributionCharts --
 // the same component and the same server-side arithmetic the company
 // hierarchy uses -- so category SIZE and category PROGRESS are read together.
+// R67 E-38 (R-270 / R-296): EVERY TILE IS A REAL LINK WITH ONE ASSERTED
+// DESTINATION. The five KPI tiles were <button>s calling router.push(), and
+// R-270 recorded one of them resolving to a NEIGHBOUR's destination -- a class
+// of bug an href cannot have. They are now single Next <Link>s
+// (ProjectKpiTile, the D-09 fork of the kit's KpiCard), each carrying
+// projectId, except the Permits tile in its FAILED state, whose job is to
+// retry its own read rather than to navigate.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
-  KpiCard,
   BulletChart,
   LineChart,
   LinkListCard,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+import { ProjectKpiTile } from "@/components/screens/ProjectKpiTile";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
 import {
   NO_PROGRESS_CAPTION,
@@ -189,7 +196,10 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     dashboard.expenses,
     dashboard.budget,
     boqBudget,
-    `/scope?projectId=${projectId}`,
+    {
+      budgets: `/budgets?projectId=${projectId}`,
+      setBudget: `/budgets/new?projectId=${projectId}`,
+    },
     (v) => money(v ?? 0, currency)
   );
   const primaryTrend = primaryTrendLabel(
@@ -207,7 +217,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       exportAction={{ label: "Export", disabledReason: "Not yet available" }}
       oneNumber={
-        <KpiCard
+        <ProjectKpiTile
           size="primary"
           // CONS-01 (R46 P4 consistency sweep): relabelled from "% Complete
           // by Value" to spell out "BOQ" -- this KPI's onClick below sends
@@ -225,19 +235,25 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           trend={{ direction: "flat", tone: primaryTrend.tone, label: primaryTrend.label }}
           baseline={hasEv ? `of ${money(dashboard.contractValue!, currency)} contract value` : ""}
           visual={hasEv ? <BulletChart value={dashboard.earnedValue!} target={dashboard.contractValue!} unit="" /> : undefined}
-          // % complete -> ANALYTICAL work-progress, filtered to this project (DASHBOARD.PROJECT's own row)
-          onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)}
+          // R67 E-38: the NUMBER'S BREAKDOWN, which is the Work Progress
+          // Report's scope view -- this percentage is earned value over
+          // contract value, and the scope view is the line-by-line table whose
+          // Grand Total is exactly those two figures (D-02's one report). It
+          // used to go to the Analytics tab, which shows a DIFFERENT
+          // percentage (the activity-log average), so following the link
+          // answered a question the reader had not asked.
+          href={`/work-progress?projectId=${projectId}&tab=report&view=scope`}
         />
       }
       secondaryKpis={
         <>
-          <KpiCard
+          <ProjectKpiTile
             label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
             value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
             // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
+            href={`/scope?projectId=${projectId}`}
           />
           {/* Sumeet audit fix (2026-08-30, requirement #10: "Project value
               matches BOQ total"). Real, confirmed gap: this screen already
@@ -253,32 +269,46 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               Point 121's own override mechanism controls. Null (not 0) is
               the honest "neither a manual value nor any linked PO exists
               yet" state, matching every other null-safe KPI on this screen. */}
-          <KpiCard
+          {/* R67 E-38: "Project settings route, or /scope until that route
+              exists" -- and it does not exist in this repo, so /scope it is.
+              That makes this tile and Contract Value share a destination; the
+              alternative was inventing a route (D-01/WS-D owns /projects/new)
+              or pointing at /purchase-orders, which ignores projectId and would
+              show every PO in the organisation. A shared honest destination
+              beats a distinct misleading one. */}
+          <ProjectKpiTile
             label={labelFor(dashboardLabels, "projectValue", "Project Value")}
             value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
             trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
             baseline="overridable per project"
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
+            href={`/scope?projectId=${projectId}`}
           />
           {/* R67 E-25: no bullet bar at all when there is no budget -- a full
               orange bar against a target of zero is a false alarm, not a
               warning. With no cost-centre budget the BOQ-derived one becomes
               the target and the baseline says which is in use. */}
-          <KpiCard
+          <ProjectKpiTile
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
             value={money(budgetCard.spend, currency)}
             trend={{ direction: budgetCard.direction, tone: budgetCard.tone, label: budgetCard.trendWord }}
             baseline={budgetCard.baseline}
             visual={budgetCard.target === null ? undefined : <BulletChart value={budgetCard.spend} target={budgetCard.target} lowerIsBetter unit="" />}
-            // With no budget the destination is the place that SETS one.
-            onClick={() =>
-              router.push(budgetCard.target === null ? budgetCard.href : `/scope?projectId=${projectId}&tab=variance`)
-            }
+            // R67 E-38: /budgets is where a budget is READ; /budgets/new is
+            // where one is SET, and with no budget at all that is the only
+            // useful door. Deliberately ONE href either way rather than a
+            // second "Set budget" link INSIDE the tile: a link inside a link is
+            // invalid markup, and the observed neighbour-href bug is exactly
+            // what nested interactive elements produce.
+            href={budgetCard.href}
           />
           {/* R67 E-25: a failed read reads "—", never 0. "No permits expire in
               the next 30 days" is a reassurance, and printing it when the
               request failed is the worst possible thing this card can say. */}
-          <KpiCard
+          {/* R67 E-38: a LINK when the read succeeded, a Retry BUTTON when it
+              failed. The two are different jobs and the control should be the
+              one that matches: navigating away from the screen you are trying
+              to fix is not what "Retry" means. */}
+          <ProjectKpiTile
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
             value={permitsError ? "—" : String(expiringCount)}
             trend={
@@ -291,9 +321,8 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
                   }
             }
             baseline={permitsError ? "Retry" : "next 30 days"}
-            // A failed card's click RETRIES rather than navigating away from
-            // the screen the reader is trying to fix.
-            onClick={permitsError ? () => void loadPermits() : () => router.push(`/permits?projectId=${projectId}&withinDays=30`)}
+            href={permitsError ? undefined : `/permits?projectId=${projectId}&withinDays=30`}
+            onClick={permitsError ? () => void loadPermits() : undefined}
           />
         </>
       }
@@ -341,7 +370,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         <LinkListCard
           title={labelFor(dashboardLabels, "quickActionsTitle", "Quick actions")}
           items={[
-            { label: "Record progress", onClick: () => router.push(`/work-progress?projectId=${projectId}`) },
+            // R67 E-38 (R-296): the quick action lands ON the entry form with
+            // its first field focused (focus=1), rather than on whichever tab
+            // the Work Progress page happened to default to, leaving the
+            // reader to find the form and click into it.
+            { label: "Record progress", onClick: () => router.push(`/work-progress?projectId=${projectId}&tab=entry&focus=1`) },
             { label: "New BOQ revision", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Import BOQ", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Run WPR", onClick: () => router.push(`/work-progress?projectId=${projectId}&tab=report`) },

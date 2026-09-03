@@ -14,9 +14,14 @@ import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalCli
 export default async function WorkProgressPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string; from?: string; to?: string; view?: string; boqId?: string }>;
+  searchParams: Promise<{
+    projectId?: string; tab?: string; from?: string; to?: string; view?: string; boqId?: string;
+    // R67 E-38 (R-296): focus=1 means "the reader came here to type", so the
+    // entry form takes the caret instead of leaving them to find it and click.
+    focus?: string;
+  }>;
 }) {
-  const { projectId, tab, from, to, view, boqId } = await searchParams;
+  const { projectId, tab, from, to, view, boqId, focus } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
@@ -44,7 +49,7 @@ export default async function WorkProgressPage({
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="report">Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
+            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} focusForm={focus === "1"} /></TabsContent>
             <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
             <TabsContent value="report">
               <WorkProgressReportClient

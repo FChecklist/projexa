@@ -74,24 +74,34 @@ describe("cumulativeProgressSeries", () => {
   });
 });
 
+// R67 E-38 (R-270): the two REAL budget destinations, passed in. /budgets is
+// where a budget is read; /budgets/new is where one is set, and with no budget
+// at all that is the only useful door.
+const HREFS = { budgets: "/budgets?projectId=p1", setBudget: "/budgets/new?projectId=p1" };
+
 describe("budgetCardModel", () => {
   test("NO budget anywhere: the spend, the words 'no budget set', no arrow and NO BAR", () => {
-    const card = budgetCardModel(185_000, 0, null, "/scope?projectId=p1", money);
+    const card = budgetCardModel(185_000, 0, null, HREFS, money);
     expect(card.target).toBeNull();
     expect(card.trendWord).toBe("no budget set");
     expect(card.direction).toBe("flat");
     expect(card.tone).toBe("context");
-    expect(card.baseline).toBe("Set budget % on the BOQ");
-    expect(card.href).toBe("/scope?projectId=p1");
+    // R67 E-38: the door is where a budget is SET, never the read-only list.
+    expect(card.href).toBe("/budgets/new?projectId=p1");
   });
 
   test("a null ERP budget is treated the same as a zero one -- both mean 'no target'", () => {
-    expect(budgetCardModel(100, null, null, "/scope", money).target).toBeNull();
-    expect(budgetCardModel(100, 0, 0, "/scope", money).target).toBeNull();
+    expect(budgetCardModel(100, null, null, HREFS, money).target).toBeNull();
+    expect(budgetCardModel(100, 0, 0, HREFS, money).target).toBeNull();
+  });
+
+  test("with a real budget the tile goes to the budget itself, not to the create form", () => {
+    expect(budgetCardModel(50_000, 100_000, null, HREFS, money).href).toBe("/budgets?projectId=p1");
+    expect(budgetCardModel(50_000, null, 80_000, HREFS, money).href).toBe("/budgets?projectId=p1");
   });
 
   test("a real ERP budget wins and the baseline says which budget it is", () => {
-    const card = budgetCardModel(50_000, 100_000, 80_000, "/scope", money);
+    const card = budgetCardModel(50_000, 100_000, 80_000, HREFS, money);
     expect(card.target).toBe(100_000);
     expect(card.source).toBe("erp");
     expect(card.baseline).toContain("cost centre");
@@ -99,7 +109,7 @@ describe("budgetCardModel", () => {
   });
 
   test("with no cost-centre budget, the BOQ-derived one is the target AND the baseline says so", () => {
-    const card = budgetCardModel(90_000, null, 80_000, "/scope", money);
+    const card = budgetCardModel(90_000, null, 80_000, HREFS, money);
     expect(card.target).toBe(80_000);
     expect(card.source).toBe("boq");
     expect(card.baseline).toContain("BOQ x budget %");
@@ -109,7 +119,7 @@ describe("budgetCardModel", () => {
   });
 
   test("a real budget the spend has not passed is not an alarm", () => {
-    const card = budgetCardModel(10, 100, null, "/scope", money);
+    const card = budgetCardModel(10, 100, null, HREFS, money);
     expect(card.direction).toBe("down");
     expect(card.tone).toBe("done");
   });

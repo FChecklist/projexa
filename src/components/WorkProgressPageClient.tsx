@@ -12,7 +12,14 @@ type Entry = { id: string; activityId: string; boqLineItemId: string | null; ent
 type Activity = { id: string; name: string };
 type LineItem = { id: string; itemCode: string | null; description: string };
 
-export default function WorkProgressPageClient({ projectId }: { projectId: string }) {
+export default function WorkProgressPageClient({
+  projectId,
+  focusForm = false,
+}: {
+  projectId: string;
+  /** R67 E-38 (R-296): arrived from a "Record progress" action -- give the form the caret. */
+  focusForm?: boolean;
+}) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
@@ -51,7 +58,7 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
         <WorkProgressListClient entries={entries} activityNameById={activityNameById} boqLineDescriptionById={boqLineDescriptionById} loading={loading} />
       </div>
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressFormClient projectId={projectId} onLogged={load} />
+        <WorkProgressFormClient projectId={projectId} onLogged={load} autoFocus={focusForm} />
       </div>
     </div>
   );

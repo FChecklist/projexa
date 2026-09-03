@@ -16,7 +16,7 @@
 // Photo: uses the FILE control (new in this seq) + the now-exported
 // uploadQueuedPhoto() from the offline queue -- see that function's own
 // updated comment for the real online-path gap this closes.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FormScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { createClient } from "@/lib/supabase/client";
@@ -41,7 +41,21 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function WorkProgressFormClient({ projectId, onLogged }: { projectId: string; onLogged: () => void }) {
+export default function WorkProgressFormClient({
+  projectId,
+  onLogged,
+  autoFocus = false,
+}: {
+  projectId: string;
+  onLogged: () => void;
+  /**
+   * R67 E-38 (R-296): the reader arrived from a "Record progress" action
+   * (?focus=1), which means they came here to TYPE. The form takes the caret
+   * so the action finishes where the work starts, instead of dropping them on
+   * a screen where they still have to find the form and click into it.
+   */
+  autoFocus?: boolean;
+}) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
@@ -54,6 +68,8 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   const [submitting, setSubmitting] = useState(false);
   const [scope, setScope] = useState<string | null>(null);
   const [queued, setQueued] = useState<QueuedWorkProgressEntry[]>([]);
+  /** R67 E-38: the handle the focus effect below reaches the rendered fields through. */
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +275,23 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   const requiredFields = ["activityId", "entryDate", "quantityDone", "percentComplete", "entryBasis"];
   const missingCount = requiredFields.filter((f) => values[f] === undefined || values[f] === null || values[f] === "").length;
 
+  // R67 E-38 (R-296). The wrapper is `display: contents`, so it adds a DOM node
+  // to hang a ref on and NOTHING to the layout -- the kit's FormScreen keeps
+  // its own box exactly as before. Focusing by querying the real rendered
+  // controls (rather than passing an autoFocus prop down) is what D-09 leaves
+  // available: FieldRenderer is the kit's, and this needs no kit change.
+  // Depends on columns.length so it runs once the fields actually exist, not
+  // on the first paint when the section is still empty.
+  useEffect(() => {
+    if (!autoFocus) return;
+    const first = formRef.current?.querySelector<HTMLElement>(
+      "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
+    );
+    first?.focus();
+  }, [autoFocus, columns.length]);
+
   return (
+    <div ref={formRef} style={{ display: "contents" }}>
     <FormScreen
       breadcrumb="Work Progress / Log entry"
       title="Log Work Progress"
@@ -277,5 +309,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     >
       <FormSection title="Progress entry" columns={columns} values={values} mode="edit" onFieldChange={handleFieldChange} />
     </FormScreen>
+    </div>
   );
 }

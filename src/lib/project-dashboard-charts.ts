@@ -66,9 +66,23 @@ export type BudgetCardModel = {
   tone: "context" | "needs-you" | "done";
   direction: "up" | "down" | "flat";
   baseline: string;
-  /** Where the card goes. An unset budget sends the reader to the place that sets one. */
+  /**
+   * Where the card goes. ONE destination, never a second link nested inside the
+   * tile -- a link inside a link is invalid markup and is exactly what produces
+   * the "click one card, land on its neighbour" bug R-270 observed.
+   *
+   * R67 E-38: /budgets is where a budget is READ, /budgets/new is where one is
+   * SET, and with no budget at all the second is the only useful door.
+   */
   href: string;
 };
+
+/**
+ * R67 E-38 (R-270): the two real budget destinations, both carrying the
+ * project. Passed in rather than built here so this module stays pure and the
+ * routes live with the screen that owns them.
+ */
+export type BudgetCardHrefs = { budgets: string; setBudget: string };
 
 /**
  * Budget vs Actual.
@@ -90,7 +104,7 @@ export function budgetCardModel(
   spend: number,
   erpBudget: number | null | undefined,
   boqBudget: number | null | undefined,
-  projectHref: string,
+  hrefs: BudgetCardHrefs,
   money: (value: number | null) => string
 ): BudgetCardModel {
   const erp = typeof erpBudget === "number" && Number.isFinite(erpBudget) && erpBudget > 0 ? erpBudget : null;
@@ -106,7 +120,8 @@ export function budgetCardModel(
       tone: "context",
       direction: "flat",
       baseline: "Set budget % on the BOQ",
-      href: projectHref,
+      // R67 E-38: with no budget, the door is the place that SETS one.
+      href: hrefs.setBudget,
     };
   }
 
@@ -122,7 +137,7 @@ export function budgetCardModel(
       erp !== null
         ? `budget ${money(target)} (cost centre)`
         : `budget ${money(target)} (BOQ x budget %, no cost-centre budget set)`,
-    href: projectHref,
+    href: hrefs.budgets,
   };
 }
 

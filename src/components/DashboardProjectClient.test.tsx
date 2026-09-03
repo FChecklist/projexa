@@ -51,6 +51,19 @@ function stubFetch({ permitsStatus = 200, entries = [{ id: "e1", activityId: "a1
   }) as typeof fetch;
 }
 
+/**
+ * R67 E-38: a tile is a <a> when it navigates and a <button> only when its job
+ * is to retry its own failed read. This finds it either way, by the label it
+ * shows -- which is also what a reader looks for.
+ */
+function tile(container: HTMLElement, label: string): HTMLElement {
+  const match = Array.from(container.querySelectorAll("a, button")).find((el) =>
+    (el.textContent ?? "").includes(label)
+  );
+  if (!match) throw new Error(`no KPI tile labelled "${label}"`);
+  return match as HTMLElement;
+}
+
 afterEach(() => {
   cleanup();
   // @ts-expect-error -- test-only global fetch stub cleanup
@@ -62,7 +75,7 @@ describe("DashboardProjectClient", () => {
     stubFetch({ permitsStatus: 500 });
     const { container } = render(<DashboardProjectClient projectId="p1" />);
     await waitFor(() => expect(container.textContent).toContain("couldn't load"));
-    const card = Array.from(container.querySelectorAll("button")).find((b) => (b.textContent ?? "").includes("Permits Expiring"))!;
+    const card = tile(container, "Permits Expiring");
     expect(card.textContent).toContain("—");
     expect(card.textContent).not.toContain("none due soon");
     expect(card.textContent).toContain("Retry");
@@ -83,7 +96,7 @@ describe("DashboardProjectClient", () => {
     await waitFor(() => expect(container.textContent).toContain("no budget set"));
     expect(container.textContent).toContain("Set budget % on the BOQ");
     expect(container.textContent).not.toContain("over budget");
-    const card = Array.from(container.querySelectorAll("button")).find((b) => (b.textContent ?? "").includes("Budget vs Actual"))!;
+    const card = tile(container, "Budget vs Actual");
     // The kit's BulletChart always prints "target ..." beside its bar; no bar
     // means that text is absent from this card.
     expect(card.textContent).not.toContain("target");
@@ -121,5 +134,77 @@ describe("DashboardProjectClient", () => {
     stubFetch();
     const { container } = render(<DashboardProjectClient projectId="p1" />);
     await waitFor(() => expect(container.textContent).toContain("60% logged, not yet linked to BOQ lines"));
+  });
+});
+// R67 E-38 (R-270 / R-296). EVERY TILE IS A REAL LINK WITH ONE DESTINATION.
+//
+// The finding was that these tiles were <button>s calling router.push(), and
+// that one of them resolved to a NEIGHBOUR's destination -- which an href
+// cannot do. The item's own acceptance clicks each tile in a browser; what is
+// provable here is the thing the click depends on: each tile is a single
+// anchor, with the right href, carrying the project.
+describe("R67 E-38: the five tiles are links, each with its own asserted destination", () => {
+  test("every KPI tile is an <a> with an href carrying projectId", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+
+    for (const label of ["% Complete by BOQ Value", "Contract Value", "Project Value", "Budget vs Actual", "Permits Expiring"]) {
+      const el = tile(container, label);
+      expect(el.tagName).toBe("A");
+      expect(el.getAttribute("href")).toContain("p1");
+    }
+  });
+
+  test("the destinations are the ones the item names", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+
+    // The number's own breakdown: earned value over contract value IS the
+    // scope view's Grand Total. It used to go to Analytics, which shows a
+    // DIFFERENT percentage.
+    expect(tile(container, "% Complete by BOQ Value").getAttribute("href")).toBe(
+      "/work-progress?projectId=p1&tab=report&view=scope"
+    );
+    expect(tile(container, "Contract Value").getAttribute("href")).toBe("/scope?projectId=p1");
+    expect(tile(container, "Permits Expiring").getAttribute("href")).toBe("/permits?projectId=p1&withinDays=30");
+    // No budget on this fixture, so the budget tile's door is the place that
+    // SETS one.
+    expect(tile(container, "Budget vs Actual").getAttribute("href")).toBe("/budgets/new?projectId=p1");
+  });
+
+  test("with a real budget the tile points at the budget itself", async () => {
+    stubFetch({ variance: { totalBudget: 200_000 } });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("BOQ x budget %"));
+    expect(tile(container, "Budget vs Actual").getAttribute("href")).toBe("/budgets?projectId=p1");
+  });
+
+  test("no anchor wraps two tiles -- a click can never resolve to a neighbour's href", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+
+    // This is the structural property behind the observed
+    // "Budget vs Actual -> Permits" bug: an anchor containing another tile's
+    // label, or an anchor inside an anchor.
+    for (const anchor of Array.from(container.querySelectorAll("a"))) {
+      expect(anchor.querySelector("a")).toBeNull();
+      const labelsInside = ["Contract Value", "Project Value", "Budget vs Actual", "Permits Expiring"].filter((l) =>
+        (anchor.textContent ?? "").includes(l)
+      );
+      expect(labelsInside.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("the failed Permits tile is a BUTTON, because retrying is not navigating", async () => {
+    stubFetch({ permitsStatus: 500 });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("couldn't load"));
+
+    const el = tile(container, "Permits Expiring");
+    expect(el.tagName).toBe("BUTTON");
+    expect(el.getAttribute("href")).toBeNull();
   });
 });
