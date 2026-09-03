@@ -110,8 +110,11 @@ export function portfolioChartGroups(projects: DashboardProject[]): GroupedBarGr
     key: p.id,
     label: p.name,
     // null, never 0: a project with no BOQ has no contract value and no earned
-    // value, and the chart draws that as a hatch labelled "No BOQ".
-    values: { contract: p.value, earned: p.earnedValue, spend: p.expenses ?? 0 },
+    // value, and the chart draws that as a hatch labelled "No BOQ". Spend is
+    // null too for a reader whose role had it redacted -- drawing a redacted
+    // figure as a zero bar would state a number they were not allowed to see,
+    // and state it wrongly.
+    values: { contract: p.value, earned: p.earnedValue, spend: p.expenses },
   }));
 }
 
