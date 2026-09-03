@@ -12,7 +12,13 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const push = mock((_: string) => {});
 const replace = mock((_: string) => {});
-mock.module("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
+// R67 lane A merge: the real module is spread in rather than replaced. Lane A
+// mounts <ObjectContext>/<ScreenContext> inside these screens, and those call
+// usePathname() -- a mock that returned only useRouter made the whole module
+// lose every other export and the file failed to load at all
+// ("Export named 'usePathname' not found in module .../next/navigation.js").
+const realNavigation = await import("next/navigation");
+mock.module("next/navigation", () => ({ ...realNavigation, useRouter: () => ({ push, replace }) }));
 
 const mod = await import("./DocumentObjectClient");
 const DocumentObjectClient = mod.default;

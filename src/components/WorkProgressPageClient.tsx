@@ -108,12 +108,17 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
   // being true the focus simply lands elsewhere -- it cannot break the page.
   const formRef = useRef<HTMLDivElement>(null);
   const focusRequest = useSearchParams().get("focus");
+  // R67 A-* + D-29. Lane A wrote this effect against a single `loading`
+  // boolean; D-29 replaced that with one status per source, because a failed
+  // BOQ read used to leave the whole screen claiming to be loading. The
+  // dependency is now the status of the source this effect actually waits for:
+  // the activity <select> does not exist until the activities read settles.
   useEffect(() => {
     if (focusRequest !== "activity") return;
     const control = formRef.current?.querySelector<HTMLSelectElement>("select");
     control?.focus();
     control?.scrollIntoView({ block: "center" });
-  }, [focusRequest, loading]);
+  }, [focusRequest, activitiesStatus]);
 
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
   const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));

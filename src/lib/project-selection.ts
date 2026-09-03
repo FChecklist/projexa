@@ -169,6 +169,9 @@ export async function resolveRouteProject(
       projects,
       errorMessage: null,
       source: picked.source,
+      // R67 D-70: the upstream status, for the caller's logging only. null on a
+      // successful read -- there is no failure to report.
+      status: null,
       missing: picked.missing,
       unreachable: picked.unreachable,
     };
@@ -178,6 +181,9 @@ export async function resolveRouteProject(
       projects: [],
       errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
       source: null,
+      // R67 D-70: carried for the caller's own logging, never rendered -- see
+      // describeProjectListFailure() for what a user is shown instead.
+      status: err instanceof VeridianApiError ? err.status : null,
       // A failed read says nothing about the URL, and must not be reported as
       // "you did not pick a project" -- the error is the sentence to show.
       missing: false,
