@@ -95,6 +95,24 @@ import {
 } from "@/lib/attendance-draft";
 import { ConfirmCard } from "@/components/shell/ConfirmCard";
 import { AnswerBlock } from "@/components/shell/AnswerBlock";
+// R67 C-09: band 2 is a CONVERSATION -- what the user said stays on screen,
+// the answer is appended beside it, and the whole thing survives the
+// navigation an answer's own link causes.
+import { ConversationBand } from "@/components/shell/ConversationBand";
+import {
+  appendTurn,
+  conversationKey,
+  editInFormRoute,
+  missingFieldLabel,
+  paramLabel,
+  parseTurns,
+  readAsLine,
+  recordLabel,
+  recordedReceiptLine,
+  serialiseTurns,
+  type ConversationTurn,
+  type NewConversationTurn,
+} from "@/lib/conversation";
 import {
   TIMING_ELAPSED_MS,
   answerRowsFrom,
@@ -329,6 +347,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     message: string | null;
   } | null>(null);
   const [answer, setAnswer] = useState<{ heading: string; rows: AnswerRowDto[] } | null>(null);
+  // R67 C-09: the conversation so far. Hydrated from sessionStorage below, so
+  // opening the screen an answer points at does not cost the question.
+  // R67 C-09: a refusal that KEEPS THE CARD. The sentence is D-03's, the
+  // button is the one that opens the picker for the slot that was wrong, and
+  // the values the user already typed stay where they are.
+  const [proposalError, setProposalError] = useState<{
+    sentence: string;
+    verbLabel: string;
+    missingStep: "boqLine" | "project" | "value" | null;
+  } | null>(null);
+  const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [turnsReady, setTurnsReady] = useState(false);
+  const turnSeqRef = useRef(0);
   // The timing states, which C-05 makes mandatory. `startedAt` lives in a ref
   // so "Keep waiting" can move the clock back a phase without a re-render
   // race, and the controller is what makes Stop and Cancel real rather than
@@ -589,7 +620,47 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     };
   }, [noteFailure]);
 
+  // R67 C-09 -- THE BAND SURVIVES NAVIGATION. sessionStorage, not local:
+  // a conversation is this session's, and a band that came back tomorrow
+  // morning full of yesterday's half-finished sentences would be worse than
+  // an empty one. Hydration waits for the identity, because the key is the
+  // user's -- two people signing in on one browser must not read each other's.
+  useEffect(() => {
+    if (turnsReady) return;
+    if (info === null) return;
+    try {
+      setTurns(parseTurns(sessionStorage.getItem(conversationKey(info.email))));
+    } catch {
+      // A blocked or unavailable storage must not take the shell down.
+    }
+    setTurnsReady(true);
+  }, [info, turnsReady]);
+
+  useEffect(() => {
+    if (!turnsReady || info === null) return;
+    try {
+      sessionStorage.setItem(conversationKey(info.email), serialiseTurns(turns));
+    } catch {}
+  }, [turns, turnsReady, info]);
+
+  /** Append one turn. The id is local and monotonic; nothing reads it back. */
+  const pushTurn = useCallback((turn: NewConversationTurn) => {
+    turnSeqRef.current += 1;
+    const id = `t${turnSeqRef.current}-${Date.now()}`;
+    setTurns((prev) => appendTurn(prev, { ...turn, id, at: Date.now() } as ConversationTurn));
+  }, []);
+
+  const onDismissTurn = useCallback((id: string) => {
+    setTurns((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId]);
+
+  /** Names for the ids the turns carry, so "was for" can name a project. */
+  const projectNameById = useCallback(
+    (id: string) => projects.find((p) => p.id === id)?.name ?? null,
+    [projects]
+  );
 
   useEffect(() => {
     projectNameRef.current = project?.name ?? null;
@@ -1429,6 +1500,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSubmitting(true);
     setSubmitError(null);
     setBandNote(null);
+    setProposalError(null);
     try {
       const body = p.functionId
         ? { functionId: p.functionId, params: p.params, mode, projectId }
@@ -1458,6 +1530,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           projectName: project?.name ?? null,
         });
         setSubmitError(resolved.sentence);
+        // THE CARD STAYS. Everything the user already answered is still on
+        // it, and the one thing that was wrong is named with the control that
+        // fixes it -- rather than a blocked Task Master row and a lost card.
+        setProposalError({
+          sentence: resolved.sentence,
+          verbLabel: resolved.verbLabel,
+          missingStep: resolved.missingStep,
+        });
         return;
       }
 
@@ -1468,6 +1548,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // receipt never trades readability for a 25-character string -- and
         // never invents a code the row does not have.
         const rawId = typeof result.id === "string" ? result.id : null;
+        // R67 C-09: the receipt is a TURN -- it stays in the band, in order,
+        // beside the sentence that produced it, and survives the navigation
+        // its own link causes.
+        pushTurn({
+          kind: "receipt",
+          projectId,
+          text: recordedReceiptLine({
+            recordId: rawId,
+            percent: Number(p.params.percent),
+            lineCode: typeof p.params.itemCode === "string" ? p.params.itemCode : null,
+            date: typeof result.entryDate === "string" ? result.entryDate : new Date().toISOString().slice(0, 10),
+          }),
+          href: `/work-progress${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+        });
         setReceipt({
           text: progressReceiptLine({
             lineLabel: p.steps[p.steps.length - 1] ?? String(p.params.itemCode ?? "this line"),
@@ -1505,7 +1599,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       startedAtRef.current = null;
       setSubmitting(false);
     }
-  }, [proposal, submitting, mode, projectId, project, loadTasks]);
+  }, [proposal, submitting, mode, projectId, project, loadTasks, pushTurn]);
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.
@@ -1527,6 +1621,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSubmitting(true);
     setSubmitError(null);
     setBandNote(null);
+    // R67 C-09: WHAT THE USER SAID STAYS ON SCREEN. Recorded before the
+    // request, not after it, so a failure cannot take the question with it.
+    if (typed) pushTurn({ kind: "said", projectId, text: typed });
     try {
       // R67 C-03 -- PREVIEW BEFORE WRITE, for the typed path.
       //
@@ -1698,6 +1795,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     submitting,
     loadTasks,
     router,
+    pushTurn,
   ]);
 
   const onTogglePin = useCallback((key: PillUsage["pillKey"]) => {
@@ -2049,7 +2147,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             answer ||
             timing.text ||
             levelPath.length > 0 ||
-            actionLevel ? (
+            actionLevel ||
+            turns.length > 0 ||
+            submitting ? (
+              <ConversationBand
+                turns={turns}
+                currentProjectId={projectId}
+                projectNameById={projectNameById}
+                sending={submitting}
+                onOpen={(href) => router.push(href)}
+                onDismissTurn={onDismissTurn}
+              >
               <div className="space-y-2">
                 {/* R67 C-05: THE TIMING STATES ARE MANDATORY. Nothing for the
                     first 300 ms, then a promise, then the real elapsed
@@ -2077,46 +2185,100 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   </p>
                 )}
 
-                {/* THE PROPOSAL. What the server read the sentence as, with
-                    nothing written until the user says yes to it. */}
+                {/* R67 C-09 -- THE PROPOSAL TURN. The understood line, then a
+                    card listing every field the server resolved, with a
+                    primary button that is the ONLY thing here that writes.
+                    Nothing has been posted to /api/tasks at this point: the
+                    preview went through /api/classify, which returns
+                    executed:false on every response. */}
                 {proposal && (
                   <div className="space-y-1.5">
                     <p className="text-[12.5px]" style={{ color: "var(--color-ct-navy)" }}>
-                      {understoodLine(proposal.steps)}
+                      {readAsLine(proposal.steps)}
                     </p>
                     {proposal.message && (
                       <p className="text-[11.5px]" style={{ color: "var(--color-ct-muted)" }}>
                         {proposal.message}
                       </p>
                     )}
-                    {proposal.missingParams.length === 0 && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded-lg px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
-                          style={{ background: "var(--color-ct-saffron)", color: "var(--color-ct-navy)" }}
-                          disabled={submitting}
-                          onClick={() => void onConfirmProposal()}
-                        >
-                          Yes, continue
-                        </button>
+                    {proposal.missingParams.length > 0 && (
+                      // ONE QUESTION AT A TIME, in D-03's own words -- never
+                      // "itemCode is required". The chips that answer it are
+                      // the ChainOptionsPanel below, built from real data.
+                      <p className="text-[11.5px]" style={{ color: "var(--color-veri-status-needs-you)" }}>
+                        {missingFieldLabel(proposal.missingParams[0])}
+                      </p>
+                    )}
+                    {proposalError && (
+                      <p className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                        <span role="alert" style={{ color: "var(--color-veri-status-late)" }}>
+                          {proposalError.sentence}
+                        </span>
                         <button
                           type="button"
                           className="veri-view-tab"
-                          disabled={submitting}
                           onClick={() => {
-                            // Nothing was written, so starting over costs the
-                            // user only their own sentence back.
-                            setDraft(proposal.typed);
-                            setProposal(null);
-                            setLevelPath([]);
-                            setScalarValue("");
+                            // LOADS THE PICKER AND STOPS. It re-runs nothing:
+                            // the write that failed is not retried by a
+                            // control whose job is to ask a question.
+                            if (proposalError.missingStep === "boqLine") {
+                              setLevelPath(["work_progress", "record_progress"]);
+                            }
+                            setProposalError(null);
                           }}
                         >
-                          No, start over
+                          {proposalError.verbLabel}
                         </button>
-                      </div>
+                      </p>
                     )}
+                    <ConfirmCard
+                      title={proposal.steps[0] ?? "This entry"}
+                      error={proposalError?.sentence ?? null}
+                      busy={submitting}
+                      primaryLabel={recordLabel(proposal.missingParams.length)}
+                      primaryDisabledReason={
+                        proposal.missingParams.length > 0
+                          ? missingFieldLabel(proposal.missingParams[0])
+                          : undefined
+                      }
+                      onPrimary={() => void onConfirmProposal()}
+                      secondaryLabel={editInFormRoute(proposal.functionId, projectId) ? "Edit in form" : undefined}
+                      onSecondary={() => {
+                        const href = editInFormRoute(proposal.functionId, projectId);
+                        if (href) router.push(href);
+                      }}
+                      tertiaryLabel="Start over"
+                      onTertiary={() => {
+                        // Nothing was written, so starting over costs the
+                        // user only their own sentence back.
+                        setDraft(proposal.typed);
+                        setProposal(null);
+                        setLevelPath([]);
+                        setScalarValue("");
+                      }}
+                      fields={Object.entries(proposal.params)
+                        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+                        .map(([name, value]) => ({
+                          id: name,
+                          // THE WORD, NEVER THE COLUMN NAME.
+                          label: paramLabel(name),
+                          control: (
+                            <input
+                              type="text"
+                              className={fieldClass}
+                              style={fieldStyle}
+                              value={String(value)}
+                              // Editable IN PLACE: correcting a fuzzy match
+                              // costs one field, not the whole sentence.
+                              onChange={(e) =>
+                                setProposal((prev) =>
+                                  prev ? { ...prev, params: { ...prev.params, [name]: e.target.value } } : prev
+                                )
+                              }
+                            />
+                          ),
+                        }))}
+                    />
                   </div>
                 )}
 
@@ -2390,6 +2552,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                   </p>
                 )}
               </div>
+              </ConversationBand>
             ) : undefined
           }
           // BAND 4 -- the chain's SCALAR value, as a labelled field beside the
