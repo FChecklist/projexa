@@ -39,17 +39,72 @@ export default function WorkProgressListClient({
   activityNameById,
   boqLineDescriptionById,
   loading,
+  frameless = false,
+  boqLoading = false,
 }: {
   entries: Entry[];
   activityNameById: Map<string, string>;
   boqLineDescriptionById: Map<string, string>;
   loading: boolean;
+  /**
+   * R67 E-24 (R-210): render WITHOUT this component's own ScreenFrame.
+   *
+   * This list is mounted in two places. On /work-progress it is the screen,
+   * and it owns its breadcrumb and its Filter/Export header actions. Inside
+   * AnalyticalScreen it is the table SLOT, and AnalyticalScreen already
+   * renders a frame with its own Filter and Export -- so the nesting put TWO
+   * controls labelled "Filter (Not yet available)" and two labelled "Export"
+   * on one screen. Frameless is how the slot case stops doing that; the
+   * enclosing screen's own actions are the real ones.
+   */
+  frameless?: boolean;
+  /**
+   * R67 E-24: the BOQ line descriptions arrive on a slower second round trip.
+   * True while they are still in flight, so the cell can show the line
+   * REFERENCE in grey rather than pretending the line has no description.
+   */
+  boqLoading?: boolean;
 }) {
   const rows = entries.map((e) => ({
     ...e,
     activityName: activityNameById.get(e.activityId) ?? e.activityId,
     boqLineDescription: e.boqLineItemId ? (boqLineDescriptionById.get(e.boqLineItemId) ?? e.boqLineItemId) : null,
   }));
+
+  const list = loading ? (
+    <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
+  ) : (
+    <ListScreen
+      functionId="work-progress.list"
+      columns={COLUMNS}
+      rows={rows as unknown as Record<string, unknown>[]}
+      getRowId={(row) => row.id as string}
+      emptyStateLabel="No progress entries logged yet."
+      renderCell={{
+        percentComplete: (row) => {
+          const pct = Number((row as unknown as Entry).percentComplete);
+          return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
+        },
+        boqLineDescription: (row) => {
+          const entry = row as unknown as Entry;
+          if (!entry.boqLineItemId) return <span className="text-ct-muted">—</span>;
+          const description = boqLineDescriptionById.get(entry.boqLineItemId);
+          if (description) return <span>{description}</span>;
+          // R67 E-24: the reference, in grey, while the BOQ read is still in
+          // flight -- the table renders on the first round trip instead of
+          // waiting for the slowest one, and a grey reference says "still
+          // resolving" rather than "this line has no description".
+          return (
+            <span className="text-ct-muted" title={boqLoading ? "Loading the BOQ line description…" : undefined}>
+              {entry.boqLineItemId}
+            </span>
+          );
+        },
+      }}
+    />
+  );
+
+  if (frameless) return list;
 
   return (
     // R42 seq23 live-user finding: same GLOBAL rule as PermitsListClient's
@@ -64,23 +119,7 @@ export default function WorkProgressListClient({
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       messages={[]}
     >
-      {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
-      ) : (
-        <ListScreen
-          functionId="work-progress.list"
-          columns={COLUMNS}
-          rows={rows as unknown as Record<string, unknown>[]}
-          getRowId={(row) => row.id as string}
-          emptyStateLabel="No progress entries logged yet."
-          renderCell={{
-            percentComplete: (row) => {
-              const pct = Number((row as unknown as Entry).percentComplete);
-              return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
-            },
-          }}
-        />
-      )}
+      {list}
     </ScreenFrame>
   );
 }
