@@ -16,7 +16,17 @@ import { expect, test, type Page, type Response } from "@playwright/test";
 //
 //        bun run build && bun run start          # terminal 1, port 3100
 //        PLAYWRIGHT_BASE_URL=http://localhost:3100 \
-//          bunx playwright test e2e/public-pages-perf.spec.ts --project=chromium
+//          bunx playwright test e2e/public-pages-perf.spec.ts --project=public-pages
+//
+//    --project=public-pages, NOT chromium: playwright.config.ts gives the
+//    `chromium` project `dependencies: ["setup"]`, and e2e/auth.setup.ts logs
+//    four seeded users in through the real login form and waits for
+//    **/dashboard. Against a local build those four logins run first and, if
+//    any fails (it will unless the local app is pointed at the seeded E2E
+//    org), the whole project is abandoned and these timing tests never
+//    execute. Nothing in this file needs a session, so it has its own
+//    dependency-free project -- and `chromium` skips this file so it is never
+//    run twice.
 //
 // 2. `next dev` will NOT do. The ISR/static behaviour these assertions are
 //    about only exists in a production build -- in dev every route is
@@ -78,25 +88,35 @@ test.describe("public pages -- static, light, painted", () => {
     expect(warm!.headers()["cache-control"]).toContain("s-maxage=3600");
   });
 
-  test("J-03: a cold load of / transfers no more than 500 KB", async ({ browser }) => {
+  test("J-03: a cold load of / transfers no more than 500 KB on the wire", async ({ browser }) => {
     // A fresh context so nothing is served from a warm disk cache.
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    let transferred = 0;
+    // ENCODED bytes, deliberately. `response.body()` returns the DECODED
+    // body, and `next start` gzips these routes (Next's `compress` defaults
+    // to true), so summing body().length measures the raw figure -- 1174.9 KB
+    // for "/" against 379.6 KB on the wire, per
+    // ai-os/scripts/measure-public-page-transfer.mjs on this same build. That
+    // sum would fail a 500 KB budget the page actually meets.
+    // request().sizes().responseBodySize is Playwright's on-the-wire size,
+    // which is the denomination the audit's clause uses.
+    const sizes: Promise<number>[] = [];
     page.on("response", (response) => {
-      void response
-        .body()
-        .then((body) => {
-          transferred += body.length;
-        })
-        .catch(() => {
-          // Redirects and cached-without-body responses have none to read.
-        });
+      sizes.push(
+        response
+          .request()
+          .sizes()
+          .then((s) => s.responseBodySize)
+          // Redirects and served-from-cache responses have no measurable body.
+          .catch(() => 0)
+      );
     });
 
     await page.goto("/", { waitUntil: "networkidle" });
 
+    const transferred = (await Promise.all(sizes)).reduce((sum, n) => sum + n, 0);
+    expect(transferred).toBeGreaterThan(0);
     expect(transferred).toBeLessThanOrEqual(500 * 1024);
     expect(await fcpMs(page)).toBeLessThanOrEqual(800);
 
@@ -139,8 +159,11 @@ test.describe("public pages -- static, light, painted", () => {
         );
         expect(transparent).toBe(0);
 
+        // test-results/ is already gitignored; e2e-results/ is NOT (.gitignore
+        // ignores the FILE /e2e-results.json), so writing there would leave
+        // four untracked PNGs for the next `git add -A` to swallow.
         await page.screenshot({
-          path: `e2e-results/public-pages/${route === "/" ? "landing" : "how-it-works"}-${width}.png`,
+          path: `test-results/public-pages/${route === "/" ? "landing" : "how-it-works"}-${width}.png`,
           fullPage: true,
         });
         await context.close();
