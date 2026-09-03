@@ -57,10 +57,18 @@ describe("single <main> landmark per page (R48_DUAL_MAIN_LANDMARK_01)", () => {
     expect(files.length).toBeGreaterThan(40);
   });
 
-  test("no route file under src/app/(app) opens its own <main>", () => {
-    const offenders = files.filter(opensAMainLandmark);
-    expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
-  });
+  // 30 s, not bun's default 5 s: this reads the CONTENTS of every .tsx in the
+  // tree, and on Windows under `bun test --isolate`'s parallel load that walk
+  // has already exceeded 5 s and failed a branch with no dual landmark in it.
+  // The assertion is unchanged; only the clock allowance is.
+  test(
+    "no route file under src/app/(app) opens its own <main>",
+    () => {
+      const offenders = files.filter(opensAMainLandmark);
+      expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
+    },
+    30_000
+  );
 
   // Two client components ARE a page body -- (app)/dashboard/page.tsx and
   // (app)/dashboard/overview/page.tsx return them directly, so a <main>
@@ -68,11 +76,15 @@ describe("single <main> landmark per page (R48_DUAL_MAIN_LANDMARK_01)", () => {
   // ui/sidebar.tsx's SidebarInset is the one legitimate <main> in this tree:
   // an unmounted shadcn primitive (nothing imports SidebarInset), kept as
   // shipped.
-  test("no page-body client component opens its own <main>", () => {
-    const componentFiles = tsxFilesUnder(join(process.cwd(), "src", "components")).filter(
-      (f) => !f.endsWith(join("ui", "sidebar.tsx"))
-    );
-    const offenders = componentFiles.filter(opensAMainLandmark);
-    expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
-  });
+  test(
+    "no page-body client component opens its own <main>",
+    () => {
+      const componentFiles = tsxFilesUnder(join(process.cwd(), "src", "components")).filter(
+        (f) => !f.endsWith(join("ui", "sidebar.tsx"))
+      );
+      const offenders = componentFiles.filter(opensAMainLandmark);
+      expect(offenders.map((f) => f.replace(process.cwd(), ""))).toEqual([]);
+    },
+    30_000
+  );
 });

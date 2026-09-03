@@ -106,14 +106,24 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PERF_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PERF_SUPABASE_ANON_KEY }}
       - name: Start the app
+        # nohup + disown, not a bare `&`: the server has to outlive THIS step,
+        # and whether a backgrounded child survives its step's shell is runner
+        # behaviour, not something this workflow states. `break`, not `exit 0`:
+        # `exit` inside the loop would end the step's shell, which is how the
+        # readiness check could "pass" without leaving anything running -- and
+        # the next step then fails with a connection error that reads like a
+        # perf regression.
         run: |
-          bun run start &
+          nohup bun run start > /tmp/next.log 2>&1 &
+          disown
           for i in $(seq 1 60); do
-            curl -sf http://localhost:3100/login > /dev/null && exit 0
+            curl -sf http://localhost:3100/login > /dev/null && break
             sleep 2
           done
-          echo "the app never became reachable on :3100" >&2
-          exit 1
+          if ! curl -sf http://localhost:3100/login > /dev/null; then
+            echo "the app never became reachable on :3100" >&2
+            exit 1
+          fi
         env:
           DATABASE_URL: ${{ secrets.PERF_DATABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PERF_SUPABASE_URL }}
@@ -125,6 +135,11 @@ jobs:
           PERF_EMAIL: ${{ secrets.PERF_EMAIL }}
           PERF_PASSWORD: ${{ secrets.PERF_PASSWORD }}
           PERF_PROJECT_ID: ${{ secrets.PERF_PROJECT_ID }}
+      - name: Server log
+        # A failed measurement is otherwise indistinguishable from a slow one:
+        # this is where "the app crashed on boot" is legible.
+        if: failure()
+        run: cat /tmp/next.log
       - name: Keep the per-module table
         if: always()
         uses: actions/upload-artifact@v4

@@ -32,8 +32,16 @@ function walkPageFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// Walked ONCE per test file, not once per test. Three tests below ask for it,
+// and on Windows a recursive readdir of src/app costs real time -- enough that
+// under `bun test --isolate`'s parallel load the first of them exceeded bun's
+// default 5 s and failed a branch whose routes were perfectly correct. The
+// assertion is unchanged; only the number of times the disk is read is.
+let routesOnDiskCache: string[] | null = null;
+
 function routesOnDisk(): string[] {
-  return walkPageFiles(APP_ROOT)
+  if (routesOnDiskCache) return routesOnDiskCache;
+  routesOnDiskCache = walkPageFiles(APP_ROOT)
     .map((file) => {
       const rel = file.slice(APP_ROOT.length).split(sep).join("/");
       // "/(app)/rfis/page.tsx" -> "/rfis": strip the file, then the route
@@ -42,6 +50,7 @@ function routesOnDisk(): string[] {
       return route === "" ? "/" : route;
     })
     .sort();
+  return routesOnDiskCache;
 }
 
 function sidebarHrefs(): string[] {
@@ -50,9 +59,17 @@ function sidebarHrefs(): string[] {
 }
 
 describe("SHIPPED_ROUTES", () => {
-  test("matches the real src/app/**/page.tsx routes exactly, in both directions", () => {
-    expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
-  });
+  test(
+    "matches the real src/app/**/page.tsx routes exactly, in both directions",
+    () => {
+      expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
+    },
+    // The one test that pays for the walk. 30 s is not a licence to be slow --
+    // it takes ~2 s alone -- it is headroom for a Windows filesystem competing
+    // with fifty other test files, which is a property of the runner, not of
+    // the routes being checked.
+    30_000
+  );
 
   test("lists no route twice", () => {
     expect(new Set(SHIPPED_ROUTES).size).toBe(SHIPPED_ROUTES.length);
