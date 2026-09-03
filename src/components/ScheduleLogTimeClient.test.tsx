@@ -24,7 +24,7 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: () =
 
 const logTimeModule = await import("./ScheduleLogTimeClient");
 const ScheduleLogTimeClient = logTimeModule.default;
-const { RAIL_NOT_ON_SCREEN, projectLine } = logTimeModule;
+const { RAIL_NOT_ON_SCREEN, TASKS_EMPTY_LABEL, TASKS_FAILED_LABEL, TASKS_LOADING_LABEL, projectLine } = logTimeModule;
 
 import { RAIL_PROJECT_KEY } from "@/lib/rail-project";
 
@@ -142,5 +142,62 @@ describe("D-51 the form names its project", () => {
     const trigger = [...container.querySelectorAll('[role="combobox"]')].pop() as HTMLElement;
     fireEvent.keyDown(trigger, { key: "Enter" });
     await waitFor(() => expect(document.body.textContent).toContain("Joinery"));
+  });
+});
+
+describe("D-50 the task select is honest about its four states", () => {
+  test("while loading, the select is disabled and says so", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { container } = renderClient({
+      "/api/schedule/tasks": async () => { await gate; return jsonRes({ tasks: [] }); },
+    });
+    await waitFor(() => expect(container.textContent).toContain(TASKS_LOADING_LABEL));
+    const trigger = container.querySelector('[role="combobox"]') as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    release!();
+  });
+
+  test("a failed load shows the backend's own sentence and a Retry that re-runs the fetch", async () => {
+    let attempt = 0;
+    const { container, findByText } = renderClient({
+      "/api/schedule/tasks": () => {
+        attempt += 1;
+        return attempt === 1
+          ? jsonRes({ error: "Gateway timeout" }, 504)
+          : jsonRes({ tasks: [{ id: "t1", number: 12, title: "Joinery shop drawings" }] });
+      },
+    });
+    await findByText(`${TASKS_FAILED_LABEL}: Gateway timeout`);
+    const trigger = container.querySelector('[role="combobox"]') as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+
+    fireEvent.click(await findByText("Retry"));
+    await waitFor(() => expect((container.querySelector('[role="combobox"]') as HTMLButtonElement).disabled).toBe(false));
+    expect(attempt).toBe(2);
+  });
+
+  test("a project with no tasks says so and offers the way to create one", async () => {
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: [] }) });
+    await waitFor(() => expect(container.textContent).toContain(TASKS_EMPTY_LABEL));
+    fireEvent.click(await findByText("Create one"));
+    expect(push).toHaveBeenCalledWith("/schedule/tasks/new?projectId=proj-cedar");
+  });
+
+  test("leaving Task without choosing one says which question was not answered", async () => {
+    const { container, findByText } = renderClient();
+    await waitFor(() => expect((container.querySelector('[role="combobox"]') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.blur(container.querySelector('[role="combobox"]') as HTMLElement);
+    await findByText("Choose the task these hours were spent on");
+  });
+});
+
+describe("D-50 the Save button counts and names what is missing", () => {
+  test("on an untouched form (Date defaults to today) it names the other three", async () => {
+    const { container, findByText } = renderClient();
+    await findByText("Category");
+    const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Save"))!;
+    expect(save.textContent).toBe("Save (3 required: Task, Hours, Category)");
+    expect((save as HTMLButtonElement).disabled).toBe(true);
   });
 });

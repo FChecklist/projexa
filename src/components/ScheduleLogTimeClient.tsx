@@ -25,7 +25,26 @@
 //     project above Task, offers a "Change project" link that focuses the rail's
 //     own switcher, and writes the resolved project INTO the rail so the two
 //     cannot disagree while the form is being filled in.
-import { useEffect, useState } from "react";
+//
+// ─── R67 D-50 (audit R-142 / R-143 / R-151) ─────────────────────────────────
+// Three more:
+//
+//   * The task fetch ended in `.catch(() => { /* task dropdown is a
+//     convenience */ })`. It is not a convenience -- it is the required field
+//     this whole screen exists to fill in. A 504 left an empty dropdown under a
+//     required label with nothing said, and the user could not tell "this
+//     project has no tasks" from "the request failed". The select now has four
+//     honest states: loading, ready, empty (with a way to create one) and error
+//     (with the backend's own sentence and a Retry that re-runs the fetch).
+//   * The three required fields validated only on submit, via a toast reading
+//     "Task, hours, and date are required". Each now validates on blur with its
+//     own message under the field, and the primary button counts and NAMES what
+//     is still missing.
+//   * A successful save produced a toast that had gone by the time the user
+//     looked up. It now lands on the timesheet with the new row highlighted and
+//     a receipt in the persistent footer message area, built from the row the
+//     SERVER stored.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -43,9 +62,29 @@ import {
   mergeCategoryNames,
   resolveCategoryValue,
 } from "@/lib/time-categories";
+import {
+  DATE_REQUIRED_MESSAGE,
+  HOURS_MAX,
+  HOURS_STEP,
+  TASK_REQUIRED_MESSAGE,
+  hoursError,
+  missingFields,
+  saveReason,
+} from "@/lib/time-entry";
 
 type Task = { id: string; number: number; title: string };
 type Category = { id: string; name: string };
+
+/** The task select's four honest states. An empty list and a failed request are different facts. */
+type TasksState =
+  | { kind: "loading" }
+  | { kind: "ready"; tasks: Task[] }
+  | { kind: "empty" }
+  | { kind: "error"; message: string };
+
+export const TASKS_LOADING_LABEL = "Loading tasks…";
+export const TASKS_FAILED_LABEL = "Couldn't load this project's tasks";
+export const TASKS_EMPTY_LABEL = "This project has no tasks yet";
 
 /** The rail-disagreement line D-51 quotes. The project's own name may contain a hyphen, so the separator is the em-dash this product's other R67 sentences use. */
 export function projectLine(projectName: string): string {
@@ -63,7 +102,7 @@ export default function ScheduleLogTimeClient({
   projectName: string;
 }) {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksState, setTasksState] = useState<TasksState>({ kind: "loading" });
   const [categories, setCategories] = useState<string[]>(mergeCategoryNames([]));
   const [issueId, setIssueId] = useState("");
   const [hours, setHours] = useState("");
@@ -74,13 +113,26 @@ export default function ScheduleLogTimeClient({
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [railNote, setRailNote] = useState<string | null>(null);
+  // Blur-touched fields: a message appears once the user has LEFT a field, not
+  // while they are still in the middle of typing into it.
+  const [touched, setTouched] = useState<{ task?: boolean; hours?: boolean; date?: boolean }>({});
+
+  const loadTasks = useCallback(async () => {
+    setTasksState({ kind: "loading" });
+    try {
+      const data = await fetchJson<{ tasks?: Task[] }>(
+        `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`
+      );
+      const rows = data.tasks ?? [];
+      setTasksState(rows.length ? { kind: "ready", tasks: rows } : { kind: "empty" });
+    } catch (err) {
+      setTasksState({ kind: "error", message: errorMessage(err, TASKS_FAILED_LABEL) });
+    }
+  }, [projectId]);
 
   useEffect(() => {
-    fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`)
-      .then((res) => res.json())
-      .then((data) => setTasks(data.tasks ?? []))
-      .catch(() => { /* task dropdown is a convenience */ });
-  }, [projectId]);
+    void loadTasks();
+  }, [loadTasks]);
 
   useEffect(() => {
     // The project's own categories, from the call that already returns them
@@ -97,20 +149,15 @@ export default function ScheduleLogTimeClient({
   }, [projectId]);
 
   const resolvedCategory = resolveCategoryValue(category, otherCategory);
-
-  const missing = [
-    ...(issueId ? [] : ["Task"]),
-    ...(hours ? [] : ["Hours"]),
-    ...(spentOn ? [] : ["Date"]),
-    ...(resolvedCategory ? [] : ["Category"]),
-  ];
+  const missing = missingFields({ issueId, hours, spentOn, category: resolvedCategory });
+  const hoursMessage = hoursError(hours);
 
   async function logTime() {
-    if (missing.length) return;
+    if (missing.length || hoursMessage) return;
     setSubmitting(true);
     setSaveError(null);
     try {
-      await fetchJson("/api/timesheets", {
+      const entry = await fetchJson<{ id?: string }>("/api/timesheets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -124,7 +171,12 @@ export default function ScheduleLogTimeClient({
         }),
       });
       toast.success("Time logged");
-      router.push(`/schedule?projectId=${projectId}&tab=timesheet`);
+      // D-50: land on the new entry. Until C04-18 ships the entry's own route,
+      // that is the timesheet with this row highlighted -- and the receipt is
+      // built there from the row the SERVER stored, never from this form's
+      // state, so it can never report something that was not written.
+      const highlight = entry?.id ? `&highlight=${encodeURIComponent(entry.id)}` : "";
+      router.push(`/schedule?projectId=${projectId}&tab=timesheet${highlight}`);
     } catch (err) {
       setSaveError(errorMessage(err, "Couldn't log time"));
     } finally {
@@ -141,8 +193,10 @@ export default function ScheduleLogTimeClient({
       onSave={logTime}
       onCancel={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
       onBack={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Logging…" : missing.length ? missing.join(", ") : undefined}
+      saveDisabled={submitting || missing.length > 0 || !!hoursMessage}
+      // ObjectScreen renders "Save (<reason>)" itself, so this is the bracket
+      // contents only; src/lib/time-entry.ts owns both halves of the rule.
+      saveDisabledReason={saveReason(missing, { submitting, blocked: hoursMessage })}
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
@@ -164,16 +218,92 @@ export default function ScheduleLogTimeClient({
           {railNote && <span className="text-px-muted">{railNote}</span>}
         </div>
 
-        <div className="space-y-1.5">
-          <Label>Task</Label>
-          <Select value={issueId} onValueChange={setIssueId}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
-            <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
+        {/* D-50: four honest states, never a silent empty list under a
+            required field. */}
+        <FormField
+          label="Task"
+          required
+          error={
+            tasksState.kind === "error"
+              ? tasksState.message
+              : touched.task && !issueId
+                ? TASK_REQUIRED_MESSAGE
+                : undefined
+          }
+        >
+          {(f) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={issueId} onValueChange={setIssueId}>
+                <SelectTrigger
+                  {...f}
+                  className="min-w-64 flex-1"
+                  disabled={tasksState.kind !== "ready"}
+                  onBlur={() => setTouched((t) => ({ ...t, task: true }))}
+                >
+                  <SelectValue
+                    placeholder={
+                      tasksState.kind === "loading"
+                        ? TASKS_LOADING_LABEL
+                        : tasksState.kind === "error"
+                          ? TASKS_FAILED_LABEL
+                          : tasksState.kind === "empty"
+                            ? TASKS_EMPTY_LABEL
+                            : "Select a task"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {tasksState.kind === "ready" &&
+                    tasksState.tasks.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {tasksState.kind === "error" && (
+                <Button type="button" variant="outline" size="sm" onClick={() => void loadTasks()}>
+                  Retry
+                </Button>
+              )}
+              {tasksState.kind === "empty" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/schedule/tasks/new?projectId=${encodeURIComponent(projectId)}`)}
+                >
+                  Create one
+                </Button>
+              )}
+            </div>
+          )}
+        </FormField>
+
         <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1.5"><Label>Hours (e.g. 7.5)</Label><Input type="number" min="0" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={spentOn} onChange={(e) => setSpentOn(e.target.value)} /></div>
+          <FormField label="Hours (e.g. 7.5)" required error={touched.hours ? hoursMessage : undefined}>
+            {(f) => (
+              <Input
+                {...f}
+                type="number"
+                min="0"
+                max={HOURS_MAX}
+                step={HOURS_STEP}
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                onBlur={() => setTouched((t) => ({ ...t, hours: true }))}
+              />
+            )}
+          </FormField>
+          <FormField label="Date" required error={touched.date && !spentOn ? DATE_REQUIRED_MESSAGE : undefined}>
+            {(f) => (
+              <Input
+                {...f}
+                type="date"
+                value={spentOn}
+                onChange={(e) => setSpentOn(e.target.value)}
+                onBlur={() => setTouched((t) => ({ ...t, date: true }))}
+              />
+            )}
+          </FormField>
         </div>
 
         <FormField label="Category" required>

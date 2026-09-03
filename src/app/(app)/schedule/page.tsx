@@ -45,9 +45,9 @@ async function resolveScheduleTimelineColumns(organizationId: string | null): Pr
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string; tab?: string; q?: string }>;
+  searchParams: Promise<{ projectId?: string; tab?: string; q?: string; highlight?: string }>;
 }) {
-  const { projectId, tab, q } = await searchParams;
+  const { projectId, tab, q, highlight } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const initialTab = isScheduleTab(tab) ? tab : "timeline";
@@ -66,6 +66,7 @@ export default async function SchedulePage({
     const params = new URLSearchParams({ projectId: project.id });
     if (tab) params.set("tab", tab);
     if (q) params.set("q", q);
+    if (highlight) params.set("highlight", highlight);
     redirect(`/schedule?${params.toString()}`);
   }
 
@@ -88,6 +89,7 @@ export default async function SchedulePage({
             projectName={project.name}
             initialTab={initialTab}
             initialQuery={q ?? ""}
+            highlightEntryId={highlight}
             timelineColumns={timelineColumns}
           />
         )}

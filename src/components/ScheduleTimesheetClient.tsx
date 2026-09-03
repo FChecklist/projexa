@@ -10,22 +10,40 @@
 // bridge to VERIDIAN yet, the same pre-existing gap already documented on
 // the leave-approval and quotation-approval buttons. The dialog is real and
 // wired; the POST will surface that 400 until the identity bridge exists.
+//
+// ─── R67 D-50 (audit R-151) ─────────────────────────────────────────────────
+// The whole screen -- including the "+ Log Time" button -- lived INSIDE the
+// loading branch and again inside the error branch, so while the list was
+// loading there was nothing on screen but a spinner, and a failed load removed
+// the one control that could still be used. The header row and the button are
+// now rendered unconditionally, with three skeleton rows beneath while the list
+// loads, and a failure hands the backend's own sentence plus a Retry to the
+// persistent footer message area rather than replacing the screen with a red
+// card.
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import SkeletonTable from "@/components/SkeletonTable";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDayMonthYear } from "@/lib/format-date";
+import { timeLoggedReceipt } from "@/lib/time-entry";
 
 type Entry = {
   id: string; issueId: string; hours: string; spentOn: string; activityType: string | null; comments: string | null;
   issue?: { id: string; number: number; title: string } | null;
 };
 
+const COLUMN_LABELS = ["Date", "Project", "Category", "Task", "Hours", "Comments"];
+
 export default function ScheduleTimesheetClient({
   projectId,
   projectName,
+  highlightEntryId,
+  onMessage,
 }: {
   projectId: string;
   /**
@@ -35,6 +53,10 @@ export default function ScheduleTimesheetClient({
    * makes an exported or printed timesheet readable away from this screen.
    */
   projectName?: string;
+  /** R67 D-50: the entry just written, from ?highlight= -- the row to mark and to build the receipt from. */
+  highlightEntryId?: string;
+  /** R67 D-50: the persistent footer message area, owned by the tabs' ScreenFrame. */
+  onMessage?: (message: FieldMessage | null) => void;
 }) {
   const router = useRouter();
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -46,12 +68,13 @@ export default function ScheduleTimesheetClient({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/timesheets?projectId=${encodeURIComponent(projectId)}${mineOnly ? "&mine=true" : ""}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load timesheet");
+      const data = await fetchJson<{ entries?: Entry[] }>(
+        `/api/timesheets?projectId=${encodeURIComponent(projectId)}${mineOnly ? "&mine=true" : ""}`
+      );
       setEntries(data.entries ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load timesheet");
+      setEntries([]);
+      setError(errorMessage(err, "Couldn't load the timesheet"));
     } finally {
       setLoading(false);
     }
@@ -59,32 +82,64 @@ export default function ScheduleTimesheetClient({
 
   useEffect(() => { load(); }, [load]);
 
+  // The failure goes to the persistent message area, where it stays until it is
+  // resolved, instead of replacing the screen.
+  useEffect(() => {
+    onMessage?.(error ? { level: "error", text: error } : null);
+  }, [error, onMessage]);
+
+  // D-50's receipt, built from the row the SERVER stored -- "a toast alone is
+  // not a receipt". It appears once the list carries the entry that was just
+  // written, so it can never describe a save that did not land.
+  useEffect(() => {
+    if (!highlightEntryId) return;
+    const entry = entries.find((e) => e.id === highlightEntryId);
+    if (!entry) return;
+    onMessage?.({
+      level: "success",
+      text: timeLoggedReceipt({
+        hours: entry.hours,
+        spentOn: entry.spentOn,
+        taskNumber: entry.issue?.number ?? null,
+        taskTitle: entry.issue?.title ?? null,
+      }),
+    });
+  }, [highlightEntryId, entries, onMessage]);
+
   const totalHours = entries.reduce((sum, e) => sum + Number(e.hours), 0);
-
-  // Real screen navigation (2026-08-30) -- replaces the old "Log Time"
-  // Dialog popup with a real create route.
-  const logTimeButton = (
-    <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}><Plus className="size-4" /> Log Time</Button>
-  );
-
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
-  if (error) {
-    return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load timesheet: {error}</CardContent>
-      </Card>
-    );
-  }
 
   return (
     <div className="space-y-4">
+      {/* Rendered unconditionally: a user who arrived to log time can still do
+          it while the list loads, and can still do it when the list failed. */}
       <div className="flex items-center justify-between">
-        <Button variant={mineOnly ? "default" : "outline"} size="sm" onClick={() => setMineOnly((v) => !v)}>
+        <Button
+          variant={mineOnly ? "default" : "outline"}
+          size="sm"
+          disabled={loading}
+          title={loading ? "Loading…" : undefined}
+          onClick={() => setMineOnly((v) => !v)}
+        >
           {mineOnly ? "Showing my entries" : "Show my entries only"}
         </Button>
-        {logTimeButton}
+        <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}>
+          <Plus className="size-4" /> Log Time
+        </Button>
       </div>
-      {entries.length === 0 ? (
+      {loading ? (
+        <Card className="shadow-card">
+          <CardContent className="p-0">
+            <SkeletonTable headers={COLUMN_LABELS} rows={3} caption="Loading time entries…" />
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-center gap-3 py-16 text-center text-sm text-px-muted">
+            <span>The timesheet did not load — the reason is in the message area below.</span>
+            <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+          </CardContent>
+        </Card>
+      ) : entries.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-sm text-px-muted">No time logged yet.</CardContent></Card>
       ) : (
         <Card className="shadow-card">
@@ -105,7 +160,11 @@ export default function ScheduleTimesheetClient({
               </TableHeader>
               <TableBody>
                 {entries.map((entry) => (
-                  <TableRow key={entry.id}>
+                  <TableRow
+                    key={entry.id}
+                    data-testid={entry.id === highlightEntryId ? "timesheet-highlighted-row" : undefined}
+                    className={entry.id === highlightEntryId ? "bg-[color:var(--color-scope-tint)]" : undefined}
+                  >
                     <TableCell>{entry.spentOn ? formatDayMonthYear(entry.spentOn) : "—"}</TableCell>
                     <TableCell>{projectName ?? "—"}</TableCell>
                     <TableCell className={entry.activityType ? undefined : "text-px-muted"}>

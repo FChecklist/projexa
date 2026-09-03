@@ -112,6 +112,7 @@ export function ScheduleTabsClient({
   projectName,
   initialTab,
   initialQuery = "",
+  highlightEntryId,
   timelineColumns,
 }: {
   projectId: string;
@@ -119,6 +120,8 @@ export function ScheduleTabsClient({
   initialTab: ScheduleTab;
   /** The `?q=` filter, read server-side so Back restores it before the first paint. */
   initialQuery?: string;
+  /** R67 D-50: `?highlight=` -- the time entry just written, to mark and to receipt. */
+  highlightEntryId?: string;
   timelineColumns: RegistryColumn[] | null;
 }) {
   const router = useRouter();
@@ -304,7 +307,12 @@ export function ScheduleTabsClient({
             <ScheduleSprintsClient projectId={projectId} />
           </TabsContent>
           <TabsContent value="timesheet">
-            <ScheduleTimesheetClient projectId={projectId} projectName={projectName} />
+            <ScheduleTimesheetClient
+              projectId={projectId}
+              projectName={projectName}
+              highlightEntryId={highlightEntryId}
+              onMessage={(message) => pushMessage(message, "timesheet")}
+            />
           </TabsContent>
         </Tabs>
       </div>
