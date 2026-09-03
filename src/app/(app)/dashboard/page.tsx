@@ -132,17 +132,41 @@ async function DashboardHome({
   // neither depends on the other -- and the registry lookup is kicked off
   // before the awaited block so it is not a third serial round trip.
   const columnsPromise = getScreenColumns("dashboard.dashboard", organizationId); // never rejects
-  const [dashboardResult, currencyResult] = await Promise.allSettled([
+  // R67 D-02: the "Permits expiring" KPI's own count, org-wide, read
+  // concurrently with the other two. VERIDIAN's /permits treats projectId as
+  // optional, so omitting it is the org-wide list -- the same withinDays=30
+  // window the card's own destination (/permits?withinDays=30) then applies,
+  // so the number and the screen it opens can never disagree.
+  const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
+    // R67 E-02: dashboardPath, not a bare "/dashboard" -- carries the Filter
+    // drawer's departmentId/from/to so the filtered view is what actually loads.
     callVeridian<OrgDashboard>(dashboardPath, { organizationId: organizationId ?? undefined }),
-    // R67 F-01: the currency master is a lookup table, not a live figure. The
-    // filtered dashboard path above is the only call here carrying real
-    // numbers. Cached only when the read is unfiltered-by-company, because the
-    // cache is keyed per org.
+    // R67 F-01/F1: the currency master is a lookup table, not a live figure,
+    // and is now memoised per org -- one fewer round trip on every dashboard
+    // navigation. Cached only when the read is unfiltered-by-company, because
+    // the cache is keyed per org.
     organizationId
       ? readCachedCurrencies(organizationId)
       : callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
+    // R67 MERGE: this third read is lane D1's, and a PREVIOUS merge had kept its
+    // comment above, its destructuring below and the KPI that consumes it while
+    // dropping the CALL -- so `permitsResult` was index 2 of a two-element
+    // tuple. It survives this merge too: lane F1 rewrote the element ABOVE it,
+    // which is exactly the shape of edit that silently truncated the tuple last
+    // time. The tile it feeds is on screen and would otherwise read a permanent
+    // en-dash that no failure caused.
+    callVeridian<{ permits?: unknown[] }>("/permits?withinDays=30", {
+      organizationId: organizationId ?? undefined,
+    }),
   ]);
   const registryColumns = await columnsPromise;
+
+  // R67 D-02: null, not 0, when that read failed -- "no permits are expiring"
+  // and "we could not find out" must not render the same.
+  const permitsExpiring =
+    permitsResult.status === "fulfilled" && Array.isArray(permitsResult.value.permits)
+      ? permitsResult.value.permits.length
+      : null;
 
   let data: OrgDashboard | null = null;
   let errorMessage: string | null = null;
@@ -189,6 +213,7 @@ async function DashboardHome({
       // mismatch class src/lib/format-date.ts documents. UTC for the same
       // reason every timestamp in this codebase is stored in it.
       today={new Date().toISOString().slice(0, 10)}
+      permitsExpiring={permitsExpiring}
     />
   );
 }

@@ -179,7 +179,8 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
                           <button
                             type="button"
                             className="flex items-center gap-2 text-left underline-offset-2 hover:underline"
-                            onClick={() => router.push(`/schedule/tasks/${issue.id}`)}
+                            // R67 D-77: ?from= so the task page's Back returns to Sprints.
+                            onClick={() => router.push(`/schedule/tasks/${issue.id}?from=sprints`)}
                           >
                             <span className="font-mono text-xs text-px-muted">#{issue.number}</span>
                             {issue.title}

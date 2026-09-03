@@ -96,3 +96,51 @@ describe("ProjectCreateClient", () => {
     expect(container.textContent).toContain("Target Date (optional)");
   });
 });
+
+// ─── R67 D-01 / D-69 (lane D1, folded into this canonical suite) ─────────────
+//
+// Lane D1 wrote its own suite against its own version of this component. That
+// version is gone (main's server-fed one is canonical under D-11), so these are
+// restated against the merged component rather than dropped.
+//
+// ONE assertion of lane D1's is deliberately NOT restated here: its
+// `missingProjectFields("", "")` block. That function moved to
+// src/lib/project-form.ts and takes an object now, and src/lib/project-form.
+// test.ts already asserts the identical rule on the merged signature (empty
+// form names both fields in form order, whitespace is not a value, a chosen
+// product drops only that field, a complete form is saveable). Restating it
+// here would be a second copy of one rule, not extra coverage.
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fieldForProjectError } from "./ProjectCreateClient";
+
+describe("fieldForProjectError -- a refusal lands next to the field it is about", () => {
+  test("attributes the backend's own words to the field it names", () => {
+    expect(fieldForProjectError("Couldn't create project: productId is required")).toBe("productId");
+    expect(fieldForProjectError("Couldn't create project: name is required")).toBe("name");
+    expect(fieldForProjectError("Couldn't create project: target date must be after start date")).toBe("targetDate");
+    expect(fieldForProjectError("Couldn't create project: start date is invalid")).toBe("startDate");
+  });
+
+  test("names no field when the message names none, so the message stays in the screen's own strip", () => {
+    expect(fieldForProjectError("Couldn't create project: Request failed (HTTP 502)")).toBeUndefined();
+  });
+});
+
+// D-01 replaced CreateProjectDialog with this route and deleted the dialog;
+// D-69's acceptance is that nothing on /dashboard, /projects or /projects/new
+// puts one back. The rendered assertions for the other two screens live in
+// DashboardHomeView.test.tsx and ProjectsListClient.test.tsx; this is the third,
+// plus a source guard so a future edit cannot reintroduce the component the
+// programme's one dialog exception (correction C-01) was closed by removing.
+describe("R67 D-69: the project flow has no dialogs", () => {
+  test("CreateProjectDialog.tsx is gone, and none of the three screens imports a Dialog", () => {
+    const dir = path.join(import.meta.dir);
+    expect(existsSync(path.join(dir, "CreateProjectDialog.tsx"))).toBe(false);
+    for (const file of ["ProjectCreateClient.tsx", "ProjectsListClient.tsx", "DashboardHomeView.tsx"]) {
+      const source = readFileSync(path.join(dir, file), "utf8");
+      expect(source).not.toMatch(/from ["']@\/components\/ui\/dialog["']/);
+      expect(source).not.toMatch(/role=["']dialog["']/);
+    }
+  });
+});

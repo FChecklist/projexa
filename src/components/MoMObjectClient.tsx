@@ -65,7 +65,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { MOM_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
-import { AUTOSAVE_IDLE_MS, autosaveIsSendable, autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
+import { autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
@@ -407,62 +407,16 @@ export default function MoMObjectClient({
   // ref read during render would not re-render the pencil or Save now.
   const hasUnsavedMinutes = minutesDraft !== (meeting?.minutes ?? "");
 
-  // R67 D-67 -- "MoMs autosave after ~2 s of inactivity with 'Saving… /
-  // Saved 12:04'." Before this, an edit lived only in local state until the
-  // user found and pressed Save; Cancel, Back, a reload or a closed tab
-  // threw the whole thing away with no warning at all. The rules -- when a
-  // save is due, what the line says, and when a draft is too incomplete to
-  // send -- are in src/lib/autosave.ts, where they are unit tests.
-  const autosaveMissing = [
-    ...(draft.title.trim() ? [] : ["Title"]),
-    ...(draft.scheduledAt ? [] : ["Date and time"]),
-  ];
-  const autosaveSendable = autosaveIsSendable(autosaveMissing);
-
-  const runAutosave = useCallback(async () => {
-    setAutosaveStatus("saving");
-    try {
-      const res = await fetch(`/api/moms/${meetingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meetingPatchBody(draftRef.current)),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
-      dirtyRef.current = false;
-      setAutosaveSavedAt(new Date());
-      setAutosaveStatus("saved");
-    } catch {
-      // Nothing is discarded and the user is not interrupted: the line reads
-      // "Not saved", the values stay on the form, and the explicit Save
-      // button is still there to try again.
-      setAutosaveStatus("error");
-    }
-    // meetingPatchBody is a stable module-shaped helper over its argument,
-    // and the draft is read from a ref, so this callback does not need to be
-    // rebuilt on every keystroke.
-  }, [meetingId]);
-
-  useEffect(() => {
-    if (mode !== "edit") return;
-    // The render right after startEdit() has changed nothing, so it must not
-    // schedule a write; only an edit the user actually made does.
-    if (!dirtyRef.current) return;
-    if (!autosaveSendable) {
-      // A required field emptied mid-edit is HELD, never written: an
-      // autosave must not put the record into a state the Save button
-      // itself refuses to produce.
-      setAutosaveStatus("pending");
-      return;
-    }
-    setAutosaveStatus("pending");
-    const id = setTimeout(() => {
-      void runAutosave();
-    }, AUTOSAVE_IDLE_MS);
-    return () => clearTimeout(id);
-    // Keyed on the draft itself, so every keystroke restarts the pause and
-    // the write happens once the user stops -- not once per character.
-  }, [draft, mode, autosaveSendable, runAutosave]);
+  // R67 DECISION D-11 point 1: the 2 s idle autosave that used to live here --
+  // "MoMs autosave after ~2 s of inactivity with 'Saving… / Saved 12:04'"
+  // (D-67) -- is REMOVED. It wrote the record while the user was still
+  // deciding, which is exactly what the ruling forbids. What D-67 was
+  // protecting against is not reintroduced by accident: Cancel and Back still
+  // discard knowingly, and the primary is disabled with its reason until the
+  // required fields are there, so a save that lands is always one the user
+  // asked for. The autosave STATUS LINE survives (autosaveLabel below) and is
+  // now settled by the explicit save alone, so "Saved 12:04" still says when
+  // the record was last written.
 
   async function publish() {
     setConfirming(null);
@@ -697,10 +651,17 @@ export default function MoMObjectClient({
       onBack={() => router.push(meeting.projectId ? `/moms?projectId=${meeting.projectId}` : "/moms")}
       saveDisabled={saving || !draft.title.trim() || !draft.scheduledAt}
       saveDisabledReason={saving ? "Saving…" : !draft.title.trim() || !draft.scheduledAt ? "Title and date/time are required" : undefined}
-      // D-17: minutes autosave. The fork arms the kit's own 2s debounce in
-      // display mode too, because live minutes are typed on the display page --
-      // there is no "edit mode" to enter for them.
-      onAutosave={isPublished ? undefined : () => void patchMinutes(latestMinutesRef.current)}
+      // R67 DECISION D-11 point 1, applied at the integration merge: NO
+      // onAutosave. Lane D22's read-only-until-Edit ruling is that a record
+      // other people read must not be written without a decision point -- a
+      // stray keystroke changing a published minute, with nothing to confirm
+      // and nothing to undo, is the defect. The minutes box below therefore
+      // writes only when "Save now" is pressed, and the details form only when
+      // Save is. Nothing else about this screen changes: Edit/Delete are still
+      // rendered-and-disabled-with-a-reason (D-17), the people picker (D-19)
+      // and the share-link list (D-21) are untouched, and the save still goes
+      // through this file's one submit path so the receipt and the failure
+      // wording are the ones D-17 specified.
       messages={[
         ...(isPublished ? [{ level: "info" as const, text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []),
         ...(actionAttempted && addDisabledReason ? [{ field: "action-validation", level: "warning" as const, text: ACTION_ITEM_VALIDATION_MESSAGE }] : []),

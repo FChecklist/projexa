@@ -45,6 +45,7 @@
 // 500'd every GET /schedule in production (digest 1240219489).
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
+import FooterMessageBanner from "@/components/FooterMessageBanner";
 import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { SCHEDULE_TIMELINE_COLUMNS } from "@/lib/module-list-columns";
@@ -173,6 +174,12 @@ export default async function SchedulePage({
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Schedule" />
+      {/* R67 lane D22 (item D-48): the receipt an import left for this page
+          ("Imported 38 activities from Programme-Rev2.xlsx"). Rendered here,
+          OUTSIDE the Suspense boundary, rather than as a toast that would race
+          the navigation announcing it -- and outside so it paints at TTFB with
+          the heading, which is F-18's whole point. */}
+      <FooterMessageBanner route="/schedule" />
       <Suspense fallback={SKELETON}>
         <ScheduleSection requestedProjectId={projectId} tab={tab} query={q} highlight={highlight} />
       </Suspense>

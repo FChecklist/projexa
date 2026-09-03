@@ -130,7 +130,7 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
       onCancel={mode === "edit" ? () => { setDraftLines(budget.lineItems); setMode("display"); } : undefined}
       onDelete={budget.status !== "cancelled" ? () => runAction("cancel") : undefined}
       deleteDisabledReason={budget.status === "cancelled" ? "Already cancelled" : actionBusy ? "Working…" : undefined}
-      onBack={() => router.push("/budgets")}
+      onBack={() => router.push("/finance/budgets")}
       saveDisabled={actionBusy !== null}
       messages={createdName ? [{ level: "success", text: `Budget ${createdName} created` }] : []}
     >

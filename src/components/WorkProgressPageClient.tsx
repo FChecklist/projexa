@@ -71,6 +71,11 @@ export default function WorkProgressPageClient({
   const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  // R67 D-29 (lane D1, folded in): a lookup that failed WITHOUT taking the
+  // table down still has to say so -- a silently missing lookup is how an
+  // activity ends up rendering as a raw id and the form's picker comes up empty
+  // with nothing on screen admitting a read failed.
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -79,6 +84,7 @@ export default function WorkProgressPageClient({
 
     const result = await readWorkProgress(projectId);
     setActivities(result.activities);
+    setActivitiesError(result.activitiesError);
 
     if (result.entries.status === "error") {
       // The rows already on screen are NOT thrown away -- PaneState labels
@@ -140,6 +146,11 @@ export default function WorkProgressPageClient({
           loadedAt={loadedAt}
           startedAt={startedAt}
         />
+        {activitiesError && (
+          <p role="status" className="border-t border-ct-border px-4 py-2 text-[12.5px] text-px-error">
+            {activitiesError} Activity names may show as ids below, and the form&apos;s picker may be empty.
+          </p>
+        )}
       </div>
       <div ref={formRef} className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         {/* F-24: the page already read this list; handing it down is one

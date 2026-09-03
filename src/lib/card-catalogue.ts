@@ -271,8 +271,11 @@ export const CARD_CATALOGUE: readonly CardDef[] = [
   {
     id: "budgets.new",
     verb: "Create",
-    object: "budget",
-    label: "New budget",
+    // R67 lane D22 (item D-41): the object is the ERP fiscal-year budget, which
+    // now lives under Finance. /budgets is the project's own BOQ budget and has
+    // nothing to create. The leaf it points at carries the new destination.
+    object: "finance budget",
+    label: "New finance budget",
     kind: "write",
     moduleId: "budgets",
     leafId: "budgets.new",

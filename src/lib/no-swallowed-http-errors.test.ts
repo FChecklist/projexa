@@ -246,6 +246,12 @@ function discardedStatusSites(source: string): string[] {
  */
 const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
   "CompanyCreateClient.tsx",
+  // R67 merge (D-11, D1 x D21): BOTH lanes removed CostVarianceAnalyticalClient
+  // from this list, for reasons that agree. D-26 converted its one read to
+  // fetchJson(); D-62 then deleted the component outright -- the Scope module's
+  // second tab is PROJEXA's project budget and is now the editable
+  // BudgetAnalyticalClient. This guard fails on a stale allowlist entry
+  // ("no such component -- delete the entry"), so the entry had to go either way.
   "JournalEntryCreateClient.tsx",
   "OpportunitiesClient.tsx",
   "OpportunityCreateClient.tsx",

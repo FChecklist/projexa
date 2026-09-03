@@ -8,8 +8,24 @@
 // screen_definitions row returns null (404/error), same "keep the hardcoded
 // version behind a flag until verified" contract as the other three
 // conversions. Real-screen conversion (2026-08-30): the "New Budget" Dialog is
-// gone, replaced by a real /budgets/new route + a real /budgets/[id] Object
-// Page (BudgetObjectClient.tsx) that never existed before.
+// gone, replaced by a real create route + a real Object Page
+// (BudgetObjectClient.tsx) that never existed before.
+//
+// R67 MERGE (D-11, lane D1 x lane D3, 2026-09-03). D3's rewrite of this screen
+// SURVIVES WHOLE -- it is the genuine superset (ScreenFrame's fixed header trio,
+// ListScreen, a real Export, and D-44's two-next-steps empty state), against
+// D1's older Card/Table version. What D1 contributed is the ROUTING, and it is
+// not cosmetic: D-62 split the two budgets this product has, moving the ERP's
+// fiscal-year budget to /finance/budgets/* and pointing the "Budgets" nav entry
+// at the PROJECT budget instead. So every push here now names /finance/budgets/*
+// directly rather than the /budgets/* aliases, which are redirects.
+//
+// One REAL DEFECT was fixed in the fold: D3's empty state linked the "BOQ
+// budget" button to /scope?tab=cost-variance, and D-62 renamed that tab to
+// "budget". The scope page maps only "budget" and "variance" onto the Budget
+// tab, so "cost-variance" fell through to the BOQ tab -- the button silently
+// landed on the wrong screen. git flagged none of this: the two lanes touched
+// different files.
 //
 // R67 D-43 (audit R-110). Three defects, all of them the screen talking to
 // itself rather than to the user:
@@ -241,7 +257,7 @@ export default function BudgetsClient({
         disabledReason: loading ? "Loading…" : budgets.length === 0 ? "No budgets to export" : undefined,
         onClick: exportBudgets,
       }}
-      newAction={{ label: "+ New", onClick: () => router.push("/budgets/new") }}
+      newAction={{ label: "+ New", onClick: () => router.push("/finance/budgets/new") }}
       messages={[]}
     >
       <div className="space-y-4 px-4 py-3">
@@ -260,7 +276,7 @@ export default function BudgetsClient({
             <CardContent className="space-y-3 p-6 text-center">
               <p className="text-sm text-ct-navy">{EMPTY_COPY(orgName)}</p>
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button size="sm" data-testid="budgets-new" onClick={() => router.push("/budgets/new")}>
+                <Button size="sm" data-testid="budgets-new" onClick={() => router.push("/finance/budgets/new")}>
                   + New Budget
                 </Button>
                 <Button
@@ -271,7 +287,7 @@ export default function BudgetsClient({
                   title={selectedProject ? undefined : NO_PROJECT_REASON}
                   onClick={() =>
                     selectedProject &&
-                    router.push(`/scope?tab=cost-variance&projectId=${encodeURIComponent(selectedProject.id)}`)
+                    router.push(`/scope?tab=budget&projectId=${encodeURIComponent(selectedProject.id)}`)
                   }
                 >
                   {selectedProject ? BOQ_BUDGET_LABEL : `${BOQ_BUDGET_LABEL} (${NO_PROJECT_REASON})`}
@@ -287,7 +303,7 @@ export default function BudgetsClient({
             getRowId={(row) => row.id as string}
             // Real screen navigation (2026-08-30) -- rows open the real Object
             // Page instead of nothing.
-            onRowClick={(row) => router.push(`/budgets/${row.id}`)}
+            onRowClick={(row) => router.push(`/finance/budgets/${row.id}`)}
             emptyStateLabel={EMPTY_COPY(orgName)}
             renderCell={{
               name: (row) => <span className="font-medium">{String(row.name)}</span>,

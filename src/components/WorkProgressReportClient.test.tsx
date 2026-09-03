@@ -16,9 +16,13 @@
 // the output as an HTML string instead of through a jsdom-backed query API.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CategoryFilterGroup, ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
+import { CategoryFilterGroup, ScopeTable, noProgressText, reportIsEmpty, type LineItemRow } from "./WorkProgressReportClient";
+import { formatMoney } from "@/lib/format-money";
 
-const money = (n: number) => `AED ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// R67 D-61 (second-merge fix): the real formatMoney(), not a hand-rolled
+// toLocaleString() -- money-format-rule.test.ts bans the method itself
+// anywhere under src/components, test files included.
+const money = (n: number) => formatMoney(n, { currency: "AED" });
 
 function textsOfTag(html: string, tag: string): string[] {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>(.*?)</${tag}>`, "gs");
@@ -132,6 +136,15 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "qty-current")[0]).toBe("");
     expect(textsByTestId(html, "amt-current")[0]).toBe("");
     // prev WAS touched, so it still renders as a real formatted number.
+    // R67 D-61 briefly changed the money half of this to "5,400.00" on the
+    // grounds that money is two decimals everywhere. It is back to "5,400",
+    // because lane G's G-05 -- already on main -- answered the same finding
+    // differently and better for THIS table: one formatDecimal() helper serves
+    // both the Quantity band and the Amount band here, with the currency named
+    // once in the band heading, precisely so a quantity of 50 Sqm is not
+    // rendered as if it were 50.00 dirhams. Two decimals is the rule for a
+    // money-only column (formatMoney), not for a grid whose columns are
+    // sometimes quantities.
     expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
     expect(textsByTestId(html, "amt-prev")[0]).toBe("AED 5,400.00");
   });
@@ -141,6 +154,15 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "amt-third")[0]).toBe("AED 23,490.00");
   });
 });
+
+// R67 D-61's own ScopeTable money-format block used to sit here. It was
+// DROPPED at the lane G merge: G-05 had already fixed this table's local
+// money(), and fixed it differently -- one formatDecimal() helper serving both
+// the Quantity band and the Amount band, with the currency named once in the
+// band heading and ScopeTable taking no currency prop at all. D-61's tests
+// asserted the prop it no longer has. The behaviour those tests were written to
+// protect is covered by src/lib/format-number.test.ts (the pinned locale and
+// the grouping) and by the "ScopeTable money format" assertions above.
 
 // R67 lane I (WS-I item I-05, R-177): the Category multi-select the item asks
 // for on the WPR parameter bar. Same renderToStaticMarkup approach as above --
@@ -214,5 +236,47 @@ describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
       <CategoryFilterGroup available={["Civil"]} selected={["Civil"]} disabled onToggle={noop} onApply={noop} />
     );
     expect(html).toMatch(/data-testid="wpr-category-apply"[^>]*disabled=""|disabled=""[^>]*data-testid="wpr-category-apply"/);
+  });
+});
+
+// ─── R67 D-29 (audit R-080) ──────────────────────────────────────────────
+// A report that ran over a window in which nothing happened used to render four
+// empty tables under four tabs, leaving the reader to work out for themselves
+// whether that meant "no progress" or "the report is broken". One sentence
+// answers it. `touched.current` is the flag the report already computes for
+// exactly this distinction -- money() cannot tell a real computed zero from a
+// bucket nothing has ever reached, because both are the number 0.
+describe("R67 D-29: an untouched window says so", () => {
+  const UNTOUCHED: LineItemRow = {
+    lineItemId: "p-2.01", code: "2.01", description: "Screed", categoryName: "Finishes",
+    unit: "Sqm", rate: 60, qtyTotal: 100, amtTotal: 6000, parentLineItemId: null,
+    qty: { prev: 20, current: 0, total: 20, balance: 80 },
+    amt: { prev: 1200, current: 0, total: 1200, balance: 4800 },
+    percentage: { prev: 20, current: 0, total: 20, balance: 80 },
+    touched: { prev: true, current: false, total: true },
+  };
+
+  test("every band untouched and no manpower or vendor rows means no progress in the window", () => {
+    expect(reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [] })).toBe(true);
+  });
+
+  test("one touched line, one manpower row or one vendor row is enough to be a real report", () => {
+    expect(
+      reportIsEmpty({ rows: [{ ...UNTOUCHED, touched: { prev: true, current: true, total: true } }], byManpower: [], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [{ trade: "Mason", workerDays: 4, totalCost: 800 }], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [{ vendorId: "v1", vendorName: "Al Noor", totalCost: 900 }] })
+    ).toBe(false);
+  });
+
+  test("a BOQ with no lines at all still reads as no progress, not as a broken report", () => {
+    expect(reportIsEmpty({ rows: [], byManpower: [], byVendor: [] })).toBe(true);
+  });
+
+  test("the sentence names the window the user asked for", () => {
+    expect(noProgressText("2026-08-01", "2026-08-31")).toBe("No progress recorded between 2026-08-01 and 2026-08-31");
   });
 });

@@ -39,17 +39,22 @@ import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScopeClient, { type Boq } from "@/components/ScopeClient";
-import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
 import BudgetActualClient from "@/components/BudgetActualClient";
+import BudgetAnalyticalClient from "@/components/BudgetAnalyticalClient";
 
 // R67 D-23 x F-18: the heading moved INSIDE the boundary so it can name the
 // resolved project (see ScopeSection), which means the fallback has to paint
 // it too -- otherwise the title would arrive with the list instead of at TTFB,
 // which is the whole point of F-18. Same shape as moms/page.tsx.
 const SKELETON = (
+  // R67 merge (D-11, lane D1 x lane D21): D21's heading-in-the-skeleton wins the
+  // structure (F-18 -- the title must paint at TTFB, not arrive with the list),
+  // and D1's tab LABEL wins the wording, because D-62 renamed that tab from
+  // "Cost Variance" to "Budget". A skeleton that named a tab the real screen no
+  // longer has would flash the old name on every load.
   <>
     <PageHeading title="Scope of Work (BOQ)" />
-    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Budget", "Revenue / Budget / Actual"]} actions={["New BOQ"]} />
   </>
 );
 
@@ -115,17 +120,34 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
     <PageHeading title="Scope of Work (BOQ)" context={name} />
     {/* R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
         destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
-        screen; variance is a different, flat "which line is worst" question. */}
-    {/* R67 E-08 (R-115): "Budget" is the third tab -- Sumeet item 9's Revenue /
-        Budget / Actual, scope-wise and category-wise. The item asks for it on
-        the project-scoped Budget screen (C03-16); until that ships it lives
-        here, beside the BOQ it is derived from, which is the item's own stated
-        fallback. */}
-    <Tabs defaultValue={tab === "variance" ? "variance" : tab === "budget" ? "budget" : "boq"} className="space-y-4">
+        screen; the second tab is a different, flat "where is the money" question.
+
+        R67 D-62 (lane D1). That second tab was called "Cost Variance" and was
+        READ-ONLY. It is PROJEXA's project budget -- the thing Sumeet's own budget
+        sheet is -- so it is named Budget and is editable in place, which is why
+        BudgetAnalyticalClient replaces CostVarianceAnalyticalClient here and the
+        latter is deleted rather than left as a second, read-only door to the same
+        figures. ?tab=variance is still honoured: it is the URL DASHBOARD.PROJECT
+        shipped with, and the one every bookmark and older screenshot carries.
+
+        R67 second-merge note (E1 x D1). E1's own E-08 (R-115) tab was ALSO
+        named "Budget" (value="budget") -- written on the premise, stated in
+        BudgetActualClient.tsx's own header, that it was "the item's own
+        fallback until the project-scoped Budget screen (C03-16) ships". D1's
+        BudgetAnalyticalClient IS that screen, but it answers a DIFFERENT
+        question (the editable BOQ budget/vendor sheet) -- it carries no
+        Revenue column and no scope-wise/category-wise fold, so E-08's own
+        report (aggregateRevenueBudgetActual, via BudgetActualClient) is NOT
+        actually superseded and survives as its own tab, renamed so the two
+        "Budget"s cannot collide on one value. */}
+    <Tabs
+      defaultValue={tab === "budget" || tab === "variance" ? "budget" : tab === "revenue-budget-actual" ? "revenue-budget-actual" : "boq"}
+      className="space-y-4"
+    >
       <TabsList>
         <TabsTrigger value="boq">BOQ</TabsTrigger>
-        <TabsTrigger value="variance">Cost Variance</TabsTrigger>
         <TabsTrigger value="budget">Budget</TabsTrigger>
+        <TabsTrigger value="revenue-budget-actual">Revenue / Budget / Actual</TabsTrigger>
       </TabsList>
       <TabsContent value="boq">
         <ScopeClient
@@ -135,10 +157,10 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
           initial={list}
         />
       </TabsContent>
-      <TabsContent value="variance" className="h-[calc(100vh-14rem)] min-h-[560px]">
-        <CostVarianceAnalyticalClient projectId={projectId} />
+      <TabsContent value="budget" className="h-[calc(100vh-14rem)] min-h-[560px]">
+        <BudgetAnalyticalClient projectId={projectId} />
       </TabsContent>
-      <TabsContent value="budget">
+      <TabsContent value="revenue-budget-actual">
         <BudgetActualClient projectId={projectId} />
       </TabsContent>
     </Tabs>

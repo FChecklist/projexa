@@ -13,9 +13,12 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { NoProjectsRow, ProjectRow, projectHref } from "./ProjectRow";
 import type { DashboardProject } from "@/lib/dashboard-rows";
+import { formatMoney } from "@/lib/format-money";
 
-const money = (v: number | string | null | undefined) =>
-  v === null || v === undefined ? "–" : `AED ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// R67 D-61 (second-merge fix): the real formatMoney(), not a hand-rolled
+// toLocaleString() -- money-format-rule.test.ts bans the method itself
+// anywhere under src/components, test files included.
+const money = (v: number | string | null | undefined) => formatMoney(v, { currency: "AED" });
 
 function project(overrides: Partial<DashboardProject> = {}): DashboardProject {
   return {

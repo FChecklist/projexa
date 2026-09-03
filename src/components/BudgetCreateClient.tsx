@@ -5,7 +5,7 @@
 // VERIDIAN lookups, same blocked-reason honesty when fiscal years / chart of
 // accounts aren't provisioned.
 //
-// â”€â”€â”€ R67 D-67 + correction C-15 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── R67 D-67 + correction C-15 ──────────────────────────────────────────────
 //
 // C-15's finding, in full: "the block is an org-setup precondition surfaced
 // correctly (disabled-with-reason), but THE REASON IS A PARAGRAPH INSIDE A
@@ -19,6 +19,43 @@
 // /erp/periods screen -- the page that actually creates fiscal years -- so
 // the dead end has an exit. The asterisks are gone with it: D-67's convention
 // is that a required field is named in the Save label and nowhere else.
+//
+// ─── R67 MERGE (lane D1 x lanes D-67 / F2) ───────────────────────────────────
+//
+// BOTH lanes independently implemented C-15, and neither is discarded:
+//
+//   * Main's CreateScreen/useSubmit/useOrgMoney rewrite is canonical (D-11).
+//     Lane D1 was still on the kit's ObjectScreen with hand-rolled FieldErrors
+//     and a `submitting` boolean; every one of those is now the shared
+//     archetype's job, so lane D1's copies go rather than sit beside them.
+//   * Lane F2's F-19 (audit R-245) allSettled lookup batch stays exactly as it
+//     is on main -- see the effect's own comment.
+//   * Lane D1's THREE things that main did not have are folded in:
+//
+//       - D-62's ROUTING. This screen now lives at /finance/budgets/new;
+//         /budgets, /budgets/[id] and /budgets/new are redirect shims (see
+//         their own page comments for why the ERP budget and the project
+//         budget had to stop sharing one door). So moduleHref, Cancel and the
+//         post-save receipt all point at /finance/budgets -- main still said
+//         /budgets, which would send every navigation off this screen through
+//         a redirect hop, and `router.replace` straight into one.
+//       - C-15's WORDING AS TESTED FUNCTIONS. shortBlockedReason(),
+//         blockedBanner() and erpSetupHref() below are what
+//         BudgetCreateClient.test.tsx asserts, so the exact sentence C-15
+//         specified is held by a test rather than by this comment.
+//         shortBlockedReason() also names only what is ACTUALLY missing --
+//         "needs a fiscal year" when the chart of accounts is fine -- where
+//         main's version was a single both-missing constant
+//         (BUDGET_PRECONDITION_LABEL, dropped here: nothing referenced it and
+//         the function subsumes it).
+//       - THE LINK'S ORIGIN COMES FROM CONFIG, NOT FROM A HARDCODED HOST.
+//         Main built the URL from NEXT_PUBLIC_VERIDIAN_APP_URL with a
+//         production host as its fallback, so a deployment pointed at a
+//         different VERIDIAN would send the user to the wrong company's ERP
+//         and could never render no link at all. veridian-client.ts already
+//         resolves the real origin, but it is server-only, so the page passes
+//         it in. No origin means NO link: a link to nowhere is worse than
+//         none, and that is a case the hardcoded fallback could not express.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -34,17 +71,56 @@ import type { BudgetLookups } from "@/lib/budget-lookups";
 import type { CreateField } from "@/lib/create-screen";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 
+/** D-62: the ERP budget's real home. /budgets/* are redirect shims onto it. */
+const MODULE_HREF = "/finance/budgets";
+
+/**
+ * R67 D-62, correction C-15. The precondition itself is correct and stays: this
+ * screen writes an ERP budget, and an ERP budget needs a fiscal year and an
+ * account. What was wrong was WHERE it was said -- a 30-word sentence inside the
+ * primary button. These two functions are the split: the long form for the
+ * banner, the short form for the button.
+ *
+ * "needs a fiscal year and an account" is the exact wording C-15 specifies, and
+ * the singular/plural is deliberate: the button names the THINGS required, not
+ * the empty collections behind them.
+ */
+export function shortBlockedReason(missing: readonly string[]): string {
+  const words = missing.map((m) => (m === "fiscal years" ? "a fiscal year" : "an account"));
+  return `needs ${words.join(" and ")}`;
+}
+
+export function blockedBanner(missing: readonly string[]): string {
+  return `This organisation has no ${missing.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`;
+}
+
+/**
+ * Where the banner's link goes. VERIDIAN's own ERP setup screens live on the
+ * compliance-tracker app, whose origin veridian-client already resolves from
+ * VERIDIAN_API_BASE_URL -- but that is a SERVER module and this is a client
+ * component, so the origin is threaded in as a prop by the page (which can read
+ * it). Not a guessed path: /erp/periods is compliance-tracker's real fiscal-year
+ * and period screen (src/app/(app)/erp/periods/page.tsx), which is where the
+ * first of the two missing things is created.
+ */
+export const VERIDIAN_ERP_SETUP_PATH = "/erp/periods";
+
+/** The full destination, or null when no VERIDIAN origin was resolvable. */
+export function erpSetupHref(veridianOrigin: string | null | undefined): string | null {
+  const origin = veridianOrigin?.trim();
+  return origin ? `${origin.replace(/\/$/, "")}${VERIDIAN_ERP_SETUP_PATH}` : null;
+}
+
 type FiscalYear = { id: string; yearName: string; startDate: string; endDate: string; isClosed: boolean };
 type CostCenter = { id: string; name: string; projectId: string | null };
 type Account = { id: string; accountName: string; accountNumber: string | null };
 
-// The ERP that owns fiscal years and the chart of accounts is a different
-// deployment, so its address is configuration. The fallback is the same
-// production host veridian-client.ts already defaults its API base to.
-const VERIDIAN_APP_URL = (
-  process.env.NEXT_PUBLIC_VERIDIAN_APP_URL ?? "https://veridian-compliance-ai.vercel.app"
-).replace(/\/+$/, "");
-const FISCAL_SETUP_URL = `${VERIDIAN_APP_URL}/erp/periods`;
+// R67 merge (D-11, D1 x D3): D3 built this link from NEXT_PUBLIC_VERIDIAN_APP_URL
+// with a PRODUCTION HOST as its fallback. That is wrong for any deployment
+// pointed at a different VERIDIAN -- it would send the user to another
+// company's ERP, and could never render no link at all. D1's erpSetupHref()
+// above takes the origin the server actually resolved and answers null when
+// there is none, so the two constants D3 declared here are gone.
 
 /** C-15's exact wording for the shortened primary. */
 export const BUDGET_PRECONDITION_LABEL = "needs a fiscal year and an account";
@@ -74,7 +150,15 @@ function canSetUpAccounting(role: string | null | undefined): boolean {
   return !!role && (ROLE_GROUPS.ORG_ADMIN as readonly string[]).includes(role);
 }
 
-export default function BudgetCreateClient({ initialLookups }: { initialLookups?: BudgetLookups } = {}) {
+// R67 merge (D-11, D1 x F1): both props, both optional. F-08's initialLookups
+// is the server-side prefetch that stops the four selects flipping from enabled
+// to disabled after hydration; D1's veridianOrigin is the resolved ERP origin
+// the blocked banner's "Set up in VERIDIAN" link needs (C-15), which cannot be
+// read here because veridian-client is server-only. They are independent.
+export default function BudgetCreateClient({
+  initialLookups,
+  veridianOrigin,
+}: { initialLookups?: BudgetLookups; veridianOrigin?: string | null } = {}) {
   const router = useRouter();
   const orgMoney = useOrgMoney();
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(initialLookups?.fiscalYears ?? []);
@@ -206,6 +290,7 @@ export default function BudgetCreateClient({ initialLookups }: { initialLookups?
   // a single optional lookup's 500 no longer suppresses this real precondition
   // for the two fields that DID answer.
   const blocked = !lookupsLoading && !lookupError && missingLookups.length > 0;
+  const setupHref = erpSetupHref(veridianOrigin);
 
   // R67 D-42: the two text inputs used to stay LIVE while the form could not be
   // saved, so a user could type a budget name and an amount into a form that was
@@ -311,34 +396,43 @@ export default function BudgetCreateClient({ initialLookups }: { initialLookups?
     onSuccess: (data) => {
       const id = typeof data?.id === "string" ? data.id : "";
       if (!id) throw new Error("The server did not confirm a saved budget");
-      router.replace(createdHref("/budgets", id, (values.name ?? "").trim()));
+      // D-62: the object page is /finance/budgets/[id]. /budgets/[id] still
+      // redirects here, but replacing straight INTO a redirect would put the
+      // receipt one bounce away from the save that earned it.
+      router.replace(createdHref(MODULE_HREF, id, (values.name ?? "").trim()));
     },
   });
 
   return (
     <CreateScreen
       module="Budgets"
-      moduleHref="/budgets"
+      moduleHref={MODULE_HREF}
       objectLabel="Budget"
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
       money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
-      // C-15: the short label. The paragraph lives in the banner.
-      extraMissing={blocked ? [BUDGET_PRECONDITION_LABEL] : []}
+      // C-15: the short label, naming only what is actually missing. The
+      // paragraph lives in the banner.
+      extraMissing={blocked ? [shortBlockedReason(missingLookups)] : []}
       failure={submit.failure}
       onRetry={submit.submit}
       saving={submit.saving || lookupsLoading}
       saved={submit.saved}
       onSubmit={submit.submit}
-      onCancel={() => router.push("/budgets")}
+      onCancel={() => router.push(MODULE_HREF)}
       secondaryAction={
+        // R67 merge (D-11, D1 x D3): D3's role split is kept whole -- an admin
+        // gets the link, everyone else gets a way to ASK, because the fix is not
+        // theirs to make. D1's rule rides on top of the admin branch: the link
+        // renders only when a VERIDIAN origin was actually resolved, since a link
+        // to nowhere is worse than none.
         // R67 D-42: an admin is sent to the screen that fixes this. Everyone
         // else is given a way to ASK, because the fix is not theirs to make.
         blocked ? (
-          canSetUpAccounting(role) ? (
+          canSetUpAccounting(role) ? (setupHref ? (
             <a
-              href={FISCAL_SETUP_URL}
+              href={setupHref}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
@@ -346,6 +440,7 @@ export default function BudgetCreateClient({ initialLookups }: { initialLookups?
               Set up in VERIDIAN
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
+            ) : undefined
           ) : askState === "sent" ? (
             <span role="status" className="text-sm text-px-muted">
               Sent — your administrator has been asked to set this up.
@@ -373,8 +468,7 @@ export default function BudgetCreateClient({ initialLookups }: { initialLookups?
         <>
           {blocked && (
             <div role="alert" className="max-w-3xl rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
-              This organisation has no {missingLookups.join(" and ")} in VERIDIAN&apos;s ERP module yet, and both are
-              required to create a budget. They must be set up in VERIDIAN before a budget can be created here.
+              {blockedBanner(missingLookups)}
             </div>
           )}
           {lookupError && (

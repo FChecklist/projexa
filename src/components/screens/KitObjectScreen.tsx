@@ -80,6 +80,7 @@ import { Pencil } from "lucide-react";
 import { ScreenFrame, StatusBadge, DocumentFlow } from "@fchecklist/veridian-ui-kit/screens";
 import type { DocumentFlowData, FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { ListLoadingWords } from "@/components/ListScreenFrame";
+import { formatTime } from "@/lib/format-date";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000; // GLOBAL: "autosave debounced ~2s"
 
@@ -102,7 +103,15 @@ export type KitObjectScreenLoadedProps = {
    * carry a menu, so the slot lives here rather than there.
    */
   headerActions?: React.ReactNode;
-  facets?: { label: string; value: string }[];
+  /**
+   * R67 D-12 (lane D1, folded in under D-11's addendum rather than kept as a
+   * third fork): a facet's value is a ReactNode, not a string. The drawings
+   * object page's "Supersedes" facet has to LINK to the revision it replaced --
+   * a facet that named the previous revision without going there would make the
+   * reader search the register by hand. Every existing caller is unaffected: a
+   * string IS a ReactNode, so this widens the prop and breaks nothing.
+   */
+  facets?: { label: string; value: React.ReactNode }[];
   documentFlow?: DocumentFlowData;
   mode: KitObjectScreenMode;
   hasDraft: boolean; // an existing draft the user left mid-edit (editing icon, M29)
@@ -126,6 +135,16 @@ export type KitObjectScreenLoadedProps = {
    * destructive footer action. On a worker that word is a lie: the action sets
    * isActive=false and keeps every attendance row and every cost. A screen has
    * to be able to call it "Deactivate".
+   *
+   * R67 MERGE (D-11, lane D1 x lane D3, 2026-09-03): lane D1 arrived with an
+   * IDENTICAL prop of the same name and type, declared for its own reason, and
+   * the two were reconciled into this single declaration rather than left as a
+   * duplicate property. D1's case, kept here because it is the one that shows
+   * why the label must be per-screen and not a two-value flag: the drawings
+   * object page has TWO destructive acts with different meanings and different
+   * gates -- "Remove" (a hard delete inside the 24-hour grace window, the file
+   * goes too) and "Dispose" (the records-management act, gated on the retention
+   * policy). A screen that called both of them "Delete" would be lying about one.
    */
   deleteLabel?: string;
   /**
@@ -240,10 +259,12 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
   if (props.loading) return <KitObjectScreenLoading {...props} />;
 
   const {
-    // D3 x D21 merge: the union of the two lanes' additions. D3 contributed
-    // `deleteLabel` (default "Delete", so no other screen changes) and
-    // `secondaryAction`; D21 contributed `headerActions` and
-    // `editDisabledReason`. Nothing is dropped -- each prop has its own caller.
+    // D3 x D21 x D1 merge: the union of the three lanes' additions. D3
+    // contributed `deleteLabel` (default "Delete", so no other screen changes)
+    // and `secondaryAction`; D21 contributed `headerActions` and
+    // `editDisabledReason`; D1 widened `facets` to ReactNode and arrived at the
+    // same `deleteLabel`, which is now one declaration serving both lanes'
+    // callers. Nothing is dropped -- each prop has its own caller.
     breadcrumb, title, subtitle, headerStatus, headerActions, facets, documentFlow, mode, hasDraft, lockedByOther,
     onEdit, onSave, onCancel, onDelete, onBack, editDisabledReason, deleteDisabledReason,
     deleteLabel = "Delete", secondaryAction, saveDisabled, saveDisabledReason,
@@ -334,10 +355,11 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
           title={deleteDisabledReason}
           className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {/* FORK (D-33): was the hard-coded word "Delete". D3 x D21 merge --
-              D3 made the word a prop, D21 made the reason visible text rather
-              than a title-only tooltip. Both apply: the control names the act
-              it performs AND says out loud why it is not offered. */}
+          {/* FORK (D-33): was the hard-coded word "Delete". D3 x D21 x D1 merge
+              -- D3 made the word a prop, D21 made the reason visible text rather
+              than a title-only tooltip, and D1 reached the same prop for the
+              drawings page's Remove/Dispose pair. All apply: the control names
+              the act it performs AND says out loud why it is not offered. */}
           {deleteLabel}
           {deleteDisabledReason && <span className="text-[11px]">({deleteDisabledReason})</span>}
         </button>
@@ -346,7 +368,12 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
   );
 
   const headerMessageStrip = lockedByOther
-    ? `Locked by another user until ${new Date(lockedByOther.lockExpiresAt).toLocaleTimeString()}`
+    // R67 D-61 (swept at the merge). toLocaleTimeString() takes the RUNTIME's
+    // locale AND time zone, so this sentence rendered one clock time on the
+    // server and another in the reader's browser -- on a lock expiry, which is
+    // the one string on the screen that has to be trusted to the minute.
+    // formatTime() pins both.
+    ? `Locked by another user until ${formatTime(lockedByOther.lockExpiresAt)}`
     : undefined;
 
   return (

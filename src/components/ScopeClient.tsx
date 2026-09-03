@@ -61,6 +61,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // R67 D-74 keeps the ORG date form; R67 G-05 owns the money.
 import { formatDate } from "@/lib/format";
 import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
+import { formatNumber } from "@/lib/format-number";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
@@ -167,7 +168,10 @@ function isTimeoutError(err: unknown): boolean {
 export function formatDeltaPct(pct: number | null | undefined): string | null {
   if (pct === null || pct === undefined || !Number.isFinite(pct)) return null;
   const sign = pct > 0 ? "+" : pct < 0 ? "-" : "";
-  return `${sign}${Math.abs(pct).toFixed(1)}%`;
+  // R67 D-61 (swept at the merge): one decimal, minimum and maximum, with the
+  // locale pinned -- the sign is carried as a glyph in front, per R-260, rather
+  // than left to the formatter.
+  return `${sign}${formatNumber(Math.abs(pct), { fractionDigits: 1 })}%`;
 }
 
 // Real-screen conversion (2026-08-30): this list's own line-item-level

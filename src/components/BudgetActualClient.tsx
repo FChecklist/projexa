@@ -34,6 +34,7 @@ import { ExportShareActions } from "@/components/ExportShareActions";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { formatNumber } from "@/lib/format-number";
 import {
   readVarianceFilters,
   varianceApiQuery,
@@ -100,7 +101,8 @@ export default function BudgetActualClient({ projectId }: { projectId: string })
   const bars = varianceBars(report?.categorySubtotals ?? []);
   const widest = bars.reduce((m, b) => Math.max(m, Math.abs(b.value)), 0);
 
-  const percent = (v: number | null) => (v === null ? EMPTY : `${v.toFixed(1)}%`);
+  // R67 D-61 (second-merge fix): formatNumber(), not a direct toFixed().
+  const percent = (v: number | null) => (v === null ? EMPTY : `${formatNumber(v, { fractionDigits: 1 })}%`);
   const money = (v: number | null) => (v === null ? EMPTY : orgMoney.money(v));
 
   return (

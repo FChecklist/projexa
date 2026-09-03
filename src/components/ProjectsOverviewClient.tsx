@@ -1,5 +1,17 @@
 "use client";
 
+// R67 MERGE (lane D1 x lane C). Both lanes deleted the same thing -- the
+// CreateProjectDialog this empty state used to open -- and both replaced it
+// with the real /projects/new route, so D-01 is satisfied twice over and only
+// the wording of the control was in conflict. Main's version stays, on merit:
+// it is the SAME control as the home screen's, down to the Plus icon and the
+// words "Create Project" (see DashboardHomeView.tsx), whereas lane D1's own
+// "+ New Project" would have made one product name the same destination two
+// ways. Nothing of lane D1's is dropped by that choice -- its whole diff on
+// this file WAS the dialog removal.
+//
+// Everything below the empty state (D-03's per-row Retry, the "Couldn't load"
+// row, the suppressed zero-length bar) arrived on main and is untouched.
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";

@@ -105,11 +105,23 @@ describe("the shared fallback columns", () => {
     // Spot-checked against the tables themselves; a silent relabel here would
     // make the skeleton and the loaded table disagree.
     expect(PERMITS_LIST_COLUMNS.map((c) => c.label)).toEqual([
-      "Permit no.",
-      "Name",
-      "Authority",
+      // R67 D-05 (lane D1, folded into this shared constant at the merge).
+      // These four were "Permit no." / "Name" / "Authority" / "Expiry date"
+      // here, while the permit CREATE form, the object page and the API all
+      // said "Permit number", "Permit name", "Issuing authority" and "End
+      // date". D-05 is that one field may not have two names inside one
+      // module, and the worst of the four was "Expiry date" against the object
+      // page's "End date" -- the same date, two screens, two words.
+      //
+      // Folding the word set into this constant rather than into
+      // PermitsListClient is what also fixes the LOADING SKELETON: both read
+      // this array, so the headers a user sees while waiting and the headers
+      // they get cannot disagree.
+      "Permit number",
+      "Permit name",
+      "Issuing authority",
       "Issue date",
-      "Expiry date",
+      "End date",
       // R67 G-01 renamed this: the cell answers a question ("Expires in 12
       // days", "Expired") rather than promising a number, so the header asks
       // one. Asserted here because the skeleton and the loaded table both read

@@ -39,8 +39,12 @@ describe("every create route is a page that ships", () => {
     // still asserted to come FIRST and in order.
     expect(MODULE_CREATE_ACTIONS.labour.map((a) => a.label)).toEqual(["Worker", "Attendance", "Workers from Excel"]);
     expect(MODULE_CREATE_ACTIONS.materials.map((a) => a.label)).toEqual(["Material", "Receipt"]);
-    // "plus Sprint where it exists".
-    expect(MODULE_CREATE_ACTIONS.schedule.map((a) => a.label)).toEqual(["Task", "Sprint", "Log time"]);
+    // "plus Sprint where it exists". R67 lane D22 (item D-48) appends
+    // "Programme from Excel" for exactly the reason "Workers from Excel" is in
+    // the labour menu above: it is a create route of this module, and this menu
+    // is its only door. Corrected to the merged reality rather than dropped,
+    // with R-301's own three entries still asserted FIRST and in order.
+    expect(MODULE_CREATE_ACTIONS.schedule.map((a) => a.label)).toEqual(["Task", "Sprint", "Log time", "Programme from Excel"]);
   });
 });
 

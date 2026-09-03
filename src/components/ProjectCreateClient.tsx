@@ -31,6 +31,22 @@ import { mayAssertEmpty } from "@/lib/read-outcome";
 
 export type ProductOption = { id: string; name: string };
 
+/**
+ * R67 D-01 (lane D1, folded into this canonical component under D-11's rule).
+ * Which FIELD a server refusal is about, so the sentence lands next to the
+ * control the user has to change rather than only at the top of the screen.
+ * Returns undefined when the message names no field -- the message is then
+ * shown once, in the screen's own message strip, exactly as before.
+ */
+export function fieldForProjectError(message: string): string | undefined {
+  const m = message.toLowerCase();
+  if (m.includes("product")) return "productId";
+  if (m.includes("target date")) return "targetDate";
+  if (m.includes("start date")) return "startDate";
+  if (m.includes("name")) return "name";
+  return undefined;
+}
+
 export default function ProjectCreateClient({
   products,
   productsError,
@@ -49,6 +65,10 @@ export default function ProjectCreateClient({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const missing = missingProjectFields({ productId, name });
+  // R67 D-01: the refusal is shown BOTH in the screen strip and beside the
+  // field it is about, when it names one.
+  const errorField = saveError ? fieldForProjectError(saveError) : undefined;
+  const fieldError = (field: string) => (errorField === field ? saveError : undefined);
 
   async function createProject() {
     if (missing.length > 0 || submitting) return;
@@ -105,7 +125,8 @@ export default function ProjectCreateClient({
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
-          <Label>Product</Label>
+          {/* R67 D-01: htmlFor/id pairs, so clicking the label reaches the control and a screen reader announces the two together. */}
+          <Label htmlFor="productId">Product</Label>
           {productsError ? (
             <p role="alert" className="rounded-md border border-px-error-border bg-px-error-light p-2 text-sm text-px-error">
               Couldn&apos;t load products: {productsError}
@@ -117,29 +138,33 @@ export default function ProjectCreateClient({
             </p>
           ) : (
             <Select value={productId} onValueChange={setProductId}>
-              <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
+              <SelectTrigger id="productId"><SelectValue placeholder="Select a product" /></SelectTrigger>
               <SelectContent>
                 {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
           )}
+          {fieldError("productId") && <p className="text-[12.5px] text-px-error">{fieldError("productId")}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label>Project Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeview Residence — Phase 2" />
+          <Label htmlFor="name">Project Name</Label>
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeview Residence — Phase 2" />
+          {fieldError("name") && <p className="text-[12.5px] text-px-error">{fieldError("name")}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label>Description (optional)</Label>
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          <Label htmlFor="description">Description (optional)</Label>
+          <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
-            <Label>Start Date (optional)</Label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Label htmlFor="startDate">Start Date (optional)</Label>
+            <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            {fieldError("startDate") && <p className="text-[12.5px] text-px-error">{fieldError("startDate")}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label>Target Date (optional)</Label>
-            <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+            <Label htmlFor="targetDate">Target Date (optional)</Label>
+            <Input id="targetDate" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+            {fieldError("targetDate") && <p className="text-[12.5px] text-px-error">{fieldError("targetDate")}</p>}
           </div>
         </div>
       </div>

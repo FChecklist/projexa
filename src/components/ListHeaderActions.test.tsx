@@ -129,7 +129,11 @@ describe("+ New opens the module's whole create list", () => {
     const { getByLabelText } = render(<ListHeaderActions module="schedule" tab="timeline" />);
     fireEvent.click(getByLabelText("+ New"));
     const items = Array.from(document.querySelectorAll('[role="menuitem"]')).map((n) => n.textContent);
-    expect(items).toEqual(["Task", "Sprint", "Log time"]);
+    // R67 lane D22 (item D-48) appends "Programme from Excel" -- this menu is
+    // that screen's only door, exactly as it is for "Workers from Excel" on
+    // /labour. Corrected to the merged reality, with R-301's own three entries
+    // still asserted first and in order.
+    expect(items).toEqual(["Task", "Sprint", "Log time", "Programme from Excel"]);
   });
 
   test("choosing one goes to the real route, carrying the project", () => {

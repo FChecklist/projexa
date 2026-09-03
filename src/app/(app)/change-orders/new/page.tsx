@@ -1,7 +1,7 @@
 import ChangeOrderCreateClient from "@/components/ChangeOrderCreateClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import CreateScreenUnavailable from "@/components/CreateScreenUnavailable";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { Card, CardContent } from "@/components/ui/card";
 
 // Real-screen conversion (2026-08-30): replaces the old "New Change Order"
 // Dialog popup with a real create route.
@@ -10,10 +10,22 @@ export default async function ChangeOrderNewPage({ searchParams }: { searchParam
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
+  // R67 D-70 (audit R-262): this used to `return` a bare Card holding
+  // resolveSelectedProject's raw message, so an upstream failure replaced the
+  // whole right pane with a bare HTTP status phrase -- no title, no Back, no
+  // Retry, and no statement of what had failed. The screen's own frame is
+  // rendered in every case now, with the failure reported inside it and a
+  // Retry that re-runs the server fetch.
   if (errorMessage || !project) {
     return (
-      <div className="flex-1 p-6">
-        <Card><CardContent className="p-8 text-center text-sm text-px-muted">{errorMessage ?? "No active project selected."}</CardContent></Card>
+      <div className="flex-1">
+        <CreateScreenUnavailable
+          breadcrumb="Change Orders / New Change Order"
+          title="New Change Order"
+          backHref="/change-orders"
+          backLabel="Back to Change Orders"
+          message={errorMessage}
+        />
       </div>
     );
   }

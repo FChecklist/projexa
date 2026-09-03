@@ -84,10 +84,15 @@ test.describe("Accounting (/accounting)", () => {
   });
 });
 
-test.describe("Budgets (/budgets)", () => {
+// R67 lane D22 (item D-41): retargeted, not rewritten. This block always
+// exercised the ERP fiscal-year ledger, which moved intact to
+// /accounting/annual-budgets when /budgets became the project's BOQ budget
+// screen. The assertions below are unchanged apart from the route and the
+// heading, because the screen itself is unchanged.
+test.describe("Annual Budgets (/accounting/annual-budgets)", () => {
   test("real empty state, and the create flow is honestly blocked on missing setup data", async ({ page }) => {
-    await page.goto("/budgets");
-    await expect(page.getByRole("heading", { name: "Budgets" })).toBeVisible();
+    await page.goto("/accounting/annual-budgets");
+    await expect(page.getByRole("heading", { name: "Annual Budgets" })).toBeVisible();
     await expect(page.getByText("No budgets found.")).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("button", { name: /new budget/i }).click();

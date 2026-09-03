@@ -20,12 +20,22 @@
 //              layout does not jump and the user learns WHY rather than
 //              staring at a number that never appears.
 //
-// The kit's KpiCard takes `value: string`, so a skeleton cannot be passed
-// through it. Rather than fork the kit for a placeholder (D-09 -- forks are for
-// behaviour, not for a grey rectangle), this wraps it: the pending and error
-// states are rendered here in the SAME card frame the kit uses, and the ready
-// state is the kit component itself.
-import { KpiCard, type KpiCardProps } from "@fchecklist/veridian-ui-kit/screens";
+// The card takes `value: string`, so a skeleton cannot be passed through it.
+// Rather than fork it again for a placeholder (D-09 -- forks are for behaviour,
+// not for a grey rectangle), this wraps it: the pending and error states are
+// rendered here in the SAME card frame, and the ready state is the card itself.
+//
+// R67 MERGE (lane D1's D-61). The ready state was the KIT's KpiCard. It is now
+// the FORKED one (src/components/screens/KpiCard.tsx), which lane D1 moved
+// DashboardProjectClient onto and which the home band already uses. Two reasons,
+// both lane D1's: a KPI value must not be set in DM Serif Display (the fork sets
+// numbers in Inter 600 with tabular figures, so two stacked cards' digits line
+// up), and the home dashboard and the project dashboard must not be two
+// different cards when they sit one click apart. Folding it in HERE rather than
+// in each screen is what keeps F-27's three tile states and D-61's typography
+// from being two competing card components on one page. The fork's props are the
+// kit's, with `trend` relaxed to optional, so nothing else in this file changes.
+import { KpiCard, type KpiCardProps } from "@/components/screens/KpiCard";
 
 /** The same frame the kit's KpiCard draws, so a tile does not resize when its
  *  figure lands. */

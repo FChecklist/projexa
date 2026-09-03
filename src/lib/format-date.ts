@@ -106,6 +106,15 @@ export function formatTime(value: Date | string | number): string {
  * what the line is for -- it exists to say how old these numbers are, to the
  * minute. Same pinned locale and time zone as its siblings, for the same
  * hydration reason.
+ *
+ * MERGE NOTE (integration train, lane D22). Lane D22 added a SECOND
+ * formatDayMonthYear() here, built on en-GB Intl, for D-63's WhatsApp summary
+ * sentence. It is dropped rather than kept beside the one already exported
+ * below: that one is the version an earlier merge already chose on merit,
+ * because en-GB Intl spells September "Sept" where this product's copy says
+ * "Sep", and it returns the en-dash rather than the literal string "Invalid
+ * Date". D-63's call sites take the surviving helper, which has the same
+ * signature and the day-first form the item asked for.
  */
 export function formatHourMinute(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, {

@@ -16,7 +16,7 @@ GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { KitObjectScreen, OBJECT_LOADING_REASON } from "./KitObjectScreen";
+import { KitObjectScreen, OBJECT_LOADING_REASON, type KitObjectScreenLoadedProps } from "./KitObjectScreen";
 import { MOM_OBJECT_BREADCRUMB, OBJECT_BREADCRUMBS } from "@/lib/object-breadcrumbs";
 
 afterEach(cleanup);
@@ -146,5 +146,82 @@ describe("KitObjectScreen loaded variant -- unchanged from the kit's", () => {
     expect(whileLoading).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
     expect(loaded.container.textContent).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
     await waitFor(() => expect(true).toBe(true));
+  });
+});
+
+// ─── R67 D-11 (lane D1, folded in here under D-11's addendum) ────────────────
+//
+// These arrived on lane D1 against its own fork of this component at
+// src/components/screens/ObjectScreen.tsx. That path is lane D0's display-first
+// archetype and is canonical, so per D-11's addendum the fork does not survive
+// at it -- D1's two distinct capabilities (deleteLabel, and a ReactNode facet
+// value) were folded into THIS component, and its assertions come with them
+// rather than being dropped.
+//
+// The capability: the destructive control's word is a prop, defaulting to the
+// kit's "Delete", so a screen with two genuinely different destructive acts
+// (Remove inside the 24-hour grace window, Dispose under the retention policy)
+// can name the one it is offering.
+describe("KitObjectScreen -- the destructive control names its own act (D-11)", () => {
+  function renderScreen(props: Partial<KitObjectScreenLoadedProps> = {}) {
+    return render(
+      <KitObjectScreen breadcrumb="Drawings & 3D / Drawing" title="AR-101 Rev B" mode="display" hasDraft={false} messages={[]} {...props}>
+        <p>body</p>
+      </KitObjectScreen>
+    );
+  }
+
+  test("keeps the kit's word when no label is given", () => {
+    const view = renderScreen({ onDelete: () => {} });
+    expect(view.getByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+
+  test("uses the screen's own verb when one is given", () => {
+    const view = renderScreen({ onDelete: () => {}, deleteLabel: "Remove" });
+    expect(view.getByRole("button", { name: "Remove" })).toBeTruthy();
+    expect(view.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  // R67 merge (D-11, D1 x D21, 2026-09-03): RESTATED, and the fact it pins down
+  // got stronger. D1 asserted the reason was carried in the button's `title`
+  // only, so the accessible name was exactly "Dispose". D-21 additionally
+  // renders the reason as VISIBLE text beside the verb -- a title-only tooltip
+  // is invisible to touch and to most screen readers -- which makes it part of
+  // the accessible name. Both halves are now asserted: the verb still leads, the
+  // reason is still on the control, and it is now readable without a hover.
+  test("a reason disables the control and is carried on it, whatever it is called", () => {
+    const reason = "Kept under the retention policy - ask an admin to dispose";
+    const view = renderScreen({
+      onDelete: () => {},
+      deleteLabel: "Dispose",
+      deleteDisabledReason: reason,
+    });
+    const button = view.getByRole("button", { name: /^Dispose/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe(reason);
+    expect(button.textContent).toContain("Dispose");
+    expect(button.textContent).toContain(reason);
+  });
+
+  test("no destructive control at all when the screen offers none", () => {
+    const view = renderScreen();
+    expect(view.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Remove" })).toBeNull();
+  });
+
+  test("edit mode still shows Save and Cancel, carried over from the kit unchanged", () => {
+    const view = renderScreen({ mode: "edit", onSave: () => {}, onCancel: () => {}, saveDisabled: true, saveDisabledReason: "Name is required" });
+    expect(view.getByRole("button", { name: "Save (Name is required)" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  // R67 D-12: a facet value is a ReactNode, so "Supersedes" can LINK to the
+  // revision it replaced instead of only naming it.
+  test("a facet value may be a node, not just a string", () => {
+    const view = renderScreen({
+      facets: [{ label: "Supersedes", value: <a href="/drawings/prev">AR-101 Rev A</a> }],
+    });
+    const link = view.getByRole("link", { name: "AR-101 Rev A" }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/drawings/prev");
   });
 });

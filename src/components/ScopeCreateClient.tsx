@@ -59,6 +59,7 @@ import {
   lineMissingFields, LINE_FIELD_MESSAGE,
   type LineField, type LineItemDraft,
 } from "@/lib/boq-helpers";
+import { draftBoqTotal, draftLineAmount } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -291,6 +292,13 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                 <th scope="col" className="px-1 pb-1 font-medium">Unit</th>
                 <th scope="col" className="px-1 pb-1 text-right font-medium">Qty</th>
                 <th scope="col" className="px-1 pb-1 text-right font-medium">Rate</th>
+                {/* R67 lane D22 (item D-60, rec R-225), folded in at the
+                    integration merge: a QS entering a 128-line BOQ could not see
+                    the arithmetic they were doing. A sub-task's amount is a SHARE
+                    of its root's (schema.ts's canonical child-rate rule), which is
+                    what draftLineAmount() encodes, so this column is a reading of
+                    the same rule the backend stores rather than a second one. */}
+                <th scope="col" className="px-1 pb-1 text-right font-medium">Amount</th>
                 <th scope="col" className="px-1 pb-1 font-medium">Item code</th>
                 <th scope="col" className="px-1 pb-1 font-medium">Parent code</th>
                 <th scope="col" className="px-1 pb-1 text-right font-medium">Breakdown %</th>
@@ -389,6 +397,9 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                           a title attribute nobody hovers. */}
                       {isSubTask && <p className="mt-0.5 text-[11px] text-px-muted">{SUB_TASK_REASON}</p>}
                     </td>
+                    <td className="px-1 py-1 text-right tabular-nums text-px-muted">
+                      {draftLineAmount(line, lines) ?? "-"}
+                    </td>
                     <td className="px-1 py-1">
                       <Input
                         className="w-[110px]"
@@ -443,6 +454,17 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                 );
               })}
             </tbody>
+            {/* R67 lane D22 (item D-60): the running BOQ total, over ROOT lines
+                only -- adding a weighted sub-task on top of its parent would
+                double-count that money, the same rule boqTotal() applies on
+                the read side. */}
+            <tfoot>
+              <tr className="border-t border-px-border text-[12px]">
+                <td className="px-1 pt-2 font-medium text-px-ink" colSpan={5}>BOQ total</td>
+                <td className="px-1 pt-2 text-right font-medium tabular-nums text-px-ink">{draftBoqTotal(lines)}</td>
+                <td colSpan={4} />
+              </tr>
+            </tfoot>
           </table>
         </div>
 

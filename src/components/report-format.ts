@@ -17,7 +17,7 @@
 // naming style.
 
 import { formatMoney, type MoneyFormat } from "@/lib/format-money";
-import { EMPTY_VALUE } from "@/lib/format-number";
+import { EMPTY_VALUE, formatNumber } from "@/lib/format-number";
 
 export type ReportFieldType = "money" | "percent" | "count" | "text";
 
@@ -100,12 +100,14 @@ export function formatReportValue(field: string, value: unknown, format: MoneyFo
     if (!Number.isFinite(n)) return EMPTY_VALUE;
     // One decimal down both percentage rows, so the two can be compared at a
     // glance -- which is the point of printing them next to each other.
-    return `${n.toFixed(1)}%`;
+    // R67 D-61 (second-merge fix): formatNumber(), not a direct toFixed().
+    return `${formatNumber(n, { fractionDigits: 1 })}%`;
   }
 
   if (type === "count") {
     const n = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(n) ? n.toLocaleString("en-US") : EMPTY_VALUE;
+    // R67 D-61 (second-merge fix): formatNumber(), not a direct toLocaleString().
+    return Number.isFinite(n) ? formatNumber(n) : EMPTY_VALUE;
   }
 
   return String(value);

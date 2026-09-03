@@ -1,4 +1,144 @@
 /// <reference types="bun-types" />
+// R67 D-07. resolveSelectedProject() falls back to the org's FIRST project
+// when the caller asked for none -- long-standing, deliberate behaviour that
+// keeps old bookmarked URLs working. What was wrong is that it happened
+// silently: the screen showed one project's rows while the top rail still
+// said "All projects", and nothing on the page named the project it had
+// actually queried.
+//
+// D-07 added a `fellBack` boolean to say so. Lane A's A-04/A-05 merged first
+// with the richer `source`, which names WHICH of four rules chose the project:
+// "route" (the URL), "preference" (the user's own last rail choice, read from
+// the veri.rail.project cookie so the server agrees on the first render),
+// "only" (their single project), or "auto" (the page choosing for them).
+// D-07's question is exactly that last case, so it is asked of `source` and the
+// duplicate flag is gone -- one fact, one name. These tests pin when the answer
+// is "auto".
+//
+// The VERIDIAN call itself is stubbed at the module boundary (veridian-client),
+// the same way this repo's other server-module tests do it -- no network, no
+// API key, no live org.
+import { afterEach, describe, expect, mock, test } from "bun:test";
+
+const realClient = await import("./veridian-client");
+
+async function loadWith(impl: () => Promise<unknown>) {
+  await mock.module("./veridian-client", () => ({ ...realClient, callVeridian: mock(impl) }));
+  return import("./project-selection");
+}
+
+afterEach(async () => {
+  mock.restore();
+  await mock.module("./veridian-client", () => realClient);
+});
+
+const PROJECTS = [
+  { id: "p1", name: "Cedar Heights Villa - Phase 1" },
+  { id: "p2", name: "Riverside Business Park" },
+];
+
+describe("resolveSelectedProject", () => {
+  test("no project asked for: falls back to the first AND reports source 'auto'", async () => {
+    const { resolveSelectedProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveSelectedProject(undefined, "org-1");
+    expect(result.project).toEqual(PROJECTS[0]);
+    expect(result.source).toBe("auto");
+  });
+
+  test("the asked-for project is honoured and reports source 'route', not 'auto'", async () => {
+    const { resolveSelectedProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveSelectedProject("p2", "org-1");
+    expect(result.project).toEqual(PROJECTS[1]);
+    expect(result.source).not.toBe("auto");
+  });
+
+  test("a project id this org does not have is a fallback too -- the user asked for something else", async () => {
+    const { resolveSelectedProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveSelectedProject("not-this-orgs-project", "org-1");
+    expect(result.project).toEqual(PROJECTS[0]);
+    expect(result.source).toBe("auto");
+  });
+
+  test("an org with no projects has nothing to fall back TO, so source is null", async () => {
+    const { resolveSelectedProject } = await loadWith(async () => ({ projects: [] }));
+    const result = await resolveSelectedProject(undefined, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.source).not.toBe("auto");
+  });
+
+  test("a failed read reports the backend's own words and never claims a project", async () => {
+    const { resolveSelectedProject } = await loadWith(async () => {
+      throw new realClient.VeridianApiError("upstream timed out", 504);
+    });
+    const result = await resolveSelectedProject(undefined, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.projects).toEqual([]);
+    expect(result.errorMessage).toBe("upstream timed out");
+    expect(result.source).not.toBe("auto");
+  });
+});
+
+// ─── R67 D-70 (audit R-262): what a create route says when this fails ────────
+//
+// These are pure functions, so unlike the block above they need no module stub.
+describe("describeProjectListFailure", () => {
+  test("a bare HTTP status phrase is replaced -- it is not the backend's words about anything", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    for (const raw of ["Internal Server Error", "internal server error.", "500", "Bad Gateway", "503"]) {
+      expect(describeProjectListFailure(raw)).toBe("VERIDIAN answered with an internal error.");
+    }
+  });
+
+  test("a real backend message is kept verbatim -- this is not a message filter", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    expect(
+      describeProjectListFailure("The construction data service did not respond in time, on two attempts. Please retry.")
+    ).toBe("The construction data service did not respond in time, on two attempts. Please retry.");
+    expect(describeProjectListFailure("No veridian_credentials row for this organisation")).toBe(
+      "No veridian_credentials row for this organisation"
+    );
+  });
+
+  test("a message that merely CONTAINS the status phrase is not rewritten", async () => {
+    const { describeProjectListFailure } = await import("./project-selection");
+    expect(describeProjectListFailure("Project sync failed: Internal Server Error from the ERP")).toBe(
+      "Project sync failed: Internal Server Error from the ERP"
+    );
+  });
+});
+
+describe("projectListFailureBanner", () => {
+  test("leads with the item's own sentence, then the described cause", async () => {
+    const { projectListFailureBanner } = await import("./project-selection");
+    expect(projectListFailureBanner("Internal Server Error")).toBe(
+      "Couldn't load your project list: VERIDIAN answered with an internal error."
+    );
+    expect(projectListFailureBanner("No veridian_credentials row for this organisation")).toBe(
+      "Couldn't load your project list: No veridian_credentials row for this organisation"
+    );
+  });
+});
+
+describe("the outcome shape D-70 asks for", () => {
+  test("a failure carries the upstream status for the caller's log, and never throws", async () => {
+    class FakeApiError extends realClient.VeridianApiError {}
+    const mod = await loadWith(async () => {
+      throw new FakeApiError("Internal Server Error", 500);
+    });
+    const result = await mod.resolveSelectedProject(undefined, "org_1");
+    expect(result.status).toBe(500);
+    expect(result.project).toBeNull();
+    expect(result.errorMessage).toBe("Internal Server Error");
+  });
+
+  test("a successful read reports no status at all", async () => {
+    const mod = await loadWith(async () => ({ projects: [{ id: "p1", name: "Cedar Heights Villa - Phase 1" }] }));
+    const result = await mod.resolveSelectedProject("p1", "org_1");
+    expect(result.status).toBeNull();
+    expect(result.project?.id).toBe("p1");
+  });
+});
+
 // R67 D-20 -- "stop the silent wrong-project fallback".
 //
 // THE DEFECT this file exists to keep dead: resolveSelectedProject() used to
@@ -22,32 +162,31 @@
 // that can disagree about one fact is how the rail and the pane came to
 // disagree in the first place. This lane's own contribution is the refusal --
 // allProjectsWhenUnset -- which WS-A's rule has no opinion about.
-import { describe, expect, mock, test } from "bun:test";
 import { dashboardScope, chooseProject, type SelectableProject } from "./project-selection";
 
-const PROJECTS: SelectableProject[] = [
+const SCOPE_PROJECTS: SelectableProject[] = [
   { id: "p-cedar", name: "Cedar Heights Villa - Phase 1" },
   { id: "p-villa21", name: "Villa 21" },
 ];
 
 describe("chooseProject -- the honest all-projects mode (opted in)", () => {
   test("no projectId asked for => { project: null, mode: 'all' } and projects[0] is NOT returned", () => {
-    const result = chooseProject(PROJECTS, undefined, { allProjectsWhenUnset: true });
+    const result = chooseProject(SCOPE_PROJECTS, undefined, { allProjectsWhenUnset: true });
     expect(result.project).toBeNull();
     expect(result.mode).toBe("all");
     expect(result.fellBack).toBe(false);
     // The whole point: the first project must not leak out as an answer.
-    expect(result.project).not.toBe(PROJECTS[0]);
+    expect(result.project).not.toBe(SCOPE_PROJECTS[0]);
   });
 
   test("a projectId that this org cannot see is the same question, not an invitation to guess", () => {
-    const result = chooseProject(PROJECTS, "p-from-another-org", { allProjectsWhenUnset: true });
+    const result = chooseProject(SCOPE_PROJECTS, "p-from-another-org", { allProjectsWhenUnset: true });
     // No source either: nothing was chosen, so there is nothing to explain.
     expect(result).toEqual({ project: null, mode: "all", fellBack: false, source: null });
   });
 
   test("a real projectId still resolves to that exact project, never to the first one", () => {
-    const result = chooseProject(PROJECTS, "p-villa21", { allProjectsWhenUnset: true });
+    const result = chooseProject(SCOPE_PROJECTS, "p-villa21", { allProjectsWhenUnset: true });
     expect(result.project).toEqual({ id: "p-villa21", name: "Villa 21" });
     expect(result.mode).toBe("project");
     expect(result.fellBack).toBe(false);
@@ -65,19 +204,19 @@ describe("chooseProject -- the honest all-projects mode (opted in)", () => {
 
 describe("chooseProject -- the legacy fallback the other ~50 callers still use", () => {
   test("no projectId still resolves to projects[0], exactly as before, so old links keep working", () => {
-    const result = chooseProject(PROJECTS, undefined);
-    expect(result.project).toEqual(PROJECTS[0]);
+    const result = chooseProject(SCOPE_PROJECTS, undefined);
+    expect(result.project).toEqual(SCOPE_PROJECTS[0]);
     expect(result.mode).toBe("project");
   });
 
   test("...but the fallback is no longer SILENT -- fellBack says so, which is what lets a screen print '(auto-selected)'", () => {
-    expect(chooseProject(PROJECTS, undefined).fellBack).toBe(true);
-    expect(chooseProject(PROJECTS, "p-villa21").fellBack).toBe(false);
+    expect(chooseProject(SCOPE_PROJECTS, undefined).fellBack).toBe(true);
+    expect(chooseProject(SCOPE_PROJECTS, "p-villa21").fellBack).toBe(false);
   });
 
   test("an unknown projectId falls back with fellBack true rather than pretending the link resolved", () => {
-    const result = chooseProject(PROJECTS, "p-gone");
-    expect(result.project).toEqual(PROJECTS[0]);
+    const result = chooseProject(SCOPE_PROJECTS, "p-gone");
+    expect(result.project).toEqual(SCOPE_PROJECTS[0]);
     expect(result.fellBack).toBe(true);
   });
 
@@ -99,36 +238,36 @@ describe("chooseProject -- the legacy fallback the other ~50 callers still use",
   test("the remembered rail choice is honoured when the URL says nothing -- and is NOT a fallback", () => {
     // WS-A's tier between the URL and the pick. It is the user's own earlier
     // decision, so it must not be labelled "(auto-selected)".
-    const result = chooseProject(PROJECTS, undefined, undefined, "p-villa21");
+    const result = chooseProject(SCOPE_PROJECTS, undefined, undefined, "p-villa21");
     expect(result.project).toEqual({ id: "p-villa21", name: "Villa 21" });
     expect(result.source).toBe("preference");
     expect(result.fellBack).toBe(false);
   });
 
   test("the URL still outranks the remembered choice", () => {
-    const result = chooseProject(PROJECTS, "p-cedar", undefined, "p-villa21");
-    expect(result.project).toEqual(PROJECTS[0]);
+    const result = chooseProject(SCOPE_PROJECTS, "p-cedar", undefined, "p-villa21");
+    expect(result.project).toEqual(SCOPE_PROJECTS[0]);
     expect(result.source).toBe("route");
     expect(result.fellBack).toBe(false);
   });
 
   test("a remembered project the user can no longer reach is ignored, not obeyed", () => {
-    const result = chooseProject(PROJECTS, undefined, undefined, "p-from-another-org");
-    expect(result.project).toEqual(PROJECTS[0]);
+    const result = chooseProject(SCOPE_PROJECTS, undefined, undefined, "p-from-another-org");
+    expect(result.project).toEqual(SCOPE_PROJECTS[0]);
     // It fell through to the pick, and says so.
     expect(result.fellBack).toBe(true);
   });
 
   test("one project is not a choice -- it is not reported as automatic", () => {
-    const one = [PROJECTS[0]];
+    const one = [SCOPE_PROJECTS[0]];
     const result = chooseProject(one, undefined);
-    expect(result.project).toEqual(PROJECTS[0]);
+    expect(result.project).toEqual(SCOPE_PROJECTS[0]);
     expect(result.source).toBe("only");
     expect(result.fellBack).toBe(false);
   });
 
   test("the returned project is the array's own object, so a caller comparing identity keeps working", () => {
-    expect(chooseProject(PROJECTS, "p-cedar").project).toBe(PROJECTS[0]);
+    expect(chooseProject(SCOPE_PROJECTS, "p-cedar").project).toBe(SCOPE_PROJECTS[0]);
   });
 });
 
@@ -139,7 +278,7 @@ describe("chooseProject -- the legacy fallback the other ~50 callers still use",
 describe("resolveSelectedProject (VERIDIAN stubbed)", () => {
   test("a two-project response and no projectId argument yields { project: null, mode: 'all' }", async () => {
     mock.module("@/lib/veridian-client", () => ({
-      callVeridian: async () => ({ projects: PROJECTS }),
+      callVeridian: async () => ({ projects: SCOPE_PROJECTS }),
       VeridianApiError: class VeridianApiError extends Error {
         constructor(message: string, public status: number) {
           super(message);

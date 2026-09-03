@@ -1,17 +1,29 @@
+"use client";
+
+// R67 D-01: this view became a client component when the Projects table's
+// rows became real, clickable rows (a server component cannot carry an
+// onClick). Every prop it receives is still plain JSON resolved server-side
+// in dashboard/page.tsx -- no data fetching moved into the browser.
 import Link from "next/link";
-import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Wallet, TrendingUp, Receipt, Building2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
-import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+// R67 G-05 / D-61: one money format for the whole product. Imported from the
+// server-safe module, not from @/lib/currency ("use client"), so the same
+// helper serves this view and the Server Components around it. D-61 shipped a
+// second copy of this module before lane G merged; G-05's is the one that
+// survived (it is a superset -- pending state, unknown-currency glyph, signed
+// money) and D-61's copy is gone.
+import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
 // R67 F-xx: the home screen speculates the next navigation, so opening a
 // project is instant. Kept from main -- it is orthogonal to what E-01/E-19
 // changed about what this screen SAYS.
 import { DashboardSpeculation } from "@/components/DashboardSpeculation";
-import { currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { ProjectRowList, ProjectRowSkeleton } from "@/components/dashboard/ProjectRow";
 import { dashboardKpis, type DashboardKpi, type KpiDirection } from "@/lib/dashboard-kpis";
@@ -46,6 +58,9 @@ export type OrgDashboard = {
   // three read construction-reports-service.ts#sumRootLineBudgets. null (never
   // 0) when no project has a BOQ, and null ALSO when the reader's role had the
   // financial figures redacted, which is what financialsRedacted tells apart.
+  // R67 D-02 (second-merge note): this is also the SAME null-not-zero widening
+  // D-02 asked for on compliance-tracker's own getOrgDashboard() -- E-06 and
+  // D-02 arrived at the identical rule independently; nothing further to fold.
   totalBudget: number | null;
   /** The ERP annual ledger budget this tile used to show, under its own name. */
   totalLedgerBudget?: number | null;
@@ -53,12 +68,19 @@ export type OrgDashboard = {
   financialsRedacted?: boolean;
   totalRevenue: number;
   totalExpenses: number;
-  // R38 (R-50/TC-40): value is the project's active BOQ root-total, null
-  // (not 0) when the project has no BOQ at all yet -- see
+  // R38 (R-50/TC-40): contractValue is the project's active BOQ root-total,
+  // null (not 0) when the project has no BOQ at all yet -- see
   // construction-dashboard-service.ts#getOrgDashboard's own comment.
   // R39 (R-51): earnedValue/percentByValue reuse that SAME service's
   // earnedValueReport() (D-3, single source of truth with the WPR report) --
   // null (not 0) when construction isn't enabled or there's no BOQ yet.
+  //
+  // R67 D-62 (audit R-202): the row now ALSO carries contractValue/
+  // projectValue/projectValueSource from getOrgDashboard's resolveProjectMoney()
+  // -- the same helper /dashboard/project reads -- alongside E-01's own row
+  // facts. DashboardProject (lib/dashboard-rows.ts) carries both sets; `value`
+  // is contractValue's own deprecated alias, kept for this row list's own
+  // "no BOQ" rendering.
   // R67 E-01: percentByActivity / spendOverValue / permitsExpiring30d are the
   // three facts the project ROW needs; spendOverValue is null (not false) when
   // the reader's role had it redacted along with revenue/expenses.
@@ -66,6 +88,9 @@ export type OrgDashboard = {
   /** R67 E-02: true when the Filter drawer's date range narrowed revenue and spend. */
   dateRangeApplied?: boolean;
 };
+// The currencies list this screen is handed. Still resolved server-side in
+// dashboard/page.tsx via callVeridian (same backing call as /api/currencies),
+// still passed down as a plain prop -- only the formatting moved.
 export type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 
 // R51 (R-62): the fallback was the literal "₹". This component IS the
@@ -128,14 +153,17 @@ export type RegistryColumn = ScreenColumn;
 // Fallback when no registry row is seeded yet (or the resolve call errors) --
 // mirrors the registry seed 1:1, so there is no visible difference between
 // "resolved from the DB" and this hardcoded default. Only LABEL text is
-// registry-driven here.
+// registry-driven here (this is PROJEXA's HOME_ROUTE, not the kit's generic
+// DashboardScreen composition -- E-01/E-19 kept that same minimal-risk call).
 const DEFAULT_COLUMNS: ScreenColumn[] = [
-  { field: "totalProjects", label: "Active Projects", type: "number", importance: "High" },
-  { field: "totalBudget", label: "Total Budget", type: "number", importance: "High" },
-  { field: "totalRevenue", label: "Total Revenue", type: "number", importance: "High" },
-  { field: "totalExpenses", label: "Total Expenses", type: "number", importance: "High" },
+  { field: "totalRevenue", label: "Revenue", type: "number", importance: "High" },
+  { field: "totalExpenses", label: "Spend", type: "number", importance: "High" },
   { field: "project", label: "Project", type: "text", importance: "High" },
-  { field: "value", label: "Value", type: "number", importance: "High" },
+  // R67 D-62: "Value" named neither of the two money facts it might have been.
+  // The registry field key is unchanged (an org that has renamed this column
+  // keeps its label); only the fallback wording now says which figure it is.
+  { field: "value", label: "Contract value", type: "number", importance: "High" },
+  { field: "projectValue", label: "Project value", type: "number", importance: "High" },
   { field: "earnedValue", label: "Earned Value", type: "number", importance: "High" },
   { field: "revenue", label: "Revenue", type: "number", importance: "High" },
   { field: "expenses", label: "Expenses", type: "number", importance: "High" },
@@ -196,6 +224,7 @@ export default function DashboardHomeView({
   from = null,
   to = null,
   today,
+  permitsExpiring = null,
 }: {
   userName: string;
   data: OrgDashboard | null;
@@ -214,6 +243,14 @@ export default function DashboardHomeView({
    * rather than required so a test can pin the day.
    */
   today?: string;
+  /**
+   * R67 D-02: count of permits expiring in the next 30 days across the org,
+   * resolved server-side in dashboard/page.tsx. null means THAT read failed OR
+   * (second-merge default) an older caller that does not pass it at all --
+   * rendered as words, never as a zero, because "no permits are expiring" and
+   * "we could not find out" must not look the same.
+   */
+  permitsExpiring?: number | null;
 }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
   const currency = orgCurrency(currencies);
@@ -274,6 +311,15 @@ export default function DashboardHomeView({
         stats={[
           ...(delayedProjectCount > 0 ? [{ label: `${delayedProjectCount} delayed`, tone: "attention" as const }] : []),
           ...(onTrackProjectCount > 0 ? [{ label: `${onTrackProjectCount} on track`, tone: "onTrack" as const }] : []),
+          // R67 D-02 (second-merge fold-in): the org-wide permits-expiring
+          // count D-02 added its own KPI card for on the old KPI-band layout
+          // this screen no longer has. Folded in here instead, next to the
+          // other two attention stats -- null (that read failed) says nothing,
+          // same as the other two chips only appearing when there is something
+          // to say.
+          ...(permitsExpiring !== null && permitsExpiring > 0
+            ? [{ label: `${permitsExpiring} permit${permitsExpiring === 1 ? "" : "s"} expiring`, tone: "attention" as const }]
+            : []),
         ]}
       />
       <div className="flex-1 space-y-6 p-6">
@@ -320,7 +366,10 @@ export default function DashboardHomeView({
             /projects/new -- with its own breadcrumb, Back control and a
             Save that names the fields still missing, the same create
             archetype /labour/new already uses. The dialog component is
-            deleted rather than left behind, so the two forms cannot drift. */}
+            deleted rather than left behind, so the two forms cannot drift.
+            Both lanes shipped this control; the merged wording is the one
+            already on main ("Create Project"), because the home screen is
+            where a bare "+ New" says least about what it creates. */}
         <div className="flex justify-end">
           <Button size="sm" asChild>
             <Link href="/projects/new"><Plus className="size-4" /> Create Project</Link>

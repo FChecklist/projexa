@@ -55,6 +55,14 @@ export const MODULE_CREATE_ACTIONS: Record<CreateMenuModule, ModuleCreateAction[
     // "plus Sprint where it exists" -- it does, /schedule/sprints/new.
     { label: "Sprint", route: "/schedule/sprints/new" },
     { label: "Log time", route: "/schedule/log-time" },
+    // R67 lane D22 (item D-48), folded in at the integration merge: the third
+    // of this app's three bulk imports. It sits in the same menu as "Workers
+    // from Excel" above, for the same reason -- a contractor's programme
+    // arrives as a spreadsheet, and typing 38 activities in one at a time is
+    // why real programmes never got entered. This is also the ONLY door to
+    // /schedule/import, which is why nav-routes.test.ts lists that route as
+    // intentionally-not-in-nav rather than unreachable.
+    { label: "Programme from Excel", route: "/schedule/import" },
   ],
 };
 

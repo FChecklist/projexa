@@ -25,7 +25,7 @@
 // without a DOM: which BOQ revision the line-item lookup should use, and
 // what an entry list is worth once a read has failed.
 
-import { fetchJson } from "@/lib/fetch-json";
+import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { listOutcomeFromError, listOutcomeFromRows, type ListOutcome } from "@/lib/read-outcome";
 
 export type BoqSummary = { id: string; version: number; status: string };
@@ -91,6 +91,17 @@ export type WorkProgressReadResult = {
    * pane.
    */
   activities: ProgressActivity[];
+  /**
+   * R67 D-29 (lane D1, folded in). Why the array above is empty, when it is.
+   *
+   * The array alone cannot tell "this project has no activities" from "the
+   * activity lookup failed", and this read used to collapse both to `[]`. That
+   * is the same class of lie the entries outcome above exists to prevent, one
+   * level down: a silently missing lookup is how the form's picker comes up
+   * empty and a row's activity renders as a raw id, with nothing on screen
+   * saying a read failed. null when the lookup answered.
+   */
+  activitiesError: string | null;
 };
 
 /**
@@ -131,8 +142,14 @@ export async function readWorkProgress(
       : listOutcomeFromError<ProgressEntry>(entriesR.reason);
 
   const activities = activitiesR.status === "fulfilled" ? (activitiesR.value.activities ?? []) : [];
+  // R67 D-29: the backend's own words when the lookup failed, so the pane can
+  // SAY the names may be missing rather than showing an empty picker.
+  const activitiesError =
+    activitiesR.status === "fulfilled"
+      ? null
+      : errorMessage(activitiesR.reason, "Could not load activities");
 
-  return { entries, activities };
+  return { entries, activities, activitiesError };
 }
 
 /**

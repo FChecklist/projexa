@@ -1,13 +1,23 @@
 import { notFound } from "next/navigation";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 import { buildWorkProgressReport, formatParentOnlyPercent, sumRootAmtTotal, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
+import { formatMoney } from "@/lib/format-money";
+import { formatNumber } from "@/lib/format-number";
 
 // CONS-03's PDF fix and WorkProgressReportClient.tsx's own money() both
 // format plain numbers, no currency code (the code/symbol is a per-org
 // setting this unauthenticated, no-session page has no way to resolve) --
 // matched here rather than inventing a third formatting rule.
+//
+// R67 D-61: that intent is now enforced rather than restated. This page is a
+// Server Component, which is precisely why format-money.ts carries no
+// "use client" -- the same helper the in-app report uses formats this public
+// copy, so a client cannot be shown a share link whose numbers are grouped
+// differently from the screen it was shared from. `currency` is deliberately
+// left unset: this page has no session and therefore no org, and the rule is
+// that a currency is never guessed.
 function money(n: number) {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatMoney(n, {});
 }
 
 // Point 118: the PUBLIC, read-only view a share-link token resolves to.
@@ -78,8 +88,12 @@ function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
           ["Revenue", figure(d.revenue)],
           ["Expenses", figure(d.expenses)],
           ["Earned Value", figure(d.earnedValue)],
-          ["% complete (by BOQ value)", d.percentByValue === null ? EMPTY : `${d.percentByValue.toFixed(1)}%`],
-          ["% complete (by activity log)", `${d.progressPercent.toFixed(1)}%`],
+          // R67 D-61 (second-merge fix): formatNumber(), not a direct
+          // toFixed() -- money-format-rule.test.ts bans the method itself
+          // anywhere under src/app, not only where a locale mismatch is
+          // visible today.
+          ["% complete (by BOQ value)", d.percentByValue === null ? EMPTY : `${formatNumber(d.percentByValue, { fractionDigits: 1 })}%`],
+          ["% complete (by activity log)", `${formatNumber(d.progressPercent, { fractionDigits: 1 })}%`],
         ] as const).map(([label, value]) => (
           <div key={label}>
             <dt style={{ fontSize: "0.75rem", color: "#888" }}>{label}</dt>

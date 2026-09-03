@@ -1,41 +1,74 @@
 /// <reference types="bun-types" />
-// R67 D-42 acceptance.
+// R67 D-62 / correction C-15, and R67 D-42.
 //
-// The item's acceptance is a Playwright walk against http://localhost:3100 and
-// this session may not start a dev server, so the same strings are asserted
-// against the real component. One half of it -- "fill only Name and expect the
-// button to read 'Save (2 required fields)'" -- cannot be driven at all in this
-// repo's test environment: happy-dom + React 19 does not deliver input/change
-// events to React (measured with a minimal controlled-input harness), so no
-// test here can type. The label that renders the count is asserted on the empty
-// form instead.
+// The items' acceptance is a Playwright walk against a local dev server, which
+// this session may not start, so the same strings are asserted here against the
+// real component with the lookup calls stubbed. One half of D-42 -- "fill only
+// Name and expect the button to read 'Save (2 required fields)'" -- cannot be
+// driven at all in this repo's test environment: happy-dom + React 19 does not
+// deliver input/change events to React (measured with a minimal controlled-input
+// harness), so no test here can type. The label that renders the count is
+// asserted on the empty form instead.
 //
 // MERGE NOTE (D-67 / C-15). This screen moved onto the shared create archetype,
 // which already owns the counting rule (src/lib/create-screen.ts, unit-tested in
 // its own file), so this lane's private missingRequiredFields/requiredFieldsReason/
 // parseAmount helpers are gone and the describe block that exercised them with
-// them -- one implementation of that rule, tested once. Two of D-42's own
-// details moved with the archetype and are asserted in their new form here:
-//   * the short reason is C-15's exact wording, "needs a fiscal year and an
-//     account", and it is what the primary reads;
-//   * the admin's way forward is "Set up in VERIDIAN" -- a link to the real ERP
-//     provisioning screen -- rather than this lane's "/accounting", which is
-//     PROJEXA's read-only surface onto it and cannot create a fiscal year.
-// What did NOT move is the other half of D-42, which main's version had no
-// answer for: only an org admin can provision a fiscal year, so everyone else
-// gets a way to ASK, and the asking files a real task.
+// them -- one implementation of that rule, tested once.
+//
+// ─── R67 MERGE (D-11, lane D1 x lane D3, 2026-09-03) ────────────────────────
+//
+// Both lanes wrote this file. BOTH SUITES SURVIVE, and the harness is D3's
+// (router()/handlers()/blockedHandlers() drive each lookup separately, where
+// D1's single stub answered every URL with the same empty object).
+//
+// Two of D1's assertions were RESTATED rather than deleted, because D-42 changed
+// the mechanism under them:
+//
+//   * D1 asserted that a blocked org ALWAYS shows "Set up in VERIDIAN". D-42
+//     gates that link on the org-admin role -- everyone else is offered a way to
+//     ASK, because provisioning a fiscal year is not theirs to do. D1's stub had
+//     no role at all, so under the merged component those tests would have been
+//     asserting the non-admin branch while claiming to test the link. They now
+//     run against blockedHandlers("admin"), which is the case they were written
+//     for.
+//   * D1's veridianOrigin prop is passed by every render that expects a link.
+//     D3's version built the URL from a hardcoded production host; D1's takes the
+//     origin the server resolved and answers null when there is none. D3's own
+//     admin test now passes an origin too -- without one there is deliberately no
+//     link to find.
+//
+// The navigation mock is D1's: the real module is SPREAD IN rather than replaced.
+// Lane A mounts <ObjectContext>/<ScreenContext> inside these screens and those
+// call usePathname(); a mock returning only useRouter made the whole module lose
+// every other export and the file failed to load at all ("Export named
+// 'usePathname' not found").
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const push = mock((_href: string) => {});
-mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: () => {} }) }));
+const realNavigation = await import("next/navigation");
+mock.module("next/navigation", () => ({
+  ...realNavigation,
+  useRouter: () => ({ push, prefetch: () => {} }),
+}));
 
 const mod = await import("./BudgetCreateClient");
 const BudgetCreateClient = mod.default;
-const { BUDGET_PRECONDITION_LABEL, NON_ADMIN_ACTION_LABEL, ADMIN_TASK_TEXT } = mod;
+const {
+  blockedBanner,
+  erpSetupHref,
+  shortBlockedReason,
+  VERIDIAN_ERP_SETUP_PATH,
+  BUDGET_PRECONDITION_LABEL,
+  NON_ADMIN_ACTION_LABEL,
+  ADMIN_TASK_TEXT,
+} = mod;
+
+const ORIGIN = "https://veridian-compliance-ai.vercel.app";
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -92,18 +125,93 @@ function fieldByLabel(container: HTMLElement, prefix: string): HTMLInputElement 
   return container.querySelector(`#${label.getAttribute("for")}`) as HTMLInputElement;
 }
 
+const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  POSTED.length = 0;
+});
+
 afterEach(() => {
   cleanup();
   push.mockClear();
   POSTED.length = 0;
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
+  globalThis.fetch = originalFetch;
 });
+
+// ─── D1's pure wording rules (no DOM) ───────────────────────────────────────
+
+describe("shortBlockedReason", () => {
+  test("both missing reads exactly as C-15 specifies", () => {
+    expect(shortBlockedReason(["fiscal years", "a chart of accounts"])).toBe("needs a fiscal year and an account");
+  });
+
+  test("names only what is actually missing", () => {
+    expect(shortBlockedReason(["fiscal years"])).toBe("needs a fiscal year");
+    expect(shortBlockedReason(["a chart of accounts"])).toBe("needs an account");
+  });
+
+  test("the long sentence still exists -- it moved to the banner, it was not deleted", () => {
+    const banner = blockedBanner(["fiscal years", "a chart of accounts"]);
+    expect(banner).toContain("This organisation has no fiscal years and a chart of accounts");
+    expect(banner.split(" ").length).toBeGreaterThan(20);
+  });
+});
+
+describe("erpSetupHref", () => {
+  test("builds the real ERP setup URL from the VERIDIAN origin", () => {
+    expect(erpSetupHref(ORIGIN)).toBe(`${ORIGIN}${VERIDIAN_ERP_SETUP_PATH}`);
+  });
+
+  test("a trailing slash does not produce a double slash", () => {
+    expect(erpSetupHref("https://example.test/")).toBe(`https://example.test${VERIDIAN_ERP_SETUP_PATH}`);
+  });
+
+  test("no origin means no link -- a link to nowhere is worse than none", () => {
+    expect(erpSetupHref(null)).toBeNull();
+    expect(erpSetupHref(undefined)).toBeNull();
+    expect(erpSetupHref("   ")).toBeNull();
+  });
+});
+
+// ─── D1's C-15 screen assertions, restated against the admin branch ─────────
+
+describe("BudgetCreateClient with no fiscal years and no chart of accounts (C-15)", () => {
+  test("the primary button carries four words, not a paragraph", async () => {
+    globalThis.fetch = router(blockedHandlers("admin"));
+    const view = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
+    await waitFor(() => {
+      const save = view.getByRole("button", { name: /^Save/ }) as HTMLButtonElement;
+      expect(save.textContent).toBe("Save (needs a fiscal year and an account)");
+      expect(save.disabled).toBe(true);
+    });
+  });
+
+  test("the banner keeps the full explanation AND offers the way out", async () => {
+    globalThis.fetch = router(blockedHandlers("admin"));
+    const view = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
+    await waitFor(() => {
+      const link = view.getByRole("link", { name: "Set up in VERIDIAN" }) as HTMLAnchorElement;
+      expect(link.getAttribute("href")).toBe(`${ORIGIN}${VERIDIAN_ERP_SETUP_PATH}`);
+      expect(view.getByRole("alert").textContent).toContain("This organisation has no fiscal years");
+    });
+  });
+
+  test("the link is withheld when no VERIDIAN origin was resolvable", async () => {
+    globalThis.fetch = router(blockedHandlers("admin"));
+    const view = render(<BudgetCreateClient veridianOrigin={null} />);
+    await waitFor(() => {
+      expect(view.getByRole("alert")).toBeTruthy();
+    });
+    expect(view.queryByRole("link", { name: "Set up in VERIDIAN" })).toBeNull();
+  });
+});
+
+// ─── D3's D-42 role split ───────────────────────────────────────────────────
 
 describe("BudgetCreateClient -- the blocked org (D-42)", () => {
   test("the button carries the SHORT reason, not a paragraph", async () => {
     globalThis.fetch = router(blockedHandlers("pm"));
-    const { container } = render(<BudgetCreateClient />);
+    const { container } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(saveButton(container).textContent).toBe(`Save (${BUDGET_PRECONDITION_LABEL})`));
     expect(saveButton(container).disabled).toBe(true);
@@ -114,7 +222,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
 
   test("the explanation lives in an alert, once, with a way forward", async () => {
     globalThis.fetch = router(blockedHandlers("pm"));
-    const { getByText } = render(<BudgetCreateClient />);
+    const { getByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(getByText(/required to create a budget/)).toBeDefined());
     // Stated ONCE: the alert carries the explanation, the button carries the
@@ -127,7 +235,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
 
   test("an admin is sent to the setup screen instead of being told to ask themselves", async () => {
     globalThis.fetch = router(blockedHandlers("admin"));
-    const { getByText, queryByText } = render(<BudgetCreateClient />);
+    const { getByText, queryByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(getByText("Set up in VERIDIAN")).toBeDefined());
     expect(queryByText(NON_ADMIN_ACTION_LABEL)).toBeNull();
@@ -139,7 +247,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
 
   test("'Ask your administrator' files a real task and says it was sent", async () => {
     globalThis.fetch = router(blockedHandlers("site_engineer"));
-    const { getByText } = render(<BudgetCreateClient />);
+    const { getByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(getByText(NON_ADMIN_ACTION_LABEL)).toBeDefined());
     fireEvent.click(getByText(NON_ADMIN_ACTION_LABEL));
@@ -155,7 +263,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
       ...blockedHandlers("site_engineer"),
       "/api/tasks": () => jsonRes({ error: "The task service didn't answer" }, 502),
     });
-    const { getByText, queryByText } = render(<BudgetCreateClient />);
+    const { getByText, queryByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(getByText(NON_ADMIN_ACTION_LABEL)).toBeDefined());
     fireEvent.click(getByText(NON_ADMIN_ACTION_LABEL));
@@ -166,7 +274,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
 
   test("the two text fields are disabled with the short reason, so nothing typed can be lost", async () => {
     globalThis.fetch = router(blockedHandlers("pm"));
-    const { container, getByText } = render(<BudgetCreateClient />);
+    const { container, getByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(getByText(NON_ADMIN_ACTION_LABEL)).toBeDefined());
     const nameField = fieldByLabel(container, "Budget Name");
@@ -184,7 +292,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
       "/api/fiscal-years": async () => { await gate; return jsonRes({ fiscalYears: HEALTHY.fiscalYears }); },
     }));
 
-    const { container } = render(<BudgetCreateClient />);
+    const { container } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
     await waitFor(() => expect(fieldByLabel(container, "Budget Name")).not.toBeNull());
     expect(fieldByLabel(container, "Budget Name").disabled).toBe(true);
     expect(fieldByLabel(container, "Budget Name").getAttribute("title")).toBe("Loading…");
@@ -198,7 +306,7 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
 describe("BudgetCreateClient -- the healthy org (D-42)", () => {
   test("the Save label counts the missing required fields", async () => {
     globalThis.fetch = router(handlers());
-    const { container } = render(<BudgetCreateClient />);
+    const { container } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(fieldByLabel(container, "Budget Name").disabled).toBe(false));
     // The archetype's counting form, the one /labour/new established: the
@@ -208,7 +316,7 @@ describe("BudgetCreateClient -- the healthy org (D-42)", () => {
 
   test("the org currency is a fixed prefix on Annual Amount, not something to type", async () => {
     globalThis.fetch = router(handlers());
-    const { container, getByText } = render(<BudgetCreateClient />);
+    const { container, getByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
     await waitFor(() => expect(fieldByLabel(container, "Budget Name").disabled).toBe(false));
     // No currency rows are served here, so the code comes from the deployment's

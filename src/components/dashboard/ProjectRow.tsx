@@ -22,6 +22,11 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Check } from "lucide-react";
 import { EMPTY_VALUE as EN_DASH, MONEY_CELL_CLASS } from "@/lib/format-money";
 import { progressBarState, projectRowStatus, type DashboardProject } from "@/lib/dashboard-rows";
+// R67 D-62 (second-merge fold-in): the SAME two pure helpers
+// DashboardProjectClient.tsx uses for the identical fact at project level --
+// so the home row and the project dashboard can never disagree about what
+// "project value" means or where it came from.
+import { formatProjectValue, projectValueCaption } from "@/lib/dashboard-kpi";
 
 export const PROJECT_HREF_PREFIX = "/dashboard/project?projectId=";
 
@@ -163,6 +168,20 @@ export function ProjectRow({
           {money(project.value)} contract · {money(project.expenses)} spent
         </span>
       </div>
+
+      {/* R67 D-62 (second-merge fold-in): the row's OWN commercial value,
+          distinct from the contract value on the line above -- a user-entered
+          or PO-derived fact, never a restatement of scope. Only rendered when
+          the payload actually carries the field, so an older fixture or test
+          that predates D-62 renders exactly as before. */}
+      {(project.projectValue !== undefined || project.projectValueSource !== undefined) && (
+        <div className="text-[11.5px] text-px-muted" data-testid="project-row-project-value">
+          Project value: {formatProjectValue(project.projectValue ?? null, (n) => money(n))}
+          {project.projectValue !== null && project.projectValue !== undefined && (
+            <> ({projectValueCaption(project.projectValueSource ?? null)})</>
+          )}
+        </div>
+      )}
 
       <ProgressBar project={project} />
 

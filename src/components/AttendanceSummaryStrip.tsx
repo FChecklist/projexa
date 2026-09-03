@@ -11,6 +11,11 @@
 // the word "today", because a summary is only useful if you can see which day
 // it is about.
 import { formatDate } from "@/lib/format-date";
+// R67 D-61 (swept at the merge): this strip's labour-cost figure was the last
+// hand-rolled money format on the screen. formatMoney() puts the currency code
+// in front for the same reason and pins the locale, which the inline
+// toLocaleString did not.
+import { formatMoney } from "@/lib/format-money";
 import type { LabourAttendanceSummary } from "@/lib/module-list-source";
 
 function Figure({ label, value }: { label: string; value: string | number }) {
@@ -67,7 +72,7 @@ export function AttendanceSummaryStrip({
           <Figure label="absent" value={summary.absent} />
           <Figure
             label="labour cost"
-            value={`${currencyCode ? `${currencyCode} ` : ""}${summary.totalCost.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}
+            value={formatMoney(summary.totalCost, { currency: currencyCode ?? null })}
           />
         </>
       )}

@@ -257,7 +257,12 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     placeholder: "e.g. Set budget % to 30 on all civil lines",
     examples: ["Set budget % to 30 on all civil lines", "Show budget vs actual by category for this project"],
     leaves: [
-      { id: "budgets.new", label: "New budget", path: "/budgets/new", chainLabel: "New budget" },
+      // R67 lane D22 (item D-41) x R67 D-62, reconciled at the integration
+      // merge: both lanes moved the ERP fiscal-year ledger out of "Budgets",
+      // and D-62's address is the one that shipped -- /finance/budgets, with
+      // /budgets/* kept as redirects so existing links still land. The verb
+      // still works; it just leads where the thing being created now lives.
+      { id: "budgets.new", label: "New finance budget", path: "/finance/budgets/new", chainLabel: "New finance budget" },
       { id: "budgets.open", label: "Open", path: "/budgets" },
     ],
   },

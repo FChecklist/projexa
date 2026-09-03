@@ -17,6 +17,7 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { CategoryDistributionCharts, CategoryDistributionChartsView, analyticsHref, PIE_MAX_SLICES, type CategoryEntry } from "./CategoryDistributionCharts";
+import { formatMoney } from "@/lib/format-money";
 
 afterEach(() => {
   cleanup();
@@ -48,10 +49,10 @@ describe("CategoryDistributionCharts", () => {
 // its rules -- the pie cap, the money labels, the destination on every bar --
 // are what the item asks for, and none of them is visible through the fetching
 // wrapper's loading/error states.
-const money = (v: number | string | null | undefined) =>
-  v === null || v === undefined
-    ? "–"
-    : `AED ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// R67 D-61 (second-merge fix): the real formatMoney(), not a hand-rolled
+// toLocaleString() -- money-format-rule.test.ts bans the method itself
+// anywhere under src/components, test files included.
+const money = (v: number | string | null | undefined) => formatMoney(v, { currency: "AED" });
 
 function category(i: number, overrides: Partial<CategoryEntry> = {}): CategoryEntry {
   return {

@@ -28,7 +28,12 @@ describe("AttendanceSummaryStrip", () => {
     expect(getByText("present")).toBeDefined();
     expect(getByText("half day")).toBeDefined();
     expect(getByText("absent")).toBeDefined();
-    expect(getByText("INR 750")).toBeDefined();
+    // R67 D-61 (swept at the merge). This read "INR 750" while the inline
+    // toLocaleString set only a MAXIMUM of 2 decimals. formatMoney() sets both
+    // the minimum and the maximum, on purpose: money always shows both places
+    // so a column of figures lines up on the point instead of ragging, and the
+    // same amount now reads the same here as on every other money surface.
+    expect(getByText("INR 750.00")).toBeDefined();
   });
 
   test("a day with nothing marked says so -- it is an answer, and it is what 9 a.m. looks like", () => {

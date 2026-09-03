@@ -22,7 +22,7 @@
 // missing bar reads as "nothing", a zero bar reads as "nothing yet", and "no
 // BOQ" is neither.
 
-import { formatCompactNumber } from "@/lib/format-number";
+import { formatCompactNumber, formatNumber } from "@/lib/format-number";
 
 export type GroupedBarSeries = {
   key: string;
@@ -117,7 +117,8 @@ export function GroupedBarChart({
               group.label,
               ...series.map((s) => {
                 const v = group.values[s.key];
-                return `${s.label.toLowerCase()} ${v === null || v === undefined ? emptyLabel : `${moneyPrefix}${v.toLocaleString("en-US")}`}`;
+                // R67 D-61 (second-merge fix): formatNumber(), not a direct toLocaleString().
+                return `${s.label.toLowerCase()} ${v === null || v === undefined ? emptyLabel : `${moneyPrefix}${formatNumber(v)}`}`;
               }),
             ].join(" · ");
             return (

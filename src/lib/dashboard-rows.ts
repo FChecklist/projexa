@@ -35,6 +35,16 @@ export type DashboardProject = {
    */
   budget?: number | null;
   /**
+   * R67 D-62 (second-merge addition): the same three money facts
+   * /dashboard/project reads, from getOrgDashboard's resolveProjectMoney().
+   * `value` above is contractValue's own deprecated alias -- optional because
+   * this row list does not render these three, but the backend now returns
+   * them and a caller that wants them should not have to widen this type.
+   */
+  contractValue?: number | null;
+  projectValue?: number | null;
+  projectValueSource?: "entered" | "purchase_orders" | null;
+  /**
    * R67 E-19 (R-180): the date of the most recent work-progress entry,
    * YYYY-MM-DD. null = nothing has EVER been recorded, which is a different
    * state from "recorded, but a long time ago"; undefined = an older payload

@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Play } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
-import { formatDecimal } from "@/lib/format-number";
+import { formatDecimal, formatNumber } from "@/lib/format-number";
 import { formatProgressCell, unlinkedEntriesNote } from "@/lib/work-progress-report";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
@@ -87,9 +87,17 @@ function qtyText(n: number) {
   return formatDecimal(n);
 }
 
-/** Percentages get ONE decimal, down the whole column, so the column aligns on the point. */
+/**
+ * Percentages get ONE decimal, down the whole column, so the column aligns on
+ * the point. R67 D-61 (second-merge fix): formatNumber(), not a direct
+ * toFixed() -- a bare toFixed() picks the runtime's own locale for the digit
+ * grouping (none, here, since there's no group separator below 1000 -- but
+ * money-format-rule.test.ts bans the METHOD everywhere under src/components,
+ * not just where the mismatch is visible, so the sweep cannot regress one
+ * call at a time).
+ */
 function percentText(n: number) {
-  return `${n.toFixed(1)}%`;
+  return `${formatNumber(n, { fractionDigits: 1 })}%`;
 }
 
 // T-WPR-14-1 (WPR-14, point 111): a real computed zero (a line that is fully
@@ -420,6 +428,57 @@ function ReportSkeleton() {
   );
 }
 
+/**
+ * R67 D-29 (audit R-080), lane D1, folded onto lane D-02's URL-state rewrite.
+ * "Every band untouched" -- the report ran, and nothing happened on this
+ * project between those two dates. Four empty tables under four tabs is a
+ * puzzle; one sentence is an answer.
+ *
+ * `touched.current` is the flag the report already computes for exactly this
+ * distinction (see LineItemRow's own comment): money() cannot tell a real
+ * computed zero from a bucket no progress entry has ever reached, because both
+ * are the number 0.
+ *
+ * This is reached only AFTER the `reportError` branch below, so it can never
+ * be the sentence shown over a failed run -- the empty answer and the failed
+ * answer stay distinct, which is the same rule read-outcome.ts enforces for
+ * every list in the product.
+ */
+export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower" | "byVendor">): boolean {
+  return (
+    report.rows.every((r) => !r.touched.current) &&
+    report.byManpower.length === 0 &&
+    report.byVendor.length === 0
+  );
+}
+
+/** The sentence itself, so its wording is asserted rather than trusted. */
+export function noProgressText(from: string, to: string): string {
+  return `No progress recorded between ${from} and ${to}`;
+}
+
+// R67 MERGE (lane D1 x lane D-02/C-04). Both lanes rewrote this screen's run
+// path. Under decision D-11 the version on main is canonical -- D-02 holds the
+// report's whole state in the URL, runs on arrival, and already replaced
+// D-29's four-second failure TOAST with a `reportError` state rendered beside
+// a Retry (it keeps the toast as well, which is the one part of D-29's
+// complaint that is a matter of taste rather than of truth). So lane D1's own
+// `runError` is dropped as a duplicate of `reportError`, NOT as a rejected
+// idea -- the behaviour D-29 asked for is what ships.
+//
+// What lane D1 had that main did not is above: reportIsEmpty()/noProgressText().
+// A report that ran successfully over a quiet fortnight used to render four
+// empty tables under four tabs and leave the reader to work out which of
+// "nothing happened", "the filter is too narrow" and "it broke" they were
+// looking at.
+//
+// R67 D-02: the report opens with its parameters ALREADY in the URL (the page
+// resolves them through parseWprParams) and runs on arrival. Correction C-04:
+// before this, the range was pre-filled and the screen still said "Pick a date
+// range and click Run Report" -- three clicks to see the current month it could
+// have shown immediately. defaultFrom()/defaultTo() moved into
+// src/lib/work-progress-report-params.ts, where they are shared with the
+// Reports module's link and are actually tested.
 export default function WorkProgressReportClient({
   projectId,
   projectName = "this project",
@@ -943,18 +1002,6 @@ export default function WorkProgressReportClient({
                   printout, on a phone, or by someone who does not know to
                   hover. */}
               <p className="text-[12px] text-px-muted" data-testid="third-column-note">{THIRD_COLUMN_NOTE}</p>
-              {/* R67 B-09: progress can be logged against an ACTIVITY that no
-                  BOQ line can claim. On a project without a BOQ that is the
-                  whole day's work, and the site engineer sees a total they know
-                  is short with nothing to explain it. */}
-              {unlinkedNote && (
-                <p
-                  className="rounded-md border border-px-warning-border bg-px-warning-light px-3 py-2 text-[12.5px] text-px-warning"
-                  data-testid="work-progress-report-unlinked-note"
-                >
-                  {unlinkedNote}
-                </p>
-              )}
             </div>
           )}
           </div>
@@ -1022,6 +1069,19 @@ export default function WorkProgressReportClient({
               onValueChange={(v) => { const next = v as WprView; setView(next); writeParamsToUrl({ from, to, view: next, boqVersion: selectedBoqVersion }); }}
               className="space-y-4"
             >
+              {/* R67 B-09: this report has always silently DROPPED an entry
+                  that no BOQ line can claim. On a project without a BOQ that
+                  is the whole day's work, and the site engineer sees a total
+                  they know is short with nothing to explain it. Now it says
+                  so, above the table, before anyone reads a number. */}
+              {unlinkedNote && (
+                <p
+                  className="rounded-md border border-px-warning-border bg-px-warning-light px-3 py-2 text-[12.5px] text-px-warning"
+                  data-testid="work-progress-report-unlinked-note"
+                >
+                  {unlinkedNote}
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <TabsList>
                   <TabsTrigger value="scope">Scope-wise</TabsTrigger>
