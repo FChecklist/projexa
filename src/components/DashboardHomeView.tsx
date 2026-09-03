@@ -36,7 +36,16 @@ import { needsYouSummary, sortProjectRows, type DashboardProject } from "@/lib/d
 // question you ask after "which project needs me today", not before.
 export type OrgDashboard = {
   totalProjects: number;
-  totalBudget: number;
+  // R67 E-06 (R-108): the BOQ-derived budget across the portfolio -- the same
+  // figure the Project Status report and Cost Variance now print, because all
+  // three read construction-reports-service.ts#sumRootLineBudgets. null (never
+  // 0) when no project has a BOQ, and null ALSO when the reader's role had the
+  // financial figures redacted, which is what financialsRedacted tells apart.
+  totalBudget: number | null;
+  /** The ERP annual ledger budget this tile used to show, under its own name. */
+  totalLedgerBudget?: number | null;
+  /** True when the API redacted the financial figures for this reader's role. */
+  financialsRedacted?: boolean;
   totalRevenue: number;
   totalExpenses: number;
   // R38 (R-50/TC-40): value is the project's active BOQ root-total, null
@@ -65,6 +74,21 @@ function orgCurrency(currencies: CurrencyRow[]): string | null {
 /** KPI tiles show whole units -- the fraction is noise at that size. Every row and table keeps two decimals. */
 function formatKpi(n: number | null, currencies: CurrencyRow[]) {
   return formatMoney(n, { currency: orgCurrency(currencies), fractionDigits: 0 });
+}
+
+/**
+ * R67 E-06 (R-108): the line under the Budget tile's figure. It exists to keep
+ * the ERP ANNUAL LEDGER budget on screen under its own name -- the two are
+ * different concepts, and the bug was that one silently stood in for the
+ * other. Three states, three sentences, never a bare number with no story:
+ * redacted, no BOQ, or a real BOQ budget beside the ledger figure.
+ */
+export function budgetSubtitle(data: OrgDashboard, currencies: CurrencyRow[]): string {
+  if (data.financialsRedacted) return "Needs manager role";
+  if (data.totalBudget === null) return "No BOQ yet";
+  const ledger = data.totalLedgerBudget;
+  if (ledger === null || ledger === undefined) return "From the BOQ";
+  return `Annual ledger budget ${formatKpi(ledger, currencies)}`;
 }
 
 export type RegistryColumn = ScreenColumn;
@@ -247,7 +271,22 @@ export default function DashboardHomeView({
                 project needs me today", not before it. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title={`${columnLabel(columns, "totalBudget", "Total Budget")}${unitSuffix}`} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
+              {/* R67 E-06 (R-108). THE BUDGET TILE, which used to read
+                  "TOTAL BUDGET AED 0" while Cost Variance read 2,193.75 for
+                  the same org. It now reads the BOQ-derived budget; where
+                  there genuinely is no BOQ it reads an en dash and says "No
+                  BOQ yet", because a fabricated zero is what made a QS stop
+                  trusting the screen. The ledger figure keeps its own name in
+                  the subtitle, so the two concepts are visible AND named. */}
+              <DashboardCard
+                title={`${columnLabel(columns, "totalBudget", "Total Budget")}${unitSuffix}`}
+                value={data.totalBudget === null ? "–" : formatKpi(data.totalBudget, currencies)}
+                subtitle={budgetSubtitle(data, currencies)}
+                icon={Wallet}
+                variant="total"
+                href="/budgets"
+                hrefLabel="Open budget"
+              />
               <DashboardCard title={`${columnLabel(columns, "totalRevenue", "Total Revenue")}${unitSuffix}`} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
               <DashboardCard title={`${columnLabel(columns, "totalExpenses", "Total Expenses")}${unitSuffix}`} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>

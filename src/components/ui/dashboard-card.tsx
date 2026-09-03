@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { type LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,15 @@ type DashboardCardProps = {
   icon: LucideIcon;
   variant: DashboardCardVariant;
   className?: string;
+  /**
+   * R67 E-06 (R-108): a KPI tile with no destination is a dead end -- the
+   * reader is told a number and given nowhere to go and check it. When an
+   * href is given the whole tile becomes a link, and hrefLabel is the words
+   * that say where it goes ("Open budget"), so the destination is readable
+   * and not just hover-discoverable.
+   */
+  href?: string;
+  hrefLabel?: string;
 };
 
 // R67 WS-G (R-227). Two changes, both about what a KPI tile is allowed to say
@@ -72,12 +82,18 @@ export function DashboardCard({
   icon: Icon,
   variant,
   className,
+  href,
+  hrefLabel,
 }: DashboardCardProps) {
   const styles = variantStyles[variant];
 
-  return (
+  const card = (
     <Card
-      className={cn("border-l-4 shadow-card transition-shadow hover:shadow-md", className)}
+      className={cn(
+        "border-l-4 shadow-card transition-shadow hover:shadow-md",
+        href && "h-full cursor-pointer focus-within:shadow-md",
+        className
+      )}
       style={{ borderLeftColor: styles.borderColor }}
     >
       <CardContent className="flex items-center gap-4 p-4">
@@ -98,8 +114,22 @@ export function DashboardCard({
           {subtitle && (
             <p className="text-xs text-ct-muted mt-1 truncate">{subtitle}</p>
           )}
+          {href && hrefLabel && (
+            <p className="mt-1 text-xs font-medium text-brand-text">{hrefLabel} &rarr;</p>
+          )}
         </div>
       </CardContent>
     </Card>
+  );
+
+  // The whole tile is the link, so the target is the size of the card rather
+  // than a word inside it -- and it is a real anchor, so Tab reaches it and
+  // the browser's own "open in new tab" works.
+  return href ? (
+    <Link href={href} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2">
+      {card}
+    </Link>
+  ) : (
+    card
   );
 }
