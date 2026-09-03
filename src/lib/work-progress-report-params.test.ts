@@ -5,13 +5,19 @@ import { describe, expect, test } from "bun:test";
 import {
   captionDate,
   isoDay,
+  matchPeriodPreset,
   noProgressNotice,
+  periodLine,
+  periodPresetRange,
   reportCaption,
   resolveDefaultFrom,
   resolveReportParams,
   THIRD_COLUMN_NOTE,
   whatsappHref,
   whatsappMessage,
+  wprRunningLine,
+  WPR_STILL_RUNNING_MS,
+  WPR_STILL_RUNNING_NOTE,
 } from "./work-progress-report-params";
 
 /** A stand-in for URLSearchParams that is explicit about what the URL carries. */
@@ -146,5 +152,60 @@ describe("whatsappMessage / whatsappHref", () => {
     const href = whatsappHref("A & B: https://x/y?z=1");
     expect(href.startsWith("https://wa.me/?text=")).toBe(true);
     expect(decodeURIComponent(href.slice("https://wa.me/?text=".length))).toBe("A & B: https://x/y?z=1");
+  });
+});
+
+// R67 E-17 (R-175) / E-20 (R-194). The period chips.
+describe("periodPresetRange / matchPeriodPreset (R67 E-17)", () => {
+  const CTX = { today: "2026-09-03", earliestFrom: "2025-11-14" };
+
+  test("each preset means one real, named window", () => {
+    expect(periodPresetRange("all", CTX)).toEqual({ from: "2025-11-14", to: "2026-09-03" });
+    expect(periodPresetRange("this-month", CTX)).toEqual({ from: "2026-09-01", to: "2026-09-03" });
+    expect(periodPresetRange("last-month", CTX)).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+    expect(periodPresetRange("this-year", CTX)).toEqual({ from: "2026-01-01", to: "2026-09-03" });
+  });
+
+  test("last month crosses a year boundary without a special case", () => {
+    const january = { today: "2026-01-09", earliestFrom: "2025-01-01" };
+    expect(periodPresetRange("last-month", january)).toEqual({ from: "2025-12-01", to: "2025-12-31" });
+  });
+
+  test("last month knows February", () => {
+    expect(periodPresetRange("last-month", { today: "2026-03-05", earliestFrom: "2020-01-01" }))
+      .toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    // 2028 is a leap year.
+    expect(periodPresetRange("last-month", { today: "2028-03-05", earliestFrom: "2020-01-01" }))
+      .toEqual({ from: "2028-02-01", to: "2028-02-29" });
+  });
+
+  test("the lit chip is the one whose window the range really is", () => {
+    expect(matchPeriodPreset({ from: "2026-09-01", to: "2026-09-03" }, CTX)).toBe("this-month");
+    expect(matchPeriodPreset({ from: "2025-11-14", to: "2026-09-03" }, CTX)).toBe("all");
+  });
+
+  test("a range that matches NO preset is custom -- never the nearest chip", () => {
+    // A shared link, or a hand-typed window. Lighting "this month" here would
+    // tell the reader they are looking at a window they are not.
+    expect(matchPeriodPreset({ from: "2026-09-02", to: "2026-09-03" }, CTX)).toBeNull();
+  });
+
+  test("the grey period line names the window AND the preset it corresponds to", () => {
+    expect(periodLine({ from: "2026-09-01", to: "2026-09-03" }, CTX))
+      .toBe("Showing 1 Sep 2026 – 3 Sep 2026 (this month)");
+    // A custom window still says what it is showing; it just has no name.
+    expect(periodLine({ from: "2026-09-02", to: "2026-09-03" }, CTX))
+      .toBe("Showing 2 Sep 2026 – 3 Sep 2026");
+  });
+});
+
+describe("the run's own state, in words (R67 E-17)", () => {
+  test("the running line counts seconds, so a slow report is distinguishable from a hung one", () => {
+    expect(wprRunningLine(3)).toBe("Running Work Progress Report – 3 s");
+  });
+
+  test("after twenty seconds the screen says what it thinks is happening -- and does NOT abort", () => {
+    expect(WPR_STILL_RUNNING_MS).toBe(20_000);
+    expect(WPR_STILL_RUNNING_NOTE).toBe("Still running – the data service is slow; you can keep waiting or cancel");
   });
 });

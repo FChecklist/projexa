@@ -187,14 +187,83 @@ describe("WorkProgressReportClient runs on arrival (R67 E-03 / D-02)", () => {
     expect(getAllByTestId("po-qty")[0].textContent).toBe("472");
   });
 
-  test("Export PDF is present and enabled once a report has run", async () => {
+  // R67 E-18 (R-178): the five header buttons became ONE Export word-button
+  // with a menu, shared with every other report screen. Export PDF is inside
+  // it, and it is a real href into the relay -- PROJEXA has no PDF library.
+  test("Export is enabled once a report has run, and its menu carries PDF, XLSX and CSV", async () => {
     const calls: string[] = [];
     stubFetch(calls);
 
     const { findByTestId, getByTestId } = render(<WorkProgressReportClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
 
     await findByTestId("grand-total-row");
-    const pdf = getByTestId("export-pdf") as HTMLButtonElement;
-    expect(pdf.disabled).toBe(false);
+    const exportButton = getByTestId("export-menu-button") as HTMLButtonElement;
+    expect(exportButton.disabled).toBe(false);
+
+    exportButton.click();
+    const pdf = await findByTestId("export-pdf");
+    expect(pdf.getAttribute("href")).toContain("/api/work-progress/report/pdf?projectId=p-1");
+    // R67 E-20 (R-208): the XLSX, over VERIDIAN's own rowsToXLSXBuffer.
+    expect(getByTestId("export-xlsx").getAttribute("href")).toContain("/api/work-progress/report/xlsx?projectId=p-1");
+    // The CSV stays client-built from the rows on screen -- a button, not a link.
+    expect(getByTestId("export-csv").tagName).toBe("BUTTON");
+  });
+
+  // R67 E-20 (R-209): every Code links to the LINE, naming the revision.
+  test("a Code links to /scope?boqId=...#line-<id>, not merely to the BOQ screen", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId, getAllByTestId } = render(<WorkProgressReportClient projectId="p-1" />);
+    await findByTestId("grand-total-row");
+
+    const href = getAllByTestId("scope-code-link")[0].getAttribute("href") ?? "";
+    expect(href).toContain("/scope?projectId=p-1");
+    expect(href).toContain("boqId=");
+    expect(href).toMatch(/#line-.+$/);
+  });
+
+  // R67 E-20 (R-209): the legend under the table, in words.
+  test("the table carries a legend saying what Previous, Current and the third column mean", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId } = render(<WorkProgressReportClient projectId="p-1" />);
+    const legend = await findByTestId("scope-table-legend");
+    expect(legend.textContent).toContain("Previous = done before");
+    expect(legend.textContent).toContain("Total = everything done to date");
+  });
+
+  // R67 E-17 (R-175): the period is named chips, and the grey line says which.
+  test("the period renders as named chips with one lit, and the grey line names the window", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId, getByTestId, queryByTestId } = render(<WorkProgressReportClient projectId="p-1" />);
+    await findByTestId("grand-total-row");
+
+    expect(getByTestId("wpr-period-chips")).toBeDefined();
+    expect(getByTestId("wpr-period-line").textContent).toContain("Showing ");
+    expect(getByTestId("wpr-period-line").textContent).toContain("Change dates");
+    // The two date fields are NOT sitting there by default -- Custom... reveals
+    // them. (This fixture's window is "since first entry", which is a preset.)
+    expect(queryByTestId("wpr-custom-dates")).toBeNull();
+    (getByTestId("wpr-period-custom") as HTMLButtonElement).click();
+    expect(await findByTestId("wpr-custom-dates")).toBeDefined();
+  });
+
+  // R67 E-17 (R-175): Table | Chart, and the chart is a sorted bar list.
+  test("the output toggle offers a sorted horizontal bar chart, never a pie", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId, getByTestId, queryByTestId } = render(<WorkProgressReportClient projectId="p-1" />);
+    await findByTestId("grand-total-row");
+
+    expect(queryByTestId("sorted-bar-list")).toBeNull();
+    (getByTestId("wpr-output-chart") as HTMLButtonElement).click();
+    expect(await findByTestId("sorted-bar-list")).toBeDefined();
+    // The table is gone while the chart is up; the grand total belongs to the table.
+    expect(queryByTestId("grand-total-row")).toBeNull();
   });
 });

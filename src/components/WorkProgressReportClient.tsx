@@ -12,23 +12,34 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Play, Link2, Download, FileText, MessageCircle } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
 import { formatProgressCell } from "@/lib/work-progress-report";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import {
+  CUSTOM_PERIOD_LABEL,
   isoDay,
+  matchPeriodPreset,
   noProgressNotice,
+  periodLine,
+  periodPresetRange,
+  PERIOD_PRESETS,
+  PERIOD_PRESET_LABELS,
   reportCaption,
   resolveReportParams,
   THIRD_COLUMN_NOTE,
-  whatsappHref,
   whatsappMessage,
+  wprRunningLine,
+  WPR_STILL_RUNNING_MS,
+  WPR_STILL_RUNNING_NOTE,
+  type PeriodPreset,
   type ReportView,
   type ThirdColumnMode,
 } from "@/lib/work-progress-report-params";
+import { ExportShareActions } from "@/components/ExportShareActions";
+import { SortedBarList, type SortedBar } from "@/components/reports/SortedBarList";
 
 export type { ThirdColumnMode };
 
@@ -196,15 +207,46 @@ export function CategoryFilterGroup({
   );
 }
 
+/**
+ * R67 E-20 (R-209): every item code links to the LINE, not just to the screen.
+ * `/scope?boqId=...#line-<id>` -- the boqId names the revision the number came
+ * from, and the fragment names the row, so a QS checking a figure lands on it
+ * rather than on a BOQ they then have to search.
+ */
+export function boqLineHref(projectId: string, boqId: string | null, lineItemId: string): string {
+  const qs = new URLSearchParams({ projectId });
+  if (boqId) qs.set("boqId", boqId);
+  return `/scope?${qs.toString()}#line-${encodeURIComponent(lineItemId)}`;
+}
+
+/**
+ * R67 E-20 (R-209): the legend, under the table, in words. Three bands of
+ * near-identical columns is exactly the table where a reader needs telling what
+ * "Previous" is previous TO, and a header cell has no room to say it.
+ */
+export function scopeTableLegend(mode: ThirdColumnMode, from: string, to: string): string {
+  const third = mode === "balance"
+    ? "Balance = the contract less everything done to date"
+    : "Total = everything done to date, including before this period";
+  return `Previous = done before ${from}. Current = done between ${from} and ${to}. ${third}. Percentages are of the BOQ line and are shown on parent lines only; a sub-task's own quantity and amount are its own.`;
+}
+
 export function ScopeTable({
   rows,
   mode,
   projectId,
+  boqId = null,
+  from,
+  to,
   money = formatDecimal,
 }: {
   rows: LineItemRow[];
   mode: ThirdColumnMode;
   projectId: string;
+  /** The BOQ revision these rows came from, so a Code link names the revision as well as the line. */
+  boqId?: string | null;
+  from: string;
+  to: string;
   /** The org money formatter. Defaults to a bare number so a caller with no currency in hand still renders. */
   money?: (n: number) => string;
 }) {
@@ -248,7 +290,11 @@ export function ScopeTable({
                 <TableCell className={STICKY_CATEGORY}>{r.categoryName}</TableCell>
                 {/* R42 seq24: every item code is a hyperlink to its BOQ (REPORT.GLOBAL). */}
                 <TableCell className={`font-mono text-xs ${STICKY_CODE}`}>
-                  {r.code ? <Link href={`/scope?projectId=${projectId}`} className="text-px-ink underline">{r.code}</Link> : "—"}
+                  {r.code ? (
+                    <Link href={boqLineHref(projectId, boqId, r.lineItemId)} className="text-px-ink underline" data-testid="scope-code-link">
+                      {r.code}
+                    </Link>
+                  ) : "—"}
                 </TableCell>
                 <TableCell>{r.description}</TableCell>
                 <TableCell className={NUM_CELL} data-testid="po-qty">{qtyText(r.qtyTotal)}</TableCell>
@@ -286,6 +332,11 @@ export function ScopeTable({
           </TableRow>
         </TableBody>
       </Table>
+      {/* R67 E-20 (R-209): the legend, under the table. Three bands of
+          near-identical column names need one sentence saying what each is
+          relative to -- and a sentence survives a printout, which a tooltip
+          does not. */}
+      <p className="pt-2 text-[12px] text-px-muted" data-testid="scope-table-legend">{scopeTableLegend(mode, from, to)}</p>
     </div>
   );
 }
@@ -399,6 +450,23 @@ export default function WorkProgressReportClient({
   // rows the table is no longer showing.
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  // R67 E-17 (R-175): the run's own state. A spinner cannot tell a slow report
+  // from a hung one; a second count can, and after twenty seconds the screen
+  // says what it thinks is happening. It does NOT abort -- unlike the Reports
+  // panel, which has a faster alternative to send the reader to, this screen IS
+  // the fast path, so the choice to keep waiting is the reader's.
+  const [elapsed, setElapsed] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  // R67 E-17: the period is a row of named chips, and "Custom..." is the
+  // absence of one. `earliestFrom` is the From the auto-run resolved, so
+  // "Since first entry" is that same date rather than a second opinion.
+  const [earliestFrom, setEarliestFrom] = useState(initial.from);
+  const [customPeriod, setCustomPeriod] = useState(false);
+  // R67 E-17: Table | Chart. The chart is a sorted horizontal bar per group
+  // with click-to-filter -- never a pie.
+  const [output, setOutput] = useState<"table" | "chart">("table");
+  /** Set once a share link has been minted, so the expiry can be said in words. */
+  const [shareExpiry, setShareExpiry] = useState<string | null>(null);
 
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode, money) : null;
 
@@ -408,13 +476,17 @@ export default function WorkProgressReportClient({
       const t = overrides.to ?? to;
       const boqId = overrides.boqId ?? selectedBoqId;
       const categories = overrides.categories ?? selectedCategories;
+      // A second run supersedes the first rather than racing it.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
       try {
         const params = new URLSearchParams({ projectId, from: f, to: t });
         if (boqId) params.set("boqId", boqId);
         // Repeatable, not comma-joined: a real category name may contain a comma.
         for (const c of categories) params.append("category", c);
-        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+        const res = await fetch(`/api/work-progress/report?${params.toString()}`, { signal: controller.signal });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error);
         setReport(data);
@@ -426,14 +498,36 @@ export default function WorkProgressReportClient({
           setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
         }
       } catch (err) {
+        // An abort is the reader's own decision (Cancel, or a second run
+        // superseding this one), not a failure to report back at them.
+        if (err instanceof DOMException && err.name === "AbortError") return;
         toast.error(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
         setReport(null);
       } finally {
-        setLoading(false);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [projectId, from, to, selectedBoqId, selectedCategories]
   );
+
+  /** R67 E-17: Cancel. The request really stops; the last good result stays on screen. */
+  function cancelRun() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  }
+
+  // The elapsed-seconds counter, restarted with every run.
+  useEffect(() => {
+    if (!loading) return;
+    const started = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [loading]);
 
   // R67 E-03, implementing D-02: THE REPORT RUNS ON ARRIVAL.
   //
@@ -473,6 +567,9 @@ export default function WorkProgressReportClient({
       }
       if (cancelled) return;
       if (resolvedFrom !== from) setFrom(resolvedFrom);
+      // R67 E-17: the same date the "Since first entry" chip means, so the chip
+      // row and the auto-run can never describe different windows.
+      setEarliestFrom(resolvedFrom);
       writeParamsToUrl({ from: resolvedFrom, to, view, boqVersion: selectedBoqId });
       await runReport({ from: resolvedFrom });
     })();
@@ -515,6 +612,33 @@ export default function WorkProgressReportClient({
 
   const emptyNotice = report ? noProgressNotice(report.rows, from, to) : null;
 
+  /** Which period chip is lit. null means the window matches no preset -- a real state, not a bug. */
+  const activePreset: PeriodPreset | null = matchPeriodPreset({ from, to }, { today, earliestFrom });
+
+  /**
+   * R67 E-17: the Chart view's bars, one per group of the view on screen, and
+   * always the SAME figure the table's third Amount column shows -- a chart
+   * that measured something the table beside it does not would be a second
+   * report, not a picture of this one.
+   */
+  const chartTitle =
+    view === "manpower" ? "Labour cost by trade"
+    : view === "vendor" ? "Labour cost by vendor"
+    : `Amount ${thirdColumnMode === "balance" ? "remaining" : "done to date"} by category`;
+
+  const chartBars: SortedBar[] = !report
+    ? []
+    : view === "manpower"
+      ? report.byManpower.map((r) => ({ key: r.trade, label: r.trade, value: r.totalCost, display: money(r.totalCost) }))
+      : view === "vendor"
+        ? report.byVendor.map((r) => ({ key: r.vendorId, label: r.vendorName, value: r.totalCost, display: money(r.totalCost) }))
+        : report.byCategory.map((r) => ({
+            key: r.name,
+            label: r.name,
+            value: r.amt[thirdColumnMode],
+            display: money(r.amt[thirdColumnMode]),
+          }));
+
   // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
   // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a binary
   // .xlsx -- Excel opens CSV natively and every value is checkable. R67 E-03
@@ -550,6 +674,15 @@ export default function WorkProgressReportClient({
     return `/api/work-progress/report/pdf?projectId=${encodeURIComponent(projectId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&mode=${thirdColumnMode}`;
   }
 
+  /**
+   * R67 E-18 (R-178) / E-20 (R-208): the XLSX, over VERIDIAN's own
+   * rowsToXLSXBuffer and its formula-injection guard, built from the SAME
+   * ReportExportSchema the PDF is drawn from. PROJEXA gains no XLSX library.
+   */
+  function xlsxHref() {
+    return `/api/work-progress/report/xlsx?projectId=${encodeURIComponent(projectId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&mode=${thirdColumnMode}`;
+  }
+
   async function createShareLink(): Promise<{ url: string; expiresAt: string } | null> {
     const res = await fetch("/api/work-progress/report/share", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -561,50 +694,20 @@ export default function WorkProgressReportClient({
   }
 
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp Business
-  // API (explicitly ruled out).
-  async function copyLink() {
+  // API (explicitly ruled out). One factory, handed to the shared control, so
+  // Copy link and Send via WhatsApp mint the SAME link rather than two.
+  async function shareUrlFactory(): Promise<string | null> {
     setSharing(true);
     try {
       const data = await createShareLink();
-      if (!data) return;
-      await navigator.clipboard.writeText(data.url);
-      toast.success(`Link copied — paste it into WhatsApp or email. Expires ${formatDate(data.expiresAt)}.`);
+      if (!data) return null;
+      // The expiry is part of what the reader is handing over, so it is said
+      // rather than left to be discovered when the link stops working.
+      setShareExpiry(formatDate(data.expiresAt));
+      return data.url;
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
-    } finally {
-      setSharing(false);
-    }
-  }
-
-  async function sendOnWhatsApp() {
-    setSharing(true);
-    try {
-      const data = await createShareLink();
-      if (!data) return;
-      const message = whatsappMessage({ projectName, from, to, url: data.url });
-      // On a device that can share a FILE, send the real PDF -- a link that
-      // expires is second best when the recipient can be handed the document
-      // itself. Everywhere else, wa.me with the message and the link.
-      const canShareFiles = typeof navigator !== "undefined" && typeof navigator.canShare === "function";
-      if (canShareFiles) {
-        try {
-          const pdfRes = await fetch(pdfHref());
-          if (pdfRes.ok) {
-            const blob = await pdfRes.blob();
-            const file = new File([blob], `work-progress-report-${from}-to-${to}.pdf`, { type: "application/pdf" });
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({ files: [file], text: message, title: "Work Progress Report" });
-              return;
-            }
-          }
-        } catch {
-          // Sharing the file is the nicer path, not the required one -- fall
-          // through to the link rather than failing the whole action.
-        }
-      }
-      window.open(whatsappHref(message), "_blank", "noopener");
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
+      return null;
     } finally {
       setSharing(false);
     }
@@ -613,17 +716,68 @@ export default function WorkProgressReportClient({
   // Every header action carries its own reason when it cannot be used, beside
   // the button, in words -- never a disabled control with no explanation.
   const notRunYet = !report ? "Run the report first" : null;
-  const exportReason = notRunYet ?? tieError;
+  const exportReason = notRunYet ?? (tieError ? "Totals do not tie – export disabled" : null);
 
   return (
     <div className="space-y-4">
       <Card className="shadow-card">
-        <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+        <CardContent className="space-y-3 p-4">
+          {/* R67 E-17 (R-175): the period, as NAMED CHIPS with one preselected.
+              Two bare date inputs made a reader do the arithmetic to work out
+              which window they were looking at; a lit chip says it. "Custom..."
+              is the absence of a preset, not a fifth one, so a shared link with
+              a hand-typed window lights nothing and reveals the two fields. */}
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Period" data-testid="wpr-period-chips">
+            <span className="text-[12.5px] text-px-muted">Period</span>
+            {PERIOD_PRESETS.map((preset) => {
+              const active = !customPeriod && activePreset === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  aria-pressed={active}
+                  data-testid={`wpr-period-${preset}`}
+                  onClick={() => {
+                    const range = periodPresetRange(preset, { today, earliestFrom });
+                    setCustomPeriod(false);
+                    setFrom(range.from);
+                    setTo(range.to);
+                    writeParamsToUrl({ from: range.from, to: range.to, view, boqVersion: selectedBoqId });
+                    runReport({ from: range.from, to: range.to });
+                  }}
+                  className={`cursor-pointer rounded-full border px-3 py-1 text-[12px] transition-colors ${
+                    active ? "border-px-teal bg-px-teal/10 text-px-ink" : "border-px-border text-px-muted hover:bg-px-cloud/50"
+                  }`}
+                >
+                  {PERIOD_PRESET_LABELS[preset]}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-pressed={customPeriod || activePreset === null}
+              data-testid="wpr-period-custom"
+              onClick={() => setCustomPeriod(true)}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-[12px] transition-colors ${
+                customPeriod || activePreset === null
+                  ? "border-px-teal bg-px-teal/10 text-px-ink"
+                  : "border-px-border text-px-muted hover:bg-px-cloud/50"
+              }`}
+            >
+              {CUSTOM_PERIOD_LABEL}
+            </button>
+          </div>
 
-          {/* Header order, per the item: Run Report | Export PDF | Export CSV |
-              Send on WhatsApp | Copy link. */}
+          {/* The two date fields, revealed by Custom... (or by a URL whose
+              window matches no preset), never sitting there by default. */}
+          {(customPeriod || activePreset === null) && (
+            <div className="flex flex-wrap items-end gap-3" data-testid="wpr-custom-dates">
+              <div className="space-y-1.5"><Label htmlFor="wpr-from">From</Label><Input id="wpr-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label htmlFor="wpr-to">To</Label><Input id="wpr-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-end gap-3">
           <Button
             onClick={() => { writeParamsToUrl({ from, to, view, boqVersion: selectedBoqId }, true); runReport(); }}
             disabled={loading}
@@ -632,29 +786,27 @@ export default function WorkProgressReportClient({
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
 
-          <Button
-            variant="outline"
-            disabled={Boolean(exportReason)}
-            title={exportReason ?? undefined}
-            data-testid="export-pdf"
-            onClick={() => window.open(pdfHref(), "_blank", "noopener")}
-          >
-            <FileText className="size-4" /> Export PDF
-          </Button>
+          {/* R67 E-18 (R-178): ONE Export / Share control, the same one the
+              Materials Cost Report, the Cost Variance screen and the Design
+              Studio use. Five separate header buttons became two word-buttons
+              with menus; PDF and XLSX are relay hrefs (PROJEXA has no PDF or
+              XLSX library), and the CSV is still built here from the rows on
+              screen, which is the trust feature it always was. */}
+          <ExportShareActions
+            canExport={!exportReason}
+            exportReason={exportReason}
+            title={`Work Progress Report – ${projectName}, ${from} to ${to}`}
+            pdfHref={pdfHref()}
+            xlsxHref={xlsxHref()}
+            onCsv={exportCsv}
+            shareUrlFactory={shareUrlFactory}
+            shareReason={sharing ? "Creating the link..." : null}
+            onMessage={(m) => toast.success(m)}
+          />
 
-          <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} data-testid="export-csv" onClick={exportCsv}>
-            <Download className="size-4" /> Export CSV
-          </Button>
-
-          <Button variant="outline" disabled={Boolean(exportReason) || sharing} title={exportReason ?? undefined} data-testid="send-whatsapp" onClick={sendOnWhatsApp}>
-            {sharing ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />} Send on WhatsApp
-          </Button>
-
-          <Button variant="outline" disabled={Boolean(exportReason) || sharing} title={exportReason ?? undefined} data-testid="copy-link" onClick={copyLink}>
-            {sharing ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Copy link
-          </Button>
-
-          {exportReason && <span className="text-xs text-px-muted" data-testid="export-disabled-reason">{exportReason}</span>}
+          {shareExpiry && (
+            <span className="text-xs text-px-muted" data-testid="wpr-share-expiry">Link expires {shareExpiry}</span>
+          )}
 
           {report && report.availableBoqs.length > 1 && (
             <div className="space-y-1.5">
@@ -709,6 +861,7 @@ export default function WorkProgressReportClient({
               <p className="text-[12px] text-px-muted" data-testid="third-column-note">{THIRD_COLUMN_NOTE}</p>
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
 
@@ -728,6 +881,21 @@ export default function WorkProgressReportClient({
               and the PDF -- one sentence, three facts, so no exported file can
               be mistaken for a different range or revision. */}
           <p className="text-[12.5px] text-px-muted" data-testid="wpr-caption">{caption}</p>
+          {/* R67 E-20 (R-194): the grey period line that replaced the idle
+              prompt -- the window in words, with the preset it corresponds to
+              named, and a way to change it that is not a hunt. */}
+          <p className="text-[12px] text-px-muted" data-testid="wpr-period-line">
+            {periodLine({ from, to }, { today, earliestFrom })}
+            {" — "}
+            <button
+              type="button"
+              className="cursor-pointer underline"
+              data-testid="wpr-change-dates"
+              onClick={() => setCustomPeriod(true)}
+            >
+              Change dates
+            </button>
+          </p>
 
           {emptyNotice && (
             <p className="text-sm" style={{ color: "var(--status-late-text)" }} data-testid="wpr-no-progress">
@@ -736,7 +904,18 @@ export default function WorkProgressReportClient({
           )}
 
           {loading ? (
-            <ReportSkeleton />
+            <div className="space-y-3">
+              {/* R67 E-17 (R-175): the run's own state, said in words and
+                  counted in seconds, with a Cancel that really aborts. */}
+              <div className="space-y-1 text-center" data-testid="wpr-running">
+                <p className="text-sm text-px-ink">{wprRunningLine(elapsed)}</p>
+                {elapsed * 1000 >= WPR_STILL_RUNNING_MS && (
+                  <p className="text-[12px] text-px-muted" data-testid="wpr-still-running">{WPR_STILL_RUNNING_NOTE}</p>
+                )}
+                <Button variant="ghost" size="sm" onClick={cancelRun} data-testid="wpr-cancel">Cancel</Button>
+              </div>
+              <ReportSkeleton />
+            </div>
           ) : !report ? (
             // Not an idle prompt -- the report runs on arrival, so the only way
             // to be here is a failed run, and the toast above said why.
@@ -747,16 +926,56 @@ export default function WorkProgressReportClient({
               onValueChange={(v) => { const next = v as ReportView; setView(next); writeParamsToUrl({ from, to, view: next, boqVersion: selectedBoqId }); }}
               className="space-y-4"
             >
-              <TabsList>
-                <TabsTrigger value="scope">Scope-wise</TabsTrigger>
-                <TabsTrigger value="category">Category-wise</TabsTrigger>
-                <TabsTrigger value="manpower">Manpower-wise</TabsTrigger>
-                <TabsTrigger value="vendor">Vendor-wise</TabsTrigger>
-              </TabsList>
-              <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} money={money} /></TabsContent>
-              <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} money={money} /></TabsContent>
-              <TabsContent value="manpower"><ManpowerTable rows={report.byManpower} money={money} /></TabsContent>
-              <TabsContent value="vendor"><VendorTable rows={report.byVendor} money={money} /></TabsContent>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <TabsList>
+                  <TabsTrigger value="scope">Scope-wise</TabsTrigger>
+                  <TabsTrigger value="category">Category-wise</TabsTrigger>
+                  <TabsTrigger value="manpower">Manpower-wise</TabsTrigger>
+                  <TabsTrigger value="vendor">Vendor-wise</TabsTrigger>
+                </TabsList>
+                {/* R67 E-17 (R-175): Table | Chart. The chart is a sorted
+                    horizontal bar per group with click-to-filter -- never a
+                    pie; see reports/SortedBarList.tsx for why. */}
+                <div className="flex gap-1" role="group" aria-label="Output" data-testid="wpr-output-toggle">
+                  {(["table", "chart"] as const).map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      aria-pressed={output === o}
+                      data-testid={`wpr-output-${o}`}
+                      onClick={() => setOutput(o)}
+                      className={`cursor-pointer rounded-md border px-3 py-1 text-[12px] transition-colors ${
+                        output === o ? "border-px-teal bg-px-teal/10 text-px-ink" : "border-px-border text-px-muted hover:bg-px-cloud/50"
+                      }`}
+                    >
+                      {o === "table" ? "Table" : "Chart"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {output === "chart" ? (
+                <SortedBarList
+                  bars={chartBars}
+                  title={chartTitle}
+                  emptyMessage="Nothing to chart for this view and period."
+                  // Click-to-filter only where there is a filter to apply: the
+                  // Category multi-select is the report's only real one, so a
+                  // bar in any other view would be a dead click.
+                  onSelect={
+                    view === "category" || view === "scope"
+                      ? (key) => { setSelectedCategories([key]); runReport({ categories: [key] }); }
+                      : undefined
+                  }
+                  selectedKey={selectedCategories.length === 1 ? selectedCategories[0] : null}
+                />
+              ) : (
+                <>
+                  <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} boqId={selectedBoqId || report.boqId} from={from} to={to} money={money} /></TabsContent>
+                  <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} money={money} /></TabsContent>
+                  <TabsContent value="manpower"><ManpowerTable rows={report.byManpower} money={money} /></TabsContent>
+                  <TabsContent value="vendor"><VendorTable rows={report.byVendor} money={money} /></TabsContent>
+                </>
+              )}
             </Tabs>
           )}
         </CardContent>

@@ -150,3 +150,113 @@ export function whatsappMessage(input: { projectName: string; from: string; to: 
 export function whatsappHref(message: string): string {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
+
+// R67 E-17 (R-175) / E-20 (R-194). THE PERIOD, AS CHIPS.
+//
+// The screen carried two bare date inputs and the sentence "Pick a date range
+// and click Run Report." over a range that was already filled (correction
+// C-04). E-03 deleted the sentence and made the report run on arrival; this is
+// the other half -- the period is a row of named chips with one preselected, so
+// a reader can see WHICH window they are looking at without reading two dates
+// and doing the arithmetic, and can change it in one click.
+//
+// "Custom..." is not a preset: it is the absence of one, which is why
+// matchPeriodPreset returns null rather than a fifth value. A range that
+// matches no preset is a real, legitimate state (a shared link, a hand-typed
+// window) and the chips must show that honestly instead of highlighting the
+// nearest one.
+
+export const PERIOD_PRESETS = ["all", "this-month", "last-month", "this-year"] as const;
+export type PeriodPreset = (typeof PERIOD_PRESETS)[number];
+
+export const PERIOD_PRESET_LABELS: Record<PeriodPreset, string> = {
+  all: "Since first entry",
+  "this-month": "This month",
+  "last-month": "Last month",
+  "this-year": "This year",
+};
+
+/** The label for the chip row's escape hatch, and for a range that matches no preset. */
+export const CUSTOM_PERIOD_LABEL = "Custom...";
+
+/** UTC month arithmetic on YYYY-MM-DD, so no local time zone can move a boundary day. */
+function utcDay(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+/**
+ * What a preset means, in dates.
+ *
+ * `earliestFrom` is the From the screen already resolved on arrival -- the
+ * earliest recorded entry date, or the project start, or 1 January (see
+ * resolveDefaultFrom). "Since first entry" is that same date rather than a
+ * second opinion about where this project's history begins.
+ */
+export function periodPresetRange(
+  preset: PeriodPreset,
+  ctx: { today: string; earliestFrom: string }
+): { from: string; to: string } {
+  const today = utcDay(ctx.today);
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth();
+  switch (preset) {
+    case "all":
+      return { from: ctx.earliestFrom, to: ctx.today };
+    case "this-month":
+      return { from: isoDay(new Date(Date.UTC(year, month, 1))), to: ctx.today };
+    case "last-month":
+      return {
+        from: isoDay(new Date(Date.UTC(year, month - 1, 1))),
+        // Day 0 of this month IS the last day of the previous one.
+        to: isoDay(new Date(Date.UTC(year, month, 0))),
+      };
+    case "this-year":
+      return { from: `${year}-01-01`, to: ctx.today };
+  }
+}
+
+/** Which chip is lit, or null when the range is genuinely a custom one. */
+export function matchPeriodPreset(
+  range: { from: string; to: string },
+  ctx: { today: string; earliestFrom: string }
+): PeriodPreset | null {
+  for (const preset of PERIOD_PRESETS) {
+    const candidate = periodPresetRange(preset, ctx);
+    if (candidate.from === range.from && candidate.to === range.to) return preset;
+  }
+  return null;
+}
+
+/**
+ * R67 E-20 (R-194): the grey line that replaced the idle prompt -- the window
+ * in words, with the preset it corresponds to named in brackets, so a reader
+ * never has to work out that "01 Sep - 03 Sep" means "month to date".
+ */
+export function periodLine(
+  range: { from: string; to: string },
+  ctx: { today: string; earliestFrom: string }
+): string {
+  const preset = matchPeriodPreset(range, ctx);
+  const named = preset ? ` (${PERIOD_PRESET_LABELS[preset].toLowerCase()})` : "";
+  return `Showing ${captionDate(range.from)} – ${captionDate(range.to)}${named}`;
+}
+
+// R67 E-17 (R-175). THE RUN'S OWN STATE, in words.
+//
+// A spinner cannot tell a slow report from a hung one. A second count can, and
+// after twenty seconds the screen stops leaving the reader to guess and says
+// what it thinks is happening -- without ABORTING, which is the difference
+// between this screen and the Reports panel: there the reader has a faster
+// alternative to be sent to, here this IS the fast path.
+
+/** "Running Work Progress Report - 3 s" */
+export function wprRunningLine(seconds: number): string {
+  return `Running Work Progress Report – ${seconds} s`;
+}
+
+/** After this long, the screen says what it thinks is happening rather than spinning silently. */
+export const WPR_STILL_RUNNING_MS = 20_000;
+
+export const WPR_STILL_RUNNING_NOTE =
+  "Still running – the data service is slow; you can keep waiting or cancel";

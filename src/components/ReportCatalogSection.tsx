@@ -39,6 +39,11 @@ import type { Company } from "@/components/company-scope";
 // R67 E-04 (R-079): the ONE place that says where a report name goes -- shared
 // with the Project Reports picker, so the two tabs cannot drift apart again.
 import { catalogDestination, catalogEntrySlug, monthToDate } from "@/lib/report-destinations";
+// R67 E-17 (R-179): the ONE index of what PROJEXA can answer for. The badge
+// below used to be decided by a rule of this component's own, which is how it
+// came to say "Not yet viewable here" about a report the sibling tab runs two
+// clicks away.
+import { isInReportRegistry } from "@/lib/report-registry";
 
 /**
  * R67 E-14 (R-132 / R-139): what a card says about a report PROJEXA genuinely
@@ -105,19 +110,11 @@ function CatalogCard({
   entry,
   companies,
   projectId,
-  pickerSlugs,
   onOpenProjectReport,
 }: {
   entry: FullCatalogEntry;
   companies: Company[];
   projectId: string | null;
-  /**
-   * R67 E-14: the slugs the sibling Project Reports tab really knows how to run.
-   * Passed down rather than imported so there is ONE list, owned by the screen
-   * that owns the picker -- which is what stops the two tabs contradicting each
-   * other about the same report.
-   */
-  pickerSlugs: ReadonlySet<string>;
   onOpenProjectReport?: (slug: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -141,7 +138,11 @@ function CatalogCard({
   // name as soon as its screen is a tab on a module named after something else
   // ("/design-studio?tab=cost-analysis").
   const slug = catalogEntrySlug(entry);
-  const inPicker = Boolean(slug && !hosted && projectId && pickerSlugs.has(slug) && onOpenProjectReport);
+  // R67 E-17 (R-179): "in the registry" is the whole test. E-14 passed the
+  // picker's slug list down as a prop so the two tabs shared ONE list; the
+  // registry is that same list, derived rather than handed over, so a caller
+  // cannot forget to pass it and quietly get the old wrong badge back.
+  const inPicker = Boolean(slug && !hosted && projectId && isInReportRegistry(slug) && onOpenProjectReport);
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -210,15 +211,11 @@ function CatalogCard({
 // project still renders every card -- just without the shortcut.
 export function ReportCatalogSection({
   projectId = null,
-  pickerSlugs,
   onOpenProjectReport,
 }: {
   projectId?: string | null;
-  /** R67 E-14: the sibling tab's real slug list, owned by ReportsClient. */
-  pickerSlugs?: ReadonlySet<string>;
   onOpenProjectReport?: (slug: string) => void;
 } = {}) {
-  const slugs = pickerSlugs ?? new Set<string>();
   const [catalog, setCatalog] = useState<FullCatalogEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -301,7 +298,7 @@ export function ReportCatalogSection({
   const constructionEntries = catalog?.filter((e) => e.domain === "construction") ?? [];
   const runHereCount = constructionEntries.filter((e) => {
     const slug = catalogEntrySlug(e);
-    return Boolean(slug && slugs.has(slug));
+    return Boolean(slug && isInReportRegistry(slug));
   }).length;
   const otherDomainCount = (catalog?.length ?? 0) - constructionEntries.length;
   const otherDomains = DOMAIN_ORDER.filter((d) => d !== "construction" && byDomain[d].length > 0);
@@ -379,7 +376,6 @@ export function ReportCatalogSection({
                   entry={entry}
                   companies={companies}
                   projectId={projectId}
-                  pickerSlugs={slugs}
                   onOpenProjectReport={onOpenProjectReport}
                 />
               ))}
@@ -407,7 +403,6 @@ export function ReportCatalogSection({
                         entry={entry}
                         companies={companies}
                         projectId={projectId}
-                        pickerSlugs={slugs}
                         onOpenProjectReport={onOpenProjectReport}
                       />
                     ))}

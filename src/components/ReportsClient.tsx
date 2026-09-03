@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -16,7 +16,10 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { useOrgMoney } from "@/lib/use-org-money";
-import { isHostedReport, monthToDate, reportDestination } from "@/lib/report-destinations";
+import { isHostedReport, reportDestination } from "@/lib/report-destinations";
+// R67 E-17 (R-175): the composed index -- what renders a report, what it takes,
+// whether it exports, and the parameters it opens with.
+import { registryDestination } from "@/lib/report-registry";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { useShellMessage } from "@/components/shell/shell-messages";
 import { taskErrorSentence } from "@/lib/task-errors";
@@ -906,16 +909,17 @@ export default function ReportsClient({
   const router = useRouter();
   const [tab, setTab] = useState(projectId ? "project" : "catalog");
   const [handoff, setHandoff] = useState<{ slug: string; nonce: number } | null>(null);
-  const pickerSlugs = useMemo(() => new Set(reports.map((r) => r.value)), [reports]);
 
   function openProjectReport(slug: string) {
     // D-02: a report with a screen of its own is NAVIGATED to, from the catalog
-    // exactly as from the picker -- one destination per name, decided in
-    // report-destinations.ts and nowhere else.
-    if (isHostedReport(slug) && projectId) {
-      const period = monthToDate();
-      const destination = reportDestination(slug, { projectId, from: period.from, to: period.to });
-      if (destination.kind === "navigate") {
+    // exactly as from the picker -- one destination per name.
+    //
+    // R67 E-17 (R-175): through the registry, so the card opens the report in
+    // the SAME state the picker would. The defaults are the report's own, and
+    // a report that ignores a period is not handed one.
+    if (projectId) {
+      const destination = registryDestination(slug, { projectId });
+      if (destination?.kind === "navigate") {
         router.push(destination.href);
         return;
       }
@@ -947,7 +951,7 @@ export default function ReportsClient({
         />
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection projectId={projectId} pickerSlugs={pickerSlugs} onOpenProjectReport={openProjectReport} />
+        <ReportCatalogSection projectId={projectId} onOpenProjectReport={openProjectReport} />
       </TabsContent>
     </Tabs>
   );
