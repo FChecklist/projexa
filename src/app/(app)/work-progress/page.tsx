@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import WorkProgressTabsClient from "@/components/WorkProgressTabsClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 // R67 F-05 (R-075) / F-03. Two costs removed before any HTML is sent:
 // resolveSelectedProject() no longer goes through VERIDIAN's 1.4-4.0 s
@@ -28,7 +29,7 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
 
 async function WorkProgressSection({ projectId, tab }: { projectId?: string; tab?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
 
   if (errorMessage) {
     return (
@@ -40,5 +41,14 @@ async function WorkProgressSection({ projectId, tab }: { projectId?: string; tab
   if (!project) {
     return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
   }
-  return <WorkProgressTabsClient projectId={project.id} tab={tab} />;
+  return (
+    <>
+      {/* R67 A-04: this pane shows ONE project's entries, so the rail and the
+          composer must name that project rather than "All projects". When the
+          URL did not name it, the page picked it -- and says so, which is why
+          the source is published and not just the id. */}
+      <ScreenContext moduleId="work-progress" project={project} source={source ?? "auto"} />
+      <WorkProgressTabsClient projectId={project.id} tab={tab} />
+    </>
+  );
 }

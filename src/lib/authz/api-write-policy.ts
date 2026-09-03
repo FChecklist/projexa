@@ -182,6 +182,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/payroll/statutory-rules": "ORG_ADMIN",
   "/permits": "PM_OR_ABOVE",
   "/permits/[id]": "PM_OR_ABOVE",
+  // R67 A-07. POST /pill-usage records one row of the CALLER'S OWN composer
+  // ranking (compliance.pill_usage is keyed per org AND per user) and touches
+  // no business data at all. It is self-service on one's own record in the
+  // strictest sense, and a read-only client_viewer still has a composer whose
+  // strip should learn what they open -- so ANY_ROLE, not ANY_MEMBER.
+  "/pill-usage": "ANY_ROLE",
   "/policies": "ORG_ADMIN",
   "/policies/[id]": "ORG_ADMIN",
   "/procurement/goods-receipts": "PM_OR_ABOVE",

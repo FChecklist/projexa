@@ -50,3 +50,42 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+// R67 A-07 -- POST: record ONE card click.
+//
+// Until now the composer counted card clicks in the browser's own
+// localStorage and nowhere else, so the server ranked only from rows the
+// PIPELINE had written -- and most card clicks NAVIGATE rather than execute,
+// which meant the ranking could never learn what a user actually does. A
+// site engineer who opens "Record progress" forty times a week saw it ranked
+// by nothing at all.
+//
+// *** RECORDING IS NOT RUNNING. *** The body carries a pillKey, an optional
+// functionId and the chain the user built; VERIDIAN's own handler upserts one
+// compliance.pill_usage row and returns. There is no dispatch on this path.
+export async function POST(req: NextRequest) {
+  const ctx = await requireAuth();
+  if (ctx.response) return ctx.response;
+
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "A JSON body is required" }, { status: 400 });
+  }
+
+  try {
+    const data = await callVeridian("/pill-usage", {
+      method: "POST",
+      body,
+      organizationId: ctx.organizationId!,
+    });
+    return NextResponse.json(data, { status: 201 });
+  } catch (err) {
+    // The backend's own words. A failed ranking write must never be shown to
+    // the user as a failed CLICK: the caller ignores this response entirely,
+    // because the navigation the click performed has already happened.
+    return NextResponse.json(
+      { error: err instanceof VeridianApiError ? err.message : "Failed to record pill usage" },
+      { status: err instanceof VeridianApiError ? err.status : 502 }
+    );
+  }
+}

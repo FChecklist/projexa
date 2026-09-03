@@ -86,7 +86,25 @@ export class ShellFetchError extends Error {
 export async function cachedShellJson<T>(
   key: string,
   url: string,
-  options: { ttlMs?: number; force?: boolean } = {}
+  options: {
+    ttlMs?: number;
+    force?: boolean;
+    /**
+     * R67 A-16 merge: how the value is actually fetched when the cache misses.
+     * It must RESOLVE with the parsed body or THROW -- this store signals
+     * failure by throwing, and a failure is never cached.
+     *
+     * It exists so caching and retrying can compose instead of competing. The
+     * shell attempts each of its reads twice, one second apart
+     * (readJsonWithRetry in shell-resilience.ts), because a single failed read
+     * on a site connection is usually a dropped request; wiring that in as the
+     * reader means a retried read is still deduplicated and still cached, and a
+     * read that fails BOTH attempts leaves nothing behind.
+     *
+     * Defaults to the plain fetch below, which every other caller uses.
+     */
+    read?: (url: string) => Promise<T>;
+  } = {}
 ): Promise<T> {
   const ttlMs = options.ttlMs ?? SHELL_CACHE_TTL_MS;
 
@@ -98,6 +116,12 @@ export async function cachedShellJson<T>(
   }
 
   const request = (async () => {
+    if (options.read) {
+      const value = await options.read(url);
+      values.set(key, { at: Date.now(), value });
+      notify(key);
+      return value as unknown;
+    }
     const res = await fetch(url);
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {

@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { resolveRouteProject } from "@/lib/project-selection";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { resolveRegistryColumns } from "@/lib/screen-definitions";
 import { callVeridian, VERIDIAN_PAGE_BUDGET_MS } from "@/lib/veridian-client";
@@ -39,6 +40,21 @@ import { isScheduleTab } from "@/lib/schedule-tabs";
 // The gantt call carries D-04's 8 s budget: this is the one blocking call on
 // the page, and a screen should say "couldn't load, Retry" long before the
 // 20 s upstream ceiling.
+//
+// R67 A-13 -- AND THIS SCREEN RENDERS STRICTLY FROM THE URL.
+//
+// It used to call resolveSelectedProject(), whose last resort is the org's
+// FIRST project. So /schedule with no ?projectId= showed one project's board,
+// timeline, sprints and timesheet under a heading naming that project, with
+// nothing on screen admitting the choice had been made for the user -- and the
+// top rail, which keeps its own answer, could be naming a different project two
+// lines above. A schedule is a project's schedule; guessing which one is the
+// same class of mistake as logging progress against the wrong project.
+//
+// Now: the URL names the project or the page ASKS for one. Ten reloads of
+// /schedule?projectId=X render X, every time, whatever the rail remembers. The
+// resolution itself happens inside the streamed section below, not above the
+// <Suspense> boundary, so asking for a project still costs no time to paint.
 const TIMELINE_COLUMNS_TTL_SECONDS = 600;
 const PROJECT_TTL_SECONDS = 60;
 
@@ -58,7 +74,15 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
 
 async function ScheduleSection({ projectId, initialTab }: { projectId?: string; initialTab: "timeline" | "board" | "sprints" | "timesheet" }) {
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId, { cacheSeconds: PROJECT_TTL_SECONDS });
+  // A-13: strictly from the URL, never "the org's first project". F-09's 60 s
+  // list cache still applies -- it memoises WHICH projects exist, never which
+  // one is selected.
+  const { project, errorMessage, source, missing, unreachable } = await resolveRouteProject(
+    { projectId },
+    null,
+    organizationId,
+    { cacheSeconds: PROJECT_TTL_SECONDS }
+  );
 
   if (errorMessage) {
     return (
@@ -67,8 +91,29 @@ async function ScheduleSection({ projectId, initialTab }: { projectId?: string; 
       </Card>
     );
   }
+  if (missing || unreachable) {
+    // The sentence asks for the one decision that is missing. No tabs are
+    // rendered underneath it: an empty board beside "Pick a project" would
+    // read as "this project has no tasks". ScreenContext still publishes the
+    // null project, so the rail says the same thing the pane does.
+    return (
+      <>
+        <ScreenContext moduleId="schedule" project={null} source={source ?? "route"} />
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-px-muted">
+            {unreachable ? "That project is not on your list — pick a project" : "Pick a project"}
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
   if (!project) {
-    return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
+    return (
+      <>
+        <ScreenContext moduleId="schedule" project={null} source={source ?? "route"} />
+        <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
+      </>
+    );
   }
 
   // Parallel: the column labels do not depend on the gantt, and the gantt does
@@ -80,6 +125,10 @@ async function ScheduleSection({ projectId, initialTab }: { projectId?: string; 
 
   return (
     <>
+      {/* The shell's rail and strip name what this pane is actually showing.
+          A-13's "no project named" case is published too -- the top rail must
+          not paper over it with a project the user did not choose. */}
+      <ScreenContext moduleId="schedule" project={project} source={source ?? "route"} />
       <h2 className="font-heading text-lg text-px-ink">{project.name}</h2>
       <ScheduleTabsClient
         projectId={project.id}

@@ -2,11 +2,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import MoMCreateClient from "@/components/MoMCreateClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 export default async function MoMNewPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
 
   if (errorMessage || !project) {
     return (
@@ -20,6 +21,9 @@ export default async function MoMNewPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="flex-1">
+      {/* R67 A-03: the create screen is inside one project too -- the shell's
+          rail and strip must say which, not "All projects". */}
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
       <MoMCreateClient projectId={project.id} />
     </div>
   );

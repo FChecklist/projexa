@@ -6,6 +6,7 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { resolveRegistryColumns } from "@/lib/screen-definitions";
 import { TableLoadingRows } from "@/components/TableLoadingRows";
 import MoMsClient, { MOMS_FALLBACK_COLUMN_LABELS, type RegistryColumn } from "@/components/MoMsClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 // R67 F-03 (R-041/R-046/R-052/R-057). Measured TTFB 1983 ms for a three-column
 // meeting list, none of it the list: this page awaited resolveSelectedProject()
@@ -43,7 +44,7 @@ export default async function MoMsPage({ searchParams }: { searchParams: Promise
 async function MoMsSection({ projectId }: { projectId?: string }) {
   const organizationId = await getServerOrganizationId();
   // Parallel, not serial -- neither lookup depends on the other.
-  const [{ project, errorMessage }, registryColumns] = await Promise.all([
+  const [{ project, errorMessage, source }, registryColumns] = await Promise.all([
     resolveSelectedProject(projectId, organizationId),
     resolveRegistryColumns("moms.list", organizationId, MOMS_COLUMNS_TTL_SECONDS) as Promise<RegistryColumn[] | null>,
   ]);
@@ -58,5 +59,13 @@ async function MoMsSection({ projectId }: { projectId?: string }) {
   if (!project) {
     return <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>;
   }
-  return <MoMsClient projectId={project.id} registryColumns={registryColumns} />;
+  return (
+    <>
+      {/* R67 A-03: tell the shell what this screen resolved, so the top rail
+          and the composer's strip name the same project the pane is showing
+          instead of reading "All projects" beside one project's meetings. */}
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
+      <MoMsClient projectId={project.id} registryColumns={registryColumns} />
+    </>
+  );
 }

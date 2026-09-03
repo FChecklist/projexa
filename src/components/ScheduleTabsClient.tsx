@@ -65,6 +65,12 @@ export function ScheduleTabsClient({
     if (!isScheduleTab(value)) return;
     const params = new URLSearchParams(window.location.search);
     params.set("tab", value);
+    // R67 A-13: this screen renders strictly from the URL's projectId, so every
+    // URL it writes has to carry one. It is set from the PROP the page resolved
+    // rather than merely copied out of the current query, so a tab switch can
+    // never be the thing that drops the project and lands the next reload on
+    // the page's own "Pick a project".
+    params.set("projectId", projectId);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
