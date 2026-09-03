@@ -1,7 +1,8 @@
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "../marketing-locale";
 
-export async function HowItWorksHero() {
-  const t = await getTranslations("Marketing.howItWorks.hero");
+export async function HowItWorksHero({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.howItWorks.hero" });
 
   return (
     <section className="relative overflow-hidden bg-px-ink py-20 sm:py-28">

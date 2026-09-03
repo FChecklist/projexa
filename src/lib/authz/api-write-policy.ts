@@ -282,6 +282,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/timesheets/[id]/approve": "PM_OR_ABOVE",
   "/timesheets/[id]/reject": "PM_OR_ABOVE",
   "/timesheets/[id]/submit": "ANY_MEMBER",
+  // R67 WS-H (item H-01): submitting a whole day is the same self-action as
+  // submitting one entry -- a designer submitting their OWN hours -- so it
+  // carries the same policy as /timesheets/[id]/submit, not a stricter one.
+  // VERIDIAN independently refuses to move anyone else's rows.
+  "/timesheets/submit-day": "ANY_MEMBER",
+  // R67 WS-H (item H-03): deciding a whole day at once is the same authority as
+  // deciding one entry -- PM and above -- so it matches /timesheets/[id]/approve
+  // rather than the designer-side submit-day beside it.
+  "/timesheets/review-day": "PM_OR_ABOVE",
   // R52: the composer's submit target. Same class as /discuss and /todos --
   // any member may ask the assistant to do something, and what they are
   // ALLOWED to do is re-checked server-side at execution, per R53's rule that
