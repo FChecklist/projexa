@@ -100,6 +100,16 @@
 // typography both survive without this file importing two card components.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+// R67 C-06: every KPI on this screen fills the control strip with that
+// tile's own sentence before it navigates. Correction C-14 recorded one of
+// these five as navigating to a destination that does not exist (Budget vs
+// Actual -> /scope?tab=variance, a tab ScopeClient never renders); the four
+// tiles whose destination still matches a DOORS entry read it from there
+// (src/lib/card-catalogue.ts) rather than hardcoding it a second time --
+// see the merge note on `oneNumber` below for the one tile (Budget vs
+// Actual) whose own onClick has outgrown that door.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById, doorRoute } from "@/lib/card-catalogue";
 import {
   DashboardScreen,
   BulletChart,
@@ -259,6 +269,9 @@ function money(n: number | null | undefined, currency: Currency | undefined) {
 
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
   const router = useRouter();
+  // R67 C-06: fills the control strip for the four KPI tiles below that
+  // still have a matching DOORS entry.
+  const openDoor = useOpenDoor();
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
 
   const [dashboard, setDashboard] = useState<Pane<ProjectDashboard>>(PENDING);
@@ -405,6 +418,18 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
       exportAction={{ label: "Export", disabledReason: "Not yet available" }}
       oneNumber={
+        // R67 MERGE (D-11): F-27's DashboardKpiTile (state/error-aware, its
+        // own onClick) is canonical -- it is itself the product of an earlier
+        // merge (see its header) and every tile on this screen already uses
+        // it. C-06's ChainDoor wraps a NON-interactive child in a real <Link>;
+        // DashboardKpiTile's ready state is already an interactive KpiCard,
+        // so wrapping it in ChainDoor would nest two interactive elements.
+        // Where a tile's destination still matches a DOORS entry exactly
+        // (this one does: project.percent_by_value), the onClick body below
+        // does what ChainDoor does -- fill the strip, `navigate: false`, then
+        // push the door's own route -- so the door table still governs the
+        // destination and a header button or composer chip that opens the
+        // same door still agrees with this tile.
         <DashboardKpiTile
           state={dashboard.state}
           error={dashboard.error}
@@ -422,8 +447,13 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(d!.earnedValue!, currency)}` : "Import a BOQ to see this" }}
           baseline={hasEv ? `of ${money(d!.contractValue!, currency)} contract value` : ""}
           visual={hasEv ? <BulletChart value={d!.earnedValue!} target={d!.contractValue!} unit="" /> : undefined}
-          // % complete -> ANALYTICAL work-progress, filtered to this project (DASHBOARD.PROJECT's own row)
-          onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)}
+          // % complete -> ANALYTICAL work-progress, filtered to this project
+          // (DASHBOARD.PROJECT's own row), through project.percent_by_value.
+          onClick={() => {
+            openDoor("project.percent_by_value", { projectId, navigate: false });
+            const door = doorById("project.percent_by_value");
+            router.push(door ? doorRoute(door, projectId) : `/work-progress?projectId=${projectId}&tab=analytics`);
+          }}
         />
       }
       secondaryKpis={
@@ -435,8 +465,13 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             value={hasEv ? money(d!.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
-            // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
+            // Contract value -> BOQ, through project.contract_value (ScopeClient
+            // is the CUSTOM screen for the latest revision -- seq22 finding).
+            onClick={() => {
+              openDoor("project.contract_value", { projectId, navigate: false });
+              const door = doorById("project.contract_value");
+              router.push(door ? doorRoute(door, projectId) : `/scope?projectId=${projectId}`);
+            }}
           />
           {/* Sumeet audit fix (2026-08-30, requirement #10: "Project value
               matches BOQ total"). Distinguished explicitly from Contract
@@ -453,8 +488,25 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             // R67 D-62: THIS project's source, not a restatement of the rule.
             trend={{ direction: "flat", tone: "context", label: projectValueCaption(d?.projectValueSource ?? null) }}
             baseline="overridable per project"
-            onClick={() => router.push(`/scope?projectId=${projectId}`)}
+            onClick={() => {
+              openDoor("project.project_value", { projectId, navigate: false });
+              const door = doorById("project.project_value");
+              router.push(door ? doorRoute(door, projectId) : `/scope?projectId=${projectId}`);
+            }}
           />
+          {/* CORRECTION C-14, THE TILE THAT WENT TO THE WRONG PLACE. It
+              pointed at /scope?tab=variance; ScopeClient renders no tabs, so
+              the parameter was ignored and this landed on the same BOQ list
+              as Contract Value beside it.
+              R67 MERGE (D-11): NOT wired through DOORS' own
+              project.budget_vs_actual entry (route /budgets, org-wide) -- D-02
+              replaced that fix with a more specific one: a project WITH a
+              budget goes to /scope?tab=budget (this project's own Budget tab)
+              and a project with none goes straight to where one is created.
+              The door table's entry is now stale for this tile; routing
+              through it would send the user to the wrong (org-wide) screen.
+              That is real follow-up work for DOORS, not something to paper
+              over here. */}
           <DashboardKpiTile
             state={dashboard.state}
             error={dashboard.error}
@@ -490,6 +542,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               )
             }
           />
+          {/* C-06, verbatim: this tile "must load 'Cedar Heights > Permits >
+              Expiring soon' and open /permits?withinDays=30", through
+              project.permits_expiring. */}
           <DashboardKpiTile
             state={dashboard.state}
             error={dashboard.error}
@@ -501,8 +556,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               label: expiredCount > 0 ? `${expiredCount} already expired` : expiringCount > 0 ? "within 30 days" : "none due soon",
             }}
             baseline="next 30 days"
-            // Permits expiring -> PERMITS.LIST pre-filtered "Expiring 30d" (DASHBOARD.PROJECT's own row, verbatim)
-            onClick={() => router.push(`/permits?projectId=${projectId}&withinDays=30`)}
+            onClick={() => {
+              openDoor("project.permits_expiring", { projectId, navigate: false });
+              const door = doorById("project.permits_expiring");
+              router.push(door ? doorRoute(door, projectId) : `/permits?projectId=${projectId}&withinDays=30`);
+            }}
           />
         </>
       }

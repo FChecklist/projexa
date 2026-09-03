@@ -48,6 +48,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+// R67 C-06: the module's primary button is a DOOR -- one label and one
+// destination, both from src/lib/card-catalogue.ts, and it fills the strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById, doorRoute } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
@@ -182,6 +186,12 @@ export function formatDeltaPct(pct: number | null | undefined): string | null {
 // to live in this file are gone, replaced by real routes. This List Report
 // only needs the list-row shape and the per-row variation figure.
 
+// R67 C-06: one door id, one label, read from the catalogue -- the header
+// button and any composer chip or KPI tile that opens this door say the same
+// words.
+const NEW_BOQ_DOOR_ID = "scope.new_boq";
+const newBoqDoorLabel = doorById(NEW_BOQ_DOOR_ID)?.label ?? "New BOQ";
+
 export default function ScopeClient({
   projectId,
   projectName,
@@ -194,6 +204,8 @@ export default function ScopeClient({
   initial?: ModuleListInitial<Boq>;
 }) {
   const router = useRouter();
+  // R67 C-06: fills the control strip when "+ New BOQ" is pressed.
+  const openDoor = useOpenDoor();
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : BOQ_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>(initial?.rows ?? []);
   // R67 D-65: a boolean plus a message string could not express "the rows on
@@ -316,7 +328,21 @@ export default function ScopeClient({
         <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
           Import
         </Button>
-        <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
+        {/* Real screen navigation (2026-08-30) -- replaces the old "New BOQ"
+            Dialog popup with a real create route.
+            R67 C-06: it is a door -- one label, one destination, and the
+            control strip fills in with "<project> > Scope > New BOQ";
+            `navigate: false` leaves the actual push to this button so D-23's
+            own row keeps governing it. */}
+        <Button
+          onClick={() => {
+            openDoor(NEW_BOQ_DOOR_ID, { projectId, navigate: false });
+            const door = doorById(NEW_BOQ_DOOR_ID);
+            router.push(door ? doorRoute(door, projectId) : `/scope/new?projectId=${projectId}`);
+          }}
+        >
+          <Plus className="size-4" /> {newBoqDoorLabel}
+        </Button>
       </div>
 
       <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, boqs.length)}</p>

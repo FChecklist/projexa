@@ -19,6 +19,10 @@ import { useSubmit } from "@/lib/use-submit";
 import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+// R67 C-06: a multi-field create route IS the card -- band 2 stays empty
+// while this form is open -- so the save reports itself back to the shell
+// and the receipt line lands in the same band a composer write's would.
+import { useShellChain } from "@/components/shell/shell-chain-context";
 
 type Material = { id: string; name: string; spec?: string | null; unit?: string | null; isActive: boolean };
 type Vendor = { id: string; vendorName: string };
@@ -32,6 +36,8 @@ function todayIso() {
 
 export default function MaterialReceiptCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  // R67 C-06: the shell chain context this save reports its receipt into.
+  const { pushReceipt } = useShellChain();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsError, setMaterialsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [materialsLoading, setMaterialsLoading] = useState(true);
@@ -177,6 +183,15 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     onSuccess: () => {
       // Remembered only after the server accepted it.
       setLastChoice(MATERIAL_PICKER, projectId, values.materialId);
+      // R67 C-06: the save reports itself back to the shell -- the receipt
+      // line lands in the same band a composer write's would, so a save made
+      // through this real screen and one made through the composer read
+      // identically.
+      const material = materials.find((m) => m.id === values.materialId);
+      pushReceipt({
+        text: `Recorded ${values.quantity} of ${material?.name ?? "this material"} on ${values.receivedDate}`,
+        href: moduleHref,
+      });
       router.replace(moduleHref);
     },
   });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
@@ -57,6 +57,26 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     const data = await callVeridian("/attendance", { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
-    return veridianErrorResponse(err, "Failed to record attendance");
+    // R67 FIX PASS (C-08) -- THE CODE HAS TO SURVIVE BOTH HOPS.
+    //
+    // C-08's whole "Attendance for today is already saved - replace it?" path
+    // hangs off the shell branching on `d?.code === "REPLACE_REQUIRED"`, and
+    // the compliance-tracker route was changed specifically to put that code
+    // in the 409 body. It was then destroyed twice on the way back: once in
+    // veridian-client (VeridianApiError had no field for a BUSINESS-RULE code
+    // at all) and once here, where the catch re-serialised only `{ error }`.
+    // So the normal case -- a foreman re-marking a crew he already marked
+    // this morning -- showed the raw sentence with no Replace control and no
+    // way forward: exactly the dead end this programme removes.
+    //
+    // R67 MERGE (D-11): veridian-client's field for this is now `ruleCode`
+    // (see its own "lane B x lane F2" merge note) -- `code` there is the
+    // TRANSPORT classification (null for a 4xx), which is why
+    // veridianErrorResponse()'s default `code` would be null for this exact
+    // failure. `extra` overrides it with the real rule code when there is
+    // one, so both hops still carry it and every OTHER failure still gets
+    // veridianErrorResponse()'s own retry/Server-Timing handling unchanged.
+    const extra = err instanceof VeridianApiError && err.ruleCode ? { code: err.ruleCode } : undefined;
+    return veridianErrorResponse(err, "Failed to record attendance", undefined, extra);
   }
 });

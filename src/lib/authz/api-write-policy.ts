@@ -85,6 +85,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/board": "FIELD",
   "/change-orders": "PM_OR_ABOVE",
   "/change-orders/[id]": "PM_OR_ABOVE",
+  // R67 C-03/C-05: the composer's PREVIEW. It is a POST only because the
+  // sentence goes in the body -- VERIDIAN's own handler gates it on READ
+  // scope and returns executed:false on every response, so classifying
+  // "approve VO-014" approves nothing. Same tier as /assistant and /tasks
+  // for the same reason: any member may ask what would happen, and what they
+  // are actually allowed to RUN is re-checked at execution.
+  "/classify": "ANY_MEMBER",
   "/companies": "ORG_ADMIN",
   "/compliance-register": "ORG_ADMIN",
   "/construction-budget/lines": "PM_OR_ABOVE",

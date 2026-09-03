@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+// R67 C-06: "Run Report" is a DOOR. It fills the control strip with
+// "<project> > Work Progress > Report" and then runs, rather than running
+// against a strip that still reads "Select a module to begin".
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -452,6 +457,11 @@ export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower"
   );
 }
 
+// R67 C-06: one door id, one label, read from the catalogue -- the header
+// button, the KPI tile and this screen's own Run Report share it.
+const RUN_REPORT_DOOR_ID = "work_progress.run_report";
+const runReportDoorLabel = doorById(RUN_REPORT_DOOR_ID)?.label ?? "Run Report";
+
 /** The sentence itself, so its wording is asserted rather than trusted. */
 export function noProgressText(from: string, to: string): string {
   return `No progress recorded between ${from} and ${to}`;
@@ -498,6 +508,8 @@ export default function WorkProgressReportClient({
   initialParams?: WprParams;
 }) {
   const router = useRouter();
+  // R67 C-06: fills the control strip when Run Report is pressed.
+  const openDoor = useOpenDoor();
   const searchParams = useSearchParams();
   const orgMoney = useOrgMoney();
   const money = useCallback((n: number) => orgMoney.money(n), [orgMoney]);
@@ -914,11 +926,21 @@ export default function WorkProgressReportClient({
 
           <div className="flex flex-wrap items-end gap-3">
           <Button
-            onClick={() => { writeParamsToUrl({ from, to, view, boqVersion: selectedBoqVersion }, true); runReport(); }}
+            onClick={() => {
+              // R67 C-06: the strip first, then the URL sync (D-02's
+              // shareable-link rule, since generalised to writeParamsToUrl()
+              // -- see the merge note above on `initial`/E-03) and the run.
+              // `navigate: false` because this IS the report screen -- pushing
+              // its own route again would throw away the from/to/view/BOQ the
+              // user just picked.
+              openDoor(RUN_REPORT_DOOR_ID, { projectId, navigate: false });
+              writeParamsToUrl({ from, to, view, boqVersion: selectedBoqVersion }, true);
+              runReport();
+            }}
             disabled={loading}
             data-testid="work-progress-report-run"
           >
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} {runReportDoorLabel}
           </Button>
 
           {/* R67 E-18 (R-178): ONE Export / Share control, the same one the

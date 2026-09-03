@@ -21,7 +21,9 @@
 //     the `history` / `suggestedHistory` / `onLoadChain` props. Loading a
 //     previous chain is the Task Master History tab's job, and it keeps the
 //     same load-and-stop contract. HistoryDrop.tsx is deliberately NOT copied
-//     into this repo.
+//     into this repo. (R67 MERGE, D-11: WS-C independently reached the same
+//     finding and kept a HISTORY shortcut wired to `onHistory` -- this merge
+//     keeps WS-A's fuller removal; see ControlStrip.tsx's own header.)
 //
 //  2. NO MODE ROW, so no `onModeChange` prop -- see ControlStrip.tsx.
 //
@@ -31,7 +33,14 @@
 //     now a single `instruction`, rendered ONCE in the strip and reused
 //     verbatim as the Send button's tooltip and accessible name. A real
 //     failure (`errorMessage`) is a different thing and still gets its own
-//     line, in red, with role="alert".
+//     line, in red, with role="alert". (This is WS-A's `instruction`/`canSend`
+//     mechanism; it supersedes WS-C's own `disabledReason` /
+//     `emptyInputReason` / `allowEmptySubmit`, which asked the same three
+//     questions -- what's missing, what an empty box means, whether Send is
+//     armed -- through three separate props instead of one state-derived
+//     string. Nothing WS-C tested is lost: composer-send-state.ts's
+//     sendLabelFor still computes the sentence, it is simply passed in as
+//     `instruction`/`canSend` rather than recomputed inside this file.)
 //
 //  4. SEND IS DRIVEN BY `canSend`, not by the textarea being non-empty. The
 //     kit disabled Send whenever the box was empty, which made the pill path
@@ -60,6 +69,13 @@
 //
 //  9. INK AND GREY ARE CLASSES, NOT CONTENT (A-19), and a value the user did
 //     NOT type is selected on focus so it reads as a draft they may replace.
+//
+//  10. R67 C-14 (WS-C, kept -- see `messages` below): A SHELL MESSAGE REGION,
+//      above the box and outside it -- a receipt for something a page's own
+//      form saved, or the sentence for a failure nobody on site can fix.
+//
+//  11. R67 C-04 (WS-C, kept -- see `fieldsSlot` below): BAND 4'S LABELLED
+//      SCALAR FIELDS, for a chain step whose answer is a number or a date.
 
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
@@ -102,6 +118,17 @@ export type ComposerProps = {
     onTogglePin: () => void;
   } | null;
 
+  /**
+   * R67 C-14: THE SHELL MESSAGE REGION, above the box.
+   *
+   * The spec's FOOTER MESSAGE AREA. It sits OUTSIDE the bordered composer and
+   * directly above it, because it is the shell's voice rather than the
+   * conversation's: a receipt for something a page's own form saved, or the
+   * sentence for a failure nobody on site can fix. Band 2 is where the
+   * composer answers for what IT did; this is where the product answers for
+   * everything else, and the two are deliberately not the same surface.
+   */
+  messages?: ReactNode;
   /** 2. CONVERSATION -- rendered only once there is something to show. */
   conversation?: ReactNode;
   /** 3. PILLS -- the ranked card strip. */
@@ -114,6 +141,19 @@ export type ComposerProps = {
   onSubmit?: () => void;
   placeholder?: string;
   attachSlot?: ReactNode;
+  /**
+   * R67 C-04: BAND 4'S LABELLED SCALAR FIELDS.
+   *
+   * A chain step whose value is a number or a date -- a quantity, a
+   * percentage, a day -- is not a chip row: there are too many answers to
+   * show and the user already knows theirs. It is a field, and it belongs in
+   * the INPUT band beside the thing it is an input to, not in the
+   * conversation band above it. Rendered above the textarea so the label is
+   * read before the box, and copying the /labour/new "Save (Name, Daily
+   * Rate)" pattern: the field says what it wants, and validation happens on
+   * blur rather than after Send.
+   */
+  fieldsSlot?: ReactNode;
   /** Lets the shell put the cursor in the box (reset, "Other…", prefill). */
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
 };
@@ -130,6 +170,7 @@ export function Composer({
   errorMessage,
   busy = false,
   loaded,
+  messages,
   conversation,
   pills,
   examples,
@@ -140,6 +181,7 @@ export function Composer({
   // which contradicted the strip's own instruction; retired with the rest.
   placeholder = "Type a task, a question or a record",
   attachSlot,
+  fieldsSlot,
   textareaRef,
 }: ComposerProps) {
   const ownRef = useRef<HTMLTextAreaElement>(null);
@@ -161,9 +203,13 @@ export function Composer({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end px-3 pb-3"
       style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` }}
     >
+      {/* R67 C-14: the message region, above the box and outside it. It
+          renders nothing at all when there is nothing to say, so it costs the
+          input band no height on a phone. */}
+      {messages}
       {/* FULL WIDTH ACROSS BOTH PANES. Not confined to one pane. */}
       <div
         className="pointer-events-auto relative flex w-full flex-col overflow-visible rounded-xl border shadow-sm"
@@ -199,6 +245,9 @@ export function Composer({
 
         {/* 4. INPUT -- real height, generous padding. Not a single line. */}
         <div className="shrink-0 px-3 pb-2.5 pt-1">
+          {/* R67 C-04: the chain's scalar values, as labelled fields, beside
+              the thing they are inputs to. */}
+          {fieldsSlot && <div className="mb-1 flex flex-wrap items-end gap-3">{fieldsSlot}</div>}
           {/* R67 A-19 -- INK VERSUS GREY, BY CLASS.
               The colour of the text in this box is what tells a person whether
               there is anything in it: a placeholder is a suggestion, a value is

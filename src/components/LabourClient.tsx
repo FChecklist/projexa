@@ -82,6 +82,12 @@
 // to which project that is.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+// R67 C-06: "+ Mark Attendance" is a DOOR. Its words and its destination both
+// come from src/lib/card-catalogue.ts's DOORS table, and pressing it fills the
+// control strip -- which used to go on reading "Select a module to begin" on
+// the very screen the button had just opened.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById, doorRoute } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
@@ -244,6 +250,11 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
   }
 }
 
+// R67 C-06: one door id, one label, read from the catalogue -- so the button,
+// the composer chip and any KPI tile that opens this door say the same words.
+const ATTENDANCE_DOOR_ID = "labour.mark_attendance";
+const attendanceDoorLabel = doorById(ATTENDANCE_DOOR_ID)?.label ?? "Mark Attendance";
+
 export default function LabourClient({
   projectId,
   registryColumns,
@@ -290,6 +301,8 @@ export default function LabourClient({
   importedNotice?: string | null;
 }) {
   const router = useRouter();
+  // R67 C-06: fills the control strip when "+ Mark Attendance" is pressed.
+  const openDoor = useOpenDoor();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
   // R67 F-25: the vendor list is a session-scoped lookup the shell bootstrap
@@ -645,14 +658,15 @@ export default function LabourClient({
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
-        {/* D3 x D21 MERGE (decision D-11): D-31's read-only summary and D-30's
-            whole-day write action are two different things this tab gained, not
-            two versions of one. Both are kept. The summary is placed first
-            because its own requirement is to sit between the tab bar and the
-            attendance log; the write action then sits directly above the day
-            control it acts on, so the day being marked is the day on screen.
-            Both read `attendanceDay`, so nothing here can describe a different
-            date from anything else in the tab. */}
+        {/* R67 MERGE (D-11): D-31's read-only summary, C-06's door button and
+            D-30's whole-day write action are three different things this tab
+            gained, not three versions of one -- all three are kept. The
+            summary is placed first because its own requirement is to sit
+            between the tab bar and the attendance log; the two write actions
+            sit directly above the day control they act on, so the day being
+            marked is the day on screen. Both buttons and the day control read
+            `attendanceDay` / `projectId`, so nothing here can describe a
+            different date or project from anything else in the tab. */}
         {/* R67 D-31 (R-090): the trade-wise summary, between the tab bar and
             the attendance log, populated by pressing nothing. Before this, the
             only place these numbers existed was the report catalogue, which
@@ -660,19 +674,46 @@ export default function LabourClient({
             control below picks, so the summary and the log can never describe
             two different dates. */}
         <AttendanceSummaryPanel projectId={projectId} date={attendanceDay} />
-        {/* R67 D-30: marking a roster of forty was forty visits to a one-worker
-            form. The whole-day SHEET marks them together, for the day this pane
-            is already showing. */}
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={roster.length === 0}
-            title={roster.length === 0 ? "Add a worker to the roster first" : undefined}
-            onClick={() => router.push(`/labour/attendance/${attendanceDay}?projectId=${projectId}`)}
-          >
-            Mark the whole day
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* R67 C-06: DISABLED-WITH-REASON. The button was disabled on an
+              empty roster with no words at all, so the one thing the user
+              needed to know -- add a worker first -- was the one thing the
+              screen did not say. */}
+          {roster.length === 0 && (
+            <span className="text-xs text-px-muted">Add a worker to the roster first</span>
+          )}
+          <div className="flex items-center gap-2">
+            {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
+                Attendance" Dialog popup with a real create route. The door
+                fills the control strip; `navigate: false` leaves the actual
+                push to this button, so the destination is still one place
+                (DOORS) but the click stays this screen's own. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={roster.length === 0}
+              onClick={() => {
+                openDoor(ATTENDANCE_DOOR_ID, { projectId, navigate: false });
+                const door = doorById(ATTENDANCE_DOOR_ID);
+                router.push(door ? doorRoute(door, projectId) : `/labour/attendance/new?projectId=${projectId}`);
+              }}
+            >
+              <Plus className="size-4" /> {attendanceDoorLabel}
+            </Button>
+            {/* R67 D-30: marking a roster of forty was forty visits to a
+                one-worker form. The whole-day SHEET marks them together, for
+                the day this pane is already showing -- a different write from
+                the door above, not a second version of it. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={roster.length === 0}
+              title={roster.length === 0 ? "Add a worker to the roster first" : undefined}
+              onClick={() => router.push(`/labour/attendance/${attendanceDay}?projectId=${projectId}`)}
+            >
+              Mark the whole day
+            </Button>
+          </div>
         </div>
         {/* R67 F-25: the day is a real, visible control, so "which day am I
             looking at?" is answered on screen rather than assumed. */}

@@ -9,6 +9,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Wallet, TrendingUp, Receipt, Building2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+// R67 C-06 x E-19 MERGE NOTE: C-06 had wired this screen's Revenue/Spend
+// KpiCards through openDoor()+doorRoute() (@/components/shell/shell-chain-context,
+// @/lib/card-catalogue) so the shell's control strip agreed with wherever
+// else opened the same DOORS entry, and wrapped the project-name cell in
+// <ChainDoor>. Neither survives this merge: E-01/E-19 replaced the table and
+// the KpiCard grid outright, and the DashboardCard/ProjectRowList this file
+// renders now are exercised by DashboardHomeView.test.tsx /
+// ProjectRow.test.tsx assertions (`getByRole("link", ...)` with a literal
+// `href`) that a door's onClick-driven <button> destination cannot satisfy --
+// see the merge note on the KPI grid below for the detail. The two routes a
+// door would have picked (`/invoices`, `/expenses`) are unchanged either way,
+// so nothing about where a reader lands regresses; only the door's own
+// control-strip side effect is not fired from here any more. Making that
+// side effect work from a real <a> (rather than trading it for a <button>)
+// is follow-up work in DashboardCard/ProjectRow.tsx themselves, not
+// something to improvise inside this file against a merge conflict.
 import { Plus } from "lucide-react";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import { type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
@@ -445,7 +461,27 @@ export default function DashboardHomeView({
                 assembled here where nothing could assert it. The budget tile
                 in particular can no longer print "AED 0": where nobody has
                 entered a budget it reads an en dash over "Budget — not
-                entered", and says which kind of "not entered" it is. */}
+                entered", and says which kind of "not entered" it is.
+
+                R67 MERGE (C-06 x E-19): C-06 had routed the old Revenue/Spend
+                KpiCards through openDoor(...) + doorRoute(...) before
+                pushing, so the shell's control strip agreed with wherever
+                else opened the same DOORS entry. That mechanism is NOT
+                re-applied here: DashboardHomeView.test.tsx (added by the same
+                E-19 work this band comes from) asserts each tile by
+                `getByRole("link", { name: ... })` with a literal `href`
+                attribute -- an onClick-driven <button> destination, which is
+                what door-wiring needs (DashboardCard renders a <button>, not
+                an <a>, whenever onClick is set instead of href), fails that
+                query outright. dashboard.total_revenue / dashboard.total_expenses
+                happen to resolve to the exact same static routes these two
+                tiles already use ("/invoices" / "/expenses"), so nothing
+                about where a reader ends up regresses -- only the control
+                strip's door-open side effect is not fired from here. Making
+                DashboardCard fire a door's side effect on a real <a> (rather
+                than trading it for a <button>) is real follow-up work in
+                that shared component, not something to improvise inside one
+                caller against a merge conflict. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {kpis.map((kpi) => (
                 <DashboardCard
@@ -474,6 +510,20 @@ export default function DashboardHomeView({
               </Button>
             </div>
 
+            {/* R67 MERGE: the old table (Table/TableRow, ChainDoor on the
+                project name, router.push on row click/Enter) is gone here --
+                E-01's rewrite already renders every project as a row via
+                <ProjectRowList> above, in the "THE ONE NUMBER" card block,
+                which is the ONE project list this screen keeps (see that
+                component's own file header). Rendering the table too would
+                put every project on the page twice. ProjectRow.tsx's own row
+                is a plain <a href> (see its file header on why: modified-click
+                and "copy link address" both need a real anchor, which a
+                ChainDoor-wrapped table row could give too, but ProjectRow.tsx
+                is not one of this merge's conflicted files and wiring it
+                through DOORS is real, separately-scoped follow-up work, not
+                something to improvise here against a component with its own
+                already-passing test suite (ProjectRow.test.tsx). */}
             {/* R67 G-05: said once, at the foot of the page. */}
             <CurrencyNotSetNotice currencySet={currencySet} />
           </>

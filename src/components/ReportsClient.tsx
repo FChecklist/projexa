@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -399,6 +398,32 @@ function ProjectReportsPanel({
       setResult(cached);
       setFromCache(true);
     }
+    // R67 MERGE (C-02 x E-09/E-10): C-02 built this composer-arrival ("Sending
+    // a report from the composer navigates here with ?report=<value>&run=1,
+    // so the picker arrives already set... and the report runs on arrival")
+    // against the OLD reportName-state architecture, with its own
+    // window.location.search read and its own once-per-mount `arrivalHandled`
+    // ref. It is not re-applied here: E-09 made the URL the actual state
+    // (`initialRun`, read once by the OUTER ReportsClient component via
+    // readReportRunParams()+useSearchParams(), and handed down as a prop --
+    // see the merge note below this function) and E-10 (R-129) already runs
+    // the report ON ARRIVAL whenever a real project is present and the report
+    // is neither hosted nor blocked (the `autoRan` effect below), with no
+    // `&run=1` flag required at all -- a strictly more general version of
+    // what C-02 asked for, since it fires for ANY arrival with a project
+    // rather than only ones the composer tagged. Re-adding C-02's own effect
+    // alongside it would not merely be redundant: both read/observe the same
+    // arrival and would each call runReport() once, racing two overlapping
+    // fetches for the same report on a single page load.
+    //
+    // This same rewrite also DROPPED the base's hover-prefetch pair
+    // (prefetchReport/cacheKeyFor/requestUrl, warming the cache when the
+    // picker's selection changed) -- that pair predates this lane's own
+    // work (it is already in the merge-base, not something C-02 added), has
+    // no test coverage in either tree, and does not fit the `run`-object +
+    // requestGeneration model this rewrite runs on without new plumbing.
+    // Re-implementing it is real, separately-scoped follow-up, not something
+    // to improvise inside a merge conflict.
     try {
       // R67 E-12 (R-136): a report whose own payload does not carry the rows its
       // document prints fetches them ALONGSIDE, in the same run -- Project
@@ -561,6 +586,13 @@ function ProjectReportsPanel({
 
   return (
     <div className="space-y-4">
+      {/* R67 MERGE (C-02 x E-09): HEAD's simple Report/Week-Start picker card
+          (Select + prefetchReport-on-change + one Run/Open button) is gone --
+          E-09's own rewrite replaced it with the richer, collapsible
+          "parametersOpen" parameter card below (Report, Week Start, Category,
+          Vendor, the disabled-with-reason primary), which is what
+          ReportsClient.test.tsx now exercises. See the earlier merge note on
+          runReport() for prefetchReport's own fate. */}
       {/* R67 E-09: the shell's right-pane header actions, with "+ New"
           suppressed -- there is nothing to create here. Every disabled control
           carries its reason in words beside it; none of them is hidden. */}
@@ -628,6 +660,18 @@ function ProjectReportsPanel({
                 ? `Project: ${projectName} — change in the top rail`
                 : "No project selected — choose one in the top rail"}
             </p>
+            {/* R67 MERGE (D-65/F-10 x E-04/E-09/E-10): HEAD's runError/loading/
+                !ranOnce chain (PaneErrorCard/PaneWaitingCaption from
+                @/components/PaneState) is gone -- E-04/E-09 replaced the
+                ranOnce+loading pair with the explicit `status` state machine
+                declared at the top of this component (idle/running/success/
+                error/timeout, see its own comment on why the old pair made
+                "running" literally unreachable), and its result area below
+                (status === "running"/"timeout"/"error"/shownResult) is what
+                now carries D-65/F-10's own rule intact: a failure or a wait
+                with nothing real on screen still gets an error/waiting state,
+                but neither replaces a remembered (fromCache) answer the
+                reader is already looking at. */}
 
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">

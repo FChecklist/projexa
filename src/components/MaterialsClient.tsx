@@ -41,6 +41,10 @@
 // implemented it on the other side either, until now.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+// R67 C-06: "+ Record Receipt" is a DOOR -- its words and its destination
+// come from src/lib/card-catalogue.ts, and pressing it fills the control strip.
+import { useOpenDoor } from "@/components/shell/shell-chain-context";
+import { doorById, doorRoute } from "@/lib/card-catalogue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -210,6 +214,12 @@ function renderMaterialCell(field: string, m: Material, money: (v: number | stri
   }
 }
 
+// R67 C-06: one door id, one label, read from the catalogue -- the header
+// button, the KPI tile and this screen's own "+ Record Receipt" share it, so
+// none of the three can drift from the others.
+const RECEIPT_DOOR_ID = "materials.record_receipt";
+const receiptDoorLabel = doorById(RECEIPT_DOOR_ID)?.label ?? "Record Receipt";
+
 // R67 D-35: the two fields a QS changes weekly. Everything else on the master
 // still goes through the object page's own Edit.
 const INLINE_EDITABLE_FIELDS = new Set(["unit", "unitCost"]);
@@ -302,6 +312,9 @@ export default function MaterialsClient({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  // R67 C-06: the door that fills the control strip when "+ Record Receipt"
+  // is pressed -- see RECEIPT_DOOR_ID above.
+  const openDoor = useOpenDoor();
   // R67 D-40: a seeded screen_definitions row still drives the ORDER and LABELS
   // of the stored columns, but it predates the quantity columns, so a registry
   // row that has not been updated must not silently hide the one thing this
@@ -868,9 +881,20 @@ export default function MaterialsClient({
               data-testid="materials-record-receipt"
               disabled={!!readOnlyReason || loadingMaterials || materials.length === 0}
               title={readOnlyReason}
-              onClick={() => { setFooterMessage(null); navigate(`/materials/receipts/new?projectId=${projectId}`); }}
+              onClick={() => {
+                // R67 C-06: the door fills the control strip -- the header
+                // button, the KPI tile and this screen's own control all read
+                // the same sentence and the same destination from DOORS.
+                // `navigate: false` stops useOpenDoor's own plain push so
+                // D-37's timeout-safe `navigate()` still governs the route
+                // change (the "Could not open — try again" fallback).
+                setFooterMessage(null);
+                openDoor(RECEIPT_DOOR_ID, { projectId, navigate: false });
+                const door = doorById(RECEIPT_DOOR_ID);
+                navigate(door ? doorRoute(door, projectId) : `/materials/receipts/new?projectId=${projectId}`);
+              }}
             >
-              <Plus className="size-4" /> {readOnlyReason ? `Record Receipt (${readOnlyReason})` : "Record Receipt"}
+              <Plus className="size-4" /> {readOnlyReason ? `${receiptDoorLabel} (${readOnlyReason})` : receiptDoorLabel}
             </Button>
             {!readOnlyReason && !loadingMaterials && materials.length === 0 && (
               <Button variant="link" size="sm" className="h-auto px-0" onClick={openNewMaterial}>

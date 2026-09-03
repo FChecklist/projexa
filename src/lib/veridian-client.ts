@@ -157,6 +157,19 @@ export class VeridianApiError extends Error {
   }
 }
 
+/**
+ * R67 MERGE (D-11): WS-C's own `veridianErrorFrom()` -- built for the same
+ * reason this comment used to sit above it ("so a new `code` can never reach
+ * one call site and not the others") -- is superseded by `throwForResponse()`
+ * below, which is WS-A/WS-B's single owner for exactly that job (see its own
+ * header) and already parses the rule code into `ruleCode` (this class's
+ * field, above). Passing an arbitrary rule-code string as this constructor's
+ * 4th argument -- what `veridianErrorFrom` did -- no longer type-checks now
+ * that argument is the closed `VeridianErrorCode` union, which is the
+ * concrete signal this function's job had already moved. Every call site
+ * that used it now calls `throwForResponse()` instead.
+ */
+
 // R46 (production incident, 2026-08-25: "Vercel Runtime Timeout Error: Task
 // timed out after 300 seconds" on /api/projects, /api/scope, /api/module-chain,
 // /api/currencies, /dashboard, /dashboard/overview and others -- 5 real

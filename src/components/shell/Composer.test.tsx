@@ -219,3 +219,40 @@ describe("the fork still assembles the kit's own composer", () => {
     expect(without.queryByText("PILLS")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// R67 C-15 -- the Send button names what it is waiting for.
+// ---------------------------------------------------------------------------
+
+describe("the Send label", () => {
+  test("plain by default", () => {
+    const { container } = renderComposer({ value: "record 50%" });
+    expect(sendButton(container)).toBeTruthy();
+  });
+
+  test("it carries the outstanding answer when the caller supplies one", () => {
+    const { container } = renderComposer({ value: "record 50%", sendLabel: "Send (pick a BOQ line)" });
+    const labels = Array.from(container.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).toContain("Send (pick a BOQ line)");
+    // The old label is GONE, not sitting beside it -- two Send buttons would
+    // be two answers to the same question.
+    expect(labels.filter((l) => l === "Send")).toHaveLength(0);
+  });
+
+  test("the message region renders above the box, outside it", () => {
+    const { container } = renderComposer({
+      value: "x",
+      messages: <p data-testid="region">Saved — Permit P-12</p>,
+    });
+    const region = container.querySelector("[data-testid='region']");
+    const box = container.querySelector(".rounded-xl");
+    expect(region).toBeTruthy();
+    expect(box).toBeTruthy();
+    expect(box!.contains(region)).toBe(false);
+  });
+
+  test("with no message the region contributes nothing at all", () => {
+    const { container } = renderComposer({ value: "x" });
+    expect(container.querySelector("[data-testid='region']")).toBeNull();
+  });
+});
