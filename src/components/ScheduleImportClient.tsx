@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 import { errorMessage } from "@/lib/fetch-json";
 import { setFooterMessage } from "@/lib/footer-message";
 import { attributeRowMessages } from "@/lib/import-row-messages";
-import ImportScreen, { type ImportField, type ImportPreview } from "@/components/ImportScreen";
+import ImportScreen, { NAME_MATCHED_MAPPING_REASON, type ImportField, type ImportPreview } from "@/components/ImportScreen";
 
 type ParsedActivity = {
   rowNumber: number;
@@ -193,8 +193,13 @@ export default function ScheduleImportClient({ projectId }: { projectId: string 
       // so rather than offering something the server will reject.
       skipDisabledReason="a programme imports whole - an activity another one waits on cannot be skipped"
       onFileChosen={onFileChosen}
-      // The programme importer matches its columns by synonym and takes no
-      // mapping override; a file it cannot read says which column is missing.
+      // parseScheduleSpreadsheet() matches columns by name (a synonym table)
+      // and takes no mapping override -- unlike the BOQ and roster parsers,
+      // which do. So the detected mapping is shown, because knowing which
+      // column fed which field is the useful half, but it is READ-ONLY and says
+      // why: an enabled Select whose value snaps back is worse than no control.
+      // A file this parser cannot read still says which column is missing.
+      mappingDisabledReason={NAME_MATCHED_MAPPING_REASON}
       onMappingChange={() => undefined}
       onImport={onImport}
       onRetry={() => (raw ? onImport() : file && onFileChosen(file))}

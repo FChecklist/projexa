@@ -39,6 +39,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 /** The sentinel the mapping selects use for "this field has no column in the file". */
 export const UNMAPPED = "__unmapped__";
 
+/**
+ * The reason an importer whose parser matches columns by name gives for a
+ * read-only mapping row.
+ *
+ * Lives here rather than inline in one screen so the sentence is the same
+ * wherever a name-matching parser sits behind this component, and so it can be
+ * asserted without a browser.
+ */
+export const NAME_MATCHED_MAPPING_REASON = "this importer matches columns by name and cannot be remapped";
+
 export type ImportField = { key: string; label: string; required?: boolean };
 
 export type ImportPreviewRow = {
@@ -84,6 +94,17 @@ export type ImportScreenProps = {
    * imports a broken dependency chain, which is worse than not importing.
    */
   skipDisabledReason?: string | null;
+  /**
+   * Non-null makes the column-mapping row READ-ONLY and says why, exactly as
+   * skipDisabledReason does for the toggle below it.
+   *
+   * R67 lane D22 (review finding): not every parser behind this screen accepts
+   * a mapping override -- the programme parser matches columns by name and has
+   * no override parameter -- and a Select that snaps its value back with no
+   * explanation is precisely the defect class this whole programme exists to
+   * remove. A control that cannot do anything must not look like one that can.
+   */
+  mappingDisabledReason?: string | null;
   onFileChosen: (file: File | null) => void;
   onMappingChange: (field: string, header: string) => void;
   onImport: () => void;
@@ -130,6 +151,7 @@ export function importDisabledReason(args: {
 export default function ImportScreen({
   title, helpText, templateHref, templateColumns, fields, previewColumns,
   preview, busy, error, skipRowsWithErrors, onSkipChange, skipDisabledReason = null,
+  mappingDisabledReason = null,
   onFileChosen, onMappingChange, onImport, onRetry,
   extraControls, extraSummary, rowNoun = { one: "row", many: "rows" },
 }: ImportScreenProps) {
@@ -198,28 +220,47 @@ export default function ImportScreen({
             )}
 
             {/* The correctable mapping row. A real export names its columns its
-                own way; the fix is a dropdown here, not "go and edit the file". */}
+                own way; the fix is a dropdown here, not "go and edit the file".
+                Where the parser behind this screen cannot be remapped, the row
+                still SHOWS what was detected -- that is the useful half -- but
+                as read-only text with the reason beside it, the same shape the
+                Skip toggle below uses. */}
             {preview.headers.length > 0 && (
-              <div className="grid gap-3 sm:grid-cols-3">
-                {fields.map((f) => {
-                  const value = preview.mapping[f.key] ?? UNMAPPED;
-                  const missing = !!f.required && value === UNMAPPED;
-                  return (
-                    <label key={f.key} className="space-y-1 text-[12.5px]">
-                      <span className={missing ? "text-px-error" : "text-px-muted"}>
-                        {f.label}{f.required && <span aria-hidden="true"> *</span>}
-                        {f.required && <span className="sr-only"> (required)</span>}
-                      </span>
-                      <Select value={value} onValueChange={(v) => onMappingChange(f.key, v)}>
-                        <SelectTrigger aria-label={`${f.label} column`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={UNMAPPED}>Not in this file</SelectItem>
-                          {preview.headers.map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                  );
-                })}
+              <div className="space-y-2">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {fields.map((f) => {
+                    const value = preview.mapping[f.key] ?? UNMAPPED;
+                    const missing = !!f.required && value === UNMAPPED;
+                    return (
+                      <label key={f.key} className="space-y-1 text-[12.5px]">
+                        <span className={missing ? "text-px-error" : "text-px-muted"}>
+                          {f.label}{f.required && <span aria-hidden="true"> *</span>}
+                          {f.required && <span className="sr-only"> (required)</span>}
+                        </span>
+                        {mappingDisabledReason ? (
+                          <span
+                            className={`block rounded-md border border-px-border2 bg-px-cloud px-3 py-2 ${missing ? "text-px-error" : ""}`}
+                            aria-label={`${f.label} column`}
+                            role="status"
+                          >
+                            {value === UNMAPPED ? "Not in this file" : value}
+                          </span>
+                        ) : (
+                          <Select value={value} onValueChange={(v) => onMappingChange(f.key, v)}>
+                            <SelectTrigger aria-label={`${f.label} column`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={UNMAPPED}>Not in this file</SelectItem>
+                              {preview.headers.map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {mappingDisabledReason && (
+                  <p className="text-[12.5px] text-px-muted">{mappingDisabledReason}</p>
+                )}
               </div>
             )}
 
