@@ -44,7 +44,7 @@
 //     looked up. It now lands on the timesheet with the new row highlighted and
 //     a receipt in the persistent footer message area, built from the row the
 //     SERVER stored.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -53,7 +53,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EntityCombobox from "@/components/EntityCombobox";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { getLastChoice, setLastChoice } from "@/lib/last-choice";
 import { writeRailProject } from "@/lib/rail-project";
 import { focusRailProjectSwitcher } from "@/lib/rail-focus";
 import {
@@ -81,6 +83,9 @@ type TasksState =
   | { kind: "ready"; tasks: Task[] }
   | { kind: "empty" }
   | { kind: "error"; message: string };
+
+// R67 D-80: the picker whose last choice this screen remembers.
+const TASK_PICKER = "task";
 
 export const TASKS_LOADING_LABEL = "Loading tasks…";
 export const TASKS_FAILED_LABEL = "Couldn't load this project's tasks";
@@ -116,6 +121,12 @@ export default function ScheduleLogTimeClient({
   // Blur-touched fields: a message appears once the user has LEFT a field, not
   // while they are still in the middle of typing into it.
   const [touched, setTouched] = useState<{ task?: boolean; hours?: boolean; date?: boolean }>({});
+  // R67 D-80: the last task logged on THIS project, offered back on return.
+  const [rememberedTask, setRememberedTask] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRememberedTask(getLastChoice(TASK_PICKER, projectId));
+  }, [projectId]);
 
   const loadTasks = useCallback(async () => {
     setTasksState({ kind: "loading" });
@@ -148,6 +159,13 @@ export default function ScheduleLogTimeClient({
     writeRailProject(projectId);
   }, [projectId]);
 
+  // "#12 Joinery shop drawings" is the label, so typing either the number or
+  // any word of the title finds it.
+  const taskOptions = useMemo(
+    () => (tasksState.kind === "ready" ? tasksState.tasks.map((t) => ({ value: t.id, label: `#${t.number} ${t.title}` })) : []),
+    [tasksState]
+  );
+
   const resolvedCategory = resolveCategoryValue(category, otherCategory);
   const missing = missingFields({ issueId, hours, spentOn, category: resolvedCategory });
   const hoursMessage = hoursError(hours);
@@ -170,6 +188,8 @@ export default function ScheduleLogTimeClient({
           comments: comments || undefined,
         }),
       });
+      // Remembered only after a 201 -- a refused write is not a habit.
+      setLastChoice(TASK_PICKER, projectId, issueId);
       toast.success("Time logged");
       // D-50: land on the new entry. Until C04-18 ships the entry's own route,
       // that is the timesheet with this row highlighted -- and the receipt is
@@ -233,32 +253,37 @@ export default function ScheduleLogTimeClient({
         >
           {(f) => (
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={issueId} onValueChange={setIssueId}>
-                <SelectTrigger
-                  {...f}
-                  className="min-w-64 flex-1"
+              {/* R67 D-80: a combobox, not a Select. D-50's four honest states
+                  are unchanged -- they now drive the field's own placeholder and
+                  its disabled state -- and on top of them the picker preselects
+                  a list of one, offers back the last task logged on this
+                  project, and takes the highlighted match on Enter. */}
+              <div className="min-w-64 flex-1">
+                <EntityCombobox
+                  id={f.id}
+                  aria-label="Task"
+                  options={taskOptions}
+                  value={issueId}
+                  onChange={setIssueId}
+                  loading={tasksState.kind === "loading"}
                   disabled={tasksState.kind !== "ready"}
+                  storedValue={rememberedTask}
                   onBlur={() => setTouched((t) => ({ ...t, task: true }))}
-                >
-                  <SelectValue
-                    placeholder={
-                      tasksState.kind === "loading"
-                        ? TASKS_LOADING_LABEL
-                        : tasksState.kind === "error"
-                          ? TASKS_FAILED_LABEL
-                          : tasksState.kind === "empty"
-                            ? TASKS_EMPTY_LABEL
-                            : "Select a task"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {tasksState.kind === "ready" &&
-                    tasksState.tasks.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+                  placeholder="Type a task number or title"
+                  emptyMessage="No task matches"
+                />
+              </div>
+              {/* D-50's four states as VISIBLE TEXT, not as a placeholder
+                  attribute. A placeholder disappears the moment anything is
+                  typed and is not read out by every screen reader, and these
+                  three sentences are the difference between "the list is empty"
+                  and "we could not ask". */}
+              {tasksState.kind === "loading" && (
+                <span className="text-[13px] text-px-muted">{TASKS_LOADING_LABEL}</span>
+              )}
+              {tasksState.kind === "empty" && (
+                <span className="text-[13px] text-px-muted">{TASKS_EMPTY_LABEL}</span>
+              )}
               {tasksState.kind === "error" && (
                 <Button type="button" variant="outline" size="sm" onClick={() => void loadTasks()}>
                   Retry

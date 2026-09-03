@@ -15,7 +15,7 @@
 //
 // A receipt is no longer write-once either: /materials/receipts/[id] can void
 // it with a reason (C03-09/D-36), so a mis-keyed quantity is recoverable.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@/components/screens/ObjectScreen";
@@ -23,9 +23,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import EntityCombobox from "@/components/EntityCombobox";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { getLastChoice, setLastChoice } from "@/lib/last-choice";
 
-type Material = { id: string; name: string; isActive: boolean };
+// R67 D-80: the picker whose memory this screen keeps. One constant, so the
+// read and the write cannot drift onto two different keys.
+const MATERIAL_PICKER = "material";
+
+type Material = { id: string; name: string; spec?: string | null; unit?: string; isActive: boolean };
 type Vendor = { id: string; vendorName: string };
 
 export default function MaterialReceiptCreateClient({ projectId }: { projectId: string }) {
@@ -40,12 +46,31 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const [vendorId, setVendorId] = useState("");
   const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loadingMaterials, setLoadingMaterials] = useState(true);
+  const [rememberedMaterial, setRememberedMaterial] = useState<string | null>(null);
 
   useEffect(() => {
+    setRememberedMaterial(getLastChoice(MATERIAL_PICKER, projectId));
+  }, [projectId]);
+
+  useEffect(() => {
+    setLoadingMaterials(true);
     fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`)
       .then((d) => setMaterials((d.materials ?? []).filter((m) => m.isActive)))
-      .catch((err) => toast.error(errorMessage(err, "Couldn't load material master")));
+      .catch((err) => toast.error(errorMessage(err, "Couldn't load material master")))
+      .finally(() => setLoadingMaterials(false));
   }, [projectId]);
+
+  // The spec is the hint, so "OPC" finds "Cement OPC 53" and two cements are
+  // distinguishable without opening either.
+  const materialOptions = useMemo(
+    () => materials.map((m) => ({
+      value: m.id,
+      label: m.name,
+      hint: [m.spec, m.unit].filter(Boolean).join(" · ") || undefined,
+    })),
+    [materials]
+  );
 
   useEffect(() => {
     fetchJson<{ vendors?: Vendor[] }>("/api/vendors")
@@ -70,6 +95,8 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
           reference: reference.trim() || undefined,
         }),
       });
+      // Remembered only after the write succeeded.
+      setLastChoice(MATERIAL_PICKER, projectId, materialId);
       toast.success("Receipt recorded");
       router.push(`/materials?projectId=${projectId}&tab=receipts`);
     } catch (err) {
@@ -94,11 +121,18 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
-          <Label>Material</Label>
-          <Select value={materialId} onValueChange={setMaterialId}>
-            <SelectTrigger><SelectValue placeholder="Select material" /></SelectTrigger>
-            <SelectContent>{materials.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <Label htmlFor="receipt-material">Material</Label>
+          <EntityCombobox
+            id="receipt-material"
+            aria-label="Material"
+            options={materialOptions}
+            value={materialId}
+            onChange={setMaterialId}
+            loading={loadingMaterials}
+            storedValue={rememberedMaterial}
+            placeholder="Type a material name or spec"
+            emptyMessage={materials.length === 0 ? "No materials in the master yet" : "No material matches"}
+          />
         </div>
         <div className="space-y-1.5"><Label>Received Date</Label><Input type="date" value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>

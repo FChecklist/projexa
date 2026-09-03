@@ -27,6 +27,15 @@ const ScheduleLogTimeClient = logTimeModule.default;
 const { RAIL_NOT_ON_SCREEN, TASKS_EMPTY_LABEL, TASKS_FAILED_LABEL, TASKS_LOADING_LABEL, projectLine } = logTimeModule;
 
 import { RAIL_PROJECT_KEY } from "@/lib/rail-project";
+import { lastChoiceKey } from "@/lib/last-choice";
+
+// R67 D-80: with exactly ONE task the picker preselects it, which is the whole
+// point of the item -- so every case that needs an UNANSWERED Task field uses
+// this two-row fixture instead.
+const TWO_TASKS = [
+  { id: "t1", number: 12, title: "Joinery shop drawings" },
+  { id: "t2", number: 13, title: "Slab pour" },
+];
 
 const PROJECT_NAME = "Cedar Heights Villa - Phase 1";
 
@@ -55,6 +64,11 @@ function renderClient(over: Partial<Record<string, Handler>> = {}) {
 afterEach(() => {
   cleanup();
   push.mockClear();
+  try {
+    window.localStorage.clear();
+  } catch {
+    // storage unavailable -- see src/lib/last-choice.ts
+  }
   try {
     window.sessionStorage.clear();
   } catch {
@@ -184,9 +198,11 @@ describe("D-50 the task select is honest about its four states", () => {
     expect(push).toHaveBeenCalledWith("/schedule/tasks/new?projectId=proj-cedar");
   });
 
+  // TWO tasks, deliberately: with exactly one, R67 D-80 preselects it, so
+  // there is no "without choosing one" state left to assert.
   test("leaving Task without choosing one says which question was not answered", async () => {
-    const { container, findByText } = renderClient();
-    await waitFor(() => expect((container.querySelector('[role="combobox"]') as HTMLButtonElement).disabled).toBe(false));
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
+    await waitFor(() => expect((container.querySelector('[role="combobox"]') as HTMLInputElement).disabled).toBe(false));
     fireEvent.blur(container.querySelector('[role="combobox"]') as HTMLElement);
     await findByText("Choose the task these hours were spent on");
   });
@@ -194,10 +210,51 @@ describe("D-50 the task select is honest about its four states", () => {
 
 describe("D-50 the Save button counts and names what is missing", () => {
   test("on an untouched form (Date defaults to today) it names the other three", async () => {
-    const { container, findByText } = renderClient();
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
     await findByText("Category");
     const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Save"))!;
     expect(save.textContent).toBe("Save (3 required: Task, Hours, Category)");
     expect((save as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+// ─────────────────────────── R67 D-80 (audit R-302) ─────────────────────────
+describe("D-80 the Task picker costs one click less", () => {
+  test("a project with exactly ONE task preselects it, and the Save label drops Task IMMEDIATELY", async () => {
+    // The default fixture is a single task -- exactly the acceptance's case.
+    const { container, findByText } = renderClient();
+    await findByText("Category");
+    const field = container.querySelector('[role="combobox"]') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe("#12 Joinery shop drawings"));
+    // A field that is visibly filled in over a button that still demands it is
+    // worse than no preselection at all, so the label must already be right.
+    const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Save"))!;
+    expect(save.textContent).toBe("Save (2 required: Hours, Category)");
+  });
+
+  test("the task logged last time comes back on the next visit, with no click", async () => {
+    window.localStorage.setItem(lastChoiceKey("task", "proj-cedar"), "t2");
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
+    await findByText("Category");
+    const field = container.querySelector('[role="combobox"]') as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe("#13 Slab pour"));
+  });
+
+  test("a remembered task that is no longer on the project is NOT re-selected", async () => {
+    window.localStorage.setItem(lastChoiceKey("task", "proj-cedar"), "t-deleted");
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
+    await findByText("Category");
+    const field = container.querySelector('[role="combobox"]') as HTMLInputElement;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(field.value).toBe("");
+  });
+
+  test("the memory is per project -- another project's habit is not applied here", async () => {
+    window.localStorage.setItem(lastChoiceKey("task", "proj-marina"), "t2");
+    const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
+    await findByText("Category");
+    const field = container.querySelector('[role="combobox"]') as HTMLInputElement;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(field.value).toBe("");
   });
 });

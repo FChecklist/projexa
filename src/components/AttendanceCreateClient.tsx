@@ -5,16 +5,20 @@
 // -- a daily attendance row is a write-once transaction (dailyCost computed
 // server-side at write time from the roster entry's own dailyRate), same
 // class as Expenses/Stock Entries.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EntityCombobox from "@/components/EntityCombobox";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { getLastChoice, setLastChoice } from "@/lib/last-choice";
 
-type RosterEntry = { id: string; name: string; isActive: boolean };
+const WORKER_PICKER = "worker";
+
+type RosterEntry = { id: string; name: string; employeeCode?: string | null; trade?: string | null; isActive: boolean };
 
 export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
@@ -25,12 +29,33 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
   const [status, setStatus] = useState("present");
   const [hoursWorked, setHoursWorked] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // R67 D-80: the picker's memory and its loading state. `loadingRoster` exists
+  // so the field says "Loading…" instead of looking like an empty roster.
+  const [loadingRoster, setLoadingRoster] = useState(true);
+  const [rememberedWorker, setRememberedWorker] = useState<string | null>(null);
 
   useEffect(() => {
+    setRememberedWorker(getLastChoice(WORKER_PICKER, projectId));
+  }, [projectId]);
+
+  useEffect(() => {
+    setLoadingRoster(true);
     fetchJson<{ roster?: RosterEntry[] }>(`/api/labour-roster?projectId=${encodeURIComponent(projectId)}`)
       .then((d) => setRoster((d.roster ?? []).filter((r) => r.isActive)))
-      .catch((err) => toast.error(errorMessage(err, "Couldn't load roster")));
+      .catch((err) => toast.error(errorMessage(err, "Couldn't load roster")))
+      .finally(() => setLoadingRoster(false));
   }, [projectId]);
+
+  // R67 D-80: id + trade as the hint, so typing "mas" or "mason" both find the
+  // right person and two workers with the same name are distinguishable.
+  const workerOptions = useMemo(
+    () => roster.map((r) => ({
+      value: r.id,
+      label: r.name,
+      hint: [r.employeeCode, r.trade].filter(Boolean).join(" · ") || undefined,
+    })),
+    [roster]
+  );
 
   const missing = [...(rosterId ? [] : ["Worker"]), ...(attendanceDate ? [] : ["Date"])];
 
@@ -42,6 +67,9 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, rosterId, attendanceDate, status, hoursWorked: hoursWorked ? Number(hoursWorked) : undefined }),
       });
+      // Remembered only once the write SUCCEEDED -- offering back a choice that
+      // was refused would be offering back a mistake.
+      setLastChoice(WORKER_PICKER, projectId, rosterId);
       toast.success("Attendance recorded");
       router.push(`/labour?projectId=${projectId}&tab=attendance`);
     } catch (err) {
@@ -66,11 +94,18 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
     >
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
-          <Label>Worker</Label>
-          <Select value={rosterId} onValueChange={setRosterId}>
-            <SelectTrigger><SelectValue placeholder="Select worker" /></SelectTrigger>
-            <SelectContent>{roster.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <Label htmlFor="attendance-worker">Worker</Label>
+          <EntityCombobox
+            id="attendance-worker"
+            aria-label="Worker"
+            options={workerOptions}
+            value={rosterId}
+            onChange={setRosterId}
+            loading={loadingRoster}
+            storedValue={rememberedWorker}
+            placeholder="Type a name or ID"
+            emptyMessage={roster.length === 0 ? "No active workers on this roster" : "No worker matches"}
+          />
         </div>
         <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} /></div>
         <div className="space-y-1.5">
