@@ -27,6 +27,13 @@ export async function POST(request: NextRequest) {
     const data = await callVeridian("/work-progress", { organizationId: ctx.organizationId!, method: "POST", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
+    // R67 B-09 (D-03): a rule violation comes back as a CODE, and it is
+    // forwarded as a code. The words are composed in the browser, from
+    // src/lib/task-errors.ts, so the Daily Entry form and the composer print
+    // the same sentence for the same failure.
+    if (err instanceof VeridianApiError && err.code) {
+      return NextResponse.json({ code: err.code, missing: err.missing ?? [] }, { status: err.status });
+    }
     return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to log progress" }, { status: err instanceof VeridianApiError ? err.status : 502 });
   }
 }

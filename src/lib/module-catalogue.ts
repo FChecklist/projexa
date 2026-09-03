@@ -167,8 +167,15 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     route: "/scope",
     prefixes: ["/scope"],
     pillKeys: ["scope", "scope_of_work", "boq"],
-    placeholder: "e.g. create a revision of the current BOQ",
-    examples: ["create a revision of the current BOQ", "what is the contract value of this project"],
+    // R67 B-02 quotes its two prompts for /scope as well as /budgets. Only one
+    // of them is a sentence about SCOPE -- budget % is a column on a BOQ line
+    // (drizzle/0322_construction_boq_budget_percentage.sql), so "set budget %
+    // on all civil lines" is a real scope-of-work edit. The other ("budget vs
+    // actual by category") is a budget REPORT and belongs on /budgets, where it
+    // ships verbatim; putting it here would advertise the wrong screen. So this
+    // route keeps lane A's own scope sentence and gains B-02's scope one.
+    placeholder: "e.g. Set budget % to 30 on all civil lines",
+    examples: ["Set budget % to 30 on all civil lines", "create a revision of the current BOQ"],
     leaves: [
       { id: "scope.new", label: "New BOQ", path: "/scope/new", chainLabel: "New BOQ" },
       { id: "scope.open", label: "Open", path: "/scope" },
@@ -243,8 +250,12 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     route: "/budgets",
     prefixes: ["/budgets"],
     pillKeys: ["budget", "budgets"],
-    placeholder: "e.g. what is budget versus actual on this project",
-    examples: ["what is budget versus actual on this project", "add a budget line for site overheads"],
+    // R67 B-02: the two prompts the item quotes verbatim. A user standing on a
+    // budget had no way to know the composer could CHANGE one -- both of lane
+    // A's originals here were questions, so the screen only ever advertised
+    // reading. One of these two is a write, which is the point.
+    placeholder: "e.g. Set budget % to 30 on all civil lines",
+    examples: ["Set budget % to 30 on all civil lines", "Show budget vs actual by category for this project"],
     leaves: [
       // R67 lane D22 (item D-41): /budgets/new no longer exists. /budgets is now
       // the PROJECT's BOQ budget -- a read of a BOQ, with nothing to create --
