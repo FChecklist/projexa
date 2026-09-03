@@ -11,9 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2 } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
 import { ReportDocument } from "@/components/reports/ReportDocument";
+import { ReportTableView } from "@/components/reports/ReportTableView";
+import { isReportTable, reportTableToCsv } from "@/lib/report-table";
 import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
@@ -151,6 +152,20 @@ function ProjectReportsPanel({
     await startRun(async (signal) => {
       const params = new URLSearchParams({ projectId });
       if (reportName === "weekly-project") params.set("weekStart", weekStart);
+      // R67 E-32 (R-265). WHICH SHAPE THIS REPORT IS ASKED FOR, and why there
+      // are two.
+      //
+      // VERIDIAN now answers every report as { columns, rows, totals?,
+      // currency } and keeps its own payload behind ?format=legacy for a
+      // release. The five reports E-22 gave a real column set of their own
+      // (report-documents.ts) read those payloads by field -- Sumeet's Project
+      // Status carries a progress block and a subcontractor breakup, his
+      // Attendance sheet a subtotal per trade, his Site Picture sheet a
+      // date-grouped grid -- none of which is a flat table, and all of which is
+      // richer than one. So those five keep asking for legacy; every other
+      // report takes the table, which is what retires the JSON key-value dump
+      // this panel used to fall back to.
+      if (NAMED_REPORTS.has(reportName)) params.set("format", "legacy");
 
       const requests: Promise<Response>[] = [
         fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`, { signal }),
@@ -159,8 +174,11 @@ function ProjectReportsPanel({
         // The vendor/category detail Sumeet's Project Status and Scope sheets
         // need lives on budget-variance -- the only report that carries a
         // vendor and a category per BOQ line. Fetched alongside, never
-        // fabricated from the other payload.
-        requests.push(fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`, { signal }));
+        // fabricated from the other payload. Legacy for the same reason: these
+        // builders read `lines`, not a table.
+        requests.push(
+          fetch(`/api/reports/budget-variance?format=legacy&projectId=${encodeURIComponent(projectId)}`, { signal })
+        );
       }
 
       const [primaryRes, varianceRes] = await Promise.all(requests);
@@ -183,6 +201,9 @@ function ProjectReportsPanel({
     void runReport();
   }, [runReport, reportName, resetRun]);
 
+  // R67 E-32: the server table, when this report answered as one.
+  const tableResult = result && isReportTable(result.primary) ? result.primary : null;
+
   const varianceForFilters = result?.variance ?? null;
   const { categories, vendors } = scopeFilterOptions(varianceForFilters);
 
@@ -201,8 +222,12 @@ function ProjectReportsPanel({
   }
 
   function exportCsv() {
-    if (!model) return;
-    const csv = documentToCsv(model, orgMoney.currency);
+    // R67 E-32: a table report exports its own server-declared columns, so the
+    // sheet a reader downloads has exactly the columns they were looking at --
+    // and the same en-dash for a missing value, so a blank cell in the sheet
+    // cannot be read as a zero.
+    const csv = model ? documentToCsv(model, orgMoney.currency) : tableResult ? reportTableToCsv(tableResult) : null;
+    if (csv === null) return;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -346,11 +371,21 @@ function ProjectReportsPanel({
         )}
         {model ? (
           <ReportDocument model={model} orgMoney={orgMoney} />
-        ) : (
-          // The twelve reports without a named column set keep the generic
-          // renderer -- inside the same document chrome, so the header block,
+        ) : isReportTable(result.primary) ? (
+          // R67 E-32: the twelve reports without a named column set are now
+          // real tables too -- server-declared columns, units and totals,
+          // rendered inside the same document chrome so the header block,
           // parameter bar and export actions are identical on every report.
-          <ReportOutput data={result.primary} />
+          <ReportTableView table={result.primary} orgMoney={orgMoney} />
+        ) : (
+          // Only reachable against a VERIDIAN deployment older than E-32. Said
+          // in words rather than silently falling back to a JSON dump, because
+          // a dump is exactly what this item removed and a quiet regression to
+          // it would be invisible.
+          <p role="alert" className="py-6 text-center text-sm text-px-error">
+            This report came back in an older format that this screen can no longer render. Refresh, or ask an
+            administrator to update VERIDIAN.
+          </p>
         )}
       </div>
     );
@@ -376,7 +411,11 @@ function ProjectReportsPanel({
         exportCsvAction={{
           label: "Export CSV",
           onClick: exportCsv,
-          disabledReason: model ? undefined : result ? "Export CSV (this report has no fixed column set yet)" : "Export CSV (run the report first)",
+          // R67 E-32: every report now has a fixed column set -- a named
+          // document's own, or the server's declared columns -- so the reason
+          // that used to sit here ("this report has no fixed column set yet")
+          // is no longer true of anything and is gone.
+          disabledReason: model || tableResult ? undefined : "Export CSV (run the report first)",
         }}
         exportPdfAction={{
           label: "Export PDF",
