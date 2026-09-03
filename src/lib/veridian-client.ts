@@ -472,6 +472,40 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN's PUT /currencies/base (compliance-tracker PR #1391) -- every
 // prior caller in this file used POST/PATCH for writes, so PUT was simply
 // never needed here before.
+// R67 WS-H / PROGRAMME DECISION D-05 (identity bridge). Every call in this
+// file authenticates as the ORGANISATION -- one shared per-org Bearer key,
+// never a per-user VERIDIAN identity (see this file's own header and
+// auth-guard.ts's OrgRole comment). That is correct for authorisation and
+// wrong for ATTRIBUTION: a timesheet entry, a work-progress entry and an
+// approval all have to name a person, and without one VERIDIAN could only
+// record "the org API key" -- which is why self-approval could not be
+// detected and manager validation was meaningless.
+//
+// `actingUserId` is that person: the logged-in PROJEXA user's Supabase id,
+// taken from requireAuth()'s ctx.user.id at the call site and sent as the
+// `X-Acting-User` header. VERIDIAN's resolveActingUser() maps it to a real,
+// org-scoped, active compliance.users row and refuses an unmapped id with
+// the code USER_NOT_LINKED.
+//
+// It is a HEADER and not a body field on purpose: a GET has no body, and
+// "whose timesheet is this?" is a read question as much as a write one.
+// It is also never a URL parameter -- a user id in a query string ends up in
+// access logs and Referer headers.
+//
+// FIX PASS: `actingUserEmail` travels the same way, for the same reason. The
+// first cut put the email in the query string (`?actorEmail=`) so that a GET
+// could identify its caller -- which contradicts the sentence above, and an
+// email address is MORE identifying than an opaque Supabase id, not less.
+export const ACTING_USER_HEADER = "X-Acting-User";
+export const ACTING_USER_EMAIL_HEADER = "X-Acting-User-Email";
+
+function actingUserHeaders(actingUserId?: string, actingUserEmail?: string): Record<string, string> {
+  return {
+    ...(actingUserId ? { [ACTING_USER_HEADER]: actingUserId } : {}),
+    ...(actingUserEmail ? { [ACTING_USER_EMAIL_HEADER]: actingUserEmail } : {}),
+  };
+}
+
 // R67 F-20: `signal` lets a caller cancel a call it no longer needs -- a client
 // pane that unmounted, a project the user switched away from. It composes with
 // the 8 s budget rather than replacing it (see attemptSignal above).
@@ -480,7 +514,7 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN_SCREEN_BUDGET_MS carries, so the four D-04 callers behave exactly
 // as they did before this merge -- the value is now the default rather than an
 // override.
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number };
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number; actingUserId?: string; actingUserEmail?: string };
 
 // R67 F-20: one place that turns a non-2xx VERIDIAN response into a typed
 // error, so all four transports (JSON, raw, binary, multipart) classify a
@@ -536,6 +570,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
       method: options.method ?? "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
+        ...actingUserHeaders(options.actingUserId, options.actingUserEmail),
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -624,7 +659,7 @@ export async function callVeridianResult<T = unknown>(
 // assuming JSON.
 export async function callVeridianBinary(
   path: string,
-  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number; actingUserId?: string; actingUserEmail?: string } = {}
 ): Promise<{ body: ArrayBuffer; contentType: string }> {
   const apiKey = await resolveApiKey(options);
 
@@ -634,7 +669,7 @@ export async function callVeridianBinary(
     `${base}${path}`,
     {
       method: "GET",
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId, options.actingUserEmail) },
       cache: "no-store",
     },
     options.signal,
@@ -654,7 +689,7 @@ export async function callVeridianBinary(
 export async function callVeridianUpload<T = unknown>(
   path: string,
   formData: FormData,
-  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number; actingUserId?: string; actingUserEmail?: string } = {}
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
@@ -665,7 +700,7 @@ export async function callVeridianUpload<T = unknown>(
     `${base}${path}`,
     {
       method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId, options.actingUserEmail) },
       body: formData,
       cache: "no-store",
     },
