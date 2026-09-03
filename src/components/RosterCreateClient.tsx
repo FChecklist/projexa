@@ -21,6 +21,7 @@ import { CreateScreen } from "@/components/screens/CreateScreen";
 import { PaneErrorCard } from "@/components/PaneState";
 import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
+import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -28,6 +29,7 @@ type Vendor = { id: string; vendorName: string };
 
 export default function RosterCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const orgMoney = useOrgMoney();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsError, setVendorsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -64,7 +66,18 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       options: vendors.map((v) => ({ value: v.id, label: v.vendorName })),
       help: "Leave blank for a directly employed worker.",
     },
-    { name: "dailyRate", label: "Daily Rate", kind: "number", required: true, placeholder: "e.g. 180" },
+    {
+      name: "dailyRate",
+      label: "Daily Rate",
+      // R67 D-39 / G-05: a money box carries the org's currency CODE inside
+      // it, beside the caret, for as long as the number is being typed. This
+      // was kind "number", so the amount was entered with nothing on screen
+      // saying what unit it was in -- and the cell that reads it back is
+      // labelled.
+      kind: "money",
+      required: true,
+      placeholder: "e.g. 180",
+    },
   ];
 
   const submit = useSubmit<{ id?: unknown }>({
@@ -100,6 +113,7 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       // Company is OPTIONAL, so a failed vendor read must not block the save
       // -- it is stated, and the form still works for a direct employee.
       banner={

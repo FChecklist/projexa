@@ -25,6 +25,7 @@ import { ExternalLink } from "lucide-react";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { fetchJson } from "@/lib/fetch-json";
+import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
 import { type Company } from "@/components/company-scope";
 import type { CreateField } from "@/lib/create-screen";
@@ -46,6 +47,7 @@ export const BUDGET_PRECONDITION_LABEL = "needs a fiscal year and an account";
 
 export default function BudgetCreateClient() {
   const router = useRouter();
+  const orgMoney = useOrgMoney();
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -122,7 +124,12 @@ export default function BudgetCreateClient() {
     {
       name: "annualAmount",
       label: "Annual Amount",
-      kind: "number",
+      // R67 D-39 / G-05: a money box carries the org's currency CODE inside
+      // it, beside the caret, for as long as the number is being typed. This
+      // was kind "number", so the amount was entered with nothing on screen
+      // saying what unit it was in -- and the cell that reads it back is
+      // labelled.
+      kind: "money",
       required: !blocked,
       placeholder: "e.g. 250000",
       validate: (value) =>
@@ -175,6 +182,7 @@ export default function BudgetCreateClient() {
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       // C-15: the short label. The paragraph lives in the banner.
       extraMissing={blocked ? [BUDGET_PRECONDITION_LABEL] : []}
       failure={submit.failure}

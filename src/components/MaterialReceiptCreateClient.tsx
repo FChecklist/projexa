@@ -15,6 +15,7 @@ import { CreateScreen } from "@/components/screens/CreateScreen";
 import { PaneErrorCard } from "@/components/PaneState";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
+import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
 
 type Material = { id: string; name: string; isActive: boolean };
@@ -28,6 +29,7 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsError, setMaterialsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [values, setValues] = useState<Record<string, string>>({ receivedDate: todayIso() });
+  const orgMoney = useOrgMoney();
 
   const loadMaterials = useCallback(async () => {
     setMaterialsError(null);
@@ -65,7 +67,11 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     {
       name: "unitCost",
       label: "Unit Cost",
-      kind: "number",
+      // R67 D-39/G-05: the currency sits inside the box, beside the caret, for
+      // as long as the number is being typed -- the same control the master
+      // form uses, so a storekeeper does not meet two different money fields
+      // one screen apart.
+      kind: "money",
       placeholder: "e.g. 28.50",
       help: "Leave blank to use the master's own unit cost.",
     },
@@ -101,6 +107,7 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
       fields={fields}
       values={values}
       onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       // A material that cannot be chosen is not the user's omission. Naming
       // it as "missing" would be the form blaming them for a failed read.
       extraMissing={materialsError ? ["the material list could not be loaded"] : []}
