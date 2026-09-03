@@ -71,11 +71,14 @@ import {
 // clicks fills the strip in front of them instead of the strip reading
 // "Select a module to begin" on the very screen it is docked to.
 import { ChainOptionsPanel } from "@/components/shell/ChainOptionsPanel";
+import { ConfirmCard } from "@/components/shell/ConfirmCard";
 import {
   DEFAULT_PERIOD,
   PERIOD_OPTIONS,
   REPORTS_ENTITY_SEGMENT,
   REPORTS_PILL_KEY,
+  cardForRoute,
+  coldStartCards,
   periodLabel,
   periodOptionsLevel,
   reportLeafById,
@@ -83,8 +86,13 @@ import {
   reportReceiptLine,
   reportRoute,
   resolvePeriod,
+  resolveTaskTitle,
+  timesheetReceiptLine,
+  timesheetRoute,
+  type CardDef,
   type ChainOptionsLevel,
   type PeriodId,
+  type ProjectTask,
 } from "@/lib/card-catalogue";
 import { maskTechnical } from "@/lib/task-errors";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
@@ -202,6 +210,26 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // from the receipt because they are different facts and hiding either one
   // would be the silent-failure defect this programme is removing.
   const [bandNote, setBandNote] = useState<string | null>(null);
+  // R67 C-03: the timesheet confirmation card. It exists between the PREVIEW
+  // (POST /api/classify, which never executes) and the write (POST
+  // /api/timesheets), which is the whole point: the user checks what the
+  // sentence was read as before any hours are logged.
+  const [timesheetDraft, setTimesheetDraft] = useState<{
+    sentence: string;
+    issueId: string;
+    hours: string;
+    spentOn: string;
+    activityType: string;
+    /** what the user actually said, kept so "Edit" can restore the sentence. */
+    typed: string;
+    /** the words the user used for the task, for the fuzzy pre-selection. */
+    taskQuery: string;
+    /** true when the fuzzy match was ambiguous and the user must choose. */
+    unmatched: boolean;
+  } | null>(null);
+  const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   // R67 C-01: the selected project's NAME, for D-03's BOQ_LINE_NOT_FOUND
   // sentence ("There is no line 1.02 on Cedar Heights Villa - Phase 1 v3").
@@ -473,6 +501,40 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     });
   }, [pathname]);
 
+  // R67 C-03: the card whose chain this route already IS. On /schedule/log-time
+  // (and on /design-studio once D-07 ships it) the strip is seeded with the
+  // top-rail project and a "Timesheet" segment -- so there is no second
+  // project selector on a screen that already has one.
+  const routeCard = useMemo(() => cardForRoute(pathname ?? ""), [pathname]);
+
+  useEffect(() => {
+    if (!routeCard) return;
+    setSegments((prev) =>
+      prev.some((s) => s.id === routeCard.entitySegment.id) ? prev : [...prev, routeCard.entitySegment]
+    );
+  }, [routeCard]);
+
+  // The PROJEXA cards shown beside the kit's ranked pill strip: what this
+  // role is cold-started with, plus the card the user is standing in.
+  const cards = useMemo(
+    () => coldStartCards(info?.role ?? null, pathname ?? ""),
+    [info?.role, pathname]
+  );
+
+  // *** A CARD CLICK LOADS THE CHAIN AND STOPS. *** It arms no functionId, so
+  // the next Send is a deliberate second act; it opens the card's own screen,
+  // because opening a screen is a read; and it never writes into the textarea.
+  const onCardSelect = useCallback(
+    (card: CardDef) => {
+      setSegments((prev) =>
+        prev.some((s) => s.id === card.entitySegment.id) ? prev : [...prev, card.entitySegment]
+      );
+      setSubmitError(null);
+      if (pathname !== card.route) router.push(card.route);
+    },
+    [pathname, router]
+  );
+
   const onReportsRoute = pathname === REPORTS_ROUTE;
   const reportsChainActive = useMemo(
     () => segments.some((s) => s.id === REPORTS_ENTITY_SEGMENT.id),
@@ -617,6 +679,87 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setPendingRawInput(knownFunctionId ? null : sel.label);
   }, []);
 
+  // R67 C-03: the project's REAL tasks, loaded when the card opens so the
+  // Task field is a picker over what exists rather than free text -- and so
+  // the fuzzy match the sentence implied can be pre-selected and CHECKED.
+  const cardOpen = timesheetDraft !== null;
+  useEffect(() => {
+    if (!cardOpen || !projectId) return;
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`);
+        const d = await res.json().catch(() => null);
+        if (!res.ok) {
+          if (live) setCardError(d?.error || `Couldn't load this project's tasks (HTTP ${res.status})`);
+          return;
+        }
+        const list: ProjectTask[] = Array.isArray(d?.tasks) ? d.tasks : [];
+        if (!live) return;
+        setProjectTasks(list);
+        setTimesheetDraft((prev) => {
+          if (!prev || prev.issueId) return prev;
+          // *** AN AMBIGUOUS MATCH IS NEVER RESOLVED FOR THE USER. ***
+          // resolveTaskTitle returns a task only when exactly one matches;
+          // otherwise the field stays empty and Save says "pick a task".
+          const match = resolveTaskTitle(list, prev.taskQuery);
+          return match ? { ...prev, issueId: match.id, unmatched: false } : { ...prev, unmatched: true };
+        });
+      } catch {
+        if (live) setCardError("Couldn't reach this project's tasks.");
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [cardOpen, projectId]);
+
+  /**
+   * R67 C-03 -- SAVE. The ONLY thing on this card that writes.
+   *
+   * It posts through /api/timesheets, the same route Design Studio's own
+   * screen uses and the one measured returning 201 on the demo org, rather
+   * than a second write path for the same table.
+   */
+  const onSaveTimesheet = useCallback(async () => {
+    const draft = timesheetDraft;
+    if (!draft || cardBusy) return;
+    setCardBusy(true);
+    setCardError(null);
+    try {
+      const res = await fetch("/api/timesheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueId: draft.issueId,
+          hours: draft.hours,
+          spentOn: draft.spentOn,
+          activityType: draft.activityType || undefined,
+        }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        setCardError(
+          d && typeof d.error === "string" && d.error.trim() ? d.error : `Couldn't log the time (HTTP ${res.status})`
+        );
+        return;
+      }
+      const task = projectTasks.find((t) => t.id === draft.issueId) ?? null;
+      setReceipt({
+        text: timesheetReceiptLine({ hours: draft.hours, task }),
+        href: timesheetRoute(projectId),
+      });
+      setTimesheetDraft(null);
+      setDraft("");
+      router.push(timesheetRoute(projectId));
+      await loadTasks();
+    } catch {
+      setCardError("Couldn't reach the time service.");
+    } finally {
+      setCardBusy(false);
+    }
+  }, [timesheetDraft, cardBusy, projectTasks, projectId, router, loadTasks]);
+
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.
   //
@@ -635,6 +778,53 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setSubmitError(null);
     setBandNote(null);
     try {
+      // R67 C-03 -- PREVIEW BEFORE WRITE, for the typed path.
+      //
+      // POST /api/classify is VERIDIAN's own read-only half of the pipeline:
+      // it resolves the sentence and returns `executed: false` in every
+      // response. When it reads the sentence as a TIMESHEET, band 2 shows the
+      // confirmation card and NOTHING is posted to /api/tasks -- the hours
+      // are written only when the user presses Save on that card.
+      //
+      // Scoped to the one registered write that has a card today. Every other
+      // verdict falls through to the existing submit unchanged, so this
+      // cannot quietly change what any other sentence does.
+      if (typed && !pendingFunctionId && !runningReport) {
+        const preview = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawInput: typed, mode, projectId }),
+        });
+        const p = await preview.json().catch(() => null);
+        const segs: {
+          verdict?: string;
+          functionId?: string | null;
+          params?: Record<string, unknown>;
+          derivedChain?: { full?: string } | null;
+        }[] = preview.ok && Array.isArray(p?.segments) ? p.segments : [];
+        const timesheet = segs.find((s) => s.functionId === "record_timesheet");
+        if (timesheet) {
+          const params = timesheet.params ?? {};
+          const hours = typeof params.hours === "number" ? String(params.hours) : String(params.hours ?? "");
+          setTimesheetDraft({
+            sentence: timesheet.derivedChain?.full ?? "Timesheet › New entry",
+            issueId: "",
+            hours,
+            spentOn:
+              typeof params.spentOn === "string" ? params.spentOn : new Date().toISOString().slice(0, 10),
+            activityType: typeof params.activityType === "string" ? params.activityType : "",
+            typed,
+            taskQuery: typeof params.task === "string" ? params.task : "",
+            unmatched: false,
+          });
+          setProjectTasks([]);
+          setCardError(projectId ? null : "Pick a project in the top rail before logging time.");
+          return;
+        }
+        // A preview that could not be reached is not a reason to refuse: the
+        // submit below is the authority and re-runs the same ladder.
+      }
+
       const range = runningReport ? resolvePeriod(periodId, new Date()) : null;
       const body = runningReport
         ? {
@@ -862,6 +1052,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     [router]
   );
 
+  // NO FAIL-AFTER-CLICK: the card's primary button carries its own reason,
+  // in its own label, derived from the same values that disable it.
+  const timesheetBlockedReason = !timesheetDraft
+    ? undefined
+    : !projectId
+      ? "pick a project"
+      : !timesheetDraft.issueId
+        ? "pick a task"
+        : !(Number(timesheetDraft.hours) > 0)
+          ? "type the hours"
+          : !timesheetDraft.spentOn
+            ? "pick a date"
+            : undefined;
+
+  const fieldClass = "rounded border px-2 py-1 text-[12px]";
+  const fieldStyle = { borderColor: "var(--color-ct-border2)", color: "var(--color-ct-navy)" } as const;
+
   return (
     <AppShell
       // F_019 fix (2026-08-27): this shell always renders the composer's
@@ -988,6 +1195,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // from here, which is a dead end, and M24 forbids dead ends.
           pills={
             <div className="flex flex-wrap items-center gap-1">
+              {/* R67 C-03 / D-10: PROJEXA's OWN CARDS, ahead of the kit's
+                  ranked pills. They are here rather than inside PillStrip
+                  because the kit's PillKey union is closed at fourteen and
+                  this catalogue is PROJEXA's (correction C-12) -- adding a
+                  key to the kit would be a release this programme does not
+                  take (D-09). A card click loads the chain and stops. */}
+              {cards.map((card) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => onCardSelect(card)}
+                  className="veri-rchip"
+                  aria-label={`${card.label} — opens the ${card.label} screen`}
+                >
+                  {card.label}
+                </button>
+              ))}
               <PillStrip
                 usage={pillUsage}
                 now={Date.now()}
@@ -1013,8 +1237,102 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // question the chain is asking (the kit's OptionChain, mounted at
           // last) and the receipt for what was just run.
           conversation={
-            bandLevel || receipt || bandNote ? (
+            bandLevel || receipt || bandNote || timesheetDraft ? (
               <div className="space-y-2">
+                {timesheetDraft && (
+                  <ConfirmCard
+                    title={timesheetDraft.sentence}
+                    error={cardError}
+                    busy={cardBusy}
+                    primaryLabel={timesheetBlockedReason ? `Save (${timesheetBlockedReason})` : "Save"}
+                    primaryDisabledReason={timesheetBlockedReason}
+                    onPrimary={() => void onSaveTimesheet()}
+                    secondaryLabel="Edit"
+                    onSecondary={() => {
+                      // Back to the sentence, with nothing written and the
+                      // user's own words restored so they can correct them.
+                      setDraft(timesheetDraft.typed);
+                      setTimesheetDraft(null);
+                      setCardError(null);
+                    }}
+                    fields={[
+                      {
+                        id: "task",
+                        label: "Task",
+                        note: timesheetDraft.unmatched && timesheetDraft.taskQuery
+                          ? `"${timesheetDraft.taskQuery}" did not match exactly one task`
+                          : undefined,
+                        control: (
+                          <select
+                            className={fieldClass}
+                            style={fieldStyle}
+                            value={timesheetDraft.issueId}
+                            onChange={(e) =>
+                              setTimesheetDraft((prev) =>
+                                prev ? { ...prev, issueId: e.target.value, unmatched: false } : prev
+                              )
+                            }
+                          >
+                            <option value="">Pick a task…</option>
+                            {projectTasks.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                #{t.number} {t.title}
+                              </option>
+                            ))}
+                          </select>
+                        ),
+                      },
+                      {
+                        id: "category",
+                        label: "Category",
+                        control: (
+                          <input
+                            type="text"
+                            className={fieldClass}
+                            style={fieldStyle}
+                            value={timesheetDraft.activityType}
+                            placeholder="optional"
+                            onChange={(e) =>
+                              setTimesheetDraft((prev) => (prev ? { ...prev, activityType: e.target.value } : prev))
+                            }
+                          />
+                        ),
+                      },
+                      {
+                        id: "date",
+                        label: "Date",
+                        control: (
+                          <input
+                            type="date"
+                            className={fieldClass}
+                            style={fieldStyle}
+                            value={timesheetDraft.spentOn}
+                            onChange={(e) =>
+                              setTimesheetDraft((prev) => (prev ? { ...prev, spentOn: e.target.value } : prev))
+                            }
+                          />
+                        ),
+                      },
+                      {
+                        id: "hours",
+                        label: "Hours",
+                        control: (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            className={fieldClass}
+                            style={fieldStyle}
+                            value={timesheetDraft.hours}
+                            onChange={(e) =>
+                              setTimesheetDraft((prev) => (prev ? { ...prev, hours: e.target.value } : prev))
+                            }
+                          />
+                        ),
+                      },
+                    ]}
+                  />
+                )}
                 {bandLevel && (
                   <ChainOptionsPanel
                     level={bandLevel}
@@ -1078,6 +1396,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             // ONE question that row was blocked on, rather than repeating the
             // generic prompt and leaving the user to work it out.
             (fixTarget?.missingStep ? FIX_PROMPT[fixTarget.missingStep] : undefined) ??
+            // R67 C-03: on the card's own screen the box shows the sentence
+            // that screen understands, so a first-time user can see the shape
+            // of what to type instead of guessing at "describe what you need".
+            routeCard?.placeholder ??
             (pendingFunctionId || pendingRawInput || (reportsChainActive && reportId)
               ? "Press send to run this, or add detail first…"
               : "Describe what you need, or pick a module above.")

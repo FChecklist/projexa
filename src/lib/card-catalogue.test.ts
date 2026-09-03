@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CARD_CATALOGUE,
   DEFAULT_PERIOD,
+  DESIGN_STUDIO_CARD,
   PERIOD_OPTIONS,
   REPORTS_ENTITY_SEGMENT,
   REPORT_LEAVES,
@@ -12,6 +14,13 @@ import {
   reportReceiptLine,
   reportRoute,
   resolvePeriod,
+  cardForRoute,
+  cardOwnsRoute,
+  coldStartCards,
+  matchTaskTitles,
+  resolveTaskTitle,
+  timesheetReceiptLine,
+  timesheetRoute,
 } from "./card-catalogue";
 
 const CEDAR = "Cedar Heights Villa - Phase 1";
@@ -144,5 +153,89 @@ describe("the levels the composer asks", () => {
     const level = periodOptionsLevel();
     expect(level.legend).toBe("Over what period?");
     expect(level.options.map((o) => o.id)).toEqual(["this-month", "last-month", "this-quarter", "this-year"]);
+  });
+});
+
+// --- R67 C-03 -------------------------------------------------------------
+
+const TASKS = [
+  { id: "i12", number: 12, title: "Joinery shop drawings" },
+  { id: "i13", number: 13, title: "Joinery site survey" },
+  { id: "i14", number: 14, title: "Facade cladding" },
+];
+
+describe("the Design Studio card", () => {
+  test("it is an action card wired to the pipeline's second write", () => {
+    expect(DESIGN_STUDIO_CARD.kind).toBe("action");
+    expect(DESIGN_STUDIO_CARD.functionId).toBe("record_timesheet");
+    expect(DESIGN_STUDIO_CARD.label).toBe("Design Studio");
+    expect(CARD_CATALOGUE).toContain(DESIGN_STUDIO_CARD);
+  });
+
+  test("its placeholder is C-03's own example sentence", () => {
+    expect(DESIGN_STUDIO_CARD.placeholder).toBe("e.g. 3 hours on #12 joinery shop drawings today");
+  });
+
+  test("it owns both the Design Studio route and the real log-time screen", () => {
+    expect(cardOwnsRoute(DESIGN_STUDIO_CARD, "/schedule/log-time")).toBe(true);
+    expect(cardOwnsRoute(DESIGN_STUDIO_CARD, "/design-studio")).toBe(true);
+    expect(cardOwnsRoute(DESIGN_STUDIO_CARD, "/design-studio/timesheet")).toBe(true);
+    expect(cardOwnsRoute(DESIGN_STUDIO_CARD, "/schedule")).toBe(false);
+    // A route that merely starts with the same letters is NOT the card's.
+    expect(cardOwnsRoute(DESIGN_STUDIO_CARD, "/design-studio-archive")).toBe(false);
+  });
+
+  test("cardForRoute finds the chain a route should seed", () => {
+    expect(cardForRoute("/schedule/log-time")).toBe(DESIGN_STUDIO_CARD);
+    expect(cardForRoute("/labour")).toBeNull();
+    expect(cardForRoute("")).toBeNull();
+  });
+
+  test("it is cold-started for designer roles, and offered on its own screen to anyone", () => {
+    expect(coldStartCards("designer", "/labour")).toEqual([DESIGN_STUDIO_CARD]);
+    expect(coldStartCards("DESIGNER", "/labour")).toEqual([DESIGN_STUDIO_CARD]);
+    expect(coldStartCards("member", "/labour")).toEqual([]);
+    expect(coldStartCards("member", "/schedule/log-time")).toEqual([DESIGN_STUDIO_CARD]);
+    expect(coldStartCards(null, "/labour")).toEqual([]);
+  });
+});
+
+describe("matchTaskTitles mirrors the executor's own fuzzy match", () => {
+  test("an issue number is exact", () => {
+    expect(matchTaskTitles(TASKS, "#12").map((t) => t.id)).toEqual(["i12"]);
+    expect(matchTaskTitles(TASKS, "12").map((t) => t.id)).toEqual(["i12"]);
+  });
+
+  test("words in any order find the real task", () => {
+    expect(matchTaskTitles(TASKS, "joinery drawings").map((t) => t.id)).toEqual(["i12"]);
+    expect(matchTaskTitles(TASKS, "shop drawings").map((t) => t.id)).toEqual(["i12"]);
+  });
+
+  test("*** an ambiguous needle returns every match so the caller can refuse ***", () => {
+    expect(matchTaskTitles(TASKS, "joinery").map((t) => t.id)).toEqual(["i12", "i13"]);
+    expect(resolveTaskTitle(TASKS, "joinery")).toBeNull();
+    expect(resolveTaskTitle(TASKS, "joinery drawings")?.id).toBe("i12");
+  });
+
+  test("nothing matches nothing", () => {
+    expect(matchTaskTitles(TASKS, "plumbing")).toEqual([]);
+    expect(matchTaskTitles(TASKS, "")).toEqual([]);
+    expect(resolveTaskTitle([], "joinery")).toBeNull();
+  });
+});
+
+describe("the timesheet receipt", () => {
+  test("C-03's line, with the hours to two places and the real task named", () => {
+    expect(timesheetReceiptLine({ hours: "3", task: TASKS[0] })).toBe("Logged 3.00 h on #12 Joinery shop drawings");
+    expect(timesheetReceiptLine({ hours: 2.5, task: TASKS[2] })).toBe("Logged 2.50 h on #14 Facade cladding");
+  });
+
+  test("with no resolved task it still reads as a sentence", () => {
+    expect(timesheetReceiptLine({ hours: 1, task: null })).toBe("Logged 1.00 h on this task");
+  });
+
+  test("the right pane lands on the project's own timesheet tab", () => {
+    expect(timesheetRoute("p1")).toBe("/schedule?projectId=p1&tab=timesheet");
+    expect(timesheetRoute(null)).toBe("/schedule?tab=timesheet");
   });
 });

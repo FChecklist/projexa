@@ -235,3 +235,147 @@ export function periodOptionsLevel(): ChainOptionsLevel {
     options: PERIOD_OPTIONS.map((p) => ({ id: p.id, label: p.label, isLeaf: true })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// CARDS (R67 C-03) -- WHAT A USER CAN START FROM
+// ---------------------------------------------------------------------------
+
+export type CardDef = {
+  /** Stable key. Not a kit PillKey: the kit's union is closed at 14 and this
+   *  catalogue is PROJEXA's own (C-12), so these render beside the kit strip. */
+  id: string;
+  /** The words on the card. A noun a person would say out loud. */
+  label: string;
+  kind: "action";
+  /** The pipeline function this card's work ends in, when it has one. */
+  functionId: string | null;
+  /** The screen the card opens. Opening a screen is a read. */
+  route: string;
+  /** The segment a card click puts on the strip, after the project. */
+  entitySegment: { id: string; label: string; kind: "action" };
+  /**
+   * The routes on which this card's chain is seeded automatically, because
+   * the user is already standing in it.
+   */
+  routes: readonly string[];
+  /** The composer's placeholder while this card's chain is loaded. */
+  placeholder: string;
+  /**
+   * Roles for which this card is in the cold-start top six.
+   *
+   * HONEST LIMIT, WORTH KNOWING: VERIDIAN's own role vocabulary today is
+   * owner/admin/manager/member (ROLE_RANK in auth-guard.ts) -- there is no
+   * "designer" role in the data yet, so this list only starts ranking anything
+   * once one exists. The card is therefore ALSO offered on its own routes
+   * (see routes above), which is what makes it reachable today rather than a
+   * setting nobody can turn on.
+   */
+  coldStartRoles: readonly string[];
+};
+
+export const DESIGN_STUDIO_CARD: CardDef = {
+  id: "design_studio",
+  label: "Design Studio",
+  kind: "action",
+  functionId: "record_timesheet",
+  route: "/schedule/log-time",
+  entitySegment: { id: "timesheet", label: "Timesheet", kind: "action" },
+  // /design-studio is D-07's own screen and does not exist in this repo yet;
+  // the prefix is matched so the chain seeds the moment that route ships,
+  // and /schedule/log-time is the real screen this reaches today.
+  routes: ["/design-studio", "/schedule/log-time"],
+  placeholder: "e.g. 3 hours on #12 joinery shop drawings today",
+  coldStartRoles: ["designer", "architect", "interior_designer"],
+};
+
+export const CARD_CATALOGUE: readonly CardDef[] = [DESIGN_STUDIO_CARD];
+
+/** True when `pathname` is inside one of the card's own routes. */
+export function cardOwnsRoute(card: CardDef, pathname: string): boolean {
+  return card.routes.some((r) => pathname === r || pathname.startsWith(`${r}/`));
+}
+
+/** The card whose chain this route should seed, if any. */
+export function cardForRoute(pathname: string): CardDef | null {
+  return CARD_CATALOGUE.find((c) => cardOwnsRoute(c, pathname)) ?? null;
+}
+
+/**
+ * The cards to show beside the ranked pill strip: everything this role is
+ * cold-started with, plus the card the user is currently standing in.
+ */
+export function coldStartCards(role: string | null | undefined, pathname: string): CardDef[] {
+  const normalised = (role ?? "").trim().toLowerCase();
+  return CARD_CATALOGUE.filter(
+    (c) => c.coldStartRoles.includes(normalised) || cardOwnsRoute(c, pathname)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE TIMESHEET CARD'S OWN FACTS
+// ---------------------------------------------------------------------------
+
+export type ProjectTask = { id: string; number: number; title: string };
+
+/**
+ * The client-side mirror of the executor's own fuzzy match, so the card
+ * arrives with the right task PRE-SELECTED instead of asking a question the
+ * sentence already answered.
+ *
+ * Same tiers, same order, same refusal to break a tie: an ambiguous needle
+ * returns every match and the caller leaves the field unset rather than
+ * choosing for the user. Logging real hours against the wrong task is not
+ * recoverable by an undo that does not exist.
+ */
+export function matchTaskTitles(tasks: readonly ProjectTask[], wanted: string): ProjectTask[] {
+  const needle = wanted.trim().toLowerCase();
+  if (!needle) return [];
+
+  if (/^#?\d+$/.test(needle)) {
+    const n = Number(needle.replace(/^#/, ""));
+    return tasks.filter((t) => t.number === n);
+  }
+
+  const exact = tasks.filter((t) => t.title.toLowerCase() === needle);
+  if (exact.length > 0) return exact;
+
+  const contains = tasks.filter((t) => t.title.toLowerCase().includes(needle));
+  if (contains.length > 0) return contains;
+
+  const words = needle.split(/\s+/).filter((w) => w.length > 2);
+  if (words.length === 0) return [];
+  return tasks.filter((t) => {
+    const title = t.title.toLowerCase();
+    return words.every((w) => title.includes(w));
+  });
+}
+
+/** The one task a needle unambiguously means, or null. */
+export function resolveTaskTitle(tasks: readonly ProjectTask[], wanted: string): ProjectTask | null {
+  const matches = matchTaskTitles(tasks, wanted);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * C-03's receipt line: "Logged 3.00 h on #12 Joinery shop drawings".
+ *
+ * DEVIATION, DELIBERATE AND DISCLOSED: C-03's example ends "(TS-000123)".
+ * pms_time_entries has no human-readable number column -- its id is a cuid --
+ * so printing a "TS-" number would be inventing an identifier that does not
+ * exist. The line names the task and the hours, both real, and the caller
+ * renders the link to the entry beside it.
+ */
+export function timesheetReceiptLine(input: { hours: number | string; task: ProjectTask | null }): string {
+  const hours = Number(input.hours);
+  const amount = Number.isFinite(hours) ? hours.toFixed(2) : String(input.hours);
+  const task = input.task ? `#${input.task.number} ${input.task.title}` : "this task";
+  return `Logged ${amount} h on ${task}`;
+}
+
+/** Where the right pane lands after a time entry is saved. */
+export function timesheetRoute(projectId: string | null): string {
+  const qs = new URLSearchParams();
+  if (projectId) qs.set("projectId", projectId);
+  qs.set("tab", "timesheet");
+  return `/schedule?${qs.toString()}`;
+}
