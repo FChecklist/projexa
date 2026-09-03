@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, FileText, Link2, Loader2, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Link2, Loader2, MessageCircle, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
@@ -32,7 +32,7 @@ import {
   RUN_TIMEOUT_MESSAGE,
   NO_PROJECT_MESSAGE,
   UNKNOWN_REPORT_MESSAGE,
-  PDF_NOT_YET_REASON,
+  dayLabel,
   type ReportRunParams,
 } from "@/lib/report-run";
 import {
@@ -47,6 +47,15 @@ import {
   weekStartFieldError,
   WHOLE_PROJECT_PERIOD,
 } from "@/lib/report-parameters";
+import { ReportDocument } from "@/components/reports/ReportDocument";
+import { noRowsMessage, reportSchema, schemaRows } from "@/lib/report-schema";
+import {
+  BREAKUP_SOURCE_REPORT,
+  exportDisabledReason,
+  reportExportHref,
+  shareDisabledReason,
+  whatsappHref,
+} from "@/lib/report-document-actions";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -222,6 +231,11 @@ function ProjectReportsPanel({
   // R67 E-09: Filter reopens the parameter card. It is open until a run
   // succeeds, then folds away -- the reader came for the result, not the form.
   const [parametersOpen, setParametersOpen] = useState(true);
+  // R67 E-12 (R-136): the document reports back when its rows do not add up to
+  // the total the report states, and Export carries THAT sentence as its reason.
+  const [tieMessage, setTieMessage] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   const orgMoney = useOrgMoney();
   const abortRef = useRef<AbortController | null>(null);
 
@@ -255,6 +269,10 @@ function ProjectReportsPanel({
   const filtered = result === null ? null : applyClientFilters(result, filterState);
   const shownResult = filtered ? filtered.result : null;
   const filterNote = filtered ? unappliedFilterNote(filterState, filtered) : null;
+  // R67 E-12: the report's own document, where one is described. A slug with no
+  // schema keeps the generic grid -- inventing a document for a payload nobody
+  // described would be a worse lie than the raw keys.
+  const schema = reportSchema(run.report);
 
   // R67 E-10 (R-133): the failure lives in the shell's message area, which
   // does not vanish on a timer the way the toast this replaces did.
@@ -361,12 +379,44 @@ function ProjectReportsPanel({
     const budget = setTimeout(() => controller.abort(new DOMException("budget", "TimeoutError")), RUN_BUDGET_MS);
     setStatus("running");
     setErrorText(null);
+    setShareUrl(null);
     try {
-      const res = await fetch(destination.path, { signal: controller.signal });
+      // R67 E-12 (R-136): a report whose own payload does not carry the rows its
+      // document prints fetches them ALONGSIDE, in the same run -- Project
+      // Status is dashboard scalars, and the table under it is the BOQ's budget
+      // line by line. Two sequential runs would put a second spinner in front of
+      // a reader who pressed once.
+      const breakupReport = BREAKUP_SOURCE_REPORT[next.report];
+      const [res, breakupRes] = await Promise.all([
+        fetch(destination.path, { signal: controller.signal }),
+        breakupReport
+          ? fetch(`/api/reports/${breakupReport}?projectId=${encodeURIComponent(projectId)}`, { signal: controller.signal })
+          : Promise.resolve(null),
+      ]);
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
-      setResult(data);
+      // The breakup is the DOCUMENT, not the report: if it fails the figures
+      // above it are still true and are still shown, with the table's own empty
+      // state saying there are no lines rather than the whole run erroring.
+      const breakupBody = breakupRes && breakupRes.ok ? await breakupRes.json() : null;
+      // Only a payload that really carries rows becomes the document's rows.
+      // Anything else leaves the figures above the table exactly as the report
+      // stated them, and the table shows its own empty state.
+      const breakup = breakupBody && Array.isArray(breakupBody.lines) ? breakupBody : null;
+      setResult(
+        breakup
+          ? {
+              ...data,
+              // ROOT lines only, the same rule every BOQ money roll-up in this
+              // product follows: a weighted sub-task's amount is derived from
+              // its parent, so printing both would show a table that does not
+              // add up to its own last row.
+              lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false),
+              totalBudget: breakup.totalBudget,
+            }
+          : data
+      );
       setRanAt(new Date());
       setStale(false);
       setStatus("success");
@@ -427,18 +477,69 @@ function ProjectReportsPanel({
     URL.revokeObjectURL(url);
   }
 
+  function runUrl(): string {
+    return `${window.location.origin}${window.location.pathname}?${reportRunSearchParams({ ...run, projectId }).toString()}`;
+  }
+
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}${window.location.pathname}?${reportRunSearchParams({ ...run, projectId }).toString()}`
-      );
+      await navigator.clipboard.writeText(runUrl());
       toast.success("Link copied — it opens this report, with these parameters, for anyone signed in to your organisation.");
     } catch {
       toast.error("Couldn't copy the link");
     }
   }
 
-  const exportReason = shownResult === null ? "Run the report first" : null;
+  // R67 E-12 (R-136): a REAL public link, minted through compliance-tracker's
+  // own signed-link service and only for a report whose public page can render
+  // it. Item E-09 could only copy the in-app URL because project-status had no
+  // public renderer; it has one now, so this is the link that actually opens for
+  // whoever it is sent to.
+  async function createShareLink(): Promise<string | null> {
+    if (shareUrl) return shareUrl;
+    if (!projectId) return null;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(run.report)}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, from: run.from, to: run.to }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
+      setShareUrl(data.url);
+      return data.url as string;
+    } catch (err) {
+      toast.error(taskErrorSentence(err instanceof Error ? err.message : null, "Couldn't create the share link"));
+      return null;
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function shareLink() {
+    const url = await createShareLink();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Public link copied — it is read-only and expires in 7 days.");
+    } catch {
+      toast.success(url);
+    }
+  }
+
+  async function shareOnWhatsApp() {
+    const url = (await createShareLink()) ?? runUrl();
+    window.open(whatsappHref(titleBlock ?? currentLabel, url), "_blank", "noopener,noreferrer");
+  }
+
+  const exportReason = exportDisabledReason({
+    hasResult: shownResult !== null,
+    serverExport: schema?.serverExport === true,
+    tieMessage,
+  });
+  const shareReason = shareDisabledReason(run.report, shownResult !== null);
+  const exportParams = { projectId: projectId ?? "", category: run.category, vendorId: run.vendorId };
 
   return (
     <div className="space-y-4">
@@ -449,17 +550,69 @@ function ProjectReportsPanel({
         <Button variant="outline" size="sm" onClick={() => setParametersOpen((v) => !v)} data-testid="reports-filter">
           <SlidersHorizontal className="size-4" /> Filter
         </Button>
-        <Button variant="outline" size="sm" disabled={Boolean(exportReason)} onClick={exportCsv} data-testid="reports-export-csv">
-          <Download className="size-4" /> Export CSV
-        </Button>
-        <Button variant="outline" size="sm" disabled title={PDF_NOT_YET_REASON} data-testid="reports-export-pdf">
-          <FileText className="size-4" /> Export PDF
-        </Button>
-        <span className="text-[12px] text-px-muted" data-testid="reports-export-pdf-reason">{PDF_NOT_YET_REASON}</span>
-        <Button variant="outline" size="sm" onClick={copyLink} data-testid="reports-share">
+        {/* R67 E-12 (R-136): Export is SERVER-SIDE. PROJEXA has no PDF or XLSX
+            library and must not gain one -- VERIDIAN builds the bytes from the
+            same schema this screen renders the table from, so the file and the
+            table cannot disagree. Each format is a real link, disabled with its
+            reason in words when the document is not exportable. */}
+        {(["pdf", "xlsx", "csv"] as const).map((format) => {
+          const Icon = format === "pdf" ? FileText : format === "xlsx" ? FileSpreadsheet : Download;
+          const label = `Export ${format.toUpperCase()}`;
+          // A report with no schema still gets its CSV, built in the browser
+          // from the rows on screen (item E-09) -- taking that away would leave
+          // fifteen reports with no export at all, which is not a fix.
+          if (format === "csv" && schema?.serverExport !== true) {
+            return (
+              <Button
+                key={format}
+                variant="outline"
+                size="sm"
+                disabled={shownResult === null}
+                title={shownResult === null ? "Run the report first" : undefined}
+                onClick={exportCsv}
+                data-testid="reports-export-csv"
+              >
+                <Icon className="size-4" /> {label}
+              </Button>
+            );
+          }
+          return exportReason ? (
+            <Button key={format} variant="outline" size="sm" disabled title={exportReason} data-testid={`reports-export-${format}`}>
+              <Icon className="size-4" /> {label}
+            </Button>
+          ) : (
+            <Button key={format} variant="outline" size="sm" asChild data-testid={`reports-export-${format}`}>
+              <a href={reportExportHref(run.report, format, exportParams)}>
+                <Icon className="size-4" /> {label}
+              </a>
+            </Button>
+          );
+        })}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={Boolean(shareReason) || sharing}
+          title={shareReason ?? undefined}
+          onClick={shareLink}
+          data-testid="reports-share"
+        >
           <Link2 className="size-4" /> Share
         </Button>
-        {exportReason && <span className="text-[12px] text-px-muted">{exportReason}</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={shownResult === null || sharing}
+          onClick={shareOnWhatsApp}
+          data-testid="reports-whatsapp"
+        >
+          <MessageCircle className="size-4" /> Send to WhatsApp
+        </Button>
+        {/* Every disabled control carries its reason in words beside it, never
+            only in a tooltip nobody hovers. */}
+        {exportReason && <span className="text-[12px] text-px-muted" data-testid="reports-export-reason">{exportReason}</span>}
+        {shareReason && (
+          <Button variant="ghost" size="sm" onClick={copyLink} data-testid="reports-copy-link">Copy link instead</Button>
+        )}
       </div>
 
       {unknownReportSlug && (
@@ -648,7 +801,21 @@ function ProjectReportsPanel({
                 data={shownResult}
                 fieldLabels={REPORT_FIELD_LABELS[run.report]}
                 fieldFormatters={run.report === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+                omitKeys={schema ? [schema.rowsKey] : undefined}
               />
+              {/* R67 E-12 (R-136): the report's own document, rendered from the
+                  schema rather than from whatever keys the payload happened to
+                  carry -- and from the SAME description the exported file is
+                  built from. */}
+              {schema && (
+                <ReportDocument
+                  schema={schema}
+                  payload={shownResult}
+                  format={orgMoney.format}
+                  emptyMessage={noRowsMessage(dayLabel(run.from), dayLabel(run.to), projectName)}
+                  onTieMessage={setTieMessage}
+                />
+              )}
             </>
           ) : !projectId ? (
             // R67 E-09/E-11: the reader is told what to DO, at the control that

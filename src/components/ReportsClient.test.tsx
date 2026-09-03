@@ -65,10 +65,25 @@ function stubFetch(calls: string[], reportHandler?: () => Promise<Response>) {
     // real lists, so the card cannot offer a category nobody uses.
     if (url.includes("/api/scope/categories")) return jsonRes({ categories: [{ id: "cat-1", name: "Civil" }, { id: "cat-2", name: "Paint" }] });
     if (url.includes("/api/vendors")) return jsonRes({ vendors: [{ id: "v-1", vendorName: "Alpha Contracting" }] });
+    // R67 E-12: the Project Status document's rows come from the budget-variance
+    // report, fetched alongside the run -- a separate answer, so this stub gives
+    // it one rather than handing it the report's own payload.
+    if (url.includes("/api/reports/budget-variance")) return breakupResponse();
     if (url.includes("/api/reports/")) return reportHandler ? reportHandler() : jsonRes({ projectName: "Cedar Heights Villa - Phase 1", budget: 0 });
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
 }
+
+/** The BOQ budget breakup the Project Status document prints, overridable per test. */
+let breakupResponse: () => Promise<Response> | Response = () =>
+  jsonRes({
+    boqId: "b-1",
+    totalBudget: 6240,
+    lines: [
+      { lineItemId: "l-1", boqId: "b-1", isRootLine: true, category: "Civil", code: "1.1", description: "Excavation", budget: 4320, vendorName: "Alpha Contracting", vendorAmount: 4500 },
+      { lineItemId: "l-2", boqId: "b-1", isRootLine: true, category: "Paint", code: "2.1", description: "Emulsion", budget: 1920, vendorName: null, vendorAmount: null },
+    ],
+  });
 
 describe("ReportsClient: Work Progress navigates, it is never fetched here (R67 E-04 / D-02)", () => {
   test("pressing the primary for Work Progress pushes its own screen and fetches nothing", async () => {
@@ -195,16 +210,22 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
     expect(replacedUrls[0]).toContain("projectId=p-1");
   });
 
-  test("Export offers CSV once there is a result, and says in words why PDF is not offered yet", async () => {
+  test("Export offers all three server-rendered formats once there is a result (R67 E-12)", async () => {
     const calls: string[] = [];
     stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
     const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
 
     await findByTestId("reports-title-block");
-    expect((await findByTestId("reports-export-csv")).hasAttribute("disabled")).toBe(false);
-    const pdf = await findByTestId("reports-export-pdf");
-    expect(pdf.hasAttribute("disabled")).toBe(true);
-    expect((await findByTestId("reports-export-pdf-reason")).textContent).toBe("PDF export not yet available");
+    // Real links into the relay, not disabled stubs: PROJEXA gains no PDF or
+    // XLSX library, VERIDIAN builds the bytes from the same schema.
+    for (const [format, expected] of [
+      ["pdf", "/api/reports/project-status/export?projectId=p-1&format=pdf"],
+      ["xlsx", "/api/reports/project-status/export?projectId=p-1&format=xlsx"],
+      ["csv", "/api/reports/project-status/export?projectId=p-1&format=csv"],
+    ] as const) {
+      const button = await findByTestId(`reports-export-${format}`);
+      expect(button.querySelector("a")?.getAttribute("href") ?? button.getAttribute("href")).toBe(expected);
+    }
   });
 
   test("an unknown ?report= slug says so, and still selects a real report rather than a dead screen", async () => {
@@ -395,5 +416,88 @@ describe("ReportsClient: the failure lives somewhere that does not vanish (R67 E
     const previous = await findByTestId("reports-previous-result");
     expect(previous.className).toContain("opacity-50");
     hold?.();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-12 (R-136): one report document, its exports and its share
+// ---------------------------------------------------------------------------
+describe("ReportsClient: the report document (R67 E-12)", () => {
+  test("the Project Status run renders the schema's document, not the payload's keys", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1", contractValue: 475000 }));
+    const { findByTestId, container } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    await findByTestId("report-document-title");
+    const headers = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(headers).toEqual(["Category", "Code", "Description", "Budget (AED)", "Vendor", "Vendor amount (AED)"]);
+    // The breakup came from the budget-variance report, fetched ALONGSIDE the
+    // run rather than behind a second click.
+    expect(calls.some((u) => u.includes("/api/reports/budget-variance?projectId=p-1"))).toBe(true);
+  });
+
+  test("the document's rows are not ALSO dumped as raw keys by the generic renderer", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+    const { findByTestId, container } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    await findByTestId("report-document-title");
+    // One table of lines, with schema headers -- not a second one headed
+    // "lineItemId", "boqId", "isRootLine".
+    expect(container.textContent).not.toContain("lineItemId");
+    expect(container.textContent).not.toContain("isRootLine");
+  });
+
+  test("when the rows do not add up to the stated total, Export is disabled WITH that sentence", async () => {
+    const calls: string[] = [];
+    breakupResponse = () =>
+      jsonRes({
+        boqId: "b-1",
+        // The report claims 6,120; its own rows add to 6,240.
+        totalBudget: 6120,
+        lines: [
+          { lineItemId: "l-1", boqId: "b-1", isRootLine: true, category: "Civil", code: "1.1", description: "Excavation", budget: 4320, vendorName: "Alpha", vendorAmount: 4500 },
+          { lineItemId: "l-2", boqId: "b-1", isRootLine: true, category: "Paint", code: "2.1", description: "Emulsion", budget: 1920, vendorName: null, vendorAmount: null },
+        ],
+      });
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    expect((await findByTestId("report-totals-banner")).textContent).toContain("Totals do not tie (difference AED 120.00)");
+    expect((await findByTestId("reports-export-xlsx")).hasAttribute("disabled")).toBe(true);
+    expect((await findByTestId("reports-export-reason")).textContent).toBe("Totals do not tie (difference AED 120.00)");
+  });
+
+  test("Share mints a REAL public link and WhatsApp carries the title and that link", async () => {
+    const calls: string[] = [];
+    const written: string[] = [];
+    const opened: string[] = [];
+    stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/share")) {
+        calls.push(url);
+        return jsonRes({ url: "http://localhost/share/report/tok-1", expiresAt: "2026-09-10" }, 201);
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (t: string) => { written.push(t); } },
+    });
+    globalThis.open = ((url: string) => { opened.push(url); return null; }) as typeof globalThis.open;
+
+    const { findByTestId, getByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    await findByTestId("report-document-title");
+
+    fireEvent.click(getByTestId("reports-share"));
+    await waitFor(() => expect(written).toContain("http://localhost/share/report/tok-1"));
+    expect(calls.some((u) => u.includes("/api/reports/project-status/share"))).toBe(true);
+
+    fireEvent.click(getByTestId("reports-whatsapp"));
+    await waitFor(() => expect(opened).toHaveLength(1));
+    expect(opened[0]).toStartWith("https://wa.me/?text=");
+    expect(decodeURIComponent(opened[0])).toContain("http://localhost/share/report/tok-1");
   });
 });

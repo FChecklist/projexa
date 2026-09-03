@@ -74,6 +74,18 @@ export function reportRunSearchParams(run: ReportRunParams): URLSearchParams {
  */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/**
+ * One date on its own: "03 Sep 2026". R67 E-12's empty state names both ends of
+ * the period separately, and periodLabel's own "from to to" shape drops the
+ * year off the first date when both fall in the same one -- correct for a
+ * range, wrong for a date quoted alone.
+ */
+export function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return iso;
+  return `${String(d).padStart(2, "0")} ${MONTHS[m - 1] ?? "?"} ${y}`;
+}
+
 export function periodLabel(from: string, to: string): string {
   const parse = (iso: string) => {
     const [y, m, d] = iso.split("-").map(Number);

@@ -17,10 +17,35 @@ function money(n: number) {
 // unauthenticated fetch (never callVeridian/callVeridianRaw, which always
 // resolve an API key first) -- the whole point of this page is that it
 // needs no credentials of any kind, session or Bearer.
-type SharedReport = {
+type SharedWorkProgressReport = {
+  reportType?: "work_progress";
   projectId: string; from: string; to: string; boqTitle: string | null;
   lineItems: BoqLineItem[]; activities: Activity[]; categories: Category[]; entries: ProgressEntry[];
 };
+
+// R67 E-12 (R-136): the second report that can be shared publicly. Item E-09
+// had to leave Share on the Reports screen copying an in-app URL because this
+// page rendered the Work Progress Report specifically -- a token for any other
+// report would have resolved to a page that could not draw it. The share
+// service gained the type and this page gained the renderer in the same change,
+// never one without the other.
+type SharedProjectStatusLine = {
+  lineItemId: string; category: string | null; code: string | null; description: string;
+  budget: number | null; vendorName: string | null; vendorAmount: number | null;
+};
+type SharedProjectStatusReport = {
+  reportType: "project_status";
+  projectId: string; from: string; to: string; boqTitle: string | null;
+  dashboard: {
+    projectName: string; contractValue: number | null; projectValue: number | null; budget: number | null;
+    revenue: number; expenses: number; earnedValue: number | null;
+    percentByValue: number | null; progressPercent: number;
+  };
+  lines: SharedProjectStatusLine[];
+  totals: { budget: number | null; vendorAmount: number };
+};
+
+type SharedReport = SharedWorkProgressReport | SharedProjectStatusReport;
 
 async function fetchSharedReport(token: string): Promise<SharedReport | null> {
   const res = await fetch(`${VERIDIAN_ORIGIN}/api/reports/share/${encodeURIComponent(token)}`, { cache: "no-store" });
@@ -28,10 +53,87 @@ async function fetchSharedReport(token: string): Promise<SharedReport | null> {
   return res.json();
 }
 
+/** The en dash. On a public page as everywhere else, absent is not zero. */
+const EMPTY = "–";
+
+function figure(n: number | null | undefined) {
+  return n === null || n === undefined ? EMPTY : money(n);
+}
+
+function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
+  const d = data.dashboard;
+  return (
+    <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "sans-serif" }}>
+      <p style={{ fontSize: "0.75rem", color: "#888", marginBottom: "0.25rem" }}>Shared, read-only — expires automatically</p>
+      <h1 style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>{d.projectName}</h1>
+      <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "1.5rem" }}>
+        Project Status{data.boqTitle ? ` · BOQ ${data.boqTitle}` : ""}
+      </p>
+
+      <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
+        {([
+          ["Contract Value", figure(d.contractValue)],
+          ["Project Value", figure(d.projectValue)],
+          ["Budget", figure(d.budget)],
+          ["Revenue", figure(d.revenue)],
+          ["Expenses", figure(d.expenses)],
+          ["Earned Value", figure(d.earnedValue)],
+          ["% complete (by BOQ value)", d.percentByValue === null ? EMPTY : `${d.percentByValue.toFixed(1)}%`],
+          ["% complete (by activity log)", `${d.progressPercent.toFixed(1)}%`],
+        ] as const).map(([label, value]) => (
+          <div key={label}>
+            <dt style={{ fontSize: "0.75rem", color: "#888" }}>{label}</dt>
+            <dd style={{ margin: 0, fontWeight: 600 }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Subcontractor / Budget breakup</h2>
+      {data.lines.length === 0 ? (
+        <p style={{ fontSize: "0.875rem", color: "#666" }}>No budget lines recorded for this project.</p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+          <thead>
+            <tr style={{ borderBottom: "2px solid #ddd" }}>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>Category</th>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>Code</th>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>Description</th>
+              <th style={{ textAlign: "right", padding: "0.5rem" }}>Budget</th>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>Vendor</th>
+              <th style={{ textAlign: "right", padding: "0.5rem" }}>Vendor amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.lines.map((l) => (
+              <tr key={l.lineItemId} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "0.5rem" }}>{l.category ?? EMPTY}</td>
+                <td style={{ padding: "0.5rem" }}>{l.code ?? EMPTY}</td>
+                <td style={{ padding: "0.5rem" }}>{l.description}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(l.budget)}</td>
+                <td style={{ padding: "0.5rem" }}>{l.vendorName ?? EMPTY}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(l.vendorAmount)}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: "2px solid #ddd", fontWeight: 600 }}>
+              <td style={{ padding: "0.5rem" }}>Grand Total</td>
+              <td /><td />
+              <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(data.totals.budget)}</td>
+              <td />
+              <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(data.totals.vendorAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </main>
+  );
+}
+
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const data = await fetchSharedReport(token);
   if (!data) notFound();
+
+  if (data.reportType === "project_status") return <SharedProjectStatus data={data} />;
 
   const report = buildWorkProgressReport({
     lineItems: data.lineItems, entries: data.entries, activities: data.activities, categories: data.categories,
