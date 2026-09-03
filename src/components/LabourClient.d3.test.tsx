@@ -70,6 +70,23 @@ function router(handlers: Record<string, () => Response>) {
 
 const DEFAULTS: Record<string, () => Response> = {
   "/api/labour-roster": () => jsonRes({ roster: ROSTER }),
+  // D3 x D21 merge: lane D21's AttendanceSummaryPanel now renders at the top of
+  // the Attendance tab, so rendering this screen makes a SECOND attendance call
+  // that the "/api/attendance" catch-all below would answer with the log's
+  // shape. router() returns the first key that matches by substring, so this
+  // more specific entry has to come first. It serves the real AttendanceSummary
+  // shape -- including `reconciliation`, whose absence used to throw inside the
+  // panel and blank the tab this file's D-30 tests read.
+  "/api/attendance/summary": () =>
+    jsonRes({
+      projectId: "p1",
+      from: null,
+      to: null,
+      rows: [],
+      totals: { present: 0, halfDay: 0, absent: 0, workerDays: 0, cost: 0 },
+      headcount: 0,
+      reconciliation: { ties: true, rowCountFromStatuses: 0, rowCountFromTrades: 0, costFromStatuses: 0, costFromTrades: 0 },
+    }),
   "/api/attendance": () => jsonRes({ attendance: [] }),
   "/api/vendors": () => jsonRes({ vendors: [{ id: "v1", vendorName: "Falcon Contracting" }] }),
   "/api/currencies": () => jsonRes({ currencies: [{ id: "c1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] }),

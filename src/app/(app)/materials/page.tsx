@@ -32,7 +32,11 @@ const SKELETON = (
 // NOT filter on isActive and 404s for anything outside this org, so:
 //   resolves -> this org's project, not active -> closed, and we have its name
 //   404      -> not this org's project at all  -> fall through to the chooser
-export const CLOSED_PROJECT_REASON = "This project is closed — materials are read-only";
+// NOT exported. A page.tsx may only export the default component and Next's
+// own known route fields; an arbitrary named export makes `next build` fail
+// the generated route-type check, and tsc --noEmit does not catch it. This
+// constant has exactly one reader, forty lines below.
+const CLOSED_PROJECT_REASON = "This project is closed — materials are read-only";
 
 async function resolveClosedProjectName(projectId: string, organizationId: string | null): Promise<string | null> {
   try {
