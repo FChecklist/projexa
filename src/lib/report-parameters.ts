@@ -178,9 +178,15 @@ export const REPORT_PARAMETERS: Record<string, ReportParameterSpec> = {
     supportsCategory: false,
     supportsVendor: true,
   },
+  // R67 E-16 (R-150): this report DID ignore a period -- it summed every
+  // approved hour ever logged -- and now takes one, so the date fields on the
+  // card are real rather than decorative. Its four Budget-vs-Actual breakdowns
+  // are rendered by Design Studio > Cost Analysis, so the primary opens that
+  // screen rather than running here.
   "designer-timesheet": {
+    openLabel: "Open Cost Analysis",
     description: "Designer Timesheet: hours by designer, with budget against actual by category, designer and project.",
-    needsDateRange: false,
+    needsDateRange: true,
     needsWeekStart: false,
     supportsCategory: true,
     supportsVendor: false,

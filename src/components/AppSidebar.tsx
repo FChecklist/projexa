@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
-  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
+  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft, DraftingCompass,
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
@@ -79,6 +79,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.moodBoards", href: "/mood-boards", icon: Palette },
       { labelKey: "items.ffe", href: "/ffe", icon: Sofa },
       { labelKey: "items.floorPlans", href: "/floor-plans", icon: LayoutPanelLeft },
+      // R67 E-16 (R-150): Design Studio > Cost Analysis. A live module route
+      // with no nav entry is the R48_NAV_OMITS_LIVE_MODULE_ROUTE_01 defect this
+      // sidebar already carries a note about two sections down.
+      { labelKey: "items.designStudio", href: "/design-studio", icon: DraftingCompass },
     ],
   },
   {

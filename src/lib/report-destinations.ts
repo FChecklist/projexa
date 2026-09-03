@@ -66,6 +66,17 @@ const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
   // ledger one under this name is what let three screens disagree. The ledger
   // report stays available to API callers under its own name; the SCREEN named
   // "Budget Summary" is the one that shows Sumeet 6.png II(iii)'s columns.
+  // R67 E-16 (R-150): "Designer Timesheet" in the picker and Design Studio's
+  // Cost Analysis tab are ONE report reached from two places. The report's four
+  // Budget-vs-Actual breakdowns need the four stacked sections and the paired
+  // bars that screen draws; rendering them inside the Reports frame would be a
+  // second, poorer copy of the same report.
+  "designer-timesheet": ({ projectId, from, to }) => {
+    const qs = new URLSearchParams({ tab: "cost-analysis", projectId });
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    return `/design-studio?${qs.toString()}`;
+  },
   "budget-summary": ({ projectId, category, vendorId }) => {
     const qs = new URLSearchParams({ tab: "variance", projectId });
     // The Cost Variance screen's filter drawer reads exactly these two, and
@@ -116,6 +127,28 @@ export function catalogSlug(route: string | null | undefined): string | null {
   return last && last.length > 0 ? last : null;
 }
 
+/**
+ * R67 E-16 (R-150). The route's last segment is only the report's name by
+ * COINCIDENCE -- it happens to be true for "/api/construction/reports/attendance"
+ * and for "/work-progress?tab=report", and it is false the moment a report's
+ * screen is a tab on a module named after something else ("/design-studio?tab=
+ * cost-analysis" would resolve to "design-studio", which is not a report).
+ *
+ * The catalog entry's OWN id is the reliable answer: compliance-tracker builds
+ * every construction entry as `construction-<reportName>` from exactly the
+ * REPORT_REGISTRY key the picker uses (report-catalog-service.ts's
+ * `id.replace(/^construction-/, "")`). So the id decides for a construction
+ * entry, and the route stays the fallback for everything else.
+ */
+export function catalogEntrySlug(entry: { id?: string | null; route?: string | null }): string | null {
+  const id = entry.id ?? "";
+  if (id.startsWith("construction-")) {
+    const slug = id.slice("construction-".length);
+    if (slug.length > 0) return slug;
+  }
+  return catalogSlug(entry.route);
+}
+
 /** What the Full Catalog card says and where its button goes, for a report that runs in PROJEXA. */
 export type CatalogDestination = { label: string; href: string };
 
@@ -129,10 +162,18 @@ export const CATALOG_RUNS_HERE_LABELS: Record<string, string> = {
   "work-progress": "Runs here — Work Progress > Report",
   "material-consumption": "Runs here — Materials > Cost Report",
   "budget-summary": "Runs here — Scope > Cost Variance",
+  "designer-timesheet": "Runs here — Design Studio > Cost Analysis",
 };
 
-export function catalogDestination(route: string | null | undefined, params: ReportParams): CatalogDestination | null {
-  const slug = catalogSlug(route);
+export function catalogDestination(
+  entry: { id?: string | null; route?: string | null } | string | null | undefined,
+  params: ReportParams
+): CatalogDestination | null {
+  // Accepts the whole entry (preferred -- see catalogEntrySlug) or, for the
+  // callers that only hold a route, the route string.
+  const slug = typeof entry === "string" || entry === null || entry === undefined
+    ? catalogSlug(entry)
+    : catalogEntrySlug(entry);
   if (!slug || !isHostedReport(slug)) return null;
   const destination = reportDestination(slug, params);
   if (destination.kind !== "navigate") return null;

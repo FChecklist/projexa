@@ -44,6 +44,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/dashboard/hierarchy",
   "/dashboard/overview",
   "/dashboard/project",
+  // R67 E-16 (R-150): Design Studio > Cost Analysis, the first PROJEXA screen
+  // to render designerTimesheetReport's four Budget-vs-Actual breakdowns.
+  "/design-studio",
   "/documents",
   "/documents/[id]",
   "/documents/upload",

@@ -38,7 +38,7 @@ import { ReportCatalogRunner } from "@/components/ReportCatalogRunner";
 import type { Company } from "@/components/company-scope";
 // R67 E-04 (R-079): the ONE place that says where a report name goes -- shared
 // with the Project Reports picker, so the two tabs cannot drift apart again.
-import { catalogDestination, catalogSlug, monthToDate } from "@/lib/report-destinations";
+import { catalogDestination, catalogEntrySlug, monthToDate } from "@/lib/report-destinations";
 
 /**
  * R67 E-14 (R-132 / R-139): what a card says about a report PROJEXA genuinely
@@ -133,12 +133,14 @@ function CatalogCard({
   // Needs a project: these are project-scoped construction reports, and a link
   // without one would land on a screen that cannot answer.
   const period = monthToDate();
-  const hosted = projectId ? catalogDestination(entry.route, { projectId, from: period.from, to: period.to }) : null;
-  // R67 E-14 (R-132): the picker's slug is the LAST SEGMENT of the entry's own
-  // route -- "/api/construction/reports/attendance" is the same report the
-  // picker calls "attendance". Deriving it is what lets a card and a picker
-  // entry agree about one report instead of being two independent lists.
-  const slug = catalogSlug(entry.route);
+  const hosted = projectId ? catalogDestination(entry, { projectId, from: period.from, to: period.to }) : null;
+  // R67 E-14 (R-132): the picker's slug is DERIVED from the entry, not kept as
+  // a second list -- "/api/construction/reports/attendance" is the same report
+  // the picker calls "attendance". R67 E-16 moved that derivation onto the
+  // entry's own id, because the route's last segment stops being the report's
+  // name as soon as its screen is a tab on a module named after something else
+  // ("/design-studio?tab=cost-analysis").
+  const slug = catalogEntrySlug(entry);
   const inPicker = Boolean(slug && !hosted && projectId && pickerSlugs.has(slug) && onOpenProjectReport);
 
   return (
@@ -298,7 +300,7 @@ export function ReportCatalogSection({
   // catalog, never a number typed into a sentence.
   const constructionEntries = catalog?.filter((e) => e.domain === "construction") ?? [];
   const runHereCount = constructionEntries.filter((e) => {
-    const slug = catalogSlug(e.route);
+    const slug = catalogEntrySlug(e);
     return Boolean(slug && slugs.has(slug));
   }).length;
   const otherDomainCount = (catalog?.length ?? 0) - constructionEntries.length;
