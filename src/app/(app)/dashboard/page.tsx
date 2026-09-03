@@ -34,6 +34,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
+import { listUserCompanies } from "@/lib/company-scope";
 import { getScreenColumns } from "@/lib/module-list-source";
 import { dashboardScope, PROJECT_COOKIE } from "@/lib/project-selection";
 import DashboardHomeView, { type OrgDashboard, type CurrencyRow } from "@/components/DashboardHomeView";
@@ -78,14 +79,58 @@ const readCachedCurrencies = createCachedVeridianGet<{ currencies: CurrencyRow[]
   DASHBOARD_LOOKUP_TTL_SECONDS
 );
 
-async function DashboardHome({ requestedProjectId }: { requestedProjectId?: string }) {
+/**
+ * R67 E-02 (R-012): /dashboard/hierarchy is retired as a destination and its
+ * Company selector now lives in this screen's Filter drawer, as ?companyId.
+ *
+ * "Company" here means a PROJEXA organization the signed-in user is a member
+ * of -- see src/lib/company-scope.ts for why that is a different concept from
+ * VERIDIAN's erp_companies. Membership is VERIFIED before the id is used to
+ * scope the payload: an unverified companyId in a URL would be a tenant-
+ * boundary hole, so an id the user is not a member of falls back to their own
+ * org rather than being trusted.
+ */
+async function resolveScopedOrganizationId(userId: string | undefined, defaultOrgId: string | null, companyId: string | null): Promise<string | null> {
+  if (!companyId || !userId) return defaultOrgId;
+  const companies = await listUserCompanies(userId);
+  return companies.some((c) => c.id === companyId) ? companyId : defaultOrgId;
+}
+
+async function DashboardHome({
+  requestedProjectId,
+  filters,
+}: {
+  requestedProjectId?: string;
+  /** R67 E-02 (R-012): the Filter drawer's state, read from the URL by the page. */
+  filters: { companyId: string | null; departmentId: string | null; from: string | null; to: string | null };
+}) {
   const authCtx = await requireAuth();
-  const organizationId = authCtx.organizationId;
   const userName = authCtx.user?.email?.split("@")[0] ?? "there";
+
+  // R67 E-02: the Filter drawer's four fields arrive here, in the URL, so the
+  // filtered view is shareable and Back undoes it.
+  const companyId = filters.companyId;
+  const departmentId = filters.departmentId;
+  const from = filters.from;
+  const to = filters.to;
+
+  // Membership is VERIFIED before the id scopes anything: an unverified
+  // companyId in a URL would be a tenant-boundary hole.
+  const organizationId = await resolveScopedOrganizationId(authCtx.user?.id, authCtx.organizationId, companyId);
+
+  const dashboardQuery = new URLSearchParams();
+  if (departmentId) dashboardQuery.set("departmentId", departmentId);
+  if (from) dashboardQuery.set("from", from);
+  if (to) dashboardQuery.set("to", to);
+  const dashboardPath = dashboardQuery.size > 0 ? `/dashboard?${dashboardQuery.toString()}` : "/dashboard";
 
   // R46 P8 seq123: DASHBOARD archetype ("dashboard.dashboard"). A missing or
   // errored registry row is NOT fatal -- DashboardHomeView falls back to its
   // own hardcoded labels when this is null.
+  //
+  // Perf fix (2026-08-17): the two VERIDIAN calls below run concurrently --
+  // neither depends on the other -- and the registry lookup is kicked off
+  // before the awaited block so it is not a third serial round trip.
   const columnsPromise = getScreenColumns("dashboard.dashboard", organizationId); // never rejects
   // R67 D-02: the "Permits expiring" KPI's own count, org-wide, read
   // concurrently with the other two. VERIDIAN's /permits treats projectId as
@@ -93,9 +138,13 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
   // window the card's own destination (/permits?withinDays=30) then applies,
   // so the number and the screen it opens can never disagree.
   const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
-    callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
-    // R67 F1: the currencies read is memoised per org now -- same value, one
-    // fewer round trip on every dashboard navigation.
+    // R67 E-02: dashboardPath, not a bare "/dashboard" -- carries the Filter
+    // drawer's departmentId/from/to so the filtered view is what actually loads.
+    callVeridian<OrgDashboard>(dashboardPath, { organizationId: organizationId ?? undefined }),
+    // R67 F-01/F1: the currency master is a lookup table, not a live figure,
+    // and is now memoised per org -- one fewer round trip on every dashboard
+    // navigation. Cached only when the read is unfiltered-by-company, because
+    // the cache is keyed per org.
     organizationId
       ? readCachedCurrencies(organizationId)
       : callVeridian<{ currencies: CurrencyRow[] }>("/currencies"),
@@ -155,6 +204,15 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
       currencies={currencies}
       errorMessage={errorMessage}
       registryColumns={registryColumns}
+      from={from}
+      to={to}
+      // R67 E-19 (R-180): the day is resolved ONCE, here on the server, and
+      // handed down. The "no progress in 30 days" signal is a date comparison,
+      // and a component that reads the clock during render produces one answer
+      // on the server pass and another on the client's -- the hydration-
+      // mismatch class src/lib/format-date.ts documents. UTC for the same
+      // reason every timestamp in this codebase is stored in it.
+      today={new Date().toISOString().slice(0, 10)}
       permitsExpiring={permitsExpiring}
     />
   );
@@ -163,9 +221,22 @@ async function DashboardHome({ requestedProjectId }: { requestedProjectId?: stri
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ projectId?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { projectId } = await searchParams;
+  // R67 E-02: the Filter drawer's fields, collapsed from Next's
+  // string | string[] to the single value each of them always carries.
+  const params = await searchParams;
+  const one = (key: string): string | null => {
+    const v = params[key];
+    return (Array.isArray(v) ? v[0] : v) ?? null;
+  };
+  const projectId = one("projectId") ?? undefined;
+  const filters = {
+    companyId: one("companyId"),
+    departmentId: one("departmentId"),
+    from: one("from"),
+    to: one("to"),
+  };
 
   // M24: HOME is the grouped module directory, and it is what REPLACES the
   // deleted left rail. It needs no network at all, so it renders OUTSIDE the
@@ -174,7 +245,7 @@ export default async function DashboardPage({
   return (
     <div className="space-y-8 pb-4">
       <Suspense fallback={<DashboardSkeleton />}>
-        <DashboardHome requestedProjectId={projectId} />
+        <DashboardHome requestedProjectId={projectId} filters={filters} />
       </Suspense>
       <div className="px-6">
         <ModuleDirectory />

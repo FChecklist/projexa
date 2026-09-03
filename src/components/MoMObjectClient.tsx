@@ -83,7 +83,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronsUpDown, Loader2, Sparkles } from "lucide-react";
+import { ChevronsUpDown, Loader2, Sparkles, Send, Link2, Ban } from "lucide-react";
+import { ExportShareActions } from "@/components/ExportShareActions";
+
+/**
+ * R67 E-18: why the minutes have no spreadsheet. Said in words on the menu
+ * entry rather than by the entry quietly not being there.
+ */
+const MINUTES_ARE_PROSE = "Minutes are prose, not a table — use PDF";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 // R67 D-74: the ORG date form, from the one formatter -- not format-date.ts's
 // pinned en-US, which is what D-17 originally imported here.
@@ -501,26 +508,36 @@ export default function MoMObjectClient({
     }
   }
 
-  // ─── Share (D-21) ────────────────────────────────────────────────────────
-  async function createShareLink(open: "whatsapp" | "clipboard") {
+  // ─── Share (D-21 x E-18) ─────────────────────────────────────────────────
+  /**
+   * R67 E-18 (R-178): ONE link, minted here and handed to the shared control,
+   * which decides whether it is copied or sent to WhatsApp. This used to be a
+   * button that could ONLY open WhatsApp -- a reader who wanted to paste the
+   * link into an email had no way to get at it, even though the route had
+   * returned it all along as `shareUrl` beside the wa.me href it was using.
+   *
+   * D-21's two destinations are both still offered; they are now offered by
+   * the same control every other report screen uses, and its outcome is
+   * reported in D-21's persistent note band rather than a toast that takes the
+   * only record of the link away on a timer.
+   */
+  async function shareUrlFactory(): Promise<string | null> {
     setBusy("share");
     try {
       const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Failed to create a share link");
-      if (open === "whatsapp" && data.whatsappHref) {
-        window.open(data.whatsappHref, "_blank", "noopener,noreferrer");
-      } else if (open === "clipboard") {
-        await navigator.clipboard?.writeText(data.shareUrl).catch(() => {});
-      }
+      // The new link joins the list below, where it can be revoked.
       clearNote("share");
       note({
         field: "share", level: "success",
-        text: `Share link created - expires ${formatDateTime(data.expiresAt)}${open === "clipboard" ? " - copied to your clipboard" : ""}`,
+        text: `Share link created - expires ${formatDateTime(data.expiresAt)}`,
       });
       await load();
+      return data.shareUrl as string;
     } catch (err) {
       note({ field: "share", level: "error", text: errorMessage(err, "Couldn't create a share link") });
+      return null;
     } finally {
       setBusy(null);
     }
@@ -594,23 +611,22 @@ export default function MoMObjectClient({
       // kit's hasDraft flag is for.
       hasDraft={hasUnsavedMinutes}
       headerStatus={{ tone: STATUS_TONE[meeting.status] ?? "neutral", label: meeting.status }}
+      // R67 E-18 (R-178): ONE Export and ONE Share, the same control every
+      // screen that produces a document uses. D-21 built this same capability
+      // as a local dropdown; both of its destinations (WhatsApp and Copy link)
+      // are still offered, by the shared control, so a reader who learns it on
+      // one screen knows it on all of them. XLSX and CSV appear DISABLED with
+      // their reason rather than being silently absent.
       headerActions={
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline">Export</Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <a href={`/api/moms/${meeting.id}/pdf`} target="_blank" rel="noopener noreferrer">Export PDF</a>
-            </DropdownMenuItem>
-            <DropdownMenuItem data-focus="share" disabled={busy === "share"} onSelect={() => void createShareLink("whatsapp")}>
-              Send on WhatsApp
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={busy === "share"} onSelect={() => void createShareLink("clipboard")}>
-              Copy link
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ExportShareActions
+          canExport
+          title={meeting.title}
+          pdfHref={`/api/moms/${meeting.id}/pdf`}
+          formatReasons={{ xlsx: MINUTES_ARE_PROSE, csv: MINUTES_ARE_PROSE }}
+          shareUrlFactory={shareUrlFactory}
+          shareReason={busy === "share" ? "Creating the link…" : null}
+          onMessage={(message) => { clearNote("share"); note({ field: "share", level: "success", text: message }); }}
+        />
       }
       facets={[
         // D-19: "System ID" is what a database calls it; "Meeting no." is what
@@ -748,6 +764,11 @@ export default function MoMObjectClient({
               <Button size="sm" variant="outline" onClick={() => void generateSummary()} disabled={busy === "ai"}>
                 {busy === "ai" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Generate AI Summary
               </Button>
+              {/* R67 E-18: Export and Share are in the object screen's HEADER,
+                  where every other screen in this product carries them -- not
+                  a second copy here. The PDF used to be a lone ghost button on
+                  this card while the share link lived in a different card three
+                  sections down. */}
             </div>
             {meeting.aiSummary && (
               <div className="mt-3 space-y-2 rounded-md border border-ct-border bg-ct-cloud/30 p-3 text-sm">
@@ -889,6 +910,13 @@ export default function MoMObjectClient({
                 })}
               </ul>
             )}
+            {/* R67 E-18: there is now exactly ONE way to make a share link,
+                and it is Share on the minutes card above -- so a link that
+                exists here is always a link somebody really sent. */}
+            <p className="text-[12px] text-ct-muted">
+              <Send className="mr-1 inline size-3.5" aria-hidden />
+              Links are created by <strong>Share</strong> on the minutes above, and appear here so they can be revoked.
+            </p>
           </div>
         </div>
       )}

@@ -193,13 +193,51 @@ export type LineItemProgress = {
 };
 
 /** Computes one BoQ line item's Prev/Current/Total qty+amt+percentage for the [from, to] window. */
+/** Trim, and treat blank as absent -- so a stray "" can never masquerade as a category name. */
+function realCategory(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+/**
+ * R67 E-15 (R-135). What a row's Category column says, in order:
+ *
+ *   1. the line's OWN category (compliance.construction_boq_line_items.category);
+ *   2. its PARENT's category -- a weighted sub-task is part of the contract line
+ *      above it, so it belongs to that line's category whether or not anyone
+ *      re-typed it on the child;
+ *   3. activityId -> activity.categoryId -> category.name, which is what this
+ *      file used exclusively before I-05, so every pre-existing categorised
+ *      line still reports exactly as it always has;
+ *   4. the PARENT'S CODE. R-135's own instruction, and it is a real answer: a
+ *      reader who sees "C-01" knows which contract line the row belongs to,
+ *      which is exactly what "Uncategorized" refused to tell them;
+ *   5. "Uncategorized", only for a ROOT line that has no category and no
+ *      activity -- the one case where there genuinely is nothing else true to
+ *      say.
+ */
+export function resolveCategoryName(
+  line: Pick<BoqLineItem, "category" | "parentLineItemId">,
+  parentLine: Pick<BoqLineItem, "category" | "itemCode"> | undefined,
+  activityCategoryName: string | null | undefined
+): string {
+  return (
+    realCategory(line.category) ??
+    realCategory(parentLine?.category) ??
+    realCategory(activityCategoryName) ??
+    realCategory(parentLine?.itemCode) ??
+    UNCATEGORIZED_LABEL
+  );
+}
+
 export function computeLineItemProgress(
   line: BoqLineItem,
   entries: ProgressEntry[],
   activitiesById: Map<string, Activity>,
   categoriesById: Map<string, Category>,
   from: string,
-  to: string
+  to: string,
+  /** R67 E-15: the row's parent, where it has one, so the Category column can fall back to it. */
+  parentLine?: BoqLineItem
 ): LineItemProgress {
   const rate = line.computedRate ?? num(line.rate);
   const qtyTotalBoq = num(line.quantity);
@@ -208,16 +246,13 @@ export function computeLineItemProgress(
   const activity = line.activityId ? activitiesById.get(line.activityId) : undefined;
   const category = activity ? categoriesById.get(activity.categoryId) : undefined;
   // R67 lane I (WS-I item I-05, R-177). CATEGORY RESOLUTION ORDER:
-  //   1. the line's own `category` text (the new column);
-  //   2. failing that, activityId -> activity.categoryId -> category.name
-  //      (what this file did exclusively before, so every pre-existing
-  //      categorised line reports exactly as it always has);
-  //   3. failing both, "Uncategorized".
+  // The full order, and the reasons for it, live on resolveCategoryName above
+  // (R67 E-15 extended it with the parent's category and the parent's code).
   // The direct column wins because most real lines have no activityId at all
   // -- an imported BOQ never does -- which is precisely why the Category-wise
-  // tab used to put nearly everything in Uncategorized. Trimmed and
-  // blank-checked so a stray "" can never masquerade as a real category name.
+  // tab used to put nearly everything in Uncategorized.
   const directCategory = typeof line.category === "string" && line.category.trim() !== "" ? line.category.trim() : null;
+  const categoryName = resolveCategoryName(line, parentLine, category?.name);
 
   // No `line.activityId ?` guard here anymore -- a line with no activityId
   // at all can still have real Option-B entries keyed by boq_line_item_id,
@@ -299,8 +334,10 @@ export function computeLineItemProgress(
     // A direct-category row has no constructionCategories id behind it, so
     // categoryId stays null and the roll-up groups it by NAME instead (see
     // buildWorkProgressReport's grouping key) -- never by a fabricated id.
-    categoryId: directCategory ? null : (category?.id ?? null),
-    categoryName: directCategory ?? category?.name ?? UNCATEGORIZED_LABEL,
+    // A row whose name did NOT come from the constructionCategories row carries
+    // no id -- the roll-up then groups it by NAME, never by a fabricated id.
+    categoryId: !directCategory && categoryName === category?.name ? (category?.id ?? null) : null,
+    categoryName,
     unit: line.unit,
     rate,
     qtyTotal: qtyTotalBoq,
@@ -522,7 +559,17 @@ export function buildWorkProgressReport(params: {
   const categoriesById = new Map(params.categories.map((c) => [c.id, c]));
   const lineItemsById = new Map(params.lineItems.map((l) => [l.id, l]));
   const ownRows = params.lineItems.map((line) =>
-    computeLineItemProgress(line, params.entries, activitiesById, categoriesById, params.from, params.to)
+    computeLineItemProgress(
+      line,
+      params.entries,
+      activitiesById,
+      categoriesById,
+      params.from,
+      params.to,
+      // R67 E-15: the parent, where there is one, so an uncategorised sub-task
+      // reports under its contract line rather than under "Uncategorized".
+      line.parentLineItemId ? lineItemsById.get(line.parentLineItemId) : undefined
+    )
   );
   // The weighted parent roll-up runs over EVERY row, before filtering: a
   // parent's numbers come from its children, so filtering first would silently

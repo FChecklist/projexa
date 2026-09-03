@@ -51,6 +51,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   // R67 D-07: the Design Studio timesheet (Date | Project | Category | Task |
   // Hours, status at row level). Reached from the sidebar's DESIGN group and
   // from the Schedule module's Timesheet tab.
+  // R67 E-16 (R-150) reaches the SAME module at ?tab=cost-analysis, where
+  // designerTimesheetReport's four Budget-vs-Actual breakdowns render.
   "/design-studio",
   // R67 WS-H: the module's other three tabs and its object/create routes. Real
   // routes, not client state, so a manager can be sent a link straight to the

@@ -16,6 +16,7 @@ import {
   taskErrorFor,
   unknownCodeMessage,
   FIX_PARAMS,
+  taskErrorSentence,
 } from "./task-errors";
 
 // A project name that itself contains " - " and a digit, because the real
@@ -320,5 +321,39 @@ describe("FIX PASS -- two legacy patterns that claimed the wrong strings", () =>
 
   test("an unmapped legacy string still gets a way forward", () => {
     expect(LEGACY_FALLBACK_MESSAGE).toBe("This task needs your input - [Fix]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 E-10 (R-129/R-133/R-137). What a SCREEN does with the single string it
+// actually holds when a run fails -- an Error's message, which may be a code,
+// a usable backend sentence, or something that must never reach a person.
+// Merged into this file rather than a second dictionary, per item D-65.
+// ---------------------------------------------------------------------------
+describe("taskErrorSentence -- the one string a failed screen has in its hand", () => {
+  test("a real code becomes the dictionary's sentence, not the code", () => {
+    expect(taskErrorSentence("PROJECT_REQUIRED")).toBe(messageFor("PROJECT_REQUIRED"));
+    expect(taskErrorSentence("PROJECT_REQUIRED")).not.toContain("PROJECT_REQUIRED");
+  });
+
+  test("a safe backend sentence is shown as-is -- it is the most specific thing known about this run", () => {
+    expect(taskErrorSentence("The BOQ has no approved revision.")).toBe("The BOQ has no approved revision.");
+  });
+
+  test("an address, a port or a camelCase field never reaches the reader -- the caller's fallback does", () => {
+    const fallback = "Could not run Project Status";
+    expect(taskErrorSentence("write CONNECT_TIMEOUT 3.109.171.244:6543", fallback)).toBe(fallback);
+    expect(taskErrorSentence("itemCode is required", fallback)).toBe(fallback);
+    expect(taskErrorSentence("https://internal.example/boom", fallback)).toBe(fallback);
+  });
+
+  test("nothing at all falls back to the caller's own sentence, never an empty string", () => {
+    const fallback = "Could not run Project Status";
+    expect(taskErrorSentence(null, fallback)).toBe(fallback);
+    expect(taskErrorSentence("   ", fallback)).toBe(fallback);
+  });
+
+  test("with no fallback offered it still says something a person can read", () => {
+    expect(taskErrorSentence(null)).toBe("That didn't run. Nothing was saved.");
   });
 });

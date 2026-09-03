@@ -430,6 +430,38 @@ export function sanitiseBackendMessage(raw: string | null | undefined): string {
   return UNSAFE_PATTERNS.some((pattern) => pattern.test(text)) ? GENERIC_FAILURE : text;
 }
 
+/**
+ * R67 E-10 (R-129/R-133/R-137), merged into lane B's dictionary rather than
+ * kept as a second one (item D-65: "extend that file, do not start a second
+ * dictionary").
+ *
+ * What a SCREEN has in its hand when a run fails is one string -- an Error's
+ * message -- and it does not know which of three things that string is:
+ *
+ *   a real code   ("PROJECT_REQUIRED")     -> the dictionary's own sentence
+ *   a safe sentence from the backend       -> show it; it is the most specific
+ *                                             thing anyone knows about this run
+ *   something unshowable (a host:port, a   -> the caller's own fallback, which
+ *   camelCase field, an empty string)         names the screen's action
+ *
+ * This composes the two primitives above in exactly that order, so a screen
+ * never has to decide it (three of them were about to, each slightly
+ * differently). `fallback` exists because "Could not run Project Status" is a
+ * better last resort on the Reports screen than one generic sentence for the
+ * whole product -- but it is only ever reached when there is nothing honest
+ * and specific to say.
+ */
+export function taskErrorSentence(
+  raw: string | null | undefined,
+  fallback: string = GENERIC_FAILURE
+): string {
+  const text = (raw ?? "").trim();
+  if (!text) return fallback;
+  if (isTaskErrorCode(text)) return messageFor(text);
+  const safe = sanitiseBackendMessage(text);
+  return safe === GENERIC_FAILURE ? fallback : safe;
+}
+
 export const READ_ERROR_CODES = [
   "UPSTREAM_TIMEOUT",
   "UPSTREAM_ERROR",

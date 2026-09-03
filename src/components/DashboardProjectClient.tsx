@@ -103,14 +103,18 @@ import { useRouter } from "next/navigation";
 import {
   DashboardScreen,
   BulletChart,
-  BarChart,
   LineChart,
   LinkListCard,
-  type BarChartDatum,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
 import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
 import { PaneErrorCard } from "@/components/PaneState";
+// R67 E-02 (R-012), chart 2: the percent-only kit BarChart below is replaced by
+// the real category-distribution charts. The PRESENTATIONAL half is imported so
+// this screen's own already-fetched category-progress response feeds it -- no
+// second request, and the percentage and the money come from one read of one
+// BOQ revision.
+import { CategoryDistributionChartsView, type CategoryEntry } from "@/components/CategoryDistributionCharts";
 // R67 D-61: one money format for the whole product.
 import { formatMoney } from "@/lib/format-money";
 // R67 D-62 / D-02: one project-money model. The same wording the home
@@ -190,7 +194,11 @@ type ProjectDashboard = {
   recentEntries?: RecentEntry[];
 };
 type Currency = { code: string; isBaseCurrency: boolean };
-type CategoryRow = { categoryId: string; name: string; percentComplete: number };
+// R67 E-02 (R-012): the category-progress report now carries the MONEY as well
+// as the percentage (compliance-tracker's categoryProgressReport). The extra
+// fields are additive, so a response from a backend that predates that change
+// still renders -- the money simply reads as zero until it lands.
+type CategoryRow = CategoryEntry;
 // R67 F-24: activityName now arrives ON the entry.
 type RecentEntry = {
   id: string;
@@ -385,7 +393,6 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const expiringCount = d?.permitsExpiringCount ?? 0;
   const expiredCount = d?.permitsExpiredCount ?? 0;
   const recentEntries = recent.data ?? [];
-  const categoryBars: BarChartDatum[] = (categories.data ?? []).map((c) => ({ label: c.name, value: c.percentComplete }));
 
   return (
     <DashboardScreen
@@ -524,8 +531,20 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             <div className="h-24 animate-pulse rounded bg-ct-cloud" role="presentation" aria-label="Loading category breakdown" />
           ) : categories.state === "error" ? (
             <p role="alert" className="text-[12.5px]" style={{ color: "var(--color-veri-status-late)" }}>{categories.error}</p>
-          ) : categoryBars.length > 0 ? (
-            <BarChart data={categoryBars} unit="%" onBarClick={(d2) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d2.label)}`)} />
+          ) : (categories.data ?? []).length > 0 ? (
+            // R67 E-02: "Completed AED n / Total AED n" beside the percentage.
+            // A bar labelled only "46%" cannot tell a reader whether that is
+            // 46% of a large category or of a trivial one, which is the
+            // question a QS is actually asking of this panel.
+            <CategoryDistributionChartsView
+              categories={categories.data ?? []}
+              projectId={projectId}
+              // R67 E-02 x F-1: the SAME money(n, currency) every KPI tile on
+              // this screen uses, over the currency this component has already
+              // fetched. useOrgMoney() would have been a THIRD request on a
+              // screen whose whole point is that it makes two.
+              money={(v) => (v === null || v === undefined ? "—" : money(Number(v), currency))}
+            />
           ) : (
             <p className="text-[12.5px] text-ct-muted">No category breakdown yet.</p>
           )}

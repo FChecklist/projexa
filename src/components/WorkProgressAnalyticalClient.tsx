@@ -175,8 +175,11 @@ export default function WorkProgressAnalyticalClient({
   return (
     <AnalyticalScreen
       breadcrumb="Work Progress / Analytics"
-      filterAction={{ label: "Filter", disabledReason: "Filtering the progress analytics is not built yet" }}
-      exportAction={{ label: "Export", disabledReason: "Exporting the progress analytics is not built yet" }}
+      // R67 E-18 (R-178): a reason, not a stub -- and the reason names the tab
+      // one click away that really does export, rather than leaving a reader
+      // to conclude this product cannot produce a file.
+      filterAction={{ label: "Filter", disabledReason: "Filter on the Report tab — this view summarises every entry ever logged" }}
+      exportAction={{ label: "Export", disabledReason: "Export from the Report tab — PDF, XLSX and CSV of the table these figures summarise" }}
       newAction={undefined}
       kpiTags={
         <div className="space-y-1.5">

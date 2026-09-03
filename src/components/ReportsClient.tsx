@@ -1,22 +1,82 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
-import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { isHostedReport, reportDestination } from "@/lib/report-destinations";
+// R67 E-17 (R-175): the composed index -- what renders a report, what it takes,
+// whether it exports, and the parameters it opens with.
+import { registryDestination } from "@/lib/report-registry";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { useShellMessage } from "@/components/shell/shell-messages";
+import { taskErrorSentence } from "@/lib/task-errors";
+import {
+  readReportRunParams,
+  reportRunSearchParams,
+  reportTitleBlock,
+  reportResultToCsv,
+  isStaleRun,
+  runningLine,
+  CANCEL_VISIBLE_AFTER_MS,
+  RUN_BUDGET_MS,
+  RUN_TIMEOUT_MESSAGE,
+  NO_PROJECT_MESSAGE,
+  UNKNOWN_REPORT_MESSAGE,
+  dayLabel,
+  type ReportRunParams,
+} from "@/lib/report-run";
+import {
+  ALL_OPTION_LABEL,
+  ALL_OPTION_VALUE,
+  applyClientFilters,
+  missingPrerequisites,
+  periodNote,
+  reportParameters,
+  runButtonLabel,
+  unappliedFilterNote,
+  weekStartFieldError,
+  WHOLE_PROJECT_PERIOD,
+} from "@/lib/report-parameters";
+import { ReportDocument } from "@/components/reports/ReportDocument";
+import { ProjectStatusCard } from "@/components/reports/ProjectStatusCard";
+import { isPlainObject, noRowsMessage, reportSchema } from "@/lib/report-schema";
+
+import {
+  BREAKUP_SOURCE_REPORT,
+  NO_DOCUMENT_REASON,
+  exportDisabledReason,
+  reportExportHref,
+  shareDisabledReason,
+} from "@/lib/report-document-actions";
+import { ExportShareActions } from "@/components/ExportShareActions";
+// R67 F-10 (R-134): a run is a full round trip that replaces what is on screen
+// with a spinner -- including when the reader re-runs the SAME report on the
+// SAME project a moment later. The last result for a given (report, project,
+// parameters) is remembered for the session and painted at once while a fresh
+// run replaces it. It is LABELLED as remembered until the live one lands, so
+// nobody mistakes it for a just-computed figure, and nothing here can show a
+// number the server did not send.
 import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
-import { projexaReportDestination } from "@/lib/work-progress-report-params";
+
+/**
+ * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
+ * with a real next step, not a blank table.
+ */
+const NO_BUDGET_LINES_MESSAGE = "No budget lines yet — set budgets on the BOQ screen";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -83,46 +143,23 @@ function buildReports(registryColumns: RegistryColumn[] | null | undefined): { v
 // here either, so the same raw-camelCase-key-as-label defect applied to
 // all of them, not just the two percent fields above. Adding real labels
 // for the rest closes that gap the same way.
-const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
-  "project-status": {
-    percentByValue: "% Complete by BOQ Value",
-    progressPercent: "% Complete by Activity Log",
-    contractValue: "Contract Value",
-    budget: "Budget",
-    revenue: "Revenue",
-    expenses: "Expenses",
-    projectValue: "Project Value",
-    earnedValue: "Earned Value",
-    delayedTaskCount: "Delayed Tasks",
-    photoCount: "Site Photos",
-    taskCount: "Tasks",
-    projectId: "Project ID",
-    projectName: "Project Name",
-  },
-};
-
-// R55_REPORTS_CONTRACTVALUE_NO_AED_01: contractValue rendered as a bare
-// number with no currency token -- same defect class as
-// R55_LABOUR_RATE_NO_AED_01/R55_MATERIALS_UNITCOST_NO_AED_01 (PR #182/#183),
-// fixed there with the shared currencyLabel()+useCurrencies() helper.
-// contractValue has no per-row currencyId of its own (same "org base
-// currency" case those two used), so the value-formatter override just
-// prefixes the same live label ReportOutput's cellValue() would otherwise
-// skip. Built inside ProjectReportsPanel (below) since it needs the live
-// `currencies` list from useCurrencies().
 //
-// R67 G-05 (R-260): the fix above prefixed the currency label onto the RAW
-// value, so a contract value came back "AED 4500000" on one report and
-// "AED 4500000.5" on another -- the same column, two precisions, no
-// grouping. It also rendered the em-dash for an absent value while the rest
-// of the app renders the en-dash. Both now come from the one money
-// formatter, which also means an org with NO currency gets the warning glyph
-// and the footer notice instead of an unexplained bare number.
-function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: unknown) => string> {
-  return {
-    contractValue: (v) => orgMoney.money(v as number | string | null | undefined),
-  };
-}
+// R67 E-13 (R-131/R-138): the project-status entry MOVED, it was not deleted.
+// A label map alone could not fix what R-131 records -- the fields still had no
+// ORDER, no bands, three money formats, a raw cuid printed as a field, and two
+// percentages whose disagreement was explained only in a code comment. All of
+// that now lives in src/components/report-format.ts, rendered by
+// reports/ProjectStatusCard.tsx. This map stays for any other report that wants
+// labels without a card of its own.
+const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {};
+
+// R55_REPORTS_CONTRACTVALUE_NO_AED_01 / R67 G-05 (R-260): contractValue used to
+// render as a bare number with no currency token, and the first fix prefixed the
+// label onto the RAW value, so the same figure came back "AED 4500000" on one
+// report and "AED 4500000.5" on another. Both are now handled by
+// report-format.ts's one formatter -- bound to the org's currency, one shape per
+// FIELD -- so the per-key formatter override this file used to build is gone
+// rather than left as a second way to format the same number.
 
 // Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
 // projexa_reports_dispatch_2026_07_16, Owner: "look at the PROJEXA reports
@@ -139,243 +176,684 @@ function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: un
 // report/analysis type across the whole platform (ERP, compliance,
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
-// R67 F-10 (R-134). A report run is a full round trip that replaces whatever is
-// on screen with a spinner -- including when the user re-runs the SAME report on
-// the SAME project a moment later, or comes back to /reports having just looked
-// at it. Three changes, none of which can make the screen show a figure it did
-// not receive from the server:
-//
-//   1. RESULTS ARE CACHED per (report, project, params) in sessionStorage and
-//      painted immediately while a fresh run replaces them. The reader gets
-//      something to read at once; the number they end up with is still current.
-//      A cached result is LABELLED as such until the live one lands, so nobody
-//      mistakes a remembered figure for a just-computed one.
-//   2. CHANGING THE PICKER PREFETCHES that report, so Run Report is usually
-//      instant instead of starting the round trip on the click.
-//   3. A 20 s ABORT BUDGET, so a hung upstream ends in a message and a usable
-//      screen rather than an indefinite spinner.
-const REPORT_REQUEST_BUDGET_MS = 20_000;
+/** The report the panel opens on when the URL names none. */
+export const DEFAULT_REPORT_NAME = "project-status";
 
-function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
+/** R67 E-11: the two lookups the Category and Vendor selects are populated from. */
+type CategoryOption = { id: string; name: string };
+type VendorOption = { id: string; vendorName?: string | null; name?: string | null; supplierName?: string | null };
+
+function vendorLabel(v: VendorOption): string {
+  return v.vendorName || v.name || v.supplierName || v.id;
+}
+
+function ProjectReportsPanel({
+  projectId,
+  projectName,
+  reports,
+  initialRun,
+  unknownReportSlug = null,
+  handoff = null,
+}: {
+  /**
+   * R67 E-11: nullable. The card renders WITH the rail on "All projects" -- the
+   * primary reads "Run Report (select a project)" and is disabled, which is what
+   * tells the reader what to fix. Hiding the whole card behind a sentence left
+   * them with a fact and no control.
+   */
+  projectId: string | null;
+  /** So the title block and the running line can name the project, not its cuid. */
+  projectName: string | null;
+  reports: { value: string; label: string }[];
+  /** R67 E-09: the whole run comes from the URL -- report, period, week start. */
+  initialRun: ReportRunParams;
+  /** The ?report= slug the URL named when this screen does not have it. */
+  unknownReportSlug?: string | null;
+  /**
+   * R67 E-14 (R-132): a report handed over from the Full Catalog. The nonce is
+   * what makes "open the same report again" a real event rather than a no-op --
+   * a reader pressing the same card twice expects it to run twice.
+   */
+  handoff?: { slug: string; nonce: number } | null;
+}) {
   const router = useRouter();
-  const [reportName, setReportName] = useState("project-status");
-  const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
-  const [loading, setLoading] = useState(false);
+  const [run, setRun] = useState<ReportRunParams>(initialRun);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
+  // R67 E-04 (R-079) and E-10 (R-129): an EXPLICIT status, replacing the
+  // ranOnce/loading pair. The old pair tested ranOnce BEFORE loading, so on a
+  // first run the panel kept showing "Pick a report and click Run Report."
+  // while the button was already spinning -- the running state was literally
+  // unreachable. That string is deleted from this file, so it can never sit on
+  // screen during a request again. `timeout` is its own state because "it is
+  // still going" and "we stopped waiting" are different things to be told.
+  const [status, setStatus] = useState<"idle" | "running" | "success" | "error" | "timeout">("idle");
+  const [elapsed, setElapsed] = useState(0);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
-  const [ranOnce, setRanOnce] = useState(false);
-  const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [ranAt, setRanAt] = useState<Date | null>(null);
+  const [stale, setStale] = useState(false);
+  // R67 E-09: Filter reopens the parameter card. It is open until a run
+  // succeeds, then folds away -- the reader came for the result, not the form.
+  const [parametersOpen, setParametersOpen] = useState(true);
+  // R67 E-12 (R-136): the document reports back when its rows do not add up to
+  // the total the report states, and Export carries THAT sentence as its reason.
+  const [tieMessage, setTieMessage] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  /** R67 F-10: true while what is on screen came from the session cache rather than this run. */
   const [fromCache, setFromCache] = useState(false);
   const orgMoney = useOrgMoney();
+  const abortRef = useRef<AbortController | null>(null);
+
+  const currentLabel = reports.find((r) => r.value === run.report)?.label ?? run.report;
+  const hosted = isHostedReport(run.report);
+  // R67 E-11: what THIS report takes -- read off the real handler, not guessed.
+  const spec = reportParameters(run.report);
+  const missing = missingPrerequisites(run.report, { projectId, weekStart: run.weekStart });
+  const weekStartError = weekStartFieldError(run.report, run.weekStart);
+  const blockedReason = missing.length > 0 || weekStartError !== null;
+  const titleBlock = ranAt
+    ? reportTitleBlock({
+        reportLabel: currentLabel,
+        projectName,
+        from: run.from,
+        to: run.to,
+        ranAt,
+        // A report the period does not touch must not be captioned with one.
+        periodText: spec.needsDateRange ? undefined : WHOLE_PROJECT_PERIOD,
+      })
+    : null;
+  const chosenVendor = run.vendorId ? vendors.find((v) => v.id === run.vendorId) ?? null : null;
+  const filterState = {
+    category: run.category,
+    vendorId: run.vendorId,
+    vendorName: chosenVendor ? vendorLabel(chosenVendor) : null,
+  };
+  // R67 E-11: applied HERE for every handler that does not filter yet -- and the
+  // outcome says which filters actually found a field, so an unchanged table is
+  // never left looking like a broken control.
+  const filtered = result === null ? null : applyClientFilters(result, filterState);
+  const shownResult = filtered ? filtered.result : null;
+  const filterNote = filtered ? unappliedFilterNote(filterState, filtered) : null;
+  // R67 E-12: the report's own document, where one is described. A slug with no
+  // schema keeps the generic grid -- inventing a document for a payload nobody
+  // described would be a worse lie than the raw keys.
+  const schema = reportSchema(run.report);
+
+  // R67 E-10 (R-133): the failure lives in the shell's message area, which
+  // does not vanish on a timer the way the toast this replaces did.
+  useShellMessage(
+    "reports.run",
+    status === "error" || status === "timeout"
+      ? { tone: "error", text: `Could not run ${currentLabel}: ${errorText ?? RUN_TIMEOUT_MESSAGE}` }
+      : null
+  );
+
+  // R67 E-11: the Category and Vendor selects are populated from the org's real
+  // lists -- GET /api/scope/categories and GET /api/vendors -- so the card can
+  // never offer a category nobody uses or a vendor nobody has. Either lookup
+  // failing costs the reader that one FILTER, never the report: the select
+  // simply offers "All" and nothing else.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/scope/categories")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("categories"))))
+      .then((d) => { if (!cancelled) setCategories(Array.isArray(d.categories) ? d.categories : []); })
+      .catch(() => { if (!cancelled) setCategories([]); });
+    fetch("/api/vendors")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("vendors"))))
+      .then((d) => { if (!cancelled) setVendors(Array.isArray(d.vendors) ? d.vendors : []); })
+      .catch(() => { if (!cancelled) setVendors([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // The elapsed-seconds counter. A reader watching a spinner cannot tell a slow
+  // report from a hung one; a number that keeps moving can.
+  useEffect(() => {
+    if (status !== "running") return;
+    const started = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [status]);
+
+  // R67 E-09: a result older than five minutes is still shown and is no longer
+  // presented as current -- the reader decides whether to re-run it.
+  useEffect(() => {
+    if (!ranAt) return;
+    setStale(isStaleRun(ranAt));
+    const id = setInterval(() => setStale(isStaleRun(ranAt)), 30000);
+    return () => clearInterval(id);
+  }, [ranAt]);
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
   // recent one's state -- e.g. the user switches the report type and clicks
   // "Run Report" again before the first request resolves; without this, a
   // slower first response landing after a faster second one would silently
-  // clobber the correct, more recent result (or vice versa, a slow response
-  // for a report the user has since navigated away from could still commit
-  // state after the fact). Bumped at the start of every runReport() call;
-  // any resolving fetch whose captured generation no longer matches the
-  // latest is dropped instead of touching state.
+  // clobber the correct, more recent result. Bumped at the start of every
+  // runReport() call; any resolving fetch whose captured generation no longer
+  // matches the latest is dropped instead of touching state.
   const requestGeneration = useRef(0);
 
-  // The params that identify THIS run, in one place, so the cache key, the
-  // request and the prefetch cannot drift apart.
-  const currentParams = useCallback(
-    (name: string): Record<string, string> => (name === "weekly-project" ? { weekStart } : {}),
-    [weekStart]
-  );
+  function cancelRun() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    // Bumping the generation makes any in-flight response a stale one, so a
+    // request that resolves after the abort cannot commit state.
+    requestGeneration.current += 1;
+    setStatus(result === null ? "idle" : "success");
+  }
 
-  const requestUrl = useCallback(
-    (name: string) => {
-      const params = new URLSearchParams({ projectId, ...currentParams(name) });
-      return `/api/reports/${encodeURIComponent(name)}?${params.toString()}`;
-    },
-    [projectId, currentParams]
-  );
+  const runReport = useCallback(async (next: ReportRunParams = run) => {
+    // R67 E-11 (R-130): a run the backend would answer 400 to never leaves this
+    // function. The primary that would have started it is disabled and says
+    // what is missing, so this is a belt-and-braces guard for the programmatic
+    // callers (Retry, the catalog's "Open in Project Reports"), not the reader's
+    // only protection.
+    if (!projectId) return;
+    if (missingPrerequisites(next.report, { projectId, weekStart: next.weekStart }).length > 0) return;
+    if (weekStartFieldError(next.report, next.weekStart)) return;
 
-  const cacheKeyFor = useCallback(
-    (name: string) => reportCacheKey(name, projectId, currentParams(name)),
-    [projectId, currentParams]
-  );
+    // R67 E-04 (R-079) and binding decision D-02: a report with a screen of
+    // its own NAVIGATES; it must not be fetched here. Fetching the Work
+    // Progress report from this panel is the 24.3 s spinner that renders
+    // nothing, measured in the audit -- the same report renders in 2.7 s with
+    // exports at /work-progress?tab=report.
+    const destination = reportDestination(next.report, {
+      projectId,
+      from: next.from,
+      to: next.to,
+      weekStart: next.weekStart,
+      category: next.category,
+      vendorId: next.vendorId,
+    });
+    if (destination.kind === "navigate") {
+      router.push(destination.href);
+      return;
+    }
 
-  // Paint from cache the moment the selection changes. Safe: the value is
-  // labelled as remembered, and a live run overwrites it with the server's own
-  // answer.
-  useEffect(() => {
-    const cached = readCachedReport(cacheKeyFor(reportName));
+    // R67 E-09: the URL IS the state, so a run survives navigation, sharing
+    // and Back. replace, not push -- a re-run is not a new place.
+    router.replace(`?${reportRunSearchParams({ ...next, projectId }).toString()}`, { scroll: false });
+
+    const myGeneration = ++requestGeneration.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    // R67 E-10: the 20 s client budget. A request still in flight then is
+    // aborted and SAID SO, rather than spinning until the reader gives up.
+    const budget = setTimeout(() => controller.abort(new DOMException("budget", "TimeoutError")), RUN_BUDGET_MS);
+    setStatus("running");
+    setErrorText(null);
+    setShareUrl(null);
+    // R67 F-10: something to read at once. The live request below still runs
+    // and still replaces this, so the figure the reader ends up with is
+    // current; the banner says which of the two they are looking at.
+    const cacheKey = reportCacheKey(next.report, projectId, {
+      from: next.from ?? "", to: next.to ?? "", weekStart: next.weekStart ?? "",
+      category: next.category ?? "", vendorId: next.vendorId ?? "",
+    });
+    const cached = readCachedReport(cacheKey);
     if (cached !== null) {
       setResult(cached);
       setFromCache(true);
-      setRanOnce(true);
-      setRunError(null);
     }
-  }, [reportName, cacheKeyFor]);
-
-  // Changing the picker warms the next report, so Run Report is usually
-  // instant. Failures are swallowed: a prefetch must never surface an error,
-  // and the real Run that follows reports properly.
-  const prefetchReport = useCallback(
-    (name: string) => {
-      const key = cacheKeyFor(name);
-      if (readCachedReport(key) !== null) return;
-      void fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data !== null) writeCachedReport(key, data);
-        })
-        .catch(() => {});
-    },
-    [cacheKeyFor, requestUrl]
-  );
-
-  async function runReport() {
-    const myGeneration = ++requestGeneration.current;
-    const key = cacheKeyFor(reportName);
-    setLoading(true);
-    setRunError(null);
-    setStartedAt(Date.now());
     try {
-      // A hung upstream must end in a message and a usable screen, not an
-      // indefinite spinner on a page whose whole content is this one panel.
-      const res = await fetch(requestUrl(reportName), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        const reason = typeof data?.error === "string" ? data.error : null;
-        const failure = new Error(reason ?? `Request failed (HTTP ${res.status})`);
-        (failure as Error & { httpStatus?: number }).httpStatus = res.status;
-        throw failure;
-      }
+      // R67 E-12 (R-136): a report whose own payload does not carry the rows its
+      // document prints fetches them ALONGSIDE, in the same run -- Project
+      // Status is dashboard scalars, and the table under it is the BOQ's budget
+      // line by line. Two sequential runs would put a second spinner in front of
+      // a reader who pressed once.
+      const breakupReport = BREAKUP_SOURCE_REPORT[next.report];
+      const [res, breakupRes] = await Promise.all([
+        fetch(destination.path, { signal: controller.signal }),
+        breakupReport
+          ? fetch(`/api/reports/${breakupReport}?projectId=${encodeURIComponent(projectId)}`, { signal: controller.signal })
+          : Promise.resolve(null),
+      ]);
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
-      setResult(data);
+      // The breakup is the DOCUMENT, not the report: if it fails the figures
+      // above it are still true and are still shown, with the table's own empty
+      // state saying there are no lines rather than the whole run erroring.
+      const breakupBody = breakupRes && breakupRes.ok ? await breakupRes.json() : null;
+      // Only a payload that really carries rows becomes the document's rows.
+      // Anything else leaves the figures above the table exactly as the report
+      // stated them, and the table shows its own empty state.
+      const breakup = breakupBody && Array.isArray(breakupBody.lines) ? breakupBody : null;
+      setResult(
+        breakup
+          ? {
+              ...data,
+              // ROOT lines only, the same rule every BOQ money roll-up in this
+              // product follows: a weighted sub-task's amount is derived from
+              // its parent, so printing both would show a table that does not
+              // add up to its own last row.
+              lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false),
+              totalBudget: breakup.totalBudget,
+            }
+          : data
+      );
+      writeCachedReport(cacheKey, breakup ? { ...data, lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false), totalBudget: breakup.totalBudget } : data);
       setFromCache(false);
-      setRanOnce(true);
-      writeCachedReport(key, data);
+      setRanAt(new Date());
+      setStale(false);
+      setStatus("success");
+      setParametersOpen(false);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
-      // so the panel below settled on the flat sentence "Could not generate
-      // this report." while the backend's own reason -- the only thing that
-      // says WHICH report failed and why -- faded with the notification. The
-      // failure is now stated in the panel, through the same dictionary
-      // every other pane uses, with a Retry that re-runs it.
-      const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
-      setRunError({
-        status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
-        message: aborted
-          ? "The report did not finish in time. Try a narrower range, or run it again."
-          : err instanceof Error && err.message
-            ? err.message
-            : null,
-      });
-      // R67 F-10: a previously cached result is deliberately LEFT on screen
-      // when a fresh run fails. It is still the last real answer the server
-      // gave, and it is still labelled as remembered, so nothing is presented
-      // as current that is not. Only a panel with nothing real to show clears.
-      if (!fromCache) setResult(null);
+      if (err instanceof DOMException && err.name === "TimeoutError") {
+        setErrorText(RUN_TIMEOUT_MESSAGE);
+        setStatus("timeout");
+        return;
+      }
+      // An abort is the reader's own decision, not a failure to report back at
+      // them.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      // D-03: whatever came back, the reader is shown a SENTENCE -- never a
+      // code, a parameter name or a host:port.
+      setErrorText(taskErrorSentence(err instanceof Error ? err.message : null, "The report service didn't answer"));
+      setStatus("error");
     } finally {
-      if (myGeneration === requestGeneration.current) setLoading(false);
+      clearTimeout(budget);
+      if (myGeneration === requestGeneration.current) abortRef.current = null;
+    }
+  }, [projectId, router, run]);
+
+  // R67 E-10 (R-129): the report runs ON ARRIVAL with month-to-date
+  // parameters. A report that lives on its own screen is the one exception --
+  // pushing a reader to another route the instant they open Reports would take
+  // the decision away from them, so its own hint and Open Report stay.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || hosted) return;
+    // R67 E-11: and not when a prerequisite is missing -- an automatic run into
+    // a 400 would put a rose error card in front of a reader who has not yet
+    // done anything wrong.
+    if (blockedReason) return;
+    autoRan.current = true;
+    void runReport(initialRun);
+    // Deliberately once, on arrival: runReport's identity changes with every
+    // parameter edit, and depending on it here would re-run the report on
+    // every keystroke in the date fields. The `autoRan` ref is what makes that
+    // safe and visible, rather than an omitted dependency nobody can see.
+  }, [hosted, initialRun, runReport]);
+
+  function updateRun(patch: Partial<ReportRunParams>) {
+    setRun((prev) => ({ ...prev, ...patch }));
+  }
+
+  // R67 E-14 (R-132): the Full Catalog's "Open in Project Reports" preselects
+  // the report AND runs it. Pressing a card and then having to press Run Report
+  // would be the same two-surfaces-one-report confusion in a new shape.
+  const handoffNonce = handoff?.nonce ?? null;
+  useEffect(() => {
+    if (!handoff) return;
+    const next = { ...run, report: handoff.slug };
+    setRun(next);
+    void runReport(next);
+    // Deliberately keyed on the nonce alone: `run` changes on every parameter
+    // edit, and depending on it here would re-run the handoff on each keystroke.
+  }, [handoffNonce]);
+
+  function exportCsv() {
+    // The rows ON SCREEN, filters and all -- an exported file that disagrees
+    // with the table it came from is worse than no export.
+    if (shownResult === null) return;
+    const blob = new Blob([reportResultToCsv(shownResult, titleBlock ?? currentLabel)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${run.report}-${projectId}-${run.from}-to-${run.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function runUrl(): string {
+    return `${window.location.origin}${window.location.pathname}?${reportRunSearchParams({ ...run, projectId }).toString()}`;
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(runUrl());
+      toast.success("Link copied — it opens this report, with these parameters, for anyone signed in to your organisation.");
+    } catch {
+      toast.error("Couldn't copy the link");
     }
   }
 
-  // R67 D-02: ONE Work Progress Report. Selecting "Work Progress" here no
-  // longer runs the slow /api/reports/work-progress path (24.3 s measured,
-  // six fan-out calls) beside the module's own faster, richer report -- it
-  // navigates to /work-progress?tab=report, which runs on arrival with its
-  // parameters in the URL, a BOQ selector, the tie check and an export. Two
-  // screens for one report is the duplication the decision retires.
-  const destination = projexaReportDestination({ id: reportName }, projectId);
+  // R67 E-12 (R-136): a REAL public link, minted through compliance-tracker's
+  // own signed-link service and only for a report whose public page can render
+  // it. Item E-09 could only copy the in-app URL because project-status had no
+  // public renderer; it has one now, so this is the link that actually opens for
+  // whoever it is sent to.
+  async function createShareLink(): Promise<string | null> {
+    if (shareUrl) return shareUrl;
+    if (!projectId) return null;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(run.report)}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, from: run.from, to: run.to }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
+      setShareUrl(data.url);
+      return data.url as string;
+    } catch (err) {
+      toast.error(taskErrorSentence(err instanceof Error ? err.message : null, "Couldn't create the share link"));
+      return null;
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  // R67 E-18: whether VERIDIAN can render this report as a DOCUMENT. False
+  // does not mean "no export" -- it means no PDF and no XLSX; the CSV is built
+  // here from the rows on screen either way.
+  const serverExport = schema?.serverExport === true;
+  const exportReason = exportDisabledReason({ hasResult: shownResult !== null, tieMessage });
+  const shareReason = shareDisabledReason(run.report, shownResult !== null);
+  const exportParams = { projectId: projectId ?? "", category: run.category, vendorId: run.vendorId };
 
   return (
     <div className="space-y-4">
-      <Card className="shadow-card">
-        <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div className="space-y-1.5">
-            <Label>Report</Label>
-            <Select
-              value={reportName}
-              onValueChange={(name) => {
-                setReportName(name);
-                // R67 F-10: warm the next report on SELECTION, so Run Report is
-                // usually instant instead of starting the round trip on click.
-                prefetchReport(name);
-              }}
-            >
-              <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-              <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          {reportName === "weekly-project" && (
-            <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
-          )}
-          {destination ? (
-            <Button onClick={() => router.push(destination)} data-testid="reports-open-work-progress">
-              <Play className="size-4" /> Open Report
-            </Button>
-          ) : (
-            <Button onClick={runReport} disabled={loading}>
-              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+      {/* R67 E-09: the shell's right-pane header actions, with "+ New"
+          suppressed -- there is nothing to create here. Every disabled control
+          carries its reason in words beside it; none of them is hidden. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setParametersOpen((v) => !v)} data-testid="reports-filter">
+          <SlidersHorizontal className="size-4" /> Filter
+        </Button>
+        {/* R67 E-18 (R-178): the SAME Export / Share control the Work Progress
+            Report, the Materials Cost Report, the Budget screen, the Manpower
+            Daily Summary, the MoM object page and Design Studio use. This
+            header carried six separate buttons -- three Export formats, Share,
+            Send to WhatsApp and "Copy link instead" -- which is the row of
+            words R-178 is about; the formats are now a detail inside one
+            "Export", and the two ways to share a link are a detail inside one
+            "Share".
 
-      <Card className="shadow-card">
-        <CardContent className="p-4">
-          {destination ? (
-            <p className="py-10 text-center text-sm text-px-muted">
-              The Work Progress Report opens in the Work Progress module, where the date range, the view and the
-              BOQ version live in the URL and the report runs as soon as it opens.
+            Export stays SERVER-SIDE: PROJEXA has no PDF or XLSX library and
+            must not gain one -- VERIDIAN builds the bytes from the same schema
+            this screen renders the table from, so the file and the table
+            cannot disagree. A report with no document schema still gets its
+            CSV, built in the browser from the rows on screen (item E-09);
+            taking that away would leave fifteen reports with no export at all,
+            which is not a fix, so PDF and XLSX carry their reason in the menu
+            rather than vanishing from it. */}
+        <ExportShareActions
+          canExport={!exportReason}
+          exportReason={exportReason}
+          title={titleBlock ?? currentLabel}
+          pdfHref={serverExport ? reportExportHref(run.report, "pdf", exportParams) : null}
+          xlsxHref={serverExport ? reportExportHref(run.report, "xlsx", exportParams) : null}
+          csvHref={serverExport ? reportExportHref(run.report, "csv", exportParams) : null}
+          onCsv={serverExport ? null : exportCsv}
+          formatReasons={serverExport ? null : { pdf: NO_DOCUMENT_REASON, xlsx: NO_DOCUMENT_REASON }}
+          shareUrlFactory={createShareLink}
+          shareReason={sharing ? "Creating the link…" : shareReason}
+          onMessage={(message) => toast.success(message)}
+        />
+        {/* A report with no public renderer cannot be Shared, so the in-app
+            link -- which opens this exact run for a colleague already signed in
+            -- is offered by its own name rather than pretending to be it. */}
+        {shareReason && shownResult !== null && (
+          <Button variant="ghost" size="sm" onClick={copyLink} data-testid="reports-copy-link">Copy link instead</Button>
+        )}
+        {/* Every disabled control carries its reason in words beside it, never
+            only in a tooltip nobody hovers. */}
+        {exportReason && <span className="text-[12px] text-px-muted" data-testid="reports-export-reason">{exportReason}</span>}
+      </div>
+
+      {unknownReportSlug && (
+        <p role="alert" className="text-[12.5px] text-px-error" data-testid="reports-unknown-slug">{UNKNOWN_REPORT_MESSAGE}</p>
+      )}
+
+      {parametersOpen && (
+        <Card className="shadow-card">
+          <CardContent className="space-y-3 p-4">
+            {/* R67 E-11 (R-130): the project is READ-ONLY here and says where it
+                is changed. The card used to carry no project at all while the
+                top rail carried one, so the two could -- and did -- disagree
+                about which project a run described. One source, named. */}
+            <p
+              className="inline-flex items-center rounded-full border border-px-teal/30 bg-px-teal/10 px-3 py-1 text-[12px] text-px-ink"
+              data-testid="reports-project-chip"
+            >
+              {projectName
+                ? `Project: ${projectName} — change in the top rail`
+                : "No project selected — choose one in the top rail"}
             </p>
-          ) : runError && result === null ? (
-            <PaneErrorCard
-              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
-              error={runError}
-              onRetry={runReport}
-            />
-          ) : loading && result === null ? (
-            <PaneWaitingCaption
-              startedAt={startedAt}
-              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
-              onRetry={runReport}
-            />
-          ) : !ranOnce ? (
-            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
-          ) : result === null ? (
-            <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
-          ) : (
-            // R67 D-65 x F-10. Both lanes' rules apply here at once, and the
-            // ORDER of the two branches above is what makes them compatible:
-            // a failure or a wait with NOTHING real on screen still gets D-65's
-            // error card or waiting caption, but neither is allowed to REPLACE
-            // a remembered answer the reader is already reading. When there is
-            // one, the failure is stated above it and the answer stays, still
-            // labelled as remembered -- so nothing is ever shown as current
-            // that is not, and nothing true is thrown away to say so.
-            <>
-              {runError && (
-                <div className="mb-3">
-                  <PaneErrorCard
-                    entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
-                    error={runError}
-                    onRetry={runReport}
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label>Report</Label>
+                <Select value={run.report} onValueChange={(v) => updateRun({ report: v })}>
+                  <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                  <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-from">From</Label>
+                <Input id="report-from" type="date" value={run.from} onChange={(e) => updateRun({ from: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-to">To</Label>
+                <Input id="report-to" type="date" value={run.to} onChange={(e) => updateRun({ to: e.target.value })} />
+              </div>
+              {spec.needsWeekStart && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="report-week-start">Week Start</Label>
+                  <Input
+                    id="report-week-start"
+                    type="date"
+                    value={run.weekStart}
+                    aria-invalid={weekStartError !== null}
+                    aria-describedby={weekStartError ? "report-week-start-error" : undefined}
+                    onChange={(e) => updateRun({ weekStart: e.target.value })}
                   />
+                  {/* The message AT the field, where the value was typed -- not
+                      in a tooltip and not only on the button. */}
+                  {weekStartError && (
+                    <p id="report-week-start-error" role="alert" className="text-[12px] text-px-error" data-testid="reports-week-start-error">
+                      {weekStartError}
+                    </p>
+                  )}
                 </div>
               )}
-              {(fromCache || loading) && (
-                <p role="status" className="mb-3 text-[12.5px] text-px-muted">
-                  {loading
-                    ? "Showing the last result while this run finishes…"
-                    : "Showing the last result. Click Run Report for current figures."}
+              {spec.supportsCategory && (
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <Select
+                    value={run.category ?? ALL_OPTION_VALUE}
+                    onValueChange={(v) => updateRun({ category: v === ALL_OPTION_VALUE ? null : v })}
+                  >
+                    <SelectTrigger className="w-48" data-testid="reports-category"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_OPTION_VALUE}>{ALL_OPTION_LABEL}</SelectItem>
+                      {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {spec.supportsVendor && (
+                <div className="space-y-1.5">
+                  <Label>Vendor</Label>
+                  <Select
+                    value={run.vendorId ?? ALL_OPTION_VALUE}
+                    onValueChange={(v) => updateRun({ vendorId: v === ALL_OPTION_VALUE ? null : v })}
+                  >
+                    <SelectTrigger className="w-48" data-testid="reports-vendor"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_OPTION_VALUE}>{ALL_OPTION_LABEL}</SelectItem>
+                      {vendors.map((v) => <SelectItem key={v.id} value={v.id}>{vendorLabel(v)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <Button
+                onClick={() => runReport()}
+                disabled={status === "running" || blockedReason}
+                data-testid="reports-run"
+              >
+                {status === "running" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                {/* The primary says what pressing it does -- and, when it cannot
+                    be pressed, what is missing. For a report that lives on its
+                    own screen, that is opening THAT screen, named. */}
+                {runButtonLabel(run.report, missing, hosted)}
+              </Button>
+            </div>
+
+            {/* One line, under the select, that changes with the selection: a
+                report name is a slug until something says what it answers. */}
+            {spec.description && (
+              <p className="text-[12px] text-px-muted" data-testid="reports-description">{spec.description}</p>
+            )}
+            {/* Most of these reports take a projectId and nothing else. Saying
+                so beats leaving two date fields that quietly do nothing. */}
+            {periodNote(currentLabel, spec) && (
+              <p className="text-[12px] text-px-muted" data-testid="reports-period-note">{periodNote(currentLabel, spec)}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-card">
+        <CardContent className="space-y-3 p-4">
+          {/* R67 E-09: the title block, above the result, naming what this run
+              IS -- so a screenshot of it is self-describing. */}
+          {titleBlock && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[12.5px] font-medium text-px-ink" data-testid="reports-title-block">{titleBlock}</p>
+              {stale && (
+                <span className="rounded-full border border-px-border px-2 py-0.5 text-[11px] text-px-muted" data-testid="reports-stale">
+                  More than 5 minutes old — re-run to refresh
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* The status is evaluated in ONE order -- running, then timeout,
+              then error, then a result, then idle -- so no combination of
+              flags can put an idle prompt on screen while a request is in
+              flight. */}
+          {status === "running" ? (
+            <div className="space-y-3">
+              <div className="space-y-2 py-4 text-center" data-testid="reports-running">
+                <p className="text-sm text-px-ink">{runningLine(currentLabel, projectName)}</p>
+                <p className="text-xs text-px-muted">{elapsed} s</p>
+                {/* Cancel appears only once the run has outlasted a normal one. */}
+                {elapsed * 1000 >= CANCEL_VISIBLE_AFTER_MS && (
+                  <Button variant="ghost" size="sm" onClick={cancelRun} data-testid="reports-cancel">Cancel</Button>
+                )}
+              </div>
+              <div className="space-y-2" data-testid="reports-skeleton">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
+              {/* R67 F-10: a remembered result is SAID to be remembered. The
+                  figure below is real -- it is what this same run returned
+                  earlier in the session -- but it is not the one this run is
+                  fetching, and a reader must never have to guess which. */}
+              {fromCache && (
+                <p className="text-xs text-px-muted" data-testid="reports-cached-notice">
+                  Showing the last result for this report while it re-runs.
                 </p>
               )}
-              <ReportOutput
-                data={result}
-                fieldLabels={REPORT_FIELD_LABELS[reportName]}
-                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
-              />
+              {/* The last good result stays visible, dimmed -- a re-run must
+                  not blank the screen the reader is still reading. */}
+              {shownResult !== null && (
+                <div className="opacity-50" data-testid="reports-previous-result">
+                  {/* The SAME renderer as the live result -- a dimmed copy that
+                      looked different from what it is a copy of would be a
+                      second document, not a previous one. */}
+                  {run.report === "project-status" && isPlainObject(shownResult) ? (
+                    <ProjectStatusCard data={shownResult} format={orgMoney.format} financialsRedacted={shownResult.financialsRedacted === true} />
+                  ) : (
+                    <ReportOutput data={shownResult} fieldLabels={REPORT_FIELD_LABELS[run.report]} omitKeys={schema ? [schema.rowsKey] : undefined} />
+                  )}
+                </div>
+              )}
+            </div>
+          ) : status === "timeout" ? (
+            <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-timeout">
+              <p className="text-sm text-px-error">{RUN_TIMEOUT_MESSAGE}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => runReport()} data-testid="reports-retry">
+                  <RotateCcw className="size-4" /> Retry
+                </Button>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/work-progress?tab=report&projectId=${encodeURIComponent(projectId ?? "")}`}>Open Work Progress &gt; Report</Link>
+                </Button>
+              </div>
+            </div>
+          ) : status === "error" ? (
+            // The BACKEND's own sentence, and a way to try again -- never a
+            // generic "could not generate this report" that says nothing about
+            // what failed.
+            <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-error">
+              <p className="text-sm text-px-error">Could not run {currentLabel}: {errorText}</p>
+              <Button variant="outline" size="sm" onClick={() => runReport()} data-testid="reports-retry">
+                <RotateCcw className="size-4" /> Retry
+              </Button>
+            </div>
+          ) : shownResult !== null ? (
+            <>
+              {/* A filter that had nothing to bite on is SAID, so an unchanged
+                  table never reads as a broken control. */}
+              {filterNote && (
+                <p className="text-[12px] text-px-muted" data-testid="reports-filter-note">{filterNote}</p>
+              )}
+              {/* R67 E-13 (R-131/R-138): Project Status has an ORDER, three
+                  bands and two figures that need a sentence -- none of which
+                  survives ReportOutput's Object.entries. Every other report
+                  keeps the generic renderer. */}
+              {run.report === "project-status" && isPlainObject(shownResult) ? (
+                <ProjectStatusCard
+                  data={shownResult}
+                  format={orgMoney.format}
+                  financialsRedacted={shownResult.financialsRedacted === true}
+                />
+              ) : (
+                <ReportOutput
+                  data={shownResult}
+                  fieldLabels={REPORT_FIELD_LABELS[run.report]}
+                  omitKeys={schema ? [schema.rowsKey] : undefined}
+                />
+              )}
+              {/* R67 E-12 (R-136): the report's own document, rendered from the
+                  schema rather than from whatever keys the payload happened to
+                  carry -- and from the SAME description the exported file is
+                  built from. */}
+              {schema && (
+                <ReportDocument
+                  schema={schema}
+                  payload={shownResult}
+                  format={orgMoney.format}
+                  emptyMessage={
+                    run.report === "project-status"
+                      ? NO_BUDGET_LINES_MESSAGE
+                      : noRowsMessage(dayLabel(run.from), dayLabel(run.to), projectName)
+                  }
+                  emptyAction={run.report === "project-status" ? { href: "/scope", label: "Open the BOQ screen" } : undefined}
+                  onTieMessage={setTieMessage}
+                />
+              )}
             </>
+          ) : !projectId ? (
+            // R67 E-09/E-11: the reader is told what to DO, at the control that
+            // does it -- the top rail -- with the card above still on screen so
+            // they can see what they will get once they have.
+            <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-no-project">{NO_PROJECT_MESSAGE}</p>
+          ) : hosted ? (
+            <p className="py-10 text-center text-sm text-px-muted" data-testid="reports-hosted-hint">
+              {currentLabel} runs on its own screen -- press {runButtonLabel(run.report, [], true)}.
+            </p>
+          ) : (
+            <p className="py-10 text-center text-sm text-px-muted">Choose a report above.</p>
           )}
         </CardContent>
       </Card>
@@ -395,29 +873,80 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
 // (compliance.screen_definitions, function_id "reports.report", archetype
 // REPORT) and only relabels the report picker -- null/missing is not fatal,
 // buildReports() falls back to DEFAULT_REPORT_COLUMNS.
-export default function ReportsClient({ projectId, registryColumns }: { projectId: string | null; registryColumns?: RegistryColumn[] | null }) {
+export default function ReportsClient({
+  projectId,
+  projectName = null,
+  registryColumns,
+}: {
+  projectId: string | null;
+  /** R67 E-09: so the title block and the running line can name the project, never its cuid. */
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const reports = buildReports(registryColumns);
+  // R67 E-04 / E-09: the WHOLE run is part of the URL, not private React state
+  // -- so a link opens on that run, Back restores it, and a run survives
+  // navigation. An unknown slug still selects a real report (selecting nothing
+  // would be a dead screen) AND says so, rather than silently pretending the
+  // reader asked for the default.
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("report");
+  const known = Boolean(requested && reports.some((r) => r.value === requested));
+  const initialRun = readReportRunParams(new URLSearchParams(searchParams.toString()), {
+    report: known ? requested! : DEFAULT_REPORT_NAME,
+    projectId,
+  });
+
+  // R67 E-14 (R-132): the Tabs value and the picker's selected slug are OWNED
+  // HERE, not one in each tab. They were independent state before, which is how
+  // the Full Catalog came to say "Not yet viewable here" about a report its
+  // sibling tab was running two clicks away.
+  const router = useRouter();
+  const [tab, setTab] = useState(projectId ? "project" : "catalog");
+  const [handoff, setHandoff] = useState<{ slug: string; nonce: number } | null>(null);
+
+  function openProjectReport(slug: string) {
+    // D-02: a report with a screen of its own is NAVIGATED to, from the catalog
+    // exactly as from the picker -- one destination per name.
+    //
+    // R67 E-17 (R-175): through the registry, so the card opens the report in
+    // the SAME state the picker would. The defaults are the report's own, and
+    // a report that ignores a period is not handed one.
+    if (projectId) {
+      const destination = registryDestination(slug, { projectId });
+      if (destination?.kind === "navigate") {
+        router.push(destination.href);
+        return;
+      }
+    }
+    setTab("project");
+    setHandoff({ slug, nonce: Date.now() });
+  }
+
   return (
-    <Tabs defaultValue={projectId ? "project" : "catalog"} className="space-y-4">
+    <Tabs value={tab} onValueChange={setTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="project">Project Reports</TabsTrigger>
         <TabsTrigger value="catalog">Full Catalog</TabsTrigger>
       </TabsList>
       <TabsContent value="project">
-        {projectId ? (
-          <ProjectReportsPanel projectId={projectId} reports={reports} />
-        ) : (
-          <Card className="shadow-card">
-            <CardContent className="p-8 text-center text-sm text-px-muted">
-              No active projects yet -- the 17 project-scoped construction reports need one. The Full Catalog tab works org-wide, no project required.
-            </CardContent>
-          </Card>
-        )}
+        {/* R67 E-11 (R-130): the panel renders WITHOUT a project too. It used to
+            be replaced by a sentence, which left the reader a fact and no
+            control; now the parameter card is there, the project chip says
+            there is no project, and the primary reads "Run Report (select a
+            project)" and is disabled -- the same disabled-with-reason pattern
+            /labour/new uses. The sentence is still there, in the result area. */}
+        <ProjectReportsPanel
+          projectId={projectId}
+          projectName={projectName}
+          reports={reports}
+          initialRun={{ ...initialRun, report: known ? initialRun.report : DEFAULT_REPORT_NAME }}
+          unknownReportSlug={requested && !known ? requested : null}
+          handoff={handoff}
+        />
       </TabsContent>
       <TabsContent value="catalog">
-        {/* R67 D-02: the catalog needs the project so its Work Progress row can
-            link to the module's real report for THIS project, not a bare route. */}
-        <ReportCatalogSection projectId={projectId} />
+        <ReportCatalogSection projectId={projectId} onOpenProjectReport={openProjectReport} />
       </TabsContent>
     </Tabs>
   );

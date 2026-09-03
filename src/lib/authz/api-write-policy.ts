@@ -264,6 +264,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/recruitment/job-openings/[id]/status": "ORG_ADMIN",
   // POST only because running a saved report needs a body; it is a read.
   "/reports/definitions/[id]/run": "FIELD",
+  // R67 E-12 (R-136) added this route and did not declare it here, which is
+  // what this file's own test exists to catch. Minting a signed link PUBLISHES
+  // a report to anyone holding the URL, so it is the same tier as its sibling
+  // /work-progress/report/share above -- deliberately NOT "FIELD", because
+  // handing the org's cost figures outside the org is a manager's decision.
+  "/reports/[reportName]/share": "PM_OR_ABOVE",
   "/rfis": "FIELD",
   "/rfis/[id]": "FIELD",
   "/risks": "PM_OR_ABOVE",
