@@ -74,6 +74,17 @@ export type ComposerProps = {
    */
   onHistory: () => void;
 
+  /**
+   * R67 C-14: THE SHELL MESSAGE REGION, above the box.
+   *
+   * The spec's FOOTER MESSAGE AREA. It sits OUTSIDE the bordered composer and
+   * directly above it, because it is the shell's voice rather than the
+   * conversation's: a receipt for something a page's own form saved, or the
+   * sentence for a failure nobody on site can fix. Band 2 is where the
+   * composer answers for what IT did; this is where the product answers for
+   * everything else, and the two are deliberately not the same surface.
+   */
+  messages?: ReactNode;
   /** 2. CONVERSATION -- rendered only once there is something to show. */
   conversation?: ReactNode;
   /** 3. PILLS -- the ranked set. */
@@ -125,6 +136,7 @@ export function Composer({
   onHome,
   onReset,
   onHistory,
+  messages,
   conversation,
   pills,
   value,
@@ -164,9 +176,13 @@ export function Composer({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end px-3 pb-3"
       style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` }}
     >
+      {/* R67 C-14: the message region, above the box and outside it. It
+          renders nothing at all when there is nothing to say, so it costs the
+          input band no height on a phone. */}
+      {messages}
       {/* FULL WIDTH ACROSS BOTH PANES. Not confined to one pane. */}
       <div
         className="pointer-events-auto relative flex w-full flex-col overflow-visible rounded-xl border shadow-sm"

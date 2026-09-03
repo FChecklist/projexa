@@ -162,6 +162,14 @@ import {
 // refusal -- all pure, all asserted in src/lib/gap-card.test.ts.
 import { answersNeededLabel, echoFields, echoLine, looksLikeCreate, refusalFor } from "@/lib/gap-card";
 import { maskTechnical, resolveTaskError } from "@/lib/task-errors";
+// R67 C-14: the shell message region -- the receipts and failures that have to
+// outlive the navigation that produced them.
+import {
+  ShellMessageRegion,
+  ShellMessagesProvider,
+  serviceUnavailableText,
+  useShellMessages,
+} from "@/lib/shell-messages";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -250,9 +258,28 @@ function hasSegmentFor(segments: Chain["segments"], id: string): boolean {
   return segments.some((s) => s.id === id || s.id.endsWith(`:${id}`));
 }
 
+/**
+ * R67 C-14: the shell's MESSAGE STORE has to sit above the shell itself,
+ * because M24Shell is one of its writers -- a system failure it reads off the
+ * task list posts a line into the region. So the default export is the
+ * provider and the shell proper is the body beneath it, which is the smallest
+ * change that lets the shell both own the region and use it.
+ */
 export default function M24Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <ShellMessagesProvider>
+      <M24ShellBody>{children}</M24ShellBody>
+    </ShellMessagesProvider>
+  );
+}
+
+function M24ShellBody({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  // R67 C-14: the FOOTER MESSAGE AREA's own handle. Page forms report their
+  // saves here (through C-06's pushReceipt), and so does a failure nobody on
+  // site can act on.
+  const shellMessages = useShellMessages();
 
   const [mode, setMode] = useState<ChainMode>(DEFAULT_CHAIN_MODE);
   const [segments, setSegments] = useState<Chain["segments"]>([]);
@@ -425,6 +452,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // of six other callbacks, and rebuilding it on every tab click would
   // rebuild all of them.
   const activeTabRef = useRef<TaskTabId>("home");
+  // R67 C-13: which system failures have already been announced in the shell
+  // message region. A ref, so re-reading the task list cannot re-announce the
+  // same outage on every poll.
+  const reportedSystemIdsRef = useRef<Set<string>>(new Set());
   // R67 C-07: declared here, above onReset and openDoor, because both of
   // them clear the tray and a useCallback dependency array is evaluated at
   // RENDER time -- a later const would be a temporal-dead-zone crash, not a
@@ -1162,9 +1193,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // C-06: a multi-field create route IS the card -- band 2 stays empty while
   // its form is open -- so the page reports its own save back here and the
   // receipt lands in the same band a composer write's would.
-  const pushReceipt = useCallback((next: { text: string; href: string }) => {
-    setReceipt(next);
-  }, []);
+  const pushReceipt = useCallback(
+    (next: { text: string; href: string }) => {
+      setReceipt(next);
+      // R67 C-14: AND into the shell region, which is the half that survives
+      // the navigation the save itself causes. Band 2's receipt is the
+      // composer answering for what IT did; this is the product answering for
+      // a write made on a page's own form, and C-14 rules they are separate
+      // surfaces.
+      shellMessages.push({ kind: "saved", text: next.text, href: next.href });
+    },
+    [shellMessages]
+  );
 
   const shellChain: ShellChainApi = useMemo(
     () => ({
@@ -1990,6 +2030,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     void loadTasks();
   }, [activeTab, loadTasks]);
 
+  // R67 C-13: "system rows never appear as needs-you and instead post 'The
+  // service was unavailable at 10:42 — Retry' into the footer message area."
+  //
+  // ONCE PER ROW, EVER. The task list is re-read after every submit and on
+  // every tab change, and a message re-posted on each of those would turn one
+  // outage into a wall. The retry is the row's own, so pressing it re-submits
+  // the identical body -- which is safe precisely because a system failure
+  // means nothing was written.
+  useEffect(() => {
+    const unreported = taskData.groups.blocked.filter(
+      (row) => row.isSystemFailure && !reportedSystemIdsRef.current.has(row.id)
+    );
+    if (unreported.length === 0) return;
+    for (const row of unreported) {
+      reportedSystemIdsRef.current.add(row.id);
+      shellMessages.push({
+        kind: "error",
+        text: serviceUnavailableText(row.createdAtMs ?? taskData.loadedAt),
+        retry: () => void retryTask(row),
+      });
+    }
+  }, [taskData.groups.blocked, taskData.loadedAt, shellMessages, retryTask]);
+
   const onRowAction = useCallback(
     (row: ProjexaTaskRow, action: RowAction) => {
       if (action.kind === "open") {
@@ -2233,6 +2296,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       }
       composer={
         <Composer
+          // R67 C-14: the spec's FOOTER MESSAGE AREA, above the box and
+          // outside it. Renders nothing at all when there is nothing to say.
+          messages={<ShellMessageRegion onOpen={(href) => router.push(href)} />}
           chain={chain}
           onModeChange={setMode}
           onCutFrom={onCutFrom}
