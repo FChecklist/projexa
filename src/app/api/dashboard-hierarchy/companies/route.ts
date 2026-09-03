@@ -23,7 +23,26 @@ import { getOrganizationSummary, listUserCompanies, resolveHierarchyCompanies } 
 // read-time fallback; nothing is written).
 export async function GET() {
   const ctx = await requireAuth();
-  if (ctx.response) return ctx.response;
+  // R67 E-37 follow-up. "YOU BELONG TO NO COMPANY" IS AN ANSWER, NOT AN ERROR.
+  //
+  // requireAuth() replies 400 "No organization" whenever the caller has no
+  // memberships row (auth-guard.ts). Returning that verbatim made the empty
+  // state this item exists to create UNREACHABLE: the client's getJson() turns
+  // any !res.ok into null, so a member-less caller landed in the "failed"
+  // branch and read "Couldn't load your companies" beside a Retry that could
+  // never succeed -- a confident wrong answer, which is the exact defect class
+  // E-37 is closing. For THIS route that state is the reply, so it is answered
+  // with a 200 carrying emptyReason "not-a-member" and the client's already
+  // correct branch renders the sentence the item quotes.
+  //
+  // Only that one status is reinterpreted. 401 (no valid session) and 503 (the
+  // membership lookup itself failed twice -- see auth-guard's retry) are real
+  // failures and still propagate, so "we could not ask" never masquerades as
+  // "you belong to nothing".
+  if (ctx.response) {
+    if (!ctx.user || ctx.response.status !== 400) return ctx.response;
+    return NextResponse.json(resolveHierarchyCompanies([], null, null, null));
+  }
 
   const memberships = await listUserCompanies(ctx.user!.id);
   // Only looked up when there is nothing to list -- the happy path keeps its

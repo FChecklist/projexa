@@ -119,6 +119,18 @@ export type HierarchyCompanies = {
  * fallback and writes NOTHING -- no production data is invented, and the
  * moment a real membership row exists it wins.
  *
+ * HOW OFTEN THAT THIRD BRANCH FIRES, STATED HONESTLY. In PROJEXA a "company"
+ * IS an organisation the caller is a member of, so on the normal path a
+ * membership row always produces a company row and synthesis never runs. It is
+ * reachable only when the route's two reads DISAGREE, and they can: the
+ * organisation id on the request context comes from Supabase PostgREST under
+ * the caller's own JWT (auth-guard's memberships query), while
+ * listUserCompanies reads the same table through drizzle on the pooled app
+ * role. A row visible to one and not the other -- RLS, replica lag, a write
+ * still in flight -- is the case this branch answers, and it answers it with
+ * the organisation's real name rather than an empty screen. It is defensive,
+ * not a routine path, and the two states it is NOT are the two above it.
+ *
  * PURE ON PURPOSE. The two reads (memberships, organisation) stay in the route;
  * this decides what to do with their results, so the decision -- which is the
  * part with three branches and a wrong answer in each -- is unit-testable
