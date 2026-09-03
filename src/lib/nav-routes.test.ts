@@ -149,6 +149,17 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",
 
+  // R67 E-01 (R-007) and E-02 (R-012): both of these are now REDIRECTS to
+  // /dashboard. Their screens were retired as destinations -- the project rows
+  // with % bars, and the Company/Department/date filters, all live on
+  // /dashboard itself now -- so their nav entries were withdrawn from
+  // AppSidebar. The page.tsx files deliberately stay on disk so every existing
+  // bookmark, shared link and audit screenshot still lands somewhere real
+  // instead of on a 404. Not reachable by clicking, by design, and that is the
+  // written reason this list asks for.
+  "/dashboard/hierarchy",
+  "/dashboard/overview",
+
   // Real-screen conversion catch-up (2026-08-30): every one of these is the
   // exact same class as /customers/[id] and /permits/new above -- a real
   // Object Page or create screen reached by clicking a row/button on its own

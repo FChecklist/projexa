@@ -30,10 +30,20 @@ export type NavSection = { titleKey: string | null; items: NavItem[] };
 const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.overview",
+    // R67 E-01 (R-007) and E-02 (R-012): "Company Dashboard"
+    // (/dashboard/hierarchy) and "Projects Overview" (/dashboard/overview) are
+    // gone from this list because both screens are gone as destinations. The
+    // project rows with their % bars, and the Company/Department/date filters,
+    // are on /dashboard itself now, so offering three doors to one room was
+    // the thing to remove -- not a third screen to maintain.
+    //
+    // Both ROUTES still exist and redirect to /dashboard (see their page.tsx
+    // files), so every bookmark and shared link still lands somewhere real;
+    // it is only the nav entry that is withdrawn. This array is also what
+    // ModuleDirectory renders, so removing an item here removes it from the
+    // home module directory too, which is exactly what the item asks for.
     items: [
       { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
-      { labelKey: "items.projectsOverview", href: "/dashboard/overview", icon: BarChart3 },
     ],
   },
   {

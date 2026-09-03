@@ -1,24 +1,39 @@
 import Link from "next/link";
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, TrendingUp, Receipt, Building2, AlertTriangle } from "lucide-react";
+import { Wallet, TrendingUp, Receipt, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
-import { MONEY_CELL_CLASS, currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
-
-/** Money column headers align with their cells. */
-const MONEY_HEAD_CLASS = "text-right";
+import { currencyUnitSuffix, formatMoney, hasCurrency } from "@/lib/format-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { ProjectRowList } from "@/components/dashboard/ProjectRow";
+import { GroupedBarChart, type GroupedBarGroup, type GroupedBarSeries } from "@/components/charts/GroupedBarChart";
+import { DashboardFilterDrawer, dateRangeCaption } from "@/components/dashboard/DashboardFilterDrawer";
+import { needsYouSummary, sortProjectRows, type DashboardProject } from "@/lib/dashboard-rows";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
 // other registry-driven screen this session -- PermitsListClient,
-// DocumentsClient, ScopeClient). Nothing about data-fetching, values, or
-// structure moved here changed -- this is a 1:1 lift of the original JSX.
+// DocumentsClient, ScopeClient).
+//
+// R67 E-01 (R-007) + E-02 (R-012). WHAT THIS SCREEN IS NOW, and why:
+//
+// It was a four-KPI grid over a seven-column project TABLE. Sumeet's home is a
+// project LIST -- one row per project, a bar filled to % complete, the contract
+// and the spend, and a status word -- and the requirement was written against
+// /dashboard/overview, a route almost nobody lands on. So the rows moved onto
+// the route users actually land on, /dashboard/overview redirects here, and
+// there is now exactly ONE project row in the product rather than two that
+// could drift.
+//
+// The order of the page is the order of the questions: the ONE number
+// (earned value against contract value), then the portfolio chart, then the
+// rows, then the supporting KPIs. The four KPI cards did not disappear -- they
+// moved BELOW the rows, as secondary, because "how much revenue in total" is a
+// question you ask after "which project needs me today", not before.
 export type OrgDashboard = {
   totalProjects: number;
   totalBudget: number;
@@ -30,64 +45,34 @@ export type OrgDashboard = {
   // R39 (R-51): earnedValue/percentByValue reuse that SAME service's
   // earnedValueReport() (D-3, single source of truth with the WPR report) --
   // null (not 0) when construction isn't enabled or there's no BOQ yet.
-  projects: { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number; value: number | null; earnedValue: number | null; percentByValue: number | null }[];
+  // R67 E-01: percentByActivity / spendOverValue / permitsExpiring30d are the
+  // three facts the project ROW needs; spendOverValue is null (not false) when
+  // the reader's role had it redacted along with revenue/expenses.
+  projects: DashboardProject[];
+  /** R67 E-02: true when the Filter drawer's date range narrowed revenue and spend. */
+  dateRangeApplied?: boolean;
 };
-// Local, server-safe copy (not imported from @/lib/currency, which is a
-// "use client" module -- this page is a Server Component and fetches its
-// own currencies list directly via callVeridian, same as /api/currencies'
-// own backing call). Priority 17 re-sweep fix: was
-// Intl.NumberFormat(..., { currency: "INR" }), forcing both symbol and
-// grouping to India regardless of the org's real base currency.
 export type CurrencyRow = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
+
 // R51 (R-62): the fallback was the literal "₹". This component IS the
 // landing screen, so that constant was the single most visible instance of
-// the bug -- a UAE buyer's first view of the product showed rupees whenever
-// the currencies list was empty, which for an org with no erp_currencies
-// base row (4 of 5 real orgs, measured 2026-08-26) is permanently. Same
-// rule as @/lib/currency: never render a currency token we cannot source.
-// The value is duplicated rather than imported because that module is
-// "use client" and this is a Server Component -- see the note above; the
-// two must be kept in step.
-// R67 G-05 (R-260): this file's own local formatCurrency() is gone. It was
-// the third independent copy of the same logic in this app, and it disagreed
-// with the other two in two ways that showed on screen: 0 decimals here
-// against 2 elsewhere, so one amount read "AED 1,200" on the home page and
-// "AED 1,200.00" one click away; and a null value fell through to the same
-// rendering as zero. src/lib/format-money.ts is now the only copy. It has no
-// "use client" and no React, precisely so this Server Component can use it.
-//
-// NEXT_PUBLIC_DEFAULT_CURRENCY_CODE is deliberately NOT consulted: it is a
-// deployment-wide guess, and R-260's rule is that a screen with no per-org
-// currency renders the number behind a warning glyph and says so once,
-// rather than labelling an amount with a code nobody confirmed. The
-// CurrencyNotSetNotice at the foot of the page is that sentence.
+// the bug. Same rule as @/lib/currency: never render a currency token we
+// cannot source. NEXT_PUBLIC_DEFAULT_CURRENCY_CODE is deliberately NOT
+// consulted -- see src/lib/format-money.ts's header.
 function orgCurrency(currencies: CurrencyRow[]): string | null {
   return currencies.find((c) => c.isBaseCurrency)?.code ?? null;
 }
-/** KPI tiles show whole units -- the fraction is noise at that size. Every table cell keeps two decimals. */
+/** KPI tiles show whole units -- the fraction is noise at that size. Every row and table keeps two decimals. */
 function formatKpi(n: number | null, currencies: CurrencyRow[]) {
   return formatMoney(n, { currency: orgCurrency(currencies), fractionDigits: 0 });
 }
-function formatCurrency(n: number | null, currencies: CurrencyRow[]) {
-  return formatMoney(n, { currency: orgCurrency(currencies) });
-}
 
-// R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
-// "dashboard.dashboard"): intentionally the same fields as ScreenColumn so a
-// registry row can be passed straight in with no reshaping, same pattern as
-// PermitsListClient/ScopeClient's RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
 // Fallback when no registry row is seeded yet (or the resolve call errors) --
 // mirrors the registry seed 1:1, so there is no visible difference between
 // "resolved from the DB" and this hardcoded default. Only LABEL text is
-// registry-driven here: the KPI cards and Projects table below stay the
-// fully hand-built layout that already shipped (not the kit's generic
-// DashboardScreen composition -- this is PROJEXA's HOME_ROUTE with its own
-// HomeGreeting hero and a real 4-card + full project-table layout; swapping
-// to DashboardScreen's oneNumber/trend/breakdown shape would be a much
-// larger visual rewrite of a live production landing page for label-only
-// registry gain, same minimal-risk call R46 P8 seq121 made for boq.custom).
+// registry-driven here.
 const DEFAULT_COLUMNS: ScreenColumn[] = [
   { field: "totalProjects", label: "Active Projects", type: "number", importance: "High" },
   { field: "totalBudget", label: "Total Budget", type: "number", importance: "High" },
@@ -106,47 +91,78 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
   return columns.find((c) => c.field === field)?.label || fallback;
 }
 
+/** R67 E-02 chart 1 -- one group per project, three bars: contract, earned, spend. */
+const PORTFOLIO_SERIES: GroupedBarSeries[] = [
+  { key: "contract", label: "Contract value", color: "var(--color-chart-1)" },
+  { key: "earned", label: "Earned value", color: "var(--color-chart-2)" },
+  { key: "spend", label: "Spend", color: "var(--color-chart-3)" },
+];
+
+/**
+ * The chart is HIDDEN below two projects, per the item: a "portfolio
+ * comparison" of one project compares nothing, and a single lonely group is
+ * chart furniture around a number the row above already states.
+ */
+export const PORTFOLIO_CHART_MIN_PROJECTS = 2;
+
+export function portfolioChartGroups(projects: DashboardProject[]): GroupedBarGroup[] {
+  return projects.map((p) => ({
+    key: p.id,
+    label: p.name,
+    // null, never 0: a project with no BOQ has no contract value and no earned
+    // value, and the chart draws that as a hatch labelled "No BOQ".
+    values: { contract: p.value, earned: p.earnedValue, spend: p.expenses ?? 0 },
+  }));
+}
+
 export default function DashboardHomeView({
   userName,
   data,
   currencies,
   errorMessage,
   registryColumns,
+  from = null,
+  to = null,
 }: {
   userName: string;
   data: OrgDashboard | null;
   currencies: CurrencyRow[];
   errorMessage: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /** The Filter drawer's date range, so the figures it narrowed can be captioned. */
+  from?: string | null;
+  to?: string | null;
 }) {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_COLUMNS;
-  const currencySet = hasCurrency({ currency: orgCurrency(currencies) });
-  const unitSuffix = currencyUnitSuffix({ currency: orgCurrency(currencies) }) ?? "";
+  const currency = orgCurrency(currencies);
+  const currencySet = hasCurrency({ currency });
+  const unitSuffix = currencyUnitSuffix({ currency }) ?? "";
+  const money = (v: number | string | null | undefined) => formatMoney(v, { currency });
 
-  // Merged-Home-page greeting (Owner directive 2026-07-18, agreed reference
-  // mockup): /dashboard is PROJEXA's designated home route (see
-  // (app)/layout.tsx's HOME_ROUTE). Real counts only -- delayedProjectCount
-  // reuses the same per-project delayedTaskCount this page already fetches
-  // above, never a fabricated number.
+  const projects = data ? sortProjectRows(data.projects) : [];
   const delayedProjectCount = data?.projects.filter((p) => p.delayedTaskCount > 0).length ?? 0;
   const onTrackProjectCount = (data?.totalProjects ?? 0) - delayedProjectCount;
+
+  // The ONE number, at twice the type size: earned value against contract
+  // value across the portfolio. Summed over the projects that HAVE a BOQ --
+  // a project with none contributes nothing rather than a zero, so the ratio
+  // describes the work that has actually been scoped.
+  const scoped = projects.filter((p) => p.value !== null && p.earnedValue !== null);
+  const totalContract = scoped.reduce((s, p) => s + (p.value ?? 0), 0);
+  const totalEarned = scoped.reduce((s, p) => s + (p.earnedValue ?? 0), 0);
+  const portfolioPercent = totalContract > 0 ? Math.round((totalEarned / totalContract) * 100) : null;
+
+  const attention = data ? needsYouSummary(data.projects) : null;
+  const rangeCaption = dateRangeCaption(from, to);
 
   return (
     <>
       {/* No PageHeading here -- this is PROJEXA's designated home route
           (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
-          already renders a real "Good morning, {name}." heading; a second
-          "Dashboard" label above it would be redundant. */}
-      {/* R46S11_01: this sentence used to fall through to "No active
-          projects yet" whenever `data` was null -- INCLUDING when data was
-          null because the read had FAILED. On the primary owner-facing
-          screen, for an org with 5 real active projects, a 504 rendered as a
-          confident "you have none", directly above an error card saying the
-          load failed. Same shape the sibling screen /dashboard/overview was
-          fixed for below; this one is the higher-blast-radius instance,
-          because it is the first page an owner lands on after login.
-          dashboardSummary() (src/lib/read-outcome.ts) will not state a count
-          the read could not produce. */}
+          already renders a real "Good morning, {name}." heading. */}
+      {/* R46S11_01: dashboardSummary() will not state a count the read could
+          not produce -- a 504 must never render as a confident "you have
+          none" on the first screen after login. */}
       <HomeGreeting
         userName={userName}
         summary={dashboardSummary(
@@ -167,111 +183,85 @@ export default function DashboardHomeView({
           </Card>
         )}
 
-        <div className="flex justify-end">
-          <CreateProjectDialog />
-        </div>
+        {/* R67 E-02: the retired /dashboard/hierarchy screen's Company and
+            Department selects live here now, with the date range. */}
+        <DashboardFilterDrawer />
 
         {data && (
           <>
+            {/* THE ONE NUMBER. Twice the type size of everything below it, with
+                a real baseline beside it -- a value with no comparison is a
+                failed card by the dashboard rule this product follows. */}
+            <Card className="shadow-card">
+              <CardContent className="space-y-1 p-5">
+                <p className="text-[12.5px] text-px-muted">Earned value across the portfolio</p>
+                <p className="font-heading text-4xl text-px-ink" data-testid="dashboard-one-number">
+                  {portfolioPercent === null ? "No BOQ yet" : `${formatKpi(totalEarned, currencies)} of ${formatKpi(totalContract, currencies)} (${portfolioPercent}%)`}
+                </p>
+                <p className="text-[12.5px] text-px-muted">
+                  {portfolioPercent === null
+                    ? "Import a BOQ on a project to see earned value."
+                    : `Across ${scoped.length} of ${data.totalProjects} ${data.totalProjects === 1 ? "project" : "projects"} with a BOQ.`}
+                </p>
+                {attention && <p className="text-[12.5px]" style={{ color: "var(--status-late-text)" }}>{attention}</p>}
+              </CardContent>
+            </Card>
+
+            {/* Chart 1 (sumeet 5.png), between the one number and the rows.
+                Hidden below two projects -- see PORTFOLIO_CHART_MIN_PROJECTS. */}
+            {projects.length >= PORTFOLIO_CHART_MIN_PROJECTS && (
+              <Card className="shadow-card">
+                <CardContent className="p-5">
+                  <GroupedBarChart
+                    title="Contract, earned and spend by project"
+                    groups={portfolioChartGroups(projects)}
+                    series={PORTFOLIO_SERIES}
+                    moneyPrefix={currency ? `${currency} ` : ""}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="shadow-card">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle className="font-heading text-base">Projects</CardTitle>
+                <CreateProjectDialog />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {rangeCaption && <p className="text-[11.5px] text-px-muted">{rangeCaption}</p>}
+                {data.projects.length === 0 && !mayAssertEmpty(errorMessage) ? (
+                  // Only a read that SUCCEEDED may report "none" -- the same
+                  // rule the greeting above follows.
+                  <p className="py-8 text-center text-sm text-px-muted">Couldn&apos;t load the project list — see the error above.</p>
+                ) : (
+                  <ProjectRowList projects={projects} money={money} />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* The four original KPI cards, now SECONDARY and below the rows:
+                a portfolio total answers a question you ask after "which
+                project needs me today", not before it. */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <DashboardCard title={columnLabel(columns, "totalProjects", "Active Projects")} value={data.totalProjects} icon={Building2} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalBudget", "Total Budget")} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
-              <DashboardCard title={columnLabel(columns, "totalRevenue", "Total Revenue")} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
-              <DashboardCard title={columnLabel(columns, "totalExpenses", "Total Expenses")} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
+              <DashboardCard title={`${columnLabel(columns, "totalBudget", "Total Budget")}${unitSuffix}`} value={formatKpi(data.totalBudget, currencies)} icon={Wallet} variant="total" />
+              <DashboardCard title={`${columnLabel(columns, "totalRevenue", "Total Revenue")}${unitSuffix}`} value={formatKpi(data.totalRevenue, currencies)} icon={TrendingUp} variant="completed" />
+              <DashboardCard title={`${columnLabel(columns, "totalExpenses", "Total Expenses")}${unitSuffix}`} value={formatKpi(data.totalExpenses, currencies)} icon={Receipt} variant="pending" />
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-px-muted">
-                {/* R67 G-04 (R-231): the second branch used to end "Create
-                    another one below.", which referred to nothing -- the
-                    only create control is the button to the RIGHT of this
-                    sentence, not below it, and the first branch's "create one
-                    below" had the same fault. Both now point at the control
-                    that actually exists, by its own label. */}
+                {/* R67 G-04 (R-231): both branches point at the control that
+                    actually exists, by its own label. */}
                 {data.totalRevenue === 0
                   ? `Total Revenue shows ${formatKpi(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org.`
                   : "Revenue reflects VERIDIAN ERP sales invoices for this org."}
               </p>
-              {/* Real-screen conversion (2026-08-30) -- was a separate,
-                  duplicate "Create / Link Invoice" Dialog popup
-                  (CreateInvoiceDialog.tsx) with its own copy of the same
-                  create-invoice logic InvoicesClient.tsx had; now routes to
-                  the one real Invoice create screen instead of maintaining
-                  two forms that could drift apart. */}
               <Button variant="outline" size="sm" asChild>
                 <Link href="/invoices/new"><Receipt className="size-4" /> Create / Link Invoice</Link>
               </Button>
             </div>
 
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="font-heading text-base">Projects</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data.projects.length === 0 ? (
-                  // Same rule as the greeting above: only a read that
-                  // succeeded may report "none". Today `data` and
-                  // `errorMessage` are mutually exclusive (dashboard/page.tsx
-                  // sets one or the other), so this guard costs nothing --
-                  // it is here so the honest branch cannot be lost if that
-                  // ever changes.
-                  <p className="py-8 text-center text-sm text-px-muted">
-                    {mayAssertEmpty(errorMessage) ? "No active projects yet." : "Couldn't load the project list — see the error above."}
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{columnLabel(columns, "project", "Project")}</TableHead>
-                        {/* R67 G-05: the unit is stated once, in the header. */}
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "value", "Value")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "earnedValue", "Earned Value")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "revenue", "Revenue")}{unitSuffix}</TableHead>
-                        <TableHead className={MONEY_HEAD_CLASS}>{columnLabel(columns, "expenses", "Expenses")}{unitSuffix}</TableHead>
-                        <TableHead className="text-right">{columnLabel(columns, "tasks", "Tasks")}</TableHead>
-                        <TableHead className="text-right">{columnLabel(columns, "delayed", "Delayed")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.projects.map((p) => (
-                        <TableRow key={p.id}>
-                          {/* R42 seq24: the real per-project DASHBOARD.PROJECT screen this org table had no link to before -- was a dead end otherwise. */}
-                          <TableCell className="font-medium">
-                            <Link href={`/dashboard/project?projectId=${p.id}`} className="text-px-ink hover:underline">{p.name}</Link>
-                          </TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>{p.value === null ? <span className="text-px-muted">No scope yet</span> : formatCurrency(p.value, currencies)}</TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>
-                            {p.earnedValue === null ? (
-                              <span className="text-px-muted">No progress yet</span>
-                            ) : (
-                              <>
-                                {formatCurrency(p.earnedValue, currencies)}
-                                <span className="text-px-muted"> ({p.percentByValue}%)</span>
-                              </>
-                            )}
-                          </TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.revenue, currencies)}</TableCell>
-                          <TableCell className={MONEY_CELL_CLASS}>{formatCurrency(p.expenses, currencies)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{p.taskCount}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {p.delayedTaskCount > 0 ? (
-                              // R67 WS-G: the glyph and the number both carry
-                              // it; the tone is the readable rose text token,
-                              // not the raw error red.
-                              <span className="inline-flex items-center gap-1" style={{ color: "var(--status-late-text)" }}>
-                                <AlertTriangle className="size-3.5" /> {p.delayedTaskCount}
-                              </span>
-                            ) : (
-                              <span className="text-px-muted">0</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
             {/* R67 G-05: said once, at the foot of the page. */}
             <CurrencyNotSetNotice currencySet={currencySet} />
           </>

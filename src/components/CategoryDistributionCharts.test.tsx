@@ -16,7 +16,7 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { CategoryDistributionCharts } from "./CategoryDistributionCharts";
+import { CategoryDistributionCharts, CategoryDistributionChartsView, analyticsHref, PIE_MAX_SLICES, type CategoryEntry } from "./CategoryDistributionCharts";
 
 afterEach(() => {
   cleanup();
@@ -28,7 +28,7 @@ describe("CategoryDistributionCharts", () => {
   test("a fetch failure (e.g. 502 from the category-boq-amounts dependency) shows a real error state", async () => {
     globalThis.fetch = (async () => new Response(null, { status: 502 })) as typeof fetch;
 
-    const { getByText, queryByText } = render(<CategoryDistributionCharts companyId="c-1" projectId="p-1" />);
+    const { getByText, queryByText } = render(<CategoryDistributionCharts projectId="p-1" />);
 
     await waitFor(() => expect(getByText(/unable to load category data/i)).toBeDefined());
     expect(queryByText(/no boq line items found/i)).toBeNull();
@@ -37,9 +37,75 @@ describe("CategoryDistributionCharts", () => {
   test("a genuinely empty category list shows the distinct empty-state message, not the error state", async () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({ categories: [] }), { status: 200 })) as typeof fetch;
 
-    const { getByText, queryByText } = render(<CategoryDistributionCharts companyId="c-1" projectId="p-1" />);
+    const { getByText, queryByText } = render(<CategoryDistributionCharts projectId="p-1" />);
 
-    await waitFor(() => expect(getByText(/no boq line items found/i)).toBeDefined());
+    await waitFor(() => expect(getByText(/no boq line items yet/i)).toBeDefined());
     expect(queryByText(/unable to load category data/i)).toBeNull();
+  });
+});
+
+// R67 E-02 (R-012), chart 2. The presentational half is exercised directly:
+// its rules -- the pie cap, the money labels, the destination on every bar --
+// are what the item asks for, and none of them is visible through the fetching
+// wrapper's loading/error states.
+const money = (v: number | string | null | undefined) =>
+  v === null || v === undefined
+    ? "–"
+    : `AED ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function category(i: number, overrides: Partial<CategoryEntry> = {}): CategoryEntry {
+  return {
+    categoryId: `cat-${i}`,
+    name: `Category ${i}`,
+    totalAmount: 1000 * i,
+    sharePercent: 10 * i,
+    percentComplete: 40,
+    completedAmount: 400 * i,
+    ...overrides,
+  };
+}
+
+describe("CategoryDistributionChartsView (R67 E-02)", () => {
+  test("every category is labelled with the money, not just a percentage", () => {
+    const { getByText } = render(
+      <CategoryDistributionChartsView categories={[category(1, { name: "Civil" })]} projectId="p-1" money={money} />
+    );
+    expect(getByText(/Completed AED 400\.00 \/ Total AED 1,000\.00 \(40%\)/)).toBeDefined();
+  });
+
+  test("every category is a link into Work Progress > Analytics, filtered to it -- never a dead end", () => {
+    const { getByText } = render(
+      <CategoryDistributionChartsView categories={[category(1, { name: "Civil" })]} projectId="p-1" money={money} />
+    );
+    const link = getByText("Civil").closest("a");
+    expect(link?.getAttribute("href")).toBe("/work-progress?projectId=p-1&tab=analytics&category=Civil");
+  });
+
+  test("five categories or fewer: the pie is drawn beside the bars", () => {
+    const five = [1, 2, 3, 4, 5].map((i) => category(i));
+    const { getByText } = render(<CategoryDistributionChartsView categories={five} projectId="p-1" money={money} />);
+    expect(five.length).toBe(PIE_MAX_SLICES);
+    expect(getByText("Category share of total BOQ")).toBeDefined();
+  });
+
+  test("more than five categories: BARS ONLY -- a pie with six segments answers nothing", () => {
+    const six = [1, 2, 3, 4, 5, 6].map((i) => category(i));
+    const { queryByText, getByText } = render(<CategoryDistributionChartsView categories={six} projectId="p-1" money={money} />);
+    expect(queryByText("Category share of total BOQ")).toBeNull();
+    expect(getByText("Completed vs total amount per category")).toBeDefined();
+  });
+
+  test("no categories at all: the empty state says what to do next, and offers the link to do it", () => {
+    const { getByText } = render(<CategoryDistributionChartsView categories={[]} projectId="p-1" money={money} />);
+    expect(getByText(/No BOQ line items yet/)).toBeDefined();
+    expect(getByText("Import a BOQ").closest("a")?.getAttribute("href")).toBe("/scope?projectId=p-1");
+  });
+});
+
+describe("analyticsHref", () => {
+  test("encodes a category name containing a space or an ampersand", () => {
+    expect(analyticsHref("p 1", "Civil & Structural")).toBe(
+      "/work-progress?projectId=p%201&tab=analytics&category=Civil%20%26%20Structural"
+    );
   });
 });

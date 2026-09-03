@@ -12,12 +12,17 @@ import {
   DashboardScreen,
   KpiCard,
   BulletChart,
-  BarChart,
   LineChart,
   LinkListCard,
-  type BarChartDatum,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+// R67 E-02 (R-012), chart 2: the percent-only kit BarChart in breakdownColumn
+// is replaced by the real category-distribution charts. The presentational
+// half is imported so this screen's own already-fetched category-progress
+// response feeds it -- no second request, and the percentage and the money
+// come from one read of one BOQ revision.
+import { CategoryDistributionChartsView, type CategoryEntry } from "@/components/CategoryDistributionCharts";
+import { useOrgMoney } from "@/lib/use-org-money";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -63,7 +68,12 @@ type ProjectDashboard = {
   contractValue: number | null;
 };
 type Currency = { code: string; isBaseCurrency: boolean };
-type CategoryRow = { categoryId: string; name: string; percentComplete: number };
+// R67 E-02: the category-progress report now carries the money as well as the
+// percentage (compliance-tracker categoryProgressReport). Older fields are
+// unchanged; totalAmount/completedAmount/sharePercent are additive, so a
+// response from a backend that predates that change still renders -- the
+// figures simply read as zero money until it lands.
+type CategoryRow = CategoryEntry;
 type RecentEntry = { id: string; activityId: string; entryDate: string; quantityDone: string; percentComplete: string };
 type Activity = { id: string; name: string };
 type Permit = { id: string; daysToExpiry: number | null };
@@ -81,6 +91,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const [dashboard, setDashboard] = useState<ProjectDashboard | null>(null);
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const orgMoney = useOrgMoney();
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [permitsExpiring, setPermitsExpiring] = useState<Permit[]>([]);
@@ -108,7 +119,16 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       // summed in the browser) -- no projexa consumer of this real, working
       // report existed before this seq.
       const catRes = await fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => null);
-      setCategories(catRes?.categories ?? []);
+      setCategories(
+        (catRes?.categories ?? []).map((c: Partial<CategoryRow> & { categoryId: string; name: string }) => ({
+          categoryId: c.categoryId,
+          name: c.name,
+          percentComplete: Number(c.percentComplete ?? 0),
+          totalAmount: Number(c.totalAmount ?? 0),
+          completedAmount: Number(c.completedAmount ?? 0),
+          sharePercent: Number(c.sharePercent ?? 0),
+        }))
+      );
       setLoading(false);
     }
     load();
@@ -120,8 +140,6 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const hasEv = dashboard.earnedValue !== null && dashboard.contractValue !== null;
   const expiringCount = permitsExpiring.length;
   const expiredCount = permitsExpiring.filter((p) => (p.daysToExpiry ?? 0) < 0).length;
-
-  const categoryBars: BarChartDatum[] = categories.map((c) => ({ label: c.name, value: c.percentComplete }));
 
   return (
     <DashboardScreen
@@ -224,11 +242,15 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       breakdownColumn={
         <>
           <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressByCategoryHeading", "Progress by scope category")}</h3>
-          {categoryBars.length > 0 ? (
-            <BarChart data={categoryBars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />
-          ) : (
-            <p className="text-[12.5px] text-ct-muted">No category breakdown yet.</p>
-          )}
+          {/* R67 E-02 (R-012): was the kit's percent-only BarChart, which told
+              a reader "Civil 40%" without saying whether Civil is a tenth of
+              the job or nine tenths. This is the real distribution -- share of
+              the BOQ, completed against total in money, a pie only at five
+              categories or fewer, and every category a link into Work Progress
+              > Analytics filtered to it. Its own empty state names the next
+              step ("Import a BOQ"), so the "No category breakdown yet." dead
+              end is gone with it. */}
+          <CategoryDistributionChartsView categories={categories} projectId={projectId} money={orgMoney.money} />
         </>
       }
       linkList={
