@@ -39,6 +39,7 @@ import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScopeClient, { type Boq } from "@/components/ScopeClient";
+import BudgetActualClient from "@/components/BudgetActualClient";
 import BudgetAnalyticalClient from "@/components/BudgetAnalyticalClient";
 
 // R67 D-23 x F-18: the heading moved INSIDE the boundary so it can name the
@@ -53,7 +54,7 @@ const SKELETON = (
   // longer has would flash the old name on every load.
   <>
     <PageHeading title="Scope of Work (BOQ)" />
-    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Budget"]} actions={["New BOQ"]} />
+    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Budget", "Revenue / Budget / Actual"]} actions={["New BOQ"]} />
   </>
 );
 
@@ -129,14 +130,24 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
         figures. ?tab=variance is still honoured: it is the URL DASHBOARD.PROJECT
         shipped with, and the one every bookmark and older screenshot carries.
 
-        R67 merge (D-11, D1 x D21): the TabsList below has exactly two triggers,
-        "BOQ" and "Budget"; a defaultValue of "variance" would select a tab that
-        does not exist and render an empty panel, so D1's mapping of ?tab=variance
-        onto "budget" is the one that survives. */}
-    <Tabs defaultValue={tab === "budget" || tab === "variance" ? "budget" : "boq"} className="space-y-4">
+        R67 second-merge note (E1 x D1). E1's own E-08 (R-115) tab was ALSO
+        named "Budget" (value="budget") -- written on the premise, stated in
+        BudgetActualClient.tsx's own header, that it was "the item's own
+        fallback until the project-scoped Budget screen (C03-16) ships". D1's
+        BudgetAnalyticalClient IS that screen, but it answers a DIFFERENT
+        question (the editable BOQ budget/vendor sheet) -- it carries no
+        Revenue column and no scope-wise/category-wise fold, so E-08's own
+        report (aggregateRevenueBudgetActual, via BudgetActualClient) is NOT
+        actually superseded and survives as its own tab, renamed so the two
+        "Budget"s cannot collide on one value. */}
+    <Tabs
+      defaultValue={tab === "budget" || tab === "variance" ? "budget" : tab === "revenue-budget-actual" ? "revenue-budget-actual" : "boq"}
+      className="space-y-4"
+    >
       <TabsList>
         <TabsTrigger value="boq">BOQ</TabsTrigger>
         <TabsTrigger value="budget">Budget</TabsTrigger>
+        <TabsTrigger value="revenue-budget-actual">Revenue / Budget / Actual</TabsTrigger>
       </TabsList>
       <TabsContent value="boq">
         <ScopeClient
@@ -148,6 +159,9 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
       </TabsContent>
       <TabsContent value="budget" className="h-[calc(100vh-14rem)] min-h-[560px]">
         <BudgetAnalyticalClient projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="revenue-budget-actual">
+        <BudgetActualClient projectId={projectId} />
       </TabsContent>
     </Tabs>
     </>

@@ -1,44 +1,26 @@
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import { fetchProjectProgressBars } from "@/lib/dashboard-overview";
-import ProjectsOverviewClient, { type RegistryColumn } from "@/components/ProjectsOverviewClient";
+import { redirect } from "next/navigation";
 
-// R46 P8 seq124 (M28 registry-model proof, same try/catch/404-is-not-an-error
-// resolver shape as budgets/page.tsx's resolveBudgetsListColumns /
-// scope/page.tsx's resolveBoqCompareColumns). function_id is
-// "dashboard.overview", NOT "dashboard.dashboard" -- this task was
-// originally assigned "dashboard.dashboard", but seq125 (PR #142, merged
-// concurrently with this seq) already claimed that exact function_id for
-// the DIFFERENT /dashboard/project screen (its columns are that screen's
-// KPI-tile labels -- percentByValue/contractValue/budgetVsActual/etc,
-// nothing to do with this page's project-progress-bar list). Reusing it
-// here would have silently served /dashboard/project's labels onto this
-// page, or raced with its resolver over which row is "the" global row for
-// that id (both org_id IS NULL, no uniqueness constraint on function_id
-// alone). "dashboard.overview" is a distinct id for a distinct screen, and
-// leaves seq125's shipped row untouched. A missing or errored registry row
-// is NOT fatal -- ProjectsOverviewClient falls back to its own hardcoded
-// labels when this is null. Data fetching (fetchProjectProgressBars) is
-// completely unrelated to this lookup and untouched by it.
-async function resolveDashboardOverviewLabels(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/dashboard.overview", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[dashboard/overview/page] screen_definitions resolve failed, falling back to hardcoded labels:", err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
-export default async function ProjectsOverviewPage() {
-  const organizationId = await getServerOrganizationId();
-  const [labels, { bars, errorMessage }] = await Promise.all([
-    resolveDashboardOverviewLabels(organizationId),
-    fetchProjectProgressBars(organizationId),
-  ]);
-
-  return <ProjectsOverviewClient bars={bars} errorMessage={errorMessage} labels={labels} />;
+// R67 E-01 (R-007). This screen WAS the project-rows-with-bars list, and the
+// requirement it satisfied was written against it -- but almost nobody lands
+// here: /dashboard is the product's HOME_ROUTE (see (app)/layout.tsx) and is
+// where the composer, the module directory and every "go home" affordance
+// point. So the rows moved onto the route users actually land on, and this
+// route redirects there.
+//
+// A REDIRECT, NOT A DELETION, and the difference is the point: this URL is in
+// the sidebar history, in bookmarks, in screenshots from the audit itself, and
+// in at least one shared link. Deleting the page would turn every one of those
+// into a 404; redirecting turns them into the screen the reader wanted. It
+// also keeps src/lib/nav-routes.ts's SHIPPED_ROUTES honest with no edit --
+// nav-routes.test.ts regenerates that list from the real page.tsx files on
+// disk, and this is still one of them.
+//
+// The nav ENTRY is what was removed (src/components/AppSidebar.tsx's
+// "Projects Overview"), so the module directory no longer offers two doors to
+// one room; ProjectsOverviewClient.tsx and src/lib/dashboard-overview.ts stay
+// on disk, unreferenced by this route, because the follow-on items in this
+// workstream still have work against the project-row rendering and deleting
+// them now would only make that a two-step change.
+export default function ProjectsOverviewPage() {
+  redirect("/dashboard");
 }

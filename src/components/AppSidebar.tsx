@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import {
   LayoutDashboard, FileText, ClipboardList, BookOpen, Users, Package,
   Building2, Wallet, Receipt, Target, BarChart3, Bot, FolderOpen, Settings, GanttChartSquare,
-  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft,
+  MessageCircleQuestion, FileCheck2, ListChecks, FileSignature, Palette, Sofa, LayoutPanelLeft, DraftingCompass,
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
@@ -31,14 +31,26 @@ export type NavSection = { titleKey: string | null; items: NavItem[] };
 const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: "sections.overview",
+    // R67 E-01 (R-007) and E-02 (R-012): "Company Dashboard"
+    // (/dashboard/hierarchy) and "Projects Overview" (/dashboard/overview) are
+    // gone from this list because both screens are gone as destinations. The
+    // project rows with their % bars, and the Company/Department/date filters,
+    // are on /dashboard itself now, so offering three doors to one room was
+    // the thing to remove -- not a third screen to maintain.
+    //
+    // Both ROUTES still exist and redirect to /dashboard (see their page.tsx
+    // files), so every bookmark and shared link still lands somewhere real;
+    // it is only the nav entry that is withdrawn. This array is also what
+    // ModuleDirectory renders, so removing an item here removes it from the
+    // home module directory too, which is exactly what the item asks for.
     items: [
       { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
-      { labelKey: "items.projectsOverview", href: "/dashboard/overview", icon: BarChart3 },
       // R67 D-69 (audit R-261/R-300): the Projects LIST. Projects were the one
       // entity every other entity nests under that had no landing of its own --
       // only a card at the bottom of the home dashboard and a cycling switcher
       // in the top rail, neither of which is a list you can filter or export.
+      // companyDashboard/projectsOverview stay OUT of this array -- see the
+      // E-01/E-02 comment above; both routes still redirect to /dashboard.
       { labelKey: "items.projects", href: "/projects", icon: FolderOpen },
     ],
   },
@@ -80,6 +92,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.moodBoards", href: "/mood-boards", icon: Palette },
       { labelKey: "items.ffe", href: "/ffe", icon: Sofa },
       { labelKey: "items.floorPlans", href: "/floor-plans", icon: LayoutPanelLeft },
+      // R67 E-16 (R-150): Design Studio > Cost Analysis. A live module route
+      // with no nav entry is the R48_NAV_OMITS_LIVE_MODULE_ROUTE_01 defect this
+      // sidebar already carries a note about two sections down.
+      { labelKey: "items.designStudio", href: "/design-studio", icon: DraftingCompass },
     ],
   },
   {

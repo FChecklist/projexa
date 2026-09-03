@@ -11,7 +11,7 @@ import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
 import ProjectLoadError from "@/components/ProjectLoadError";
 import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
-import { getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
+import { getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ReportsClient from "@/components/ReportsClient";
 
@@ -21,7 +21,7 @@ const SKELETON = <ModuleListSkeletonBody columns={[]} tabs={["Project Reports", 
 
 async function ReportsSection({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  const [{ projectId, errorMessage }, registryColumns] = await Promise.all([
+  const [{ projectId, projectName, errorMessage }, registryColumns] = await Promise.all([
     resolveProjectForModule(requestedProjectId, organizationId),
     // R46 P8 seq126: REPORT archetype ("reports.report") -- only the picker's
     // report LABELS are registry-driven; execution stays hand-built.
@@ -36,12 +36,33 @@ async function ReportsSection({ requestedProjectId }: { requestedProjectId?: str
           resolves. ProjectLoadError keeps the backend's own words and adds the
           retry. */}
       {errorMessage && <ProjectLoadError message={`Could not load projects: ${errorMessage}`} />}
-      <ReportsClient key={projectId ?? "no-project"} projectId={projectId} registryColumns={registryColumns} />
+      <ReportsClient
+        key={projectId ?? "no-project"}
+        projectId={projectId}
+        // R67 E-13: the title block names the project in words, so the card
+        // never prints a raw cuid at the reader.
+        projectName={projectName ?? (projectId ? await getProjectName(projectId, organizationId) : null)}
+        registryColumns={registryColumns}
+      />
     </>
   );
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
+// R67 E-09 (R-128): every parameter a run is made of is read here and handed
+// to the panel as its initial state, so a link to a run OPENS on that run.
+// They stay a QUERY on /reports rather than becoming /reports/<slug> dynamic
+// segments -- src/lib/nav-routes.ts's SHIPPED_ROUTES stays exact, and the
+// deep-link contract is what the recommendation needs, not a new route shape.
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; report?: string; from?: string; to?: string; weekStart?: string }>;
+}) {
+  // R67 E-09 (R-128): report/from/to/weekStart stay in the URL and are read by
+  // ReportsClient itself through useSearchParams -- ONE reader, so the run the
+  // panel opens on and the run the URL names can never be two different things.
+  // They are declared in the type below because this route really does carry
+  // them and a reader may arrive with all four.
   const { projectId } = await searchParams;
 
   return (

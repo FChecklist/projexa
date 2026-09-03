@@ -204,6 +204,7 @@ import {
 } from "@/lib/module-catalogue";
 import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
+import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
@@ -3503,11 +3504,40 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {/* R67 D-66: everything under the shell -- every module page, every
+      {/* R67 E-10 (R-133): the shell's persistent message area. A screen that
+          fails publishes ONE sentence here, where it stays until the reader
+          dismisses it or the screen withdraws it -- unlike the toast it
+          replaces, which took the only explanation of a failure away on a
+          timer. See shell-messages.tsx for why this is not merged into the
+          Task Master pane's own shellErrors box.
+
+          R67 D-66: everything under the shell -- every module page, every
           breadcrumb, every chooser card -- reads the project from here.
-          Nothing below this line derives its own. */}
+          Nothing below this line derives its own.
+
+          R67 MERGE (E-10 x C-06/composer-chain): THREE providers nest here
+          rather than compete, each carrying something none of the others do.
+          ShellChainProvider (this lane's own -- the shellChainApi
+          useOpenDoor()/ChainDoor read, so a door can fill the control strip)
+          is untouched by this merge and stays outermost. Inside it,
+          ShellMessageProvider/ShellMessageStrip is E-10's OWN mechanism --
+          singular, @/components/shell/shell-messages -- for a PAGE'S current
+          error state, declaratively kept in sync with a key (republish to
+          replace, publish null to clear); it is NOT the same problem as
+          ShellMessagesProvider/ShellMessageRegion (plural, @/lib/shell-messages,
+          already wrapping further out -- see this component's own top, and
+          `messages={<ShellMessageRegion .../>}` below), which is this lane's
+          own canonical receipt log surviving exactly one navigation, grouped,
+          sessionStorage-persisted. Neither substitutes for the other (the
+          plural log has no key/replace/withdraw semantics -- see that
+          module's own header), so both stay, each rendering its own region:
+          the log above the composer per its own header, this strip at the
+          foot of the right pane per E-10's own header -- not overlapping. */}
       <ShellChainProvider value={shellChainApi}>
-        <ProjectScopeProvider value={projectScope}>{children}</ProjectScopeProvider>
+        <ShellMessageProvider>
+          <ProjectScopeProvider value={projectScope}>{children}</ProjectScopeProvider>
+          <ShellMessageStrip />
+        </ShellMessageProvider>
       </ShellChainProvider>
     </AppShell>
   );

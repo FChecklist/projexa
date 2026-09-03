@@ -158,16 +158,20 @@ describe("D-17: deleting", () => {
 });
 
 describe("D-17: the Export menu, and the minutes box", () => {
+  // R67 E-18 / E-20, merged 2026-09-03: this is now the SHARED Export control
+  // every screen that produces a document uses. It still shows one word on
+  // screen; its ACCESSIBLE name lists the formats behind it, so a screen
+  // reader is told what the menu holds instead of hearing a bare "Export".
   test("Export is a worded header action, not a ghost icon in the body", async () => {
     const { getByRole, getByText } = mount();
     await waitFor(() => expect(getByText("Weekly Site Coordination")).toBeDefined());
-    expect(getByRole("button", { name: "Export" })).toBeDefined();
+    expect(getByRole("button", { name: /^Export/ })).toBeDefined();
   });
 
   test("a published meeting KEEPS the Export menu -- a locked meeting is exactly the one you send", async () => {
     const { getByRole, getByText } = mount({ status: "published", publishedAt: "2026-08-28T11:00:00.000Z" });
     await waitFor(() => expect(getByText("Weekly Site Coordination")).toBeDefined());
-    expect(getByRole("button", { name: "Export" })).toBeDefined();
+    expect(getByRole("button", { name: /^Export/ })).toBeDefined();
   });
 
   test("the explicit button is 'Save now' and is inert while the box matches the server", async () => {

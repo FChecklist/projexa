@@ -76,6 +76,10 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
   /** "-" for a figure that does not exist; the org's money format for one that does. */
   const cell = (value: number | null) => (value === null ? "-" : money(value));
   const noBudgetDimension = rows.length > 0 && budgeted.length === 0;
+  // R67 E-16: ONE scale for every bar on screen, so the bars are comparable
+  // down the column instead of each row being drawn to its own maximum (which
+  // would make the smallest row look as big as the largest).
+  const barScale = rows.reduce((max, r) => Math.max(max, r.actual, r.budget ?? 0), 0);
 
   return (
     <ScreenFrame
@@ -134,8 +138,44 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
               {rows.map((row) => {
                 const v = variance(row.budget, row.actual);
                 return (
-                  <TableRow key={row.label}>
-                    <TableCell>{row.label}</TableCell>
+                  <TableRow key={row.label} data-testid="cost-analysis-row">
+                    <TableCell>
+                      <span className="block">{row.label}</span>
+                      {/* R67 E-16 (R-150): the PAIRED bar. Four columns of money
+                          make a reader do the comparison in their head; two bars
+                          on one scale make "this one is over" visible before any
+                          number is read. Scaled across the rows on screen, so
+                          the bars are comparable down the column.
+                          A row with NO budget is hatched and labelled rather
+                          than drawn as a full-width overrun -- "nobody set a
+                          budget" is not "spent 100% of nothing". */}
+                      <span className="mt-1 block space-y-0.5" aria-hidden="true">
+                        {row.budget === null ? (
+                          <span
+                            className="block h-1.5 w-full rounded-sm border border-px-line bg-[repeating-linear-gradient(45deg,var(--px-cloud)_0_4px,transparent_4px_8px)]"
+                            data-testid="cost-analysis-no-budget-bar"
+                          />
+                        ) : (
+                          <span
+                            className="block h-1.5 rounded-sm bg-px-cloud"
+                            style={{ width: `${barScale === 0 ? 0 : Math.round((row.budget / barScale) * 100)}%` }}
+                            data-testid="cost-analysis-budget-bar"
+                          />
+                        )}
+                        <span
+                          className={`block h-1.5 rounded-sm ${v.variance !== null && v.variance < 0 ? "bg-px-error" : "bg-px-accent"}`}
+                          style={{ width: `${barScale === 0 ? 0 : Math.round((row.actual / barScale) * 100)}%` }}
+                          data-testid="cost-analysis-actual-bar"
+                        />
+                      </span>
+                      <span className="text-[11.5px] text-px-muted">
+                        {row.budget === null
+                          ? "No budget set"
+                          : v.variance !== null && v.variance < 0
+                            ? "over budget"
+                            : "within budget"}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right">{cell(row.budget)}</TableCell>
                     <TableCell className="text-right">{money(row.actual)}</TableCell>
                     <TableCell className="text-right">{cell(v.variance)}</TableCell>

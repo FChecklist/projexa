@@ -13,14 +13,18 @@ type DashboardCardProps = {
   variant: DashboardCardVariant;
   className?: string;
   /**
-   * R67 D-02 (audit R-009, "EVERY NUMBER IS A DOOR"): where this KPI leads.
-   * When set, the whole card becomes a link and a visible arrow appears
-   * beside the value so the card ADVERTISES that it navigates -- a
-   * hover-only shadow does not. When absent, the hover affordance is dropped
-   * too: a card that lifts under the cursor and then does nothing is the
-   * dead end this rule exists to stop shipping.
+   * R67 E-06 (R-108) x D-02 (audit R-009, "EVERY NUMBER IS A DOOR"): a KPI
+   * tile with no destination is a dead end -- the reader is told a number
+   * and given nowhere to go and check it. `href` is the common case (a real
+   * route); `onClick` covers a destination that needs client logic (e.g. a
+   * router.push built from state) rather than a static path. hrefLabel is
+   * the words that say where an href-based tile goes ("Open budget"), so the
+   * destination is readable and not just hover-discoverable. A visible arrow
+   * appears beside the value whenever either is set, so the card ADVERTISES
+   * that it navigates -- a hover-only shadow does not.
    */
   href?: string;
+  hrefLabel?: string;
   onClick?: () => void;
 };
 
@@ -84,6 +88,7 @@ export function DashboardCard({
   variant,
   className,
   href,
+  hrefLabel,
   onClick,
 }: DashboardCardProps) {
   const styles = variantStyles[variant];
@@ -96,7 +101,7 @@ export function DashboardCard({
       // and then does nothing on click is the defect this removes.
       className={cn(
         "border-l-4 shadow-card",
-        hasDestination && "transition-shadow hover:shadow-md",
+        hasDestination && "h-full cursor-pointer transition-shadow hover:shadow-md focus-within:shadow-md",
         className
       )}
       style={{ borderLeftColor: styles.borderColor }}
@@ -122,18 +127,31 @@ export function DashboardCard({
           {subtitle && (
             <p className="text-xs text-ct-muted mt-1 truncate">{subtitle}</p>
           )}
+          {href && hrefLabel && (
+            <p className="mt-1 text-xs font-medium text-brand-text">{hrefLabel} &rarr;</p>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 
+  // The whole tile is the link, so the target is the size of the card rather
+  // than a word inside it -- and it is a real anchor, so Tab reaches it and
+  // the browser's own "open in new tab" works.
   if (href) {
     return (
-      <Link href={href} role="link" aria-label={`${title}: ${value}`} className="block">
+      <Link
+        href={href}
+        aria-label={`${title}: ${value}`}
+        className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
         {card}
       </Link>
     );
   }
+  // R67 D-02: a destination that needs client logic (e.g. a router.push
+  // built from state) rather than a static path -- same visible-arrow
+  // affordance as href, a real button instead of an anchor.
   if (onClick) {
     return (
       <button type="button" onClick={onClick} aria-label={`${title}: ${value}`} className="block w-full text-left">

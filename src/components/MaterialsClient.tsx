@@ -64,6 +64,15 @@ import { materialUnitLabel } from "@/lib/material-units";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
+// R67 E-05 (R-103): the rules the SCREEN owes this report -- the tie check that
+// gates Export, the CSV of the rows on screen, and the empty-range sentence.
+import {
+  buildMaterialCostCsv,
+  checkMaterialCostTies,
+  costReportTitle,
+  emptyRangeMessage,
+} from "@/lib/material-cost-report";
+import { ExportShareActions } from "@/components/ExportShareActions";
 
 export type Material = {
   id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean;
@@ -90,7 +99,30 @@ type Receipt = {
   voidReason: string | null;
 };
 type Vendor = { id: string; vendorName: string };
-type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
+// R67 E-05 (R-103): the Cost Report became a real parameterised report on the
+// server -- it carries a VENDOR per row, excludes VOIDED receipts, and returns
+// the grand total from the SAME grouped read as the rows so the two can never
+// describe different sets. The screen therefore reads an object, not an array.
+type CostReportRow = {
+  key: string;
+  materialId: string | null;
+  name: string;
+  spec: string | null;
+  vendorId: string | null;
+  vendorName: string | null;
+  unit: string | null;
+  totalQuantityReceived: number;
+  totalCost: number;
+  averageUnitCost: number;
+  masterUnitCost: number | null;
+  variance: number | null;
+};
+type CostReportGroupBy = "material" | "vendor";
+type CostReport = {
+  rows: CostReportRow[];
+  totals: { quantity: number; cost: number };
+  params: { projectId: string; from: string | null; to: string | null; groupBy: CostReportGroupBy };
+};
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
@@ -254,6 +286,8 @@ export default function MaterialsClient({
   initialMaterialId,
   initialMaster = null,
   readOnlyReason,
+  initialFrom,
+  initialTo,
 }: {
   projectId: string;
   projectName: string | null;
@@ -271,6 +305,10 @@ export default function MaterialsClient({
    * rose tone, so the user is told before they try rather than after.
    */
   readOnlyReason?: string;
+  /** R67 E-05 (R-103): the Cost Report's period, from the URL, so Reports >
+   *  "Material Consumption" and this tab open on the same run. */
+  initialFrom?: string;
+  initialTo?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -308,8 +346,10 @@ export default function MaterialsClient({
   // the From field is seeded from the ledger's own earliest receipt once the
   // receipts arrive -- see defaultReportFrom() for why that is the project's
   // start for this purpose.
-  const [reportFrom, setReportFrom] = useState("");
-  const [reportTo, setReportTo] = useState("");
+  // R67 E-05: seeded from the URL, so arriving from Reports > "Material
+  // Consumption" lands on that report's window rather than a blank bar.
+  const [reportFrom, setReportFrom] = useState(initialFrom ?? "");
+  const [reportTo, setReportTo] = useState(initialTo ?? "");
   const [reportWindowSeeded, setReportWindowSeeded] = useState(false);
   // R67 F-18 merge: the master arrives as a PROP, fetched by the page inside
   // its own Suspense boundary, so the landing tab paints filled with no round
@@ -318,7 +358,16 @@ export default function MaterialsClient({
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [report, setReport] = useState<CostReportRow[]>([]);
+  const [report, setReport] = useState<CostReport | null>(null);
+  // R67 E-05: "which material cost most" and "which vendor cost most" are the
+  // two questions a QS asks of this ledger. One grouped read answers both.
+  const [groupBy, setGroupBy] = useState<CostReportGroupBy>("material");
+  /**
+   * R67 E-18: what Export/Share just did, said in a line that STAYS. A toast
+   * would take the only record of a share link away on a timer, which is the
+   * defect this programme is removing rather than repeating.
+   */
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
   // R67 D-37: ONE loading flag used to gate all three tabs, so the Material
   // Master -- the tab the user is looking at -- waited for the receipts ledger
   // and the cost-report aggregate, two tabs they had not opened. Three flags,
@@ -377,22 +426,36 @@ export default function MaterialsClient({
     }
   }, [projectId]);
 
-  const loadReport = useCallback(async (window?: { from: string; to: string }) => {
+  const reportRows = report?.rows ?? [];
+  // R67 E-05: THE tie check. If the rows on screen do not sum to the Grand
+  // Total the server returned, the screen says so and Export is disabled --
+  // a QS who adds the column by hand and gets a different answer stops
+  // trusting every other figure on the screen.
+  const costReportTieError = report ? checkMaterialCostTies(report, (n: number) => money(n)) : null;
+
+  const loadReport = useCallback(async (window?: { from: string; to: string; groupBy?: CostReportGroupBy }) => {
     setLoadingReport(true);
     const params = new URLSearchParams({ projectId });
-    if (window?.from) params.set("from", window.from);
-    if (window?.to) params.set("to", window.to);
+    // R67 E-05: the window defaults to the one the SCREEN is showing, which on
+    // arrival is the one the URL carried. Without this the run on mount asks
+    // for the whole ledger while the parameter bar displays a period -- the
+    // screen and its own numbers describing different things.
+    const from = window?.from ?? reportFrom;
+    const to = window?.to ?? reportTo;
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    params.set("groupBy", window?.groupBy ?? groupBy);
     try {
-      const data = await fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?${params.toString()}`);
-      setReport(data.report ?? []);
+      const data = await fetchJson<{ report?: CostReport }>(`/api/construction-materials/cost-report?${params.toString()}`);
+      setReport(data.report ?? null);
       setLoadErrors((prev) => ({ ...prev, report: undefined }));
     } catch (err) {
-      setReport([]);
+      setReport(null);
       setLoadErrors((prev) => ({ ...prev, report: errorMessage(err, "Cost report") }));
     } finally {
       setLoadingReport(false);
     }
-  }, [projectId]);
+  }, [projectId, groupBy, reportFrom, reportTo]);
 
   // R67 D-36: the vendor list is a display-only lookup for the Inbound
   // tab's new Vendor column -- its failure degrades to an en-dash, never to
@@ -565,26 +628,28 @@ export default function MaterialsClient({
   // an export that silently covers a different period than the screen is worse
   // than no export. Relayed through this repo's own RFC-4180 CSV writer; no
   // XLSX/PDF library may exist in projexa.
+  /**
+   * R67 E-05. The CSV is built from the report ON SCREEN, including its Grand
+   * Total row, and the caption is its first line -- so an exported file can
+   * never be mistaken for a different window or a different grouping than the
+   * one the reader was looking at. buildMaterialCostCsv is the pure half,
+   * tested directly, and carries the formula-injection guard.
+   */
   function exportCostReport() {
-    const code = (orgMoney.currency ?? "");
-    const rows: unknown[][] = report.map((r, i) => [
-      i + 1, r.name, r.spec ?? "", r.unit, r.totalQuantityReceived, r.totalCost, r.averageUnitCost,
-    ]);
-    rows.push([
-      "Total", "", "", "",
-      report.reduce((sum, r) => sum + r.totalQuantityReceived, 0),
-      Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100,
-      "",
-    ]);
-    const money = (label: string) => (code ? `${label} (${code})` : label);
-    const csv = toCsv(
-      ["S.No", "Material", "Spec", "Unit", "Total Qty Received", money("Total Cost"), money("Avg Unit Cost")],
-      rows
-    );
+    if (!report) return;
     downloadCsv(
       csvFilename(`cost-report-${reportFrom || "start"}-to-${reportTo || "today"}`, projectName ?? "project", new Date().toISOString().slice(0, 10)),
-      csv
+      buildMaterialCostCsv(report)
     );
+  }
+
+  /** The report's own parameters, so every export and the share link describe the run on screen. */
+  function costReportQuery(extra: Record<string, string> = {}) {
+    const params = new URLSearchParams({ projectId, groupBy });
+    if (reportFrom) params.set("from", reportFrom);
+    if (reportTo) params.set("to", reportTo);
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    return params.toString();
   }
 
   const headerActions: PageHeadingAction[] = [
@@ -1030,18 +1095,51 @@ export default function MaterialsClient({
             >
               Whole project
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loadingReport || report.length === 0}
-              title={report.length === 0 ? "Nothing to export" : undefined}
-              data-testid="cost-report-export"
-              onClick={exportCostReport}
-            >
-              {report.length === 0 ? "Export (Nothing to export)" : "Export"}
-            </Button>
+            {/* R67 E-05: Material | Vendor. The server answers both from ONE
+                grouped (material, vendor) read, so switching cannot make the
+                two views disagree about the same money. */}
+            <div className="flex items-center gap-1" role="group" aria-label="Group by">
+              {(["material", "vendor"] as const).map((option) => (
+                <Button
+                  key={option}
+                  size="sm"
+                  variant={groupBy === option ? "default" : "outline"}
+                  data-testid={`cost-report-group-${option}`}
+                  disabled={loadingReport}
+                  onClick={() => { setGroupBy(option); void loadReport({ from: reportFrom, to: reportTo, groupBy: option }); }}
+                >
+                  {option === "material" ? "Material" : "Vendor"}
+                </Button>
+              ))}
+            </div>
+            {/* R67 E-05 + E-18: one Export, one Share, and a format that has
+                nowhere to go says so in words. Export is disabled when the
+                rows do not sum to the Grand Total -- an export of a report
+                that does not add up is worse than no export. */}
+            <ExportShareActions
+              canExport={reportRows.length > 0 && !costReportTieError}
+              exportReason={reportRows.length === 0 ? "Nothing to export" : costReportTieError}
+              title={costReportTitle(report?.params.from ?? null, report?.params.to ?? null)}
+              onCsv={exportCostReport}
+              pdfHref={`/api/construction-materials/cost-report/export?${costReportQuery({ format: "pdf" })}`}
+              xlsxHref={`/api/construction-materials/cost-report/export?${costReportQuery({ format: "xlsx" })}`}
+              shareUrlFactory={async () => `${window.location.origin}/materials?tab=cost-report&${costReportQuery()}`}
+              onMessage={(message) => setReportNotice(message)}
+            />
           </CardContent>
         </Card>
+        {reportNotice && (
+          <p className="text-[12.5px] text-px-muted" data-testid="cost-report-notice">{reportNotice}</p>
+        )}
+        {costReportTieError && (
+          // R67 E-05: said in words, at the top, where the reader is before
+          // they add the column up themselves.
+          <Card className="border-px-error-border bg-px-error-light">
+            <CardContent className="p-4 text-sm text-px-error" data-testid="cost-report-tie-error">
+              {costReportTieError}
+            </CardContent>
+          </Card>
+        )}
         <Card className="shadow-card">
           <CardContent className="p-0">
             {loadingReport ? (
@@ -1052,15 +1150,26 @@ export default function MaterialsClient({
               />
             ) : loadErrors.report ? (
               <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={() => void loadReport({ from: reportFrom, to: reportTo })} /></div>
-            ) : report.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">
-                No receipts to report yet — the Cost Report fills in as receipts are recorded
+            ) : reportRows.length === 0 ? (
+              // R67 E-05: an empty RANGE is not an empty ledger. The sentence
+              // names the window it searched and what to do about it, instead
+              // of implying nothing was ever received.
+              <p className="py-10 text-center text-sm text-px-muted" data-testid="cost-report-empty">
+                {/* The window the REPORT ran with, not whatever the two date
+                    boxes currently show: they drift as soon as the receipts
+                    load, and a sentence about a window the server never
+                    applied would be a false description of this result. */}
+                {emptyRangeMessage(report?.params.from ?? null, report?.params.to ?? null)}
               </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Material</TableHead>
+                    <TableHead>{groupBy === "vendor" ? "Vendor" : "Material"}</TableHead>
+                    {/* R67 E-05: receipts carry only a vendor_id, and every
+                        screen that showed it showed a cuid. Joined once on the
+                        server, never per row. */}
+                    <TableHead>{groupBy === "vendor" ? "Material" : "Vendor"}</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead className="text-right">Total Qty Received</TableHead>
                     <TableHead className="text-right">Total Cost</TableHead>
@@ -1070,30 +1179,37 @@ export default function MaterialsClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.map((r) => {
-                    const master = materials.find((m) => m.id === r.materialId);
-                    const masterCost = master ? Number(master.unitCost) : NaN;
-                    const variance = Number.isFinite(masterCost) ? r.averageUnitCost - masterCost : null;
+                  {reportRows.map((r) => {
+                    // R67 E-05: the master unit cost and the variance are the
+                    // SERVER's, from the same read as the row -- not re-derived
+                    // here off a materials list that may have been fetched at a
+                    // different moment.
+                    const variance = r.variance;
                     return (
-                      <TableRow key={r.materialId}>
+                      <TableRow key={r.key}>
                         <TableCell className="font-medium">
                           {/* R67 D-35: every reported number can be opened down
                               to the transactions behind it. */}
-                          <button
-                            type="button"
-                            className="text-[color:var(--color-veri-status-context)] underline underline-offset-2"
-                            onClick={() => openMaterialReceipts(r.materialId)}
-                          >
-                            {r.name}
-                          </button>
+                          {r.materialId ? (
+                            <button
+                              type="button"
+                              className="text-[color:var(--color-veri-status-context)] underline underline-offset-2"
+                              onClick={() => openMaterialReceipts(r.materialId!)}
+                            >
+                              {groupBy === "vendor" ? (r.vendorName ?? r.name) : r.name}
+                            </button>
+                          ) : (
+                            <span>{groupBy === "vendor" ? (r.vendorName ?? r.name) : r.name}</span>
+                          )}
                           {r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}
                         </TableCell>
-                        <TableCell>{r.unit}</TableCell>
+                        <TableCell>{groupBy === "vendor" ? r.name : (r.vendorName ?? "—")}</TableCell>
+                        <TableCell>{r.unit ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(r.totalCost)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(r.averageUnitCost)}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {master ? money(master.unitCost) : "—"}
+                          {r.masterUnitCost === null ? "—" : money(r.masterUnitCost)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {variance === null ? (
@@ -1112,15 +1228,20 @@ export default function MaterialsClient({
                       </TableRow>
                     );
                   })}
-                  {/* R67 D-57: a report with no total is a list, not a report. */}
-                  <TableRow className="font-semibold">
-                    <TableCell>Total</TableCell>
+                  {/* R67 D-57: a report with no total is a list, not a report.
+                      R67 E-05: and the total is the SERVER's, from the same
+                      grouped read as the rows -- not the browser re-adding the
+                      column and hoping it matches. checkMaterialCostTies above
+                      compares the two and disables Export if they differ. */}
+                  <TableRow className="font-semibold" data-testid="cost-report-grand-total">
+                    <TableCell>Grand Total</TableCell>
                     <TableCell />
-                    <TableCell className="text-right tabular-nums">
-                      {formatQty(report.reduce((sum, r) => sum + r.totalQuantityReceived, 0))}
+                    <TableCell />
+                    <TableCell className="text-right tabular-nums" data-testid="cost-report-grand-total-qty">
+                      {formatQty(report?.totals.quantity ?? 0)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {money(Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100)}
+                    <TableCell className="text-right tabular-nums" data-testid="cost-report-grand-total-cost">
+                      {money(report?.totals.cost ?? 0)}
                     </TableCell>
                     {/* Averages do not add up, and a sum of averages is a number
                         that means nothing -- so these three stay blank. */}
