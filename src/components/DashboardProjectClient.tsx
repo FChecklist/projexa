@@ -54,7 +54,7 @@ import {
   LinkListCard,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
-import { ProjectKpiTile } from "@/components/screens/ProjectKpiTile";
+import { ProjectKpiTile, type ProjectKpiTileAction } from "@/components/screens/ProjectKpiTile";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
 import { OneDayProgressChart } from "@/components/OneDayProgressChart";
 import { formatDateTimeDMY } from "@/lib/format-date";
@@ -284,6 +284,23 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this"
   );
 
+  // R67 E-38 follow-up. THE TILE'S CONTROL IS ONE DECISION, MADE ONCE.
+  //
+  // Both of these tiles are a LINK when their own read succeeded and a Retry
+  // BUTTON when it failed -- two different jobs, and the control should be the
+  // one that matches (navigating away from the screen you are trying to fix is
+  // not what Retry means). Written as `href={err ? undefined : x}` beside
+  // `onClick={err ? fn : undefined}` that was two independent ternaries which
+  // could both land on undefined, producing a focusable, clickable dead tile.
+  // ProjectKpiTileAction is a discriminated union, so stating it once makes the
+  // compiler check that exactly one of the two always exists.
+  const budgetAction: ProjectKpiTileAction = varianceError
+    ? { onClick: () => void load() }
+    : { href: budgetCard.href };
+  const permitsAction: ProjectKpiTileAction = permitsError
+    ? { onClick: () => void loadPermits() }
+    : { href: `/permits?projectId=${projectId}&withinDays=30` };
+
   return (
     <DashboardScreen
       breadcrumb={`Dashboard / ${dashboard.projectName}`}
@@ -390,8 +407,11 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             // second "Set budget" link INSIDE the tile: a link inside a link is
             // invalid markup, and the observed neighbour-href bug is exactly
             // what nested interactive elements produce.
-            href={varianceError ? undefined : budgetCard.href}
-            onClick={varianceError ? () => void load() : undefined}
+            // One ACTION object, not two conditionally-undefined props: the
+            // tile's props are a discriminated union, so "a link, or a retry
+            // button" is now a choice the compiler checks rather than two
+            // ternaries that could both land on undefined.
+            {...budgetAction}
           />
           {/* R67 E-25: a failed read reads "—", never 0. "No permits expire in
               the next 30 days" is a reassurance, and printing it when the
@@ -419,8 +439,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             }
             baseline={permitsError ? "Retry" : "next 30 days"}
             asOf={permitsError ? undefined : asOf}
-            href={permitsError ? undefined : `/permits?projectId=${projectId}&withinDays=30`}
-            onClick={permitsError ? () => void loadPermits() : undefined}
+            {...permitsAction}
           />
         </>
       }

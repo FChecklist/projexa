@@ -19,8 +19,9 @@
 //     so the tile reads as somewhere to go rather than a decorated number;
 //   * `onClick` (used only where the tile's job is to RETRY its own failed
 //     read) renders a <button>, because retrying is not navigating;
-//   * exactly one of the two, so a KPI with no destination cannot ship --
-//     which the kit could only ask for in a comment.
+//   * exactly one of the two, and the props type is a discriminated union so
+//     the COMPILER refuses a KPI with no destination -- which the kit could
+//     only ask for in a comment.
 // Layout, type scale, tone variables and the trend/baseline contract are the
 // kit's own, kept deliberately close so the two do not drift.
 import Link from "next/link";
@@ -32,7 +33,7 @@ export type KpiTrend = { direction: "up" | "down" | "flat"; label: string; tone:
 
 const ARROW: Record<KpiTrend["direction"], string> = { up: "↑", down: "↓", flat: "→" };
 
-export type ProjectKpiTileProps = {
+type ProjectKpiTileBaseProps = {
   label: string;
   value: string;
   /**
@@ -53,15 +54,35 @@ export type ProjectKpiTileProps = {
   asOf?: string;
   visual?: ReactNode;
   size?: "primary" | "secondary";
-  /** Where this number's breakdown lives. Mutually exclusive with onClick. */
-  href?: string;
-  /** Only for a tile whose job is to retry its own failed read. Mutually exclusive with href. */
-  onClick?: () => void;
 };
+
+/**
+ * EXACTLY ONE OF href / onClick, ENFORCED BY THE COMPILER.
+ *
+ * The header above promises a tile with no destination cannot ship. Two
+ * independently optional props could not deliver that promise: passing neither
+ * type-checked cleanly and rendered `<button onClick={undefined}>` -- a
+ * focusable, clickable dead control, which is the precise defect class E-38
+ * exists to remove. A discriminated union says it in the type instead of in a
+ * comment, so the next call site that forgets is a build failure.
+ */
+export type ProjectKpiTileAction =
+  | {
+      /** Where this number's breakdown lives. */
+      href: string;
+      onClick?: never;
+    }
+  | {
+      /** Only for a tile whose job is to retry its own failed read. */
+      onClick: () => void;
+      href?: never;
+    };
+
+export type ProjectKpiTileProps = ProjectKpiTileBaseProps & ProjectKpiTileAction;
 
 const TILE_CLASS = "block w-full text-left rounded-md border border-ct-border p-3 hover:border-ct-teal";
 
-function TileBody({ label, value, trend, baseline, asOf, visual, size = "secondary", showArrow }: ProjectKpiTileProps & { showArrow: boolean }) {
+function TileBody({ label, value, trend, baseline, asOf, visual, size = "secondary", showArrow }: ProjectKpiTileBaseProps & { showArrow: boolean }) {
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
