@@ -13,11 +13,11 @@
 //     every cost. A foreman reading "Delete" reasonably believes the
 //     worker's recorded history goes with him. The kit source is not on this
 //     machine, so per programme decision D-09 ObjectScreen is FORKED into
-//     src/components/screens/ObjectScreen.tsx with a deleteLabel prop; every
-//     other kit screens export is still imported from the kit.
+//     src/components/screens/KitObjectScreen.tsx with a deleteLabel prop;
+//     every other kit screens export is still imported from the kit.
 //  2. DEACTIVATION WAS ONE-WAY. Nothing in the UI could set isActive back to
 //     true, even though the route has always accepted it. An inactive worker
-//     now gets Reactivate where Edit would be.
+//     now gets Reactivate.
 //  3. DISPLAY MODE SHOWED ALMOST NOTHING -- four facets and an empty body.
 //     It now carries a read-only Details section and the worker's own
 //     attendance history, which is the question this page exists to answer
@@ -26,25 +26,61 @@
 // The confirm before deactivating is INLINE, not a dialog: this product's one
 // remaining popup is the home's Create Project, and a blast-radius statement
 // is exactly the kind of thing that must stay readable while the user decides.
+//
+// ---------------------------------------------------------------------------
+// R67 D-33 x D-34 MERGE (lane D3 x lane D21, decision D-11). Both lanes rebuilt
+// this screen for different halves of it, and BOTH halves are kept:
+//
+//   D21 owns the FORM half and it is canonical, because it is the SHARED one.
+//     The edit fields were a second, independent copy of the create form's;
+//     they are now the same <RosterFields> reading the same validation model
+//     (src/lib/roster-form.ts), with Trade as a picklist and a currencied Daily
+//     Rate. D21's FieldMessage strip also replaces D3's sonner toasts for save
+//     and status outcomes -- one receipt mechanism per screen, and the strip is
+//     the one KitObjectScreen already renders. `toast` is gone from this file.
+//   D3 owns the DISPLAY half, which the shared archetype cannot express: the
+//     read-only Details section, the month-windowed attendance history with its
+//     cost total, the inline blast-radius confirm, and Reactivate.
+//
+// TWO CONTRADICTIONS were settled on merit rather than by picking a lane:
+//
+//   THE DESTRUCTIVE WORD. D3 passes deleteLabel="Deactivate"; D21 left the kit
+//     default and asserted the literal word "Delete". D-33/R-093 wins: the
+//     action sets isActive=false and keeps every attendance row, so "Delete" is
+//     factually wrong, and D21's own header already calls it "real Delete =
+//     real Deactivate". D21's assertion was about the D-09 fork RENDERING both
+//     controls, not about the word, so it is restated against "Deactivate".
+//   AN INACTIVE WORKER'S CONTROLS. D3 hid Edit and Deactivate and showed
+//     Reactivate in their place; D21 rendered them DISABLED WITH A REASON. D21's
+//     is the canonical posture (decision D-22, quoted in KitObjectScreen: a
+//     control that vanishes cannot be told apart from a broken feature), so
+//     Edit and Deactivate now stay visible and disabled -- "This worker is
+//     inactive" / "Already inactive" -- AND D3's Reactivate is offered beside
+//     them. That is a superset of both lanes; D3's assertions are restated
+//     against it, and they still pin what D-33 actually required: an inactive
+//     worker can be neither edited nor deactivated, and can be reactivated.
+// ---------------------------------------------------------------------------
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+// R67 F-34 (D-09) + D-22, reconciled by the integration train: the FORKED
+// ObjectScreen, which carries the `loading` variant, the disabled-with-reason
+// Edit/Delete, and D-33's deleteLabel/secondaryAction.
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import RosterFields, { useTrades, type RosterFieldValues, type Vendor } from "@/components/RosterFields";
+import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { missingRosterFields, missingRosterReason, rosterFieldMessage, type RosterFieldKey } from "@/lib/roster-form";
 import { formatDayMonthYear } from "@/lib/format-date";
 
 import { ATTENDANCE_STATUS_LABEL, loadFailureSentence, type AttendanceStatus } from "@/lib/attendance-sheet";
 
 type RosterEntry = { id: string; projectId: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
-type Vendor = { id: string; vendorName: string };
 type AttendanceRow = { id: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
 
 // Month presets, newest first. Computed from today rather than hard-coded so
@@ -63,18 +99,29 @@ function monthPresets(today = new Date()): { label: string; from: string; to: st
   return presets;
 }
 
-export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
+const EMPTY: RosterFieldValues = { employeeCode: "", name: "", trade: "", vendorId: "", dailyRate: "" };
+
+export default function RosterObjectClient({ rosterId, createdNotice }: { rosterId: string; createdNotice?: string | null }) {
   const router = useRouter();
   // R67 G-05 merge: the org's currency is resolved once for the screen and the
   // formatter comes back bound to it, so no cell can be rendered with the wrong
-  // currency by forgetting to pass one.
+  // currency by forgetting to pass one. `money` renders the DISPLAY half (the
+  // Details section and the attendance table's costs).
   const orgMoney = useOrgMoney();
   const money = orgMoney.money;
+  // D21's currency LABEL is a different job from D3's money FORMATTER, so both
+  // stay: `currency` is the bare prefix RosterFields and the validation
+  // messages need ("AED "), and it is what the facet's "<rate> / day" reads.
+  const currencies = useCurrencies();
+  const currency = currencyLabel(undefined, currencies);
+  const trades = useTrades();
   const [entry, setEntry] = useState<RosterEntry | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
-  const [draft, setDraft] = useState({ name: "", employeeCode: "", trade: "", skillLevel: "", vendorId: "", dailyRate: "" });
+  const [draft, setDraft] = useState<RosterFieldValues>(EMPTY);
+  const [touched, setTouched] = useState<Partial<Record<RosterFieldKey, boolean>>>({});
+  const [messages, setMessages] = useState<FieldMessage[]>([]);
   const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
@@ -124,28 +171,58 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   }, [rosterId, monthWindow.from, monthWindow.to]);
   useEffect(() => { void loadAttendance(); }, [loadAttendance]);
 
+  // The create screen's confirmation arrives here, in the band, because that
+  // screen unmounts with the navigation.
+  useEffect(() => {
+    if (createdNotice) setMessages([{ level: "info", text: createdNotice }]);
+  }, [createdNotice]);
+
   function startEdit() {
     if (!entry) return;
-    setDraft({ name: entry.name, employeeCode: entry.employeeCode ?? "", trade: entry.trade ?? "", skillLevel: entry.skillLevel ?? "", vendorId: entry.vendorId ?? "", dailyRate: entry.dailyRate });
+    setDraft({
+      employeeCode: entry.employeeCode ?? "",
+      name: entry.name,
+      trade: entry.trade ?? "",
+      vendorId: entry.vendorId ?? "",
+      dailyRate: entry.dailyRate,
+    });
+    setTouched({});
+    setMessages([]);
     setMode("edit");
   }
 
+  function blurField(field: RosterFieldKey) {
+    setTouched((t) => ({ ...t, [field]: true }));
+    const message = rosterFieldMessage(field, draft, currency);
+    setMessages(message ? [{ field, level: "error", text: message }] : []);
+  }
+
+  const missing = mode === "edit" ? missingRosterFields(draft) : [];
+
   async function saveEdit() {
-    if (!draft.name.trim() || !draft.dailyRate) { toast.error("Name and daily rate are required"); return; }
+    if (missing.length > 0) {
+      setTouched({ name: true, dailyRate: true });
+      setMessages(missing.map((field) => ({ field, level: "error" as const, text: rosterFieldMessage(field, draft, currency)! })));
+      return;
+    }
     setSaving(true);
+    setMessages([]);
     try {
       const data = await fetchJson<RosterEntry>(`/api/labour-roster/${rosterId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: draft.name.trim(), employeeCode: draft.employeeCode || null, trade: draft.trade || null,
-          skillLevel: draft.skillLevel || null, vendorId: draft.vendorId || null, dailyRate: Number(draft.dailyRate),
+          name: draft.name.trim(),
+          employeeCode: draft.employeeCode.trim() || null,
+          trade: draft.trade.trim() || null,
+          vendorId: draft.vendorId || null,
+          dailyRate: Number(draft.dailyRate),
         }),
       });
-      toast.success("Worker saved");
-      setMode("display");
       setEntry(data);
+      setMode("display");
+      setMessages([{ level: "info", text: "Worker saved" }]);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't save worker"));
+      setMessages([{ level: "error", text: errorMessage(err, "Couldn't save this worker") }]);
     } finally {
       setSaving(false);
     }
@@ -158,11 +235,17 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive }),
       });
-      toast.success(isActive ? "Worker reactivated" : "Worker deactivated");
       setEntry(data);
       setConfirmingDeactivate(false);
+      // D3 x D21 merge: D21's message strip (not D3's toast), but kept
+      // TWO-WAY -- D-33's point 2 is that deactivation stopped being one-way,
+      // so the receipt has to be able to say "reactivated" too.
+      setMessages([{ level: "info", text: isActive ? "Worker reactivated" : "Worker deactivated" }]);
     } catch (err) {
-      toast.error(errorMessage(err, isActive ? "Couldn't reactivate worker" : "Couldn't deactivate worker"));
+      setMessages([{
+        level: "error",
+        text: errorMessage(err, isActive ? "Couldn't reactivate this worker" : "Couldn't deactivate this worker"),
+      }]);
     } finally {
       setStatusChanging(false);
     }
@@ -193,7 +276,10 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       />
     );
 
-  const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
+  // D21's "Direct hire" over D3's em-dash, on merit: a worker with no
+  // subcontractor is not missing data, he is directly employed, and the em-dash
+  // said "unknown" about a fact the record actually knows.
+  const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "Direct hire";
   const windowCost = attendance.reduce((sum, row) => sum + Number(row.dailyCost || 0), 0);
   const keptRows = lifetimeRows ?? attendance.length;
 
@@ -218,40 +304,54 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         { label: "ID", value: entry.employeeCode ?? "—" },
         { label: "Trade", value: entry.trade ?? "—" },
         { label: "Company", value: vendorName },
-        { label: "Daily Rate", value: money(entry.dailyRate) },
+        // D21's facet: the rate with its currency AND its unit. "AED 300"
+        // alone does not say per what, and this roster is priced per day.
+        { label: "Daily Rate", value: `${currency}${entry.dailyRate} / day` },
       ]}
+      // Edit is RENDERED on an inactive worker, disabled with its reason,
+      // rather than vanishing (D-22 / D21). D3's earlier version hid it, which
+      // is the exact posture D-22 exists to stop.
       onEdit={entry.isActive && mode === "display" ? startEdit : undefined}
-      // Deactivation is no longer one-way: an inactive worker gets Reactivate
-      // where Edit would be.
+      editDisabledReason={mode === "display" && !entry.isActive ? "This worker is inactive" : undefined}
+      // D-33 point 2: deactivation is no longer one-way. Reactivate sits beside
+      // the disabled Edit rather than replacing it.
       secondaryAction={
         !entry.isActive && mode === "display"
           ? { label: "Reactivate", onClick: () => void setActive(true), disabledReason: statusChanging ? "Working…" : undefined }
           : undefined
       }
       onSave={mode === "edit" ? saveEdit : undefined}
-      onCancel={mode === "edit" ? () => setMode("display") : undefined}
+      onCancel={mode === "edit" ? () => { setMode("display"); setMessages([]); } : undefined}
+      // D3's INLINE CONFIRM is kept: this opens the blast-radius statement, it
+      // does not PATCH. (D21 wired onDelete straight to a `deactivate` function
+      // that does not exist in the merged file -- the confirm flow is the one
+      // that is actually implemented, and it is also the safer of the two.)
       onDelete={entry.isActive && mode === "display" ? () => setConfirmingDeactivate(true) : undefined}
+      // D-33 / R-093: the word. This sets isActive=false and keeps every
+      // attendance row, so it cannot say "Delete".
       deleteLabel="Deactivate"
-      deleteDisabledReason={statusChanging ? "Working…" : undefined}
+      // Rendered-with-a-reason rather than absent (the D-09 fork's whole
+      // point): on an already-inactive worker the control stays visible and
+      // says why it is not offered.
+      deleteDisabledReason={statusChanging ? "Working…" : !entry.isActive ? "Already inactive" : mode === "edit" ? "Finish editing first" : undefined}
       onBack={() => router.push(`/labour?projectId=${entry.projectId}`)}
-      saveDisabled={saving || !draft.name.trim() || !draft.dailyRate}
-      saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.dailyRate ? "Name and daily rate are required" : undefined}
-      messages={[]}
+      saveDisabled={saving || missing.length > 0}
+      saveDisabledReason={saving ? "Saving…" : missingRosterReason(draft)}
+      messages={messages}
     >
       {mode === "edit" && (
-        <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>ID (optional)</Label><Input value={draft.employeeCode} onChange={(e) => setDraft((d) => ({ ...d, employeeCode: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Trade (optional)</Label><Input value={draft.trade} onChange={(e) => setDraft((d) => ({ ...d, trade: e.target.value }))} /></div>
-          <div className="space-y-1.5">
-            <Label>Company (optional)</Label>
-            <Select value={draft.vendorId} onValueChange={(v) => setDraft((d) => ({ ...d, vendorId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select subcontractor" /></SelectTrigger>
-              <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.vendorName}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={draft.dailyRate} onChange={(e) => setDraft((d) => ({ ...d, dailyRate: e.target.value }))} /></div>
-        </div>
+        <RosterFields
+          values={draft}
+          onChange={(field, value) => {
+            setDraft((d) => ({ ...d, [field]: value }));
+            setMessages([]);
+          }}
+          vendors={vendors}
+          trades={trades}
+          currency={currency}
+          touched={touched}
+          onBlurField={blurField}
+        />
       )}
 
       {mode === "display" && (
@@ -280,6 +380,16 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
             </div>
           )}
 
+          {/* OBSERVED BY THE D3 x D21 MERGE, deliberately NOT resolved here.
+              This Details block repeats the four facets above it (ID, Trade,
+              Company, Daily Rate) and adds only Status, which the header badge
+              already shows. D-33 asked for it when display mode was four facets
+              and an EMPTY body; D21's facet strip and D3's attendance history
+              have both landed since, so the redundancy is real. Collapsing it is
+              a product call about D-33's own acceptance criterion ("a read-only
+              Details block names ID, Trade, Company, Daily Rate and Status"),
+              not a merge call, so it is named here and left standing rather than
+              dropped by an integration agent. */}
           <section className="border-t border-ct-border px-4 py-3">
             <h2 className="mb-2 text-[13px] font-medium text-ct-slate">Details</h2>
             <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">

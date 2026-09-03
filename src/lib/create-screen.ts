@@ -87,6 +87,17 @@ export type CreateField = {
    */
   storedValue?: string | null;
   /**
+   * R67 D-34, added by the integration train. A text field whose value SHOULD
+   * come from a shared vocabulary but must not be locked to one: the roster's
+   * Trade is the case that forced it. Free text split every trade-wise total
+   * three ways ("Mason", "mason", "Masonry"), and a plain select would refuse
+   * a trade this org genuinely has and the seed list does not. A native
+   * datalist offers the vocabulary as the user types and still accepts a new
+   * word -- one mechanism, in the archetype, rather than a hand-built combo
+   * box on one screen. Only meaningful for `kind: "text"`.
+   */
+  suggestions?: string[];
+  /**
    * R67 G-04 (R-231) merge: a select whose options are still arriving renders
    * a disabled skeleton in the control's own shape rather than putting a word
    * like "Loading…" in the VALUE SLOT, where it reads as a chosen answer.

@@ -52,7 +52,13 @@ import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { useSubmit, formFailure } from "@/lib/use-submit";
-import { emptyLine, childPercentSum, collectLines, toPayloadLineItems, type LineItemDraft } from "@/lib/boq-helpers";
+import {
+  emptyLine, childPercentSum, collectLines, toPayloadLineItems,
+  // R67 D-24: the per-field sentences, from the same module the incomplete-line
+  // banner reads, so one field has one message.
+  lineMissingFields, LINE_FIELD_MESSAGE,
+  type LineField, type LineItemDraft,
+} from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
 
@@ -68,6 +74,21 @@ const FIELDS: CreateField[] = [
 ];
 
 const SUB_TASK_REASON = "derived from the root line";
+
+/**
+ * R67 D-24: one line field's complaint, rendered NEXT TO that input and tied
+ * to it by id, so it is programmatically attached and not only visually near.
+ * Renders nothing at all until the field has been visited and is still empty.
+ */
+function LineFieldError({ id, message }: { id: string; message: string | null }) {
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className="mt-0.5 flex items-start gap-1 text-[11px] text-px-error">
+      <span aria-hidden="true">⚠</span>
+      <span>{message}</span>
+    </p>
+  );
+}
 
 /**
  * What the line grid still needs, in the words the header row uses. Returned
@@ -113,17 +134,49 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   // apart from the submit's own failure so a local complaint and a server
   // refusal can never be mistaken for one another.
   const [lineError, setLineError] = useState<string | null>(null);
+  // R67 I-05 x integration: registering a category org-wide can fail without
+  // the SAVE failing -- the name still lands on this line. That is a separate
+  // sentence from a refused save, so it has its own persistent slot rather
+  // than being squeezed into `lineError` (which blocks the primary) or into a
+  // toast (which is gone before it has been read).
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
+  // R67 D-24 (its acceptance's second half), folded in by the integration
+  // train. Which line fields the user has actually VISITED, keyed
+  // "<index>:<field>". A message is shown only for a field that has been left,
+  // never for every empty box at once -- being shouted at before you have
+  // started is what the finding was about, not the absence of validation.
+  const [touchedLine, setTouchedLine] = useState<Record<string, boolean>>({});
 
   function updateLine(index: number, field: keyof LineItemDraft, value: string) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
+    // Typing into a field clears its complaint immediately; it is re-checked on
+    // the next blur.
+    setTouchedLine((t) => (t[`${index}:${field}`] ? { ...t, [`${index}:${field}`]: false } : t));
+  }
+
+  /**
+   * The sentence for ONE line field, or null. Uses the same
+   * lineMissingFields/LINE_FIELD_MESSAGE pair the "Line 2 is incomplete" banner
+   * and the Save label read, so a field cannot be called required in one place
+   * and optional in another.
+   */
+  function lineFieldError(index: number, field: LineField): string | null {
+    if (!touchedLine[`${index}:${field}`]) return null;
+    return lineMissingFields(lines, index).includes(field) ? LINE_FIELD_MESSAGE[field] : null;
+  }
+
+  function blurLine(index: number, field: LineField) {
+    setTouchedLine((t) => ({ ...t, [`${index}:${field}`]: true }));
   }
 
   // "Add new" registers the category org-wide so it is offered on every other
   // line and on the next BOQ. A failure to register is NOT fatal and NOT
   // silent: the name still lands on this line (nothing the user typed is
-  // lost), and the toast says the list was not updated.
+  // lost), and the message band says the list was not updated.
   async function registerCategory(name: string) {
     addLocal(name);
+    setCategoryNotice(null);
+    const fallback = `"${name}" was applied to this line but could not be added to the category list.`;
     try {
       const res = await fetch("/api/scope/categories", {
         method: "POST",
@@ -132,10 +185,10 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       });
       if (!res.ok && res.status !== 409) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error ?? `"${name}" was applied to this line but could not be added to the category list.`);
+        setCategoryNotice(typeof data.error === "string" ? data.error : fallback);
       }
     } catch {
-      toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
+      setCategoryNotice(fallback);
     }
   }
 
@@ -198,6 +251,14 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       values={values}
       onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
       extraMissing={missingLineFields(lines)}
+      // R67 I-05: a category that could not be REGISTERED org-wide is stated
+      // here, persistently, and does not block the save -- the name is already
+      // on the line and the BOQ is still correct.
+      banner={
+        categoryNotice ? (
+          <p role="status" className="text-[12px] text-px-muted">{categoryNotice}</p>
+        ) : undefined
+      }
       failure={lineError ? formFailure(lineError) : submit.failure}
       onRetry={submit.submit}
       saving={submit.saving}
@@ -207,8 +268,16 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
     >
       <div className="space-y-2">
         <Label>Line Items</Label>
+        {/* R67 D-24: the two hardest columns encode the whole sub-task model
+            and nothing on screen said so. Both sentences are kept -- the first
+            says what the codes DO, the second what the percentages must add up
+            to, and neither answers the other's question. */}
         <p className="text-xs text-px-muted">
-          Parent Item Code links a sub-task to its root line; Breakdown % is its share of the root&apos;s quantity
+          Item Code identifies the line in reports and the WPR. Parent Item Code links a sub-task to its root line;
+          Breakdown % is its share of the root&apos;s quantity.
+        </p>
+        <p className="text-xs text-px-muted">
+          The children of one parent should add up to 100% -- the running total is shown under each Breakdown % as you type.
         </p>
 
         <div className="overflow-x-auto">
@@ -240,8 +309,12 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         aria-label={`Description, line ${i + 1}`}
                         placeholder="Excavation to reduced level"
                         value={line.description}
+                        aria-invalid={lineFieldError(i, "description") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "description") ? `line-${i}-description-error` : undefined}
                         onChange={(e) => updateLine(i, "description", e.target.value)}
+                        onBlur={() => blurLine(i, "description")}
                       />
+                      <LineFieldError id={`line-${i}-description-error`} message={lineFieldError(i, "description")} />
                     </td>
                     <td className="px-1 py-1">
                       {/* R67 I-05: the org's registered list, with an inline
@@ -261,6 +334,11 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         failed={categoriesFailed}
                         onChange={(next) => updateLine(i, "category", next)}
                         onAddNew={registerCategory}
+                        // R67 D-24: "Category" alone is ambiguous the moment a
+                        // screen renders more than one, which is every BOQ with
+                        // more than one line. Same per-row form the other
+                        // controls in this grid use.
+                        ariaLabel={`Category, line ${i + 1}`}
                       />
                     </td>
                     <td className="px-1 py-1">
@@ -270,7 +348,11 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         placeholder="m3"
                         value={line.unit}
                         onChange={(e) => updateLine(i, "unit", e.target.value)}
+                        aria-invalid={lineFieldError(i, "unit") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "unit") ? `line-${i}-unit-error` : undefined}
+                        onBlur={() => blurLine(i, "unit")}
                       />
+                      <LineFieldError id={`line-${i}-unit-error`} message={lineFieldError(i, "unit")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
@@ -280,9 +362,13 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         type="number"
                         value={line.quantity}
                         onChange={(e) => updateLine(i, "quantity", e.target.value)}
+                        aria-invalid={lineFieldError(i, "quantity") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "quantity") ? `line-${i}-quantity-error` : undefined}
+                        onBlur={() => blurLine(i, "quantity")}
                         disabled={isSubTask}
                         title={isSubTask ? SUB_TASK_REASON : undefined}
                       />
+                      <LineFieldError id={`line-${i}-quantity-error`} message={lineFieldError(i, "quantity")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
@@ -292,9 +378,13 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         type="number"
                         value={line.rate}
                         onChange={(e) => updateLine(i, "rate", e.target.value)}
+                        aria-invalid={lineFieldError(i, "rate") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "rate") ? `line-${i}-rate-error` : undefined}
+                        onBlur={() => blurLine(i, "rate")}
                         disabled={isSubTask}
                         title={isSubTask ? SUB_TASK_REASON : undefined}
                       />
+                      <LineFieldError id={`line-${i}-rate-error`} message={lineFieldError(i, "rate")} />
                       {/* The reason in WORDS, once per row, rather than only in
                           a title attribute nobody hovers. */}
                       {isSubTask && <p className="mt-0.5 text-[11px] text-px-muted">{SUB_TASK_REASON}</p>}
@@ -325,7 +415,11 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         type="number"
                         value={line.breakdownPercentage ?? ""}
                         onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)}
+                        aria-invalid={lineFieldError(i, "breakdownPercentage") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "breakdownPercentage") ? `line-${i}-breakdownPercentage-error` : undefined}
+                        onBlur={() => blurLine(i, "breakdownPercentage")}
                       />
+                      <LineFieldError id={`line-${i}-breakdownPercentage-error`} message={lineFieldError(i, "breakdownPercentage")} />
                       {childSum != null && <p className="mt-0.5 text-[11px] text-px-muted">{childSum}% total</p>}
                     </td>
                     <td className="px-1 py-1">
@@ -339,6 +433,10 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                         title={lines.length === 1 ? "A BOQ needs at least one line" : undefined}
                       >
                         Remove
+                        {/* R67 D-24: the reason as VISIBLE text beside the
+                            word. Disabled-with-a-hidden-title is how a control
+                            reads as broken rather than as not-applicable. */}
+                        {lines.length === 1 && <span className="ml-1 text-[11px] font-normal">(last line)</span>}
                       </Button>
                     </td>
                   </tr>

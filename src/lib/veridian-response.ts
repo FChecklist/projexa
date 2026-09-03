@@ -115,14 +115,27 @@ export function classifyUpstreamFailure(err: unknown, fallbackMessage: string): 
  * used when the thrown value carries no message of its own -- the backend's
  * own words always win (C19 ERROR_TRUTHFUL).
  */
-export function veridianErrorResponse(err: unknown, fallbackMessage: string, appMs?: number): NextResponse {
+/**
+ * `extra` (R67 D-27, added by the integration train) lets ONE route forward a
+ * named, structured field from the upstream body alongside the sentence --
+ * the scope-reduction 409's `conflicts[]` is the only one today. It is opt-in
+ * and per-field on purpose: the whole upstream body must never be splatted
+ * into a client response, because `message` is the only thing safe to render
+ * and `detail` is server-side-only. Every existing caller is unchanged.
+ */
+export function veridianErrorResponse(
+  err: unknown,
+  fallbackMessage: string,
+  appMs?: number,
+  extra?: Record<string, unknown>
+): NextResponse {
   const failure = classifyUpstreamFailure(err, fallbackMessage);
   const headers: Record<string, string> = {
     "Server-Timing": serverTimingHeader(failure.durationMs, appMs),
   };
   if (failure.retryable) headers["Retry-After"] = String(RETRY_AFTER_SECONDS);
   return NextResponse.json(
-    { error: failure.message, code: failure.code },
+    { error: failure.message, code: failure.code, ...(extra ?? {}) },
     { status: failure.status, headers }
   );
 }

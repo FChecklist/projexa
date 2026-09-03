@@ -53,6 +53,26 @@
 //
 // The loaded path below is byte-for-byte the kit's, so switching a screen to
 // this fork changes nothing about how it renders once its record has arrived.
+//
+// R67 INTEGRATION TRAIN, lane D21 (decision D-11 addendum). A THIRD lane
+// forked the kit's ObjectScreen at src/components/screens/ObjectScreen.tsx --
+// the path D0's PROJEXA-native archetype already owns. Per D-11 ("the version
+// already merged to main is canonical; the arriving lane folds its distinct
+// capability into it"), D0's component keeps that path untouched and D21's
+// three fork deltas are folded in HERE, where the shape already matches:
+//
+//   1. `headerActions` -- a worded Export/Share slot in the object header row
+//      (R-047/R-053), which ScreenFrame's own three fixed header actions
+//      cannot carry.
+//   2. `editDisabledReason` + disabled-with-reason Edit/Delete -- a screen
+//      that cannot offer an action now says so instead of showing nothing.
+//      Opt-in: a caller that passes neither handler nor reason renders no
+//      control, exactly as before.
+//   3. autosave arms on `onAutosave` rather than on edit mode, so a MoM's
+//      minutes -- typed live on the DISPLAY page -- can actually save.
+//
+// Nothing was deleted: D21's nine screens now import KitObjectScreen, and
+// D0's ObjectScreen keeps its own consumer and its own behaviour.
 
 
 import { useEffect, useRef } from "react";
@@ -74,6 +94,14 @@ export type KitObjectScreenLoadedProps = {
   title: string; // "New <Object>" until named, per M29 -- caller supplies this already resolved
   subtitle?: string;
   headerStatus?: { tone: StatusTone; label: string }; // dual header/item status -- this is the HEADER half (M31)
+  /**
+   * R67 D-17/D-47 (R-047/R-053), folded in by the integration train: worded
+   * actions -- an Export menu, a Share control -- in the object HEADER row,
+   * beside the title and the status badge. ScreenFrame's own header takes
+   * three fixed single-button actions (Filter | Export | + New) and cannot
+   * carry a menu, so the slot lives here rather than there.
+   */
+  headerActions?: React.ReactNode;
   facets?: { label: string; value: string }[];
   documentFlow?: DocumentFlowData;
   mode: KitObjectScreenMode;
@@ -84,6 +112,14 @@ export type KitObjectScreenLoadedProps = {
   onCancel?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
   onBack?: () => void;
+  /**
+   * R67 D-22, folded in by the integration train: when set, Edit renders
+   * DISABLED with this reason beside the word instead of vanishing. The kit
+   * rendered Edit only when onEdit existed, so on every approved or
+   * superseded BOQ and every published meeting the user saw no Edit and no
+   * reason, and could not tell a missing feature from a broken one.
+   */
+  editDisabledReason?: string;
   deleteDisabledReason?: string;
   /**
    * R67 D-33 fork addition. The kit hard-codes the word "Delete" on the
@@ -204,16 +240,29 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
   if (props.loading) return <KitObjectScreenLoading {...props} />;
 
   const {
-    breadcrumb, title, subtitle, headerStatus, facets, documentFlow, mode, hasDraft, lockedByOther,
-    onEdit, onSave, onCancel, onDelete, onBack, deleteDisabledReason, deleteLabel = "Delete", secondaryAction,
-    saveDisabled, saveDisabledReason,
+    // D3 x D21 merge: the union of the two lanes' additions. D3 contributed
+    // `deleteLabel` (default "Delete", so no other screen changes) and
+    // `secondaryAction`; D21 contributed `headerActions` and
+    // `editDisabledReason`. Nothing is dropped -- each prop has its own caller.
+    breadcrumb, title, subtitle, headerStatus, headerActions, facets, documentFlow, mode, hasDraft, lockedByOther,
+    onEdit, onSave, onCancel, onDelete, onBack, editDisabledReason, deleteDisabledReason,
+    deleteLabel = "Delete", secondaryAction, saveDisabled, saveDisabledReason,
     onAutosave, messages, onMessageClick, children,
   } = props;
 
   // Debounced autosave -- fires AUTOSAVE_DEBOUNCE_MS after the LAST call to
-  // scheduleAutosave() while in edit/create mode. Exposed via a data
-  // attribute hook so the caller's field onChange can trigger it without
-  // KitObjectScreen needing to know the field shape.
+  // scheduleAutosave(). Exposed via a data attribute hook so the caller's
+  // field onChange can trigger it without KitObjectScreen needing to know the
+  // field shape.
+  //
+  // R67 D-17, folded in by the integration train: the ARMING CONDITION is
+  // "did the caller ask for autosave", not "is the screen in edit mode". A
+  // MoM's minutes are typed live, during the meeting, on the DISPLAY page --
+  // there is no edit mode to enter -- so a timer armed only while editing
+  // could never fire for the one field in this product that most needs it.
+  // The debounce itself is unchanged and still lives in one place. A screen
+  // that does not pass onAutosave is unaffected: scheduleAutosave() returns
+  // immediately and onChangeCapture is not even wired up.
   function scheduleAutosave() {
     if (!onAutosave) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
@@ -241,9 +290,23 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
     </>
   ) : (
     <>
-      {onEdit && (
-        <button type="button" onClick={() => onEdit()} className="rounded-md bg-ct-navy px-3 py-1.5 text-[13px] font-medium text-white">
+      {/* R67 D-22, folded in by the integration train: a screen that CANNOT
+          offer Edit or Delete states why instead of showing nothing. It does
+          that by passing a *DisabledReason without a handler -- so a caller
+          that passes neither still renders no control at all, exactly as
+          before, and no existing screen changes shape. */}
+      {(onEdit || editDisabledReason) && (
+        <button
+          type="button"
+          onClick={() => onEdit?.()}
+          disabled={!onEdit || !!editDisabledReason}
+          title={editDisabledReason}
+          className="inline-flex items-center gap-1.5 rounded-md bg-ct-navy px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Edit
+          {/* The reason as VISIBLE text beside the word, not a title-only
+              tooltip a mouse has to hover to find. */}
+          {editDisabledReason && <span className="text-[11px] font-normal">({editDisabledReason})</span>}
         </button>
       )}
       {/* FORK (D-33): the secondary display-mode action, e.g. Reactivate. Sits
@@ -262,17 +325,21 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
         </button>
       )}
       {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a spacer, not just a gap class, keeps Delete visually separated. */}
-      {onDelete && <div className="flex-1" />}
-      {onDelete && (
+      {(onDelete || deleteDisabledReason) && <div className="flex-1" />}
+      {(onDelete || deleteDisabledReason) && (
         <button
           type="button"
-          onClick={() => onDelete()}
-          disabled={!!deleteDisabledReason}
+          onClick={() => onDelete?.()}
+          disabled={!onDelete || !!deleteDisabledReason}
           title={deleteDisabledReason}
-          className="rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {/* FORK (D-33): was the hard-coded word "Delete". */}
+          {/* FORK (D-33): was the hard-coded word "Delete". D3 x D21 merge --
+              D3 made the word a prop, D21 made the reason visible text rather
+              than a title-only tooltip. Both apply: the control names the act
+              it performs AND says out loud why it is not offered. */}
           {deleteLabel}
+          {deleteDisabledReason && <span className="text-[11px]">({deleteDisabledReason})</span>}
         </button>
       )}
     </>
@@ -299,7 +366,7 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
       messages={messages}
       onMessageClick={onMessageClick}
     >
-      <div data-veri-autosave-trigger onChangeCapture={isEditing ? scheduleAutosave : undefined} data-state="ready">
+      <div data-veri-autosave-trigger onChangeCapture={onAutosave ? scheduleAutosave : undefined} data-state="ready">
         <div className="px-4 py-3 border-b border-ct-border">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -309,7 +376,10 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
               </h1>
               {subtitle && <p className="text-[13px] text-ct-muted mt-0.5">{subtitle}</p>}
             </div>
-            {headerStatus && <StatusBadge tone={headerStatus.tone} label={headerStatus.label} />}
+            <div className="flex items-center gap-2 shrink-0">
+              {headerActions}
+              {headerStatus && <StatusBadge tone={headerStatus.tone} label={headerStatus.label} />}
+            </div>
           </div>
           {facets && facets.length > 0 && (
             <dl className="flex flex-wrap gap-x-6 gap-y-1 mt-3">

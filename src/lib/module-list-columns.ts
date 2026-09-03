@@ -77,6 +77,10 @@ export const BOQ_LIST_COLUMNS: ScreenColumn[] = [
   // two are real columns now rather than a per-row /compare request.
   { field: "lineCount", label: "Lines", type: "number", importance: "Medium" },
   { field: "total", label: "Total", type: "number", importance: "High" },
+  // R67 D-23 (R-176): the distance from the lineage's ORIGINAL is its own
+  // column -- a chain of small revisions can still have moved the contract a
+  // long way from where it started, which "vs. prior" alone never shows.
+  { field: "variationVsOriginal", label: "Variation vs original", type: "text", importance: "High" },
   { field: "variation", label: "Variation vs. prior", type: "text", importance: "High" },
   { field: "createdAt", label: "Created", type: "date", importance: "High" },
 ];

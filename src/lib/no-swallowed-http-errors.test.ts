@@ -240,10 +240,12 @@ function discardedStatusSites(source: string): string[] {
  * WorkProgressFormClient, DocumentsClient.
  * Removed by R67 D-67: ScheduleTaskCreateClient (migrated to CreateScreen,
  * which reads through fetchJson).
+ * Removed by R67 D-26: CostVarianceAnalyticalClient -- its one read is
+ * fetchJson() now and its failure is stated with errorMessage(), so the entry
+ * had to go. This guard only ever shrinks.
  */
 const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
   "CompanyCreateClient.tsx",
-  "CostVarianceAnalyticalClient.tsx",
   "JournalEntryCreateClient.tsx",
   "OpportunitiesClient.tsx",
   "OpportunityCreateClient.tsx",

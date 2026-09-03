@@ -3,6 +3,37 @@
 // the destructive action is "Deactivate" and the word "Delete" is nowhere on
 // the page, deactivation is reversible, and display mode actually shows the
 // worker's details and attendance instead of an empty body.
+//
+// R67 D-34 (R-085). The object page's edit fields used to be an independent
+// SECOND copy of the create form's -- refusing an empty name with a toast where
+// the create screen refused it silently, with free-text Trade and an unmarked,
+// uncurrencied Daily Rate. They are the same component now, reading the same
+// validation model, on the D-09 ObjectScreen fork so Deactivate is
+// rendered-with-a-reason rather than silently absent on a worker who is already
+// inactive.
+//
+// ---------------------------------------------------------------------------
+// D3 x D21 MERGE (decision D-11). This file was an add/add: two independent
+// suites for one component, with two different harnesses. BOTH SUITES SURVIVE.
+// The harness below is the union, and it MOCKS LESS than either lane did --
+// D21 mocked @/lib/currency wholesale, which cannot work now that the merged
+// screen also uses useOrgMoney(), because that reads useCurrenciesState from
+// the same module and a whole-module mock deletes it. Serving /api/currencies
+// instead drives BOTH through their real code path, and the real
+// currencyLabel() returns exactly the "AED " D21's mock hard-coded.
+//
+// Three assertions are RESTATED against the merged mechanism, not deleted:
+//   - D21's "Edit and Delete are BOTH rendered" now matches /^Deactivate/,
+//     because D-33/R-093 won the word (the action keeps every attendance row).
+//     What that test was actually pinning -- the D-09 fork renders both
+//     controls rather than hiding one -- is unchanged.
+//   - D3's "an inactive worker offers Reactivate INSTEAD OF Edit" now expects
+//     Edit and Deactivate to be PRESENT AND DISABLED WITH THEIR REASON, beside
+//     an enabled Reactivate. Decision D-22 (a control that vanishes cannot be
+//     told apart from a broken feature) is the canonical posture; D-33's real
+//     requirement -- an inactive worker can be neither edited nor deactivated,
+//     and can be reactivated -- is still pinned, and more precisely than before.
+// ---------------------------------------------------------------------------
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -11,13 +42,16 @@ import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/re
 
 const push = mock(() => {});
 // ObjectContext (shell-screen-context) reads the pathname, so a mock that
-// only supplies useRouter makes the whole module fail to import.
+// only supplies useRouter makes the whole module fail to import. `refresh` is
+// lane D21's addition to the same stub.
 mock.module("next/navigation", () => ({
-  useRouter: () => ({ push, prefetch: () => {}, replace: () => {}, back: () => {} }),
+  useRouter: () => ({ push, prefetch: () => {}, replace: () => {}, back: () => {}, refresh: () => {} }),
   usePathname: () => "/labour/r1",
   useSearchParams: () => new URLSearchParams(),
 }));
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
+// NOTE: @/lib/currency is deliberately NOT mocked -- see the merge note above.
+// /api/currencies below drives both useCurrencies() and useOrgMoney().
 
 const RosterObjectClient = (await import("./RosterObjectClient")).default;
 
@@ -44,11 +78,18 @@ const ATTENDANCE = [
   { id: "a2", attendanceDate: "2026-09-02", status: "half_day", hoursWorked: null, dailyCost: "150" },
 ];
 
+const CURRENCIES = { currencies: [{ id: "c1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] };
+
+// Order matters: router() matches by substring in INSERTION order, and
+// "/api/labour-roster/" is a prefix of "/api/labour-roster/trades", so the
+// trades lookup useTrades() makes (lane D21's picklist) has to be listed first
+// or it would be answered with a worker record.
 const DEFAULTS: Record<string, (init?: RequestInit) => Response> = {
+  "/api/labour-roster/trades": () => jsonRes({ trades: ["Mason", "Carpenter"] }),
   "/api/labour-roster/": () => jsonRes(ACTIVE_WORKER),
   "/api/attendance": () => jsonRes({ attendance: ATTENDANCE }),
   "/api/vendors": () => jsonRes({ vendors: [{ id: "v1", vendorName: "Falcon Contracting" }] }),
-  "/api/currencies": () => jsonRes({ currencies: [{ id: "c1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] }),
+  "/api/currencies": () => jsonRes(CURRENCIES),
 };
 
 afterEach(() => {
@@ -146,11 +187,26 @@ describe("deactivation is no longer one-way", () => {
         return jsonRes({ ...ACTIVE_WORKER, isActive: false });
       },
     });
-    const { getByText, queryByText } = render(<RosterObjectClient rosterId="w1" />);
+    const { getByText, getByRole } = render(<RosterObjectClient rosterId="w1" />);
 
     await waitFor(() => expect(getByText("Reactivate")).toBeDefined());
-    expect(queryByText("Edit")).toBeNull();
-    expect(queryByText("Deactivate")).toBeNull();
+
+    // RESTATED for the D3 x D21 merge. D3 originally asserted Edit and
+    // Deactivate were ABSENT here. Under decision D-22 they are instead
+    // RENDERED AND DISABLED, each saying why -- a control that vanishes cannot
+    // be told apart from a broken feature. What D-33 requires is unchanged and
+    // is what is asserted: an inactive worker can be neither edited nor
+    // deactivated, and the screen says so in words rather than by omission.
+    const edit = getByRole("button", { name: /^Edit/ }) as HTMLButtonElement;
+    expect(edit.disabled).toBe(true);
+    expect(getByText(/This worker is inactive/)).toBeDefined();
+
+    const deactivate = getByRole("button", { name: /^Deactivate/ }) as HTMLButtonElement;
+    expect(deactivate.disabled).toBe(true);
+    expect(getByText(/Already inactive/)).toBeDefined();
+
+    // The word is still never "Delete", active or inactive (R-093).
+    expect(document.body.textContent).not.toContain("Delete");
 
     fireEvent.click(getByText("Reactivate"));
     await waitFor(() => expect(sentBody).toEqual({ isActive: true }));
@@ -221,5 +277,101 @@ describe("display mode actually shows something", () => {
     expect(getByText(/attendance for this worker/).textContent).not.toContain("upstream boom");
     expect(queryByText("No attendance recorded for this worker yet")).toBeNull();
     expect(getByText("Retry")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lane D21's suite (R67 D-34). Kept whole; jsonRes() above is now shared rather
+// than redeclared, and mount() gained the attendance/currencies stubs the
+// merged screen needs (D3's display half always loads them).
+// ---------------------------------------------------------------------------
+
+const WORKER = {
+  id: "roster-1", projectId: "proj-1", name: "Ali", employeeCode: "W-0042",
+  trade: "Tiler", skillLevel: null, vendorId: "v1", dailyRate: "120", isActive: true,
+};
+
+function mount(overrides: Partial<typeof WORKER> = {}) {
+  const worker = { ...WORKER, ...overrides };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/labour-roster/trades")) return jsonRes({ trades: ["Mason", "Carpenter"] });
+    if (url.includes("/api/labour-roster/roster-1")) return jsonRes(worker);
+    if (url.includes("/api/vendors")) return jsonRes({ vendors: [{ id: "v1", vendorName: "Skyline Labour" }] });
+    // Added by the D3 x D21 merge: the merged screen carries D3's display half,
+    // which always loads the attendance history and the org currency.
+    if (url.includes("/api/attendance")) return jsonRes({ attendance: [] });
+    if (url.includes("/api/currencies")) return jsonRes(CURRENCIES);
+    throw new Error(`unexpected fetch in test: ${url}`);
+  }) as typeof fetch;
+  return render(<RosterObjectClient rosterId="roster-1" />);
+}
+
+describe("RosterObjectClient (R67 D-34)", () => {
+  test("shows the generated worker ID and the rate with its currency and /day", async () => {
+    const { findByText, container } = mount();
+    await findByText("Ali");
+    const text = container.textContent ?? "";
+    expect(text).toContain("W-0042");
+    expect(text).toContain("AED 120 / day");
+  });
+
+  test("a worker with no subcontractor reads as a Direct hire, not as a blank cell", async () => {
+    // RESTATED for the D3 x D21 merge: the merged screen names the company in
+    // BOTH the facet strip (D21) and the Details section (D3), so this is
+    // findAllByText now. The assertion itself is unchanged -- a null vendor is
+    // rendered as words, never as a blank or an em-dash.
+    const { findAllByText, queryByText } = mount({ vendorId: null });
+    const shown = await findAllByText("Direct hire");
+    expect(shown.length).toBeGreaterThan(0);
+    expect(queryByText("Company: —")).toBeNull();
+  });
+
+  // RESTATED for the D3 x D21 merge: the destructive control is named
+  // "Deactivate", not "Delete" (D-33 / audit R-093 -- the action sets
+  // isActive=false and keeps every attendance row). What this test pins is
+  // unchanged: the D-09 fork renders BOTH controls on an active worker.
+  test("Edit and the destructive action are BOTH rendered on an active worker (the D-09 fork)", async () => {
+    const { findByRole, getByRole } = mount();
+    expect(await findByRole("button", { name: /^Edit/ })).toBeDefined();
+    expect(getByRole("button", { name: /^Deactivate/ })).toBeDefined();
+  });
+
+  test("an already-inactive worker keeps both controls, disabled WITH the reason as visible text", async () => {
+    const { findByRole, getByText } = mount({ isActive: false });
+    const edit = await findByRole("button", { name: /^Edit/ }) as HTMLButtonElement;
+    expect(edit.disabled).toBe(true);
+    expect(getByText(/This worker is inactive/)).toBeDefined();
+    expect(getByText(/Already inactive/)).toBeDefined();
+  });
+
+  test("Edit opens the SAME fields the create screen uses, with Trade as a picklist", async () => {
+    const { findByRole, findByText, getByLabelText } = mount();
+    // R67 INTEGRATION: wait for the RECORD, not just for a button called Edit.
+    // F-34 gave this screen a loading frame whose action bar is present and
+    // DISABLED, so an Edit button exists before the worker does -- clicking
+    // that one is a no-op, which is exactly what it is there to be.
+    await findByText("Ali");
+    fireEvent.click(await findByRole("button", { name: /^Edit/ }));
+    await waitFor(() => expect(getByLabelText(/^Name/)).toBeDefined());
+    expect(getByLabelText(/^Name/).getAttribute("aria-required")).toBe("true");
+    expect(getByLabelText(/^Daily Rate/).getAttribute("aria-required")).toBe("true");
+    expect(getByLabelText(/^Trade/).getAttribute("role")).toBe("combobox");
+  });
+
+  test("a trade this worker already carries survives becoming a Select -- opening Edit never silently clears it", async () => {
+    // "Tiler" is NOT in the seeded list this test serves, which is exactly the
+    // case a naive Select would blank.
+    const { findByRole, findByText, getByLabelText } = mount();
+    await findByText("Ali");
+    fireEvent.click(await findByRole("button", { name: /^Edit/ }));
+    await waitFor(() => expect(getByLabelText(/^Trade/).textContent).toContain("Tiler"));
+  });
+
+  test("a failed load shows the backend's own words with a Retry, not a permanent 'Loading…'", async () => {
+    globalThis.fetch = (async () => jsonRes({ error: "Couldn't reach the roster" }, 502)) as typeof fetch;
+    const { findByText, findByRole } = render(<RosterObjectClient rosterId="roster-1" />);
+    expect(await findByText(/Couldn't reach the roster/)).toBeDefined();
+    expect(await findByRole("button", { name: "Retry" })).toBeDefined();
   });
 });

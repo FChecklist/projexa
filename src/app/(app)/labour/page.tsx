@@ -114,12 +114,21 @@ async function LabourSection({
   requestedProjectId,
   tab,
   date,
+  // D3 x D21 MERGE (decision D-11): both lanes widened this section's props
+  // for different features -- D3's restored filter, D21's import receipt --
+  // and neither reads the other's, so both are passed through.
   initialFilter,
+  importedNotice,
 }: {
   requestedProjectId?: string;
   tab?: string;
   date: string;
   initialFilter: Partial<RosterFilterState>;
+  // R67 D-34: `imported` is the confirmation the bulk-import screen hands
+  // over; that screen unmounts with the navigation, so it cannot carry its
+  // own. It travels down here rather than being read in the client so the
+  // receipt is part of the first painted section, not a second render.
+  importedNotice?: string | null;
 }) {
   const { organizationId, projectId, errorMessage, projectName, resolvedByFallback, landing } = await resolveLanding(
     requestedProjectId,
@@ -147,6 +156,9 @@ async function LabourSection({
       // actually choose it?" -- so the screen can admit to a guess.
       projectName={projectName}
       resolvedByFallback={resolvedByFallback}
+      // R67 D-34 (lane D21): the bulk-import receipt, carried down rather than
+      // re-read in the client. Orthogonal to D-32's filter above.
+      importedNotice={importedNotice ?? null}
     />
   );
 }
@@ -154,6 +166,9 @@ async function LabourSection({
 export default async function LabourPage({
   searchParams,
 }: {
+  // D3 x D21 MERGE: the union of both lanes' query parameters. D3 reads the
+  // four filter keys (D-32), D21 reads `imported` (D-34); the URL carries all
+  // of them and this screen is the only reader of either set.
   searchParams: Promise<{
     projectId?: string;
     tab?: string;
@@ -162,9 +177,10 @@ export default async function LabourPage({
     trade?: string;
     company?: string;
     status?: string;
+    imported?: string;
   }>;
 }) {
-  const { projectId, tab, date, q, trade, company, status } = await searchParams;
+  const { projectId, tab, date, q, trade, company, status, imported } = await searchParams;
   const day = summaryDate(date);
 
   // R67 D-32: only what the URL actually says. An absent parameter must not
@@ -187,7 +203,13 @@ export default async function LabourPage({
       </Suspense>
 
       <Suspense fallback={SKELETON}>
-        <LabourSection requestedProjectId={projectId} tab={tab} date={day} initialFilter={initialFilter} />
+        <LabourSection
+          requestedProjectId={projectId}
+          tab={tab}
+          date={day}
+          initialFilter={initialFilter}
+          importedNotice={imported ?? null}
+        />
       </Suspense>
     </div>
   );

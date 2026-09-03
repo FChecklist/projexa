@@ -124,6 +124,16 @@ export function workProgressReportHref(
  */
 const REPORT_ROUTE_OVERRIDES: Record<string, (projectId: string | null) => string> = {
   "work-progress": (projectId) => workProgressReportHref(projectId),
+  // R67 D-31 (R-090), folded in by the integration train. The Attendance
+  // Report and the Manpower Cost Report both carried "Not yet viewable here"
+  // while the SAME numbers were live on the Manpower screen's trade-wise
+  // summary -- so the product gave three different answers to "where is my
+  // attendance report". Both now resolve through this one table, which is what
+  // stops the picker and the Full Catalog row sending one name to two places.
+  // The ids are the ones VERIDIAN's report-catalog-service.ts assigns
+  // (CONSTRUCTION_REPORT_META).
+  "construction-attendance": () => "/labour?tab=attendance",
+  "construction-manpower-cost": () => "/labour?tab=attendance",
 };
 
 function slugify(value: string): string {

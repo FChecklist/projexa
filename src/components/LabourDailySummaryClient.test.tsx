@@ -110,7 +110,11 @@ describe("LabourDailySummaryClient (D-53)", () => {
     );
 
     await waitFor(() => expect(lastUrl).toContain("date=2026-09-02"));
-    expect(lastUrl).toContain("/api/attendance/summary?projectId=p1");
+    // Restated for the D3 x D21 merge: lane D21 took /api/attendance/summary
+    // for its own from/to report, so this tab reaches the same VERIDIAN
+    // manpower-daily-summary report through the generic reports proxy. The
+    // assertion still pins "this tab asks for exactly one project's one day".
+    expect(lastUrl).toContain("/api/reports/manpower-daily-summary?projectId=p1");
     // The day itself is on screen in the org's dd-mm-yyyy form.
     expect(getByText("02-09-2026")).toBeDefined();
 

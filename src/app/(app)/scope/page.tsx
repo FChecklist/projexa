@@ -41,8 +41,15 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScopeClient, { type Boq } from "@/components/ScopeClient";
 import CostVarianceAnalyticalClient from "@/components/CostVarianceAnalyticalClient";
 
+// R67 D-23 x F-18: the heading moved INSIDE the boundary so it can name the
+// resolved project (see ScopeSection), which means the fallback has to paint
+// it too -- otherwise the title would arrive with the list instead of at TTFB,
+// which is the whole point of F-18. Same shape as moms/page.tsx.
 const SKELETON = (
-  <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+  <>
+    <PageHeading title="Scope of Work (BOQ)" />
+    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Cost Variance"]} actions={["New BOQ"]} />
+  </>
 );
 
 async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: string; tab?: string }) {
@@ -55,14 +62,31 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
     { allProjectsWhenUnset: true }
   );
 
-  if (errorMessage) return <ModuleProjectNotice errorMessage={errorMessage} />;
+  if (errorMessage) {
+    return (
+      <>
+        <PageHeading title="Scope of Work (BOQ)" />
+        <ModuleProjectNotice errorMessage={errorMessage} />
+      </>
+    );
+  }
   // Two different answers, told apart at last.
-  if (!projectId && mode === "all") return <ProjectRequiredCard module="BOQs" />;
+  if (!projectId && mode === "all") {
+    return (
+      <>
+        <PageHeading title="Scope of Work (BOQ)" />
+        <ProjectRequiredCard module="BOQs" />
+      </>
+    );
+  }
   if (!projectId) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent>
-      </Card>
+      <>
+        <PageHeading title="Scope of Work (BOQ)" />
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent>
+        </Card>
+      </>
     );
   }
 
@@ -79,9 +103,18 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
   ]);
 
   return (
-    // R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
-    // destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
-    // screen; variance is a different, flat "which line is worst" question.
+    <>
+    {/* R67 D-23: the resolved project's own NAME in the heading. The BOQ list
+        is entirely project-scoped and resolveProjectForModule() can fall back
+        to the org's first project, so a heading that never named the project
+        left the user reading someone else's scope with no way to notice. It
+        renders here rather than in the page shell because the name is not
+        known until this section resolves; SKELETON paints the unnamed title
+        at TTFB so nothing is late. */}
+    <PageHeading title="Scope of Work (BOQ)" context={name} />
+    {/* R42 seq24: "variance" is DASHBOARD.PROJECT's own "Budget vs Actual" KPI
+        destination (?tab=variance). The BOQ tab stays the CUSTOM weighted-tree
+        screen; variance is a different, flat "which line is worst" question. */}
     <Tabs defaultValue={tab === "variance" ? "variance" : "boq"} className="space-y-4">
       <TabsList>
         <TabsTrigger value="boq">BOQ</TabsTrigger>
@@ -99,6 +132,7 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
         <CostVarianceAnalyticalClient projectId={projectId} />
       </TabsContent>
     </Tabs>
+    </>
   );
 }
 
@@ -107,7 +141,6 @@ export default async function ScopePage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Scope of Work (BOQ)" />
       <Suspense fallback={SKELETON}>
         <ScopeSection requestedProjectId={projectId} tab={tab} />
       </Suspense>

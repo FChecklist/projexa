@@ -74,6 +74,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // write it batches -- marking a site's attendance is field work, and a
   // batch of the same act is not a more privileged one.
   "/attendance/bulk": "FIELD",
+  // R67 D-31: minting a public, unauthenticated link to this project's
+  // attendance and labour cost is a commercial disclosure, not a site record --
+  // same tier as /work-progress/report/share, which shares the identical
+  // mechanism.
+  "/attendance/summary/share": "PM_OR_ABOVE",
   "/audit-engagements": "ORG_ADMIN",
   "/audit-findings": "ORG_ADMIN",
   "/audit-findings/[id]": "ORG_ADMIN",
@@ -129,6 +134,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/kpis": "PM_OR_ABOVE",
   "/labour-roster": "FIELD",
   "/labour-roster/[id]": "FIELD",
+  // R67 D-34: bulk roster load. Same tier as adding one worker -- it is the
+  // same write, thirty-eight times, done by the same person on site.
+  "/labour-roster/import": "FIELD",
   "/leads": "PM_OR_ABOVE",
   "/leads/[id]": "PM_OR_ABOVE",
   "/leads/bulk-reassign": "PM_OR_ABOVE",
@@ -318,6 +326,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",
+  // R67 D-28: correcting or deleting one progress entry. Same tier as logging
+  // it -- the site engineer who mis-keyed a quantity is the person who has to
+  // be able to fix it, and VERIDIAN re-runs the create path's own validation on
+  // both.
+  "/work-progress/[id]": "FIELD",
   "/work-progress/activities": "FIELD",
   "/work-progress/photos": "FIELD",
   "/work-progress/report/share": "PM_OR_ABOVE",

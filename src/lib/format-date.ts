@@ -47,6 +47,45 @@ export function formatDate(value: Date | string | number): string {
   return new Date(value).toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
 
+// R67 D-23's formatDayMonthYear USED to live here, implemented with
+// toLocaleDateString("en-GB", { month: "short" }). Lane D3 independently added
+// a second implementation of the same exported name lower in this file, and the
+// D3/D21 merge left both -- a duplicate function implementation git auto-merged
+// without flagging. The lower one is the survivor, on merit, and D-23's BOQ-list
+// rationale is carried into its doc comment. Measured on this repo's Node
+// (v26, CLDR): the en-GB path returns "02 Sept 2026", not the "02 Sep 2026"
+// D-23's own copy is written against, and returns the literal string
+// "Invalid Date" rather than the en-dash for an unparseable value. Both are
+// user-visible, and both are asserted against in format-date.test.ts.
+
+/**
+ * R67 D-28: e.g. "25-08-2026" -- the numeric day-first form Work Progress uses
+ * across its list, its form and its report, because the module's three surfaces
+ * previously each formatted the same stored date their own way ("8/25/2026" in
+ * the list, the raw ISO "2026-08-25" in the form's date control, and a third
+ * reading in the report), and a site engineer comparing them cannot tell
+ * whether they are looking at one entry or three.
+ *
+ * Deliberately NOT formatDayMonthYear()'s "25 Aug 2026": that helper is the BOQ
+ * list's format (R67 D-23), and this is the format D-28 specifies for Work
+ * Progress. Both are day-first and unambiguous; they are two REGISTERS of the
+ * same reading, and each module uses exactly one.
+ *
+ * Built from Intl parts rather than a locale string, so no runtime's locale
+ * data can reorder or re-separate it -- the output is byte-identical on the
+ * server and in every visitor's browser, like every other helper here.
+ */
+export function formatDayMonthYearNumeric(value: Date | string | number): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: FIXED_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")}-${part("month")}-${part("year")}`;
+}
+
 /** e.g. "8/25/2026, 2:30 PM" -- identical on server and client, any visitor. */
 export function formatDateTime(value: Date | string | number): string {
   return new Date(value).toLocaleString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
@@ -194,7 +233,16 @@ function toValidDate(value: Date | string | number | null | undefined): Date | n
 // three helpers above.
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** e.g. "02 Sep 2026". Returns the en-dash for an unparseable value, never "Invalid Date". */
+/**
+ * e.g. "02 Sep 2026". Returns the en-dash for an unparseable value, never
+ * "Invalid Date".
+ *
+ * R67 D-23 (folded in by the D3 x D21 merge): this is ALSO the BOQ list's
+ * format. "8/25/2026" reads as 8 May to half of this product's users (a UAE
+ * contractor's site team) and as 25 August to the other half, so the BOQ list,
+ * the schedule baselines, the attendance sentences and the roster's attendance
+ * history all speak this one day-first form. Nine call sites across both lanes.
+ */
 export function formatDayMonthYear(value: Date | string | number): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return EMPTY_VALUE;
@@ -207,6 +255,16 @@ export function formatDayMonthYear(value: Date | string | number): string {
 // the first twelve days of every month. This is the day-first counterpart;
 // making the choice org-configurable is R67 item D-39's own job, and this
 // helper is where that switch will land.
+//
+// KNOWN DUPLICATION, named rather than silently collapsed (decision D-11).
+// formatDayMonthYearNumeric() above is lane D21's independently-written
+// equivalent: same "28-08-2026" output, same UTC pinning, built from Intl
+// parts instead of a manual pad. Both survive this merge because each has its
+// own call sites (this one: Materials, the Labour daily summary, schedule
+// baselines; that one: Work Progress) and its own passing assertions, and
+// rewriting one lane's call sites during a catch-up merge would risk more than
+// the duplication costs. Collapsing them onto one name is a follow-up, and
+// D-39's org-configurable switch is the natural moment to do it.
 export function formatDateNumeric(value: Date | string | number): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return EMPTY_VALUE;

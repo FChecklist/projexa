@@ -120,8 +120,15 @@ export default function LabourDailySummaryClient({
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // D3 x D21 merge: this used to be a lane-local /api/attendance/summary
+      // proxy, but lane D21 landed a DIFFERENT report on that exact path (the
+      // from/to trade-wise summary, with ./pdf and ./share siblings). This tab
+      // now goes through the generic reports proxy that has existed since R42,
+      // which reaches the same VERIDIAN /reports/manpower-daily-summary and adds
+      // withTiming() + veridianErrorResponse(). See the merge note in
+      // src/app/api/attendance/summary/route.ts.
       const data = await fetchJson<DailySummaryResponse>(
-        `/api/attendance/summary?projectId=${encodeURIComponent(projectId)}&date=${encodeURIComponent(date)}`
+        `/api/reports/manpower-daily-summary?projectId=${encodeURIComponent(projectId)}&date=${encodeURIComponent(date)}`
       );
       setSummary(data);
       setError(null);
