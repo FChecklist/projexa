@@ -42,22 +42,37 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Plus } from "lucide-react";
+import { Download, FileText, Link2, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
 import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { materialUnitLabel } from "@/lib/material-units";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+// R67 E-05 (R-103): the Cost Report tab becomes a real parameterised report.
+// The arithmetic is compliance-tracker's; these are the rules the SCREEN owes
+// the reader -- the tie check that gates Export, the CSV of the rows on
+// screen, and the empty-range sentence.
+import {
+  buildMaterialCostCsv,
+  checkMaterialCostTies,
+  defaultCostReportRange,
+  emptyRangeMessage,
+  type MaterialCostReport,
+  type MaterialCostReportGroupBy,
+} from "@/lib/material-cost-report";
 
 type Material = { id: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
 type Receipt = { id: string; materialId: string; receivedDate: string; quantity: string; unitCost: string | null; vendorId: string | null };
-type CostReportRow = { materialId: string; name: string; spec: string | null; unit: string; totalQuantityReceived: number; totalCost: number; averageUnitCost: number };
+
 
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ChangeOrdersClient.tsx's
@@ -110,23 +125,52 @@ function renderMaterialCell(field: string, m: Material, money: (v: number | stri
   }
 }
 
-export default function MaterialsClient({ projectId, registryColumns, initialTab }: { projectId: string; registryColumns?: RegistryColumn[] | null; initialTab?: string }) {
+export default function MaterialsClient({
+  projectId,
+  registryColumns,
+  initialTab,
+  initialFrom,
+  initialTo,
+}: {
+  projectId: string;
+  registryColumns?: RegistryColumn[] | null;
+  initialTab?: string;
+  /** R67 E-05: the Cost Report's period comes from the URL, so Reports > "Material Consumption" lands on the same run. */
+  initialFrom?: string;
+  initialTo?: string;
+}) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MASTER_COLUMNS;
   const orgMoney = useOrgMoney();
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [report, setReport] = useState<CostReportRow[]>([]);
+  const [report, setReport] = useState<MaterialCostReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ materials?: string; receipts?: string; report?: string }>({});
+
+  // R67 E-05: the report's own parameters. Defaulted so the tab runs by
+  // pressing nothing -- see defaultCostReportRange for why the lower bound is
+  // open rather than month-to-date.
+  const fallbackRange = defaultCostReportRange();
+  const [from, setFrom] = useState(initialFrom ?? fallbackRange.from);
+  const [to, setTo] = useState(initialTo ?? fallbackRange.to);
+  const [groupBy, setGroupBy] = useState<MaterialCostReportGroupBy>("material");
+  const [sharing, setSharing] = useState(false);
+
+  function costReportQuery(extra: Record<string, string> = {}) {
+    const qs = new URLSearchParams({ projectId, groupBy, ...extra });
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    return qs.toString();
+  }
 
   async function load() {
     setLoading(true);
     const [matR, recR, repR] = await Promise.allSettled([
       fetchJson<{ materials?: Material[] }>(`/api/materials/master?projectId=${encodeURIComponent(projectId)}`),
       fetchJson<{ receipts?: Receipt[] }>(`/api/materials?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ report?: MaterialCostReport }>(`/api/construction-materials/cost-report?${costReportQuery()}`),
     ]);
 
     const errors: { materials?: string; receipts?: string; report?: string } = {};
@@ -136,14 +180,43 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
     if (recR.status === "fulfilled") setReceipts(recR.value.receipts ?? []);
     else { setReceipts([]); errors.receipts = errorMessage(recR.reason, "Inbound receipts"); }
 
-    if (repR.status === "fulfilled") setReport(repR.value.report ?? []);
-    else { setReport([]); errors.report = errorMessage(repR.reason, "Cost report"); }
+    if (repR.status === "fulfilled") setReport(repR.value.report ?? null);
+    else { setReport(null); errors.report = errorMessage(repR.reason, "Cost report"); }
 
     setLoadErrors(errors);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, [projectId]);
+
+  // The tie check gates Export: a file that does not add up outlives the screen
+  // that produced it.
+  const tieError = report ? checkMaterialCostTies(report, orgMoney.money) : null;
+  const exportReason = !report ? "Run the report first" : tieError;
+
+  function exportCsv() {
+    if (!report) return;
+    const blob = new Blob([buildMaterialCostCsv(report)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `material-cost-report-${projectId}${from ? `-${from}` : ""}-to-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyLink() {
+    setSharing(true);
+    try {
+      const url = `${window.location.origin}/materials?tab=cost-report&${costReportQuery()}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied — paste it into WhatsApp or email.");
+    } catch {
+      toast.error("Couldn't copy the link");
+    } finally {
+      setSharing(false);
+    }
+  }
 
   const materialName = (id: string) => materials.find((m) => m.id === id)?.name ?? id;
 
@@ -228,30 +301,118 @@ export default function MaterialsClient({ projectId, registryColumns, initialTab
         </Card>
       </TabsContent>
 
+      {/* R67 E-05 (R-103): this was "a summary card wearing the word report" --
+          no parameters, no total, no export, and it counted receipts that had
+          been voided. It is a report now: a parameter bar that makes it run by
+          pressing nothing, a grouping, real header actions, the vendor and
+          variance columns the data always had, and a Grand Total that ties. */}
       <TabsContent value="cost-report" className="space-y-4">
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label>From</Label>
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="cost-report-from" />
+              {!from && <p className="text-[11px] text-px-muted">Blank = every receipt on record</p>}
+            </div>
+            <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="cost-report-to" /></div>
+
+            <div className="space-y-1.5">
+              <Label id="cost-report-groupby-label">Group by</Label>
+              {/* A segmented control, not a dropdown: two options, both worth
+                  seeing, and the current one readable without opening anything. */}
+              <div role="group" aria-labelledby="cost-report-groupby-label" className="flex rounded-md border border-px-border p-0.5" data-testid="cost-report-groupby">
+                {(["material", "vendor"] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={groupBy === g}
+                    onClick={() => setGroupBy(g)}
+                    className={`rounded px-3 py-1 text-xs capitalize ${groupBy === g ? "bg-px-ink text-white" : "text-px-muted hover:bg-muted/50"}`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button onClick={load} disabled={loading} data-testid="cost-report-run">
+              {loading ? <Loader2 className="size-4 animate-spin" /> : null} Apply
+            </Button>
+
+            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={exportCsv} data-testid="cost-report-export-csv">
+              <Download className="size-4" /> Export CSV
+            </Button>
+            {/* PDF and XLSX are SERVER-rendered and relayed -- projexa gains no
+                PDF or XLSX library. */}
+            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={() => window.open(`/api/construction-materials/cost-report/export?${costReportQuery({ format: "pdf" })}`, "_blank", "noopener")} data-testid="cost-report-export-pdf">
+              <FileText className="size-4" /> Export PDF
+            </Button>
+            <Button variant="outline" disabled={Boolean(exportReason)} title={exportReason ?? undefined} onClick={() => window.open(`/api/construction-materials/cost-report/export?${costReportQuery({ format: "xlsx" })}`, "_blank", "noopener")} data-testid="cost-report-export-xlsx">
+              <Download className="size-4" /> Export XLSX
+            </Button>
+            <Button variant="outline" disabled={sharing} onClick={copyLink} data-testid="cost-report-share">
+              {sharing ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Share link
+            </Button>
+            {exportReason && <span className="text-xs text-px-muted" data-testid="cost-report-export-reason">{exportReason}</span>}
+          </CardContent>
+        </Card>
+
+        {/* If the rows do not sum to the total the report is WRONG and says so
+            loudly -- the table still renders, because a reader needs the rows
+            to find the discrepancy; only Export is blocked. */}
+        {tieError && (
+          <Card className="border-px-error-border bg-px-error-light">
+            <CardContent className="p-4 text-sm text-px-error" role="alert" data-testid="cost-report-tie-error">{tieError}</CardContent>
+          </Card>
+        )}
+
         <Card className="shadow-card">
           <CardContent className="p-0">
             {loading ? (
               <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
             ) : loadErrors.report ? (
               <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={load} /></div>
-            ) : report.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No receipts to report yet.</p>
+            ) : !report || report.rows.length === 0 ? (
+              <p className="py-10 text-center text-sm text-px-muted" data-testid="cost-report-empty">{emptyRangeMessage(from || null, to || null)}</p>
             ) : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Unit</TableHead><TableHead className="text-right">Total Qty Received</TableHead><TableHead className="text-right">Total Cost{orgMoney.unitSuffix}</TableHead><TableHead className="text-right">Avg Unit Cost{orgMoney.unitSuffix}</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {report.map((r) => (
-                    <TableRow key={r.materialId}>
-                      <TableCell className="font-medium">{r.name}{r.spec ? <span className="text-px-muted"> ({r.spec})</span> : null}</TableCell>
-                      <TableCell>{materialUnitLabel(r.unit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.totalQuantityReceived}</TableCell>
-                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.totalCost)}</TableCell>
-                      <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.averageUnitCost)}</TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Material</TableHead>
+                      <TableHead>Spec</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead className="text-right">Qty Received</TableHead>
+                      <TableHead className="text-right">Total Cost{orgMoney.unitSuffix}</TableHead>
+                      <TableHead className="text-right">Avg Unit Cost{orgMoney.unitSuffix}</TableHead>
+                      <TableHead className="text-right">Master Unit Cost{orgMoney.unitSuffix}</TableHead>
+                      <TableHead className="text-right">Variance{orgMoney.unitSuffix}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {report.rows.map((r) => (
+                      <TableRow key={r.key}>
+                        <TableCell className="font-medium">{r.name}</TableCell>
+                        <TableCell className="text-px-muted">{r.spec ?? EMPTY_VALUE}</TableCell>
+                        <TableCell>{r.vendorName ?? EMPTY_VALUE}</TableCell>
+                        <TableCell>{r.unit ? materialUnitLabel(r.unit) : EMPTY_VALUE}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.totalQuantityReceived}</TableCell>
+                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.totalCost)}</TableCell>
+                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.averageUnitCost)}</TableCell>
+                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.masterUnitCost)}</TableCell>
+                        <TableCell className={MONEY_CELL_CLASS}>{orgMoney.money(r.variance)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2 border-px-border font-semibold" data-testid="cost-report-grand-total">
+                      <TableCell colSpan={4}>Grand Total</TableCell>
+                      <TableCell className="text-right tabular-nums">{report.totals.quantity}</TableCell>
+                      <TableCell className={MONEY_CELL_CLASS} data-testid="cost-report-grand-total-cost">{orgMoney.money(report.totals.cost)}</TableCell>
+                      <TableCell /><TableCell /><TableCell />
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

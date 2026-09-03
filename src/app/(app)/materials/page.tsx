@@ -32,8 +32,11 @@ async function resolveMaterialsListColumns(organizationId: string | null): Promi
 // Point 33: repointed to a real project-scoped material master + receipts
 // (was org-wide ERP ledger listing only, no create path) -- same
 // resolveSelectedProject pattern as moms/page.tsx.
-export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+// R67 E-05 (R-103): the Cost Report tab reads its period from the URL, so
+// Reports > "Material Consumption" and this tab are one report reached from two
+// places, in the same state.
+export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; from?: string; to?: string }> }) {
+  const { projectId, tab, from, to } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveMaterialsListColumns(organizationId);
@@ -50,7 +53,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} />}
+        {project && <MaterialsClient projectId={project.id} registryColumns={registryColumns} initialTab={tab} initialFrom={from} initialTo={to} />}
       </div>
     </>
   );
