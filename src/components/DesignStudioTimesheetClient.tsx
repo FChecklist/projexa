@@ -1,20 +1,36 @@
 "use client";
 
-// R67 WS-H (items H-01/H-02/H-03/H-04, decision D-07). The Design Studio
-// "My timesheet" tab: a DAY GRID, one row per task, in Sumeet's exact
-// columns Date | Project | Category | Task | Hours, with the status chip at
-// row level and one primary action for the whole day.
+// R67 D-07 -- the Design Studio timesheet, "My timesheet" tab: a DAY GRID, one
+// row per task, in Sumeet's exact columns Date | Project | Category | Task |
+// Hours, with the status chip at row level and one primary action for the
+// whole day.
 //
-// D-07 SUPERSEDES the recommendations' "week grid with day columns": the
-// week view here is a FILTER over the same rows, rendered by the same table,
-// not a second grid with its own layout, its own totals and its own bugs.
+// D-07 SUPERSEDES the recommendations' "week grid with day columns": the week
+// view here is a FILTER over the same rows, rendered by the same table, not a
+// second grid with its own layout, its own totals and its own bugs.
+//
+// The row shape, the day grouping, the week filter and every sentence this
+// screen shows live in src/lib/design-studio-timesheet.ts, where they are unit
+// tested. This file is the screen: four honest states (loading, failed, empty,
+// data), never an empty grid over a failed read.
+//
+// ── MERGE NOTE (D-11 addendum) ──────────────────────────────────────────────
+// Lane D0's version of this component is CANONICAL -- it is already on main --
+// and lane H's capabilities are folded INTO it rather than replacing it.
+// Kept from D0, unchanged in behaviour: the SERVER-RESOLVED `today` prop (a
+// client-side new Date() makes the grid's day depend on the visitor's clock and
+// drift between the server-rendered and hydrated markup), the read of
+// GET /api/timesheets (no second endpoint for the same hours), the four honest
+// states, and the rule that a failed read never becomes an empty grid.
+// Added by lane H: the ScreenFrame chrome, the inline Add-entry row, the row
+// Submit / Send-again actions, the designer-wise status strip and the tabs.
 //
 // WHY THE ROWS ARE SAVED ON BLUR AND NOT ON A "SAVE" BUTTON: the add row is
 // one line of a grid the designer is filling in at the end of a day, and the
 // audit's own count budget (D-08) allows at most one typed value and three
-// clicks per task. The row commits when Hours loses focus, optimistically,
-// and rolls back with the backend's own sentence if the write fails --
-// never a generic "something went wrong", and never a silent revert.
+// clicks per task. The row commits when Hours loses focus, optimistically, and
+// rolls back with the backend's own sentence if the write fails -- never a
+// generic "something went wrong", and never a silent revert.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
@@ -37,7 +53,6 @@ import {
   isResubmittable,
   rowStatus,
   submitDayLabel,
-  todayIso,
   totalHours,
   validateHours,
 } from "@/lib/design-studio-timesheet";
@@ -52,6 +67,7 @@ export type TimesheetEntry = {
   comments: string | null;
   approvalStatus: string;
   rejectionReason: string | null;
+  projectId?: string | null;
   issue?: { id: string; number: number; title: string } | null;
   loggedBy?: { id: string; name: string } | null;
 };
@@ -79,13 +95,19 @@ export default function DesignStudioTimesheetClient({
   projectId,
   projectName,
   projects,
+  today,
 }: {
   projectId: string;
   projectName: string;
   projects: ProjectOption[];
+  /**
+   * ISO yyyy-mm-dd, resolved on the SERVER (lane D0's rule, kept over lane H's
+   * client-side todayIso()) so the grid's day is not the visitor's clock and
+   * cannot drift between the server-rendered and the hydrated markup.
+   */
+  today: string;
 }) {
   const router = useRouter();
-  const today = todayIso();
 
   const [spentOn, setSpentOn] = useState(today);
   const [view, setView] = useState<"day" | "week">("day");
@@ -94,10 +116,15 @@ export default function DesignStudioTimesheetClient({
   const [designerStatus, setDesignerStatus] = useState<DesignerStatusRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
+  const [tasksError, setTasksError] = useState<string | null>(null);
   const [footerMessage, setFooterMessage] = useState<{ level: "error" | "success" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // The inline "Add entry" row.
+  // The inline "Add entry" row. `draftProjectId` is a REAL control: the task
+  // list is re-fetched for whatever project it names, the row is logged against
+  // that project's task, and the Project cell shows that project. A select that
+  // does not refilter the Task list beside it is a control that looks like it
+  // does something and does not -- the exact defect class this programme closes.
   const [draftProjectId, setDraftProjectId] = useState(projectId);
   const [draftCategory, setDraftCategory] = useState<string>(DESIGN_STUDIO_CATEGORIES[0]);
   const [draftTaskId, setDraftTaskId] = useState("");
@@ -116,17 +143,13 @@ export default function DesignStudioTimesheetClient({
     const listQuery = new URLSearchParams({ projectId, mine: "true" });
     if (view === "day") listQuery.set("spentOn", spentOn);
 
-    const [entriesResult, tasksResult, statusResult] = await Promise.allSettled([
+    const [entriesResult, statusResult] = await Promise.allSettled([
       fetchJson<{ entries?: TimesheetEntry[] }>(`/api/timesheets?${listQuery.toString()}`),
-      fetchJson<{ tasks?: Task[] }>(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`),
       fetchJson<{ byDesigner?: DesignerStatusRow[] }>(`/api/reports/designer-approval-status?projectId=${encodeURIComponent(projectId)}`),
     ]);
 
     if (entriesResult.status === "fulfilled") setEntries(entriesResult.value.entries ?? []);
     else errors.push(entriesResult.reason instanceof Error ? entriesResult.reason.message : "Could not load your timesheet");
-
-    if (tasksResult.status === "fulfilled") setTasks(tasksResult.value.tasks ?? []);
-    else errors.push(tasksResult.reason instanceof Error ? tasksResult.reason.message : "Could not load this project's tasks");
 
     if (statusResult.status === "fulfilled") setDesignerStatus(statusResult.value.byDesigner ?? []);
     else errors.push(statusResult.reason instanceof Error ? statusResult.reason.message : "Could not load the designer-wise status");
@@ -136,6 +159,26 @@ export default function DesignStudioTimesheetClient({
   }, [projectId, spentOn, view]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // The add row's task list follows the add row's OWN project. Changing the
+  // project also clears the chosen task: a task id from project A is not a task
+  // on project B, and leaving it selected would post an entry against a project
+  // the user is no longer looking at.
+  useEffect(() => {
+    let cancelled = false;
+    setTasks([]);
+    setDraftTaskId("");
+    setTasksError(null);
+    fetchJson<{ tasks?: Task[] }>(`/api/schedule/tasks?projectId=${encodeURIComponent(draftProjectId)}`)
+      .then((data) => { if (!cancelled) setTasks(data.tasks ?? []); })
+      .catch((err) => {
+        if (cancelled) return;
+        // NOT swallowed: an empty Task dropdown over a failed read is the form
+        // blaming the user for a backend fault.
+        setTasksError(err instanceof Error ? err.message : "Could not load this project's tasks");
+      });
+    return () => { cancelled = true; };
+  }, [draftProjectId]);
 
   const visibleEntries = useMemo(() => {
     if (view === "day") return entries.filter((e) => e.spentOn === spentOn);
@@ -149,6 +192,13 @@ export default function DesignStudioTimesheetClient({
   // corrected day, which is the other half of the return loop.
   const draftRows = dayEntries.filter((e) => isResubmittable(e.approvalStatus));
   const projectNameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
+  const draftProjectName = projectNameById.get(draftProjectId) ?? projectName;
+
+  /** An entry's OWN project, never the page's default. */
+  function projectOf(entry: TimesheetEntry): string {
+    const own = entry.projectId ? projectNameById.get(entry.projectId) : undefined;
+    return own ?? projectNameById.get(projectId) ?? projectName;
+  }
 
   async function addRow() {
     const otherHours = totalHours(dayEntries);
@@ -164,7 +214,7 @@ export default function DesignStudioTimesheetClient({
     const optimisticId = `pending-${Date.now()}`;
     const task = tasks.find((t) => t.id === draftTaskId) ?? null;
     setEntries((prev) => [
-      { id: optimisticId, issueId: draftTaskId, hours: draftHours, spentOn, activityType: draftCategory, comments: draftComments || null, approvalStatus: "draft", rejectionReason: null, issue: task },
+      { id: optimisticId, issueId: draftTaskId, hours: draftHours, spentOn, activityType: draftCategory, comments: draftComments || null, approvalStatus: "draft", rejectionReason: null, projectId: draftProjectId, issue: task },
       ...prev,
     ]);
     setBusy(true);
@@ -174,7 +224,7 @@ export default function DesignStudioTimesheetClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId: draftTaskId, hours: draftHours, spentOn, activityType: draftCategory, comments: draftComments || undefined }),
       });
-      setEntries((prev) => prev.map((e) => (e.id === optimisticId ? { ...saved, issue: task } : e)));
+      setEntries((prev) => prev.map((e) => (e.id === optimisticId ? { ...saved, issue: task, projectId: saved.projectId ?? draftProjectId } : e)));
       setDraftHours("");
       setDraftComments("");
       setFooterMessage({ level: "success", text: `${formatHours(saved.hours)} h saved on ${formatDayLabel(saved.spentOn)}` });
@@ -191,8 +241,10 @@ export default function DesignStudioTimesheetClient({
     setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, approvalStatus: "submitted" } : e)));
     setBusy(true);
     try {
-      await fetchJson(`/api/timesheets/${encodeURIComponent(entry.id)}/submit`, { method: "POST" });
-      setFooterMessage({ level: "success", text: `${entry.ref ?? "Entry"} submitted for review` });
+      // The write names itself: pms-time-service returns the same TS- ref the
+      // reads carry, so the receipt is never a bare "Entry submitted".
+      const sent = await fetchJson<{ ref?: string }>(`/api/timesheets/${encodeURIComponent(entry.id)}/submit`, { method: "POST" });
+      setFooterMessage({ level: "success", text: `${sent.ref ?? entry.ref ?? "Entry"} submitted for review` });
       void load();
     } catch (err) {
       setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, approvalStatus: before } : e)));
@@ -232,9 +284,15 @@ export default function DesignStudioTimesheetClient({
   return (
     <ScreenFrame
       breadcrumb={`Design Studio / ${projectName} / Timesheet`}
+      // ONE MEANING PER CONTROL (correction C-03). The body's "View" select is
+      // the single day/week switch; the header Filter keeps its own job --
+      // narrowing to somebody else's hours, which is the review queue -- and
+      // says why when there is nobody else's day to look at. Two controls on one
+      // screen doing the same thing is what C-03 records as a real finding.
       filterAction={{
-        label: view === "day" ? "Filter: day" : "Filter: week",
-        onClick: () => setView((v) => (v === "day" ? "week" : "day")),
+        label: "Filter",
+        disabledReason: designerStatus.length < 2 ? "Only your own hours are on this project" : undefined,
+        onClick: () => router.push(`/design-studio/review?projectId=${encodeURIComponent(projectId)}`),
       }}
       exportAction={{
         label: "Export",
@@ -274,7 +332,7 @@ export default function DesignStudioTimesheetClient({
           </div>
         </div>
 
-        <DataLoadError messages={loadErrors} onRetry={() => void load()} />
+        <DataLoadError messages={tasksError ? [...loadErrors, tasksError] : loadErrors} onRetry={() => void load()} />
 
         {/* Designer-wise status strip (item H-02) -- hours per designer in
             each approval state, from designerApprovalStatusReport. It sits
@@ -320,15 +378,25 @@ export default function DesignStudioTimesheetClient({
                 return (
                   <TableRow key={entry.id}>
                     <TableCell>{formatDayLabel(entry.spentOn)}</TableCell>
-                    <TableCell>{projectNameById.get(projectId) ?? projectName}</TableCell>
+                    <TableCell>{projectOf(entry)}</TableCell>
                     <TableCell>{entry.activityType ?? "-"}</TableCell>
                     <TableCell>
                       <button
                         type="button"
                         className="text-left underline-offset-2 hover:underline"
-                        onClick={() => router.push(`/design-studio/timesheets/${encodeURIComponent(entry.id)}`)}
+                        // The entry's OWN project rides into the object page, so
+                        // its breadcrumb and Project facet cannot fall back to
+                        // the org's first project and state something false.
+                        onClick={() =>
+                          router.push(
+                            `/design-studio/timesheets/${encodeURIComponent(entry.id)}?projectId=${encodeURIComponent(entry.projectId ?? projectId)}`
+                          )
+                        }
                       >
-                        {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}
+                        {/* KEPT FROM LANE D0: a row whose task did not join
+                            reads WORDS, never the raw issue id. An id in a
+                            Task cell is a string the user cannot act on. */}
+                        {entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : "Untitled task"}
                       </button>
                     </TableCell>
                     <TableCell>{formatHours(entry.hours)}</TableCell>
@@ -345,7 +413,10 @@ export default function DesignStudioTimesheetClient({
               })
             )}
 
-            {!loading && visibleEntries.length === 0 && (
+            {/* Reachable only when the read SUCCEEDED and returned nothing --
+                lane D0's rule (src/lib/read-outcome.ts): a failed read must
+                never become a confident empty state. */}
+            {!loading && visibleEntries.length === 0 && loadErrors.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-10 text-center text-sm text-px-muted">
                   {emptyDayMessage(spentOn)}
@@ -371,7 +442,9 @@ export default function DesignStudioTimesheetClient({
               </TableCell>
               <TableCell>
                 <Select value={draftTaskId} onValueChange={setDraftTaskId}>
-                  <SelectTrigger aria-label="Task" className="w-full"><SelectValue placeholder="Select a task" /></SelectTrigger>
+                  <SelectTrigger aria-label="Task" className="w-full">
+                    <SelectValue placeholder={tasksError ? "Could not be loaded" : tasks.length === 0 ? `No tasks on ${draftProjectName}` : "Select a task"} />
+                  </SelectTrigger>
                   <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
                 </Select>
               </TableCell>

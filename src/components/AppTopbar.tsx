@@ -38,6 +38,7 @@ import { MobileSidebarTrigger } from "@/components/AppSidebar";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import { createClient } from "@/lib/supabase/client";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 import Image from "next/image";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
@@ -63,6 +64,10 @@ export function AppTopbar({
   async function handleLogout() {
     setLoggingOut(true);
     const supabase = createClient();
+    // See AccountMenu: a selected-project cookie that outlives the session
+    // makes the next user's list screens report "there are none" about a
+    // project that was never theirs.
+    rememberSelectedProject(null);
     await supabase.auth.signOut();
     router.push("/login");
   }

@@ -20,11 +20,14 @@
 // Once published, meeting-level fields AND minutes lock server-side
 // (assertEditable) -- the UI mirrors that by hiding Edit/Save-Minutes
 // rather than letting a click 409.
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MOM_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { AUTOSAVE_IDLE_MS, autosaveIsSendable, autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Download, Sparkles, Send, Link2, Ban } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDate, formatDateTime, toLocalInputValue, toOrgInstant } from "@/lib/format";
 
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
@@ -47,6 +50,35 @@ type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: stri
 
 const STATUS_TONE: Record<string, StatusTone> = { draft: "neutral", published: "done" };
 
+/**
+ * R67 A-20 -- THE COMPOSER'S OBJECT-PAGE CARDS PUT THE CURSOR ON THE REAL
+ * CONTROL. "Save minutes" and "Share via WhatsApp" are both live on THIS page,
+ * so those cards navigate here with ?focus=minutes / ?focus=share and this
+ * focuses the control they name -- rather than doing it, which would make a
+ * card execute a write from one click, or doing nothing, which would land the
+ * user on a long page to find the button themselves. Same shape as A-04's
+ * ?focus=activity on the Work Progress form, and the targets are explicit
+ * data-focus attributes rather than a positional querySelector, because both
+ * controls are this file's own markup.
+ *
+ * IT IS A SEPARATE COMPONENT BEHIND A SUSPENSE BOUNDARY -- the convention this
+ * repo already uses for useSearchParams() (search-command.tsx's
+ * SearchDialogWithProject, M24Shell's RouteProjectIdReader), because reading it
+ * in the page's own component opts the route out of static rendering. It is
+ * mounted only once the meeting has loaded, which is when the controls it looks
+ * for exist. It renders nothing.
+ */
+function FocusRequest() {
+  const focus = useSearchParams().get("focus");
+  useEffect(() => {
+    if (!focus) return;
+    const control = document.querySelector<HTMLElement>(`[data-focus="${focus}"]`);
+    control?.focus();
+    control?.scrollIntoView({ block: "center" });
+  }, [focus]);
+  return null;
+}
+
 export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -56,6 +88,15 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const [draft, setDraft] = useState({ title: "", meetingType: "team", scheduledAt: "", attendees: "", agenda: "" });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
+  const [autosaveSavedAt, setAutosaveSavedAt] = useState<Date | null>(null);
+  // Set by every real edit, cleared by a landed write. Without it, merely
+  // ENTERING edit mode would schedule a PATCH of unchanged values.
+  const dirtyRef = useRef(false);
+  // The autosave reads the draft from here rather than closing over it, so
+  // the debounce callback does not have to be rebuilt on every keystroke
+  // (which would clear its own pending timer and never fire).
+  const draftRef = useRef(draft);
 
   const [minutesDraft, setMinutesDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -80,11 +121,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   }
   useEffect(() => { load(); }, [meetingId]);
 
-  function toLocalInputValue(iso: string) {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
+  // Synced in an effect, never during render: writing a ref while rendering
+  // is a real hazard (React may discard the render) and the repo's
+  // react-hooks/refs rule rejects it. Declared before the autosave effect,
+  // so within one commit the ref is fresh before a write can be scheduled.
+  useEffect(() => {
+    draftRef.current = draft;
+  });
 
   function startEdit() {
     if (!meeting) return;
@@ -92,7 +135,38 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       title: meeting.title, meetingType: meeting.meetingType, scheduledAt: toLocalInputValue(meeting.scheduledAt),
       attendees: meeting.attendees.join(", "), agenda: meeting.agenda.join("\n"),
     });
+    dirtyRef.current = false;
+    setAutosaveStatus("idle");
+    setAutosaveSavedAt(null);
     setMode("edit");
+  }
+
+  // R67 D-67: the ONE way this screen changes the draft. Every field goes
+  // through it, so no control can be added later that edits the meeting
+  // without arming the autosave -- which would silently reintroduce the
+  // "typed for ten minutes, pressed Back, lost it all" case.
+  function editDraft(update: (d: typeof draft) => typeof draft) {
+    dirtyRef.current = true;
+    setDraft(update);
+  }
+
+  // R67 D-67: ONE body for both writes. An autosave that sent a different
+  // shape from the Save button would be a second, invisible way to change a
+  // record, and the two would drift the first time either was edited.
+  function meetingPatchBody(d: typeof draft) {
+    return {
+      title: d.title.trim(),
+      meetingType: d.meetingType,
+      // R67 D-74: `d.scheduledAt` is a datetime-local value with no zone.
+      // `new Date(...)` read it in the BROWSER's zone, so the same meeting
+      // saved from Dubai and from London stored two different instants, and
+      // neither was necessarily the one the user typed. The org's offset is
+      // attached instead -- by the same function the create form uses, so
+      // the two write paths cannot disagree.
+      scheduledAt: toOrgInstant(d.scheduledAt),
+      attendees: d.attendees.split(",").map((s) => s.trim()).filter(Boolean),
+      agenda: d.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
+    };
   }
 
   async function saveEdit() {
@@ -101,15 +175,14 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
     try {
       const res = await fetch(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: draft.title.trim(), meetingType: draft.meetingType, scheduledAt: new Date(draft.scheduledAt).toISOString(),
-          attendees: draft.attendees.split(",").map((s) => s.trim()).filter(Boolean),
-          agenda: draft.agenda.split("\n").map((s) => s.trim()).filter(Boolean),
-        }),
+        body: JSON.stringify(meetingPatchBody(draft)),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save meeting");
       toast.success("Meeting saved");
+      dirtyRef.current = false;
+      setAutosaveSavedAt(new Date());
+      setAutosaveStatus("saved");
       setMode("display");
       await load();
     } catch (err) {
@@ -118,6 +191,63 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       setSaving(false);
     }
   }
+
+  // R67 D-67 -- "MoMs autosave after ~2 s of inactivity with 'Saving… /
+  // Saved 12:04'." Before this, an edit lived only in local state until the
+  // user found and pressed Save; Cancel, Back, a reload or a closed tab
+  // threw the whole thing away with no warning at all. The rules -- when a
+  // save is due, what the line says, and when a draft is too incomplete to
+  // send -- are in src/lib/autosave.ts, where they are unit tests.
+  const autosaveMissing = [
+    ...(draft.title.trim() ? [] : ["Title"]),
+    ...(draft.scheduledAt ? [] : ["Date and time"]),
+  ];
+  const autosaveSendable = autosaveIsSendable(autosaveMissing);
+
+  const runAutosave = useCallback(async () => {
+    setAutosaveStatus("saving");
+    try {
+      const res = await fetch(`/api/moms/${meetingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meetingPatchBody(draftRef.current)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `Request failed (HTTP ${res.status})`);
+      dirtyRef.current = false;
+      setAutosaveSavedAt(new Date());
+      setAutosaveStatus("saved");
+    } catch {
+      // Nothing is discarded and the user is not interrupted: the line reads
+      // "Not saved", the values stay on the form, and the explicit Save
+      // button is still there to try again.
+      setAutosaveStatus("error");
+    }
+    // meetingPatchBody is a stable module-shaped helper over its argument,
+    // and the draft is read from a ref, so this callback does not need to be
+    // rebuilt on every keystroke.
+  }, [meetingId]);
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+    // The render right after startEdit() has changed nothing, so it must not
+    // schedule a write; only an edit the user actually made does.
+    if (!dirtyRef.current) return;
+    if (!autosaveSendable) {
+      // A required field emptied mid-edit is HELD, never written: an
+      // autosave must not put the record into a state the Save button
+      // itself refuses to produce.
+      setAutosaveStatus("pending");
+      return;
+    }
+    setAutosaveStatus("pending");
+    const id = setTimeout(() => {
+      void runAutosave();
+    }, AUTOSAVE_IDLE_MS);
+    return () => clearTimeout(id);
+    // Keyed on the draft itself, so every keystroke restarts the pause and
+    // the write happens once the user stops -- not once per character.
+  }, [draft, mode, autosaveSendable, runAutosave]);
 
   async function publish() {
     setPublishing(true);
@@ -233,13 +363,37 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
       </div>
     );
   }
-  if (!meeting) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!meeting) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
+      label={MOM_OBJECT_BREADCRUMB.label}
+      actions={MOM_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const isPublished = meeting.status === "published";
 
   return (
-    <ObjectScreen
-      breadcrumb="Minutes of Meeting / Meeting"
+    <>
+      {/* A-20: mounted here, after the meeting has loaded, so the control the
+          composer's card named already exists when the focus is applied. */}
+      <Suspense fallback={null}>
+        <FocusRequest />
+      </Suspense>
+      {/* R67 A-21 -- THE STRIP NAMES THIS MEETING. Same reason and same moment
+          as the focus request above: the meeting is fetched in the browser, so
+          the title and the project only exist once it has arrived.
+          `meeting.projectId` is genuinely nullable here -- a meeting can be
+          filed against no project at all -- and null is published as null
+          rather than being replaced with the rail's guess. */}
+      <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
+    <KitObjectScreen
+      breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
       mode={mode}
       hasDraft={false}
@@ -266,11 +420,19 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
 
       {mode === "edit" ? (
         <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} /></div>
+          {/* R67 D-67's autosave line. role="status" so a screen reader is
+              told, and it renders nothing at all until there is something
+              true to say -- a screen that has saved nothing makes no claim. */}
+          {autosaveLabel(autosaveStatus, autosaveSavedAt) && (
+            <p role="status" className="text-[12px] text-px-muted">
+              {autosaveLabel(autosaveStatus, autosaveSavedAt)}
+            </p>
+          )}
+          <div className="space-y-1.5"><Label>Title</Label><Input value={draft.title} onChange={(e) => editDraft((d) => ({ ...d, title: e.target.value }))} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Type</Label>
-              <Select value={draft.meetingType} onValueChange={(v) => setDraft((d) => ({ ...d, meetingType: v }))}>
+              <Select value={draft.meetingType} onValueChange={(v) => editDraft((d) => ({ ...d, meetingType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="team">Team</SelectItem>
@@ -281,10 +443,10 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => setDraft((d) => ({ ...d, scheduledAt: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Date &amp; time</Label><Input type="datetime-local" value={draft.scheduledAt} onChange={(e) => editDraft((d) => ({ ...d, scheduledAt: e.target.value }))} /></div>
           </div>
-          <div className="space-y-1.5"><Label>Attendees (comma-separated)</Label><Input value={draft.attendees} onChange={(e) => setDraft((d) => ({ ...d, attendees: e.target.value }))} /></div>
-          <div className="space-y-1.5"><Label>Agenda (one per line)</Label><Textarea value={draft.agenda} onChange={(e) => setDraft((d) => ({ ...d, agenda: e.target.value }))} rows={3} /></div>
+          <div className="space-y-1.5"><Label>Attendees (comma-separated)</Label><Input value={draft.attendees} onChange={(e) => editDraft((d) => ({ ...d, attendees: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label>Agenda (one per line)</Label><Textarea value={draft.agenda} onChange={(e) => editDraft((d) => ({ ...d, agenda: e.target.value }))} rows={3} /></div>
         </div>
       ) : (
         <div className="space-y-5 px-4 py-3">
@@ -307,7 +469,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
 
           <div>
             <h4 className="mb-1.5 font-semibold text-ct-navy text-sm">Minutes</h4>
-            <Textarea value={minutesDraft} onChange={(e) => setMinutesDraft(e.target.value)} rows={8} placeholder="Type live meeting notes here…" disabled={isPublished} />
+            <Textarea data-focus="minutes" value={minutesDraft} onChange={(e) => setMinutesDraft(e.target.value)} rows={8} placeholder="Type live meeting notes here…" disabled={isPublished} />
             <div className="mt-2 flex items-center gap-2">
               {!isPublished && (
                 <Button size="sm" onClick={saveMinutes} disabled={busy === "minutes"}>{busy === "minutes" ? "Saving…" : "Save Minutes"}</Button>
@@ -354,7 +516,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 {meeting.actionItems.map((a) => (
                   <li key={a.id} className="flex items-center justify-between rounded-md border border-ct-border px-2 py-1.5">
                     <span>{a.task.title}</span>
-                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${new Date(a.task.dueDate).toLocaleDateString()}` : ""}</span>
+                    <span className="text-xs text-ct-muted">{a.task.status}{a.task.dueDate ? ` · due ${formatDate(a.task.dueDate)}` : ""}</span>
                   </li>
                 ))}
               </ul>
@@ -396,12 +558,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 })}
               </ul>
             )}
-            <Button size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
+            <Button data-focus="share" size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
               {busy === "share" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Create Share Link &amp; Send via WhatsApp
             </Button>
           </div>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

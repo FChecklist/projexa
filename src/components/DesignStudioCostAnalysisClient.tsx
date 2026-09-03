@@ -61,8 +61,21 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
 
   const rows = costRowsFor(report, grouping);
   const active = GROUPINGS.find((g) => g.key === grouping)!;
-  const totals = rows.reduce((acc, r) => ({ budget: acc.budget + r.budget, actual: acc.actual + r.actual }), { budget: 0, actual: 0 });
+  // A budget that does not exist is NOT a zero. Rows with a null budget are
+  // left out of the budget total, and when NONE of them has one the total
+  // budget is null too -- summing nothing to 0 and then printing "0" would
+  // assert a figure the ERP never stated. (VERIDIAN returns byCategory[].budget
+  // as null by design: there is no per-category budget dimension in
+  // pms_budget_line_items.)
+  const budgeted = rows.filter((r) => r.budget !== null);
+  const totals = {
+    budget: budgeted.length > 0 ? budgeted.reduce((acc, r) => acc + (r.budget ?? 0), 0) : null,
+    actual: rows.reduce((acc, r) => acc + r.actual, 0),
+  };
   const totalVariance = variance(totals.budget, totals.actual);
+  /** "-" for a figure that does not exist; the org's money format for one that does. */
+  const cell = (value: number | null) => (value === null ? "-" : money(value));
+  const noBudgetDimension = rows.length > 0 && budgeted.length === 0;
 
   return (
     <ScreenFrame
@@ -94,6 +107,13 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
           Actual is APPROVED hours priced at each designer&apos;s billable rate. Draft, submitted and returned hours are deliberately not counted as cost.
         </p>
         {showNotice && <p className="text-[12.5px] text-px-muted">{notice}</p>}
+        {noBudgetDimension && (
+          // Said ONCE, on screen, rather than by printing a dash on every row
+          // and leaving the reader to guess whether it means "zero" or "unknown".
+          <p className="text-[12.5px] text-px-muted">
+            The ERP holds no budget at this level, so Budget, Variance and Variance % read &quot;-&quot; rather than 0.
+          </p>
+        )}
 
         {loading ? (
           <div className="space-y-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
@@ -116,18 +136,18 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
                 return (
                   <TableRow key={row.label}>
                     <TableCell>{row.label}</TableCell>
-                    <TableCell className="text-right">{money(row.budget)}</TableCell>
+                    <TableCell className="text-right">{cell(row.budget)}</TableCell>
                     <TableCell className="text-right">{money(row.actual)}</TableCell>
-                    <TableCell className="text-right">{money(v.variance)}</TableCell>
+                    <TableCell className="text-right">{cell(v.variance)}</TableCell>
                     <TableCell className="text-right">{formatVariancePercent(v.variancePercent)}</TableCell>
                   </TableRow>
                 );
               })}
               <TableRow>
                 <TableCell className="font-medium">Total</TableCell>
-                <TableCell className="text-right font-medium">{money(totals.budget)}</TableCell>
+                <TableCell className="text-right font-medium">{cell(totals.budget)}</TableCell>
                 <TableCell className="text-right font-medium">{money(totals.actual)}</TableCell>
-                <TableCell className="text-right font-medium">{money(totalVariance.variance)}</TableCell>
+                <TableCell className="text-right font-medium">{cell(totalVariance.variance)}</TableCell>
                 <TableCell className="text-right font-medium">{formatVariancePercent(totalVariance.variancePercent)}</TableCell>
               </TableRow>
             </TableBody>

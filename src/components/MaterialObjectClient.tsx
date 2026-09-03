@@ -19,7 +19,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MATERIAL_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -109,6 +113,19 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     }
   }
 
+  // R67 D-67. Deactivating is reversible in the data but not in the UI --
+  // the master list only offers active materials and there is no reactivate
+  // control anywhere -- and it silently removes the item from every receipt
+  // form in the project. One click was not enough deliberation for that.
+  // Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Material",
+    identifier: material?.name ?? null,
+    extra: "and remove it from the Record Receipt form",
+    verb: "Deactivate",
+    run: deactivate,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -117,7 +134,18 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       </div>
     );
   }
-  if (!material) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!material) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
+      label={MATERIAL_OBJECT_BREADCRUMB.label}
+      actions={MATERIAL_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   // A stored unit the vocabulary does not recognise. It stays selectable so
   // the record can be edited without being forced to change a field the editor
@@ -125,8 +153,13 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const legacyUnit = draft.unit && !isMaterialUnit(draft.unit) ? draft.unit : null;
 
   return (
-    <ObjectScreen
-      breadcrumb="Materials / Material"
+    <>
+    {/* R67 A-21: the strip reads "<project> › Material OPC 43-grade cement"
+        rather than naming the module, and the project is the one on the record
+        rather than whichever one the top rail was left on. */}
+    <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
+    <KitObjectScreen
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Material" : material.name}
       mode={mode}
       hasDraft={false}
@@ -142,13 +175,14 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       onEdit={material.isActive && mode === "display" ? startEdit : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={material.isActive && mode === "display" ? deactivate : undefined}
+      onDelete={material.isActive && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
       onBack={() => router.push(`/materials?projectId=${material.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.unit.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.unit.trim() ? "Name and unit are required" : undefined}
       messages={[]}
     >
+      {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
@@ -186,6 +220,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
           <CurrencyNotSetNotice currencySet={false} />
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

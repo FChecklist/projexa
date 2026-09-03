@@ -182,6 +182,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/payroll/statutory-rules": "ORG_ADMIN",
   "/permits": "PM_OR_ABOVE",
   "/permits/[id]": "PM_OR_ABOVE",
+  // R67 A-07. POST /pill-usage records one row of the CALLER'S OWN composer
+  // ranking (compliance.pill_usage is keyed per org AND per user) and touches
+  // no business data at all. It is self-service on one's own record in the
+  // strictest sense, and a read-only client_viewer still has a composer whose
+  // strip should learn what they open -- so ANY_ROLE, not ANY_MEMBER.
+  "/pill-usage": "ANY_ROLE",
   "/policies": "ORG_ADMIN",
   "/policies/[id]": "ORG_ADMIN",
   "/procurement/goods-receipts": "PM_OR_ABOVE",
@@ -273,6 +279,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // carries the same policy as /timesheets/[id]/submit, not a stricter one.
   // VERIDIAN independently refuses to move anyone else's rows.
   "/timesheets/submit-day": "ANY_MEMBER",
+  // R67 WS-H (item H-03): deciding a whole day at once is the same authority as
+  // deciding one entry -- PM and above -- so it matches /timesheets/[id]/approve
+  // rather than the designer-side submit-day beside it.
+  "/timesheets/review-day": "PM_OR_ABOVE",
   // R52: the composer's submit target. Same class as /discuss and /todos --
   // any member may ask the assistant to do something, and what they are
   // ALLOWED to do is re-checked server-side at execution, per R53's rule that

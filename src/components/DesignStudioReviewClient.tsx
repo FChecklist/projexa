@@ -71,57 +71,68 @@ export default function DesignStudioReviewClient({
 
   const groups = useMemo(() => groupSubmittedByDesignerDay(entries), [entries]);
 
-  async function decide(entry: TimesheetEntry, decision: "approve" | "reject", rejectionReason?: string) {
-    const before = entry.approvalStatus;
-    setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, approvalStatus: decision === "approve" ? "approved" : "rejected" } : e)));
+  /**
+   * ONE decision over the whole day, in ONE request.
+   *
+   * FIX PASS: this used to loop one POST per entry, which is exactly the
+   * half-succeeding pattern /api/timesheets/submit-day exists to avoid on the
+   * designer's side ("a loop of N POSTs can half-succeed, and there is no
+   * honest thing to show" -- that route's own header). On the manager's side
+   * it is worse: a four-row day whose third call fails leaves two rows
+   * approved and two not, the footer shows only the first error, and the
+   * reload re-renders a partly decided day in a queue they believe they have
+   * cleared. VERIDIAN's reviewDayForReview() moves the whole day or none of
+   * it, and refuses self-review for the whole call rather than per row.
+   */
+  async function decideDay(group: DayGroup, decision: "approved" | "rejected", rejectionReason?: string) {
+    const before = new Map(group.entries.map((e) => [e.id, e.approvalStatus]));
+    const ids = new Set(before.keys());
+    setEntries((prev) => prev.map((e) => (ids.has(e.id) ? { ...e, approvalStatus: decision } : e)));
+    setBusy(true);
     try {
-      await fetchJson(`/api/timesheets/${encodeURIComponent(entry.id)}/${decision}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        ...(rejectionReason ? { body: JSON.stringify({ rejectionReason }) } : {}),
-      });
-      return null;
+      const result = await fetchJson<{ decided: number; hours: number; reviewTaskError: string | null }>(
+        "/api/timesheets/review-day",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            designerId: group.designerId,
+            projectId,
+            spentOn: group.spentOn,
+            decision,
+            ...(rejectionReason ? { rejectionReason } : {}),
+          }),
+        }
+      );
+      const day = `${group.designerName}'s ${formatDayLabel(group.spentOn)}`;
+      const done = decision === "approved"
+        ? `${day} approved (${result.decided} ${result.decided === 1 ? "entry" : "entries"}, ${formatHours(result.hours)} h)`
+        : `${day} returned with your reason (${result.decided} ${result.decided === 1 ? "entry" : "entries"})`;
+      setFooterMessage(
+        result.reviewTaskError
+          ? { level: "error", text: `${done}, but the Task Master rows were not updated: ${result.reviewTaskError}` }
+          : { level: "success", text: done }
+      );
     } catch (err) {
-      // Roll back to exactly what it was, and put the BACKEND's sentence in
-      // the footer -- not a sentence this component made up.
-      setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, approvalStatus: before } : e)));
-      return err instanceof Error ? err.message : "The decision was not recorded";
+      // Roll every row back to exactly what it was, and put the BACKEND's
+      // sentence in the footer -- not one this component made up.
+      setEntries((prev) => prev.map((e) => (before.has(e.id) ? { ...e, approvalStatus: before.get(e.id)! } : e)));
+      setFooterMessage({ level: "error", text: err instanceof Error ? err.message : "The decision was not recorded" });
+    } finally {
+      setBusy(false);
+      void load();
     }
   }
 
   async function approveDay(group: DayGroup) {
-    setBusy(true);
-    let failure: string | null = null;
-    for (const entry of group.entries) {
-      const err = await decide(entry, "approve");
-      if (err && !failure) failure = err;
-    }
-    setFooterMessage(
-      failure
-        ? { level: "error", text: failure }
-        : { level: "success", text: `${group.designerName}'s ${formatDayLabel(group.spentOn)} approved (${formatHours(totalHours(group.entries))} h)` }
-    );
-    setBusy(false);
-    void load();
+    await decideDay(group, "approved");
   }
 
   async function rejectDay(group: DayGroup) {
     if (reason.trim().length < MIN_REJECT_REASON) return;
-    setBusy(true);
-    let failure: string | null = null;
-    for (const entry of group.entries) {
-      const err = await decide(entry, "reject", reason.trim());
-      if (err && !failure) failure = err;
-    }
-    setFooterMessage(
-      failure
-        ? { level: "error", text: failure }
-        : { level: "success", text: `${group.designerName}'s ${formatDayLabel(group.spentOn)} returned with your reason` }
-    );
+    await decideDay(group, "rejected", reason.trim());
     setRejecting(null);
     setReason("");
-    setBusy(false);
-    void load();
   }
 
   return (
@@ -197,7 +208,7 @@ export default function DesignStudioReviewClient({
                         <TableCell>{formatDayLabel(entry.spentOn)}</TableCell>
                         <TableCell>{projectName}</TableCell>
                         <TableCell>{entry.activityType ?? "-"}</TableCell>
-                        <TableCell>{entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId}</TableCell>
+                        <TableCell>{entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : "Untitled task"}</TableCell>
                         <TableCell>{formatHours(entry.hours)}</TableCell>
                         <TableCell><StatusBadge tone={chip.tone} label={chip.label} /></TableCell>
                       </TableRow>

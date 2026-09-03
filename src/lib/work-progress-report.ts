@@ -447,7 +447,47 @@ export type WorkProgressReport = {
   byCategory: ReturnType<typeof rollupBy>;
   /** R67 I-05: every category name present BEFORE the filter was applied -- what the multi-select offers. */
   availableCategories: string[];
+  /**
+   * R67 B-09 -- how many entries in this window resolve to NO BOQ line at
+   * all, and are therefore absent from every figure above.
+   *
+   * This report has always silently dropped them: entryBelongsToLine()
+   * claims an entry for a line by boq_line_item_id or, failing that, by
+   * activity, and an entry matching neither simply never appears in any
+   * row. On a project with no BOQ that is the whole day's work. Counting
+   * them here is what lets the screen say so instead of showing a total the
+   * site engineer knows is wrong and cannot explain.
+   */
+  unlinkedEntryCount: number;
 };
+
+/**
+ * Entries inside [from, to] that no line item in this BOQ can claim. Pure and
+ * exported so the rule is testable on its own, and so the number the note
+ * quotes is computed by the same predicate the report itself uses -- not by a
+ * second, drifting definition of "linked".
+ */
+export function countUnlinkedEntries(params: {
+  lineItems: Pick<BoqLineItem, "id" | "activityId">[];
+  entries: ProgressEntry[];
+  from: string;
+  to: string;
+}): number {
+  return params.entries.filter(
+    (e) => inRange(e.entryDate, params.from, params.to) && !params.lineItems.some((line) => entryBelongsToLine(e, line))
+  ).length;
+}
+
+/**
+ * The sentence shown above the table. null when there is nothing to say --
+ * a note that renders "0 entries ..." is noise, and the commonest case is
+ * zero.
+ */
+export function unlinkedEntriesNote(count: number): string | null {
+  if (count <= 0) return null;
+  if (count === 1) return "1 entry not linked to a BOQ line is not counted";
+  return `${count} entries not linked to a BOQ line are not counted`;
+}
 
 /**
  * R67 lane I (WS-I item I-05, R-177): keeps only the rows whose category is in
@@ -502,7 +542,22 @@ export function buildWorkProgressReport(params: {
     (r) => r.categoryId ?? `name:${r.categoryName.toLowerCase()}`,
     (r) => r.categoryName
   );
-  return { from: params.from, to: params.to, rows, byCategory, availableCategories };
+  return {
+    from: params.from,
+    to: params.to,
+    rows,
+    byCategory,
+    availableCategories,
+    // R67 B-09: counted over the UNFILTERED entry set, deliberately -- an
+    // entry no line can claim is missing from the report whatever category
+    // filter is applied, so scoping this to the filter would understate it.
+    unlinkedEntryCount: countUnlinkedEntries({
+      lineItems: params.lineItems,
+      entries: params.entries,
+      from: params.from,
+      to: params.to,
+    }),
+  };
 }
 
 // -- Manpower-wise / Vendor-wise --------------------------------------------

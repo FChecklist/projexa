@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridianBinary, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridianBinary } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -8,7 +10,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 // through to the browser -- uses callVeridianBinary() (not callVeridian(),
 // which assumes a JSON response body) since this is the first binary
 // download PROJEXA proxies.
-export async function GET(_request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -21,6 +23,6 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to generate payslip PDF" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to generate payslip PDF");
   }
-}
+});

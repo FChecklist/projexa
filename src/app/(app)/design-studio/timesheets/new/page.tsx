@@ -2,6 +2,7 @@ import DesignStudioTimesheetCreateClient from "@/components/DesignStudioTimeshee
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
+import { todayIso } from "@/lib/design-studio-timesheet";
 
 // R67 WS-H (item H-01). "New Timesheet Entry" -- the real create route.
 // /schedule/log-time is now an alias that redirects here carrying ?taskId=,
@@ -25,7 +26,14 @@ export default async function NewTimesheetEntryPage({ searchParams }: { searchPa
 
   return (
     <div className="min-h-0 flex-1">
-      <DesignStudioTimesheetCreateClient projectId={project.id} projectName={project.name} preselectedTaskId={taskId} />
+      {/* `today` is resolved on the SERVER (lane D0's rule) so the default date
+          is not the visitor's clock and cannot drift on hydration. */}
+      <DesignStudioTimesheetCreateClient
+        projectId={project.id}
+        projectName={project.name}
+        preselectedTaskId={taskId}
+        today={todayIso(new Date())}
+      />
     </div>
   );
 }

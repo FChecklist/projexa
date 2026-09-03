@@ -54,10 +54,14 @@ export default function DesignStudioTimesheetObjectClient({
   entryId,
   projectId,
   projectName,
+  projects,
 }: {
   entryId: string;
+  /** The route's resolved project -- the FALLBACK, used only when the entry names none. */
   projectId: string;
   projectName: string;
+  /** Every project in the org, so the entry's OWN projectId can be named. */
+  projects: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -97,7 +101,9 @@ export default function DesignStudioTimesheetObjectClient({
 
   useEffect(() => { void load(); }, [load]);
 
-  const backHref = `/design-studio?projectId=${encodeURIComponent(projectId)}`;
+  // Back goes to the grid of the entry's OWN project, so leaving an entry does
+  // not silently move the user to a different project's timesheet.
+  const backHref = `/design-studio?projectId=${encodeURIComponent(entry?.projectId ?? projectId)}`;
 
   async function save() {
     const problem = validateHours(hours);
@@ -159,17 +165,25 @@ export default function DesignStudioTimesheetObjectClient({
   }
 
   const status = headerStatus(entry.approvalStatus);
-  const task = entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : entry.issueId;
+  // A task that did not join reads WORDS, never the raw issue id -- the same
+  // rule the grid applies. An id is not a thing the reader can act on.
+  const task = entry.issue ? `#${entry.issue.number} ${entry.issue.title}` : "Untitled task";
+  // FIX PASS: the entry's OWN project. The route's resolved project is the
+  // fallback, used only for an entry whose task carries none -- naming the
+  // org's first project on a facet labelled "Project" is a false statement,
+  // not a harmless default.
+  const entryProjectName =
+    (entry.projectId ? projects.find((p) => p.id === entry.projectId)?.name : undefined) ?? projectName;
 
   return (
     <>
       <ObjectScreen
-        breadcrumb={`Design Studio / ${projectName} / Timesheet`}
+        breadcrumb={`Design Studio / ${entryProjectName} / Timesheet`}
         title={`Timesheet entry ${entry.ref}`}
         headerStatus={status}
         facets={[
           { label: "Date", value: formatDayLabel(entry.spentOn) },
-          { label: "Project", value: projectName },
+          { label: "Project", value: entryProjectName },
           { label: "Category", value: entry.activityType ?? "-" },
           { label: "Task", value: task },
           { label: "Hours", value: formatHours(entry.hours) },

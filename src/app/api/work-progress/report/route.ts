@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
@@ -25,7 +27,7 @@ type VeridianVendor = { id: string; vendorName: string };
 // vendors) -- see PROGRESS.md for why this needs 5 separate VERIDIAN calls
 // instead of one: PROJEXA stores no construction domain data itself, and
 // each of these was already its own real, separately-scoped endpoint.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -110,13 +112,15 @@ export async function GET(request: NextRequest) {
       // parameters it really ran with rather than what it thinks it sent.
       availableCategories: report.availableCategories,
       categoryFilter,
+      // R67 B-09: entries this window holds that no BOQ line can claim, and
+      // that are therefore in none of the figures above. Reported so the
+      // screen can say so rather than showing a total the site engineer
+      // knows is short and cannot account for.
+      unlinkedEntryCount: report.unlinkedEntryCount,
       byManpower,
       byVendor,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to generate work progress report");
   }
-}
+});

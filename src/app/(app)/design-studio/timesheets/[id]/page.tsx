@@ -6,6 +6,17 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 // R67 WS-H (item H-01, decision D-11). One timesheet entry's object page:
 // display-first, one explicit Edit, and a Delete that states its blast
 // radius rather than asking "Are you sure?".
+//
+// FIX PASS -- THE PROJECT COMES FROM THE ENTRY, NOT FROM THE DEFAULT.
+// resolveSelectedProject(undefined, orgId) falls back to `projects[0]`
+// (src/lib/project-selection.ts). So with the Design Studio open on any project
+// other than the org's first, clicking a row used to open an object page whose
+// breadcrumb read "Design Studio / <wrong project> / Timesheet" and whose
+// "Project" facet named that wrong project -- a facet asserting a fact that is
+// false, which is worse than showing nothing. The whole project LIST is handed
+// down now, and the client labels itself from the entry's own projectId (which
+// getTimeEntry already returns), falling back to the resolved default only for
+// an entry whose task carries no project at all.
 export default async function TimesheetEntryPage({
   params,
   searchParams,
@@ -16,7 +27,7 @@ export default async function TimesheetEntryPage({
   const { id } = await params;
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, projects, errorMessage } = await resolveSelectedProject(projectId, organizationId);
 
   if (errorMessage || !project) {
     return (
@@ -32,7 +43,12 @@ export default async function TimesheetEntryPage({
 
   return (
     <div className="min-h-0 flex-1">
-      <DesignStudioTimesheetObjectClient entryId={id} projectId={project.id} projectName={project.name} />
+      <DesignStudioTimesheetObjectClient
+        entryId={id}
+        projectId={project.id}
+        projectName={project.name}
+        projects={projects}
+      />
     </div>
   );
 }

@@ -27,7 +27,9 @@
 //                     ReportCatalogRunner.tsx, which POSTs to the pre-
 //                     existing /api/reports/definitions/[id]/run proxy.
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { FileBarChart, Search } from "lucide-react";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -83,8 +85,21 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
   );
 }
 
-function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies: Company[] }) {
+function CatalogCard({
+  entry,
+  companies,
+  projectId,
+}: {
+  entry: FullCatalogEntry;
+  companies: Company[];
+  projectId: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
+  // R67 D-02: a catalog row for a report PROJEXA already renders itself is a
+  // link to that screen, not a "not yet viewable here" card. Today that is the
+  // Work Progress Report; the table lives in one place so the picker above and
+  // this row can never send the same name to two different destinations.
+  const projexaDestination = projexaReportDestination(entry, projectId);
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -92,7 +107,9 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
         <span className="text-sm font-medium text-px-ink">{entry.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={entry.status} />
-          {entry.source === "static" && <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>}
+          {entry.source === "static" && !projexaDestination && (
+            <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>
+          )}
           {entry.source === "definition" && (
             <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30">Engine</Badge>
           )}
@@ -100,7 +117,15 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
       </div>
       <p className="text-xs text-px-muted mb-1.5">{entry.description}</p>
 
-      {entry.source === "static" ? (
+      {projexaDestination ? (
+        <Link
+          href={projexaDestination}
+          className="text-xs font-medium text-px-teal transition-colors hover:text-px-ink"
+          data-testid="catalog-open-in-projexa"
+        >
+          Open this report
+        </Link>
+      ) : entry.source === "static" ? (
         <p className="text-[10.5px] text-px-muted/80">
           Runs on VERIDIAN own dashboard ({entry.route}) -- not yet renderable inside PROJEXA, shown for visibility only.
         </p>
@@ -126,7 +151,7 @@ function CatalogCard({ entry, companies }: { entry: FullCatalogEntry; companies:
   );
 }
 
-export function ReportCatalogSection() {
+export function ReportCatalogSection({ projectId = null }: { projectId?: string | null } = {}) {
   const [catalog, setCatalog] = useState<FullCatalogEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -259,7 +284,7 @@ export function ReportCatalogSection() {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {byDomain[domain].map((entry) => (
-                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} />
+                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} projectId={projectId} />
               ))}
             </div>
           </div>

@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
 import ScheduleGanttClient, { type RegistryColumn } from "@/components/ScheduleGanttClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
@@ -43,21 +45,48 @@ export function ScheduleTabsClient({
   initialTab: ScheduleTab;
   timelineColumns: RegistryColumn[] | null;
 }) {
+  // R67 D-79: the Tabs value is CONTROLLED now. It was uncontrolled
+  // (`defaultValue`), so this component could not name the tab the user was
+  // on -- and the header's "+ New" has to, because which object it offers
+  // first is the whole point. The URL sync below is unchanged: still
+  // history.replaceState, never router.push, so a tab click does not re-run
+  // the page's Server Component and its VERIDIAN calls.
+  const [activeTab, setActiveTab] = useState<ScheduleTab>(initialTab);
+
   function handleTabChange(value: string) {
     if (!isScheduleTab(value)) return;
+    setActiveTab(value);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", value);
+    // R67 A-13: this screen renders strictly from the URL's projectId, so every
+    // URL it writes has to carry one. It is set from the PROP the page resolved
+    // rather than merely copied out of the current query, so a tab switch can
+    // never be the thing that drops the project and lands the next reload on
+    // the page's own "Pick a project".
+    params.set("projectId", projectId);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
   return (
-    <Tabs defaultValue={initialTab} onValueChange={handleTabChange}>
-      <TabsList>
-        <TabsTrigger value="timeline">Timeline</TabsTrigger>
-        <TabsTrigger value="board">Board</TabsTrigger>
-        <TabsTrigger value="sprints">Sprints</TabsTrigger>
-        <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
-      </TabsList>
+    <Tabs value={activeTab} onValueChange={handleTabChange}>
+      {/* R67 D-79: the Schedule module had NO header action on any of its
+          four tabs, so logging time from the Gantt meant leaving the module
+          entirely even though /schedule/log-time has existed all along. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="board">Board</TabsTrigger>
+          <TabsTrigger value="sprints">Sprints</TabsTrigger>
+          <TabsTrigger value="timesheet">Timesheet</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="schedule"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering the schedule is not built yet"
+          exportDisabledReason="Exporting the schedule is not built yet"
+        />
+      </div>
       <TabsContent value="timeline">
         <ScheduleGanttClient projectId={projectId} registryColumns={timelineColumns} />
       </TabsContent>

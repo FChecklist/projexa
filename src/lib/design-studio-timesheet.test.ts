@@ -1,19 +1,26 @@
 /// <reference types="bun-types" />
-// R67 WS-H. The audit specifies EXACT wording for the Design Studio
-// timesheet, so the wording is asserted here rather than left to a
-// screenshot: a reformat of the component cannot silently reword the
-// primary button, the empty state or the delete confirmation without this
-// file failing.
+// BOTH LANES' TESTS, kept (D-11 addendum: "the arriving lane folds its distinct
+// capability into it and keeps both sets of tests").
+//
+//  - Lane D0 (already on main): Sumeet's exact columns, one grid, and a week
+//    view that is a FILTER over the same rows rather than a second grid.
+//  - Lane H: the audit specifies EXACT wording for the Design Studio timesheet,
+//    so the wording is asserted here rather than left to a screenshot -- a
+//    reformat of the component cannot silently reword the primary button, the
+//    empty state or the delete confirmation without this file failing.
 import { describe, expect, test } from "bun:test";
 import {
+  TIMESHEET_STATUS_LABELS,
   costRowsFor,
   DESIGN_STUDIO_CATEGORIES,
   dayTotalLabel,
   deleteConfirmation,
   emptyDayMessage,
+  filterToWeek,
   formatDayLabel,
   formatHours,
   formatVariancePercent,
+  groupByDay,
   groupSubmittedByDesignerDay,
   headerStatus,
   isResubmittable,
@@ -24,10 +31,14 @@ import {
   savedMessage,
   saveLabel,
   submitDayLabel,
+  toTimesheetRows,
   todayIso,
   totalHours,
   validateHours,
   variance,
+  weekDates,
+  weekStartOf,
+  type TimesheetApiEntry,
 } from "./design-studio-timesheet";
 
 describe("the fixed Category list (item H-03)", () => {
@@ -180,8 +191,13 @@ describe("Budget | Actual | Variance | Variance %", () => {
     expect(variance(1000, 1200)).toEqual({ variance: -200, variancePercent: -20 });
   });
 
+  // FIX PASS: this used to feed budget: 0, a value the real endpoint never
+  // returns for byCategory -- it returns NULL. The null case is covered in its
+  // own describe at the foot of this file; both are asserted so neither can
+  // regress.
   test("an unbudgeted line has NO percentage rather than 0% or Infinity", () => {
     expect(variance(0, 500).variancePercent).toBeNull();
+    expect(variance(null, 500).variancePercent).toBeNull();
     expect(formatVariancePercent(null)).toBe("-");
   });
 
@@ -279,5 +295,194 @@ describe("isResubmittable -- what a designer can still act on themselves", () =>
   test("a submitted entry belongs to the manager, and an approved one has already been counted as cost", () => {
     expect(isResubmittable("submitted")).toBe(false);
     expect(isResubmittable("approved")).toBe(false);
+  });
+});
+
+// ── Lane D0's suite, unchanged ──────────────────────────────────────────────
+const PROJECT = "Cedar Heights Villa — Phase 1";
+
+const ENTRIES: TimesheetApiEntry[] = [
+  {
+    id: "t1",
+    issueId: "i1",
+    hours: "2.5",
+    spentOn: "2026-09-02",
+    activityType: "Design",
+    approvalStatus: "submitted",
+    issue: { id: "i1", number: 14, title: "Lobby elevation" },
+  },
+  {
+    id: "t2",
+    issueId: "i2",
+    hours: "4",
+    spentOn: "2026-09-01",
+    activityType: null,
+    approvalStatus: "approved",
+    issue: { id: "i2", number: 15, title: "FF&E schedule" },
+  },
+  {
+    id: "t3",
+    issueId: "i1",
+    hours: "1.5",
+    spentOn: "2026-09-02",
+    activityType: "Coordination",
+    approvalStatus: "rejected",
+    issue: { id: "i1", number: 14, title: "Lobby elevation" },
+  },
+];
+
+describe("the status vocabulary", () => {
+  test('"rejected" reads as "Sent back", the word D-07 names', () => {
+    expect(TIMESHEET_STATUS_LABELS).toEqual({
+      draft: "Draft",
+      submitted: "Submitted",
+      approved: "Approved",
+      rejected: "Sent back",
+    });
+  });
+});
+
+describe("toTimesheetRows -- Date | Project | Category | Task | Hours, status at row level", () => {
+  const rows = toTimesheetRows(ENTRIES, PROJECT);
+
+  test("newest day first", () => {
+    expect(rows.map((r) => r.date)).toEqual(["2026-09-02", "2026-09-02", "2026-09-01"]);
+  });
+
+  test("every column comes from real data, none invented", () => {
+    expect(rows[0]).toEqual({
+      id: "t1",
+      date: "2026-09-02",
+      project: PROJECT,
+      category: "Design",
+      task: "#14 Lobby elevation",
+      hours: 2.5,
+      status: "submitted",
+      issueId: "i1",
+    });
+  });
+
+  test("an entry with no activity type shows the en-dash, never a blank cell", () => {
+    expect(rows.find((r) => r.id === "t2")?.category).toBe("–");
+  });
+
+  test("hours arrive as a numeric string and become a number", () => {
+    expect(rows.find((r) => r.id === "t2")?.hours).toBe(4);
+  });
+
+  test("an unknown or missing approval status is treated as Draft, the column's default", () => {
+    const [row] = toTimesheetRows(
+      [{ id: "x", issueId: "i9", hours: "1", spentOn: "2026-09-02", approvalStatus: null, issue: null }],
+      PROJECT
+    );
+    expect(row.status).toBe("draft");
+  });
+
+  test("a row whose task did not join shows words, never the raw id", () => {
+    const [row] = toTimesheetRows(
+      [{ id: "x", issueId: "issue_01HZX", hours: "1", spentOn: "2026-09-02", issue: null }],
+      PROJECT
+    );
+    expect(row.task).toBe("Untitled task");
+    expect(row.task).not.toContain("issue_01HZX");
+  });
+});
+
+describe("groupByDay -- the day grid", () => {
+  const days = groupByDay(toTimesheetRows(ENTRIES, PROJECT));
+
+  test("one group per date, newest first", () => {
+    expect(days.map((d) => d.date)).toEqual(["2026-09-02", "2026-09-01"]);
+  });
+
+  test("each day carries its own hours total", () => {
+    expect(days[0].totalHours).toBe(4);
+    expect(days[1].totalHours).toBe(4);
+  });
+
+  test("one row per task, not one row per day", () => {
+    expect(days[0].rows.map((r) => r.id)).toEqual(["t1", "t3"]);
+  });
+});
+
+describe("totalHours", () => {
+  test("adds up without a float artefact", () => {
+    const rows = toTimesheetRows(
+      [0.1, 0.2, 0.3].map((h, i) => ({ id: `f${i}`, issueId: "i1", hours: String(h), spentOn: "2026-09-02", issue: null })),
+      PROJECT
+    );
+    expect(totalHours(rows)).toBe(0.6);
+  });
+});
+
+describe("the week view is a filter over the same rows", () => {
+  test("weekStartOf returns the Monday on or before the date", () => {
+    expect(weekStartOf("2026-09-02")).toBe("2026-08-31"); // a Wednesday -> that Monday
+    expect(weekStartOf("2026-08-31")).toBe("2026-08-31"); // a Monday is its own week start
+    expect(weekStartOf("2026-09-06")).toBe("2026-08-31"); // a Sunday belongs to the week that began
+  });
+
+  test("weekDates spans exactly seven days", () => {
+    expect(weekDates("2026-08-31")).toEqual([
+      "2026-08-31",
+      "2026-09-01",
+      "2026-09-02",
+      "2026-09-03",
+      "2026-09-04",
+      "2026-09-05",
+      "2026-09-06",
+    ]);
+  });
+
+  test("filterToWeek keeps the rows inside the week and drops the rest -- same row objects", () => {
+    const rows = toTimesheetRows(
+      [...ENTRIES, { id: "old", issueId: "i1", hours: "8", spentOn: "2026-08-20", issue: null }],
+      PROJECT
+    );
+    const week = filterToWeek(rows, "2026-08-31");
+    expect(week.map((r) => r.id)).toEqual(["t1", "t3", "t2"]);
+    expect(week[0]).toBe(rows[0]);
+  });
+});
+
+// ── Lane H's regression for the fix pass ────────────────────────────────────
+// The Cost analysis screen rendered "-Infinity%" on its DEFAULT tab. VERIDIAN's
+// designerTimesheetReport returns projectScoped.byCategory[].budget as NULL by
+// design ("No per-category budget dimension exists in pms_budget_line_items").
+// The old 0-budget test passed while the real data path was broken, because
+// null is not 0.
+describe("an unbudgeted line reports NO variance, not -Infinity%", () => {
+  test("variance(null, actual) -- the shape the real endpoint returns for a category", () => {
+    expect(variance(null, 800)).toEqual({ variance: null, variancePercent: null });
+    expect(formatVariancePercent(variance(null, 800).variancePercent)).toBe("-");
+  });
+
+  test("a zero budget is still no percentage, and still not a -0% claim", () => {
+    expect(variance(0, 800)).toEqual({ variance: null, variancePercent: null });
+  });
+
+  test("a real budget still computes exactly as before", () => {
+    expect(variance(1000, 800)).toEqual({ variance: 200, variancePercent: 20 });
+    expect(variance(1000, 1200)).toEqual({ variance: -200, variancePercent: -20 });
+  });
+
+  test("costRowsFor carries a null budget through instead of coercing it to a 0 that was never real", () => {
+    const rows = costRowsFor(
+      { projectScoped: { byCategory: [{ category: "Drawings", budget: null, actual: 800 }] } },
+      "category"
+    );
+    expect(rows).toEqual([{ label: "Drawings", budget: null, actual: 800 }]);
+    expect(variance(rows[0].budget, rows[0].actual).variancePercent).toBeNull();
+  });
+});
+
+// The merged totalHours(): D0's rounding, lane H's parameter type.
+describe("totalHours accepts both lanes' inputs", () => {
+  test("string hours straight off the API", () => {
+    expect(totalHours([{ hours: "3" }, { hours: "4.5" }])).toBe(7.5);
+  });
+
+  test("a non-numeric value contributes nothing rather than making the whole total NaN", () => {
+    expect(totalHours([{ hours: "3" }, { hours: "not a number" }])).toBe(3);
   });
 });

@@ -22,7 +22,8 @@
 // fs.readdirSync walk nav-routes.test.ts itself uses (this tree contains
 // [id]/[token] dynamic segments, and a PowerShell path with unescaped
 // brackets is a wildcard that silently matches nothing -- see that file's
-// own comment). All 161 are listed below.
+// own comment). All 161 were listed below; R67 added /projects/new (D-01) and
+// /design-studio (D-07), taking it to 163.
 export const SHIPPED_ROUTES: readonly string[] = [
   "/",
   "/accounting",
@@ -44,7 +45,13 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/dashboard/hierarchy",
   "/dashboard/overview",
   "/dashboard/project",
+  // R67 D-07: the Design Studio timesheet (Date | Project | Category | Task |
+  // Hours, status at row level). Reached from the sidebar's DESIGN group and
+  // from the Schedule module's Timesheet tab.
   "/design-studio",
+  // R67 WS-H: the module's other three tabs and its object/create routes. Real
+  // routes, not client state, so a manager can be sent a link straight to the
+  // review queue.
   "/design-studio/cost-analysis",
   "/design-studio/review",
   "/design-studio/timesheets/[id]",
@@ -138,6 +145,11 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01 / correction C-01: the home screen's "+ Create Project" dialog
+  // became a real route. Reached from the Create Project button on /dashboard
+  // and on /dashboard/overview, never from the sidebar -- see
+  // nav-routes.test.ts's ROUTES_INTENTIONALLY_NOT_IN_NAV entry.
+  "/projects/new",
   "/punch-list",
   "/punch-list/[id]",
   "/punch-list/new",
@@ -193,6 +205,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/wiki/[id]",
   "/wiki/new",
   "/work-progress",
+  "/work-progress/[id]",
 ];
 
 const STATIC_ROUTES = new Set(SHIPPED_ROUTES.filter((r) => !r.includes("[")));
