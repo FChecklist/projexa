@@ -582,3 +582,111 @@ describe("ReportsClient: the Project Status card (R67 E-13)", () => {
     expect(empty.querySelector("a")?.getAttribute("href")).toBe("/scope");
   });
 });
+
+// ---------------------------------------------------------------------------
+// R67 E-14 (R-132 / R-139): the Full Catalog agrees with Project Reports
+// ---------------------------------------------------------------------------
+describe("ReportsClient: the Full Catalog and the picker are one screen (R67 E-14)", () => {
+  const CATALOG = [
+    // A construction report the picker really runs, reached by its ROUTE's last
+    // segment -- which is what makes the two surfaces agree about one report.
+    { id: "att", name: "Attendance Report", description: "Present/absent by trade", domain: "construction", route: "/api/construction/reports/attendance", routeNote: "", directlyNavigable: false, source: "static", status: "built" },
+    // The Work Progress Report, which has a screen of its own (D-02).
+    { id: "wpr", name: "Work Progress Report", description: "Quantities and amounts done per BOQ line", domain: "construction", route: "/work-progress?tab=report", routeNote: "", directlyNavigable: true, source: "static", status: "built" },
+    // A report PROJEXA genuinely cannot render.
+    { id: "gst", name: "GST Reconciliation", description: "GSTR-2B vs purchase register", domain: "ERP", route: "/erp/reports/gst", routeNote: "", directlyNavigable: false, source: "static", status: "built" },
+    { id: "def", name: "Custom Margin Analysis", description: "A report_definitions row", domain: "custom", route: "/reports/definitions/def", routeNote: "", directlyNavigable: false, source: "definition", definitionId: "def", status: "built" },
+  ];
+
+  function stubWithCatalog(calls: string[]) {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push(url);
+      if (url.includes("/api/currencies")) return jsonRes({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] });
+      if (url.includes("/api/reports/catalog")) return jsonRes({ catalog: CATALOG });
+      if (url.includes("/api/companies")) return jsonRes({ companies: [] });
+      if (url.includes("/api/scope/categories")) return jsonRes({ categories: [] });
+      if (url.includes("/api/vendors")) return jsonRes({ vendors: [] });
+      if (url.includes("/api/reports/budget-variance")) return breakupResponse();
+      if (url.includes("/api/reports/")) return jsonRes({ projectName: "Cedar Heights Villa - Phase 1" });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+  }
+
+  async function openCatalog(projectId: string | null = "p-1") {
+    const view = render(<ReportsClient projectId={projectId} projectName="Cedar Heights Villa - Phase 1" />);
+    const trigger = view.getByText("Full Catalog");
+    fireEvent.mouseDown(trigger);
+    fireEvent.click(trigger);
+    await view.findByTestId("catalog-header-sentence");
+    return view;
+  }
+
+  test("ACCEPTANCE: no card whose title matches a picker entry says 'Not yet viewable here'", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { container } = await openCatalog();
+    // The phrase is gone from the component entirely, in both directions.
+    expect(container.textContent).not.toContain("Not yet viewable here");
+  });
+
+  test("ACCEPTANCE: the 'Work Progress Report' card exposes a way in, and it is D-02's own destination", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { findByTestId } = await openCatalog();
+    const open = await findByTestId("catalog-open-link");
+    expect(open.getAttribute("href")).toContain("/work-progress?tab=report&projectId=p-1");
+  });
+
+  test("a picker report opens IN the Project Reports tab, preselected and already running", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { findByTestId, getByTestId } = await openCatalog();
+
+    fireEvent.click(getByTestId("catalog-open-in-project-reports"));
+    // The tab really switched, and the handed-over report really ran.
+    await waitFor(() => expect(calls.some((u) => u.includes("/api/reports/attendance?projectId=p-1"))).toBe(true));
+    expect((await findByTestId("reports-title-block")).textContent).toContain("Attendance Report");
+  });
+
+  test("a report PROJEXA cannot render names the surface that CAN, instead of only saying no", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { findByTestId, getByTestId } = await openCatalog();
+    // ERP lives behind the closed disclosure; open it the way a reader would.
+    const details = getByTestId("catalog-other-domains") as HTMLDetailsElement;
+    details.open = true;
+    expect((await findByTestId("catalog-not-available")).textContent).toContain(
+      "Not available in PROJEXA yet — runs on the VERIDIAN dashboard"
+    );
+  });
+
+  test("construction is the default view and everything else is ONE closed disclosure", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { getByTestId, container } = await openCatalog();
+    const details = getByTestId("catalog-other-domains") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toBe("Other platform reports (2)");
+    // The header counts what is really in the catalog, never a typed number.
+    // Both construction entries run here: attendance through the picker, the
+    // WPR on its own screen. The number is counted, never typed.
+    expect(getByTestId("catalog-header-sentence").textContent).toBe(
+      "2 construction reports — 2 run here with your project; the rest run on the VERIDIAN dashboard."
+    );
+    expect(container.textContent).not.toContain("Run this report");
+  });
+
+  test("the 'Engine' badge is renamed to the fact a reader needs, wherever it is true", async () => {
+    const calls: string[] = [];
+    stubWithCatalog(calls);
+    const { getByTestId, getAllByTestId, findByTestId } = await openCatalog();
+    (getByTestId("catalog-other-domains") as HTMLDetailsElement).open = true;
+    // Two cards carry it -- the picker report and the engine definition -- and
+    // both say the same thing, which is the point.
+    const badges = getAllByTestId("catalog-engine-badge");
+    expect(badges.length).toBeGreaterThan(1);
+    for (const badge of badges) expect(badge.textContent).toBe("Runs here");
+    expect((await findByTestId("catalog-run-report")).textContent).toContain("Run Report");
+  });
+});

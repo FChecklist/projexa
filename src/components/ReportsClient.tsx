@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -15,8 +15,8 @@ import { Download, FileSpreadsheet, FileText, Link2, Loader2, MessageCircle, Pla
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
-import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
-import { isHostedReport, reportDestination } from "@/lib/report-destinations";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { isHostedReport, monthToDate, reportDestination } from "@/lib/report-destinations";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { useShellMessage } from "@/components/shell/shell-messages";
 import { taskErrorSentence } from "@/lib/task-errors";
@@ -51,11 +51,6 @@ import { ReportDocument } from "@/components/reports/ReportDocument";
 import { ProjectStatusCard } from "@/components/reports/ProjectStatusCard";
 import { isPlainObject, noRowsMessage, reportSchema } from "@/lib/report-schema";
 
-/**
- * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
- * with a real next step, not a blank table.
- */
-const NO_BUDGET_LINES_MESSAGE = "No budget lines yet — set budgets on the BOQ screen";
 import {
   BREAKUP_SOURCE_REPORT,
   exportDisabledReason,
@@ -63,6 +58,12 @@ import {
   shareDisabledReason,
   whatsappHref,
 } from "@/lib/report-document-actions";
+
+/**
+ * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
+ * with a real next step, not a blank table.
+ */
+const NO_BUDGET_LINES_MESSAGE = "No budget lines yet — set budgets on the BOQ screen";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -179,6 +180,7 @@ function ProjectReportsPanel({
   reports,
   initialRun,
   unknownReportSlug = null,
+  handoff = null,
 }: {
   /**
    * R67 E-11: nullable. The card renders WITH the rail on "All projects" -- the
@@ -194,6 +196,12 @@ function ProjectReportsPanel({
   initialRun: ReportRunParams;
   /** The ?report= slug the URL named when this screen does not have it. */
   unknownReportSlug?: string | null;
+  /**
+   * R67 E-14 (R-132): a report handed over from the Full Catalog. The nonce is
+   * what makes "open the same report again" a real event rather than a no-op --
+   * a reader pressing the same card twice expects it to run twice.
+   */
+  handoff?: { slug: string; nonce: number } | null;
 }) {
   const router = useRouter();
   const [run, setRun] = useState<ReportRunParams>(initialRun);
@@ -447,6 +455,19 @@ function ProjectReportsPanel({
   function updateRun(patch: Partial<ReportRunParams>) {
     setRun((prev) => ({ ...prev, ...patch }));
   }
+
+  // R67 E-14 (R-132): the Full Catalog's "Open in Project Reports" preselects
+  // the report AND runs it. Pressing a card and then having to press Run Report
+  // would be the same two-surfaces-one-report confusion in a new shape.
+  const handoffNonce = handoff?.nonce ?? null;
+  useEffect(() => {
+    if (!handoff) return;
+    const next = { ...run, report: handoff.slug };
+    setRun(next);
+    void runReport(next);
+    // Deliberately keyed on the nonce alone: `run` changes on every parameter
+    // edit, and depending on it here would re-run the handoff on each keystroke.
+  }, [handoffNonce]);
 
   function exportCsv() {
     // The rows ON SCREEN, filters and all -- an exported file that disagrees
@@ -877,8 +898,34 @@ export default function ReportsClient({
     report: known ? requested! : DEFAULT_REPORT_NAME,
     projectId,
   });
+
+  // R67 E-14 (R-132): the Tabs value and the picker's selected slug are OWNED
+  // HERE, not one in each tab. They were independent state before, which is how
+  // the Full Catalog came to say "Not yet viewable here" about a report its
+  // sibling tab was running two clicks away.
+  const router = useRouter();
+  const [tab, setTab] = useState(projectId ? "project" : "catalog");
+  const [handoff, setHandoff] = useState<{ slug: string; nonce: number } | null>(null);
+  const pickerSlugs = useMemo(() => new Set(reports.map((r) => r.value)), [reports]);
+
+  function openProjectReport(slug: string) {
+    // D-02: a report with a screen of its own is NAVIGATED to, from the catalog
+    // exactly as from the picker -- one destination per name, decided in
+    // report-destinations.ts and nowhere else.
+    if (isHostedReport(slug) && projectId) {
+      const period = monthToDate();
+      const destination = reportDestination(slug, { projectId, from: period.from, to: period.to });
+      if (destination.kind === "navigate") {
+        router.push(destination.href);
+        return;
+      }
+    }
+    setTab("project");
+    setHandoff({ slug, nonce: Date.now() });
+  }
+
   return (
-    <Tabs defaultValue={projectId ? "project" : "catalog"} className="space-y-4">
+    <Tabs value={tab} onValueChange={setTab} className="space-y-4">
       <TabsList>
         <TabsTrigger value="project">Project Reports</TabsTrigger>
         <TabsTrigger value="catalog">Full Catalog</TabsTrigger>
@@ -896,10 +943,11 @@ export default function ReportsClient({
           reports={reports}
           initialRun={{ ...initialRun, report: known ? initialRun.report : DEFAULT_REPORT_NAME }}
           unknownReportSlug={requested && !known ? requested : null}
+          handoff={handoff}
         />
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection projectId={projectId} />
+        <ReportCatalogSection projectId={projectId} pickerSlugs={pickerSlugs} onOpenProjectReport={openProjectReport} />
       </TabsContent>
     </Tabs>
   );
