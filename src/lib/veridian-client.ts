@@ -47,10 +47,46 @@ export const VERIDIAN_ORIGIN = VERIDIAN_API_ROOT.replace(/\/api\/v1$/, "");
 // the exact budget -- and is only ever logged server-side, never returned.
 export class VeridianApiError extends Error {
   readonly detail?: string;
-  constructor(message: string, public status: number, detail?: string) {
+  /**
+   * R67 FIX PASS (C-08) -- THE BACKEND'S OWN MACHINE-READABLE REASON.
+   *
+   * VERIDIAN's services put a `code` in the body of a refusal precisely so a
+   * client can branch on it, and this class dropped it: every 4xx arrived here
+   * as a message and a status, so the only way for a caller to tell
+   * "attendance for this date is already saved -- replace it?" from any other
+   * 409 was to match on the wording of an English sentence. The shell's
+   * REPLACE_REQUIRED branch read `d?.code` and nothing ever set it, so the
+   * whole replace path was unreachable: a foreman re-marking a crew got the
+   * raw sentence and no Replace control -- the dead end this programme exists
+   * to remove.
+   *
+   * Optional, because most refusals carry no code and inventing one would be
+   * worse than having none.
+   */
+  readonly code?: string;
+  constructor(message: string, public status: number, detail?: string, code?: string) {
     super(message);
     this.detail = detail;
+    this.code = code;
   }
+}
+
+/** The two fields a VERIDIAN error body may carry. Neither is guaranteed. */
+type VeridianErrorBody = { error?: string; code?: string };
+
+/**
+ * One place that turns a failed Response into the error every caller catches,
+ * so a new `code` can never reach one call site and not the others -- which is
+ * exactly how the REPLACE_REQUIRED path came to be dead.
+ */
+async function veridianErrorFrom(res: Response): Promise<VeridianApiError> {
+  const errorBody: VeridianErrorBody = await res.json().catch(() => ({ error: res.statusText }));
+  return new VeridianApiError(
+    errorBody.error ?? `VERIDIAN API request failed (${res.status})`,
+    res.status,
+    undefined,
+    typeof errorBody.code === "string" && errorBody.code.trim().length > 0 ? errorBody.code.trim() : undefined
+  );
 }
 
 // R46 (production incident, 2026-08-25: "Vercel Runtime Timeout Error: Task
@@ -234,10 +270,7 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
     cache: "no-store",
   });
 
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
-  }
+  if (!res.ok) throw await veridianErrorFrom(res);
   return res;
 }
 
@@ -264,10 +297,7 @@ export async function callVeridianBinary(
     cache: "no-store",
   });
 
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
-  }
+  if (!res.ok) throw await veridianErrorFrom(res);
   return { body: await res.arrayBuffer(), contentType: res.headers.get("Content-Type") ?? "application/octet-stream" };
 }
 
@@ -291,10 +321,7 @@ export async function callVeridianUpload<T = unknown>(
     cache: "no-store",
   });
 
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new VeridianApiError(errorBody.error ?? `VERIDIAN API request failed (${res.status})`, res.status);
-  }
+  if (!res.ok) throw await veridianErrorFrom(res);
   return res.json() as Promise<T>;
 }
 

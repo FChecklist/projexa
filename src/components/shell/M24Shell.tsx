@@ -225,6 +225,12 @@ type ApiTasks = {
     total?: number;
     /** R67 C-11: one number per TAB, counted over the whole scope. */
     tabs?: ServerTabCounts;
+    /**
+     * R67 C-13: how many of those are infrastructure failures. Read so HOME's
+     * server count can be built with the same definition as its rendered one
+     * -- see task-row.ts's homeServerCount().
+     */
+    systemBlocked?: number;
   };
   /** R67 C-11: whether the rows returned are the whole list or one page of it. */
   page?: { limit?: number; returned?: number; truncated?: boolean; status?: string | null };
@@ -714,7 +720,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             running: (g.running ?? []).map((t) => toTaskRow(t, "running", ctx)),
             done: (g.done ?? []).map((t) => toTaskRow(t, "done", ctx)),
           },
-          serverTabs: data.counts?.tabs ?? null,
+          serverTabs: data.counts?.tabs
+            ? { ...data.counts.tabs, systemBlocked: data.counts.systemBlocked }
+            : null,
           serverTotal: typeof data.counts?.total === "number" ? data.counts.total : null,
           truncated: data.page?.truncated === true,
           returned: typeof data.page?.returned === "number" ? data.page.returned : (data.tasks?.length ?? 0),

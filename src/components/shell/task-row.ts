@@ -430,7 +430,41 @@ export const TAB_STATUS_QUERY: Readonly<Record<TaskTabId, string | null>> = {
 };
 
 /** VERIDIAN's `counts.tabs` payload, keyed by its own vocabulary. */
-export type ServerTabCounts = Partial<Record<"needs_you" | "waiting" | "approval" | "queued" | "done", number>>;
+export type ServerTabCounts = Partial<Record<"needs_you" | "waiting" | "approval" | "queued" | "done", number>> & {
+  /**
+   * R67 FIX PASS -- how many of the server's needs-you rows are infrastructure
+   * failures. Needed so HOME's server number can be built with the SAME
+   * definition as its rendered one; see homeServerCount() below.
+   */
+  systemBlocked?: number;
+};
+
+/**
+ * *** FIX PASS -- HOME'S NUMBER MUST MEAN ONE THING. ***
+ *
+ * Untruncated, Home printed views.home.count, which tabView defines as
+ * needsYou (SYSTEM FAILURES EXCLUDED) + running + done. Truncated, it fell back
+ * to the server's GRAND TOTAL over the whole scope, which includes them. So the
+ * badge jumped by exactly the number of system failures the moment an org
+ * crossed the page limit -- the same "the number silently changes meaning"
+ * defect C-11 was raised to remove for the other tabs.
+ *
+ * This builds Home's server number the way tabView builds its rendered one:
+ * the needs-you tab's rows minus the infrastructure ones, plus the queue and
+ * the completed. It returns undefined rather than guessing when any piece is
+ * absent -- no number at all is better than a differently-defined one, which
+ * is the rule History already follows in this same function.
+ *
+ * It cannot account for LOCALLY dismissed rows, and neither can any server
+ * count; that divergence is the one this function's own header already accepts
+ * for every non-active tab.
+ */
+export function homeServerCount(serverTabs: ServerTabCounts | null): number | undefined {
+  if (!serverTabs) return undefined;
+  const { needs_you: needsYou, queued, done, systemBlocked = 0 } = serverTabs;
+  if (needsYou === undefined || queued === undefined || done === undefined) return undefined;
+  return Math.max(0, needsYou - systemBlocked) + queued + done;
+}
 
 /**
  * The number printed on each tab.
@@ -454,13 +488,21 @@ export type ServerTabCounts = Partial<Record<"needs_you" | "waiting" | "approval
 export function mergeTabCounts(input: {
   views: Record<TaskTabId, { count: number }>;
   serverTabs: ServerTabCounts | null;
-  serverTotal: number | null;
+  /**
+   * The server's grand total over the scope. Kept in the signature because the
+   * caller reads it for the "Showing the newest 50 of 120." line beneath the
+   * list -- which is the ONE thing it is honestly the number for. It is
+   * deliberately not used as any tab's badge: see homeServerCount().
+   */
+  serverTotal?: number | null;
   activeTab: TaskTabId;
   truncated: boolean;
 }): Record<TaskTabId, number | undefined> {
-  const { views, serverTabs, serverTotal, activeTab, truncated } = input;
+  const { views, serverTabs, activeTab, truncated } = input;
   const server: Record<TaskTabId, number | undefined> = {
-    home: serverTotal ?? undefined,
+    // NOT serverTotal -- see homeServerCount() for why that number means
+    // something different from the one this tab renders.
+    home: homeServerCount(serverTabs),
     "approval-pending": serverTabs?.approval,
     "in-queue": serverTabs?.queued,
     completed: serverTabs?.done,

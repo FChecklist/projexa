@@ -123,6 +123,75 @@ describe("maskTechnical is the last line of defence", () => {
     expect(maskTechnical("")).toBe("");
     expect(maskTechnical("   ")).toBe("");
   });
+
+  // *** FIX PASS REGRESSION 1: A FOUR-SEGMENT BOQ CODE IS NOT AN IP ADDRESS. ***
+  //
+  // The IP pattern made the port optional, so a dotted item code was masked
+  // out of the very sentence it was the subject of. This repo's own fixtures
+  // use exactly that shape (work-progress-report-pdf.test.ts itemCode
+  // "1.01.1", "1.01.1.a"), and maskTechnical is applied to every sentence this
+  // module returns AND to every row's rawInput -- so it was live on both.
+  test("a four-segment BOQ item code survives untouched", () => {
+    expect(maskTechnical("record 50% on 1.01.1.2")).toBe("record 50% on 1.01.1.2");
+    expect(maskTechnical("1.01.1.a is a parent line")).toBe("1.01.1.a is a parent line");
+    // Still masked: an address WITH a port is what the captured defect was.
+    expect(maskTechnical("write to 1.2.3.4:5432")).toBe("write to service unavailable");
+  });
+
+  test("the same code survives the BOQ_LINE_NOT_FOUND sentence it is the subject of", () => {
+    const resolved = resolveTaskError({
+      code: "BOQ_LINE_NOT_FOUND",
+      itemCode: "1.01.1.2",
+      projectName: "Cedar Heights",
+    });
+    expect(resolved.sentence).toContain("1.01.1.2");
+    expect(resolved.sentence).not.toContain("service unavailable");
+  });
+
+  // *** FIX PASS REGRESSION 2: THE COLLAPSE MUST NOT EAT THE SEPARATOR. ***
+  //
+  // /(?:service unavailable[\s,]*)+/g consumed the space AFTER the last
+  // replacement, not only the space between repeats, so EVERY masked string
+  // ran its words together -- "write service unavailablewhile saving".
+  test("collapsing a stutter keeps the separator that followed it", () => {
+    expect(maskTechnical("write CONNECT_TIMEOUT 3.109.171.244:6543 while saving")).toBe(
+      "write service unavailable while saving"
+    );
+    expect(maskTechnical("record 50% on 1.01.1.2 today")).toBe("record 50% on 1.01.1.2 today");
+    // A genuine repeat still collapses to one.
+    expect(maskTechnical("1.2.3.4:5432 1.2.3.4:5432 then done")).toBe("service unavailable then done");
+    // Nothing may end up glued to a word.
+    expect(maskTechnical("write CONNECT_TIMEOUT 1.2.3.4:5432 while saving")).not.toMatch(
+      /\w(?:service unavailable)|(?:service unavailable)\w/
+    );
+  });
+});
+
+// *** FIX PASS REGRESSION 3: AN HTTP STATUS NEEDS AN HTTP CONTEXT. ***
+//
+// The transport catch-all matched a BARE 502/503/504 anywhere in a stored
+// sentence, and BOQ item codes numbered 501/502/503 are ordinary. So "there is
+// no line 503 on Cedar Heights" was read as an outage: the actionable sentence
+// replaced by "the construction data service didn't answer [Retry]", the row
+// offered a Retry that could only fail identically, and the user was told to
+// wait for a service that was fine.
+describe("a three-digit number is not an outage unless it is wearing a status", () => {
+  test("a BOQ line numbered 502/503/504 keeps its own meaning", () => {
+    expect(inferTaskErrorCode("there is no line 503 on Cedar Heights")).toBeNull();
+    expect(inferTaskErrorCode("record 50% on line 504")).toBeNull();
+    expect(inferTaskErrorCode(`item code "502" not found in this project's BOQ`)).toBe("BOQ_LINE_NOT_FOUND");
+  });
+
+  test("a real 5xx still reads as one, in every shape this stack produces", () => {
+    for (const raw of ["HTTP 503 from upstream", "status 502", "502 Bad Gateway", "504 gateway timeout"]) {
+      expect(inferTaskErrorCode(raw)).toBe("BACKEND_UNAVAILABLE");
+    }
+  });
+
+  test("the named transport codes are unaffected -- they never needed the number", () => {
+    expect(inferTaskErrorCode("write CONNECT_TIMEOUT 3.109.171.244:6543")).toBe("BACKEND_UNAVAILABLE");
+    expect(inferTaskErrorCode("the request timed out")).toBe("BACKEND_UNAVAILABLE");
+  });
 });
 
 describe("a legacy pipeline_tasks.error string is translated, never shown", () => {

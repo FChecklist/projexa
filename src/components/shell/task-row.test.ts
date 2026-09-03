@@ -6,6 +6,7 @@ import {
   assertNoUnderscore,
   countedTabLabel,
   humaniseFunctionId,
+  homeServerCount,
   mergeTabCounts,
   objectFor,
   objectIdLabel,
@@ -410,7 +411,8 @@ describe("mergeTabCounts -- which source each tab's number comes from", () => {
     const counts = mergeTabCounts({ views, serverTabs, serverTotal: 169, activeTab: "completed", truncated: false });
     expect(counts["approval-pending"]).toBe(40);
     expect(counts["in-queue"]).toBe(9);
-    expect(counts.home).toBe(169);
+    // Home is NOT serverTotal -- see the describe below for why.
+    expect(counts.home).toBe(homeServerCount(serverTabs));
   });
 
   test("a truncated page hands the active tab back to the server's total", () => {
@@ -434,6 +436,58 @@ describe("mergeTabCounts -- which source each tab's number comes from", () => {
     const counts = mergeTabCounts({ views, serverTabs: null, serverTotal: null, activeTab: "in-queue", truncated: false });
     expect(counts["in-queue"]).toBe(1);
     expect(counts.completed).toBeUndefined();
+    expect(counts.home).toBeUndefined();
+  });
+});
+
+// *** FIX PASS -- HOME'S NUMBER MEANT TWO DIFFERENT THINGS. ***
+//
+// Untruncated, Home printed views.home.count -- needsYou with SYSTEM FAILURES
+// EXCLUDED, plus running, plus done. Truncated, it fell back to the server's
+// grand total over the whole scope, which INCLUDES them. So the badge jumped by
+// exactly the number of system failures the moment an org crossed the 50-row
+// page limit: the same silent change of meaning C-11 was raised to remove.
+describe("homeServerCount -- Home's server number is defined like its rendered one", () => {
+  test("it is needs-you minus the outages, plus the queue and the completed", () => {
+    // 40 needs-you of which 4 are infrastructure, 9 queued, 120 done.
+    expect(homeServerCount({ needs_you: 40, queued: 9, done: 120, systemBlocked: 4 })).toBe(165);
+  });
+
+  test("*** IT IS NEVER THE GRAND TOTAL ***", () => {
+    const homeViews = {
+      home: { count: 6 },
+      "approval-pending": { count: 2 },
+      "in-queue": { count: 1 },
+      completed: { count: 3 },
+      history: { count: 1 },
+    } as Record<TaskTabId, { count: number }>;
+    const serverTabs = { needs_you: 40, waiting: 0, approval: 40, queued: 9, done: 120, systemBlocked: 4 };
+    const truncatedHome = mergeTabCounts({
+      views: homeViews,
+      serverTabs,
+      serverTotal: 169,
+      activeTab: "home",
+      truncated: true,
+    });
+    // 169 is the grand total and would have been printed here before the fix.
+    expect(truncatedHome.home).toBe(165);
+    expect(truncatedHome.home).not.toBe(169);
+  });
+
+  test("with no system failures the two definitions agree exactly", () => {
+    expect(homeServerCount({ needs_you: 40, queued: 9, done: 120, systemBlocked: 0 })).toBe(169);
+    // An absent systemBlocked is zero, not a reason to bail out.
+    expect(homeServerCount({ needs_you: 40, queued: 9, done: 120 })).toBe(169);
+  });
+
+  test("a missing piece yields NO number rather than a guessed one", () => {
+    expect(homeServerCount(null)).toBeUndefined();
+    expect(homeServerCount({ needs_you: 40, queued: 9 })).toBeUndefined();
+    expect(homeServerCount({ queued: 9, done: 120 })).toBeUndefined();
+  });
+
+  test("it never goes negative, whatever the two grouped reads disagree about", () => {
+    expect(homeServerCount({ needs_you: 2, queued: 0, done: 0, systemBlocked: 5 })).toBe(0);
   });
 });
 

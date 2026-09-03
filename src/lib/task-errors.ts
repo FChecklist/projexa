@@ -171,8 +171,25 @@ export const TASK_ERROR_DICTIONARY: Readonly<Record<TaskErrorCode, TaskErrorEntr
 // THE LAST LINE OF DEFENCE
 // ---------------------------------------------------------------------------
 
-/** An IPv4 address with a port: "3.109.171.244:6543" (the real captured row). */
-const IP_PORT = /\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b/g;
+/**
+ * An IPv4 address WITH A PORT: "3.109.171.244:6543" (the real captured row).
+ *
+ * *** FIX PASS -- THE PORT IS MANDATORY, AND THAT IS THE WHOLE FIX. ***
+ *
+ * It used to be optional -- `(?::\d{1,5})?` -- which made this pattern match a
+ * four-segment dotted BOQ ITEM CODE. Reproduced against the real code before
+ * changing it: maskTechnical('record 50% on 1.01.1.2') returned 'record 50% on
+ * service unavailable', with the line the sentence is ABOUT replaced by an
+ * outage. This repo's own fixtures use exactly that shape
+ * (work-progress-report-pdf.test.ts itemCode '1.01.1' and '1.01.1.a'), and
+ * maskTechnical is applied to every sentence this module returns and to every
+ * row's rawInput (task-row.ts), so it was live on both.
+ *
+ * The captured defect was always an IP:PORT pair. A bare dotted quad is far
+ * more likely to be a BOQ code than a leaked host, and masking a real item
+ * code is the worse failure: it destroys the one fact the user needs.
+ */
+const IP_PORT = /\b\d{1,3}(?:\.\d{1,3}){3}:\d{1,5}\b/g;
 /** A hostname with a port: "db.abcdef.supabase.co:5432", "localhost:3100". */
 const HOST_PORT = /\b(?:[a-z0-9-]+\.)*[a-z0-9-]+(?::\d{2,5})\b/gi;
 /** Node/Postgres transport codes that mean exactly one thing to a person: nothing. */
@@ -187,6 +204,20 @@ const SERVICE_UNAVAILABLE = "service unavailable";
  *
  * Deliberately not a validator: it never throws and never blanks the string.
  * A sentence that survives it unchanged is a sentence that was already safe.
+ *
+ * *** FIX PASS -- THE STUTTER COLLAPSE WAS EATING THE FOLLOWING SEPARATOR. ***
+ *
+ * It was /(?:service unavailable[\s,]*)+/g, and that trailing `[\s,]*`
+ * consumed the space AFTER the last replacement, not only between repeats. So
+ * every masked string ran its words together, whether or not it stuttered:
+ *
+ *   'write CONNECT_TIMEOUT 3.109.171.244:6543 while saving'
+ *      -> 'write service unavailablewhile saving'
+ *   BOQ_LINE_NOT_FOUND for line 1.01.1.2
+ *      -> 'There is no line service unavailableon Cedar Heights - pick a line'
+ *
+ * Both reproduced against the real code. The collapse now matches only the
+ * repeats themselves, so exactly one separator survives where one was.
  */
 export function maskTechnical(text: string): string {
   if (!text) return text;
@@ -194,9 +225,10 @@ export function maskTechnical(text: string): string {
     .replace(IP_PORT, SERVICE_UNAVAILABLE)
     .replace(TRANSPORT_CODE, SERVICE_UNAVAILABLE)
     .replace(HOST_PORT, SERVICE_UNAVAILABLE)
-    // "service unavailable service unavailable" reads as a stutter; collapse.
-    .replace(/(?:service unavailable[\s,]*)+/g, SERVICE_UNAVAILABLE)
-    .replace(/\s{2,}/g, " ")
+    // "service unavailable service unavailable" reads as a stutter; collapse
+    // the repeats WITHOUT swallowing the separator that followed them.
+    .replace(/(?:service unavailable)(?:[ ,]+service unavailable)+/g, SERVICE_UNAVAILABLE)
+    .replace(/ {2,}/g, " ")
     .trim();
 }
 
@@ -234,7 +266,25 @@ const RAW_PATTERNS: ReadonlyArray<[RegExp, TaskErrorCode]> = [
   [/\bis not permitted to execute\b/i, "FUNCTION_NOT_AVAILABLE"],
   // executor.ts:243 / the raw transport failures it now catches
   [/\b(?:ECONN[A-Z]+|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|CONNECT_TIMEOUT|POOL_TIMEOUT)\b/, "BACKEND_UNAVAILABLE"],
-  [/\b(?:timed? ?out|timeout|unavailable|internal error|502|503|504)\b/i, "BACKEND_UNAVAILABLE"],
+  [/\b(?:timed? ?out|timeout|unavailable|internal error)\b/i, "BACKEND_UNAVAILABLE"],
+  // *** FIX PASS -- AN HTTP STATUS NEEDS AN HTTP CONTEXT. ***
+  //
+  // This clause used to be `|502|503|504` inside the pattern above: a BARE
+  // three-digit number, matched anywhere in a stored sentence. BOQ item codes
+  // numbered 501/502/503 are ordinary, so "there is no line 503 on Cedar
+  // Heights" was classified as an outage -- reproduced against the real code
+  // before changing it. The consequence is the inverse of what this dictionary
+  // is for: the actionable sentence ("pick a line") is replaced by "the
+  // construction data service didn't answer [Retry]", and the user is told to
+  // wait for a service that is fine and can never fix their request.
+  //
+  // The number now has to be wearing its status: a gateway phrase beside it,
+  // or an explicit HTTP/status prefix. Every driver string this stack really
+  // produces is already caught by name in the clause above.
+  [
+    /\b(?:HTTP|status)\s*(?:502|503|504)\b|\b(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway time-?out)\b/i,
+    "BACKEND_UNAVAILABLE",
+  ],
 ];
 
 /** The D-03 code a legacy `pipeline_tasks.error` string stands for, or null. */
