@@ -15,14 +15,17 @@ export default async function ScheduleTaskDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ backTo?: string }>;
+  searchParams: Promise<{ backTo?: string; created?: string }>;
 }) {
   const { id } = await params;
-  const { backTo } = await searchParams;
+  const { backTo, created } = await searchParams;
   const safeBackTo = backTo && /^\/schedule(\?|$)/.test(backTo) ? backTo : undefined;
+  // R67 D-47: `?created=<number>` is the create screen's receipt. Digits only,
+  // so the parameter cannot put arbitrary text into the object's message area.
+  const createdNumber = created && /^\d+$/.test(created) ? created : undefined;
   return (
     <div className="flex-1">
-      <ScheduleTaskObjectClient taskId={id} backTo={safeBackTo} />
+      <ScheduleTaskObjectClient taskId={id} backTo={safeBackTo} createdNumber={createdNumber} />
     </div>
   );
 }

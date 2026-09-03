@@ -165,6 +165,8 @@ describe("D-45 baseline capture", () => {
 
     const { container, findByTestId } = renderGantt();
     const trigger = (await findByTestId("capture-baseline")) as HTMLButtonElement;
+    // The role lookup gates the action, so wait for it before clicking.
+    await waitFor(() => expect(trigger.disabled).toBe(false));
     fireEvent.click(trigger);
     await waitFor(() => expect(container.querySelector("#baseline-name")).not.toBeNull());
 
@@ -189,8 +191,17 @@ describe("D-45 baseline capture", () => {
       },
     });
     const button = (await findByTestId("capture-baseline")) as HTMLButtonElement;
-    await waitFor(() => expect(button.disabled).toBe(true));
-    expect(button.textContent).toBe(`Capture Baseline (${NEEDS_PM_ROLE})`);
+    await waitFor(() => expect(button.textContent).toBe(`Capture Baseline (${NEEDS_PM_ROLE})`));
+    expect(button.disabled).toBe(true);
+  });
+
+  test("a role lookup that FAILED does not pre-refuse a PM -- the route still enforces it", async () => {
+    const { findByTestId } = renderGantt({
+      handlers: { "/api/organization": () => jsonRes({ error: "org lookup failed" }, 502) },
+    });
+    const button = (await findByTestId("capture-baseline")) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    expect(button.textContent).toBe("Capture Baseline");
   });
 
   test("a refused capture shows the backend's own sentence in the footer message area", async () => {
@@ -204,7 +215,9 @@ describe("D-45 baseline capture", () => {
         },
       },
     });
-    fireEvent.click(await findByTestId("capture-baseline"));
+    const trigger = (await findByTestId("capture-baseline")) as HTMLButtonElement;
+    await waitFor(() => expect(trigger.disabled).toBe(false));
+    fireEvent.click(trigger);
     await waitFor(() => expect(container.querySelector("#baseline-name")).not.toBeNull());
 
     globalThis.fetch = (async () =>

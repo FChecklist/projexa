@@ -153,7 +153,14 @@ export default function ScheduleGanttClient({
   const [baselinesOpen, setBaselinesOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [baselineName, setBaselineName] = useState("");
-  const [role, setRole] = useState<string | null>(null);
+  // "unknown" is NOT the same as "not a PM": if the role lookup itself failed we
+  // must not pre-refuse the action on a guess. The route enforces
+  // ROLE_GROUPS.PM_OR_ABOVE either way, and its refusal now reaches the footer
+  // verbatim -- so the worst case is one wasted click with a truthful reason,
+  // rather than a PM being told they lack a role they have.
+  const [roleState, setRoleState] = useState<{ kind: "loading" } | { kind: "known"; role: string | null } | { kind: "unknown" }>({
+    kind: "loading",
+  });
 
   // Resolved once on mount, not read during render: `new Date()` in a render
   // body is the same hydration hazard src/lib/format-date.ts documents.
@@ -227,11 +234,16 @@ export default function ScheduleGanttClient({
     // The role decides whether the action is offered at all -- refusing AFTER
     // the click is the defect D-45 names.
     fetchJson<{ role?: string }>("/api/organization")
-      .then((d) => setRole(d.role ?? null))
-      .catch(() => setRole(null));
+      .then((d) => setRoleState({ kind: "known", role: d.role ?? null }))
+      .catch(() => setRoleState({ kind: "unknown" }));
   }, []);
 
-  const canCapture = role !== null && PM_OR_ABOVE.includes(role);
+  const captureDisabledReason =
+    roleState.kind === "loading"
+      ? "Loading…"
+      : roleState.kind === "known" && !(roleState.role && PM_OR_ABOVE.includes(roleState.role))
+        ? NEEDS_PM_ROLE
+        : undefined;
 
   function openBaselineForm() {
     // "Baseline 02-09-2026" -- today in the organisation's own date format.
@@ -420,12 +432,12 @@ export default function ScheduleGanttClient({
           {!formOpen ? (
             <Button
               onClick={openBaselineForm}
-              disabled={!canCapture}
-              title={canCapture ? undefined : NEEDS_PM_ROLE}
+              disabled={!!captureDisabledReason}
+              title={captureDisabledReason}
               variant="outline"
               data-testid="capture-baseline"
             >
-              {canCapture ? "Capture Baseline" : `Capture Baseline (${NEEDS_PM_ROLE})`}
+              {captureDisabledReason ? `Capture Baseline (${captureDisabledReason})` : "Capture Baseline"}
             </Button>
           ) : (
             <div className="flex flex-wrap items-end gap-2">

@@ -35,6 +35,7 @@ const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 export default function ScheduleTaskObjectClient({
   taskId,
   backTo,
+  createdNumber,
 }: {
   taskId: string;
   /**
@@ -42,6 +43,13 @@ export default function ScheduleTaskObjectClient({
    * the user had. Validated by the page before it reaches here.
    */
   backTo?: string;
+  /**
+   * R67 D-47: the activity number the create screen just wrote, so this page
+   * opens with "Activity #12 created" in its persistent message area instead of
+   * the create screen bouncing to an empty form. Validated as digits by the
+   * page before it reaches here.
+   */
+  createdNumber?: string;
 }) {
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
@@ -170,7 +178,9 @@ export default function ScheduleTaskObjectClient({
       onBack={() => router.push(backTo ?? `/schedule?projectId=${task.projectId}&tab=timeline`)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
-      messages={[]}
+      // R67 D-47: the create screen's receipt, in the persistent message area
+      // rather than a toast that has gone by the time the page paints.
+      messages={createdNumber ? [{ level: "success", text: `Activity #${createdNumber} created` }] : []}
     >
       <div className="space-y-3 px-4 py-3">
         {mode === "edit" ? (
