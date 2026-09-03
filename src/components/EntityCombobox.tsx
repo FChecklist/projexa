@@ -174,6 +174,11 @@ export default function EntityCombobox({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-autocomplete="list"
+        // The arrow keys move a highlight that lives in this component's state,
+        // not DOM focus (focus stays in the input so typing keeps filtering).
+        // aria-activedescendant is how a screen reader is told which option
+        // that highlight is on; without it the arrows are silent.
+        aria-activedescendant={open && highlight >= 0 && visible[highlight] ? `${listboxId}-option-${highlight}` : undefined}
         aria-label={ariaLabel}
         autoComplete="off"
         disabled={disabled || loading}
@@ -196,26 +201,33 @@ export default function EntityCombobox({
           role="listbox"
           className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-ct-border2 bg-background py-1 shadow-card"
         >
+          {/* role="option" sits on the <li> ITSELF, not on a button nested
+              inside it. A listbox's owned children must BE the options: with an
+              unrelated element between the listbox and its options, screen
+              readers do not report the option set or which one is selected --
+              which would leave the one control this item added specifically for
+              keyboard and type-ahead use unannounced. The empty-state <li> is
+              role="presentation" for the same reason: "No match" is not an
+              option anyone can choose. */}
           {visible.length === 0 ? (
-            <li className="px-3 py-2 text-[13px] text-px-muted">{emptyMessage}</li>
+            <li role="presentation" className="px-3 py-2 text-[13px] text-px-muted">{emptyMessage}</li>
           ) : (
             visible.map((option, index) => (
-              <li key={option.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={option.value === value}
-                  className={`flex w-full flex-col items-start px-3 py-2 text-left text-[13px] ${
-                    index === highlight ? "bg-px-cloud" : ""
-                  }`}
-                  // onMouseDown, not onClick: the input's blur fires first and
-                  // would close the list before a click could land.
-                  onMouseDown={(event) => { event.preventDefault(); commit(option); }}
-                  onMouseEnter={() => setHighlight(index)}
-                >
-                  <span>{option.label}</span>
-                  {option.hint ? <span className="text-[11px] text-px-muted">{option.hint}</span> : null}
-                </button>
+              <li
+                key={option.value}
+                id={`${listboxId}-option-${index}`}
+                role="option"
+                aria-selected={option.value === value}
+                className={`flex cursor-pointer flex-col items-start px-3 py-2 text-left text-[13px] ${
+                  index === highlight ? "bg-px-cloud" : ""
+                }`}
+                // onMouseDown, not onClick: the input's blur fires first and
+                // would close the list before a click could land.
+                onMouseDown={(event) => { event.preventDefault(); commit(option); }}
+                onMouseEnter={() => setHighlight(index)}
+              >
+                <span>{option.label}</span>
+                {option.hint ? <span className="text-[11px] text-px-muted">{option.hint}</span> : null}
               </li>
             ))
           )}

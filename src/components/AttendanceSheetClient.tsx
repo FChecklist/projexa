@@ -16,7 +16,12 @@
 //     absences for anyone the supervisor had not got to yet.
 //  2. A PAST DATE OPENS READ-ONLY. Yesterday's sheet is a record, not a form.
 //     It takes an explicit Edit, and Cancel confirms before discarding, which
-//     is the same rule the object pages follow.
+//     is the same rule the object pages follow. That confirm is INLINE, the
+//     same shape RosterObjectClient uses before deactivating a worker -- NOT
+//     window.confirm(). A browser dialog cannot be styled, cannot be tested,
+//     and is suppressed outright by some browsers, which would silently turn
+//     Cancel into "discard without asking"; this lane removed the product's
+//     last window.prompt() for exactly that reason (D-45).
 //  3. THE SAVED FOOTER LINE IS THE RECEIPT, and its numbers come from the
 //     SERVER's response, not from this component's own running total -- the
 //     server recomputes every cost from the roster's dailyRate, so quoting the
@@ -89,6 +94,7 @@ export default function AttendanceSheetClient({
   // Today (and any future date a user reaches by URL) opens ready to mark.
   const isPastDate = attendanceDate < todayIso();
   const [editing, setEditing] = useState(!isPastDate);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -185,25 +191,35 @@ export default function AttendanceSheetClient({
     }
   }
 
-  function cancelEditing() {
-    if (!window.confirm("Discard the marks you have made on this sheet? They have not been saved.")) return;
+  function discardEdits() {
+    setConfirmingDiscard(false);
     setEditing(false);
     void load();
   }
 
   const markedCount = totals.markedCount;
-  const saveDisabledReason = saving ? `Saving ${markedCount} rows…` : markedCount === 0 ? "No rows marked" : undefined;
+
+  // In-flight progress is a LABEL, not a refusal reason. PageHeading renders a
+  // disabled action as `${label} (${disabledReason})`, so passing the progress
+  // string as the reason produced "Save sheet (Saving 38 rows…)" -- which reads
+  // as an explanation of why the button will not work. PageHeadingAction.disabled
+  // exists for exactly this case (see its own comment), and MaterialsClient
+  // already uses it the same way for "Opening…".
+  const saveAction = saving
+    ? { label: `Saving ${markedCount} rows…`, disabled: true }
+    : { label: "Save sheet", disabledReason: markedCount === 0 ? "No rows marked" : undefined };
 
   const headerActions = editing
     ? [
         {
-          label: "Save sheet",
+          ...saveAction,
           variant: "default" as const,
-          disabledReason: saveDisabledReason,
           onClick: () => void saveSheet(),
           testId: "attendance-sheet-save",
         },
-        ...(isPastDate ? [{ label: "Cancel", onClick: cancelEditing }] : []),
+        ...(isPastDate
+          ? [{ label: "Cancel", disabled: saving, onClick: () => setConfirmingDiscard(true) }]
+          : []),
       ]
     : [{ label: "Edit", variant: "default" as const, onClick: () => setEditing(true), testId: "attendance-sheet-edit" }];
 
@@ -225,6 +241,24 @@ export default function AttendanceSheetClient({
 
       <Card className="shadow-card">
         <CardContent className="p-0">
+          {confirmingDiscard && (
+            // Inline, inside the card the marks are in, so the sheet being
+            // discarded stays readable while the supervisor decides. Same shape
+            // as RosterObjectClient's deactivate confirm.
+            <div role="alertdialog" aria-label="Confirm discard" className="border-b border-ct-border bg-px-error-light px-4 py-3">
+              <p className="text-[13px] text-px-error">
+                Discard the marks you have made on this sheet? They have not been saved.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" variant="destructive" onClick={discardEdits} data-testid="attendance-sheet-discard">
+                  Discard
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setConfirmingDiscard(false)} data-testid="attendance-sheet-keep-editing">
+                  Keep editing
+                </Button>
+              </div>
+            </div>
+          )}
           {loading ? (
             <SkeletonTable headers={COLUMN_HEADERS} rows={5} caption={`Loading the sheet for ${projectName}…`} />
           ) : roster.length === 0 ? (

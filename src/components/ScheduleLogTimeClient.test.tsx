@@ -77,16 +77,30 @@ afterEach(() => {
 });
 
 describe("D-51 Category", () => {
-  test("the label is 'Category' and it is marked required", async () => {
+  test("the label reads exactly 'Category *' and is marked required", async () => {
     const { container, findByText } = renderClient();
     const label = await findByText("Category");
     expect(label.tagName.toLowerCase()).toBe("label");
-    // FormField renders the asterisk aria-hidden and the word for a screen
-    // reader, so the visible text is "Category *" and the accessible name is
-    // "Category (required)".
-    expect(label.textContent).toContain("*");
+    // D-51's acceptance quotes the label as "Category *", WITH the space.
+    // FormField used to render the marker flush against the word, so the
+    // serialised text was "Category*" and the quoted string was never
+    // produced verbatim; it now emits a literal space before the marker.
+    expect(label.textContent?.startsWith("Category *")).toBe(true);
+    // The asterisk is aria-hidden and the word carries the meaning for a
+    // screen reader, so the accessible name is "Category (required)".
     expect(label.textContent).toContain("(required)");
     expect(container.querySelector(`[aria-required="true"]`)).not.toBeNull();
+  });
+
+  test("every required field on this screen reads 'Label *' -- Task, Hours, Date and Category alike", async () => {
+    const { container, findByText } = renderClient();
+    await findByText("Category");
+    const labels = [...container.querySelectorAll("label")].map((l) => l.textContent ?? "");
+    for (const expected of ["Task *", "Hours (e.g. 7.5) *", "Date *", "Category *"]) {
+      expect(labels.some((text) => text.startsWith(expected))).toBe(true);
+    }
+    // And no label anywhere runs the marker into the word.
+    expect(labels.some((text) => /[^\s]\*/.test(text))).toBe(false);
   });
 
   test("the option list contains the seeded BOQ vocabulary and the project's own categories", async () => {

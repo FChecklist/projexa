@@ -183,7 +183,11 @@ describe("AttendanceSheetClient -- saving", () => {
     fireEvent.click(within(getByText("Bina Rao").closest("tr")!).getByRole("radio", { name: "Half day" }));
 
     fireEvent.click(getByTestId("attendance-sheet-save"));
-    await waitFor(() => expect(getByTestId("attendance-sheet-save").textContent).toBe("Save sheet (Saving 2 rows…)"));
+    // The in-flight state is the LABEL, not a parenthesised refusal reason:
+    // "Save sheet (Saving 2 rows…)" reads as an explanation of why the button
+    // will not work. The button is disabled by the separate `disabled` flag.
+    await waitFor(() => expect(getByTestId("attendance-sheet-save").textContent).toBe("Saving 2 rows…"));
+    expect((getByTestId("attendance-sheet-save") as HTMLButtonElement).disabled).toBe(true);
 
     resolveSave?.(new Response());
     await waitFor(() =>
@@ -253,6 +257,49 @@ describe("AttendanceSheetClient -- a past date is a record", () => {
 
     fireEvent.click(getByTestId("attendance-sheet-edit"));
     await waitFor(() => expect(queryAllByRole("radio").length).toBe(6));
+  });
+
+  // The discard confirm is INLINE, so both of its branches are reachable from
+  // a test -- a window.confirm() would make this whole path untestable, which
+  // is half the reason it is not one.
+  test("Cancel asks before discarding, and 'Keep editing' leaves the sheet alone", async () => {
+    globalThis.fetch = router({ ...DEFAULTS, "/api/attendance": () => jsonRes({ attendance: [] }) });
+
+    const { getByText, getByTestId, queryByText, queryAllByRole } = render(
+      <AttendanceSheetClient projectId="p1" projectName="Cedar Heights Villa - Phase 1" attendanceDate="2020-01-02" />
+    );
+    await waitFor(() => expect(getByText("Ali Hassan")).toBeDefined());
+    fireEvent.click(getByTestId("attendance-sheet-edit"));
+    await waitFor(() => expect(queryAllByRole("radio").length).toBe(6));
+
+    // Nothing is asked until Cancel is pressed.
+    expect(queryByText("Discard the marks you have made on this sheet? They have not been saved.")).toBeNull();
+    fireEvent.click(getByText("Cancel"));
+    expect(getByText("Discard the marks you have made on this sheet? They have not been saved.")).toBeDefined();
+
+    fireEvent.click(getByTestId("attendance-sheet-keep-editing"));
+    expect(queryByText("Discard the marks you have made on this sheet? They have not been saved.")).toBeNull();
+    // Still editing: the radios are still there.
+    expect(queryAllByRole("radio").length).toBe(6);
+  });
+
+  test("'Discard' drops the marks, reloads and returns the past sheet to its read-only state", async () => {
+    globalThis.fetch = router({ ...DEFAULTS, "/api/attendance": () => jsonRes({ attendance: [] }) });
+
+    const { getByText, getByTestId, queryAllByRole } = render(
+      <AttendanceSheetClient projectId="p1" projectName="Cedar Heights Villa - Phase 1" attendanceDate="2020-01-02" />
+    );
+    await waitFor(() => expect(getByText("Ali Hassan")).toBeDefined());
+    fireEvent.click(getByTestId("attendance-sheet-edit"));
+    await waitFor(() => expect(queryAllByRole("radio").length).toBe(6));
+
+    fireEvent.click(within(getByText("Ali Hassan").closest("tr")!).getByRole("radio", { name: "Present" }));
+    fireEvent.click(getByText("Cancel"));
+    fireEvent.click(getByTestId("attendance-sheet-discard"));
+
+    await waitFor(() => expect(queryAllByRole("radio").length).toBe(0));
+    expect(getByTestId("attendance-sheet-edit")).toBeDefined();
+    expect(getByText("This sheet is a past record — choose Edit to change it.")).toBeDefined();
   });
 
   test("an existing row seeds the sheet, so re-opening a saved date shows what was recorded", async () => {

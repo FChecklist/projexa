@@ -62,6 +62,14 @@ export function FormField({
         {label}
         {required ? (
           <>
+            {/* R67 D-50/D-51 quote these labels as "Category *", "Task *",
+                "Hours *" -- with the space. The marker used to sit flush
+                against the label, so the serialised text was "Category*" and
+                the quoted string was never produced verbatim on any screen
+                built from this primitive. The literal space is inside the
+                JSX expression so JSX cannot strip it as whitespace between
+                elements. */}
+            {" "}
             {/* The asterisk is decorative -- aria-required on the control is
                 what actually conveys this, so it is hidden from the a11y tree
                 rather than read out as "asterisk". */}

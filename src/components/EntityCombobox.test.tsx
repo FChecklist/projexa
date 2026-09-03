@@ -196,6 +196,42 @@ describe("EntityCombobox in the DOM", () => {
     expect(changes).toEqual([]);
   });
 
+  test("the listbox's OWN children are the options -- nothing sits between them", async () => {
+    // A listbox's owned children must be the options themselves. With an
+    // unrelated wrapper in between (the original shape put role="option" on a
+    // <button> inside a plain <li>), a screen reader does not report the option
+    // set or which one is selected -- which would make this picker, added
+    // specifically for keyboard and type-ahead use, unusable by the people who
+    // most need it.
+    const { getByLabelText, getByRole, getAllByRole } = render(
+      <EntityCombobox aria-label="Worker" options={WORKERS} value="" onChange={() => {}} />
+    );
+    fireEvent.focus(getByLabelText("Worker"));
+    await waitFor(() => expect(getAllByRole("option")).toHaveLength(3));
+
+    const listbox = getByRole("listbox");
+    expect(listbox.querySelectorAll(":scope > [role=option]").length).toBe(3);
+    // ...and no option is nested inside another element within the listbox.
+    expect(listbox.querySelectorAll("[role=option] [role=option]").length).toBe(0);
+  });
+
+  test("the arrow-key highlight is announced through aria-activedescendant", async () => {
+    const { getByLabelText, getAllByRole } = render(
+      <EntityCombobox aria-label="Worker" options={WORKERS} value="" onChange={() => {}} />
+    );
+    const input = getByLabelText("Worker");
+    fireEvent.focus(input);
+    await waitFor(() => expect(getAllByRole("option")).toHaveLength(3));
+    // Nothing highlighted yet: nothing to point at.
+    expect(input.getAttribute("aria-activedescendant")).toBeNull();
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const active = input.getAttribute("aria-activedescendant");
+    expect(active).not.toBeNull();
+    expect(document.getElementById(active!)?.getAttribute("role")).toBe("option");
+    expect(document.getElementById(active!)?.textContent).toContain("Masood Alam");
+  });
+
   test("Escape closes the list without selecting anything", async () => {
     const changes: string[] = [];
     const { getByLabelText, queryAllByRole } = render(

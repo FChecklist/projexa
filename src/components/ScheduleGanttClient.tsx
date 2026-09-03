@@ -670,7 +670,12 @@ export default function ScheduleGanttClient({
             <TableBody>
               {visibleTasks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="py-8 text-center text-sm text-px-muted">
+                  {/* 10, matching the TableHead count above exactly: Task,
+                      Start, Due, Duration, Planned %, % Complete, Slippage,
+                      Planned finish, Slip, Critical Path. A colSpan larger
+                      than the header count stretches the table by a phantom
+                      column. */}
+                  <TableCell colSpan={10} className="py-8 text-center text-sm text-px-muted">
                     {tasks.length === 0
                       ? "No scheduled activities yet."
                       : `No activity matches "${titleFilter}".`}
