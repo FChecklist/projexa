@@ -18,7 +18,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { FormField, type FieldErrors } from "@/components/ui/form-field";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -79,7 +79,7 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
   }
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Materials / New Material"
       title="New Material"
       mode="create"
@@ -126,6 +126,6 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
           {(f) => <Input {...f} type="number" min={0} step="any" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} />}
         </FormField>
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

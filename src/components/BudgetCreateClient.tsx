@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -233,7 +233,7 @@ export default function BudgetCreateClient() {
   const isAdmin = canSetUpAccounting(role);
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Budgets / New Budget"
       title="New Budget"
       mode="create"
@@ -351,7 +351,7 @@ export default function BudgetCreateClient() {
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }
 

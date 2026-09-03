@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -130,7 +130,7 @@ export default function MaterialIssueCreateClient({
   }
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Materials / Record Issue"
       title="Issue to Site"
       mode="create"
@@ -223,6 +223,6 @@ export default function MaterialIssueCreateClient({
 
         {saveError && <p role="alert" className="text-[13px] text-px-error">{saveError}</p>}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

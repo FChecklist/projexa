@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -177,7 +177,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   const keptRows = lifetimeRows ?? attendance.length;
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Labour / Worker"
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
@@ -227,8 +227,15 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         <>
           {confirmingDeactivate && (
             // The blast radius, stated before the PATCH rather than after it.
-            // "They/Their" rather than the pronoun a name cannot tell us --
-            // this roster carries Ali Hassan and Bina Rao alike.
+            //
+            // DECLARED DEVIATION from D-33's quoted string, which reads
+            // "...He will no longer appear in Mark Attendance. His 37
+            // attendance rows...". The name is dynamic and this roster carries
+            // Ali Hassan and Bina Rao alike, so the pronoun cannot be derived
+            // from it; "They/Their" is used instead. Everything else in the
+            // sentence -- the name, the count, the two facts it states -- is
+            // verbatim. Recorded here and in the PR body rather than left as a
+            // silent divergence from an item's quoted copy.
             <div role="alertdialog" aria-label="Confirm deactivation" className="border-t border-ct-border bg-px-error-light px-4 py-3">
               <p className="text-[13px] text-px-error">
                 Deactivate {entry.name}? They will no longer appear in Mark Attendance. Their {keptRows} attendance {keptRows === 1 ? "row" : "rows"} and costs are kept.
@@ -313,6 +320,6 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
           </section>
         </>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

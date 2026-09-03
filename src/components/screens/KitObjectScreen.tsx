@@ -21,6 +21,26 @@
 // StatusBadge, DocumentFlow, the shared types) is still imported FROM the
 // kit, so only this one component diverges.
 //
+// ─── WHY THE NAME IS KitObjectScreen, NOT ObjectScreen ──────────────────────
+// Lane D0 (merged, projexa #234) put a COMPLETELY DIFFERENT component at
+// src/components/screens/ObjectScreen.tsx: the display-first "one object page
+// for every module" archetype, with its own props (ObjectFacet / Button /
+// Card / ProjectBreadcrumb) and 20+ consumer screens. This file and that one
+// share nothing but a shape of intent.
+//
+// Decision D-11 §3 settles it: "Two different components must never share one
+// import path", D0's is canonical at the canonical path, and the fork that
+// survives for a genuinely different shape is RENAMED. That is what this is.
+// D-33's literal instruction to write this file at screens/ObjectScreen.tsx
+// is overridden by that decision, as the programme's own rule that a decision
+// beats an item's wording requires.
+//
+// The two are not interchangeable: this one is the kit's full draft/autosave/
+// document-flow lifecycle used by PROJEXA's CREATE forms and the two richest
+// object pages; D0's is the display-first archetype. Left at one path, a
+// rebase would keep whichever side merged last and silently break the other
+// side's consumers.
+//
 // The divergence is exactly two additions, both required by R67 D-33:
 //
 //   deleteLabel   The kit hard-codes the word "Delete" on the destructive
@@ -40,16 +60,16 @@ import type { DocumentFlowData, FieldMessage, StatusTone } from "@fchecklist/ver
 
 const AUTOSAVE_DEBOUNCE_MS = 2000; // GLOBAL: "autosave debounced ~2s"
 
-export type ObjectScreenMode = "display" | "edit" | "create";
+export type KitObjectScreenMode = "display" | "edit" | "create";
 
-export type ObjectScreenProps = {
+export type KitObjectScreenProps = {
   breadcrumb: React.ReactNode;
   title: string; // "New <Object>" until named, per M29 -- caller supplies this already resolved
   subtitle?: string;
   headerStatus?: { tone: StatusTone; label: string }; // dual header/item status -- this is the HEADER half (M31)
   facets?: { label: string; value: string }[];
   documentFlow?: DocumentFlowData;
-  mode: ObjectScreenMode;
+  mode: KitObjectScreenMode;
   hasDraft: boolean; // an existing draft the user left mid-edit (editing icon, M29)
   lockedByOther?: { userId: string; lockExpiresAt: string } | null;
   onEdit?: () => void | Promise<void>;
@@ -64,13 +84,13 @@ export type ObjectScreenProps = {
   deleteDisabledReason?: string;
   saveDisabled?: boolean;
   saveDisabledReason?: string; // e.g. "2 required fields"
-  onAutosave?: () => void | Promise<void>; // caller reads its own current form state; ObjectScreen only owns the timing
+  onAutosave?: () => void | Promise<void>; // caller reads its own current form state; KitObjectScreen only owns the timing
   messages: FieldMessage[];
   onMessageClick?: (message: FieldMessage) => void;
   children: React.ReactNode; // FormSection(s) / read-only field display, anchor-section content
 };
 
-export function ObjectScreen({
+export function KitObjectScreen({
   breadcrumb,
   title,
   subtitle,
@@ -94,13 +114,13 @@ export function ObjectScreen({
   messages,
   onMessageClick,
   children,
-}: ObjectScreenProps) {
+}: KitObjectScreenProps) {
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced autosave -- fires AUTOSAVE_DEBOUNCE_MS after the LAST call to
   // scheduleAutosave() while in edit/create mode. Exposed via a data
   // attribute hook so the caller's field onChange can trigger it without
-  // ObjectScreen needing to know the field shape.
+  // KitObjectScreen needing to know the field shape.
   function scheduleAutosave() {
     if (!onAutosave) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);

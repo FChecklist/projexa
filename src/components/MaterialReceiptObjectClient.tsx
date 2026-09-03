@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -169,7 +169,7 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
   const blastRadius = `Voiding removes ${formatQty(receipt.quantity)} ${unit} from Received to date and ${formatMoney(lineTotal, currencies)} from the Cost Report.`;
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={`Materials / Receipts / ${formatDateNumeric(receipt.receivedDate)}${receipt.reference ? ` ${receipt.reference}` : ""} ${materialName}`}
       title={materialName}
       mode="display"
@@ -245,6 +245,6 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
           ))}
         </dl>
       </section>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

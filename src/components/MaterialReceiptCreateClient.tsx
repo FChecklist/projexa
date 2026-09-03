@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -107,7 +107,7 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   }
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Materials / Record Receipt"
       title="Record Inbound Receipt"
       mode="create"
@@ -160,6 +160,6 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
           <Input id="receipt-reference" value={reference} onChange={(e) => setReference(e.target.value)} />
         </div>
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }
