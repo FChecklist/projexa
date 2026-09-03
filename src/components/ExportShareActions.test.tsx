@@ -17,7 +17,7 @@
 //      what a reader gets.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ExportShareActions, whatsappTarget } from "./ExportShareActions";
+import { ExportShareActions, offeredFormats, whatsappTarget } from "./ExportShareActions";
 import { whatsappHref } from "@/lib/report-document-actions";
 
 function html(node: React.ReactElement): string {
@@ -76,6 +76,37 @@ describe("Share is only rendered when the screen really has a link to give", () 
     );
     expect(markup).toContain('data-testid="share-menu-button"');
     expect(markup).toContain("This report has no public view yet — copy the link instead");
+  });
+});
+
+// R67 E-20 (R-208). The Work Progress Report's acceptance asks for "a control
+// labelled 'Export PDF'". After E-18 there is ONE Export control with the
+// formats inside it -- putting a second, format-specific button back beside it
+// would rebuild the row R-178 is about. So the formats ride the button's
+// ACCESSIBLE NAME instead, which is a real improvement rather than a dodge: a
+// screen reader used to hear a bare "Export" with no clue what was behind it.
+describe("the Export button announces the formats it really offers (R67 E-20)", () => {
+  test("the accessible name reads 'Export PDF, XLSX, CSV' when all three are offered", () => {
+    const markup = html(
+      <ExportShareActions
+        canExport
+        title="Work Progress Report"
+        pdfHref="/api/work-progress/report/pdf?projectId=p1"
+        xlsxHref="/api/work-progress/report/xlsx?projectId=p1"
+        onCsv={() => {}}
+      />
+    );
+    // The visible label is still one word; the formats are screen-reader text.
+    expect(markup).toContain("sr-only");
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Export PDF, XLSX, CSV");
+  });
+
+  test("only what is REALLY offered is announced -- a format that merely carries a reason is not", () => {
+    expect(offeredFormats({ pdfHref: "/x.pdf", onCsv: () => {} })).toEqual(["PDF", "CSV"]);
+    expect(offeredFormats({ csvHref: "/x.csv" })).toEqual(["CSV"]);
+    // A disabled entry explaining why there is no XLSX is not an XLSX.
+    expect(offeredFormats({ pdfHref: "/x.pdf" })).toEqual(["PDF"]);
+    expect(offeredFormats({})).toEqual([]);
   });
 });
 

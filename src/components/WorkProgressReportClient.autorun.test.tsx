@@ -252,6 +252,63 @@ describe("WorkProgressReportClient runs on arrival (R67 E-03 / D-02)", () => {
     expect(await findByTestId("wpr-custom-dates")).toBeDefined();
   });
 
+  // -------------------------------------------------------------------------
+  // R67 E-20 (R-194/R-208/R-209/R-223) ACCEPTANCE, all three clauses in one
+  // test because the item states them as one arrival: open the report's URL
+  // and, WITH NO CLICK, a row renders, the idle prompt is absent, and a
+  // control offering the PDF is on screen.
+  //
+  // The Playwright half (a real browser at :3100 against the demo project) is
+  // not run here -- this worktree starts no dev server, per the programme's
+  // own rules -- but every clause it asserts is asserted here against the real
+  // component and a real DOM.
+  // -------------------------------------------------------------------------
+  test("ACCEPTANCE: arriving at the report URL renders a row, no idle prompt, and an Export offering PDF -- with no click", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId, getByTestId, queryByText } = render(
+      <WorkProgressReportClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />
+    );
+
+    // 1. At least one report row, without pressing anything.
+    const grandTotal = await findByTestId("grand-total-row");
+    expect(grandTotal).toBeDefined();
+    expect(getByTestId("po-qty").textContent).toBe("472");
+
+    // 2. The sentence correction C-04 is about is gone from the product.
+    expect(queryByText(/Pick a date range and click Run Report/i)).toBeNull();
+
+    // 3. A control that offers the PDF. After item E-18 that is ONE Export
+    //    button with the formats inside it and named in its accessible text --
+    //    a second "Export PDF" button beside it would rebuild the row R-178
+    //    exists to remove.
+    const exportButton = getByTestId("export-menu-button");
+    expect(exportButton.textContent).toContain("Export PDF");
+    expect((exportButton as HTMLButtonElement).disabled).toBe(false);
+
+    // ...and the PDF really goes to the relay that reaches VERIDIAN's
+    // generateWorkProgressReportPdf, carrying the parameters this run used.
+    (exportButton as HTMLButtonElement).click();
+    const pdf = await findByTestId("export-pdf");
+    expect(pdf.getAttribute("href")).toContain("/api/work-progress/report/pdf");
+    expect(pdf.getAttribute("href")).toContain("projectId=p-1");
+    expect(pdf.getAttribute("href")).toContain("from=2026-01-15");
+    // The XLSX sits beside it, over VERIDIAN's own rowsToXLSXBuffer -- PROJEXA
+    // builds neither format itself.
+    expect((await findByTestId("export-xlsx")).getAttribute("href")).toContain("/api/work-progress/report/xlsx");
+  });
+
+  // R67 E-20 (R-209): every item code links to the LINE, not just to the screen.
+  test("each Code is a link carrying the BOQ revision and the line's own fragment", async () => {
+    const calls: string[] = [];
+    stubFetch(calls);
+
+    const { findByTestId } = render(<WorkProgressReportClient projectId="p-1" />);
+    const link = await findByTestId("scope-code-link");
+    expect(link.getAttribute("href")).toBe("/scope?projectId=p-1&boqId=boq-1#line-l-1");
+  });
+
   // R67 E-17 (R-175): Table | Chart, and the chart is a sorted bar list.
   test("the output toggle offers a sorted horizontal bar chart, never a pie", async () => {
     const calls: string[] = [];

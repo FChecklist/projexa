@@ -82,18 +82,48 @@ const EXPORT_MENU: { format: ExportFormat; icon: typeof FileText }[] = [
   { format: "csv", icon: Download },
 ];
 
+/**
+ * The formats this screen really offers, upper-cased, in menu order. Only the
+ * ones with somewhere to go: a format that is merely explained (a disabled
+ * entry carrying its reason) is NOT announced as available, because the whole
+ * point of the accessible name is that it can be trusted.
+ */
+export function offeredFormats(input: {
+  pdfHref?: string | null;
+  xlsxHref?: string | null;
+  csvHref?: string | null;
+  onCsv?: (() => void) | null;
+}): string[] {
+  const has: Record<ExportFormat, boolean> = {
+    pdf: Boolean(input.pdfHref),
+    xlsx: Boolean(input.xlsxHref),
+    csv: Boolean(input.csvHref) || Boolean(input.onCsv),
+  };
+  return EXPORT_MENU.filter((entry) => has[entry.format]).map((entry) => entry.format.toUpperCase());
+}
+
 /** A small menu anchored under its own word-button. Plain React state, so it works in a test and needs no portal. */
 function MenuButton({
   label,
   icon,
   disabled,
   testId,
+  hiddenSuffix = null,
   children,
 }: {
   label: string;
   icon: React.ReactNode;
   disabled: boolean;
   testId: string;
+  /**
+   * Appended to the button's ACCESSIBLE NAME but not to its visible label.
+   * Export's is the list of formats it really offers, so a screen reader hears
+   * "Export PDF, XLSX, CSV" instead of a bare "Export" that gives no clue what
+   * is behind it -- and item E-20's "a control labelled Export PDF is present"
+   * is satisfiable without putting the six-button row R-178 is about back on
+   * the screen. It lists only what is genuinely offered on THIS screen.
+   */
+  hiddenSuffix?: string | null;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -129,6 +159,7 @@ function MenuButton({
         onClick={() => setOpen((v) => !v)}
       >
         {icon} {label}
+        {hiddenSuffix && <span className="sr-only"> {hiddenSuffix}</span>}
       </Button>
       {open && !disabled && (
         <div
@@ -223,6 +254,7 @@ export function ExportShareActions({
         icon={<Download className="size-4" />}
         disabled={exportDisabled}
         testId="export-menu-button"
+        hiddenSuffix={offeredFormats({ pdfHref, xlsxHref, csvHref, onCsv }).join(", ") || null}
       >
         {(close) => (
           <>
