@@ -1,19 +1,43 @@
 /// <reference types="bun-types" />
-// R67 D-13. The item's acceptance is a Playwright run against a local dev
-// server, which this lane may not start; the same assertions are made here with
-// /api/documents stubbed.
+// R67 MERGE (lane D0/F2 x lane D1). Both lanes wrote a suite for this screen
+// from the same starting defect, and BOTH survive here -- lane D1's assertions
+// are RESTATED against the merged component rather than deleted, per decision
+// D-11.
 //
-// THE ONE THAT MATTERS: over a 500, the page says "Could not load documents",
-// offers a Retry, and contains NO text matching /No documents/. That is the
-// whole defect -- the catch used to show a four-second toast and then fall
-// through to the same branch the empty case renders, so a failed read reported
-// "No documents found for this project." as fact.
+// THE SHARED FINDING, in R-184's own words: "'No documents found for this
+// project.' after a 504". The catch was a four-second toast and `docs` stayed
+// at [], so a failed read fell through to the branch the EMPTY case renders and
+// reported a false claim as fact, with the only contradiction fading away.
+//
+// WHAT CHANGED UNDER LANE D1'S TESTS, and why each restatement is the same
+// assertion and not a weaker one:
+//
+//   * documentsLoadErrorText() is gone. Lane D1 owned the failure sentence in
+//     this screen; the merged component takes it from the ONE dictionary
+//     (paneError, asserted in src/lib/pane-state.test.ts), so the wording is
+//     tested once for every module instead of once per screen. Its two cases
+//     survive below as rendered behaviour: the backend's own words are kept,
+//     and "supabaseKey is required" never reaches a user.
+//   * load()/`loading` are gone, replaced by useListRead()/PaneState. Lane D1's
+//     four-branch describe block therefore asserts the four BRANCHES rather
+//     than the flag: loading, error, empty-with-a-successful-read, rows.
+//   * The `fellBack` banner test is dropped, not restated -- that fact moved
+//     onto the page heading (PageHeading contextNote="auto-selected"), one
+//     place instead of two, and the prop no longer exists. See DocumentsClient's
+//     own header comment, which records the same decision.
+//   * "+ New Document" is a Button that routes, not an <a>, so it is queried as
+//     a button. The destination is asserted through the router mock instead of
+//     through an href.
+//
+// Everything lane D1 tested as a PURE FUNCTION -- emptyStateText, categoryWords,
+// applyDocumentFilters, hasActiveFilter -- is carried over verbatim, because
+// those exports survived the merge unchanged.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 // `screen` is deliberately NOT imported: it binds to document.body at module
-// init, which under bun + happy-dom happens before the registrator below has
+// init, which under bun + happy-dom happens before the registrator above has
 // run. Every query here comes from render()'s own return value instead.
 import { cleanup, render, waitFor } from "@testing-library/react";
 
@@ -24,20 +48,18 @@ const push = mock((_: string) => {});
 // lose every other export and the file failed to load at all
 // ("Export named 'usePathname' not found in module .../next/navigation.js").
 const realNavigation = await import("next/navigation");
-mock.module("next/navigation", () => ({ ...realNavigation, useRouter: () => ({ push }) }));
+mock.module("next/navigation", () => ({
+  ...realNavigation,
+  useRouter: () => ({ push, replace: () => {}, refresh: () => {}, back: () => {} }),
+  usePathname: () => "/documents",
+}));
 
 const mod = await import("./DocumentsClient");
 const DocumentsClient = mod.default;
-const {
-  EMPTY_DOCUMENT_FILTERS,
-  applyDocumentFilters,
-  categoryWords,
-  documentsLoadErrorText,
-  emptyStateText,
-  hasActiveFilter,
-} = mod;
+const { EMPTY_DOCUMENT_FILTERS, applyDocumentFilters, categoryWords, emptyStateText, hasActiveFilter } = mod;
 
 const PROJECT = "Cedar Heights Villa - Phase 1";
+const PROPS = { projectId: "p1", projectName: PROJECT };
 
 const DOC = {
   id: "doc-1",
@@ -55,23 +77,25 @@ const DOC = {
 const realFetch = globalThis.fetch;
 let requested: string[] = [];
 
+/** The documents read answers with `rows`; every other lookup answers empty. */
 function stubDocuments(rows: unknown[]) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
-    requested.push(String(input));
-    return new Response(JSON.stringify({ documents: rows }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    const url = String(input);
+    requested.push(url);
+    const body = url.includes("/api/documents") ? { documents: rows } : {};
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
 }
 
+/** Only the documents read fails -- the Relates-to lookups are not the subject. */
 function stubFailure(status: number, error: string) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
-    requested.push(String(input));
-    return new Response(JSON.stringify({ error }), {
-      status,
-      headers: { "content-type": "application/json" },
-    });
+    const url = String(input);
+    requested.push(url);
+    if (!url.includes("/api/documents")) {
+      return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error }), { status, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
 }
 
@@ -84,24 +108,6 @@ afterEach(() => {
   cleanup();
   push.mockClear();
   globalThis.fetch = realFetch;
-});
-
-describe("documentsLoadErrorText", () => {
-  test("keeps veridian-client's own wording verbatim so users recognise it across screens", () => {
-    const text = documentsLoadErrorText(
-      new Error("The construction data service did not respond in time, on two attempts. Please retry.")
-    );
-    expect(text).toBe(
-      "Could not load documents: The construction data service did not respond in time, on two attempts. Please retry."
-    );
-  });
-
-  test("adds the full stop only when the backend's message does not already end in one", () => {
-    expect(documentsLoadErrorText(new Error("Internal Server Error"))).toBe(
-      "Could not load documents: Internal Server Error."
-    );
-    expect(documentsLoadErrorText(new Error("Nope!"))).toBe("Could not load documents: Nope!");
-  });
 });
 
 describe("emptyStateText", () => {
@@ -146,33 +152,61 @@ describe("applyDocumentFilters -- R67 D-14", () => {
 });
 
 describe("DocumentsClient -- the four branches", () => {
-  test("THE ACCEPTANCE: over a 500 the screen shows the backend's words and a Retry, and never says 'No documents'", async () => {
-    stubFailure(500, "Internal Server Error");
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+  test("THE ACCEPTANCE: a 504 shows the failure and a Retry, and never the empty sentence", async () => {
+    stubFailure(504, "The construction data service did not respond.");
+    const view = render(<DocumentsClient {...PROPS} />);
 
-    await waitFor(() => expect(view.getAllByText(/Could not load documents/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(view.container.textContent).toContain("Couldn't load documents"));
     expect(view.getAllByRole("button", { name: "Retry" }).length).toBeGreaterThan(0);
-    // The empty-state wording must never appear over a failed GET.
+    // The empty-state wording must never appear over a failed GET -- in either
+    // lane's phrasing of it.
     expect(view.queryByText(/No documents/)).toBeNull();
-    // ...and the error is mirrored into the persistent band below the card,
-    // counted, so the reason survives after the table scrolls out of view.
-    expect(view.getByText("1 error")).toBeTruthy();
+    expect(view.container.textContent).not.toContain("No documents found for this project.");
+    // ...and no record count is minted from a read that did not answer.
+    expect(view.container.textContent).not.toContain("0 records");
+    // The reason survives below the card, counted, after the table scrolls away.
+    expect(view.container.textContent).toContain("1 error on this screen");
   });
 
-  test("a successful read with no rows names the project and offers the create route", async () => {
-    stubDocuments([]);
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+  test("'supabaseKey is required' becomes words a user can act on", async () => {
+    // Documents is the module where this message actually surfaces -- the file
+    // store is what serves them.
+    stubFailure(500, "supabaseKey is required.");
+    const view = render(<DocumentsClient {...PROPS} />);
 
-    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`, { exact: false })).toBeTruthy());
-    const link = view.getByRole("link", { name: "+ New Document" });
-    expect(link.getAttribute("href")).toBe("/documents/upload?projectId=p1");
-    expect(view.queryByText(/Could not load documents/)).toBeNull();
+    await waitFor(() =>
+      expect(view.container.textContent).toContain("file storage is not configured for this environment")
+    );
+    expect(view.container.textContent).not.toContain("supabaseKey");
+  });
+
+  test("the backend's own words are kept when they are safe to show", async () => {
+    stubFailure(500, "The BOQ has no published revision.");
+    const view = render(<DocumentsClient {...PROPS} />);
+
+    await waitFor(() => expect(view.container.textContent).toContain("Couldn't load documents"));
+    expect(view.container.textContent).toContain("The BOQ has no published revision.");
+  });
+
+  test("only a 200 with zero rows shows the empty sentence, it names the project, and it offers the create route", async () => {
+    stubDocuments([]);
+    const view = render(<DocumentsClient {...PROPS} />);
+
+    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`)).toBeTruthy());
+    expect(view.container.textContent).toContain("0 records");
+    expect(view.container.textContent).not.toContain("Couldn't load documents");
+
+    // R67 D-14: "+ New Document" is a Button that routes, not an <a>. The
+    // destination is the same one lane D1 asserted as an href.
+    const create = view.getAllByRole("button", { name: /New Document/ }).at(-1) as HTMLButtonElement;
+    create.click();
+    expect(push).toHaveBeenCalledWith("/documents/upload?projectId=p1");
   });
 
   test("the loading branch is a skeleton carrying the REAL column headers, marked aria-busy", () => {
     // Never resolves, so the component stays in the loading branch.
     globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch;
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    const view = render(<DocumentsClient {...PROPS} />);
 
     expect(view.container.querySelector("[aria-busy='true']")).toBeTruthy();
     for (const header of ["Name", "Category", "Type", "Size", "Expiry", "Added", "Relates to"]) {
@@ -182,37 +216,22 @@ describe("DocumentsClient -- the four branches", () => {
     expect(view.queryByText(/No documents/)).toBeNull();
   });
 
-  test("rows are scoped to the project, and a real row renders instead of an empty state", async () => {
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+  test("rows are scoped to the project, and a real row renders with a real count", async () => {
+    const view = render(<DocumentsClient {...PROPS} />);
 
     await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
+    expect(view.container.textContent).toContain("1 record");
     // R67 D-14: by project SCOPE, so a document filed against one of this
-    // project's permits is still on this list.
+    // project's permits is still on this list. This URL must stay byte-identical
+    // to module-list-source.ts's own prefetch, or F-18's server-seeded first
+    // paint silently stops matching.
     expect(requested.some((url) => url.includes("/api/documents?projectScopeId=p1"))).toBe(true);
-  });
-
-  test("a fallback project selection is announced rather than shown silently", async () => {
-    const view = render(
-      <DocumentsClient
-        projectId="p1"
-        projectName={PROJECT}
-        fellBack
-        projects={[{ id: "p1", name: PROJECT }, { id: "p2", name: "Marina Tower" }]}
-      />
-    );
-
-    await waitFor(() =>
-      expect(
-        view.getByText(`Showing ${PROJECT} (first project). Choose a project in the top rail to switch.`)
-      ).toBeTruthy()
-    );
-    expect(view.getByRole("button", { name: "Change project" })).toBeTruthy();
   });
 });
 
 describe("DocumentsClient -- R67 D-15 the word View", () => {
   test("every row's LAST cell is a View link to the object page", async () => {
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    const view = render(<DocumentsClient {...PROPS} />);
     await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
 
     const link = view.getByRole("link", { name: "View" });
@@ -224,7 +243,7 @@ describe("DocumentsClient -- R67 D-15 the word View", () => {
 
   test("an empty value is an en dash on every column -- a null category never reads 'other'", async () => {
     stubDocuments([{ ...DOC, category: null, fileType: null, linkedEntityType: null, linkedEntityId: null }]);
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    const view = render(<DocumentsClient {...PROPS} />);
 
     await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
     expect(view.queryByText("other")).toBeNull();
@@ -234,7 +253,7 @@ describe("DocumentsClient -- R67 D-15 the word View", () => {
 
 describe("DocumentsClient -- R67 D-14 header trio", () => {
   test("the header controls are Filter | Export | + New Document, in that DOM order", async () => {
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    const view = render(<DocumentsClient {...PROPS} />);
     await waitFor(() => expect(view.getByText("DEWA permit 2026.pdf")).toBeTruthy());
 
     const header = view.container.querySelector("div.flex.shrink-0") as HTMLElement;
@@ -247,9 +266,9 @@ describe("DocumentsClient -- R67 D-14 header trio", () => {
 
   test("Export refuses to produce an empty file, and says why", async () => {
     stubDocuments([]);
-    const view = render(<DocumentsClient projectId="p1" projectName={PROJECT} />);
+    const view = render(<DocumentsClient {...PROPS} />);
 
-    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`, { exact: false })).toBeTruthy());
+    await waitFor(() => expect(view.getByText(`No documents yet for ${PROJECT}.`)).toBeTruthy());
     const exportButton = [...view.container.querySelectorAll("button")].find((b) =>
       (b.textContent ?? "").startsWith("Export")
     ) as HTMLButtonElement;

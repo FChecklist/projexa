@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -207,6 +208,17 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
     }
   }
 
+  // R67 D-67: disposal removes the stored file, not just the row, and the
+  // kit fired it from a single click. Declared before the early returns
+  // below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Document",
+    identifier: doc?.name ?? null,
+    extra: "and its stored file",
+    verb: "Dispose",
+    run: handleDispose,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -254,13 +266,19 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
       } : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
       onCancel={mode === "edit" ? () => { setReplacement(null); setMode("display"); } : undefined}
-      onDelete={!doc.isDisposed ? handleDispose : undefined}
+      // R67 MERGE: lane D1 wired Dispose straight to handleDispose; lane D0's
+      // useDeleteConfirmation puts an inline card in front of it that names the
+      // blast radius ("Dispose document <name> and its stored file?"). D-11's
+      // rule -- a destructive control never fires on its own click -- is lane
+      // D0's, so the confirmation wins and lane D1's handler is what it runs.
+      onDelete={!doc.isDisposed ? removal.request : undefined}
       deleteDisabledReason={disposeReason}
       onBack={() => router.push("/documents")}
       saveDisabled={!!saveReason}
       saveDisabledReason={saveReason}
       messages={messages}
     >
+      {removal.card}
       <div className="space-y-3 px-4 py-3">
         {/* The document itself, on the page. A link alone made every reader
             leave the screen to find out what they were looking at. */}

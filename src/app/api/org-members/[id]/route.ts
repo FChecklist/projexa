@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS, ALL_ORG_ROLES, type OrgRole } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 // 403'd off all six newly role-gated routes with no recovery path short of
 // a manual Supabase edit. Restricted to ROLE_GROUPS.ORG_ADMIN (owner/admin)
 // since role assignment is itself a privileged action.
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.ORG_ADMIN);
@@ -69,4 +70,4 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Member not found" }, { status: 404 });
   return NextResponse.json({ member: data });
-}
+});

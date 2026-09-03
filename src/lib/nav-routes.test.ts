@@ -33,8 +33,16 @@ function walkPageFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// Walked ONCE per test file, not once per test. Three tests below ask for it,
+// and on Windows a recursive readdir of src/app costs real time -- enough that
+// under `bun test --isolate`'s parallel load the first of them exceeded bun's
+// default 5 s and failed a branch whose routes were perfectly correct. The
+// assertion is unchanged; only the number of times the disk is read is.
+let routesOnDiskCache: string[] | null = null;
+
 function routesOnDisk(): string[] {
-  return walkPageFiles(APP_ROOT)
+  if (routesOnDiskCache) return routesOnDiskCache;
+  routesOnDiskCache = walkPageFiles(APP_ROOT)
     .map((file) => {
       const rel = file.slice(APP_ROOT.length).split(sep).join("/");
       // "/(app)/rfis/page.tsx" -> "/rfis": strip the file, then the route
@@ -43,6 +51,7 @@ function routesOnDisk(): string[] {
       return route === "" ? "/" : route;
     })
     .sort();
+  return routesOnDiskCache;
 }
 
 function sidebarHrefs(): string[] {
@@ -51,9 +60,17 @@ function sidebarHrefs(): string[] {
 }
 
 describe("SHIPPED_ROUTES", () => {
-  test("matches the real src/app/**/page.tsx routes exactly, in both directions", () => {
-    expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
-  });
+  test(
+    "matches the real src/app/**/page.tsx routes exactly, in both directions",
+    () => {
+      expect([...SHIPPED_ROUTES].sort()).toEqual(routesOnDisk());
+    },
+    // The one test that pays for the walk. 30 s is not a licence to be slow --
+    // it takes ~2 s alone -- it is headroom for a Windows filesystem competing
+    // with fifty other test files, which is a property of the runner, not of
+    // the routes being checked.
+    30_000
+  );
 
   test("lists no route twice", () => {
     expect(new Set(SHIPPED_ROUTES).size).toBe(SHIPPED_ROUTES.length);
@@ -144,8 +161,20 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // href with no id in it into the sidebar.
   "/customers/[id]",
   "/customers/new",
+  // R67 D-07: the Design Studio timesheet is the same hours the Schedule
+  // module's Timesheet tab lists, laid out in Sumeet's own columns -- reached
+  // from the "Open in Design Studio" control on that tab (see
+  // ScheduleTimesheetClient.tsx), not as a second top-level nav entry for one
+  // module's data.
+  "/design-studio",
   "/permits/[id]",
   "/permits/new",
+  // R67 D-67: a logged progress entry's own page, reached by clicking its row
+  // on Work Progress > Daily Entry. It is where the site photo attached to
+  // that entry lives -- which was reachable from nowhere in the UI before --
+  // and it needs the entry id and the project, so a sidebar href for it could
+  // not be written.
+  "/work-progress/[id]",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",
@@ -245,10 +274,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
-  // R67 D-01: reached from the home's "+ New" and from /dashboard/overview's
-  // empty state -- the create screen that replaced CreateProjectDialog. Same
-  // class as every other .../new above: a create screen opened from its own
-  // parent screen, never a standalone sidebar item.
+  // R67 D-01 / correction C-01: the home screen's Create Project dialog became
+  // a real create route. Reached by the "Create Project" button on /dashboard,
+  // on /dashboard/overview and from /projects' own empty state -- the same
+  // class as /invoices/new above: a create screen opened from its own parent
+  // screen, never a standalone sidebar destination.
   "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",

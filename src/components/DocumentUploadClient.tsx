@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Real-screen conversion (2026-08-30) -- replaces DocumentsClient.tsx's old
 // "Upload Document" Dialog popup with a real create screen.
@@ -17,6 +17,17 @@
 // filled from an .eml where they are parseable, and a "Relates to" combobox
 // over this project's permits, RFIs and meetings. Every message -- the size
 // refusal, the backend's own words -- lands in the screen's own message band.
+//
+// R67 MERGE (lane D1 x lane D0's D-67). Lane D0 rebuilt this same screen onto
+// the shared <CreateScreen> archetype. That archetype IS the right general
+// answer and it stays on the other ten create routes -- but it has no drop
+// zone, no conditional field group, and no combobox, so adopting it here would
+// mean dropping D-13, D-14 and D-78 (the file-shaped defaults, the email header
+// trio, the Relates-to list and the storage probe) to gain a shared frame. This
+// screen therefore keeps its own body, and the PR says so rather than leaving
+// the trade to be discovered. What lane D0 was right about IS folded in:
+// D-72's rule that a guard must never return silently -- see handleSave below.
+// D-11's "nothing is deleted silently" is the reason this note exists.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
@@ -167,7 +178,16 @@ export default function DocumentUploadClient({
   }, []);
 
   async function handleSave() {
-    if (!file) return;
+    // R67 D-72 (lane D0, folded in). This guard used to be a bare
+    // `if (!file) return;` -- a click that produced no request, no message and
+    // no change on screen. The Save button is already disabled with the reason
+    // "A file is required", so this is the belt to that brace, but a guard that
+    // returns silently is the exact fail-after-click D-72 exists to remove: it
+    // SPEAKS now, in the screen's own message band.
+    if (!file) {
+      setMessages([{ level: "error", text: "Nothing was sent — choose a file and try again." }]);
+      return;
+    }
     if (fileError) {
       setMessages([{ level: "error", text: fileError }]);
       return;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
 import { formatProgressCell, unlinkedEntriesNote } from "@/lib/work-progress-report";
+import { wprSearchParams, type WprParams, type WprView } from "@/lib/work-progress-report-params";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -332,21 +333,21 @@ function VendorTable({ rows }: { rows: VendorRow[] }) {
   );
 }
 
-function defaultFrom() {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().slice(0, 10);
-}
-
 /**
- * R67 D-29 (audit R-080). "Every band untouched" -- the report ran, and nothing
- * happened on this project between those two dates. Four empty tables under
- * four tabs is a puzzle; one sentence is an answer.
+ * R67 D-29 (audit R-080), lane D1, folded onto lane D-02's URL-state rewrite.
+ * "Every band untouched" -- the report ran, and nothing happened on this
+ * project between those two dates. Four empty tables under four tabs is a
+ * puzzle; one sentence is an answer.
  *
  * `touched.current` is the flag the report already computes for exactly this
  * distinction (see LineItemRow's own comment): money() cannot tell a real
  * computed zero from a bucket no progress entry has ever reached, because both
  * are the number 0.
+ *
+ * This is reached only AFTER the `reportError` branch below, so it can never
+ * be the sentence shown over a failed run -- the empty answer and the failed
+ * answer stay distinct, which is the same rule read-outcome.ts enforces for
+ * every list in the product.
  */
 export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower" | "byVendor">): boolean {
   return (
@@ -361,17 +362,49 @@ export function noProgressText(from: string, to: string): string {
   return `No progress recorded between ${from} and ${to}`;
 }
 
-export default function WorkProgressReportClient({ projectId }: { projectId: string }) {
-  const [from, setFrom] = useState(defaultFrom());
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [loading, setLoading] = useState(false);
+// R67 MERGE (lane D1 x lane D-02/C-04). Both lanes rewrote this screen's run
+// path. Under decision D-11 the version on main is canonical -- D-02 holds the
+// report's whole state in the URL, runs on arrival, and already replaced
+// D-29's four-second failure TOAST with a `reportError` state rendered beside
+// a Retry (it keeps the toast as well, which is the one part of D-29's
+// complaint that is a matter of taste rather than of truth). So lane D1's own
+// `runError` is dropped as a duplicate of `reportError`, NOT as a rejected
+// idea -- the behaviour D-29 asked for is what ships.
+//
+// What lane D1 had that main did not is above: reportIsEmpty()/noProgressText().
+// A report that ran successfully over a quiet fortnight used to render four
+// empty tables under four tabs and leave the reader to work out which of
+// "nothing happened", "the filter is too narrow" and "it broke" they were
+// looking at.
+//
+// R67 D-02: the report opens with its parameters ALREADY in the URL (the page
+// resolves them through parseWprParams) and runs on arrival. Correction C-04:
+// before this, the range was pre-filled and the screen still said "Pick a date
+// range and click Run Report" -- three clicks to see the current month it could
+// have shown immediately. defaultFrom()/defaultTo() moved into
+// src/lib/work-progress-report-params.ts, where they are shared with the
+// Reports module's link and are actually tested.
+export default function WorkProgressReportClient({
+  projectId,
+  initialParams,
+}: {
+  projectId: string;
+  initialParams: WprParams;
+}) {
+  const router = useRouter();
+  const [from, setFrom] = useState(initialParams.from);
+  const [to, setTo] = useState(initialParams.to);
+  const [view, setView] = useState<WprView>(initialParams.view);
+  const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  // The backend's own words when the run failed -- so an empty report pane can
+  // never be mistaken for "this project has no progress", the standing rule in
+  // src/lib/read-outcome.ts.
+  const [reportError, setReportError] = useState<string | null>(null);
   // R67 B-09: the sentence itself is a pure function beside the report's own
   // maths, so the number the note quotes and the number the tables exclude
   // can never come from two different definitions of "linked".
   const unlinkedNote = unlinkedEntriesNote(report?.unlinkedEntryCount ?? 0);
-  /** R67 D-29: the run's own state, kept on screen instead of shown in a toast. */
-  const [runError, setRunError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
@@ -380,6 +413,15 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
   const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // The version the USER explicitly chose, which is what belongs in the URL --
+  // null means "let the server pick the latest", and stays out of the link.
+  // Held separately from selectedBoqId so changing the date range afterwards
+  // cannot silently drop the chosen BOQ out of a shareable URL.
+  const [selectedBoqVersion, setSelectedBoqVersion] = useState<number | null>(initialParams.boqVersion);
+  // D-02 carries the BOQ in the URL as a VERSION (stable and readable), while
+  // the API takes an id. The first response is what maps one to the other, so
+  // a link that names a version is honoured exactly once, on arrival.
+  const wantedBoqVersion = useRef<number | null>(initialParams.boqVersion);
   // R67 lane I (WS-I item I-05, R-177): the Category multi-select. Held here,
   // sent to the server, and APPLIED THERE -- never filtered client-side, or the
   // Grand Total would keep describing rows the table is no longer showing.
@@ -392,36 +434,70 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  // REBASE NOTE (r67 lanes A, I and D1 all changed this function).
-  // Lane I (I-05) gave it the category filter and the grow-only option list;
-  // lane A (A-04) made it a useCallback so the auto-run effect below can
-  // depend on it honestly rather than reaching past the dependency array;
-  // lane D1 (D-29) replaced its four-second failure toast with a state the
-  // report card renders alongside a Retry -- a report that failed to run is
-  // not a transient notice, it is the state of the screen until somebody does
-  // something about it. All three are kept.
+  // The URL is the report's state (D-02): Back, a reload and a shared link all
+  // restore the same report. replace(), not push(), so re-running does not fill
+  // the history stack with one entry per date tweak.
+  const syncUrl = useCallback(
+    (next: Partial<WprParams>) => {
+      const params: WprParams = {
+        from,
+        to,
+        view,
+        boqVersion: selectedBoqVersion,
+        ...next,
+      };
+      router.replace(`/work-progress?${wprSearchParams(params, projectId).toString()}`, { scroll: false });
+    },
+    [from, to, view, selectedBoqVersion, projectId, router]
+  );
+
   const runReport = useCallback(
-    async (boqId = selectedBoqId, categories = selectedCategories) => {
+    async (options: { boqId?: string; from?: string; to?: string; categories?: string[] } = {}) => {
+      const rangeFrom = options.from ?? from;
+      const rangeTo = options.to ?? to;
+      const categories = options.categories ?? selectedCategories;
+      let boqId = options.boqId ?? selectedBoqId;
       setLoading(true);
-      setRunError(null);
+      setReportError(null);
       try {
-        const params = new URLSearchParams({ projectId, from, to });
-        if (boqId) params.set("boqId", boqId);
-        // Repeatable, not comma-joined: a real category name may contain a comma.
-        for (const c of categories) params.append("category", c);
-        const res = await fetch(`/api/work-progress/report?${params.toString()}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error);
-        setReport(data);
-        if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
-        // R67 I-05: only ever GROWS the option list. A filtered run legitimately
-        // reports fewer categories present, and shrinking the control to match
-        // would make it impossible to widen the filter again.
-        if (Array.isArray(data.availableCategories)) {
-          setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+        // At most two passes, and the second only when the URL named a BOQ
+        // version the server's own auto-pick did not land on. A bounded loop
+        // rather than a recursive call: a self-referencing useCallback cannot
+        // see its own latest value, which is exactly the stale-closure class
+        // this repo's lint rules refuse.
+        for (let pass = 0; pass < 2; pass++) {
+          const params = new URLSearchParams({ projectId, from: rangeFrom, to: rangeTo });
+          if (boqId) params.set("boqId", boqId);
+          // R67 I-05: repeatable, not comma-joined -- a real category name may
+          // contain a comma. Applied SERVER-SIDE, so the subtotals and the
+          // Grand Total both describe the filtered set and still tie.
+          for (const category of categories) params.append("category", category);
+          const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error);
+          setReport(data);
+          if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+          // R67 I-05: only ever GROWS the option list. A filtered run
+          // legitimately reports fewer categories present, and shrinking the
+          // control to match would make it impossible to widen the filter again.
+          if (Array.isArray(data.availableCategories)) {
+            setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+          }
+
+          // Honour a ?boqVersion= from the URL once, now that the version->id
+          // mapping is known. Cleared before it is used, so it can never loop.
+          const wanted = wantedBoqVersion.current;
+          wantedBoqVersion.current = null;
+          if (wanted === null) break;
+          const match = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.version === wanted);
+          if (!match || match.id === data.boqId) break;
+          setSelectedBoqId(match.id);
+          boqId = match.id;
         }
       } catch (err) {
-        setRunError(err instanceof Error && err.message ? err.message : "Couldn't generate the report");
+        const message = err instanceof Error && err.message ? err.message : "Couldn't generate the report";
+        toast.error(message);
+        setReportError(message);
         setReport(null);
       } finally {
         setLoading(false);
@@ -430,25 +506,31 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
     [projectId, from, to, selectedBoqId, selectedCategories]
   );
 
-  // R67 A-04. The composer's "Run WPR" card is a verb: it must run the report,
-  // not land the user on a form with the dates already filled in and a Run
-  // Report button still to press. It navigates here with ?run=1 and the report
-  // runs on arrival, over the default range this component already computes
-  // (1st of the month to today).
+  // D-02 / C-04: RUN ON ARRIVAL. Mount only -- every later run is an explicit
+  // user action (Run Report, a BOQ switch), so this must not re-fire when the
+  // date inputs change under the user's fingers.
   //
-  // ONCE. The ref, not the report state, is the guard: a run that FAILS must
-  // not retry itself on every re-render, and the user must be able to press
-  // Run Report again afterwards without the effect fighting them. The ref also
-  // makes the effect safe now that runReport's identity changes with lane I's
-  // selectedCategories: picking a category cannot silently re-fire the run.
-  const searchParams = useSearchParams();
-  const autoRunRequested = searchParams.get("run") === "1";
-  const autoRanRef = useRef(false);
+  // THIS SUBSUMES WS-A's ?run=1. A-04's requirement is that the composer's
+  // "Run WPR" card be a verb -- that it must not land the user on a filled-in
+  // form with a Run Report button still to press. D-02/C-04 makes that true of
+  // EVERY arrival, not only the ones carrying the flag, so the card's landing
+  // already runs. Reading the flag as well would add a second condition that
+  // can only ever be redundant, and a ?run=1 that appeared to gate something
+  // it does not gate is worse than no flag: the link still works, it is simply
+  // no longer load-bearing.
+  //
+  // The ref, not the report state, is the guard, for A-04's own reason: a run
+  // that FAILS must not retry itself on every re-render, and the user must be
+  // able to press Run Report again afterwards without the effect fighting
+  // them. It also keeps the effect safe now that runReport's identity changes
+  // with lane I's selectedCategories -- picking a category cannot silently
+  // re-fire the run.
+  const ranOnArrival = useRef(false);
   useEffect(() => {
-    if (!autoRunRequested || autoRanRef.current) return;
-    autoRanRef.current = true;
-    void runReport();
-  }, [autoRunRequested, runReport]);
+    if (ranOnArrival.current) return;
+    ranOnArrival.current = true;
+    void runReport({ from: initialParams.from, to: initialParams.to });
+  }, [runReport, initialParams.from, initialParams.to]);
 
   // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
   // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a
@@ -488,6 +570,10 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   // same one that disables the button, and "an export of a report that doesn't
   // add up is worse than no export" (see exportCsv's own comment above). When
   // the check fails the tie-error card is already on screen saying why.
+  // A-04's ?export=csv still needs the query string. The RUN half of that
+  // effect is gone (D-02/C-04 runs the report on every arrival, so a flag
+  // gating it could only ever be redundant), but the export half is real.
+  const searchParams = useSearchParams();
   const autoExportRequested = searchParams.get("export") === "csv";
   const autoExportedRef = useRef(false);
   useEffect(() => {
@@ -524,7 +610,11 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <Button onClick={() => runReport()} disabled={loading} data-testid="work-progress-report-run">
+          <Button
+            onClick={() => { syncUrl({ from, to }); void runReport(); }}
+            disabled={loading}
+            data-testid="work-progress-report-run"
+          >
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
           </Button>
           {report && (
@@ -542,7 +632,13 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
               <Label>BOQ</Label>
               <Select
                 value={selectedBoqId || report.boqId || ""}
-                onValueChange={(v) => { setSelectedBoqId(v); runReport(v); }}
+                onValueChange={(v) => {
+                  setSelectedBoqId(v);
+                  const chosen = report.availableBoqs.find((b) => b.id === v)?.version ?? null;
+                  setSelectedBoqVersion(chosen);
+                  syncUrl({ boqVersion: chosen });
+                  void runReport({ boqId: v });
+                }}
               >
                 <SelectTrigger className="w-56" data-testid="boq-selector"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -562,7 +658,7 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
             onToggle={(name, checked) =>
               setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
             }
-            onApply={() => runReport(selectedBoqId, selectedCategories)}
+            onApply={() => void runReport({ boqId: selectedBoqId, categories: selectedCategories })}
           />
           {report && (
             <div className="space-y-1.5">
@@ -593,19 +689,30 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
         <CardContent className="p-4">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : runError ? (
-            <div role="alert" className="space-y-2 rounded-md border border-px-error-border bg-px-error-light p-4 text-sm text-px-error">
-              <p className="font-medium">Could not load live data</p>
-              <p>{runError}</p>
-              <button type="button" onClick={() => void runReport()} className="underline underline-offset-2">Retry</button>
+          ) : reportError ? (
+            // D-02 / the standing empty-state rule: a failed run says so and
+            // offers the retry. It never falls through to a calm sentence that
+            // reads like an answer.
+            <div role="alert" className="space-y-3 py-10 text-center text-sm text-px-error">
+              <p>Couldn&apos;t load the Work Progress Report: {reportError}</p>
+              <Button variant="outline" size="sm" onClick={() => void runReport()}>Retry</Button>
             </div>
           ) : !report ? (
             <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
           ) : reportIsEmpty(report) ? (
-            // R67 D-29: one answer instead of four empty tables under four tabs.
+            // R67 D-29: one answer instead of four empty tables under four
+            // tabs. Reachable only past the reportError branch above, so it is
+            // never shown over a run that failed.
             <p className="py-10 text-center text-sm text-px-muted">{noProgressText(from, to)}</p>
           ) : (
-            <Tabs defaultValue="scope" className="space-y-4">
+            <Tabs
+              value={view}
+              onValueChange={(v) => { setView(v as WprView); syncUrl({ view: v as WprView }); }}
+              className="space-y-4"
+            >
+              {/* D-02 holds the chosen view in the URL (value + onValueChange,
+                  never defaultValue), so Back, a reload and a shared link all
+                  reproduce the same report. */}
               {/* R67 B-09: this report has always silently DROPPED an entry
                   that no BOQ line can claim. On a project without a BOQ that
                   is the whole day's work, and the site engineer sees a total

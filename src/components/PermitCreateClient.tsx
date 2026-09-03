@@ -16,6 +16,7 @@ import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/scr
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
+import { useSubmit } from "@/lib/use-submit";
 import {
   STORAGE_UNAVAILABLE_BANNER,
   STORAGE_UNAVAILABLE_REASON,
@@ -106,7 +107,6 @@ export default function PermitCreateClient({
   storageConfigured?: boolean;
 }) {
   const router = useRouter();
-  const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
 
   const [name, setName] = useState("");
@@ -119,6 +119,39 @@ export default function PermitCreateClient({
   // every keystroke -- a message that appears while a user is still typing the
   // first character of a date is noise, not help.
   const [touchedDates, setTouchedDates] = useState(false);
+
+  // R67 D-72 (lane D0, folded in). This screen's own handler called fetch()
+  // with NO signal at all, so a hung upstream left Save spinning forever, and a
+  // refusal and a request that never left the device arrived as one sentence.
+  // The shared submit hook owns the 10 s ceiling and tells those two apart; the
+  // FormData it posts, and this screen's own field validation, are unchanged.
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Permit",
+    buildRequest: () => {
+      // Same multipart contract the dialog and the previous full-page form used.
+      const formData = new FormData();
+      formData.set("projectId", projectId);
+      formData.set("name", name);
+      if (permitNumber.trim()) formData.set("permitNumber", permitNumber.trim());
+      if (permitAuthority.trim()) formData.set("permitAuthority", permitAuthority.trim());
+      formData.set("issueDate", issueDate);
+      formData.set("endDate", endDate);
+      if (file) formData.set("file", file);
+      return { input: "/api/permits", init: { method: "POST", body: formData } };
+    },
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved permit");
+      // Carried through the frame's message area on the object page, not a
+      // toast that is gone before the page finishes painting.
+      setScreenMessage("permits.object", {
+        level: "success",
+        text: `Permit ${permitNumber.trim() || name.trim()} created`,
+      });
+      router.push(`/permits/${id}`);
+    },
+  });
+  const saving = submit.saving;
 
   const missing = missingPermitFields({ name, issueDate, endDate, hasFile: file !== null });
   const dateError = touchedDates ? endDateError(issueDate, endDate) : undefined;
@@ -137,39 +170,22 @@ export default function PermitCreateClient({
     : attentionReason(attentionCount) ?? missingPermitFieldsReason(missing);
   const saveDisabled = saving || missing.length > 0 || attentionCount > 0 || !storageConfigured;
 
-  async function createPermit() {
-    if (saveDisabled) return;
-    setSaving(true);
-    setMessages([]);
-    // Same multipart contract the dialog and the previous full-page form used.
-    const formData = new FormData();
-    formData.set("projectId", projectId);
-    formData.set("name", name);
-    if (permitNumber.trim()) formData.set("permitNumber", permitNumber.trim());
-    if (permitAuthority.trim()) formData.set("permitAuthority", permitAuthority.trim());
-    formData.set("issueDate", issueDate);
-    formData.set("endDate", endDate);
-    if (file) formData.set("file", file);
-    try {
-      const res = await fetch("/api/permits", { method: "POST", body: formData });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        setMessages([{ level: "error", text: (body && body.error) || `Couldn't create this permit (HTTP ${res.status})` }]);
-        setSaving(false);
-        return;
-      }
-      // Carried through the frame's message area on the object page, not a
-      // toast that is gone before the page finishes painting.
-      setScreenMessage("permits.object", {
-        level: "success",
-        text: `Permit ${permitNumber.trim() || name.trim()} created`,
-      });
-      router.push(`/permits/${body.id}`);
-    } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't create this permit" }]);
-      setSaving(false);
+  function createPermit() {
+    // R67 D-72: never a silent return. Save is already disabled with a reason,
+    // but a guard that swallows a click is the fault this rule exists to kill.
+    if (saveDisabled) {
+      if (disabledReason) setMessages([{ level: "error", text: disabledReason }]);
+      return;
     }
+    setMessages([]);
+    submit.submit();
   }
+
+  // The hook's own failure, in this screen's message band -- one place for
+  // every sentence, whether it came from a field rule or from the server.
+  const bandMessages: FieldMessage[] = submit.failure
+    ? [...messages, { level: "error" as const, text: submit.failure.message }]
+    : messages;
 
   const backToList = () => router.push(`/permits?projectId=${projectId}`);
 
@@ -196,7 +212,7 @@ export default function PermitCreateClient({
       // this form -- a user scanning for why Save is dead should find it on the
       // control itself.
       saveDisabledReason={!storageConfigured ? STORAGE_UNAVAILABLE_REASON : undefined}
-      messages={messages}
+      messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
         {!storageConfigured && (

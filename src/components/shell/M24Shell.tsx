@@ -61,9 +61,11 @@ import {
   type ScreenCardView,
 } from "./PillStrip";
 import { cardsFor, chainForScreenCard, hrefForScreenCard, type ScreenCard } from "@/lib/composer-cards";
-// R67 A-16 / decision D-09: the rail is forked too, for one reason -- the kit
-// types `organisationName` as a string, so it cannot render "Organisation
-// unavailable — [Retry]", and the string fallback it forced was a bare em-dash.
+// Decision D-09: the rail is forked, for two reasons that landed in two lanes
+// and are both in the fork -- A-16, because the kit types `organisationName`
+// as a string and so cannot render "Organisation unavailable - [Retry]"; and
+// D-66, because the kit exposes no picker slot, which is why this shell was
+// CYCLING through projects one click at a time under a caret promising a menu.
 import { TopRail } from "./TopRail";
 import { useShellScreen, type ScreenProjectSource } from "./shell-screen-context";
 import {
@@ -130,8 +132,19 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
-import { LEGACY_FALLBACK_MESSAGE, fixChainFor, legacyToCode, messageFor, rowDetailFor } from "@/lib/task-errors";
+import { invalidateShell, useShell } from "@/lib/shell-store";
+import { rememberSelectedProject } from "@/lib/project-cookie";
+import {
+  LEGACY_FALLBACK_MESSAGE,
+  describeReadError,
+  fixChainFor,
+  legacyToCode,
+  messageFor,
+  rowDetailFor,
+} from "@/lib/task-errors";
+import { asOfLabel } from "@/lib/pane-state";
 
 // R67 A-14 -- THE PINS, AND ONLY THE PINS.
 //
@@ -192,6 +205,28 @@ const RANKED_CARDS_KEY = "veri.pill.ranked";
 const TASK_TAB_PARAM = "taskTab";
 const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
 
+// ─── R67 D-20: the rail-to-page sync contract ────────────────────────────
+//
+// THE SPLIT-BRAIN THIS CLOSES. This shell held its own `projectId` state
+// (below) and the pages under it read `?projectId=` from the URL. Nothing
+// connected the two. So the rail could say "All projects" while /moms
+// rendered Cedar Heights, and switching project in the rail changed the
+// composer's chain root without the page beneath it re-querying anything.
+//
+// THE RULE, one sentence: THE URL WINS. A route that carries ?projectId=
+// sets this shell's state (never the other way round), and switching in the
+// rail writes that same parameter -- preserving every OTHER parameter, so a
+// list's own filter survives a project switch -- which is what makes the
+// page re-query with the new id. The cookie is only a memory of the last
+// choice, consulted when the URL says nothing at all.
+// R67 D-66: the cookie NAME lives in src/lib/project-selection.ts, which the
+// SERVER components that read it also import; the URL-wins rule, the cookie
+// read/write and the resolution effect live in shell/project-context.tsx,
+// where they are unit-tested (project-context.test.tsx). They stood inline
+// here, inside a component that also fetches the org, the project list, the
+// task list and the screen registry -- so the one rule D-04's and D-66's
+// acceptances turn on could not be exercised without standing all of that up.
+
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
 // R53's task shape, from GET /api/v1/projexa/tasks (contract: claude_log id=35).
@@ -213,6 +248,13 @@ type ApiTask = {
   legacyError?: string | null;
   rawInput?: string | null;
   mode?: string | null;
+  // R67 D-03's 'needs_input' payload, added additively by
+  // compliance-tracker's GET /api/v1/projexa/tasks. Optional because a row
+  // that failed outside the closed five-code set carries no code at all, and
+  // because an older backend simply will not send these fields.
+  code?: string | null;
+  missing?: string[] | null;
+  errorContext?: { lineCode?: string; boqVersion?: number } | null;
   /** Real column on compliance.pipeline_tasks, selected by the route's own
    *  query and already ordered desc -- used by the History tab's dedup. */
   createdAt?: string | null;
@@ -244,7 +286,46 @@ type ApiTasks = {
   counts?: { needsYou?: number; running?: number; done?: number; blocked?: number; total?: number };
   groups?: { needsYou?: ApiTask[]; running?: ApiTask[]; done?: ApiTask[]; blocked?: ApiTask[] };
   tasks?: ApiTask[];
+  /** R67 F-26: the keyset position of the next page, or null at the end. */
+  nextCursor?: string | null;
 };
+
+// R67 F-26 (audit recommendation R-242). THE THREE NUMBERS THIS CHANGES.
+//
+// Task Master shows ten rows and was fetching FIFTY, on every navigation, at
+// 590-1740 ms -- and again after every Send, which is why the composer sat
+// empty and Send sat disabled for seconds with nothing to look at.
+//
+//   TASK_PAGE_SIZE   20, with an explicit "Show 20 more" at the foot of the
+//                    pane. Twenty covers the ten visible rows plus the group
+//                    the user is most likely to scroll into.
+//   POLL_*           after a Send the minted row goes in AT ONCE from the POST
+//                    response and only THAT row is polled -- fast while the
+//                    user is still watching, then slowly, and never at all once
+//                    the row reaches a terminal status.
+//   TASK_REVALIDATE  the full list is otherwise re-read on a five-minute
+//                    background schedule or an explicit refresh, not on every
+//                    navigation.
+const TASK_PAGE_SIZE = 20;
+/** The backend's own ceiling on ?limit=. A refresh may not ask for more. */
+const TASK_MAX_LIMIT = 200;
+const POLL_FAST_MS = 1_000;
+const POLL_FAST_FOR_MS = 10_000;
+const POLL_SLOW_MS = 5_000;
+/** Give up on a row that never settles, rather than polling for the life of the tab. */
+const POLL_GIVE_UP_MS = 5 * 60_000;
+const TASK_REVALIDATE_MS = 5 * 60_000;
+
+const TERMINAL_TASK_STATUSES = new Set(["done", "blocked"]);
+
+/** Which group a task row belongs to, from its status alone -- so an optimistic
+ *  row and a listed row are always placed by the same rule. */
+function groupForStatus(status?: string | null): "needsYou" | "running" | "done" | "blocked" {
+  if (status === "done") return "done";
+  if (status === "blocked") return "blocked";
+  if (status === "in_progress") return "running";
+  return "needsYou";
+}
 
 // M24: "Line 1 must START WITH A VERB from a CLOSED SET ... Six words the user
 // learns once." Task names are system-generated, which is exactly why the
@@ -292,7 +373,13 @@ export function codeFor(t: ApiTask): string | null {
 function toTaskRow(
   t: ApiTask,
   group: "needsYou" | "running" | "done" | "blocked",
-  railProjectId: string | null
+  // A-01: the project a row's destination falls back to when the task itself
+  // names none. D-03: the project NAME the failure sentence uses ("There is no
+  // line 1.01 on Cedar Heights Villa v2"). Two different questions about the
+  // project, so two parameters -- collapsing them would make one of the two
+  // answers wrong.
+  railProjectId: string | null,
+  projectNameById: (id: string | null | undefined) => string | null
 ): TaskRow {
   const steps = t.derivedChain?.steps ?? [];
   const root = t.derivedChain?.root ?? null;
@@ -442,7 +529,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  // The RAIL's own selection. It is no longer the only answer to "which
+  // R67 D-20/D-66 x A-13 -- THE URL STILL WINS, and WS-A's model is how.
+  //
+  // This lane held the shell's project in its own useUrlProjectId(pathname)
+  // hook: the URL, else a px_project cookie. WS-A shipped a strictly richer
+  // answer to the same question -- routeProject, then the record an object
+  // page names, then what the screen itself published, then the rail's
+  // remembered choice -- applying pickProject(), the SAME pure function the
+  // server page applies, which is what stops the rail and the pane
+  // disagreeing at all. Keeping this lane's hook beside it would put two
+  // resolutions back on one screen, which is the defect BOTH items existed to
+  // remove, so the hook is retired here and `projectId` is derived below.
+  // Its precedence rules are tested in src/lib/project-preference.test.ts.
+  //
+  // The rail's own selection. It is no longer the only answer to "which
+  // project": a screen that resolved one from the URL outranks it (A-03). It is no longer the only answer to "which
   // project": a screen that resolved one from the URL outranks it (A-03).
   const [railProjectId, setRailProjectId] = useState<string | null>(null);
   // A-07: the user's own pinned cards, per browser. Pinning is how a user
@@ -453,7 +554,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // thing as the last ranking the server sent. See applyRanking() below.
   const [rankedPills, setRankedPills] = useState<RankedEntry[] | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
-  const [tasksError, setTasksError] = useState<string | null>(null);
+  // R67 MERGE: `tasksError` is declared below, with lane D0's richer
+  // {status, message} shape -- the shared dictionary needs the status to
+  // decide whether a Retry could help at all.
+  //
+  // R67 F-26: the keyset position of the next page (null = this is the whole
+  // list, so no "Show 20 more" control is rendered at all), whether that page
+  // is in flight, when the list was last read in full, and which rows came from
+  // a Send rather than from the server.
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // A ref, not state: nothing RENDERS from "when did the list last load" -- it
+  // only decides whether the navigation effect should go to the network -- and
+  // a ref written inside loadTasks is read by that effect without adding a
+  // render or a dependency that would re-run it.
+  const tasksFetchedAtRef = useRef<number | null>(null);
+  /** How many "Show 20 more" pages the user has pulled, so a refresh can ask
+   *  for the list they are actually looking at rather than shrinking it. */
+  const extraPagesRef = useRef(0);
+  const optimisticIdsRef = useRef<Set<string>>(new Set());
   // R67 A-16 -- WHOSE STRIP IS THIS? The ranking is a statement about one
   // person's work, so the cache that paints it before the server answers is
   // keyed by the signed-in user. Resolved from this tab's own Supabase session,
@@ -464,6 +583,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // A-16: the organisation read failed twice. The rail says so, in the band
   // M24 says is never covered, with the one control that can change it.
   const [orgFailed, setOrgFailed] = useState(false);
+  // R67 D-66: a monotonic counter the shell increments when something OTHER
+  // than the rail asks for the switcher -- the breadcrumb's project name, the
+  // "pick a project" chooser card. A counter rather than a boolean because a
+  // second request has to open the list a second time, and a boolean that is
+  // already true does nothing.
+  const [switcherOpenSignal, setSwitcherOpenSignal] = useState(0);
+  const openSwitcher = useCallback(() => setSwitcherOpenSignal((n) => n + 1), []);
+  // R67 D-55/D-65: what the transport actually said -- a status AND the
+  // backend's words -- not a pre-formatted sentence, so the ONE shared
+  // dictionary in src/lib/task-errors.ts writes what the user reads, exactly
+  // as it already does for a failed task row. WS-A's own two-attempt read
+  // supplies both (see shell-resilience.ts's JsonRead).
+  const [tasksError, setTasksError] = useState<{ status: number | null; message: string | null } | null>(null);
+  // When the rows currently on screen were last true, for the "as of 14:32"
+  // band a failed refresh leaves behind.
+  const [tasksLoadedAt, setTasksLoadedAt] = useState<Date | null>(null);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
@@ -522,16 +657,61 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setLoadedChain(next);
   }, []);
   const [draft, setDraft] = useState("");
-  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number; done: number }>({
-    home: 0,
-    approval: 0,
-    queue: 0,
+  // R67 D-55: null, not 0. A tab badge reading 0 over a failed read is a
+  // claim nobody made; the kit renders no badge at all for an absent count,
+  // which is the honest rendering of "we have not been told". A-10's `done`
+  // takes the same rule for the same reason -- "this person has never
+  // completed a task" and "we could not ask" are different facts, and the
+  // first-run hint below turns on which one it is.
+  const [counts, setCounts] = useState<{
+    home: number | null;
+    approval: number | null;
+    queue: number | null;
+    done: number | null;
+  }>({
+    home: null,
+    approval: null,
+    queue: null,
     // A-10: whether this account has EVER completed a task. It is the honest
     // signal for "has this person got a save to their name yet", and it comes
     // from the same one call the tabs are counted from -- never a second guess.
-    done: 0,
+    done: null,
   });
   const [tasksLoaded, setTasksLoaded] = useState(false);
+
+  // R67 F-19 (audit recommendation R-245). THE SHELL YIELDS TO THE FORM ON A
+  // CREATE ROUTE.
+  //
+  // This shell refetches its organisation, projects, tasks and pill ranking on
+  // every navigation -- 3.8-4.6 s to network idle -- INCLUDING on create
+  // forms, which need none of them: /permits/new needs a project id (already
+  // in the URL) and its own field lookups, and nothing else. Those shell calls
+  // were competing with the form's own for the browser's connections and for
+  // the main thread, on exactly the screens where the user is waiting to type.
+  //
+  // So on /new, /upload and /log-time the bootstrap is deferred to the first
+  // idle callback: the form mounts, focuses its first field and issues its own
+  // lookups first, and the shell fills in behind it. requestIdleCallback is
+  // not in Safari, hence the setTimeout(0) fallback -- which still yields a
+  // frame, which is the point. The 2 s timeout guarantees the rail is never
+  // left empty on a page the user keeps open.
+  // `pathname` is already resolved above (A-01 needs it for the composer).
+  const isCreateRoute = /\/(new|upload|log-time)$/.test(pathname ?? "");
+  const [bootstrapReady, setBootstrapReady] = useState(!isCreateRoute);
+
+  useEffect(() => {
+    if (bootstrapReady) return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(() => setBootstrapReady(true), { timeout: 2000 });
+      return () => win.cancelIdleCallback?.(handle);
+    }
+    const timer = setTimeout(() => setBootstrapReady(true), 0);
+    return () => clearTimeout(timer);
+  }, [bootstrapReady]);
 
   useEffect(() => {
     try {
@@ -593,6 +773,27 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setShellErrors((prev) => (prev.some((e) => e.what === what) ? prev : [...prev, { what, detail }]));
   }, []);
 
+  // *** MERGE NOTE (F-21 x WS-A A-14/A-16). ***
+  //
+  // These two items rebuilt the same loading path for different reasons, so the
+  // pieces are kept apart by what each is actually about.
+  //
+  // F-21 owns WHERE the data comes from: one GET /api/shell per session instead
+  // of /api/organization, /api/projects, /api/notifications, /api/pill-usage and
+  // /api/capability-tree on every navigation.
+  //
+  // A-14 and A-16 own WHAT IS DONE WITH IT: the ranking is never repainted under
+  // a moving finger, an identical ranking is not a repaint at all, the strip can
+  // paint from a per-user cache before the server answers, a failed organisation
+  // read is stated in the rail, and only a successful projects read may say the
+  // org has none.
+  //
+  // So A-16's loadOrgInfo()/loadProjects() pair is gone -- the bootstrap answers
+  // both, and answering them twice was the cost F-21 exists to remove -- while
+  // A-16's RETRY moved with them: readJsonWithRetry() now wraps the bootstrap
+  // fetch itself in src/lib/shell-store.ts, so "each call is attempted twice"
+  // still holds for the one call that replaced the four.
+
   // R67 A-14 -- WHEN A NEW RANKING MAY REPLACE WHAT IS ON SCREEN: NEVER, WHILE
   // THE USER IS LOOKING AT IT.
   //
@@ -643,64 +844,106 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setRankedPills(entries);
   }, []);
 
-  // F_025 fix: this used to run exactly once, inline in the mount effect
-  // below, with no way to re-invoke it. That made the account menu's
-  // identity a snapshot of whoever was signed in at the moment THIS TAB
-  // first mounted -- reproduced live: sign in as user A in one tab (menu
-  // correctly shows A), then in a SEPARATE tab of the SAME browser sign in
-  // as user B (Supabase's cookie-backed session is shared per-origin, so
-  // this silently replaces A's session for every open tab). The first tab,
-  // never having re-fetched, went on showing A indefinitely -- while a
-  // fresh `fetch("/api/organization")` issued from that exact same tab
-  // (same cookies) correctly returned B, because that route always reads
-  // the CURRENT request's session fresh. The mismatch was never in
-  // /api/organization or requireAuth() (both were already correct, per
-  // that route's `email: ctx.user!.email` straight off the verified JWT) --
-  // it was this component's `info` state going stale relative to the
-  // session that now owns the tab. Extracted to a stable callback so it can
-  // be re-run below on any Supabase auth-state change, not just on mount.
-  //
-  // R67 A-16 -- AND IT IS ATTEMPTED TWICE BEFORE ANY FALLBACK. A single failed
-  // read is usually a dropped request, not a broken backend: this product runs
-  // on site connections and all four of the shell's reads happen in the same
-  // first second of a page load, which is exactly when a flaky link drops one.
-  // One retry, one second later, removes most of the degraded states the user
-  // would otherwise have to reload out of. The retry policy itself is pure and
-  // lives in src/lib/shell-resilience.ts, so "each call is attempted twice" is
-  // asserted rather than described.
-  const loadOrgInfo = useCallback(async () => {
-    const read = await readJsonWithRetry<OrgInfo>("/api/organization");
-    if (!read.ok) {
-      setOrgFailed(true);
-      noteFailure("your organisation", read.error);
-      return;
-    }
-    setOrgFailed(false);
-    if (read.data?.organization?.name) setInfo(read.data);
-  }, [noteFailure]);
 
-  const loadProjects = useCallback(async () => {
-    const read = await readJsonWithRetry<Project[] | { projects?: Project[] }>("/api/projects");
-    if (!read.ok) {
-      noteFailure("your projects", read.error);
-      return;
-    }
-    const d = read.data;
-    const list: Project[] = Array.isArray(d) ? d : ((d as { projects?: Project[] })?.projects ?? []);
-    if (!Array.isArray(list)) return;
-    setProjects(list.map((p) => ({ id: p.id, name: p.name })));
-    // Only a REAL, successful read can say the org has no projects. An
-    // empty list before the call answers must never produce the "Create
-    // a project first" sentence -- that would be a confident empty state
-    // standing in for "not loaded yet", the exact defect this shell has
-    // been corrected for twice already.
-    setProjectsLoaded(true);
-  }, [noteFailure]);
+  // R67 F-21 (R-236). THE SHELL'S SIX LOOKUPS ARE NOW ONE CALL.
+  //
+  // This component used to fetch /api/organization (two or three times),
+  // /api/projects, /api/notifications, /api/pill-usage and, through the chat
+  // provider, /api/capability-tree ON EVERY NAVIGATION -- 3.8-4.6 s to network
+  // idle for six answers that do not change between /permits and /scope. They
+  // now come from GET /api/shell once per session, held in the store in
+  // src/lib/shell-store.ts, which revalidates in the BACKGROUND on each key's
+  // own schedule (5 min for projects and the pill ranking, 24 h for the
+  // capability tree and currencies) and only when a write says to.
+  //
+  // F_025 IS PRESERVED, and this is the part that must not be lost: the
+  // account menu's identity used to be a snapshot of whoever was signed in
+  // when the tab first mounted. Sign in as A here, then as B in another tab of
+  // the same browser (@supabase/ssr persists the session in COOKIES, which
+  // GoTrueClient's localStorage `storage`-event sync never sees), and this tab
+  // kept showing A forever. So the store is still refreshed on this tab's own
+  // auth-state change AND on focus/visibility -- the cases where the identity
+  // under us can have moved on with no event of any kind.
+  const shell = useShell({ enabled: bootstrapReady });
 
   useEffect(() => {
-    void loadOrgInfo();
-    void loadProjects();
-  }, [loadOrgInfo, loadProjects]);
+    if (!shell.loaded) return;
+    if (shell.organization?.name) {
+      setInfo({
+        organization: { id: shell.organization.id, name: shell.organization.name },
+        role: shell.role ?? undefined,
+        email: shell.email ?? undefined,
+      });
+    }
+    setProjects((shell.projects ?? []).map((p) => ({ id: p.id, name: p.name })));
+    // Only a REAL, successful read can say the org has no projects. An empty
+    // list before the call answers must never produce the "Create a project
+    // first" sentence -- that would be a confident empty state standing in for
+    // "not loaded yet", the exact defect this shell has been corrected for
+    // twice already. The bootstrap reports the projects key's own failure, so
+    // this is set from that and not merely from "the call returned".
+    if (!shell.errors.projects) setProjectsLoaded(true);
+    // A-16: the organisation read failed. The rail says so, in the band M24
+    // says is never covered, with the one control that can change it.
+    setOrgFailed(Boolean(shell.errors.organization));
+    // A-16: and the RANKING's own failure is separate -- the cached strip
+    // survives it. Setting this from the bootstrap's per-key error is what
+    // keeps "the pill ranking could not be read" distinct from "this user has
+    // earned no pills yet", which look identical on screen otherwise.
+    setRankingFailed(Boolean(shell.errors.pillUsage));
+    if (Array.isArray(shell.pillUsage)) {
+      // R67 A-14/A-16: the bootstrap's ranking goes through applyRanking(), not
+      // straight into state. That is what keeps the two rules the ranking has:
+      // an IDENTICAL list must not repaint the strip, and a list that arrives
+      // while the user is already looking at the cards is DEFERRED rather than
+      // moved under their finger. F-21 changed where the ranking comes from --
+      // one bootstrap instead of a per-navigation /api/pill-usage -- and
+      // changed nothing about when it is allowed on screen.
+      const entries = shell.pillUsage.map((p) => ({
+        pillKey: p.pillKey,
+        label: p.label ?? null,
+        pinned: Boolean(p.pinned),
+      })) as RankedEntry[];
+      // A-07/A-16: cache it BEFORE deciding whether to paint it. The cache is
+      // for the next first render, under this user's own key; A-14's rule
+      // decides whether it may replace what is on screen NOW.
+      serverAnsweredRef.current = true;
+      latestServerRankingRef.current = entries;
+      persistRanking();
+      applyRanking(entries);
+      // A-08: no recent chains is a normal first week and must render as
+      // "role cards only", never as an error and never as a placeholder.
+      setRecentChains(
+        (shell.recentChains ?? []).map((c) => ({
+          fullChain: c.fullChain,
+          label: c.label,
+          steps: (c.steps ?? []) as RecentCardView["steps"],
+          projectId: c.projectId ?? null,
+          outcome: (c.outcome ?? "ok") as RecentCardView["outcome"],
+        }))
+      );
+      // R53's payload carries functionId per pill. Held in a ref so the submit
+      // handler can read it without re-rendering the strip.
+      pillFnRef.current = Object.fromEntries(
+        shell.pillUsage.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
+      );
+    }
+    // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01: a half-loaded shell
+    // says so, with the backend's own words, instead of rendering an em-dash
+    // and an empty project switcher as if that were the answer.
+    const labels: Record<string, string> = {
+      organization: "your organisation",
+      projects: "your projects",
+      pillUsage: "your ranked modules",
+      notifications: "your notifications",
+      capabilityTree: "your module list",
+      currencies: "your currencies",
+      shell: "your workspace",
+    };
+    for (const [key, detail] of Object.entries(shell.errors)) {
+      noteFailure(labels[key] ?? key, detail);
+    }
+  }, [shell.loaded, shell.organization, shell.projects, shell.pillUsage, shell.recentChains, shell.role, shell.email, shell.errors, noteFailure, applyRanking, persistRanking]);
 
   // R67 A-16 -- WHOSE RANKING IS CACHED. Read from this tab's own Supabase
   // session, which is the identity every server read above is made under. The
@@ -718,10 +961,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // F_025: re-run the identity fetch whenever THIS tab's own Supabase client
-  // reports a session change -- a sign-in/sign-out in this same tab (also
-  // covers a token silently refreshing to the same user; re-fetching then
-  // is a harmless no-op, not a reason to special-case which events fire).
+  const refreshShell = shell.refresh;
+
+  // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
     const supabase = createClient();
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
@@ -730,14 +972,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         // too -- a sign-in as somebody else must not leave the previous user's
         // ranking on screen.
         setUserId(session?.user?.id ?? null);
-        void loadOrgInfo();
+        // F-21: refreshing the bootstrap is what A-16's loadOrgInfo() call did
+        // here, for all six answers rather than one.
+        void refreshShell();
       } else if (event === "SIGNED_OUT") {
         setInfo(null);
         setUserId(null);
+        // Covers the sign-out that happened in ANOTHER tab as well as this
+        // one's own: the cookie is shared by every tab, so whichever tab sees
+        // the event first must clear it.
+        rememberSelectedProject(null);
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // A-16 -- THE CACHE FOLLOWS THE IDENTITY. Once the user is known, the strip
   // is repainted from THEIR cached ranking; if this browser has none for them,
@@ -776,7 +1024,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // actually looks at it again.
   useEffect(() => {
     const onFocusOrVisible = () => {
-      if (document.visibilityState === "visible") void loadOrgInfo();
+      if (document.visibilityState === "visible") void refreshShell();
     };
     window.addEventListener("focus", onFocusOrVisible);
     document.addEventListener("visibilitychange", onFocusOrVisible);
@@ -784,7 +1032,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", onFocusOrVisible);
       document.removeEventListener("visibilitychange", onFocusOrVisible);
     };
-  }, [loadOrgInfo]);
+  }, [refreshShell]);
 
   // M24: "HEADER TABS WITH LIVE COUNTS ... Counts so the user knows before
   // clicking." Both the counts and the rows come from ONE call to
@@ -798,99 +1046,253 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
+  // R67 D-03: BOQ_LINE_NOT_FOUND's sentence names the project ("There is no
+  // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
+  // carry a projectId, not a name.
   //
-  // A-16: attempted twice, one second apart, before the pane admits a failure
-  // -- and the pane's Retry now calls THIS, not router.refresh(). The refresh
-  // re-rendered a server component that does not own this list, so the one
-  // control offered on a failed read could not actually retry the read.
-  const loadTasks = useCallback(async () => {
-    const read = await readJsonWithRetry<ApiTasks>("/api/tasks?limit=50");
-    if (!read.ok) {
-      setTasksError(read.error);
-      return;
+  // R67 D-03: BOQ_LINE_NOT_FOUND's sentence names the project ("There is no
+  // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
+  // carry a projectId, not a name.
+  //
+  // A PLAIN DEPENDENCY, not a ref. This lane held the list in a ref so that
+  // loadTasks could keep a stable identity; after the WS-A merge loadTasks no
+  // longer builds rows at all -- it stores the groups RAW and the rows are
+  // derived per tab during render -- so a ref here would be read during
+  // render, which is both a lint error and a real staleness bug: the memo
+  // would not re-run when the project list arrived, and a row's sentence
+  // would keep saying nothing where it should name the project.
+  const projectNameById = useCallback(
+    (id: string | null | undefined) => (id ? projects.find((p) => p.id === id)?.name ?? null : null),
+    [projects]
+  );
+
+  // R67 MERGE (lane D0 x lane F2). Three items meet in this one function and
+  // all three survive:
+  //
+  //   * A-16 -- attempted twice, one second apart, before the pane admits a
+  //     failure, and the pane's Retry calls THIS rather than router.refresh(),
+  //     which re-rendered a server component that does not own this list.
+  //   * D-55/D-65 -- what a failure LEAVES BEHIND. The status and the
+  //     backend's own words are kept whole for the shared dictionary; the
+  //     COUNTS are forgotten rather than kept, because a badge left over from
+  //     the last successful read asserts a number THIS read did not confirm;
+  //     and the rows are NOT cleared, so a failed refresh leaves what was true
+  //     a minute ago on screen, greyed and dated, instead of an empty pane.
+  //   * F-26 -- the PAGING. A cursor appends a page instead of replacing the
+  //     pane, so "Show 20 more" grows the list the user is reading, and a
+  //     refresh asks for as many rows as they currently have rather than
+  //     collapsing sixty back to twenty under their cursor.
+  //
+  // They compose cleanly: the retry wraps whichever page is being asked for,
+  // and the failure rules apply to a first page only -- a failed APPEND leaves
+  // the list exactly as it was and says so, because the rows already on screen
+  // are still correct.
+  const loadTasks = useCallback(async (cursor?: string) => {
+    const append = Boolean(cursor);
+    if (append) setLoadingMore(true);
+    try {
+      // A REFRESH asks for as many rows as the user currently has on screen,
+      // not for one page. Otherwise a five-minute background re-read would
+      // collapse a list they had expanded to sixty rows back down to twenty,
+      // under their cursor, for no reason they could see.
+      const limit = append
+        ? TASK_PAGE_SIZE
+        : Math.min(TASK_MAX_LIMIT, TASK_PAGE_SIZE * (1 + extraPagesRef.current));
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (cursor) qs.set("cursor", cursor);
+      // readJsonWithRetry() reads the STATUS before the body, which is what
+      // stops an error body that happens to parse as JSON from becoming a
+      // confident empty list.
+      const read = await readJsonWithRetry<ApiTasks>(`/api/tasks?${qs.toString()}`);
+      if (!read.ok) {
+        // D-55: the transport's own status AND words, for the one dictionary.
+        setTasksError({ status: read.status, message: read.error });
+        // A failed APPEND must not blank the counts describing rows that are
+        // still correct on screen; a failed FULL read must, because those
+        // badges would otherwise assert a total this read did not confirm.
+        if (!append) setCounts({ home: null, approval: null, queue: null, done: null });
+        return;
+      }
+      const data = (read.data ?? {}) as ApiTasks;
+      setTasksError(null);
+      setTasksLoadedAt(new Date());
+      setNextCursor(data.nextCursor ?? null);
+      setTasksLoaded(true);
+      // Counts are refreshed on an APPENDED page too. They describe the whole
+      // set (the backend computes them from a grouped aggregate, not from the
+      // page it just returned), so a "Show 20 more" that left them alone would
+      // freeze the badges at whatever the first page happened to see -- the
+      // same disagreement between the tabs and the list under them that A-01's
+      // comment below says can never happen.
+      setCounts({
+        home: Number(data.counts?.total) || 0,
+        approval: Number(data.counts?.needsYou) || 0,
+        queue: Number(data.counts?.running) || 0,
+        done: Number(data.counts?.done) || 0,
+      });
+      const g = data.groups ?? {};
+      // R67 A-01: kept RAW. The rows a tab shows are derived per tab further
+      // down, because the five header tabs used to be pure decoration -- every
+      // one of them rendered the same two lists, so clicking "Completed"
+      // changed nothing on screen.
+      //
+      // R67 F-26: and a page is MERGED into what is already held, by id. A
+      // blind concat would render a row twice, and a blind replace would drop
+      // the optimistic row a Send just inserted -- making a successful Send
+      // look lost until the next full read.
+      const mergeRaw = (previous: ApiTask[], page: ApiTask[]) => {
+        if (append) {
+          const seen = new Set(previous.map((t) => t.id));
+          return [...previous, ...page.filter((t) => !seen.has(t.id))];
+        }
+        const pageIds = new Set(page.map((t) => t.id));
+        // A row the user just created that this page does not yet carry stays
+        // put; the server's own version replaces it as soon as it appears.
+        return [...previous.filter((t) => optimisticIdsRef.current.has(t.id) && !pageIds.has(t.id)), ...page];
+      };
+      setTaskGroups((prev) => ({
+        needsYou: mergeRaw(prev.needsYou, g.needsYou ?? []),
+        running: mergeRaw(prev.running, g.running ?? []),
+        done: mergeRaw(prev.done, g.done ?? []),
+        blocked: mergeRaw(prev.blocked, g.blocked ?? []),
+        all: mergeRaw(prev.all, data.tasks ?? []),
+      }));
+      if (append) extraPagesRef.current += 1;
+      else tasksFetchedAtRef.current = Date.now();
+    } catch {
+      setTasksError({ status: null, message: null });
+      if (!append) setCounts({ home: null, approval: null, queue: null, done: null });
+    } finally {
+      if (append) setLoadingMore(false);
     }
-    const data = read.data ?? ({} as ApiTasks);
-    setTasksError(null);
-    setCounts({
-      home: Number(data.counts?.total) || 0,
-      approval: Number(data.counts?.needsYou) || 0,
-      queue: Number(data.counts?.running) || 0,
-      done: Number(data.counts?.done) || 0,
-    });
-    setTasksLoaded(true);
-    const g = data.groups ?? {};
-    // R67 A-01: kept RAW. The rows a tab shows are now derived per tab
-    // (below), because the five header tabs used to be pure decoration --
-    // every one of them rendered the same two lists, so clicking
-    // "Completed" changed nothing on screen.
-    setTaskGroups({
-      needsYou: g.needsYou ?? [],
-      running: g.running ?? [],
-      done: g.done ?? [],
-      blocked: g.blocked ?? [],
-      all: data.tasks ?? [],
+  }, []);
+
+  // R67 F-21: the pill ranking moved into the /api/shell bootstrap above --
+  // it was a separate per-navigation call for a list that changes when the
+  // user clicks a pill, not when they change route.
+  //
+  // R67 F-26: and tasks no longer re-read on every navigation either. This
+  // shell wraps all 53 app routes, so that read fired on every route change for
+  // a list that changes when the USER acts -- and a Send now puts its own row
+  // in directly. The full list is read once per mount, re-read on a navigation
+  // that finds it older than five minutes, AND on a real five-minute timer.
+  useEffect(() => {
+    if (!bootstrapReady) return;
+    if (tasksFetchedAtRef.current !== null && Date.now() - tasksFetchedAtRef.current < TASK_REVALIDATE_MS) return;
+    void loadTasks();
+  }, [loadTasks, bootstrapReady, pathname]);
+
+  // The staleness check above only runs when something re-renders this effect
+  // -- in practice, a navigation. A user who leaves Task Master open on one
+  // route never navigates, so without this timer their pane would never
+  // refresh at all, and a row another user or an executor moved would stay
+  // wrong on screen indefinitely. (Single-row polling covers only the task
+  // this user just sent.) Skipped while the tab is hidden: a background tab
+  // waking up to fetch is cost with no reader, and the focus/visibility
+  // handler above already refreshes on return.
+  useEffect(() => {
+    if (!bootstrapReady) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void loadTasks();
+    }, TASK_REVALIDATE_MS);
+    return () => clearInterval(id);
+  }, [loadTasks, bootstrapReady]);
+
+  // R67 F-26: place ONE task, by id, in whichever group its status belongs to
+  // -- used by both the optimistic insert after a Send and the single-task
+  // poll, so a task can never end up in two groups or in the wrong one.
+  //
+  // It writes the RAW task into A-01's groups rather than a rendered row: the
+  // five header tabs derive their own rows from these groups, so a row built
+  // here would be invisible to every tab but the one it was built for.
+  //
+  // `pinToNeedsYou` is the Send case: the task the user just submitted stays at
+  // the top of "Needs you" while it is still executing, because that is the row
+  // they are watching. Once it settles it takes its real group.
+  const upsertTask = useCallback((api: ApiTask, pinToNeedsYou: boolean) => {
+    const status = api.status ?? "";
+    const settled = TERMINAL_TASK_STATUSES.has(status);
+    const group = groupForStatus(status);
+    const pinned = pinToNeedsYou && !settled;
+    // A pinned task is shown under "Needs you" until it settles, whatever its
+    // status says, so that is the group it is filed under while pinned.
+    const target: keyof Omit<TaskGroups, "all"> = pinned ? "needsYou" : group;
+    setTaskGroups((prev) => {
+      const drop = (list: ApiTask[]) => list.filter((t) => t.id !== api.id);
+      const next: TaskGroups = {
+        needsYou: drop(prev.needsYou),
+        running: drop(prev.running),
+        done: drop(prev.done),
+        blocked: drop(prev.blocked),
+        all: [api, ...drop(prev.all)],
+      };
+      next[target] = [api, ...next[target]];
+      return next;
     });
   }, []);
 
-  // The pill strip's ranking. R53 returns it ALREADY RANKED -- rendered in
-  // order, never re-sorted here. isNewUser true means "nothing earned yet",
-  // which must not look like a failed call.
-  //
-  // R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01 (reopened): this was
-  // `if (!res.ok) return;` / `catch {}` -- the same silent-swallow the
-  // org/projects effect above was fixed for in the first PR, just never
-  // applied here. The backend's own message is kept.
-  //
-  // A-16: attempted twice before any fallback, and THE CACHED RANKING SURVIVES
-  // A FAILURE -- what is on screen is a real answer from a previous visit, and
-  // replacing it with a shorter fallback set because one request failed would
-  // be the "two different pill sets" defect wearing an error's clothes.
-  const loadRanking = useCallback(async () => {
-    const read = await readJsonWithRetry<PillPayload>("/api/pill-usage?limit=6");
-    if (!read.ok) {
-      setRankingFailed(true);
-      noteFailure("your ranked modules", read.error);
-      return;
-    }
-    const d = read.data;
-    if (!Array.isArray(d?.pills)) return;
-    setRankingFailed(false);
-    const entries = d.pills.map((p) => ({
-      pillKey: p.pillKey,
-      label: p.label ?? null,
-      pinned: Boolean(p.pinned),
-    }));
-    // A-07/A-16: cache it BEFORE deciding whether to paint it. The cache is
-    // for the next first render, under this user's own key; A-14's rule
-    // decides whether it may replace what is on screen NOW.
-    serverAnsweredRef.current = true;
-    latestServerRankingRef.current = entries;
-    persistRanking();
-    applyRanking(entries);
-    // A-08: no recent chains is a normal first week and must render as
-    // "role cards only", never as an error and never as a placeholder.
-    setRecentChains(
-      Array.isArray(d.recentChains)
-        ? d.recentChains.map((c) => ({
-            fullChain: c.fullChain,
-            label: c.label,
-            steps: c.steps ?? [],
-            projectId: c.projectId ?? null,
-            outcome: c.outcome ?? "ok",
-          }))
-        : []
-    );
-    // R53's payload carries functionId per pill. Held in a ref so the
-    // submit handler can read it without re-rendering the strip.
-    pillFnRef.current = Object.fromEntries(
-      d.pills.filter((x) => x.functionId).map((x) => [x.pillKey, x.functionId as string])
-    );
-  }, [applyRanking, noteFailure, persistRanking]);
-
+  // Every scheduled poll, so none of them outlives the component.
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   useEffect(() => {
-    void loadTasks();
-    void loadRanking();
-  }, [loadTasks, loadRanking]);
+    const timers = pollTimersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
+  // R67 F-26: poll ONE row. Fast (1 s) while the user is still watching, then
+  // slowly (5 s), and never once the row is done or blocked. A row that never
+  // settles is abandoned after five minutes rather than polled for the life of
+  // the tab. Self-scheduling through a ref so the callback can re-arm itself
+  // without re-creating on every tick.
+  const pollTaskRef = useRef<(taskId: string, startedAt: number) => void>(() => {});
+  const pollTask = useCallback(
+    (taskId: string, startedAt: number) => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= POLL_GIVE_UP_MS) {
+        optimisticIdsRef.current.delete(taskId);
+        return;
+      }
+      const timer = setTimeout(async () => {
+        pollTimersRef.current.delete(timer);
+        try {
+          const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+          const body = await res.json().catch(() => null);
+          const task = res.ok ? (body?.task as ApiTask | undefined) : undefined;
+          if (task) {
+            upsertTask(task, true);
+            if (TERMINAL_TASK_STATUSES.has(task.status ?? "")) {
+              // Settled. Stop polling, and stop protecting it from the next
+              // full list read -- the server now has the same row.
+              optimisticIdsRef.current.delete(taskId);
+              return;
+            }
+          }
+        } catch {
+          // A poll that could not reach the service is not a failure the user
+          // needs to see -- the row is still on screen, and the next tick tries
+          // again. The list's own error surface covers a real outage.
+        }
+        pollTaskRef.current(taskId, startedAt);
+      }, elapsed < POLL_FAST_FOR_MS ? POLL_FAST_MS : POLL_SLOW_MS);
+      pollTimersRef.current.add(timer);
+    },
+    [upsertTask]
+  );
+  useEffect(() => {
+    pollTaskRef.current = pollTask;
+  }, [pollTask]);
+
+  // *** MERGE NOTE (F-21 x A-08/A-16). ***
+  //
+  // A-16's loadRanking() lived here and read /api/pill-usage?limit=6 on every
+  // navigation. F-21 folded that exact upstream call into the /api/shell
+  // bootstrap, so the function is gone and the effect above applies its result
+  // instead -- through the same applyRanking()/persistRanking() pair, so A-14's
+  // "never repaint under a moving finger" and A-16's per-user cache are
+  // untouched. `label`, `pinned` and `recentChains` were added to the bootstrap
+  // payload for this, rather than the call being made a second time.
 
   // R67 A-03 -- ONE PROJECT, AND THE SCREEN'S ANSWER WINS.
   //
@@ -953,6 +1355,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // resolves to nothing rather than to a name invented here.
     return projects.find((p) => p.id === id) ?? null;
   }, [screenObject, projects]);
+
+  // R67 D-20/D-66: the writing half this lane wrote -- "switching project
+  // navigates, carrying every OTHER search parameter through untouched so a
+  // list's filter survives the switch" -- is exactly what chooseProject()
+  // below already does, and it answers two cases this lane's version did not
+  // (an object page, and a screen whose URL does not name the project). One
+  // writer, one reader.
 
   // A-13 -- ONE ROOT, AND THE URL WINS. Route, then the record the URL names,
   // then whatever the screen published, then the rail's remembered choice.
@@ -1201,6 +1610,30 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       router.refresh();
     },
     [routeProjectId, router, screenObject]
+  );
+
+  // R67 D-66 -- ONE ProjectContext. The rail, the breadcrumb, the composer
+  // root and every page read the project from here and from nothing else, so
+  // the disagreement R-253 recorded ("All projects" in the rail over
+  // "Dashboard / Cedar Heights Villa" in the breadcrumb) has no second source
+  // left to come from. `mode` is derived inside the provider, never stored.
+  //
+  // It is declared HERE, below chooseProject, because it hands that writer out
+  // -- there is exactly one function in this shell that changes the project,
+  // and the context publishes that one rather than a second copy of it.
+  const projectScope = useMemo(
+    () => ({
+      projects,
+      project,
+      projectId,
+      projectsLoaded,
+      // WS-A's writer: it remembers the choice for this browser AND for the
+      // server, rewrites the URL where the URL is what names the project, and
+      // leaves an object page rather than pretending the record moved.
+      selectProject: (next: Project | null) => chooseProject(next ? next.id : null),
+      openSwitcher,
+    }),
+    [projects, project, projectId, projectsLoaded, chooseProject, openSwitcher]
   );
 
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
@@ -1653,15 +2086,88 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(null);
       setArmedCard(null);
       setAwaitingText(false);
-      // The minted task must APPEAR. That is the last step of R-80 and the
-      // only part of the path a unit test cannot stand in for.
-      await loadTasks();
+      // R67 F-21: a Send re-ranks the pills server-side, so mark that ONE key
+      // stale rather than re-reading the whole shell.
+      invalidateShell("pillUsage");
+
+      // R67 F-26 (R-242). THE MINTED TASK MUST APPEAR -- and it now appears
+      // IMMEDIATELY, from this response, instead of after a 590-1740 ms re-read
+      // of fifty rows during which the pane showed nothing new.
+      //
+      // verdict is PER TASK, not per submission (see this function's own
+      // comment above), so every minted row is placed independently; a
+      // chat-only submission mints none and nothing is inserted.
+      //
+      // R67 MERGE (lane B x lane F2): the per-task shape is B-01's, not the
+      // one F-26 was written against. `error: string` is GONE from
+      // TaskOutcome on the VERIDIAN side -- deliberately, so no caller can
+      // render a driver message verbatim -- and the structured
+      // {code, missing, context} `failure` replaces it. The optimistic row
+      // therefore carries `failure`, which is exactly what toTaskRow() already
+      // renders through task-errors.ts. Keeping `error` here would not have
+      // compiled, and mapping it to `legacyError` would have been worse: it
+      // would route a brand-new failure through the LEGACY prose path.
+      const minted = ((d?.tasks ?? []) as {
+        taskId: string;
+        functionId?: string | null;
+        status?: string | null;
+        failure?: { code?: string | null; missing?: string[]; context?: Record<string, string | number | null> | null } | null;
+        segmentText?: string | null;
+      }[]).filter((t) => typeof t.taskId === "string" && t.taskId);
+
+      let addedNeedsYou = 0;
+      let addedRunning = 0;
+      for (const task of minted) {
+        const api: ApiTask = {
+          id: task.taskId,
+          projectId,
+          functionId: task.functionId ?? null,
+          status: task.status ?? "in_progress",
+          failure: task.failure ?? null,
+          rawInput: task.segmentText ?? typed,
+          mode,
+        };
+        optimisticIdsRef.current.add(task.taskId);
+        upsertTask(api, true);
+        const group = groupForStatus(api.status);
+        if (group === "needsYou" || group === "blocked") addedNeedsYou += 1;
+        if (group === "running") addedRunning += 1;
+        // Only a row that has not settled is worth polling. runDirectTask
+        // executes synchronously, so a pill submission is frequently already
+        // done or blocked by the time this response lands.
+        if (!TERMINAL_TASK_STATUSES.has(api.status ?? "")) pollTaskRef.current(task.taskId, Date.now());
+      }
+      // The badge counts move with the rows, from THIS response -- reading them
+      // back from a second endpoint is how tabs and list drift apart.
+      if (minted.length > 0) {
+        // R67 MERGE (D-55 x F-26): a badge is null when the last read did not
+        // establish it, and a Send does not establish it either -- adding to
+        // an unknown total would mint the very number D-55 removed. So the
+        // optimistic bump applies only where there IS a count to bump.
+        setCounts((c) => ({
+          ...c,
+          home: c.home === null ? null : c.home + minted.length,
+          approval: c.approval === null ? null : c.approval + addedNeedsYou,
+          queue: c.queue === null ? null : c.queue + addedRunning,
+          // `done` is carried through untouched: a Send mints work, it never
+          // completes any, and A-10 reads counts.done as "has this account ever
+          // finished a task".
+        }));
+      }
+      // (A-10's setArmedCard/setAwaitingText resets moved to the top of this
+      // block; A-16's `await loadTasks()` is deliberately gone -- the minted
+      // rows are inserted from THIS response above, which is F-26's whole
+      // point. "The minted task must APPEAR" still holds, sooner.)
     } catch {
       setSubmitError("Couldn't reach the task service.");
     } finally {
       setSubmitting(false);
     }
-  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, loadTasks, router]);
+    // R67 MERGE (lane B x lane F2): the union of both lanes' dependencies. This
+    // body still calls loadTasks() (B-07's verdict branch) and router.push()
+    // (B-07's COMMAND verb) as well as upsertTask() (F-26's optimistic
+    // insert), so all three must be listed or this closure goes stale.
+  }, [draft, pendingFunctionId, mode, projectId, chainModule, submitting, upsertTask, loadTasks, router]);
 
   // A-07: pinning is how a user defeats the 7-day decay for work they know is
   // periodic (a month-end report used heavily on the 30th and invisible from
@@ -1678,14 +2184,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const tabs: TaskTab[] = [
-    { id: "home", label: "Home", count: counts.home },
-    { id: "approval-pending", label: "Approval Pending", count: counts.approval },
-    { id: "in-queue", label: "In Queue", count: counts.queue },
+    { id: "home", label: "Home", count: counts.home ?? undefined },
+    { id: "approval-pending", label: "Approval Pending", count: counts.approval ?? undefined },
+    { id: "in-queue", label: "In Queue", count: counts.queue ?? undefined },
     // M24: Completed and History carry no count -- nothing there needs action.
     { id: "completed", label: "Completed" },
     { id: "history", label: "History" },
   ];
   const [activeTab, setActiveTab] = useState<TaskTab["id"]>("home");
+
+  // "Couldn't load your tasks - ... (UPSTREAM_TIMEOUT)." from the same
+  // dictionary a failed task row uses. Never "Nothing is waiting on you."
+  const taskReadError = tasksError ? describeReadError("your tasks", tasksError) : null;
 
   // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
   // written to the URL -- a hard reload always fell back to "home", the
@@ -1735,7 +2245,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // The rows are already newest-first: the route orders by created_at desc.
   const { needsYouRows, waitingRows } = useMemo(() => {
     const rows = (list: ApiTask[], group: "needsYou" | "running" | "done" | "blocked") =>
-      list.map((t) => toTaskRow(t, group, projectId));
+      list.map((t) => toTaskRow(t, group, projectId, projectNameById));
     switch (activeTab) {
       case "approval-pending":
         return { needsYouRows: rows(taskGroups.needsYou, "needsYou"), waitingRows: [] };
@@ -1755,7 +2265,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 : t.status === "blocked"
                   ? "blocked"
                   : "needsYou";
-          const row = toTaskRow(t, group, projectId);
+          const row = toTaskRow(t, group, projectId, projectNameById);
           const key = `${row.verb} ${row.object}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -1773,7 +2283,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           waitingRows: [...rows(taskGroups.running, "running"), ...rows(taskGroups.done, "done")],
         };
     }
-  }, [activeTab, taskGroups, projectId]);
+  }, [activeTab, taskGroups, projectId, projectNameById]);
 
   // R67 A-02/A-06 -- NO STALE CHAIN ACROSS A NAVIGATION.
   //
@@ -2135,6 +2645,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // for the full mechanism this constant accounts for.
       composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
       topRail={
+        // MERGE NOTE: A-13's rail replaces F-18's inline cookie write here.
+        // chooseProject() already calls writeStoredProjectId() -- the one
+        // writer rememberSelectedProject() now delegates to -- and also syncs
+        // the URL, which the inline version did not. A-16's "Retry" calls
+        // refreshShell(), since F-21 replaced loadOrgInfo() with the
+        // bootstrap, and the bell renders from that same bootstrap.
+        //
         // The wrapper exists so the composer can put keyboard focus on the
         // project control when a click could not proceed without one (A-03):
         // the rail is where that decision is made, so that is where the user
@@ -2147,16 +2664,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           </Suspense>
           <TopRail
             brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
-            // A-16: "Organisation unavailable — [Retry]" when two attempts
-            // failed, "Loading…" until the first answers, and the name once it
-            // has. A lone "—" is not one of the reachable states any more.
+            // A-16: "Organisation unavailable - [Retry]" when two attempts
+            // failed, "Loading..." until the first answers, and the name once
+            // it has. A lone "-" is not one of the reachable states any more.
             organisation={
               <>
                 <span>{orgLabel.text}</span>
                 {orgLabel.retry && (
                   <button
                     type="button"
-                    onClick={() => void loadOrgInfo()}
+                    onClick={() => void refreshShell()}
                     className="veri-view-tab"
                     style={{ minHeight: 24 }}
                   >
@@ -2166,19 +2683,28 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               </>
             }
             project={railLabelProject}
-            onSwitchProject={() => {
-              // Cycles through real projects and back through the null state.
-              // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects')
-              // so CRM, pipeline and org-level work are reachable." The cycle
-              // starts from the project actually on show, which after A-03 may
-              // be the one the SCREEN resolved rather than the last one clicked.
-              if (projects.length === 0) return;
-              const i = projects.findIndex((p) => p.id === projectId);
-              const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-              chooseProject(next ? next.id : null);
-            }}
+            // R67 D-66/D-04 -- A REAL LIST, NOT A CYCLE. The rail's control was
+            // onSwitchProject: one click advanced to the NEXT project, so with
+            // five projects reaching the third cost three clicks and there was
+            // no moment at which the user could see what they were choosing
+            // from -- under a "▾" promising a menu that never opened. M24's own
+            // sentence is why that matters: "THE PROJECT MUST BE VISIBLE AT ALL
+            // TIMES ... logging progress against the wrong project is the most
+            // expensive mistake available in this product", and a control you
+            // cannot see the options of is how that mistake gets made.
+            //
+            // Choosing writes through A-13's chooseProject(), so every rule
+            // that answer already carries -- the remembered preference, the
+            // URL rewrite on a screen whose URL names the project, the
+            // deliberate departure from an object page -- applies unchanged.
+            projects={projects}
+            onSelectProject={(next) => chooseProject(next ? next.id : null)}
+            // R67 D-66: the breadcrumb's project name and the "pick a project"
+            // chooser card both open THIS list rather than each growing a
+            // switcher of their own.
+            openSignal={switcherOpenSignal}
             search={<SearchTrigger />}
-            alerts={<NotificationBell />}
+            alerts={<NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />}
             account={<AccountMenu email={info?.email} />}
           />
         </div>
@@ -2209,33 +2735,60 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <div className="min-h-0 flex-1">
-        {tasksError ? (
+        {taskReadError ? (
           // Never an empty list in place of an error -- that is the exact
           // defect this codebase has shipped repeatedly, and it makes a broken
-          // backend indistinguishable from "you have nothing to do". The
-          // backend's OWN words, with a retry that costs one click.
+          // backend indistinguishable from "you have nothing to do".
+          //
+          // R67 D-55/D-65: the kit's TaskMaster prints "Nothing is waiting on
+          // you." whenever BOTH lists are empty, so on a failure it is
+          // rendered only when real rows survive from an earlier read --
+          // greyed, and labelled with when they were true. The sentence comes
+          // from the one shared dictionary, and Retry re-issues the read
+          // rather than reloading the whole route.
           <div className="flex h-full flex-col">
-            <div className="m-2 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
-              {/* A-16 -- ONE LINE, then the backend's own words under it. The
-                  notice names the thing that failed in the user's language;
-                  the detail is kept because it is the only sentence that can
-                  tell an operator WHY, and hiding it in a tooltip would lose
-                  it. Retry calls the task read itself: the old control called
-                  router.refresh(), which re-renders a server component that
-                  does not own this list, so the one control offered on a
-                  failure could not actually retry it. */}
+            <div className="m-2 shrink-0 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+              {/* ONE LINE, then the backend's own words under it. The sentence
+                  is the shared dictionary's (src/lib/task-errors.ts), so
+                  "supabaseKey is required" reads here exactly as it does on
+                  every other screen, and a 401 is offered no Retry because
+                  retrying will not fix a permission. The detail is kept
+                  because it is the only sentence that can tell an operator
+                  WHY, and hiding it in a tooltip would lose it.
+
+                  A-16: Retry calls the task read itself. The old control
+                  called router.refresh(), which re-renders a server component
+                  that does not own this list -- so the one control offered on
+                  a failure could not actually retry it. */}
               <p role="alert" className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
-                <span>{TASKS_UNAVAILABLE}</span>
-                <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
-                  Retry
-                </button>
+                <span>{taskReadError.sentence}</span>
+                {taskReadError.retryable && (
+                  <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
+                    Retry
+                  </button>
+                )}
               </p>
-              {tasksError && (
+              {taskReadError.detail && (
                 <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
-                  {tasksError}
+                  {taskReadError.detail}
                 </p>
               )}
             </div>
+            {needsYouRows.length + waitingRows.length > 0 && (
+              <div className="min-h-0 flex-1 opacity-70">
+                <p className="px-3 pb-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  Showing what loaded {asOfLabel(tasksLoadedAt) ?? "earlier"}.
+                </p>
+                <TaskMaster
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                  needsYou={needsYouRows}
+                  waitingOnOthers={waitingRows}
+                  onLoad={onLoadChain}
+                />
+              </div>
+            )}
           </div>
         ) : (
         <TaskMaster
@@ -2248,6 +2801,23 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
         )}
           </div>
+          {/* R67 F-26 (R-242): the pane now loads 20 rows, not 50, and says so.
+              Rendered ONLY when the backend handed back a cursor -- a control
+              that loads nothing is a dead end, and M24 forbids dead ends. It
+              sits below the kit's TaskMaster rather than inside it, so no kit
+              file is forked for one button. */}
+          {!tasksError && nextCursor && (
+            <div className="shrink-0 border-t px-2 py-1.5" style={{ borderColor: "var(--color-ct-border)" }}>
+              <button
+                type="button"
+                className="veri-view-tab w-full"
+                onClick={() => void loadTasks(nextCursor)}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading…" : `Show ${TASK_PAGE_SIZE} more`}
+              </button>
+            </div>
+          )}
         </div>
       }
       composer={
@@ -2352,25 +2922,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
-          // R67 A-01: ONE state-derived sentence. It renders in the strip and
-          // is reused verbatim as this button's tooltip and accessible name --
-          // it is never printed twice, and the four strings it replaces
-          // ("Select a module to begin", "Pick a project or a module first",
-          // and the two placeholders below) are gone.
+          // R67 A-01/A-19: ONE state-derived sentence, rendered in the strip
+          // and reused verbatim as this button's tooltip and accessible name.
           //
-          // THIS REPLACES LANE G'S disabledReason/emptyInputReason/
-          // allowEmptySubmit TRIO (r67(G) #229) RATHER THAN SITTING BESIDE IT,
-          // and the replacement is deliberate. G's rule was "there is no state
-          // in which Send is dead and unexplained", and it bought that with a
-          // separate sentence rendered next to the button. Those props do not
-          // exist on this fork any more: A-19 moved the explanation INTO the
-          // button's own label ("Send (pick a project, say what you need)"),
-          // which keeps G's rule and makes it stronger -- the words are now the
-          // control's accessible name, so a screen reader announces the same
-          // sentence the eye reads, and the empty-input state G had to add
-          // emptyInputReason for is one of the things missingThings() lists.
-          // Keeping both mechanisms would print the reason twice, which is the
-          // duplicate-instruction defect BOTH lanes were sent to remove.
+          // THIS REPLACES THIS LANE'S disabledReason PROP, which the forked
+          // Composer no longer accepts. The rule D-66 attached to it -- "the
+          // reason names the RAIL, because that is where a project is chosen,
+          // rather than leaving the user to find the control" -- is not lost:
+          // A-03 moves keyboard focus to the rail's project control when a
+          // click cannot proceed without one, which is the same instruction
+          // acted on rather than merely written down.
           instruction={instruction}
           // A-10: the button is named for what it will do, and never becomes
           // "Sending..." -- a spinner sits beside it instead.
@@ -2421,7 +2982,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {children}
+      {/* R67 D-66: everything under the shell -- every module page, every
+          breadcrumb, every chooser card -- reads the project from here.
+          Nothing below this line derives its own. */}
+      <ProjectScopeProvider value={projectScope}>{children}</ProjectScopeProvider>
     </AppShell>
   );
 }

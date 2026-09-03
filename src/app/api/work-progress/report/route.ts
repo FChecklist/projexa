@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
@@ -25,7 +27,7 @@ type VeridianVendor = { id: string; vendorName: string };
 // vendors) -- see PROGRESS.md for why this needs 5 separate VERIDIAN calls
 // instead of one: PROJEXA stores no construction domain data itself, and
 // each of these was already its own real, separately-scoped endpoint.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -119,9 +121,6 @@ export async function GET(request: NextRequest) {
       byVendor,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to generate work progress report");
   }
-}
+});

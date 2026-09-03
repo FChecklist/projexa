@@ -1,5 +1,15 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2, item F-24 / audit R-240). The entries table on
+// this tab used to sit on "Loading..." indefinitely, because the read only
+// settled after a SERIAL tail of /api/scope plus one /api/scope/{id}, fetched
+// purely to translate the BOQ column. Those two calls are gone: VERIDIAN sends
+// activityName / boqItemCode / boqDescription with each entry now
+// (compliance-tracker #1579), so the table renders as soon as the entries do.
+// Lane D0's own work here -- the tested reads module, metricLabel()'s en-dash
+// over a failed read, and the chart and the table each owning their own
+// failure -- is untouched.
+
 // R42 seq24 (M28 ANALYTICAL archetype) -- the real destination
 // DASHBOARD.PROJECT's "% Complete by Value" and category-bar KPIs link to
 // (GLOBAL: "a KPI with no destination MUST NOT SHIP"). Chart above,
@@ -9,35 +19,71 @@
 // D-5 this pass delivers without full saved-view persistence -- see
 // AnalyticalScreen.tsx's own scope note).
 //
-// R67 D-29 (audit R-070/R-080). Three defects, all in this file's load().
+// R67 D-55 / D-65 -- THE FAULT THIS SCREEN CARRIED. Its load() read four
+// endpoints with `fetch(...).then((r) => r.json())` and never looked at a
+// single status. On a 500 the three KPI tiles rendered
 //
-// 1. NO CATCH ANYWHERE. Three reads in a Promise.all, then /api/scope and
-//    /api/scope/:id awaited serially, with setLoading(false) on the last line
-//    of the happy path. A BOQ fetch that rejected left the table on "Loading…"
-//    for the rest of the session -- no error, no retry, nothing to click.
-// 2. KPI FIGURES ABOVE A LOADING TABLE. The tags rendered from the first render
-//    onward, so "Total entries 0 / Avg 0% / Categories 0" was on screen as fact
-//    while the reads behind them were still running -- and stayed there forever
-//    in case 1. A figure may only be shown once the read behind it succeeded.
-// 3. THE TABLE WAITED ON THE BOQ. Entries resolve first and are all the table
-//    needs; the BOQ supplies only the "BOQ line" column's labels. It now renders
-//    as soon as the entries arrive.
+//     Total entries  0        Avg % Complete (Activity Log)  0%
+//     Categories     0
 //
-// Also: Filter and Export were passed to BOTH this AnalyticalScreen and the
-// nested WorkProgressListClient's own ScreenFrame, so one screen showed two
-// disabled Filter buttons and two disabled Export buttons.
+// which is R-002/R-019 exactly: a failed GET rendered as a number. A tile is
+// worse than a false empty list, because a figure carries no hint that
+// anything was ever asked for -- and this is the tile a project manager
+// reads to decide whether the site is behind. There was also no catch on the
+// batch at all, so a THROWN read left `loading` true forever and the pane
+// spun with no error and no way out.
+//
+// Now: the reads come from src/lib/work-progress-reads.ts, every figure goes
+// through metricLabel() (an en-dash unless a 200 established it), and the
+// chart and the table each say what happened to their own read.
+//
+// R67 MERGE (lane D1, folded onto that canonical data layer). Lane D1 filed the
+// same three defects against this same load() as D-29 (audit R-070/R-080), and
+// rewrote it against its own SourceStatus type. Under decision D-11 main's data
+// layer is canonical, and it already answers all three:
+//
+//   * "no catch anywhere" -- readWorkProgress()/readCategoryProgress() return
+//     outcomes and do not throw, and each is settled independently.
+//   * "KPI figures above a loading table" -- every tile is metricLabel()'d.
+//     Lane D1 HID the tiles until their read succeeded; main renders the label
+//     with an en-dash instead. Main's is kept on merit: the tile keeps its
+//     place (nothing on the screen moves when the figure lands) and the reader
+//     is told which figure is missing rather than being shown a shorter row and
+//     left to notice. Neither version ever prints a zero over a failure, which
+//     is the actual rule.
+//   * "the table waited on the BOQ" -- there is no BOQ read left to wait on.
+//
+// Three things lane D1 had that main did not, all folded in here:
+//
+//   * D-29's DOUBLE HEADER. Filter and Export were passed to this
+//     AnalyticalScreen AND to the nested WorkProgressListClient's own
+//     ScreenFrame, so one screen carried two disabled Filter buttons and two
+//     disabled Export buttons saying the same thing. `framed={false}` below.
+//   * D-29's KPI CAPTION. Two figures measured differently sit side by side --
+//     a flat average over entries, and a value-weighted bar per category -- and
+//     nothing on the screen said so. KPI_CAPTION is exported so the wording is
+//     asserted rather than trusted.
+//   * D-29's NON-FATAL SOURCE. An activity lookup that failed without taking
+//     the table down still owes the user its reason and a Retry; work-progress
+//     reads.ts already carries `activitiesError` for exactly this (folded there
+//     by the same merge), and this screen now says it, the same way
+//     WorkProgressPageClient does.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, BarChart, KpiTag, type BarChartDatum } from "@fchecklist/veridian-ui-kit/screens";
 import WorkProgressListClient from "./WorkProgressListClient";
-import { currentBoq } from "./WorkProgressPageClient";
-import { fetchJson } from "@/lib/fetch-json";
-import { SOURCE_LOADING, SOURCE_OK, errorTexts, mayShowFigure, sourceError, type SourceStatus } from "@/lib/source-status";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { metricLabel, type PaneStatus } from "@/lib/pane-state";
+import {
+  averagePercentComplete,
+  readCategoryProgress,
+  readWorkProgress,
+  type CategoryProgress,
+  type ProgressActivity,
+  type ProgressEntry,
+} from "@/lib/work-progress-reads";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
-type Activity = { id: string; name: string; categoryId: string | null };
-type CategoryProgress = { categoryId: string; name: string; percentComplete: number };
-type LineItem = { id: string; itemCode: string | null; description: string };
+type ReadError = { status: number | null; message: string | null } | null;
 
 /**
  * R67 D-29. Two different figures are shown side by side -- a flat average over
@@ -47,148 +93,156 @@ type LineItem = { id: string; itemCode: string | null; description: string };
  */
 export const KPI_CAPTION = "Avg % is a flat average of entries; the bar is value-weighted per category";
 
-export default function WorkProgressAnalyticalClient({ projectId }: { projectId: string }) {
+export default function WorkProgressAnalyticalClient({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName?: string | null;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const categoryFilter = searchParams.get("category");
 
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const [entries, setEntries] = useState<ProgressEntry[]>([]);
+  const [activities, setActivities] = useState<ProgressActivity[]>([]);
   const [categories, setCategories] = useState<CategoryProgress[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [entriesStatus, setEntriesStatus] = useState<SourceStatus>(SOURCE_LOADING);
-  const [activitiesStatus, setActivitiesStatus] = useState<SourceStatus>(SOURCE_LOADING);
-  const [categoriesStatus, setCategoriesStatus] = useState<SourceStatus>(SOURCE_LOADING);
-  const [boqStatus, setBoqStatus] = useState<SourceStatus>(SOURCE_LOADING);
+
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [error, setError] = useState<ReadError>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  // R67 D-29 (lane D1, folded in): the activity lookup is NOT fatal to this
+  // screen -- the entry rows carry their own activity name now -- but a lookup
+  // that failed silently is how a row ends up rendering a raw id with nothing
+  // admitting a read failed.
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
+
+  // The chart's read is tracked separately from the table's, because they
+  // are separate endpoints and one failing tells you nothing about the
+  // other. Folding them into one flag is how a working table ends up hidden
+  // behind a chart's error.
+  const [chartStatus, setChartStatus] = useState<PaneStatus>("loading");
+  const [chartError, setChartError] = useState<ReadError>(null);
 
   const load = useCallback(async () => {
-    setEntriesStatus(SOURCE_LOADING);
-    setActivitiesStatus(SOURCE_LOADING);
-    setCategoriesStatus(SOURCE_LOADING);
-    setBoqStatus(SOURCE_LOADING);
+    setStatus("loading");
+    setChartStatus("loading");
+    setStartedAt(Date.now());
+    setError(null);
+    setChartError(null);
 
-    const [entriesRes, activitiesRes, catRes] = await Promise.allSettled([
-      fetchJson<{ entries?: Entry[] }>(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ activities?: Activity[] }>(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ categories?: CategoryProgress[] }>(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`),
+    const [main, chart] = await Promise.all([
+      readWorkProgress(projectId),
+      readCategoryProgress(projectId),
     ]);
 
-    if (entriesRes.status === "fulfilled") {
-      setEntries(entriesRes.value.entries ?? []);
-      setEntriesStatus(SOURCE_OK);
+    setActivities(main.activities);
+    setActivitiesError(main.activitiesError);
+    if (main.entries.status === "error") {
+      setError({ status: main.entries.httpStatus, message: main.entries.message });
+      setStatus("error");
     } else {
-      setEntries([]);
-      setEntriesStatus(sourceError(entriesRes.reason, "Could not load progress entries"));
+      setEntries(main.entries.status === "ready" ? main.entries.rows : []);
+      setLoadedAt(new Date());
+      setStatus("ready");
     }
 
-    if (activitiesRes.status === "fulfilled") {
-      setActivities(activitiesRes.value.activities ?? []);
-      setActivitiesStatus(SOURCE_OK);
+    if (chart.status === "error") {
+      setChartError({ status: chart.httpStatus, message: chart.message });
+      setChartStatus("error");
     } else {
-      setActivities([]);
-      setActivitiesStatus(sourceError(activitiesRes.reason, "Could not load activities"));
-    }
-
-    if (catRes.status === "fulfilled") {
-      setCategories(catRes.value.categories ?? []);
-      setCategoriesStatus(SOURCE_OK);
-    } else {
-      setCategories([]);
-      setCategoriesStatus(sourceError(catRes.reason, "Could not load category progress"));
-    }
-
-    // Last, and deliberately after the table already has what it needs: the BOQ
-    // supplies the "BOQ line" column's labels and nothing else.
-    try {
-      const boqsRes = await fetchJson<{ boqs?: { id: string; version: number; status: string }[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      const current = currentBoq(boqsRes.boqs ?? []);
-      if (current) {
-        const boq = await fetchJson<{ lineItems?: LineItem[] }>(`/api/scope/${current.id}`);
-        setLineItems(boq.lineItems ?? []);
-      } else {
-        setLineItems([]);
-      }
-      setBoqStatus(SOURCE_OK);
-    } catch (err) {
-      setLineItems([]);
-      setBoqStatus(sourceError(err, "Could not load the BOQ line names"));
+      setCategories(chart.status === "ready" ? chart.rows : []);
+      setChartStatus("ready");
     }
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const activityById = new Map(activities.map((a) => [a.id, a]));
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   const selectedCategoryId = categoryFilter ? categories.find((c) => c.name === categoryFilter)?.categoryId : undefined;
   const filteredEntries = selectedCategoryId
     ? entries.filter((e) => activityById.get(e.activityId)?.categoryId === selectedCategoryId)
     : entries;
 
-  const avgPercent = entries.length > 0 ? Math.round(entries.reduce((s, e) => s + Number(e.percentComplete), 0) / entries.length) : 0;
+  const avgPercent = averagePercentComplete(entries);
   const bars: BarChartDatum[] = categories.map((c) => ({ label: c.name, value: c.percentComplete }));
-
-  // A figure is a claim, and a claim needs a read that succeeded behind it. The
-  // entry-derived tags wait on the entries; the Categories tag waits on the
-  // category read. Nothing here waits on the BOQ, which none of them use.
-  const showEntryFigures = mayShowFigure(entriesStatus);
-  const showCategoryFigures = mayShowFigure(categoriesStatus);
-  const problems = errorTexts(activitiesStatus, categoriesStatus, boqStatus);
 
   return (
     <AnalyticalScreen
       breadcrumb="Work Progress / Analytics"
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering the progress analytics is not built yet" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting the progress analytics is not built yet" }}
       newAction={undefined}
       kpiTags={
         <div className="space-y-1.5">
           <div className="flex flex-wrap gap-2">
-            {showEntryFigures && <KpiTag label="Total entries" value={String(entries.length)} />}
+            {/* Every figure below is metricLabel()'d: an en-dash unless the
+                read that would establish it actually returned 200. */}
+            <KpiTag label="Total entries" value={metricLabel(status, entries.length)} />
             {/* CONS-01 (R46 P4 consistency sweep): this is a flat, BOQ-agnostic
                 average of percentComplete across every raw work-progress entry
                 ever logged (no value-weighting, no current-BOQ scoping) --
                 genuinely a different metric than Dashboard's "% Complete by
                 BOQ Value" (value-weighted against the current BOQ revision
-                only). The two are intentionally distinct, not a bug to
-                reconcile into one number, so this label calls out exactly what
-                it is measuring. R67 D-29 adds the caption below, because the
-                bar chart beside it uses the OTHER measure. */}
-            {showEntryFigures && <KpiTag label="Avg % Complete (Activity Log)" value={`${avgPercent}%`} />}
-            {showCategoryFigures && <KpiTag label="Categories" value={String(categories.length)} />}
-            {!showEntryFigures && !showCategoryFigures && (
-              <span className="text-[12.5px] text-ct-muted">
-                {entriesStatus.state === "loading" ? "Working out the figures…" : "Figures unavailable — see below."}
-              </span>
-            )}
+                only), which is where this screen's own kpiTags docstring
+                above says the Dashboard's KPI links to. The two are
+                intentionally distinct, not a bug to reconcile into one
+                number, so this label calls out exactly what it is measuring
+                instead of a bare "Avg % complete" that reads as the same
+                headline figure as Dashboard's when it is not. R67 D-29 adds
+                the caption below, because the bar chart beside it uses the
+                OTHER measure and the screen never said so. */}
+            <KpiTag label="Avg % Complete (Activity Log)" value={metricLabel(status, avgPercent, "%")} />
+            <KpiTag label="Categories" value={metricLabel(chartStatus, categories.length)} />
           </div>
-          {(showEntryFigures || showCategoryFigures) && (
-            <p className="text-[12.5px] text-ct-muted">{KPI_CAPTION}</p>
-          )}
-          {problems.length > 0 && (
-            // A source that failed WITHOUT taking the table down still owes the
-            // user its reason and a way to try again -- losing the BOQ costs the
-            // "BOQ line" column its names, and a silently missing lookup is how
-            // a line ends up rendering as a raw id.
+          <p className="text-[12.5px] text-px-muted">{KPI_CAPTION}</p>
+          {activitiesError && (
+            // R67 D-29: a source that failed WITHOUT taking the table down
+            // still owes the user its reason and a way to try again. Same
+            // sentence WorkProgressPageClient shows, for the same read.
             <p role="status" className="text-[12.5px] text-px-error">
-              {problems.join(" ")}{" "}
-              <button type="button" onClick={() => void load()} className="underline underline-offset-2">Retry</button>
+              {activitiesError} Activity names may show as ids below.{" "}
+              <button type="button" onClick={() => void load()} className="underline underline-offset-2">
+                Retry
+              </button>
             </p>
           )}
         </div>
       }
       drillSlices={categoryFilter ? [{ label: categoryFilter, onRemove: () => router.push(`/work-progress?projectId=${projectId}&tab=analytics`) }] : []}
-      chart={<BarChart data={bars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />}
+      chart={
+        chartStatus === "error" ? (
+          <PaneErrorCard entity="the category breakdown" error={chartError} onRetry={() => void load()} />
+        ) : chartStatus === "loading" && categories.length === 0 ? (
+          <PaneWaitingCaption
+            startedAt={startedAt}
+            entity="the category breakdown"
+            projectName={projectName}
+            onRetry={() => void load()}
+          />
+        ) : (
+          <BarChart data={bars} unit="%" onBarClick={(d) => router.push(`/work-progress?projectId=${projectId}&tab=analytics&category=${encodeURIComponent(d.label)}`)} />
+        )
+      }
       table={
         <WorkProgressListClient
+          projectId={projectId}
+          projectName={projectName}
           entries={filteredEntries}
           activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
-          // The table follows the ENTRIES alone: it renders as soon as they
-          // arrive rather than waiting on the BOQ that only labels one column.
-          status={entriesStatus}
+          status={status}
+          error={error}
           onRetry={() => void load()}
+          loadedAt={loadedAt}
+          startedAt={startedAt}
+          // R67 D-29: this screen already drew Filter | Export above. Two
+          // frames meant two disabled Filter buttons and two disabled Export
+          // buttons on one screen, both saying the same thing.
           framed={false}
         />
       }

@@ -116,6 +116,148 @@ function unguardedBatchFiles(source: string): boolean {
   return false;
 }
 
+/**
+ * R67 D-55 / D-71 -- THE THIRD SHAPE, and the one that let the defect
+ * survive this guard for a whole release.
+ *
+ *     fetch(`/api/work-progress?projectId=${id}`)
+ *       .then((r) => r.json())
+ *       .then((data) => setEntries(data.entries ?? []))
+ *
+ * Identical fault, invisible to both checks above: there is no
+ * `const res = await fetch(...)` to anchor on, and no `Promise.all([`
+ * either when the chain stands alone. /work-progress, its analytics tab and
+ * /documents all carried it, and all three printed a confident empty state
+ * over a 500 while this file's other two tests passed.
+ *
+ * The window is the whole promise CHAIN, found by BRACKET DEPTH rather than
+ * by looking for a terminating semicolon. The first version of this detector
+ * used "the first line ending in `;`" and produced a false positive on
+ * ScheduleLogTimeClient.tsx, which is written correctly:
+ *
+ *     fetch(url)
+ *       .then(async (res) => {
+ *         const data = await res.json().catch(() => null);   <- ends in ';'
+ *         if (!res.ok) throw new Error(...);                 <- the .ok is HERE
+ *       })
+ *
+ * The semicolon that closed the window was an inner statement inside the
+ * callback body, so the window stopped one line before the status check it
+ * was looking for. Counting `(`/`)` and `{`/`}` from the `fetch(` line, and
+ * then continuing over any following `.then`/`.catch`/`.finally`, covers the
+ * callback bodies too. A `.ok` anywhere in that chain clears the site, which
+ * is the correct signal: reading the status is exactly what the chain has to
+ * do, wherever in it that happens.
+ *
+ * Writes are skipped for the same reason as unguardedSites(): a fetch
+ * carrying an options object is a POST/PATCH/DELETE, and those already read
+ * their status in this codebase.
+ */
+function unguardedChainSites(source: string): string[] {
+  const lines = source.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!/\bfetch\(/.test(line)) continue;
+    if (/^\s*(\/\/|\*)/.test(line)) continue; // a comment describing the defect, not the defect
+    if (line.includes(", {") || /,\s*$/.test(line)) continue; // a write, or a multi-line call with options
+
+    let depth = 0;
+    let chain = "";
+    let started = false;
+    const hardStop = Math.min(lines.length, i + 40);
+    for (let j = i; j < hardStop; j++) {
+      chain += lines[j] + "\n";
+      for (const ch of lines[j]) {
+        if (ch === "(" || ch === "{") { depth++; started = true; }
+        else if (ch === ")" || ch === "}") depth--;
+      }
+      if (!started || depth > 0) continue;
+      // Depth is balanced. Keep going only while the chain literally
+      // continues onto the next line.
+      if (/^\s*\.(then|catch|finally)\b/.test(lines[j + 1] ?? "")) continue;
+      break;
+    }
+
+    if (!/\.json\(\)/.test(chain)) continue;
+    if (/\.ok\b/.test(chain)) continue;
+    found.push(`line ${i + 1}: ${line.trim()}`);
+  }
+  return found;
+}
+
+/**
+ * R67 D-03 -- THE FOURTH SHAPE: reads the status, then throws the failure away.
+ *
+ *     async function getJson<T>(url: string): Promise<T | null> {
+ *       const res = await fetch(url);
+ *       if (!res.ok) return null;
+ *       return res.json();
+ *     }
+ *
+ * DashboardHierarchyClient.tsx carried exactly this, and it slipped past all
+ * three checks above for the same reason each of them exists: the first two
+ * clear a site the moment they see `res.ok` anywhere in the window, and this
+ * one DOES read it -- it just answers a 500 with `null`, which every caller
+ * then discarded with `if (!data) return;`. The result on screen was "No
+ * company memberships found for this account." over a refused request.
+ *
+ * "Reading the status" is not the property that matters; ACTING on it is. A
+ * non-ok branch that resolves to null, undefined or an empty literal has
+ * erased the failure just as completely as never having looked. Throwing,
+ * recording a message, or returning a discriminated `{ ok: false }` all clear
+ * the site -- what is flagged is only the branch that resolves to nothing.
+ *
+ * Writes are skipped for the same reason as unguardedSites().
+ */
+function discardedStatusSites(source: string): string[] {
+  const lines = source.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+fetch\((.+)\);\s*$/.exec(lines[i]);
+    if (!m) continue;
+    const [, varName, args] = m;
+    if (args.trimEnd().endsWith("}") || args.includes(", {")) continue; // a write call
+    const window = lines.slice(i, i + 12).join("\n");
+    // Single-line and braced forms of the same discard.
+    const discard = new RegExp(
+      `if\\s*\\(\\s*!\\s*${varName}\\.ok\\s*\\)\\s*(?:\\{\\s*)?return\\s*(?:null|undefined|\\[\\s*\\]|\\{\\s*\\})?\\s*;`
+    );
+    if (discard.test(window)) found.push(`line ${i + 1}: ${lines[i].trim()}`);
+  }
+  return found;
+}
+
+/**
+ * Files that still carry the chain shape, each named with the module it
+ * belongs to. THIS LIST MAY ONLY SHRINK. It is not a suppression: the guard
+ * above is what stops a NEW one being written, and every entry here is a
+ * screen whose own WS-D item owns the conversion (each of these is an ERP
+ * module -- sales, purchasing, accounting, settings -- outside the
+ * construction surfaces R-184 and R-293 measured).
+ *
+ * Removed by R67 D-55: WorkProgressPageClient, WorkProgressAnalyticalClient,
+ * WorkProgressFormClient, DocumentsClient.
+ * Removed by R67 D-67: ScheduleTaskCreateClient (migrated to CreateScreen,
+ * which reads through fetchJson).
+ */
+const CHAIN_SHAPE_NOT_YET_CONVERTED = new Set([
+  "CompanyCreateClient.tsx",
+  // R67 D-62 deleted CostVarianceAnalyticalClient.tsx -- the Scope module's
+  // second tab is PROJEXA's project budget and is now the editable
+  // BudgetAnalyticalClient. This guard fails on a stale allowlist entry
+  // ("no such component -- delete the entry"), so the entry goes with it.
+  "JournalEntryCreateClient.tsx",
+  "OpportunitiesClient.tsx",
+  "OpportunityCreateClient.tsx",
+  "PurchaseOrderCreateClient.tsx",
+  "PurchaseOrdersClient.tsx",
+  "SalesDashboardClient.tsx",
+  "SalesOrderCreateClient.tsx",
+  "SalesQuotationCreateClient.tsx",
+  "SettingsClient.tsx",
+]);
+
 describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
   const files = clientComponents();
 
@@ -140,6 +282,144 @@ describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
       .filter((f) => unguardedBatchFiles(readFileSync(f, "utf8")))
       .map((f) => f.replace(process.cwd(), ""));
     expect(offenders).toEqual([]);
+  });
+
+  test("no client component chains .then(r => r.json()) without reading the status", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const base = f.split(/[\\/]/).pop() ?? f;
+      if (CHAIN_SHAPE_NOT_YET_CONVERTED.has(base)) continue;
+      const sites = unguardedChainSites(readFileSync(f, "utf8"));
+      if (sites.length > 0) offenders.push(`${f.replace(process.cwd(), "")}\n    ${sites.join("\n    ")}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("no client component reads the status and then answers a failure with nothing", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const sites = discardedStatusSites(readFileSync(f, "utf8"));
+      if (sites.length > 0) offenders.push(`${f.replace(process.cwd(), "")}\n    ${sites.join("\n    ")}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("the discarded-status detector actually detects -- proven on a synthetic bad case", () => {
+    // Exactly what DashboardHierarchyClient.tsx carried before R67 D-03.
+    const bad = `"use client";
+      async function getJson<T>(url: string): Promise<T | null> {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return res.json();
+      }`;
+    expect(discardedStatusSites(bad)).toHaveLength(1);
+
+    const badBraced = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          return [];
+        }
+        return res.json();
+      }`;
+    expect(discardedStatusSites(badBraced)).toHaveLength(1);
+
+    // ACTING on the status clears the site, in each of the three ways this
+    // codebase actually does it.
+    const throws = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("failed");
+        return res.json();
+      }`;
+    expect(discardedStatusSites(throws)).toEqual([]);
+
+    const records = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          setLoadError(await res.text());
+          return;
+        }
+        return res.json();
+      }`;
+    expect(discardedStatusSites(records)).toEqual([]);
+
+    const discriminated = `"use client";
+      async function load(url: string) {
+        const res = await fetch(url);
+        if (!res.ok) return { ok: false, message: String(res.status) };
+        return { ok: true, data: await res.json() };
+      }`;
+    expect(discardedStatusSites(discriminated)).toEqual([]);
+
+    // ...and the file the fix landed in is clean, read from disk rather than
+    // asserted from memory.
+    const fixed = readFileSync(join(COMPONENTS, "DashboardHierarchyClient.tsx"), "utf8");
+    expect(discardedStatusSites(fixed)).toEqual([]);
+    // The whole point of the fix, in one line: the empty sentence is now
+    // gated on an outcome rather than on an array's length.
+    expect(fixed).toContain("mayShowEmptyState(companiesStatus, companies.length)");
+  });
+
+  test("the known-offender list may only shrink -- an entry that is clean must be removed", () => {
+    // Without this, a file could be converted and left on the list, and the
+    // list would stop describing reality. Every name here must still carry
+    // the shape it is excusing.
+    const byBase = new Map(files.map((f) => [f.split(/[\\/]/).pop() ?? f, f]));
+    const stale: string[] = [];
+    for (const base of CHAIN_SHAPE_NOT_YET_CONVERTED) {
+      const full = byBase.get(base);
+      if (!full) {
+        stale.push(`${base} (no such component -- delete the entry)`);
+        continue;
+      }
+      if (unguardedChainSites(readFileSync(full, "utf8")).length === 0) {
+        stale.push(`${base} (already clean -- delete the entry)`);
+      }
+    }
+    expect(stale).toEqual([]);
+  });
+
+  test("the chain detector actually detects -- proven on a synthetic bad case", () => {
+    // A guard whose detector silently stopped matching would pass forever.
+    const bad = `"use client";
+      function load() {
+        fetch("/api/permits?projectId=1")
+          .then((r) => r.json())
+          .then((data) => setPermits(data.permits ?? []));
+      }`;
+    expect(unguardedChainSites(bad)).toHaveLength(1);
+
+    const good = `"use client";
+      function load() {
+        fetch("/api/permits?projectId=1")
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
+          .then((data) => setPermits(data.permits));
+      }`;
+    expect(unguardedChainSites(good)).toEqual([]);
+
+    const write = `"use client";
+      async function save() {
+        const res = await fetch("/api/permits", { method: "POST", body });
+        const data = await res.json();
+      }`;
+    expect(unguardedChainSites(write)).toEqual([]);
+
+    // The false positive the first version of this detector produced: the
+    // status check sits AFTER an inner statement that ends in a semicolon,
+    // inside the callback body.
+    const okInsideCallback = `"use client";
+      function load() {
+        fetch(\`/api/schedule/tasks?projectId=\${id}\`)
+          .then(async (res) => {
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error("failed");
+            setTasks(data.tasks);
+          })
+          .catch(() => setTasksError(true));
+      }`;
+    expect(unguardedChainSites(okInsideCallback)).toEqual([]);
   });
 
   test("fetchJson actually throws on a non-2xx, carrying the backend's own message", async () => {

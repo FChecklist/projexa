@@ -13,7 +13,7 @@
 // plus, so the label is the plain word "New" -- C01-13). The 3D builder is a
 // TAB, not a rival primary action, and it carries the one line that says what
 // it is for.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ListScreen,
@@ -21,14 +21,34 @@ import {
   type FieldMessage,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+// errorMessage() is still the right tool for a failed WRITE (the register
+// export below): paneError()'s dictionary describes a failed READ of a list,
+// and its sentences do not fit an action the user just took.
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+// R67 MERGE (lane D0's D-71 x lane D1's D-10/D-12). This screen keeps lane D1's
+// ScreenFrame + ListScreen shape -- it is a genuine superset of the shared list
+// archetype (a tab strip, removable filter chips, a "Showing n of m" that reads
+// a SECOND unfiltered register) -- so it does not adopt PaneState. What it does
+// adopt is PaneState's DICTIONARY. errorMessage() pasted the transport's raw
+// words after a fixed prefix, which is how "supabaseKey is required." reached a
+// user on the one screen whose rows come out of the file store. paneError()
+// gives the same failure a closed-vocabulary sentence and keeps the backend's
+// own words underneath ONLY when they are safe to show -- so lane D1's
+// requirement (the backend's real reason is visible, not swallowed) and lane
+// D0's (an internal message never reaches a user) are both satisfied by one
+// call instead of trading one off against the other.
+import { paneError } from "@/lib/pane-state";
 import { formatDate } from "@/lib/format-date";
 import { readListFilters, writeListFilters } from "@/lib/list-view-state";
 import { takeScreenMessage } from "@/lib/screen-message";
 import { statusPresentation } from "@/lib/drawing-status";
 import DataLoadError from "@/components/DataLoadError";
 
-type Drawing = {
+// R67 F-18: exported so drawings/page.tsx can type the rows it fetches
+// server-side and hands back as `initial`. The merge dropped the keyword while
+// keeping that call site (`fetchDrawingsList<Drawing>`), the same way
+// DocumentsClient exports its own `Doc` for the same reason.
+export type Drawing = {
   id: string;
   name: string;
   kind: "dwg" | "3d_walkthrough";
@@ -121,24 +141,40 @@ export function activeFilterChips(filters: DrawingFilters): { key: keyof Drawing
 export default function DrawingsClient({
   projectId,
   projectName,
-  fellBack,
   registryColumns,
+  initial = null,
 }: {
   projectId: string;
   /** D-07's rule, applied here too: a screen names the project it queried. */
-  projectName?: string;
-  fellBack?: boolean;
+  projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18 (lane F2, folded in). What drawings/page.tsx already fetched on the
+   * server inside its Suspense boundary. Present, this screen paints those rows
+   * with NO round trip of its own on first paint; a server-side failure seeds
+   * the error state, never a spinner and never an empty table. Only the FIRST,
+   * unfiltered read is seeded -- changing a filter is exactly the case that
+   * should go to the network.
+   *
+   * Lane D1's own `fellBack` prop is gone: the fact it carried (the project was
+   * chosen FOR the user) is now stated once, on the page's heading, rather than
+   * a second time inside the pane.
+   */
+  initial?: { rows?: Drawing[] | null; error?: string | null } | null;
 }) {
   const router = useRouter();
   const base = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const columns = [...base, ...(base.some((c) => c.field === FILE_COLUMN.field) ? [] : [FILE_COLUMN])];
 
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [drawings, setDrawings] = useState<Drawing[]>(initial?.rows ?? []);
+  const [loading, setLoading] = useState(!initial);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(initial?.error ?? null);
   const [filters, setFilters] = useState<DrawingFilters>(DEFAULT_FILTERS);
+  // R67 F-18: true until the first client read runs. The seeded rows are the
+  // answer for the FIRST render only, so this skips exactly one fetch and every
+  // later filter change reads normally.
+  const seeded = useRef(initial !== null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [knownDisciplines, setKnownDisciplines] = useState<string[]>([]);
@@ -189,8 +225,15 @@ export default function DrawingsClient({
         // not look identical -- and the backend's own words are shown, in the
         // body with a Retry and in the frame's persistent band.
         setDrawings([]);
-        setLoadError(errorMessage(err, "Couldn't load drawings"));
-        setMessages([{ level: "error", text: errorMessage(err, "Couldn't load drawings") }]);
+        // R67 MERGE: one sentence from the shared dictionary, plus the
+        // backend's own words when they are safe to repeat. See the import.
+        const described = paneError("drawings", {
+          message: err instanceof Error ? err.message : null,
+          status: (err as { status?: number | null } | null)?.status ?? null,
+        });
+        const text = described.detail ? `${described.sentence} ${described.detail}` : described.sentence;
+        setLoadError(text);
+        setMessages([{ level: "error", text }]);
       } finally {
         setLoading(false);
       }
@@ -199,6 +242,12 @@ export default function DrawingsClient({
   );
 
   useEffect(() => {
+    // R67 F-18: the server already answered this exact read, so the first paint
+    // costs no round trip. Every subsequent one goes to the network.
+    if (seeded.current) {
+      seeded.current = false;
+      return;
+    }
     void load(filters);
   }, [load, filters]);
 
@@ -317,11 +366,11 @@ export default function DrawingsClient({
         </p>
       </div>
 
-      {fellBack && projectName && (
-        <p role="status" className="px-4 pt-3 text-[12.5px] text-ct-muted">
-          Showing {projectName} (first project). Choose a project in the top rail to switch.
-        </p>
-      )}
+      {/* R67 MERGE: lane D1's "Showing <project> (first project)" banner is
+          gone from here. The same fact is stated once, on the page's own
+          heading (PageHeading contextNote="auto-selected"), so a user is told
+          which project they are looking at in ONE place rather than two that
+          can disagree. */}
 
       {filterOpen && (
         <div className="flex flex-wrap items-end gap-4 border-b border-ct-border px-4 py-3">

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client";
+import { createCachedVeridianGet } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Priority 13: VERIDIAN's /api/v1/projexa/cost-centers discovery lookup --
 // same rationale as the sibling fiscal-years/route.ts.
@@ -12,13 +14,13 @@ import { VeridianApiError, createCachedVeridianGet } from "@/lib/veridian-client
 // createCachedVeridianGet() in veridian-client.ts for why that's safe.
 const getCachedCostCenters = createCachedVeridianGet("veridian-cost-centers", "/cost-centers", 60);
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
     const data = await getCachedCostCenters(ctx.organizationId!);
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load cost centers" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load cost centers");
   }
-}
+});

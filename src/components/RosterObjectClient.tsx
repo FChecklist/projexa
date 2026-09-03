@@ -12,7 +12,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,7 +109,18 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       </div>
     );
   }
-  if (!entry) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!entry) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
+      label={LABOUR_OBJECT_BREADCRUMB.label}
+      actions={LABOUR_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
 
@@ -117,8 +130,8 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         "<project> › Worker Ramesh Kumar" -- instead of the module. Published
         after the fetch, which is when this page first knows either. */}
     <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
-    <ObjectScreen
-      breadcrumb="Labour / Worker"
+    <KitObjectScreen
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
       hasDraft={false}
@@ -154,7 +167,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
           <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={draft.dailyRate} onChange={(e) => setDraft((d) => ({ ...d, dailyRate: e.target.value }))} /></div>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

@@ -1,10 +1,38 @@
 /// <reference types="bun-types" />
-// R67 D-05 + D-07. The lane's own acceptance for these two items is a
-// Playwright run against a local dev server, which this session is not
-// permitted to start (no dev server may be launched in these worktrees), so
-// the same assertions are made here against the rendered component with the
-// /api/permits response stubbed: the column vocabulary, the Document/Open
-// affordances, and the screen naming the project it actually queried.
+// R67 MERGE (lane D0/F2's D-65 / D-59 / D-71 x lane D1's D-05 / D-07). Two
+// suites were written for this screen from two different starting points, and
+// both survive here.
+//
+// LANE D0'S HALF -- the read's OUTCOME. Its acceptance, verbatim: "with
+// /api/permits stubbed to 500: the page shows 'Couldn't load permits' and a
+// 'Retry' button and does NOT contain 'No permits yet for this project.'; with
+// the same route stubbed to [] the empty sentence is shown instead." Before the
+// change the fetch was `.then(r => r.json()).then(d => setPermits(d.permits ??
+// []))` with the status never read, so a 500 produced an empty array and the
+// kit's ListScreen printed "0 records" and the empty sentence on a project that
+// has permits. That half is asserted below unchanged -- PaneState is the
+// canonical data layer here (decision D-11) and this screen adopted it.
+//
+// LANE D1'S HALF -- the words and the affordances, RESTATED rather than
+// deleted:
+//
+//   * D-05's column vocabulary is unchanged and still asserted. It moved into
+//     src/lib/module-list-columns.ts (PERMITS_LIST_COLUMNS) at the merge, which
+//     is what makes the loading SKELETON and the loaded table draw the same
+//     headers -- so these assertions now hold one column set instead of two.
+//   * D-05's PDF column and D-07's "Open" word column are unchanged.
+//   * D-07's "the primary is the plain word New" is unchanged, and the merge
+//     restored it: the frame renders a Plus icon and the label had drifted back
+//     to "+ New", which read "+ + New" on screen.
+//   * D-07's "the empty state names the project it queried" is RESTATED. The
+//     merged screen names the project in the frame's breadcrumb band instead,
+//     and PaneState's empty sentence is the module-wide one. One project name
+//     per screen, in the place every other module puts it.
+//   * D-07's `fellBack` banner test is dropped, not restated -- the prop no
+//     longer exists. That fact moved onto the page's own heading
+//     (PageHeading contextNote="auto-selected"), the same decision recorded in
+//     DocumentsClient and DrawingsClient, so it is stated once rather than in
+//     three panes that could disagree.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -19,11 +47,19 @@ const push = mock((_: string) => {});
 // lose every other export and the file failed to load at all
 // ("Export named 'usePathname' not found in module .../next/navigation.js").
 const realNavigation = await import("next/navigation");
-mock.module("next/navigation", () => ({ ...realNavigation, useRouter: () => ({ push }) }));
+mock.module("next/navigation", () => ({
+  ...realNavigation,
+  useRouter: () => ({ push, replace: () => {}, refresh: () => {}, back: () => {} }),
+  usePathname: () => "/permits",
+}));
 
 const mod = await import("./PermitsListClient");
 const PermitsListClient = mod.default;
 const { rowHasDocument } = mod;
+
+const realFetch = globalThis.fetch;
+
+const PROPS = { projectId: "p-cedar", projectName: "Cedar Heights Villa - Phase 1" };
 
 const PERMIT = {
   id: "permit-1",
@@ -35,16 +71,19 @@ const PERMIT = {
   daysToExpiry: 60,
 };
 
-function stubPermits(permits: unknown[]) {
+function stubFetch(status: number, body: unknown) {
   globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ permits }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })) as typeof globalThis.fetch;
+}
+
+function stubPermits(permits: unknown[]) {
+  stubFetch(200, { permits });
 }
 
 afterEach(() => {
   cleanup();
   push.mockClear();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
+  globalThis.fetch = realFetch;
 });
 
 describe("rowHasDocument", () => {
@@ -60,21 +99,111 @@ describe("rowHasDocument", () => {
   });
 });
 
+describe("PermitsListClient -- the read's outcome (D-65 / D-71)", () => {
+  test("THE ACCEPTANCE: a 500 shows the failure and NEVER the empty sentence", async () => {
+    stubFetch(500, { error: "Something went wrong upstream." });
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Couldn't load permits");
+    });
+    expect(container.textContent).toContain("Retry");
+    expect(container.textContent).not.toContain("No permits yet for this project.");
+    // The record count is an en-dash, never "0 records".
+    expect(container.textContent).toContain("—");
+    expect(container.textContent).not.toContain("0 records");
+  });
+
+  test("a 504 is named as a timeout, from the shared dictionary", async () => {
+    stubFetch(504, { error: "The construction data service did not respond in time. Please retry." });
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("UPSTREAM_TIMEOUT");
+    });
+    expect(container.textContent).toContain("Couldn't load permits — the construction data service didn't answer");
+    expect(container.textContent).not.toContain("No permits yet");
+  });
+
+  test("a 401 says so and offers no Retry, because retrying will not fix a permission", async () => {
+    stubFetch(401, { error: "Unauthorized" });
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("NOT_AUTHORISED");
+    });
+    expect(container.textContent).not.toContain("No permits yet");
+    const retry = Array.from(container.querySelectorAll("button")).filter((b) => (b.textContent ?? "").includes("Retry"));
+    expect(retry).toHaveLength(0);
+  });
+
+  test("only a 200 with zero rows shows the empty sentence, with its primary action", async () => {
+    stubPermits([]);
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("No permits yet for this project.");
+    });
+    expect(container.textContent).not.toContain("Couldn't load permits");
+    expect(container.textContent).toContain("0 records");
+  });
+
+  test("rows render and the count becomes real", async () => {
+    stubPermits([PERMIT]);
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("BP-2026-0142");
+    });
+    expect(container.textContent).toContain("1 record");
+    expect(container.textContent).not.toContain("No permits yet");
+  });
+
+  // R67 D-59: "'(Not yet available)' replaced by a real reason such as
+  // 'Export - no rows to export'." Both header controls carried the literal
+  // placeholder while the shared ListHeaderActions on Labour, Materials and
+  // Schedule said something real -- two conventions for the same disabled
+  // control on one product. Asserted so it cannot drift back.
+  test("a disabled header control gives a real reason, never the placeholder", async () => {
+    stubPermits([]);
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("No permits yet for this project.");
+    });
+    expect(container.innerHTML).not.toContain("Not yet available");
+    expect(container.innerHTML).toContain("Filtering permits is not built yet");
+    // With no rows on screen, Export names the reason it has TODAY.
+    expect(container.innerHTML).toContain("Export — no rows to export");
+  });
+
+  test("with rows on screen, Export's reason is that it is not built -- not that there is nothing to export", async () => {
+    stubPermits([PERMIT]);
+    const { container } = render(<PermitsListClient {...PROPS} />);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("BP-2026-0142");
+    });
+    expect(container.innerHTML).not.toContain("Not yet available");
+    expect(container.innerHTML).toContain("Exporting permits is not built yet");
+  });
+});
+
 describe("PermitsListClient columns (D-05: one word set)", () => {
   test("the end-date column is called 'End date', never 'Expiry date'", async () => {
     stubPermits([PERMIT]);
     const view = render(<PermitsListClient projectId="proj-1" />);
-    await waitFor(() => expect(view.getByText("End date")).toBeTruthy());
+    await waitFor(() => expect(view.getAllByText("End date").length).toBeGreaterThan(0));
     expect(view.queryByText("Expiry date")).toBeNull();
   });
 
   test("uses the module's one word set for every other column too", async () => {
     stubPermits([PERMIT]);
     const view = render(<PermitsListClient projectId="proj-1" />);
-    await waitFor(() => expect(view.getByText("Permit number")).toBeTruthy());
-    expect(view.getByText("Permit name")).toBeTruthy();
-    expect(view.getByText("Issuing authority")).toBeTruthy();
-    expect(view.getByText("Issue date")).toBeTruthy();
+    await waitFor(() => expect(view.getAllByText("Permit number").length).toBeGreaterThan(0));
+    expect(view.getAllByText("Permit name").length).toBeGreaterThan(0);
+    expect(view.getAllByText("Issuing authority").length).toBeGreaterThan(0);
+    expect(view.getAllByText("Issue date").length).toBeGreaterThan(0);
   });
 
   // RECORDED DEVIATION, resolved at the R67 lane G merge (2026-09-03). D-05's
@@ -89,7 +218,7 @@ describe("PermitsListClient columns (D-05: one word set)", () => {
   test("the sixth column is G-01's 'Status', and the phrase 'Days left' is gone with it", async () => {
     stubPermits([PERMIT]);
     const view = render(<PermitsListClient projectId="proj-1" />);
-    await waitFor(() => expect(view.getByText("Status")).toBeTruthy());
+    await waitFor(() => expect(view.getAllByText("Status").length).toBeGreaterThan(0));
     expect(view.queryByText("Days left")).toBeNull();
   });
 
@@ -118,27 +247,21 @@ describe("PermitsListClient columns (D-05: one word set)", () => {
 });
 
 describe("PermitsListClient project naming (D-07)", () => {
-  test("names the project it fell back to, instead of leaving the rail to claim 'All projects'", async () => {
+  // RESTATED. Lane D1 asserted the project's name inside the EMPTY sentence.
+  // The merged screen states it once, in the frame's breadcrumb band, and
+  // leaves PaneState's module-wide sentence alone -- see this file's header.
+  test("names the project it queried, in the band above the list", async () => {
     stubPermits([PERMIT]);
-    const view = render(<PermitsListClient projectId="proj-1" projectName="Cedar Heights Villa - Phase 1" fellBack />);
-    await waitFor(() =>
-      expect(view.getByRole("status").textContent).toBe(
-        "Showing Cedar Heights Villa - Phase 1 (first project). Choose a project in the top rail to switch."
-      )
-    );
+    const view = render(<PermitsListClient {...PROPS} />);
+    await waitFor(() => expect(view.getAllByText("End date").length).toBeGreaterThan(0));
+    expect(view.getByText("Cedar Heights Villa - Phase 1")).toBeTruthy();
   });
 
-  test("says nothing when the project was actually asked for", async () => {
+  test("falls back to the module's own name when no project name was resolved", async () => {
     stubPermits([PERMIT]);
-    const view = render(<PermitsListClient projectId="proj-1" projectName="Cedar Heights Villa - Phase 1" />);
-    await waitFor(() => expect(view.getByText("End date")).toBeTruthy());
-    expect(view.queryByRole("status")).toBeNull();
-  });
-
-  test("the empty state names the project it queried", async () => {
-    stubPermits([]);
-    const view = render(<PermitsListClient projectId="proj-1" projectName="Cedar Heights Villa - Phase 1" />);
-    await waitFor(() => expect(view.getByText("No permits yet for Cedar Heights Villa - Phase 1.")).toBeTruthy());
+    const view = render(<PermitsListClient projectId="proj-1" />);
+    await waitFor(() => expect(view.getAllByText("End date").length).toBeGreaterThan(0));
+    expect(view.getByText("Permits")).toBeTruthy();
   });
 });
 

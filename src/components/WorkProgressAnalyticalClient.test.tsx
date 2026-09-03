@@ -1,13 +1,31 @@
 /// <reference types="bun-types" />
-// R67 D-29. The item's own acceptance, verbatim: "with the /api/scope stub
-// rejecting, assert a control named 'Retry' is rendered and that the KPI tag
-// values are absent while the table status is loading."
+// R67 MERGE (lane D1's D-29 x lane D0's D-55/D-65 and lane F2's F-24).
 //
-// The defect being held closed: load() awaited four reads with no catch and set
-// loading=false on the last line of the happy path, so a rejecting /api/scope
-// left the table on "Loading…" for the rest of the session -- while the KPI tags
-// above it were already showing figures derived from the reads that HAD
-// succeeded.
+// THIS FILE WAS NOT A MERGE CONFLICT, AND THAT IS WHY IT NEEDED REWRITING.
+// git auto-merged it -- main never touched it -- so it arrived intact,
+// asserting a component that no longer exists. Three of its five tests were
+// pinned to lane D1's own implementation rather than to D-29's requirement:
+//
+//   * "a rejecting /api/scope produces a Retry" and the "Could not load the BOQ
+//     line names" sentence. There is no /api/scope read on this screen any
+//     more. F-24 (compliance-tracker #1579) made VERIDIAN send activityName /
+//     boqItemCode / boqDescription WITH each entry, so the two scope calls that
+//     existed only to translate one column are gone -- which is a stronger
+//     answer to D-29's third defect ("the table waited on the BOQ") than
+//     reordering the awaits was. A test that a removed request fails gracefully
+//     is a test of nothing.
+//   * "no KPI figure is on screen while the read behind it is still running",
+//     asserting the tag LABELS are absent. The merged screen keeps every label
+//     in place and renders the VALUE as an en-dash until a 200 established it
+//     (metricLabel(), unit-tested in src/lib/pane-state.test.ts). D-29's actual
+//     requirement is that a figure is never minted from a read that has not
+//     answered, and the en-dash satisfies it without the tag row changing size
+//     under the reader. Restated as: the value is an en-dash, never a number.
+//
+// D-29's other two findings are asserted below exactly as the item asked, and
+// both are things main did NOT have -- they are what lane D1 folded in:
+// ONE Filter and ONE Export on a screen that had two of each, and the caption
+// that says the two figures beside each other are measured differently.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -30,6 +48,9 @@ const ENTRY = {
   id: "e1",
   activityId: "a1",
   boqLineItemId: "l1",
+  boqItemCode: "1.1",
+  boqDescription: "Blockwork",
+  activityName: "Blockwork",
   entryDate: "2026-08-14",
   quantityDone: "12",
   percentComplete: "40",
@@ -44,7 +65,7 @@ function ok(body: unknown) {
 }
 
 /** Every read answers, except the ones named in `failing`. */
-function stub(options: { failing?: string[]; hangEntries?: boolean } = {}) {
+function stub(options: { failing?: string[] } = {}) {
   const failing = options.failing ?? [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -54,16 +75,21 @@ function stub(options: { failing?: string[]; hangEntries?: boolean } = {}) {
         headers: { "content-type": "application/json" },
       });
     }
-    if (url.includes("/api/work-progress/activities")) return ok({ activities: [{ id: "a1", name: "Blockwork", categoryId: "c1" }] });
-    if (url.includes("/api/work-progress")) {
-      if (options.hangEntries) return new Promise<Response>(() => {}) as unknown as Response;
-      return ok({ entries: [ENTRY] });
+    if (url.includes("/api/work-progress/activities")) {
+      return ok({ activities: [{ id: "a1", name: "Blockwork", categoryId: "c1" }] });
     }
-    if (url.includes("/api/reports/category-progress")) return ok({ categories: [{ categoryId: "c1", name: "Structure", percentComplete: 40 }] });
-    if (url.includes("/api/scope/")) return ok({ lineItems: [{ id: "l1", itemCode: "1.1", description: "Blockwork" }] });
-    if (url.includes("/api/scope")) return ok({ boqs: [{ id: "b1", version: 1, status: "approved" }] });
+    if (url.includes("/api/work-progress")) return ok({ entries: [ENTRY] });
+    if (url.includes("/api/reports/category-progress")) {
+      return ok({ categories: [{ categoryId: "c1", name: "Structure", percentComplete: 40 }] });
+    }
     return ok({});
   }) as unknown as typeof fetch;
+}
+
+/** The value rendered beside a KPI tag's label. */
+function kpiValue(container: HTMLElement, label: string): string | null {
+  const labelEl = [...container.querySelectorAll("div")].find((d) => d.textContent === label);
+  return labelEl?.nextElementSibling?.textContent ?? null;
 }
 
 beforeEach(() => {
@@ -82,55 +108,83 @@ afterEach(() => {
 });
 
 describe("WorkProgressAnalyticalClient -- R67 D-29", () => {
-  test("THE ACCEPTANCE (half 1): a rejecting /api/scope produces a Retry, not a table stuck on 'Loading…'", async () => {
-    stub({ failing: ["/api/scope"] });
-    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
-
-    await waitFor(() => expect(view.getByRole("button", { name: "Retry" })).toBeTruthy());
-    // The backend's own words, and the consequence stated -- not a bare failure.
-    expect(view.getByText(/Could not load the BOQ line names/)).toBeTruthy();
-    // ...and the table is NOT withheld: the BOQ only supplies one column's
-    // labels, so the entries that did arrive still render.
-    expect(view.getByText("Blockwork")).toBeTruthy();
-  });
-
-  test("THE ACCEPTANCE (half 2): no KPI figure is on screen while the read behind it is still running", () => {
-    stub({ hangEntries: true });
-    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
-
-    expect(view.queryByText("Total entries")).toBeNull();
-    expect(view.queryByText("Avg % Complete (Activity Log)")).toBeNull();
-    expect(view.getByText("Working out the figures…")).toBeTruthy();
-    // The table says it is loading by SHOWING the shape of what is coming.
-    expect(view.container.querySelector("[aria-busy='true']")).toBeTruthy();
-    expect(view.getByText("% complete")).toBeTruthy();
-  });
-
   test("once the reads succeed the figures appear, with the caption that says how they differ", async () => {
     const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
 
-    await waitFor(() => expect(view.getByText("Total entries")).toBeTruthy());
-    expect(view.getByText("Categories")).toBeTruthy();
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
+    expect(kpiValue(view.container, "Categories")).toBe("1");
+    expect(kpiValue(view.container, "Avg % Complete (Activity Log)")).toBe("40%");
     expect(view.getByText(KPI_CAPTION)).toBe(
       view.getByText("Avg % is a flat average of entries; the bar is value-weighted per category")
     );
   });
 
-  test("the entries' own failure DOES withhold the table, with the reason inside the entries card", async () => {
+  test("THE ACCEPTANCE, restated: a figure is never minted from a read that has not answered", async () => {
     stub({ failing: ["/api/work-progress?"] });
     const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
 
-    await waitFor(() => expect(view.getByText("Could not load live data")).toBeTruthy());
-    expect(view.getByText(/Could not load progress entries/)).toBeTruthy();
+    // PaneState states a failure twice on purpose -- once in the card and once
+    // in the persistent band below it, so the reason survives after the pane
+    // scrolls out of view. Both are expected; neither is the assertion.
+    await waitFor(() => expect(view.getAllByText(/Couldn't load progress entries/).length).toBeGreaterThan(0));
+    // The two entry-derived figures are en-dashes, NOT zeroes. This is the
+    // defect D-29 and R-002/R-019 both name: "Total entries 0" over a 504 is a
+    // false statement, and worse than a false empty list because a number
+    // carries no hint that anything was ever asked for.
+    expect(kpiValue(view.container, "Total entries")).toBe("—");
+    expect(kpiValue(view.container, "Avg % Complete (Activity Log)")).toBe("—");
+    // The category read succeeded, so ITS figure is real -- one failed read
+    // does not blank the tags that another read established.
+    expect(kpiValue(view.container, "Categories")).toBe("1");
+  });
+
+  test("the entries' own failure DOES withhold the table, with the reason and a Retry inside the pane", async () => {
+    stub({ failing: ["/api/work-progress?"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    // PaneState states a failure twice on purpose -- once in the card and once
+    // in the persistent band below it, so the reason survives after the pane
+    // scrolls out of view. Both are expected; neither is the assertion.
+    await waitFor(() => expect(view.getAllByText(/Couldn't load progress entries/).length).toBeGreaterThan(0));
+    // The backend's own words survive under the dictionary's sentence.
+    expect(view.container.textContent).toContain("The construction data service did not respond in time");
+    expect(view.getAllByRole("button", { name: /Retry/ }).length).toBeGreaterThan(0);
     // Never a confident empty state over a failed read.
     expect(view.queryByText("No progress entries logged yet.")).toBeNull();
-    expect(view.queryByText("Total entries")).toBeNull();
+  });
+
+  test("the CHART's failure does not take the table down with it", async () => {
+    stub({ failing: ["/api/reports/category-progress"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    // The entries arrived, so the table renders and its figures are real...
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
+    // ...while the chart says what happened to its own read, and the figure
+    // that depends on it stays an en-dash.
+    expect(view.container.textContent).toContain("Couldn't load the category breakdown");
+    expect(kpiValue(view.container, "Categories")).toBe("—");
+  });
+
+  test("a failed ACTIVITY lookup is reported without withholding anything, and offers a Retry", async () => {
+    // R67 D-29's fourth finding, folded onto the merged read: the activity
+    // lookup is not fatal -- the rows carry their own activity name now -- but
+    // a lookup that failed SILENTLY is how a row renders a raw id with nothing
+    // on screen admitting a read failed.
+    stub({ failing: ["/api/work-progress/activities"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    await waitFor(() => expect(view.container.textContent).toContain("Activity names may show as ids below"));
+    // The table is NOT withheld: the entries answered.
+    expect(kpiValue(view.container, "Total entries")).toBe("1");
+    expect(view.getAllByRole("button", { name: /Retry/ }).length).toBeGreaterThan(0);
   });
 
   test("Filter and Export appear ONCE on this screen, not once per nested frame", async () => {
     const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(view.getByText("Total entries")).toBeTruthy());
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
 
+    // The whole point of the `framed={false}` fold: this screen draws the
+    // header, and the list it reuses wholesale must not draw a second one.
     expect(view.getAllByRole("button", { name: /^Filter/ })).toHaveLength(1);
     expect(view.getAllByRole("button", { name: /^Export/ })).toHaveLength(1);
   });

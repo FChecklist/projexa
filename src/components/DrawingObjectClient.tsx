@@ -27,10 +27,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
-// The fork, per programme decision D-09: the kit hard-codes this screen's
-// destructive control as "Delete", and this page has two destructive acts that
-// are genuinely different things. See the fork's own header.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+// The fork (F-34 / D-09): the kit hard-codes this screen's destructive control
+// as "Delete", and this page has two destructive acts that are genuinely
+// different things -- so it takes the fork's `deleteLabel`. The fork also adds
+// the `loading` variant. Not the kit's component; the kit is still imported for
+// everything that was not forked, and A-21's ObjectContext is unaffected.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { DRAWING_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,6 +239,17 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     }
   }
 
+  // R67 MERGE (lane D0's D-67 x lane D1's D-11). Lane D0 armed the kit's
+  // single destructive control with useDeleteConfirmation, because the kit
+  // called onDelete() straight from onClick and disposed a drawing AND its file
+  // on one click with no confirmation anywhere. That rule is kept -- but this
+  // screen has TWO destructive acts that mean different things ("Remove", the
+  // grace-window hard delete, and "Dispose", the retention-gated records act),
+  // and useDeleteConfirmation models one. The confirm above (confirmText() /
+  // `confirming`) is therefore the one that survives: it states the same blast
+  // radius, and it states the RIGHT one for whichever act is on offer.
+  // useDeleteConfirmation is unchanged and still used by the other object pages.
+
   // "Loading" forever is its own lie. Once the load has failed, say so.
   if (loadError) {
     return (
@@ -245,7 +259,18 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       </div>
     );
   }
-  if (!d) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!d) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
+      label={DRAWING_OBJECT_BREADCRUMB.label}
+      actions={DRAWING_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const kind = d.kind === "3d_walkthrough" ? "3D Walkthrough" : "DWG";
   const label = drawingLabel(d);
@@ -262,8 +287,13 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         so an empty string is published as null -- the shell then falls back to
         the rail, which is honest, instead of resolving a project id of "". */}
     <ObjectContext moduleId="drawings" label={d.name} projectId={projectId || null} />
-    <ObjectScreen
-      breadcrumb="Drawings & 3D / Drawing"
+    <KitObjectScreen
+      // Lane D0's shared constant, so this breadcrumb and the one the route's
+      // own loading frame paints are the same literal and cannot drift.
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
+      // R67 D-12: what a person calls this drawing -- "AR-101 Rev B" -- not the
+      // file name. `mode` is real here: D-11 gave the page an Edit toggle, and
+      // D-11's own ruling is that object pages are display-first until Edit.
       title={label}
       subtitle={d.projectName ?? undefined}
       mode={mode}
@@ -362,7 +392,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
           <p className="text-sm text-ct-muted">No file link available.</p>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

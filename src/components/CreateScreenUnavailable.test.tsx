@@ -126,24 +126,41 @@ describe("R67 D-70: every create route that resolves a project renders the frame
   /** Generous, because a cold CI checkout reads these off a cold disk. */
   const FILE_SCAN_TIMEOUT_MS = 30_000;
 
+  // R67 MERGE. The sweep looked for ONE helper name and ONE component name, and
+  // the merge moved both -- so it was reporting two false offenders and had
+  // stopped seeing seven routes entirely. Neither the requirement nor its
+  // strength changes here; only the names it recognises.
+  //
+  //   * A create route resolves its project with resolveSelectedProject OR,
+  //     since lane F-19/F-18, with resolveProjectForModule. Seven routes moved
+  //     to the second name, which is why the coverage floor below was reading
+  //     16 instead of the 20-odd routes that actually exist.
+  //   * The framed failure is CreateScreenUnavailable OR CreateProjectMissing,
+  //     which is a thin wrapper AROUND CreateScreenUnavailable (see
+  //     CreateFormSkeleton.tsx) and whose breadcrumb/title/backHref/backLabel
+  //     are REQUIRED props -- so a route that renders it cannot render an
+  //     unframed failure, and the compiler holds that, not this string match.
+  const RESOLVES_PROJECT = /resolveSelectedProject|resolveProjectForModule/;
+  const FRAMED_FAILURE = /CreateScreenUnavailable|CreateProjectMissing/;
+
   test("no create page returns a bare Card for a failed project resolution", () => {
     expect(existsSync(APP_DIR)).toBe(true);
     const offenders: string[] = [];
     for (const { file, source } of pageSources) {
-      if (!source.includes("resolveSelectedProject")) continue;
+      if (!RESOLVES_PROJECT.test(source)) continue;
       // drawings/new is the one that never returns early at all (R67 D-08): it
       // always renders DrawingCreateClient, which carries the same banner.
       if (file.includes("drawings")) {
         expect(source).not.toMatch(/if \(errorMessage/);
         continue;
       }
-      if (!source.includes("CreateScreenUnavailable")) offenders.push(path.relative(APP_DIR, file));
+      if (!FRAMED_FAILURE.test(source)) offenders.push(path.relative(APP_DIR, file));
     }
     expect(offenders).toEqual([]);
   }, FILE_SCAN_TIMEOUT_MS);
 
   test("the sweep actually covered a real number of routes, so an empty walk cannot pass silently", () => {
-    const withHelper = pageSources.filter((p) => p.source.includes("resolveSelectedProject"));
+    const withHelper = pageSources.filter((p) => RESOLVES_PROJECT.test(p.source));
     expect(withHelper.length).toBeGreaterThanOrEqual(20);
   }, FILE_SCAN_TIMEOUT_MS);
 });

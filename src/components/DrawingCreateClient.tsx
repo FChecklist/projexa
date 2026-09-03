@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Link from "next/link";
 import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection";
 import { setScreenMessage } from "@/lib/screen-message";
+import { useSubmit } from "@/lib/use-submit";
 import {
   STORAGE_UNAVAILABLE_BANNER,
   STORAGE_UNAVAILABLE_REASON,
@@ -196,7 +197,7 @@ export default function DrawingCreateClient({
   const [externalUrl, setExternalUrl] = useState("");
   const [urlTouched, setUrlTouched] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+
   const [messages, setMessages] = useState<FieldMessage[]>([]);
 
   // The project this screen will write to. Seeded from the server, and
@@ -206,6 +207,43 @@ export default function DrawingCreateClient({
   const [resolvedName, setResolvedName] = useState<string | undefined>(projectName);
   const [loadError, setLoadError] = useState<string | null>(projectError ?? null);
   const [retrying, setRetrying] = useState(false);
+
+  // R67 D-72 (lane D0, folded in). This screen's own handler called fetch()
+  // with NO signal, so a hung upstream left Save spinning forever and a
+  // refusal was indistinguishable from a request that never left the device.
+  // The shared hook owns the 10 s ceiling and tells those apart; the multipart
+  // body and every field rule below are unchanged. The server's own validation
+  // ("DWG drawings require a file upload") still lands in the frame's
+  // persistent message band, never in a toast.
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Drawing",
+    buildRequest: () => {
+      if (!resolvedId) return null;
+      const formData = new FormData();
+      formData.set("projectId", resolvedId);
+      formData.set("kind", kind);
+      formData.set("name", name.trim());
+      formData.set("drawingNo", drawingNo.trim());
+      formData.set("rev", rev.trim());
+      formData.set("status", status);
+      if (discipline.trim()) formData.set("discipline", discipline.trim());
+      if (kind === "3d_walkthrough" && linkMode) {
+        formData.set("externalUrl", externalUrl.trim());
+      } else if (file) {
+        formData.set("file", file);
+      }
+      return { input: "/api/drawings", init: { method: "POST", body: formData } };
+    },
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved drawing");
+      // The receipt has to outlive this screen, which the push below is
+      // about to replace -- see screen-message.ts.
+      setScreenMessage("drawings.object", { level: "success", text: `Drawing ${name.trim()} added` });
+      router.push(`/drawings/${id}?projectId=${resolvedId}`);
+    },
+  });
+  const submitting = submit.saving;
 
   const usingLink = kind === "3d_walkthrough" && linkMode;
   const extensions = ACCEPTED_EXTENSIONS[kind];
@@ -274,44 +312,21 @@ export default function DrawingCreateClient({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  async function createDrawing() {
-    if (saveDisabledReason || !resolvedId) return;
-    const formData = new FormData();
-    formData.set("projectId", resolvedId);
-    formData.set("kind", kind);
-    formData.set("name", name.trim());
-    formData.set("drawingNo", drawingNo.trim());
-    formData.set("rev", rev.trim());
-    formData.set("status", status);
-    if (discipline.trim()) formData.set("discipline", discipline.trim());
-    if (usingLink) {
-      formData.set("externalUrl", externalUrl.trim());
-    } else {
-      formData.set("file", file!);
+  function createDrawing() {
+    // R67 D-72: never a silent return -- the reason Save is unavailable is
+    // already on the button, and it is said again rather than swallowed.
+    if (saveDisabledReason || !resolvedId) {
+      setMessages([{ level: "error", text: saveDisabledReason ?? "No project is resolved yet — nothing was sent." }]);
+      return;
     }
-    setSubmitting(true);
     setMessages([]);
-    try {
-      const res = await fetch("/api/drawings", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // The server's own validation ("DWG drawings require a file upload")
-        // is the second line of defence, and it belongs in the frame's
-        // persistent message band -- not in a toast that is gone before the
-        // user has finished reading it.
-        setMessages([{ level: "error", text: data.error ?? `Couldn't add this drawing (HTTP ${res.status})` }]);
-        setSubmitting(false);
-        return;
-      }
-      // The receipt has to outlive this screen, which the push below is
-      // about to replace -- see screen-message.ts.
-      setScreenMessage("drawings.object", { level: "success", text: `Drawing ${name.trim()} added` });
-      router.push(`/drawings/${data.id}?projectId=${resolvedId}`);
-    } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't add this drawing" }]);
-      setSubmitting(false);
-    }
+    submit.submit();
   }
+
+  // Field rules and the hook's own failure share ONE message band.
+  const bandMessages: FieldMessage[] = submit.failure
+    ? [...messages, { level: "error" as const, text: submit.failure.message }]
+    : messages;
 
   const backToList = () => router.push(resolvedId ? `/drawings?projectId=${resolvedId}` : "/drawings");
 
@@ -332,7 +347,7 @@ export default function DrawingCreateClient({
       // a sentence (the sentence form is the permit form's counter, which has
       // four fields to name).
       saveDisabledReason={saveDisabledReason}
-      messages={messages}
+      messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
         {/* R67 D-78: stated BEFORE the file field, because it is the one thing

@@ -25,7 +25,7 @@
 //                       one; the way out is to create the first project.
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { PROJECT_LIST_UNAVAILABLE_REASON, projectListFailureBanner } from "@/lib/project-selection";
 
 export default function CreateScreenUnavailable({
@@ -50,7 +50,7 @@ export default function CreateScreenUnavailable({
   const failed = message !== null;
 
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={breadcrumb}
       title={title}
       mode="create"
@@ -90,6 +90,6 @@ export default function CreateScreenUnavailable({
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

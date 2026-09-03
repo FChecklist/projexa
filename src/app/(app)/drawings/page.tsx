@@ -1,64 +1,80 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+// R67 F-18 / decision D-04 option A. See permits/page.tsx for the full
+// rationale: the three serial round-trips that ran before the first byte are
+// gone, the frame streams first, and the drawings are fetched here on the
+// server inside the Suspense boundary and handed to DrawingsClient as props.
+import { Suspense } from "react";
+import { PageHeading } from "@/components/PageHeading";
+import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
+import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
+import { fetchDrawingsList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import DrawingsClient, { type RegistryColumn } from "@/components/DrawingsClient";
+import DrawingsClient, { type Drawing } from "@/components/DrawingsClient";
 
-// R46 P8 seq127 (same pattern as permits/page.tsx, R43 seq2): resolved
-// server-side so DrawingsClient (a client component) never needs its own
-// Bearer-key-authenticated fetch. A missing or errored registry row is NOT
-// fatal -- DrawingsClient falls back to its own hardcoded COLUMNS when this
-// is null.
-async function resolveDrawingsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/drawings.list", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[drawings/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
-    return null;
-  }
+const SKELETON = (
+  <ModuleListSkeletonBody
+    columns={DRAWINGS_LIST_COLUMNS}
+    // R67 D-10 (lane D1, folded in at the merge). These were the two buttons
+    // D-10 REMOVED -- "Floor Plans / 3D Walkthrough" and "Add Drawing" -- so
+    // the skeleton was drawing controls the loaded screen no longer has, and
+    // the header visibly changed shape under the user when the rows landed.
+    // Same three, same order, as the frame beneath it.
+    actions={["Filter", "Export", "New"]}
+  />
+);
+
+// R67 D-10 (lane D1, folded into lane F2's streamed structure). The module used
+// to name itself TWICE, one line apart -- this PageHeading and DrawingsClient's
+// own screen-frame breadcrumb beneath it. Same correction D-07 made on /permits,
+// resolved the same way: the heading stays (F-18/F-31 make it the thing that
+// paints at TTFB, and the skeleton would otherwise be untitled) and the frame's
+// band names the PROJECT this screen queried instead of repeating the module.
+const HEADING_TITLE = "Drawings & 3D";
+
+async function DrawingsSection({ requestedProjectId }: { requestedProjectId?: string }) {
+  const organizationId = await getServerOrganizationId();
+  const { projectId, projectName: resolvedName, errorMessage, source } = await resolveProjectForModule(requestedProjectId, organizationId);
+  if (!projectId) return (
+    <>
+      <PageHeading title={HEADING_TITLE} />
+      <ModuleProjectNotice errorMessage={errorMessage} />
+    </>
+  );
+
+  const [registryColumns, list, name] = await Promise.all([
+    getScreenColumns("drawings.list", organizationId),
+    fetchDrawingsList<Drawing>(organizationId, projectId, "drawings"),
+    // R67 D-65 x F-18: the name rides in the SAME batch as the list read, so
+    // it costs no serial hop; getProjectName never throws and never blocks.
+    resolvedName ? Promise.resolve(resolvedName) : getProjectName(projectId, organizationId),
+  ]);
+
+  // R67 D-65: the project name travels with its id so the pane can name what
+  // it is waiting for, and an empty screen can name the project it is empty FOR.
+  return (
+    <>
+      {/* R67 D-07/D-13: the title band names the project this screen queried. */}
+      <PageHeading title={HEADING_TITLE} context={name} contextNote={source === "auto" ? "auto-selected" : null} />
+      <DrawingsClient projectId={projectId} projectName={name} registryColumns={registryColumns} initial={list} />
+    </>
+  );
 }
 
 export default async function DrawingsPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
-  const organizationId = await getServerOrganizationId();
-  // R67 D-07's `fellBack` boolean was folded into lane A's richer `source` at
-  // the lane A merge: "auto" is exactly the case D-07 asks about -- the page
-  // chose the project because nothing else did.
-  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
-  const fellBack = source === "auto";
-  const registryColumns = await resolveDrawingsListColumns(organizationId);
 
   return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        {/* R67 D-10: the standalone <PageHeading title="Drawings & 3D" /> that
-            used to sit here is gone -- DrawingsClient now renders the standard
-            screen frame, whose breadcrumb "Drawings & 3D" sits directly beneath
-            it, so the module named itself twice one line apart. Same correction
-            D-07 made on /permits, for the same reason. */}
-        {errorMessage && (
-          <Card className="border-px-error-border bg-px-error-light">
-            <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-          </Card>
-        )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
-        )}
-        {project && (
-          <DrawingsClient
-            projectId={project.id}
-            // D-07's rule applied here too: the screen names the project it
-            // actually queried, in the empty state and in the fallback notice.
-            projectName={project.name}
-            fellBack={fellBack}
-            registryColumns={registryColumns}
-          />
-        )}
-      </div>
-    </>
+    <div className="flex-1 space-y-6 p-6">
+      <Suspense
+        fallback={
+          <>
+            <PageHeading title={HEADING_TITLE} />
+            {SKELETON}
+          </>
+        }
+      >
+        <DrawingsSection requestedProjectId={projectId} />
+      </Suspense>
+    </div>
   );
 }

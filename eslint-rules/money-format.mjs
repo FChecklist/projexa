@@ -55,6 +55,13 @@ export const RULE_MESSAGE =
  * and were swept by G-05 before it landed, so their lines are gone. That is the
  * mechanism working -- the test below fails on a listed file that no longer
  * offends, which is what forced the deletion.
+ *
+ * ...and it shrank a second time, at the lane D1 integration merge, for exactly
+ * the same reason and by exactly the same mechanism: MoMObjectClient,
+ * ScopeObjectClient and the forked screens/ObjectScreen were all swept on main
+ * while this branch still carried them as offenders, so the merged tree has
+ * three clean files that this list was still exempting. The test caught all
+ * three. Their lines are gone.
  */
 export const NOT_YET_SWEPT = [
   "src/components/AccountingClient.tsx",
@@ -82,7 +89,6 @@ export const NOT_YET_SWEPT = [
   "src/components/ItemObjectClient.tsx",
   "src/components/JournalEntryCreateClient.tsx",
   "src/components/JournalEntryObjectClient.tsx",
-  "src/components/MoMObjectClient.tsx",
   "src/components/OpportunitiesClient.tsx",
   "src/components/OpportunityObjectClient.tsx",
   "src/components/PayrollClient.tsx",
@@ -99,7 +105,6 @@ export const NOT_YET_SWEPT = [
   "src/components/SalesQuotationObjectClient.tsx",
   "src/components/ScheduleGanttClient.tsx",
   "src/components/ScheduleTimesheetClient.tsx",
-  "src/components/ScopeObjectClient.tsx",
   "src/components/reports/pivot-utils.ts",
   // The two vendored shadcn/ui primitives. Both format for a chart axis or a
   // calendar caption rather than for a money column, and both are upstream
@@ -107,8 +112,4 @@ export const NOT_YET_SWEPT = [
   // (the rule is off for them, not approved for them).
   "src/components/ui/calendar.tsx",
   "src/components/ui/chart.tsx",
-  // The R67 D-11 fork of the kit's ObjectScreen. Its one call is inherited
-  // verbatim from the kit source, and the fork's stated contract is that it
-  // differs from the kit in exactly the ways D-11/D-12 needed and no others.
-  "src/components/screens/ObjectScreen.tsx",
 ];

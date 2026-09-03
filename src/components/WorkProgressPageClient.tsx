@@ -1,99 +1,99 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2, item F-24 / audit R-240). WHAT THIS SCREEN
+// USED TO DO, AND WHY IT COST 7.4 s. Its read ran a SERIAL chain: entries and
+// activities, then /api/scope, then /api/scope/{id} for the resolved revision
+// -- pulling a whole BOQ's line items across the wire -- and only then could
+// the BOQ column be translated. All four calls existed to fill ONE column, and
+// it still rendered a raw id like "e5eibnze72n8u2y3aoeok" when the resolution
+// missed. VERIDIAN now LEFT JOINs both names into the progress query
+// (compliance-tracker #1579) and sends activityName / boqItemCode /
+// boqDescription with each entry, so the two scope calls and the two id->label
+// maps are gone from this screen and the cell can never fall back to an id.
+//
+// Everything lane D0 built here is untouched: the read still comes from the
+// tested src/lib/work-progress-reads.ts, the pane still branches on an OUTCOME
+// rather than a boolean, and PaneState still owns what the screen says.
+
 // R42 seq22: thin composition of the FORM (WorkProgressFormClient) and LIST
 // (WorkProgressListClient) archetypes on one page, per this seq's own
 // "WORK PROGRESS (FORM+LIST)" row. Owns only the entries/lookups both need
 // -- no per-module UI logic lives here.
 //
-// R67 D-29 (audit R-070). Every read here was `fetch(...).then(r => r.json())`
-// with no status check and no catch: an HTTP error parsed cleanly as JSON,
-// `?? []` turned it into an empty list, and the one try/finally around it only
-// ever cleared the spinner. So a failed load produced a confident "No progress
-// entries logged yet." -- the exact defect src/lib/fetch-json.ts was written
-// for -- or, when the /api/scope chain rejected, an unhandled rejection and a
-// list stuck on its loading state.
+// R67 D-55 / D-65 -- WHAT CHANGED AND WHY. The load() here was:
 //
-// Each source now carries its own status, so the screen can say which one
-// failed while still showing what it really has.
+//     const [entriesRes, activitiesRes] = await Promise.all([
+//       fetch(`/api/work-progress?…`).then((r) => r.json()),
+//       fetch(`/api/work-progress/activities?…`).then((r) => r.json()),
+//     ]);
+//     setEntries(entriesRes.entries ?? []);
+//
+// with a `finally` that cleared `loading` and NO catch. Two faults in five
+// lines. A 500 answers `{ error: "…" }`, so `.entries` was undefined and
+// `?? []` turned a failed read into an empty one -- the list then printed
+// "No progress entries logged yet." with nothing on screen to contradict it.
+// And a THROWN fetch (a dropped connection, an abort) rejected the whole
+// batch, so `setLoading(false)` did run but nothing was ever set and no
+// error was captured -- leaving a pane that had failed looking exactly like
+// a project with no entries.
+//
+// The reads now live in src/lib/work-progress-reads.ts, where they are
+// tested, and this file holds only the outcome the list branches on.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import WorkProgressFormClient from "./WorkProgressFormClient";
 import WorkProgressListClient from "./WorkProgressListClient";
-import { fetchJson } from "@/lib/fetch-json";
-import { SOURCE_LOADING, SOURCE_OK, sourceError, type SourceStatus } from "@/lib/source-status";
+import {
+  readWorkProgress,
+  type ProgressActivity,
+  type ProgressEntry,
+} from "@/lib/work-progress-reads";
+import type { PaneStatus } from "@/lib/pane-state";
 
-type Entry = { id: string; activityId: string; boqLineItemId: string | null; entryDate: string; quantityDone: string; percentComplete: string; entryBasis: string; remarks: string | null };
-type Activity = { id: string; name: string };
-type LineItem = { id: string; itemCode: string | null; description: string };
-type Boq = { id: string; version: number; status: string };
-
-/**
- * Which BOQ a project's line items should be read from: the approved one, else
- * the submitted one, else the highest version. Exported so the two screens that
- * make this choice cannot drift (Analytics makes it too).
- */
-export function currentBoq<T extends Boq>(boqs: T[]): T | null {
-  if (boqs.length === 0) return null;
-  return boqs.find((b) => b.status === "approved") ?? boqs.find((b) => b.status === "submitted") ?? [...boqs].sort((a, b) => b.version - a.version)[0];
-}
-
-export default function WorkProgressPageClient({ projectId }: { projectId: string }) {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
-  const [entriesStatus, setEntriesStatus] = useState<SourceStatus>(SOURCE_LOADING);
-  const [activitiesStatus, setActivitiesStatus] = useState<SourceStatus>(SOURCE_LOADING);
-  const [boqStatus, setBoqStatus] = useState<SourceStatus>(SOURCE_LOADING);
+export default function WorkProgressPageClient({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName?: string | null;
+}) {
+  const [entries, setEntries] = useState<ProgressEntry[]>([]);
+  const [activities, setActivities] = useState<ProgressActivity[]>([]);
+  const [status, setStatus] = useState<PaneStatus>("loading");
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  // R67 D-29 (lane D1, folded in): a lookup that failed WITHOUT taking the
+  // table down still has to say so -- a silently missing lookup is how an
+  // activity ends up rendering as a raw id and the form's picker comes up empty
+  // with nothing on screen admitting a read failed.
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setEntriesStatus(SOURCE_LOADING);
-    setActivitiesStatus(SOURCE_LOADING);
-    setBoqStatus(SOURCE_LOADING);
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setError(null);
 
-    // Independent sources, settled independently: an activities outage must not
-    // withhold the entries, and neither must withhold the other's error.
-    const [entriesRes, activitiesRes] = await Promise.allSettled([
-      fetchJson<{ entries?: Entry[] }>(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`),
-      fetchJson<{ activities?: Activity[] }>(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`),
-    ]);
+    const result = await readWorkProgress(projectId);
+    setActivities(result.activities);
+    setActivitiesError(result.activitiesError);
 
-    if (entriesRes.status === "fulfilled") {
-      setEntries(entriesRes.value.entries ?? []);
-      setEntriesStatus(SOURCE_OK);
-    } else {
-      // Never an empty list where an error belongs.
-      setEntries([]);
-      setEntriesStatus(sourceError(entriesRes.reason, "Could not load progress entries"));
+    if (result.entries.status === "error") {
+      // The rows already on screen are NOT thrown away -- PaneState labels
+      // them "as of 14:32" under the failure, which is more use than a blank
+      // pane and is never mistaken for a fresh answer.
+      setError({ status: result.entries.httpStatus, message: result.entries.message });
+      setStatus("error");
+      return;
     }
-
-    if (activitiesRes.status === "fulfilled") {
-      setActivities(activitiesRes.value.activities ?? []);
-      setActivitiesStatus(SOURCE_OK);
-    } else {
-      setActivities([]);
-      setActivitiesStatus(sourceError(activitiesRes.reason, "Could not load activities"));
-    }
-
-    try {
-      const boqsRes = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      const current = currentBoq(boqsRes.boqs ?? []);
-      if (current) {
-        const boq = await fetchJson<{ lineItems?: LineItem[] }>(`/api/scope/${current.id}`);
-        setLineItems(boq.lineItems ?? []);
-      } else {
-        setLineItems([]);
-      }
-      setBoqStatus(SOURCE_OK);
-    } catch (err) {
-      // The BOQ only supplies the "BOQ line" column's LABELS. Losing it must
-      // cost the labels and say so -- never the entries themselves, which is
-      // what an uncaught rejection here used to do.
-      setLineItems([]);
-      setBoqStatus(sourceError(err, "Could not load the BOQ line names"));
-    }
+    setEntries(result.entries.status === "ready" ? result.entries.rows : []);
+    setLoadedAt(new Date());
+    setStatus("ready");
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // R67 A-04. The composer's "Record progress" card is a verb, so it must put
   // the cursor where the work starts -- the form's first field, Activity --
@@ -108,46 +108,49 @@ export default function WorkProgressPageClient({ projectId }: { projectId: strin
   // being true the focus simply lands elsewhere -- it cannot break the page.
   const formRef = useRef<HTMLDivElement>(null);
   const focusRequest = useSearchParams().get("focus");
-  // R67 A-* + D-29. Lane A wrote this effect against a single `loading`
-  // boolean; D-29 replaced that with one status per source, because a failed
-  // BOQ read used to leave the whole screen claiming to be loading. The
-  // dependency is now the status of the source this effect actually waits for:
-  // the activity <select> does not exist until the activities read settles.
   useEffect(() => {
     if (focusRequest !== "activity") return;
     const control = formRef.current?.querySelector<HTMLSelectElement>("select");
     control?.focus();
     control?.scrollIntoView({ block: "center" });
-  }, [focusRequest, activitiesStatus]);
+  // R67 D-55 replaced this pane's `loading` boolean with a real outcome, so
+  // the focus effect re-runs when the read SETTLES rather than when a flag
+  // flips -- which is the moment the Activity select actually exists.
+  }, [focusRequest, status]);
 
+  // F-24: kept ONLY as the fallback for an entry whose row carries no
+  // activityName -- an older backend, or an activity deleted since. The list
+  // no longer depends on it, and there is no BOQ map at all any more.
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
-  const boqLineDescriptionById = new Map(lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description]));
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4 h-full min-h-0">
       <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         <WorkProgressListClient
+          projectId={projectId}
+          projectName={projectName}
           entries={entries}
           activityNameById={activityNameById}
-          boqLineDescriptionById={boqLineDescriptionById}
-          status={entriesStatus}
+          status={status}
+          error={error}
           onRetry={() => void load()}
+          loadedAt={loadedAt}
+          startedAt={startedAt}
         />
-        {/* A source that failed WITHOUT taking the table down still has to say
-            so -- a silently missing lookup is how a BOQ line ends up rendering
-            as a raw id. */}
-        {(activitiesStatus.state === "error" || boqStatus.state === "error") && (
+        {activitiesError && (
           <p role="status" className="border-t border-ct-border px-4 py-2 text-[12.5px] text-px-error">
-            {[activitiesStatus, boqStatus]
-              .filter((s): s is { state: "error"; text: string } => s.state === "error")
-              .map((s) => s.text)
-              .join(" ")}{" "}
-            Names may show as ids below.
+            {activitiesError} Activity names may show as ids below, and the form&apos;s picker may be empty.
           </p>
         )}
       </div>
       <div ref={formRef} className="min-h-0 border border-ct-border rounded-md overflow-hidden">
-        <WorkProgressFormClient projectId={projectId} onLogged={load} />
+        {/* F-24: the page already read this list; handing it down is one
+            request saved on a screen that made the same call twice. */}
+        <WorkProgressFormClient
+          projectId={projectId}
+          activities={activities}
+          onLogged={() => void load()}
+        />
       </div>
     </div>
   );

@@ -1,44 +1,75 @@
+// R67 F-18 / decision D-04 option A.
+//
+// This route is the fallback destination of every module page that cannot
+// establish a project, so it is the screen most often waited on -- and it
+// awaited requireAuth() plus two VERIDIAN calls before emitting anything. The
+// greeting, the KPI tiles and the projects table now stream as a frame
+// (loading.tsx and the boundary below share it) while those calls run, and the
+// screen-definitions lookup is served from an hour-long per-org cache rather
+// than re-requested on every visit.
+//
+// The two VERIDIAN calls stay concurrent (perf fix 2026-08-17, see
+// scripts/measure-perf.mjs): neither depends on the other's response.
+//
+// R67 MERGE (lane D0 x lane F2). Lane D0's D-66 -- "HOME follows the project
+// context" -- is kept in full and moves INSIDE the boundary with everything
+// else that needs the network:
+//
+//   /dashboard renders the portfolio when the context is All and the PROJECT
+//   dashboard when a project is set; /dashboard/project stays a deep link that
+//   sets the context. Until D-66, /dashboard always rendered the org
+//   portfolio, whatever the rail said -- so a user who picked Cedar Heights in
+//   the top bar and then clicked HOME landed on a screen about every project,
+//   with the rail still naming one. That is the same split-brain R-253
+//   recorded in the breadcrumb, in the one place a user returns to most often.
+//
+// The order of sources is the WS-A root rule's: the URL wins, then the cookie
+// the rail writes. There is deliberately NO projects[0] fallback -- that is
+// the fault D-20 removed, and the home screen is the loudest possible place to
+// re-introduce it. The scope is decided from the org's REAL project list, so a
+// stale cookie naming a project this org can no longer see is discarded rather
+// than followed into a blank screen; that is why the decision sits after the
+// dashboard read rather than before it, and therefore inside the boundary.
+import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import DashboardHomeView, { type OrgDashboard, type CurrencyRow, type RegistryColumn } from "@/components/DashboardHomeView";
+import { getScreenColumns } from "@/lib/module-list-source";
+import { dashboardScope, PROJECT_COOKIE } from "@/lib/project-selection";
+import DashboardHomeView, { type OrgDashboard, type CurrencyRow } from "@/components/DashboardHomeView";
+import DashboardProjectClient from "@/components/DashboardProjectClient";
 import ModuleDirectory from "@/components/shell/ModuleDirectory";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
-// "dashboard.dashboard"): same pattern as permits/page.tsx's
-// resolvePermitsListColumns and scope/page.tsx's resolveRegistryColumns. A
-// missing or errored registry row is NOT fatal -- DashboardHomeView falls
-// back to its own hardcoded labels when this is null. This route also has
-// 3 separate, already-tracked backend timeout faults (R46S11_01/02/03,
-// platform.r43_faults) on its /dashboard, /currencies data calls -- that is
-// a VERIDIAN backend latency issue, unrelated to this registry wiring.
-async function resolveDashboardColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/dashboard.dashboard", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[dashboard/page] screen_definitions resolve failed, falling back to hardcoded labels:", err instanceof Error ? err.message : err);
-    return null;
-  }
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 p-6" data-state="loading" aria-busy="true">
+      <Skeleton className="h-7 w-72" />
+      <Skeleton className="h-4 w-96" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <Card key={i} className="shadow-card">
+            <CardContent className="space-y-3 p-4">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-7 w-32" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export default async function DashboardPage() {
-  let data: OrgDashboard | null = null;
-  let errorMessage: string | null = null;
-  let currencies: CurrencyRow[] = [];
-
+async function DashboardHome({ requestedProjectId }: { requestedProjectId?: string }) {
   const authCtx = await requireAuth();
   const organizationId = authCtx.organizationId;
   const userName = authCtx.user?.email?.split("@")[0] ?? "there";
 
-  // Perf fix (2026-08-17, see scripts/measure-perf.mjs): the two VERIDIAN
-  // calls below must run concurrently, not one-after-another -- neither
-  // depends on the other's response. The registry-columns lookup is kicked
-  // off here too (before the awaited allSettled block) so it runs
-  // concurrently with both, not as a third serial round-trip.
-  const columnsPromise = resolveDashboardColumns(organizationId); // never rejects
+  // R46 P8 seq123: DASHBOARD archetype ("dashboard.dashboard"). A missing or
+  // errored registry row is NOT fatal -- DashboardHomeView falls back to its
+  // own hardcoded labels when this is null.
+  const columnsPromise = getScreenColumns("dashboard.dashboard", organizationId); // never rejects
   // R67 D-02: the "Permits expiring" KPI's own count, org-wide, read
   // concurrently with the other two. VERIDIAN's /permits treats projectId as
   // optional, so omitting it is the org-wide list -- the same withinDays=30
@@ -47,16 +78,28 @@ export default async function DashboardPage() {
   const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
     callVeridian<OrgDashboard>("/dashboard", { organizationId: organizationId ?? undefined }),
     callVeridian<{ currencies: CurrencyRow[] }>("/currencies", { organizationId: organizationId ?? undefined }),
-    callVeridian<{ permits: unknown[] }>("/permits?withinDays=30", { organizationId: organizationId ?? undefined }),
+    // R67 MERGE: this third read is lane D1's, and the merge had kept its
+    // comment above, its destructuring below and the KPI that consumes it while
+    // dropping the CALL -- so `permitsResult` was index 2 of a two-element
+    // tuple. Restored here rather than by deleting the other three, because the
+    // tile it feeds is on screen and would otherwise have read a permanent
+    // en-dash that no failure caused.
+    callVeridian<{ permits?: unknown[] }>("/permits?withinDays=30", {
+      organizationId: organizationId ?? undefined,
+    }),
   ]);
   const registryColumns = await columnsPromise;
 
-  // null, not 0, when that read failed -- "no permits are expiring" and "we
-  // could not find out" must not render the same.
+  // R67 D-02: null, not 0, when that read failed -- "no permits are expiring"
+  // and "we could not find out" must not render the same.
   const permitsExpiring =
     permitsResult.status === "fulfilled" && Array.isArray(permitsResult.value.permits)
       ? permitsResult.value.permits.length
       : null;
+
+  let data: OrgDashboard | null = null;
+  let errorMessage: string | null = null;
+  let currencies: CurrencyRow[] = [];
 
   if (dashboardResult.status === "fulfilled") {
     data = dashboardResult.value;
@@ -67,22 +110,50 @@ export default async function DashboardPage() {
   if (currencyResult.status === "fulfilled") {
     currencies = currencyResult.value.currencies ?? [];
   }
-  // else: non-fatal. NOTE, corrected R52: this used to say formatCurrency()
-  // falls back to a rupee. It no longer does -- PR #156 removed that fallback
-  // because it was the DEFAULT RENDER, not a rare degradation path, and a UAE
-  // buyer saw rupees on the landing screen. An empty list now renders the
-  // deployment default (NEXT_PUBLIC_DEFAULT_CURRENCY_CODE=AED in production)
-  // or a bare number. Leaving the old comment would have told the next reader
-  // something false about live behaviour.
+  // else: non-fatal. NOTE, corrected R52: formatCurrency() does NOT fall back
+  // to a rupee -- PR #156 removed that because it was the DEFAULT RENDER, not
+  // a rare degradation path, and a UAE buyer saw rupees on the landing screen.
+  // An empty list now renders the deployment default
+  // (NEXT_PUBLIC_DEFAULT_CURRENCY_CODE=AED in production) or a bare number.
+
+  const remembered = (await cookies()).get(PROJECT_COOKIE)?.value ?? null;
+  const scope = dashboardScope(data?.projects ?? [], requestedProjectId, remembered);
+
+  if (scope.project) {
+    // The project dashboard renders its own "Dashboard / <project name>"
+    // breadcrumb from the payload it fetches, so the rail and the breadcrumb
+    // are naming the same project by construction.
+    return <DashboardProjectClient projectId={scope.project.id} labels={registryColumns} />;
+  }
+
+  return (
+    <DashboardHomeView
+      userName={userName}
+      data={data}
+      currencies={currencies}
+      errorMessage={errorMessage}
+      registryColumns={registryColumns}
+      permitsExpiring={permitsExpiring}
+    />
+  );
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string }>;
+}) {
+  const { projectId } = await searchParams;
 
   // M24: HOME is the grouped module directory, and it is what REPLACES the
-  // deleted left rail. Rendered beneath the greeting/summary so a returning
-  // user still lands on their numbers first, while a new user -- who has none
-  // of the earned affordances (history, pinning, ranking) -- can still see
-  // every module the product has, grouped by domain.
+  // deleted left rail. It needs no network at all, so it renders OUTSIDE the
+  // boundary -- a new user with a slow backend still sees every module the
+  // product has while the numbers are still arriving.
   return (
     <div className="space-y-8 pb-4">
-      <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} permitsExpiring={permitsExpiring} />
+      <Suspense fallback={<DashboardSkeleton />}>
+        <DashboardHome requestedProjectId={projectId} />
+      </Suspense>
       <div className="px-6">
         <ModuleDirectory />
       </div>

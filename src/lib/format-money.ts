@@ -40,7 +40,7 @@
 // formatter renders the bare number behind a warning glyph, and the screen
 // says CURRENCY_NOT_SET_NOTICE once in its footer.
 
-import { EMPTY_VALUE, formatNumber } from "./format-number";
+import { EMPTY_VALUE, formatDecimal, formatNumber } from "./format-number";
 
 export { EMPTY_VALUE };
 
@@ -156,3 +156,26 @@ export function currencyUnitSuffix(format: MoneyFormat | null | undefined): stri
 
 /** Tailwind classes every money CELL uses, so alignment cannot drift screen to screen. */
 export const MONEY_CELL_CLASS = "text-right tabular-nums whitespace-nowrap";
+
+/**
+ * R67 D-39: the QUANTITY shape, beside the money shape so the two rules that
+ * a Materials grid needs are read together and cannot be confused.
+ *
+ *   formatQty(50)        -> "50"
+ *   formatQty("1250.5")  -> "1,250.5"
+ *   formatQty(0.125)     -> "0.125"
+ *   formatQty(null)      -> "–"
+ *
+ * Up to THREE decimals and no trailing zeros. Money always shows both
+ * decimals so a column aligns on the point; a quantity must not -- "50 m3"
+ * reading "50.00 m3" is noise, and a batching quantity like 0.125 cum would
+ * be rounded away at two. Null / non-numeric renders the en-dash, never 0:
+ * "we have no quantity" and "the quantity is zero" are different facts.
+ *
+ * Accepts a numeric string because drizzle numeric columns arrive as strings.
+ */
+export function formatQty(value: number | string | null | undefined, locale?: string): string {
+  const n = toFiniteNumber(value);
+  if (n === null) return EMPTY_VALUE;
+  return formatDecimal(n, { locale: locale ?? DEFAULT_MONEY_LOCALE, maxFractionDigits: 3 });
+}

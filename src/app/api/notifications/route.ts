@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
 // Real notification list + unread count, backing NotificationBell.tsx.
 // Same Supabase-JS-client + RLS pattern as GET /api/todos and
 // GET /api/org-members -- rows are scoped to the caller via the real
 // "users can view their own notifications" policy (drizzle/0011), not an
 // application-level filter alone.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   if (!ctx.user) return NextResponse.json({ notifications: [], unreadCount: 0 });
@@ -43,4 +44,4 @@ export async function GET() {
     })),
     unreadCount: count ?? 0,
   });
-}
+});

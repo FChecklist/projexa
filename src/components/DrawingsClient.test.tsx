@@ -1,10 +1,26 @@
 /// <reference types="bun-types" />
-// R67 D-10. The item's acceptance is a Playwright run against a local dev
-// server, which this lane may not start. The same assertions are made here with
-// /api/drawings stubbed: the header carries Filter | Export | + New in that
-// order, the Kind filter's wire value is the one the request must contain
-// (kind=dwg), and Export refuses to produce an empty spreadsheet -- it says why
-// instead.
+// R67 MERGE (lane D0/F2's D-71 x lane D1's D-10 / D-12). Both lanes wrote a
+// suite for this screen; both survive here.
+//
+// WHY LANE D1'S SUITE IS THE BULK OF IT. The merged DrawingsClient is lane D1's
+// screen, not the shared list archetype: this register is a genuine superset
+// (a tab strip, removable filter chips, a default "Current only" filter, and a
+// "Showing n of m" whose m comes from a SECOND unfiltered read), which
+// PaneState's shape cannot express. Per the programme's own rule, where lane
+// D1's screen is a superset the screen survives and the shared work folds into
+// IT. So the assertions about the record count and about PaneState's wording,
+// which lane D0's suite made, are NOT restated -- this screen has no record
+// count and never had one, and saying otherwise would be a test asserting a
+// component that does not exist.
+//
+// WHAT LANE D0'S SUITE CONTRIBUTED, and is kept below as its own describe
+// block: the failure branch. D-71's requirement is that a 5xx says it could not
+// load, offers Retry, and never prints the empty-state sentence -- and, the
+// half that mattered most, that "supabaseKey is required." never reaches a
+// user. The merged component satisfies both through paneError(), the same
+// dictionary PaneState uses; see DrawingsClient's own import comment for why
+// that call replaced errorMessage() and how it keeps lane D1's requirement
+// (the backend's REAL reason stays visible) at the same time.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -18,11 +34,18 @@ const push = mock((_: string) => {});
 // lose every other export and the file failed to load at all
 // ("Export named 'usePathname' not found in module .../next/navigation.js").
 const realNavigation = await import("next/navigation");
-mock.module("next/navigation", () => ({ ...realNavigation, useRouter: () => ({ push }) }));
+mock.module("next/navigation", () => ({
+  ...realNavigation,
+  useRouter: () => ({ push, replace: () => {}, refresh: () => {}, back: () => {} }),
+  usePathname: () => "/drawings",
+}));
 
 const mod = await import("./DrawingsClient");
 const DrawingsClient = mod.default;
 const { activeFilterChips, drawingQuery, hasActiveFilter, DEFAULT_FILTERS, EMPTY_FILTERS, KIND_OPTIONS } = mod;
+
+const CURRENT_ONLY_EMPTY =
+  "No current drawings yet. Remove the Current only filter to see revisions awaiting approval.";
 
 const DRAWING = {
   id: "d1",
@@ -32,6 +55,10 @@ const DRAWING = {
   isExternalLink: false,
   documentUrl: "https://signed.example/AR-101.dwg",
   createdAt: "2026-08-14T09:30:00.000Z",
+  drawingNo: "AR-101",
+  rev: "A",
+  status: "current",
+  supersedesId: null,
 };
 
 const realFetch = globalThis.fetch;
@@ -47,9 +74,23 @@ function stubDrawings(rows: unknown[]) {
   }) as unknown as typeof fetch;
 }
 
+function stubFailure(status: number, error: string) {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requested.push(String(input));
+    return new Response(JSON.stringify({ error }), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+}
+
 beforeEach(() => {
   requested = [];
-  window.sessionStorage.clear();
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // The register keeps its filters here; a clean slate per test.
+  }
   stubDrawings([DRAWING]);
 });
 
@@ -134,13 +175,7 @@ describe("DrawingsClient", () => {
   test("Export is disabled with its reason when there is nothing to export", async () => {
     stubDrawings([]);
     const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
-    await waitFor(() =>
-      expect(
-        view.getByText(
-          "No current drawings yet. Remove the Current only filter to see revisions awaiting approval."
-        )
-      ).toBeTruthy()
-    );
+    await waitFor(() => expect(view.getByText(CURRENT_ONLY_EMPTY)).toBeTruthy());
     const exportButton = view.getByRole("button", { name: "Export (No rows to export)" }) as HTMLButtonElement;
     expect(exportButton.disabled).toBe(true);
   });
@@ -176,22 +211,46 @@ describe("DrawingsClient", () => {
     render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
     await waitFor(() => expect(requested.some((u) => u.includes("kind=dwg"))).toBe(true));
   });
+});
 
-  test("a failed load shows the backend's own words, never an empty register", async () => {
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ error: "VERIDIAN did not respond in time, on two attempts" }), {
-        status: 502,
-        headers: { "content-type": "application/json" },
-      })) as unknown as typeof fetch;
+describe("DrawingsClient -- the failure branch (R67 D-71, folded onto lane D1's screen)", () => {
+  test("THE ACCEPTANCE: a 5xx says it could not load, offers Retry, and never prints the empty sentence", async () => {
+    stubFailure(502, "VERIDIAN did not respond in time, on two attempts");
     const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
-    await waitFor(() =>
-      expect(document.body.textContent).toContain("VERIDIAN did not respond in time, on two attempts")
-    );
-    // An empty register and a failed request must not look identical: the
-    // table (and its empty-state line) is withheld, and a Retry is offered.
-    expect(
-      view.queryByText("No current drawings yet. Remove the Current only filter to see revisions awaiting approval.")
-    ).toBeNull();
+
+    await waitFor(() => expect(view.container.textContent).toContain("Couldn't load drawings"));
+    // Lane D1's half: the backend's REAL reason is still on screen, not
+    // swallowed behind a generic sentence.
+    expect(view.container.textContent).toContain("VERIDIAN did not respond in time, on two attempts");
+    // An empty register and a failed request must not look identical: the table
+    // (and its empty-state line) is withheld, and a Retry is offered.
+    expect(view.queryByText(CURRENT_ONLY_EMPTY)).toBeNull();
+    expect(view.container.textContent).not.toContain("No drawings yet");
     expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  test("'supabaseKey is required' is translated, never shown", async () => {
+    stubFailure(500, "supabaseKey is required.");
+    const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
+
+    await waitFor(() =>
+      expect(view.container.textContent).toContain("file storage is not configured for this environment")
+    );
+    expect(view.container.textContent).not.toContain("supabaseKey");
+  });
+
+  test("only a 200 with zero rows shows an empty sentence, and it is the one that names the filter", async () => {
+    stubDrawings([]);
+    const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
+
+    await waitFor(() => expect(view.getByText(CURRENT_ONLY_EMPTY)).toBeTruthy());
+    expect(view.container.textContent).not.toContain("Couldn't load drawings");
+  });
+
+  test("rows render rather than any empty state", async () => {
+    const view = render(<DrawingsClient projectId="p1" projectName="Cedar Heights" />);
+
+    await waitFor(() => expect(view.getByText("AR-101 Ground floor plan")).toBeTruthy());
+    expect(view.queryByText(CURRENT_ONLY_EMPTY)).toBeNull();
   });
 });

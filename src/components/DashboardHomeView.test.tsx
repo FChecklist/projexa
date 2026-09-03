@@ -130,9 +130,17 @@ describe("DashboardHomeView projects table (D-01)", () => {
     expect(push).toHaveBeenCalledWith("/dashboard/project?projectId=p1");
   });
 
+  // R67 MERGE. This test was auto-merged (main never touched it) and still
+  // asked for a control named "+ New" -- lane D1's wording. Both lanes shipped
+  // this control as part of D-01, and the merged component deliberately keeps
+  // main's "Create Project": on the HOME screen a bare "+ New" says least about
+  // what it creates, and it is the same words ProjectsOverviewClient's empty
+  // state now uses, so one product does not name one destination two ways. See
+  // DashboardHomeView.tsx's own comment on the control. The ASSERTION is
+  // unchanged in substance -- a real link to a real route, and no dialog.
   test("the home's create control is a link to the real route, not a dialog trigger", () => {
     const view = renderHome();
-    const link = view.getByRole("link", { name: "+ New" }) as HTMLAnchorElement;
+    const link = view.getByRole("link", { name: "Create Project" }) as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/projects/new");
     expect(view.queryByRole("dialog")).toBeNull();
   });
