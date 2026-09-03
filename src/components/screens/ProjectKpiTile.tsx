@@ -35,9 +35,22 @@ const ARROW: Record<KpiTrend["direction"], string> = { up: "↑", down: "↓", f
 export type ProjectKpiTileProps = {
   label: string;
   value: string;
-  trend: KpiTrend;
+  /**
+   * R67 E-39 (R-271): NULL means there is no trend row at all -- no arrow, no
+   * word. The kit makes `trend` required so that omitting it is a conscious
+   * choice rather than an accident, which is right; but "there is nothing to
+   * compare this with" is a real state, and rendering an arrow for it is a
+   * claim. A spend with no budget is the case that forced this.
+   */
+  trend: KpiTrend | null;
   /** "target 5,000" / "latest BOQ revision" / "next 30 days" -- required, as in the kit. */
   baseline: string;
+  /**
+   * R67 E-39 (R-293): "as of 03-09-2026 14:02". A dashboard four minutes old
+   * and one whose fetch quietly failed twenty minutes ago look identical
+   * without it.
+   */
+  asOf?: string;
   visual?: ReactNode;
   size?: "primary" | "secondary";
   /** Where this number's breakdown lives. Mutually exclusive with onClick. */
@@ -48,7 +61,7 @@ export type ProjectKpiTileProps = {
 
 const TILE_CLASS = "block w-full text-left rounded-md border border-ct-border p-3 hover:border-ct-teal";
 
-function TileBody({ label, value, trend, baseline, visual, size = "secondary", showArrow }: ProjectKpiTileProps & { showArrow: boolean }) {
+function TileBody({ label, value, trend, baseline, asOf, visual, size = "secondary", showArrow }: ProjectKpiTileProps & { showArrow: boolean }) {
   return (
     <>
       <div className="flex items-baseline justify-between gap-2">
@@ -61,11 +74,16 @@ function TileBody({ label, value, trend, baseline, visual, size = "secondary", s
       <div className={size === "primary" ? "font-heading text-4xl text-ct-navy mt-1" : "font-heading text-xl text-ct-navy mt-1"}>
         {value}
       </div>
-      <div className="flex items-center gap-1.5 mt-1 text-[12.5px]" style={{ color: `var(--color-veri-status-${trend.tone})` }}>
-        <span aria-hidden>{ARROW[trend.direction]}</span>
-        <span>{trend.label}</span>
-      </div>
+      {/* R67 E-39: no trend, no row -- an arrow with nothing to point away
+          from is a claim about a comparison that was never made. */}
+      {trend && (
+        <div className="flex items-center gap-1.5 mt-1 text-[12.5px]" style={{ color: `var(--color-veri-status-${trend.tone})` }}>
+          <span aria-hidden>{ARROW[trend.direction]}</span>
+          <span>{trend.label}</span>
+        </div>
+      )}
       <div className="text-[11.5px] text-ct-muted mt-0.5">{baseline}</div>
+      {asOf && <div className="text-[11px] text-ct-muted mt-0.5">as of {asOf}</div>}
       {visual && <div className="mt-2">{visual}</div>}
     </>
   );

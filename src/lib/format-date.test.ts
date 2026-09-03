@@ -9,7 +9,7 @@
 // runtime-dependent flake.
 import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateDMY, formatDateTime, formatDayMonth, formatHourMinute, formatTime } from "./format-date";
+import { formatDate, formatDateDMY, formatDateTime, formatDateTimeDMY, formatDayMonth, formatHourMinute, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -113,5 +113,19 @@ describe("formatDateDMY (R67 E-34 / E-31)", () => {
   test("accepts a Date and an epoch, like every other helper here", () => {
     expect(formatDateDMY(new Date("2026-01-02T00:00:00.000Z"))).toBe("02-01-2026");
     expect(formatDateDMY(Date.parse("2026-01-02T00:00:00.000Z"))).toBe("02-01-2026");
+  });
+});
+describe("formatDateTimeDMY (R67 E-39: the tiles' 'as of' stamp)", () => {
+  test("day-first date and a 24-hour clock, in that order", () => {
+    expect(formatDateTimeDMY("2026-09-03T14:02:00.000Z")).toBe("03-09-2026 14:02");
+  });
+
+  test("it is exactly its two parts, so the screen cannot show two date conventions", () => {
+    const iso = "2026-01-05T09:07:00.000Z";
+    expect(formatDateTimeDMY(iso)).toBe(`${formatDateDMY(iso)} ${formatHourMinute(iso)}`);
+  });
+
+  test("midnight is 00:00, never 12:00 AM and never 24:00", () => {
+    expect(formatDateTimeDMY("2026-09-03T00:00:00.000Z")).toBe("03-09-2026 00:00");
   });
 });

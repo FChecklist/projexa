@@ -55,6 +55,7 @@ import {
 } from "@fchecklist/veridian-ui-kit/screens";
 import { ProjectKpiTile } from "@/components/screens/ProjectKpiTile";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
+import { formatDateTimeDMY } from "@/lib/format-date";
 import {
   NO_PROGRESS_CAPTION,
   budgetCardModel,
@@ -78,7 +79,10 @@ export type RegistryColumn = ScreenColumn;
 // "resolved from the DB" and "resolved from this hardcoded default" (M28:
 // keep the hardcoded version behind a flag until verified).
 const DEFAULT_LABELS: ScreenColumn[] = [
-  { field: "percentByValue", label: "% Complete by BOQ Value", type: "text" },
+  // R67 E-39 (R-297): two different progress figures reach this screen and both
+  // were called "progress". Each is now named by the base it is measured
+  // against, here and on the chart heading below.
+  { field: "percentByValue", label: "% complete by BOQ value", type: "text" },
   { field: "contractValue", label: "Contract Value", type: "text" },
   { field: "budgetVsActual", label: "Budget vs Actual", type: "text" },
   { field: "permitsExpiring", label: "Permits Expiring", type: "text" },
@@ -95,16 +99,24 @@ function labelFor(labels: ScreenColumn[], field: string, fallback: string): stri
 type ProjectDashboard = {
   projectId: string;
   projectName: string;
-  budget: number;
+  // R67 E-39 (R-271): null (never 0) when this project has no ERP cost-centre
+  // budget at all. The server stopped coalescing it; this type stopped lying
+  // about it.
+  budget: number | null;
   revenue: number;
   expenses: number;
   progressPercent: number;
+  /** R67 E-39: the same two numbers under names that say what they measure. */
+  progressByActivityLogPct?: number;
+  progressByBoqValuePct?: number | null;
   delayedTaskCount: number;
   taskCount: number;
   projectValue: number | null;
   earnedValue: number | null;
   percentByValue: number | null;
   contractValue: number | null;
+  /** R67 E-39 (R-293): when the server computed these figures, ISO 8601. */
+  generatedAt?: string;
 };
 type Currency = { code: string; isBaseCurrency: boolean };
 type RecentEntry = { id: string; activityId: string; entryDate: string; quantityDone: string; percentComplete: string };
@@ -131,6 +143,15 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   // different facts and the card must not print the first when it means the
   // second.
   const [permitsError, setPermitsError] = useState(false);
+  // R67 E-39 (R-293): the SAME rule for the tiles the project-dashboard call
+  // feeds. It used to hand a failed response straight into setDashboard, so a
+  // 500 rendered four tiles of undefined figures rather than saying nothing
+  // could be read.
+  const [dashboardError, setDashboardError] = useState(false);
+  // And for the BOQ-derived budget: a failed variance read used to look exactly
+  // like "this project has no BOQ budget", which then made the Budget tile
+  // announce "No budget set" about a figure nobody had actually looked up.
+  const [varianceError, setVarianceError] = useState(false);
   // Every entry, for the cumulative day-by-day series -- `recent` stays the
   // five-row list the activity panel shows.
   const [allEntries, setAllEntries] = useState<RecentEntry[]>([]);
@@ -154,11 +175,17 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     }
   }, [projectId]);
 
-  useEffect(() => {
-    async function load() {
+  const load = useCallback(async () => {
       setLoading(true);
+      setDashboardError(false);
+      setVarianceError(false);
       const [dashRes, curRes, activitiesRes, entriesRes, varianceRes] = await Promise.all([
-        fetch(`/api/dashboard/project/${encodeURIComponent(projectId)}`).then((r) => r.json()),
+        // R67 E-39: the STATUS is read before the body. `.then(r => r.json())`
+        // turned a 500's error body into a dashboard object, and four tiles
+        // then rendered figures out of `undefined`.
+        fetch(`/api/dashboard/project/${encodeURIComponent(projectId)}`)
+          .then(async (r) => (r.ok ? ((await r.json()) as ProjectDashboard) : null))
+          .catch(() => null),
         fetch("/api/currencies").then((r) => r.json()).catch(() => ({ currencies: [] })),
         fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ activities: [] })),
         fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ entries: [] })),
@@ -166,11 +193,13 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         loadPermits(),
       ]);
       setDashboard(dashRes);
+      setDashboardError(dashRes === null);
       setCurrency((curRes.currencies ?? []).find((c: Currency) => c.isBaseCurrency));
       setActivities(activitiesRes.activities ?? []);
       const entries: RecentEntry[] = entriesRes.entries ?? [];
       setAllEntries(entries);
       setRecent(entries.slice(0, 5));
+      setVarianceError(varianceRes === null);
       setBoqBudget(typeof varianceRes?.totalBudget === "number" ? varianceRes.totalBudget : null);
 
       // R67 E-29: the category breakdown used to be fetched HERE, serially,
@@ -180,16 +209,50 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       // labelled skeleton, and the rest of the dashboard paints one round trip
       // sooner.
       setLoading(false);
-    }
-    load();
   }, [projectId, loadPermits]);
 
-  if (loading || !dashboard) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+
+  // R67 E-39 (R-293): the project dashboard call feeds four of the five tiles.
+  // When it fails there is nothing honest to put in them, so the screen says
+  // so ONCE and offers the retry -- rather than four identical dead tiles, and
+  // rather than the figures-out-of-undefined it used to render.
+  if (!dashboard || dashboardError) {
+    return (
+      <div className="space-y-2 p-6">
+        <p role="alert" className="text-[13px] text-px-error">
+          — could not load this project&apos;s dashboard
+        </p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
   const hasEv = dashboard.earnedValue !== null && dashboard.contractValue !== null;
   const expiringCount = permitsExpiring.length;
   const expiredCount = permitsExpiring.filter((p) => (p.daysToExpiry ?? 0) < 0).length;
+
+  // R67 E-39 (R-293): the stamp every tile carries. The server says when it
+  // computed the figures; if an older VERIDIAN answers without generatedAt,
+  // the tiles simply carry no stamp rather than one invented in the browser --
+  // a made-up "as of" is worse than none.
+  const asOf = dashboard.generatedAt ? formatDateTimeDMY(dashboard.generatedAt) : undefined;
+  // R67 E-39 (R-297): the activity-log figure, under its own name. The named
+  // field is preferred; progressPercent is the same number from an older
+  // payload.
+  const activityLogPct = dashboard.progressByActivityLogPct ?? dashboard.progressPercent;
+  const boqValuePct = dashboard.progressByBoqValuePct ?? dashboard.percentByValue;
 
   const progress = cumulativeProgressSeries(allEntries);
   const budgetCard = budgetCardModel(
@@ -203,8 +266,8 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     (v) => money(v ?? 0, currency)
   );
   const primaryTrend = primaryTrendLabel(
-    dashboard.percentByValue,
-    dashboard.progressPercent,
+    boqValuePct,
+    activityLogPct,
     hasEv ? `Earned ${money(dashboard.earnedValue!, currency)}` : "Import a BOQ to see this"
   );
 
@@ -227,8 +290,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           // BOQ scoping). Without the distinguishing word here, a user
           // following that link sees a second unlabelled "percent complete"
           // number that disagrees with the one they just clicked.
-          label={labelFor(dashboardLabels, "percentByValue", "% Complete by BOQ Value")}
-          value={hasEv ? `${dashboard.percentByValue}%` : "No BOQ yet"}
+          label={labelFor(dashboardLabels, "percentByValue", "% complete by BOQ value")}
+          value={hasEv ? `${boqValuePct}%` : "No BOQ yet"}
+          asOf={asOf}
           // R67 E-25: when the BOQ figure is 0 and the activity log is not,
           // the two numbers on screen disagree, and the reader gets the
           // reason and the fix instead of a bare "Earned AED 0".
@@ -252,6 +316,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             value={hasEv ? money(dashboard.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
+            asOf={asOf}
             // Contract value -> BOQ (ScopeClient is the CUSTOM screen for the latest revision -- seq22 finding)
             href={`/scope?projectId=${projectId}`}
           />
@@ -281,25 +346,39 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             value={dashboard.projectValue !== null ? money(dashboard.projectValue, currency) : "Not set"}
             trend={{ direction: "flat", tone: "context", label: "manual entry, or linked POs" }}
             baseline="overridable per project"
+            asOf={asOf}
             href={`/scope?projectId=${projectId}`}
           />
           {/* R67 E-25: no bullet bar at all when there is no budget -- a full
               orange bar against a target of zero is a false alarm, not a
               warning. With no cost-centre budget the BOQ-derived one becomes
               the target and the baseline says which is in use. */}
+          {/* R67 E-39 (R-271): with no budget this reads "AED 185,000 spent",
+              "No budget set — Set budget", and NOTHING else: no bar, no arrow,
+              no verdict word. A failed variance read is its own state -- it
+              must not be allowed to say "No budget set" about a figure nobody
+              managed to look up. */}
           <ProjectKpiTile
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
-            value={money(budgetCard.spend, currency)}
-            trend={{ direction: budgetCard.direction, tone: budgetCard.tone, label: budgetCard.trendWord }}
-            baseline={budgetCard.baseline}
-            visual={budgetCard.target === null ? undefined : <BulletChart value={budgetCard.spend} target={budgetCard.target} lowerIsBetter unit="" />}
+            value={varianceError ? "—" : budgetCard.value}
+            trend={
+              varianceError
+                ? { direction: "flat", tone: "needs-you", label: "could not load" }
+                : budgetCard.trend
+                  ? { direction: budgetCard.trend.direction, tone: budgetCard.trend.tone, label: budgetCard.trend.word }
+                  : null
+            }
+            baseline={varianceError ? "Retry" : budgetCard.baseline}
+            asOf={varianceError ? undefined : asOf}
+            visual={varianceError || budgetCard.target === null ? undefined : <BulletChart value={budgetCard.spend} target={budgetCard.target} lowerIsBetter unit="" />}
             // R67 E-38: /budgets is where a budget is READ; /budgets/new is
             // where one is SET, and with no budget at all that is the only
             // useful door. Deliberately ONE href either way rather than a
             // second "Set budget" link INSIDE the tile: a link inside a link is
             // invalid markup, and the observed neighbour-href bug is exactly
             // what nested interactive elements produce.
-            href={budgetCard.href}
+            href={varianceError ? undefined : budgetCard.href}
+            onClick={varianceError ? () => void load() : undefined}
           />
           {/* R67 E-25: a failed read reads "—", never 0. "No permits expire in
               the next 30 days" is a reassurance, and printing it when the
@@ -313,7 +392,12 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             value={permitsError ? "—" : String(expiringCount)}
             trend={
               permitsError
-                ? { direction: "flat", tone: "needs-you", label: "couldn't load" }
+                // R67 E-39 supersedes E-25's phrasing here. E-25 shipped
+                // "couldn't load"; E-39 generalises the rule to every tile and
+                // spells it "could not load", and one register across the five
+                // tiles beats matching the earlier item's contraction. Flagged
+                // to the owner as a two-item wording conflict inside one audit.
+                ? { direction: "flat", tone: "needs-you", label: "could not load" }
                 : {
                     direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
                     tone: expiredCount > 0 ? "late" : expiringCount > 0 ? "needs-you" : "done",
@@ -321,6 +405,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
                   }
             }
             baseline={permitsError ? "Retry" : "next 30 days"}
+            asOf={permitsError ? undefined : asOf}
             href={permitsError ? undefined : `/permits?projectId=${projectId}&withinDays=30`}
             onClick={permitsError ? () => void loadPermits() : undefined}
           />
@@ -328,7 +413,16 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       }
       trendColumn={
         <>
-          <h3 className="text-[13px] font-medium text-ct-navy mb-2">{labelFor(dashboardLabels, "progressOverTimeHeading", "Progress logged over time")}</h3>
+          <h3 className="text-[13px] font-medium text-ct-navy mb-1">{labelFor(dashboardLabels, "progressOverTimeHeading", "Progress logged over time")}</h3>
+          {/* R67 E-39 (R-297): the OTHER progress figure, named by the base it
+              is measured against, beside the chart it comes from. Deliberately
+              NOT the chart's title: this panel plots cumulative QUANTITY
+              logged per day, and titling it with a percentage would mislabel
+              its own axis. The two measures are now "% complete by BOQ value"
+              (the tile above) and "% complete by activity log" (here), and a
+              reader comparing 0% with 60% can see they are different
+              questions. */}
+          <p className="mb-2 text-[11.5px] text-ct-muted">% complete by activity log: {activityLogPct}%</p>
           {/* Honest scope note: a real AED-denominated "earned value over time"
               trend needs historical earned-value snapshots this codebase
               doesn't persist yet -- plotting one here would mean fabricating

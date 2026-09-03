@@ -58,13 +58,23 @@ export const NO_PROGRESS_CAPTION = "No progress logged yet";
 export type BudgetCardModel = {
   /** The figure on the card. Always the spend -- that is the number that exists. */
   spend: number;
+  /**
+   * R67 E-39 (R-271): the value AS WRITTEN. With no budget it reads
+   * "AED 185,000 spent" -- the word matters, because without a budget beside
+   * it a bare money figure on a card labelled "Budget vs Actual" reads as the
+   * budget.
+   */
+  value: string;
   /** The target the bullet bar is drawn against; null means NO BAR AT ALL. */
   target: number | null;
   /** Which budget is on screen, so the baseline can say. */
   source: "erp" | "boq" | "none";
-  trendWord: string;
-  tone: "context" | "needs-you" | "done";
-  direction: "up" | "down" | "flat";
+  /**
+   * R67 E-39: NULL when there is no budget, and null means NO TREND ROW AT
+   * ALL -- no arrow, no verdict word. There is nothing to compare the spend
+   * with, so any direction would be invented; an arrow is a claim.
+   */
+  trend: { word: string; tone: "context" | "needs-you" | "done"; direction: "up" | "down" | "flat" } | null;
   baseline: string;
   /**
    * Where the card goes. ONE destination, never a second link nested inside the
@@ -97,8 +107,11 @@ export type BudgetCardHrefs = { budgets: string; setBudget: string };
  * THE RULE: a real ERP budget wins. Failing that, the BOQ-derived budget
  * (SUM of line amount x budget %) is used as the target and the baseline says
  * so, because the reader must know WHICH budget the verdict is against.
- * Failing both, the card shows the spend, the words "no budget set", no
- * arrow, and no bar.
+ * Failing both, the card reads "<spend> spent" with "No budget set — Set
+ * budget", NO arrow, NO verdict word and NO bar (R67 E-39 refines E-25 here:
+ * E-25 removed the false alarm and left the words "no budget set" in the trend
+ * row, which still rendered an arrow beside them; E-39 removes the trend row
+ * entirely, because an arrow with nothing to point away from is a claim).
  */
 export function budgetCardModel(
   spend: number,
@@ -114,13 +127,17 @@ export function budgetCardModel(
   if (target === null) {
     return {
       spend,
+      // R67 E-39: "AED 185,000 spent", not a bare figure on a card called
+      // "Budget vs Actual" -- with no budget beside it, the bare figure reads
+      // as the budget.
+      value: `${money(spend)} spent`,
       target: null,
       source: "none",
-      trendWord: "no budget set",
-      tone: "context",
-      direction: "flat",
-      baseline: "Set budget % on the BOQ",
-      // R67 E-38: with no budget, the door is the place that SETS one.
+      // R67 E-39: no trend AT ALL. No arrow, and no "over budget".
+      trend: null,
+      baseline: "No budget set — Set budget",
+      // R67 E-38: with no budget, the door is the place that SETS one, and the
+      // whole tile is that link -- never a second anchor nested inside it.
       href: hrefs.setBudget,
     };
   }
@@ -128,11 +145,14 @@ export function budgetCardModel(
   const over = spend > target;
   return {
     spend,
+    value: money(spend),
     target,
     source: erp !== null ? "erp" : "boq",
-    trendWord: over ? "over budget" : "within budget",
-    tone: over ? "needs-you" : "done",
-    direction: over ? "up" : "down",
+    trend: {
+      word: over ? "over budget" : "within budget",
+      tone: over ? "needs-you" : "done",
+      direction: over ? "up" : "down",
+    },
     baseline:
       erp !== null
         ? `budget ${money(target)} (cost centre)`
@@ -142,12 +162,21 @@ export function budgetCardModel(
 }
 
 /**
- * The primary KPI's trend label.
+ * The line UNDER the top-left number.
  *
  * When the BOQ figure is 0 and the activity log is not, the two numbers on
  * screen disagree and the reader deserves the reason and the fix rather than
  * a bare "Earned AED 0". The needs-you tone, because it IS something for them
  * to do.
+ *
+ * R67 E-39 (R-297) REFINES E-25's wording here, deliberately and once. E-25
+ * said "60% logged, not yet linked to BOQ lines"; E-39 specifies "Activity log
+ * says 60% — no quantities booked against BOQ lines yet", which names WHICH
+ * measure the 60% belongs to (this screen carries two progress figures and
+ * both were called "progress") and states the actual cause -- no quantity has
+ * been booked against a BOQ line -- rather than the symptom. Two sentences for
+ * one fact would have been the duplication this programme keeps removing, so
+ * E-25's is replaced, not added to.
  */
 export function primaryTrendLabel(
   percentByValue: number | null,
@@ -157,7 +186,10 @@ export function primaryTrendLabel(
   const byValue = typeof percentByValue === "number" ? percentByValue : null;
   const logged = typeof progressPercent === "number" ? progressPercent : null;
   if (byValue === 0 && logged !== null && logged > 0) {
-    return { label: `${logged}% logged, not yet linked to BOQ lines`, tone: "needs-you" };
+    return {
+      label: `Activity log says ${logged}% — no quantities booked against BOQ lines yet`,
+      tone: "needs-you",
+    };
   }
   return { label: earnedValueText, tone: "context" };
 }

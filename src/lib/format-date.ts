@@ -132,3 +132,16 @@ export function formatDayMonth(value: Date | string | number): string {
   const month = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, month: "short" });
   return `${day} ${month}`;
 }
+/**
+ * e.g. "03-09-2026 14:02" -- the "as of" stamp every project-dashboard tile
+ * carries.
+ *
+ * R67 E-39 (R-293). Built from the two helpers above rather than from a fresh
+ * toLocaleString call, so the date half cannot read month-first while
+ * formatDateDMY reads day-first two lines away, and the clock half is the same
+ * 24-hour form the report stamps already use. formatDateTime() gives
+ * "9/3/2026, 2:02 PM", which is a third convention on the same screen.
+ */
+export function formatDateTimeDMY(value: Date | string | number): string {
+  return `${formatDateDMY(value)} ${formatHourMinute(value)}`;
+}

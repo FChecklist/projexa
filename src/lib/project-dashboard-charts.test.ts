@@ -80,12 +80,19 @@ describe("cumulativeProgressSeries", () => {
 const HREFS = { budgets: "/budgets?projectId=p1", setBudget: "/budgets/new?projectId=p1" };
 
 describe("budgetCardModel", () => {
-  test("NO budget anywhere: the spend, the words 'no budget set', no arrow and NO BAR", () => {
+  // R67 E-39 (R-271) refines E-25 here. E-25 removed the false alarm and left
+  // the words "no budget set" in the TREND row, which still rendered an arrow
+  // beside them; E-39 removes the trend row entirely, because an arrow with
+  // nothing to point away from is a claim about a comparison never made.
+  test("NO budget anywhere: '<spend> spent', 'No budget set - Set budget', NO trend row and NO BAR", () => {
     const card = budgetCardModel(185_000, 0, null, HREFS, money);
     expect(card.target).toBeNull();
-    expect(card.trendWord).toBe("no budget set");
-    expect(card.direction).toBe("flat");
-    expect(card.tone).toBe("context");
+    // The word "spent" is load-bearing: without a budget beside it, a bare
+    // money figure on a card called "Budget vs Actual" reads as the budget.
+    expect(card.value).toBe("AED 185,000 spent");
+    expect(card.trend).toBeNull();
+    expect(card.baseline).toBe("No budget set \u2014 Set budget");
+    expect(card.baseline).not.toContain("over budget");
     // R67 E-38: the door is where a budget is SET, never the read-only list.
     expect(card.href).toBe("/budgets/new?projectId=p1");
   });
@@ -105,7 +112,9 @@ describe("budgetCardModel", () => {
     expect(card.target).toBe(100_000);
     expect(card.source).toBe("erp");
     expect(card.baseline).toContain("cost centre");
-    expect(card.trendWord).toBe("within budget");
+    // With a real budget the verdict word IS earned, so the trend row returns.
+    expect(card.trend?.word).toBe("within budget");
+    expect(card.value).toBe("AED 50,000");
   });
 
   test("with no cost-centre budget, the BOQ-derived one is the target AND the baseline says so", () => {
@@ -114,21 +123,21 @@ describe("budgetCardModel", () => {
     expect(card.source).toBe("boq");
     expect(card.baseline).toContain("BOQ x budget %");
     expect(card.baseline).toContain("no cost-centre budget set");
-    expect(card.trendWord).toBe("over budget");
-    expect(card.tone).toBe("needs-you");
+    expect(card.trend?.word).toBe("over budget");
+    expect(card.trend?.tone).toBe("needs-you");
   });
 
   test("a real budget the spend has not passed is not an alarm", () => {
     const card = budgetCardModel(10, 100, null, HREFS, money);
-    expect(card.direction).toBe("down");
-    expect(card.tone).toBe("done");
+    expect(card.trend?.direction).toBe("down");
+    expect(card.trend?.tone).toBe("done");
   });
 });
 
 describe("primaryTrendLabel", () => {
   test("0% by value with real logged progress explains the gap and names the fix", () => {
     const trend = primaryTrendLabel(0, 60, "Earned AED 0");
-    expect(trend.label).toBe("60% logged, not yet linked to BOQ lines");
+    expect(trend.label).toBe("Activity log says 60% \u2014 no quantities booked against BOQ lines yet");
     expect(trend.tone).toBe("needs-you");
   });
 

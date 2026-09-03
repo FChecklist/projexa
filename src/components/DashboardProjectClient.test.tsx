@@ -1,6 +1,6 @@
 /// <reference types="bun-types" />
 // R67 E-25 (R-211). The item's own acceptance clause -- with /api/permits
-// failing, the Permits Expiring card reads "couldn't load" and never "0" --
+// failing, the Permits Expiring card reads "could not load" and never "0" --
 // plus the other two defects it names: no bullet bar against a zero budget,
 // and a one-day series that says so instead of drawing an empty frame.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -20,7 +20,7 @@ import DashboardProjectClient from "./DashboardProjectClient";
 const DASHBOARD = {
   projectId: "p1",
   projectName: "Cedar Heights Villa - Phase 1",
-  budget: 0,
+  budget: null,
   revenue: 0,
   expenses: 185_000,
   progressPercent: 60,
@@ -30,22 +30,48 @@ const DASHBOARD = {
   earnedValue: 0,
   percentByValue: 0,
   contractValue: 475_000,
+  // R67 E-39: the named progress bases and the "as of" stamp the server
+  // now sends with every project dashboard.
+  progressByActivityLogPct: 60,
+  progressByBoqValuePct: 0,
+  generatedAt: "2026-09-03T14:02:00.000Z",
 };
 
-type Options = { permitsStatus?: number; entries?: unknown[]; variance?: unknown };
+type Options = {
+  permitsStatus?: number;
+  entries?: unknown[];
+  variance?: unknown;
+  // R67 E-39: a non-2xx on either of these is its own state on screen.
+  dashboardStatus?: number;
+  varianceStatus?: number;
+  dashboard?: unknown;
+};
 
-function stubFetch({ permitsStatus = 200, entries = [{ id: "e1", activityId: "a1", entryDate: "2026-08-25", quantityDone: "10", percentComplete: "60" }], variance = { totalBudget: 0 } }: Options = {}) {
+function stubFetch({
+  permitsStatus = 200,
+  entries = [{ id: "e1", activityId: "a1", entryDate: "2026-08-25", quantityDone: "10", percentComplete: "60" }],
+  variance = { totalBudget: 0 },
+  dashboardStatus = 200,
+  varianceStatus = 200,
+  dashboard = DASHBOARD,
+}: Options = {}) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/api/permits")) {
       if (permitsStatus !== 200) return new Response(JSON.stringify({ error: "boom" }), { status: permitsStatus });
       return new Response(JSON.stringify({ permits: [] }), { status: 200 });
     }
-    if (url.includes("/api/dashboard/project")) return new Response(JSON.stringify(DASHBOARD), { status: 200 });
+    if (url.includes("/api/dashboard/project")) {
+      if (dashboardStatus !== 200) return new Response(JSON.stringify({ error: "boom" }), { status: dashboardStatus });
+      return new Response(JSON.stringify(dashboard), { status: 200 });
+    }
     if (url.includes("/api/currencies")) return new Response(JSON.stringify({ currencies: [{ code: "AED", isBaseCurrency: true }] }), { status: 200 });
     if (url.includes("/api/work-progress/activities")) return new Response(JSON.stringify({ activities: [{ id: "a1", name: "Blockwork" }] }), { status: 200 });
     if (url.includes("/api/work-progress")) return new Response(JSON.stringify({ entries }), { status: 200 });
-    if (url.includes("/api/reports/budget-variance")) return new Response(JSON.stringify(variance), { status: 200 });
+    if (url.includes("/api/reports/budget-variance")) {
+      if (varianceStatus !== 200) return new Response(JSON.stringify({ error: "boom" }), { status: varianceStatus });
+      return new Response(JSON.stringify(variance), { status: 200 });
+    }
     if (url.includes("/api/reports/category-progress")) return new Response(JSON.stringify({ categories: [] }), { status: 200 });
     return new Response(JSON.stringify({}), { status: 200 });
   }) as typeof fetch;
@@ -71,10 +97,10 @@ afterEach(() => {
 });
 
 describe("DashboardProjectClient", () => {
-  test("a failed permits read reads 'couldn't load' with a dash, never 0", async () => {
+  test("a failed permits read reads 'could not load' with a dash, never 0", async () => {
     stubFetch({ permitsStatus: 500 });
     const { container } = render(<DashboardProjectClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("couldn't load"));
+    await waitFor(() => expect(container.textContent).toContain("could not load"));
     const card = tile(container, "Permits Expiring");
     expect(card.textContent).toContain("—");
     expect(card.textContent).not.toContain("none due soon");
@@ -87,14 +113,14 @@ describe("DashboardProjectClient", () => {
     stubFetch();
     const { container } = render(<DashboardProjectClient projectId="p1" />);
     await waitFor(() => expect(container.textContent).toContain("none due soon"));
-    expect(container.textContent).not.toContain("couldn't load");
+    expect(container.textContent).not.toContain("could not load");
   });
 
-  test("no budget anywhere: 'no budget set', the words that set one, and NO bar", async () => {
+  test("no budget anywhere: '<spend> spent', the words that set one, NO bar and NO arrow", async () => {
     stubFetch();
     const { container } = render(<DashboardProjectClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("no budget set"));
-    expect(container.textContent).toContain("Set budget % on the BOQ");
+    await waitFor(() => expect(container.textContent).toContain("No budget set"));
+    expect(container.textContent).toContain("No budget set \u2014 Set budget");
     expect(container.textContent).not.toContain("over budget");
     const card = tile(container, "Budget vs Actual");
     // The kit's BulletChart always prints "target ..." beside its bar; no bar
@@ -133,7 +159,7 @@ describe("DashboardProjectClient", () => {
   test("0% by value with real logged progress explains the gap on the primary KPI", async () => {
     stubFetch();
     const { container } = render(<DashboardProjectClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("60% logged, not yet linked to BOQ lines"));
+    await waitFor(() => expect(container.textContent).toContain("Activity log says 60% \u2014 no quantities booked against BOQ lines yet"));
   });
 });
 // R67 E-38 (R-270 / R-296). EVERY TILE IS A REAL LINK WITH ONE DESTINATION.
@@ -149,7 +175,7 @@ describe("R67 E-38: the five tiles are links, each with its own asserted destina
     const { container } = render(<DashboardProjectClient projectId="p1" />);
     await waitFor(() => expect(container.textContent).toContain("Contract Value"));
 
-    for (const label of ["% Complete by BOQ Value", "Contract Value", "Project Value", "Budget vs Actual", "Permits Expiring"]) {
+    for (const label of ["% complete by BOQ value", "Contract Value", "Project Value", "Budget vs Actual", "Permits Expiring"]) {
       const el = tile(container, label);
       expect(el.tagName).toBe("A");
       expect(el.getAttribute("href")).toContain("p1");
@@ -164,7 +190,7 @@ describe("R67 E-38: the five tiles are links, each with its own asserted destina
     // The number's own breakdown: earned value over contract value IS the
     // scope view's Grand Total. It used to go to Analytics, which shows a
     // DIFFERENT percentage.
-    expect(tile(container, "% Complete by BOQ Value").getAttribute("href")).toBe(
+    expect(tile(container, "% complete by BOQ value").getAttribute("href")).toBe(
       "/work-progress?projectId=p1&tab=report&view=scope"
     );
     expect(tile(container, "Contract Value").getAttribute("href")).toBe("/scope?projectId=p1");
@@ -201,10 +227,86 @@ describe("R67 E-38: the five tiles are links, each with its own asserted destina
   test("the failed Permits tile is a BUTTON, because retrying is not navigating", async () => {
     stubFetch({ permitsStatus: 500 });
     const { container } = render(<DashboardProjectClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("couldn't load"));
+    await waitFor(() => expect(container.textContent).toContain("could not load"));
 
     const el = tile(container, "Permits Expiring");
     expect(el.tagName).toBe("BUTTON");
     expect(el.getAttribute("href")).toBeNull();
+  });
+});
+// R67 E-39 (R-271 / R-297 / R-293 / R-270). NULL IS NOT ZERO, BOTH PROGRESS
+// BASES ARE NAMED, EVERY TILE IS STAMPED, AND A FAILED READ SHOWS A DASH.
+describe("R67 E-39: what a tile is allowed to claim", () => {
+  test("with no budget: the value says 'spent', there is NO arrow and no verdict word", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("No budget set"));
+
+    const card = tile(container, "Budget vs Actual");
+    expect(card.textContent).toContain("AED 185,000 spent");
+    expect(card.textContent).toContain("No budget set \u2014 Set budget");
+    expect(card.textContent).not.toContain("over budget");
+    expect(card.textContent).not.toContain("within budget");
+    // The kit's arrow glyphs. None of them belongs on a card with nothing to
+    // compare against.
+    expect(card.textContent).not.toContain("\u2191");
+    expect(card.textContent).not.toContain("\u2193");
+    // No bar either -- the kit's BulletChart always prints "target ..." beside
+    // one, so that text is absent.
+    expect(card.textContent).not.toContain("target");
+  });
+
+  test("both progress measures are named by the base they are measured against", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("% complete by BOQ value"));
+    expect(container.textContent).toContain("% complete by activity log");
+    // And the one sentence that explains why they disagree, in E-39's words.
+    expect(container.textContent).toContain(
+      "Activity log says 60% \u2014 no quantities booked against BOQ lines yet"
+    );
+  });
+
+  test("every tile carries the server's own 'as of' stamp", async () => {
+    stubFetch();
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+
+    for (const label of ["% complete by BOQ value", "Contract Value", "Project Value", "Budget vs Actual", "Permits Expiring"]) {
+      expect(tile(container, label).textContent).toContain("as of 03-09-2026 14:02");
+    }
+  });
+
+  test("a payload with no generatedAt carries NO stamp -- never one invented in the browser", async () => {
+    stubFetch({ dashboard: { ...DASHBOARD, generatedAt: undefined } });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+    expect(container.textContent).not.toContain("as of");
+  });
+
+  test("a failed project-dashboard read says so and offers a Retry, instead of four tiles of undefined", async () => {
+    stubFetch({ dashboardStatus: 500 });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("could not load"));
+
+    expect(container.textContent).toContain("\u2014");
+    expect(container.textContent).toContain("Retry");
+    // Not a screen full of confident zeroes.
+    expect(container.textContent).not.toContain("Contract Value");
+    expect(container.textContent).not.toContain("undefined");
+    expect(container.textContent).not.toContain("NaN");
+  });
+
+  test("a failed budget-variance read never lets the Budget tile announce 'No budget set'", async () => {
+    stubFetch({ varianceStatus: 500 });
+    const { container } = render(<DashboardProjectClient projectId="p1" />);
+    await waitFor(() => expect(container.textContent).toContain("Contract Value"));
+
+    const card = tile(container, "Budget vs Actual");
+    expect(card.textContent).toContain("\u2014");
+    expect(card.textContent).toContain("could not load");
+    expect(card.textContent).toContain("Retry");
+    expect(card.textContent).not.toContain("No budget set");
+    expect(card.tagName).toBe("BUTTON");
   });
 });
