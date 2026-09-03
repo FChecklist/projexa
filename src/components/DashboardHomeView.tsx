@@ -8,6 +8,7 @@ import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { dashboardSummary, mayAssertEmpty } from "@/lib/read-outcome";
+import { formatMoney } from "@/lib/format-money";
 
 // R46 P8 seq123: presentational body extracted out of (app)/dashboard/page.tsx
 // so that route file could stay a thin server resolver (same split as every
@@ -38,21 +39,23 @@ export type CurrencyRow = { id: string; code: string; name: string; symbol: stri
 // landing screen, so that constant was the single most visible instance of
 // the bug -- a UAE buyer's first view of the product showed rupees whenever
 // the currencies list was empty, which for an org with no erp_currencies
-// base row (4 of 5 real orgs, measured 2026-08-26) is permanently. Same
-// rule as @/lib/currency: never render a currency token we cannot source.
-// The value is duplicated rather than imported because that module is
-// "use client" and this is a Server Component -- see the note above; the
-// two must be kept in step.
-const CURRENCY_FALLBACK_LABEL = (() => {
-  const code = (process.env.NEXT_PUBLIC_DEFAULT_CURRENCY_CODE ?? "").trim();
-  return code ? `${code} ` : "";
-})();
-function currencyLabel(currencies: CurrencyRow[]): string {
-  const c = currencies.find((c) => c.isBaseCurrency);
-  return c ? `${c.code} ` : CURRENCY_FALLBACK_LABEL;
-}
+// base row (4 of 5 real orgs, measured 2026-08-26) is permanently.
+//
+// R67 D-57 (audit R-186): the private copy of that rule is GONE. This file used
+// to carry its own CURRENCY_FALLBACK_LABEL / currencyLabel / formatCurrency
+// because @/lib/currency is "use client" and this is a Server Component -- a
+// duplication whose stated maintenance contract was "the two must be kept in
+// step", which is exactly how one cement item came to read "AED 420", "435"
+// and "AED 21750.00" on three tabs of the same module. src/lib/format-money.ts
+// is deliberately NOT "use client" precisely so a server component can import
+// it, so the dashboard now prints money through the same function the Materials
+// master, the receipts ledger and the Cost Report do.
+//
+// The one deliberate difference from the shared default is kept: these tiles
+// show WHOLE currency units (decimals: 0). A dashboard headline of
+// "AED 12,480,000.00" is two characters of information and four of noise.
 function formatCurrency(n: number, currencies: CurrencyRow[]) {
-  return `${currencyLabel(currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return formatMoney(n, currencies, { decimals: 0 });
 }
 
 // R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id

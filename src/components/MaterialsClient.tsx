@@ -66,7 +66,9 @@ type Material = {
   reorderLevel?: string | null;
   receivedToDate?: number;
   issuedToDate?: number;
-  onHand?: number;
+  // R67 D-57: explicitly nullable. An item with no stock ledger of its own has
+  // NO on-hand figure, which is not the same as an on-hand figure of zero.
+  onHand?: number | null;
 };
 type Issue = {
   id: string; materialId: string; issuedDate: string; quantity: string;
@@ -136,9 +138,14 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
       return formatQty(m.receivedToDate);
     case "onHand": {
       const onHand = m.onHand;
+      // R67 D-57: "a null onHand renders an en-dash with the title 'No stock
+      // ledger for this item'". Absent and zero are different facts: zero means
+      // the store is empty, absent means nothing has ever tracked this item.
+      if (onHand === null || onHand === undefined) {
+        return <span className="text-px-muted" title="No stock ledger for this item">—</span>;
+      }
       const reorderLevel = m.reorderLevel === null || m.reorderLevel === undefined ? null : Number(m.reorderLevel);
-      const low =
-        onHand !== undefined && reorderLevel !== null && Number.isFinite(reorderLevel) && onHand < reorderLevel;
+      const low = reorderLevel !== null && Number.isFinite(reorderLevel) && onHand < reorderLevel;
       return (
         <span className="inline-flex items-center justify-end gap-1">
           {formatQty(onHand)}
@@ -178,6 +185,45 @@ const NAVIGATION_FAILED_MESSAGE = "Could not open — try again";
 // says so in one line and shows the difference as its own column.
 const COST_REPORT_NOTE =
   "Avg Unit Cost is the average price actually received; the master's Unit Cost is the planned price";
+
+/**
+ * R67 D-57. A receipt's own money: quantity x unit cost. Exported so the column
+ * and the totals row can never be two different sums of the same rows, and so
+ * the rule is testable without the DOM.
+ *
+ * A receipt with no unit cost has NO line total -- null, rendered as the
+ * en-dash. Treating a missing price as zero would quietly understate a ledger
+ * that people reconcile invoices against.
+ */
+export function lineTotal(receipt: { quantity: string; unitCost: string | null }): number | null {
+  if (receipt.unitCost === null || receipt.unitCost === "") return null;
+  const quantity = Number(receipt.quantity);
+  const unitCost = Number(receipt.unitCost);
+  if (!Number.isFinite(quantity) || !Number.isFinite(unitCost)) return null;
+  return Math.round(quantity * unitCost * 100) / 100;
+}
+
+/** Voided receipts are excluded from every total, exactly as VERIDIAN's own aggregate excludes them. */
+export function receiptsTotal(receipts: readonly { quantity: string; unitCost: string | null; voidedAt: string | null }[]): number {
+  return Math.round(
+    receipts.reduce((sum, r) => (r.voidedAt ? sum : sum + (lineTotal(r) ?? 0)), 0) * 100
+  ) / 100;
+}
+
+/**
+ * R67 D-57: the Cost Report's default window is "the whole project so far".
+ *
+ * The project's own start date is NOT available to this screen -- the
+ * /dashboard DTO that materials/page.tsx resolves its project from carries
+ * {id, name} only -- so the earliest receipt in the ledger is used instead. For
+ * a Cost Report the two windows show the same rows by construction: there can
+ * be no receipt before the first receipt. An empty ledger has no window at all
+ * and the field is left blank rather than defaulted to today, which would read
+ * as "nothing was received today".
+ */
+export function defaultReportFrom(receipts: readonly { receivedDate: string }[]): string {
+  return receipts.reduce<string>((earliest, r) => (!earliest || r.receivedDate < earliest ? r.receivedDate : earliest), "");
+}
 
 export default function MaterialsClient({
   projectId,
@@ -226,6 +272,13 @@ export default function MaterialsClient({
   const [editing, setEditing] = useState<{ id: string; field: "unit" | "unitCost" } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [footerMessage, setFooterMessage] = useState<string | null>(null);
+  // R67 D-57: the Cost Report's From/To window. Empty means "everything", and
+  // the From field is seeded from the ledger's own earliest receipt once the
+  // receipts arrive -- see defaultReportFrom() for why that is the project's
+  // start for this purpose.
+  const [reportFrom, setReportFrom] = useState("");
+  const [reportTo, setReportTo] = useState("");
+  const [reportWindowSeeded, setReportWindowSeeded] = useState(false);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -285,10 +338,13 @@ export default function MaterialsClient({
     }
   }, [projectId]);
 
-  const loadReport = useCallback(async () => {
+  const loadReport = useCallback(async (window?: { from: string; to: string }) => {
     setLoadingReport(true);
+    const params = new URLSearchParams({ projectId });
+    if (window?.from) params.set("from", window.from);
+    if (window?.to) params.set("to", window.to);
     try {
-      const data = await fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?projectId=${encodeURIComponent(projectId)}`);
+      const data = await fetchJson<{ report?: CostReportRow[] }>(`/api/construction-materials/cost-report?${params.toString()}`);
       setReport(data.report ?? []);
       setLoadErrors((prev) => ({ ...prev, report: undefined }));
     } catch (err) {
@@ -318,6 +374,17 @@ export default function MaterialsClient({
     void loadReport();
     void loadVendors();
   }, [loadMaterials, loadReceipts, loadIssues, loadReport, loadVendors]);
+
+  // R67 D-57: seed the window ONCE, from the ledger itself, and never again --
+  // re-seeding on every receipts refresh would silently throw away a window the
+  // user had chosen.
+  useEffect(() => {
+    if (reportWindowSeeded || loadingReceipts) return;
+    setReportWindowSeeded(true);
+    const from = defaultReportFrom(receipts);
+    if (from) setReportFrom(from);
+    setReportTo(new Date().toISOString().slice(0, 10));
+  }, [loadingReceipts, receipts, reportWindowSeeded]);
 
   // R67 D-37: an "Opening…" that never resolves is worse than no feedback at
   // all -- it tells the user the click landed when it did not. The timer is
@@ -453,6 +520,32 @@ export default function MaterialsClient({
       rows
     );
     downloadCsv(csvFilename("materials", projectName, new Date().toISOString().slice(0, 10)), csv);
+  }
+
+  // R67 D-57: the Cost Report exports what it is SHOWING, window and all --
+  // an export that silently covers a different period than the screen is worse
+  // than no export. Relayed through this repo's own RFC-4180 CSV writer; no
+  // XLSX/PDF library may exist in projexa.
+  function exportCostReport() {
+    const code = resolveCurrencyCode(currencies);
+    const rows: unknown[][] = report.map((r, i) => [
+      i + 1, r.name, r.spec ?? "", r.unit, r.totalQuantityReceived, r.totalCost, r.averageUnitCost,
+    ]);
+    rows.push([
+      "Total", "", "", "",
+      report.reduce((sum, r) => sum + r.totalQuantityReceived, 0),
+      Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100,
+      "",
+    ]);
+    const money = (label: string) => (code ? `${label} (${code})` : label);
+    const csv = toCsv(
+      ["S.No", "Material", "Spec", "Unit", "Total Qty Received", money("Total Cost"), money("Avg Unit Cost")],
+      rows
+    );
+    downloadCsv(
+      csvFilename(`cost-report-${reportFrom || "start"}-to-${reportTo || "today"}`, projectName, new Date().toISOString().slice(0, 10)),
+      csv
+    );
   }
 
   const headerActions: PageHeadingAction[] = [
@@ -734,6 +827,10 @@ export default function MaterialsClient({
                     <TableHead>Reference</TableHead>
                     <TableHead className="text-right">Quantity</TableHead>
                     <TableHead className="text-right">Unit Cost</TableHead>
+                    {/* R67 D-57: qty x unit cost. Without it the ledger asks the
+                        reader to multiply in their head on every row, and the
+                        tab's own totals row would have nothing to total. */}
+                    <TableHead className="text-right">Line total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -755,6 +852,7 @@ export default function MaterialsClient({
                         <TableCell className="text-px-muted">{r.reference ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatQty(r.quantity)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney(r.unitCost, currencies)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMoney(lineTotal(r), currencies)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -834,6 +932,66 @@ export default function MaterialsClient({
 
       <TabsContent value="cost-report" className="space-y-4">
         <p className="text-[13px] text-px-muted">{COST_REPORT_NOTE}</p>
+
+        {/* R67 D-57: the parameter bar. The window is applied SERVER-side (the
+            aggregate is grouped with the same predicate that excludes voided
+            receipts), so a month's report does not get slower as the project's
+            history grows. */}
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="cost-report-from" className="text-[12px] text-px-muted">From</Label>
+              <Input
+                id="cost-report-from"
+                type="date"
+                className="h-9 w-44"
+                value={reportFrom}
+                onChange={(event) => setReportFrom(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cost-report-to" className="text-[12px] text-px-muted">To</Label>
+              <Input
+                id="cost-report-to"
+                type="date"
+                className="h-9 w-44"
+                value={reportTo}
+                onChange={(event) => setReportTo(event.target.value)}
+              />
+            </div>
+            <Button
+              size="sm"
+              disabled={loadingReport}
+              data-testid="cost-report-apply"
+              onClick={() => void loadReport({ from: reportFrom, to: reportTo })}
+            >
+              {loadingReport ? "Running…" : "Apply"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loadingReport}
+              onClick={() => {
+                const from = defaultReportFrom(receipts);
+                setReportFrom(from);
+                setReportTo(new Date().toISOString().slice(0, 10));
+                void loadReport({ from, to: new Date().toISOString().slice(0, 10) });
+              }}
+            >
+              Whole project
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loadingReport || report.length === 0}
+              title={report.length === 0 ? "Nothing to export" : undefined}
+              data-testid="cost-report-export"
+              onClick={exportCostReport}
+            >
+              {report.length === 0 ? "Export (Nothing to export)" : "Export"}
+            </Button>
+          </CardContent>
+        </Card>
         <Card className="shadow-card">
           <CardContent className="p-0">
             {loadingReport ? (
@@ -843,7 +1001,7 @@ export default function MaterialsClient({
                 caption={`Loading the cost report for ${projectName}…`}
               />
             ) : loadErrors.report ? (
-              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={loadReport} /></div>
+              <div className="p-4"><DataLoadError messages={[loadErrors.report]} onRetry={() => void loadReport({ from: reportFrom, to: reportTo })} /></div>
             ) : report.length === 0 ? (
               <p className="py-10 text-center text-sm text-px-muted">
                 No receipts to report yet — the Cost Report fills in as receipts are recorded
@@ -904,6 +1062,22 @@ export default function MaterialsClient({
                       </TableRow>
                     );
                   })}
+                  {/* R67 D-57: a report with no total is a list, not a report. */}
+                  <TableRow className="font-semibold">
+                    <TableCell>Total</TableCell>
+                    <TableCell />
+                    <TableCell className="text-right tabular-nums">
+                      {formatQty(report.reduce((sum, r) => sum + r.totalQuantityReceived, 0))}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100, currencies)}
+                    </TableCell>
+                    {/* Averages do not add up, and a sum of averages is a number
+                        that means nothing -- so these three stay blank. */}
+                    <TableCell />
+                    <TableCell />
+                    <TableCell />
+                  </TableRow>
                 </TableBody>
               </Table>
             )}

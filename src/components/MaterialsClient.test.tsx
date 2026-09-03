@@ -312,3 +312,125 @@ describe("MaterialsClient -- the Cost Report explains the 420 vs 435 disagreemen
     await waitFor(() => expect(getByText("▼ under AED 20.00")).toBeDefined());
   });
 });
+
+// ─────────────────────────── R67 D-57 (audit R-186) ─────────────────────────
+// One money format across the three tabs, quantity on the master, a Line total
+// on the ledger, and a Cost Report that has a window and a total.
+const { lineTotal, receiptsTotal, defaultReportFrom } = await import("./MaterialsClient");
+
+describe("D-57 line totals and the report window (pure)", () => {
+  test("a line total is quantity x unit cost, rounded to the cent", () => {
+    expect(lineTotal({ quantity: "50", unitCost: "435" })).toBe(21750);
+    expect(lineTotal({ quantity: "1.5", unitCost: "3.33" })).toBe(5);
+  });
+
+  test("a receipt with NO unit cost has no line total -- null, not a confident zero", () => {
+    expect(lineTotal({ quantity: "50", unitCost: null })).toBeNull();
+    expect(lineTotal({ quantity: "50", unitCost: "" })).toBeNull();
+    expect(lineTotal({ quantity: "abc", unitCost: "435" })).toBeNull();
+  });
+
+  test("the ledger total excludes voided receipts, exactly as VERIDIAN's own aggregate does", () => {
+    expect(receiptsTotal([
+      { quantity: "50", unitCost: "435", voidedAt: null },
+      { quantity: "10", unitCost: "400", voidedAt: "2026-09-01T00:00:00.000Z" },
+      { quantity: "5", unitCost: null, voidedAt: null },
+    ])).toBe(21750);
+  });
+
+  test("the default From is the ledger's own earliest receipt, and blank when there is no ledger", () => {
+    expect(defaultReportFrom([
+      { receivedDate: "2026-08-28" },
+      { receivedDate: "2026-07-04" },
+      { receivedDate: "2026-09-02" },
+    ])).toBe("2026-07-04");
+    expect(defaultReportFrom([])).toBe("");
+  });
+});
+
+describe("D-57 the same money string on every tab", () => {
+  const RECEIPT = {
+    id: "rec-1", materialId: CEMENT.id, receivedDate: "2026-08-28", quantity: "50", unitCost: "435",
+    vendorId: null, reference: "DN-4471", voidedAt: null, voidReason: null,
+  };
+
+  // Radix Tabs unmounts the inactive TabsContent (see this file's own note
+  // above), so the two tabs are opened as two renders rather than by clicking
+  // between them -- the assertion is about the STRING each tab prints for the
+  // same item, which is unaffected by how the tab was reached.
+  test("the cement item reads 'AED 435.00' as a unit cost on the Inbound ledger, and its line total is 'AED 21,750.00'", async () => {
+    const { container, findByText } = renderClient(
+      { "/api/materials": () => jsonRes({ receipts: [RECEIPT] }) },
+      "receipts"
+    );
+    await findByText("DN-4471");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("DN-4471"))!;
+    expect(row.textContent).toContain("AED 435.00");
+    expect(row.textContent).toContain("AED 21,750.00");
+  });
+
+  test("the SAME item reads the SAME two strings on the Cost Report", async () => {
+    const { container, findByText } = renderClient(
+      { "/api/materials": () => jsonRes({ receipts: [RECEIPT] }) },
+      "cost-report"
+    );
+    await findByText("Cement OPC 53");
+    const reportRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Cement OPC 53"))!;
+    expect(reportRow.textContent).toContain("AED 435.00");
+    expect(reportRow.textContent).toContain("AED 21,750.00");
+  });
+
+  test("the master shows 'Received to date' equal to the receipt quantity, and a null On hand is an en-dash that says why", async () => {
+    const { container, findByText } = renderClient({
+      "/api/materials/master": () => jsonRes({
+        materials: [{ ...CEMENT, receivedToDate: 50, issuedToDate: 0, onHand: null }],
+      }),
+    });
+    await findByText("Cement OPC 53");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Cement OPC 53"))!;
+    expect(row.textContent).toContain("50");
+    expect(container.querySelector('[title="No stock ledger for this item"]')).not.toBeNull();
+  });
+});
+
+describe("D-57 the Cost Report's window, total and export", () => {
+  test("the window is sent to the server, not applied in the browser", async () => {
+    const urls: string[] = [];
+    const { findByText, getByTestId } = renderClient(
+      {
+        "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
+        "/api/materials": () => jsonRes({ receipts: [{
+          id: "rec-1", materialId: CEMENT.id, receivedDate: "2026-07-04", quantity: "50", unitCost: "435",
+          vendorId: null, reference: null, voidedAt: null, voidReason: null,
+        }] }),
+      },
+      "cost-report"
+    );
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return realFetch(input as RequestInfo);
+    }) as typeof fetch;
+
+    // The From field is seeded from the ledger's own earliest receipt.
+    await waitFor(() => expect((getByTestId("cost-report-apply") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByTestId("cost-report-apply"));
+    await waitFor(() => expect(urls.some((u) => u.includes("cost-report") && u.includes("from=2026-07-04"))).toBe(true));
+    expect(urls.some((u) => u.includes("cost-report") && u.includes("to="))).toBe(true);
+    await findByText("Cement OPC 53");
+  });
+
+  test("the report foots with a Total row, and Export says why it cannot run on an empty report", async () => {
+    const { container, findByText, getByTestId } = renderClient({}, "cost-report");
+    await findByText("Cement OPC 53");
+    const totalRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.startsWith("Total"))!;
+    expect(totalRow).toBeDefined();
+    expect(totalRow.textContent).toContain("AED 21,750.00");
+    expect((getByTestId("cost-report-export") as HTMLButtonElement).disabled).toBe(false);
+
+    cleanup();
+    const empty = renderClient({ "/api/construction-materials/cost-report": () => jsonRes({ report: [] }) }, "cost-report");
+    await empty.findByText(/No receipts to report yet/);
+    expect(empty.getByTestId("cost-report-export").textContent).toBe("Export (Nothing to export)");
+  });
+});
