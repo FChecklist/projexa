@@ -77,6 +77,8 @@ import {
   PERIOD_OPTIONS,
   REPORTS_ENTITY_SEGMENT,
   REPORTS_PILL_KEY,
+  actionLevelFor,
+  cardActionById,
   cardForRoute,
   coldStartCards,
   periodLabel,
@@ -147,6 +149,9 @@ type Project = { id: string; name: string };
 // report REPLACES the first rather than appending a second sentence.
 const REPORT_SEGMENT_PREFIX = "report:";
 const PERIOD_SEGMENT_PREFIX = "period:";
+// R67 C-04: a segment produced by walking the option chain. The depth is in
+// the id so cutting the strip can cut the level path to match.
+const LEVEL_SEGMENT_PREFIX = "lvl:";
 const REPORTS_ROUTE = "/reports";
 
 export default function M24Shell({ children }: { children: React.ReactNode }) {
@@ -230,6 +235,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  // R67 C-04: the ENTITY > ACTION > STEP walk. `levelPath` is the server's
+  // own addressing for "which question comes next"; the segments on the strip
+  // are its human rendering. They move together, and an (x) that cuts the
+  // strip cuts this too.
+  const [levelPath, setLevelPath] = useState<string[]>([]);
+  const [serverLevel, setServerLevel] = useState<ChainOptionsLevel | null>(null);
+  const [levelLoading, setLevelLoading] = useState(false);
+  const [levelError, setLevelError] = useState<string | null>(null);
+  const [levelReload, setLevelReload] = useState(0);
+  // The scalar value the last step asks for, when it asks for one.
+  const [scalarValue, setScalarValue] = useState("");
+  const [scalarError, setScalarError] = useState<string | null>(null);
   const pillFnRef = useRef<Record<string, string>>({});
   // R67 C-01: the selected project's NAME, for D-03's BOQ_LINE_NOT_FOUND
   // sentence ("There is no line 1.02 on Cedar Heights Villa - Phase 1 v3").
@@ -550,6 +567,110 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
 
   const bandSelectedId = reportId ? periodId : null;
 
+  // R67 C-04 -- THE SERVER-FED LEVELS. Fetched through PROJEXA's own proxy so
+  // the org API key stays server-side (D-04). A failed read renders the
+  // backend's words with Retry; it NEVER renders as an empty chip row, which
+  // would tell the user this project has no BOQ when the truth is that the
+  // read did not answer.
+  useEffect(() => {
+    if (levelPath.length === 0) {
+      setServerLevel(null);
+      setLevelError(null);
+      setLevelLoading(false);
+      return;
+    }
+    let live = true;
+    setLevelLoading(true);
+    setLevelError(null);
+    (async () => {
+      try {
+        const qs = new URLSearchParams({ path: levelPath.join(",") });
+        if (projectId) qs.set("projectId", projectId);
+        const res = await fetch(`/api/chain-options?${qs.toString()}`);
+        const d = await res.json().catch(() => null);
+        if (!live) return;
+        if (!res.ok) {
+          setServerLevel(null);
+          setLevelError(d?.error || `Couldn't load the next step (HTTP ${res.status})`);
+          return;
+        }
+        setServerLevel(d as ChainOptionsLevel);
+      } catch {
+        if (live) {
+          setServerLevel(null);
+          setLevelError("Couldn't reach the construction data service.");
+        }
+      } finally {
+        if (live) setLevelLoading(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [levelPath, projectId, levelReload]);
+
+  // The action level is local -- it is PROJEXA's own catalogue (C-12), not a
+  // read -- so it renders instantly, before any fetch.
+  const actionLevel = useMemo(() => (routeCard ? actionLevelFor(routeCard) : null), [routeCard]);
+
+  /**
+   * *** ONE CLICK, ONE SEGMENT, NO EXECUTION. ***
+   *
+   * Advancing appends the picked option to the strip AND to the level path,
+   * so the sentence the user reads and the question the server is asked can
+   * never describe different things. Nothing here posts.
+   */
+  const onLevelAdvance = useCallback(
+    (seg: { id: string; label: string }) => {
+      setSegments((prev) => [
+        ...prev,
+        { id: `${LEVEL_SEGMENT_PREFIX}${levelPath.length}:${seg.id}`, label: seg.label, kind: "step" as const },
+      ]);
+      setLevelPath((prev) => [...prev, seg.id]);
+      setScalarValue("");
+      setScalarError(null);
+    },
+    [levelPath.length]
+  );
+
+  /** Starting the walk from an action chip: the level path opens with the card. */
+  const onActionAdvance = useCallback(
+    (seg: { id: string; label: string }) => {
+      if (!routeCard) return;
+      const action = cardActionById(routeCard, seg.id);
+      setSegments((prev) => [
+        ...prev,
+        { id: `${LEVEL_SEGMENT_PREFIX}0:${seg.id}`, label: action?.label ?? seg.label, kind: "action" as const },
+      ]);
+      setLevelPath([routeCard.id, seg.id]);
+      setScalarValue("");
+      setScalarError(null);
+    },
+    [routeCard]
+  );
+
+  // Whether the deepest level asks for a number the user already knows. The
+  // chips cover the common answers; this covers every other one.
+  const wantsScalar = levelPath.length >= 3 && levelPath[0] === "work_progress";
+
+  /**
+   * R67 C-04 -- WHAT SEND WOULD RUN, once the chain is a complete sentence.
+   *
+   * Null until every value the write needs is on the strip, which is what
+   * lets the composer say "Pick a BOQ line" instead of accepting a Send that
+   * can only come back blocked. `itemCode` is the chain's own segment id --
+   * see chain-options.ts's boqLineOptions() for why the chip carries the item
+   * code rather than the row id.
+   */
+  const chainRun = useMemo(() => {
+    if (levelPath[0] !== "work_progress" || levelPath[1] !== "record_progress") return null;
+    const itemCode = levelPath[2];
+    if (!itemCode) return null;
+    const percent = Number(levelPath[3] ?? scalarValue);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+    return { functionId: "record_work_progress", params: { itemCode, percent } };
+  }, [levelPath, scalarValue]);
+
   // *** A LEAF CLICK LOADS THE CHAIN AND STOPS. *** It appends segments and
   // nothing else: no POST, no navigation, and -- the rule C-02 exists to
   // restore -- no write into the textarea.
@@ -609,6 +730,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         setReportId(null);
         setPeriodId(DEFAULT_PERIOD);
       }
+      // R67 C-04: the level path is the machine reading of the same sentence,
+      // so it is cut to exactly the depth the strip was cut to. Leaving it
+      // deeper would leave band 2 asking a question about a step the user has
+      // just removed.
+      const depth = kept.filter((s) => s.id.startsWith(LEVEL_SEGMENT_PREFIX)).length;
+      setLevelPath((prev) => (depth === 0 ? [] : prev.slice(0, depth + 1)));
+      setScalarValue("");
+      setScalarError(null);
     },
     [chain]
   );
@@ -621,6 +750,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setFixTarget(null);
     setReportId(null);
     setPeriodId(DEFAULT_PERIOD);
+    setLevelPath([]);
+    setScalarValue("");
+    setScalarError(null);
   }, [chain]);
 
   // LOADS AND STOPS. Sets the mode, restores the chain, navigates. Navigation
@@ -773,7 +905,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     const typed = draft.trim() || pendingRawInput?.trim() || "";
     // R67 C-02: a third runnable shape -- a report leaf chosen in band 2.
     const runningReport = reportsChainActive && reportId ? reportId : null;
-    if (!typed && !pendingFunctionId && !runningReport) return;
+    if (!typed && !pendingFunctionId && !runningReport && !chainRun) return;
     setSubmitting(true);
     setSubmitError(null);
     setBandNote(null);
@@ -789,7 +921,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       // Scoped to the one registered write that has a card today. Every other
       // verdict falls through to the existing submit unchanged, so this
       // cannot quietly change what any other sentence does.
-      if (typed && !pendingFunctionId && !runningReport) {
+      if (typed && !pendingFunctionId && !runningReport && !chainRun) {
         const preview = await fetch("/api/classify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -835,9 +967,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             mode,
             projectId,
           }
-        : pendingFunctionId
-          ? { functionId: pendingFunctionId, params: {}, mode, projectId }
-          : { rawInput: typed, mode, projectId };
+        : chainRun
+          ? // R67 C-04: the chain the user BUILT, run only now, on a
+            // deliberate Send. Every chip click before this one loaded and
+            // stopped.
+            { functionId: chainRun.functionId, params: chainRun.params, mode, projectId }
+          : pendingFunctionId
+            ? { functionId: pendingFunctionId, params: {}, mode, projectId }
+            : { rawInput: typed, mode, projectId };
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -875,6 +1012,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         }
         router.push(href);
       }
+      if (chainRun) {
+        // The chain has been run, so the question band 2 was asking is
+        // answered: clear the walk and leave the receipt in its place. The
+        // strip keeps the sentence, which is the record of what was done.
+        const label = segments.find((s) => s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}1:`))?.label;
+        setReceipt({
+          text: `Recorded ${chainRun.params.percent}% on ${label ?? chainRun.params.itemCode}`,
+          href: `/work-progress${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+        });
+        setLevelPath([]);
+        setScalarValue("");
+        setScalarError(null);
+      }
       setDraft("");
       setPendingFunctionId(null);
       setPendingRawInput(null);
@@ -893,6 +1043,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     reportsChainActive,
     reportId,
     periodId,
+    chainRun,
+    segments,
     project,
     mode,
     projectId,
@@ -1237,7 +1389,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           // question the chain is asking (the kit's OptionChain, mounted at
           // last) and the receipt for what was just run.
           conversation={
-            bandLevel || receipt || bandNote || timesheetDraft ? (
+            bandLevel || receipt || bandNote || timesheetDraft || levelPath.length > 0 || actionLevel ? (
               <div className="space-y-2">
                 {timesheetDraft && (
                   <ConfirmCard
@@ -1333,6 +1485,24 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                     ]}
                   />
                 )}
+                {/* R67 C-04: ENTITY > ACTION > STEP. The action level is
+                    PROJEXA's own catalogue and renders instantly; every level
+                    after it comes from the server through the proxy, with a
+                    real loading state and a real error state -- never an
+                    empty chip row standing in for either. */}
+                {levelPath.length > 0 ? (
+                  <ChainOptionsPanel
+                    level={serverLevel}
+                    loading={levelLoading}
+                    loadingLegend={levelPath.length === 2 ? "Which BOQ line?" : "How much?"}
+                    error={levelError}
+                    onRetry={() => setLevelReload((n) => n + 1)}
+                    onAdvance={onLevelAdvance}
+                    onEmptyAction={(route) => router.push(route)}
+                  />
+                ) : actionLevel ? (
+                  <ChainOptionsPanel level={actionLevel} onAdvance={onActionAdvance} />
+                ) : null}
                 {bandLevel && (
                   <ChainOptionsPanel
                     level={bandLevel}
@@ -1361,6 +1531,57 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               </div>
             ) : undefined
           }
+          // BAND 4 -- the chain's SCALAR value, as a labelled field beside the
+          // box, validated on blur. The chips above cover 25/50/75/100; a
+          // site engineer with 37% types it here rather than being told those
+          // are the only answers. Same pattern as /labour/new's "Save (Name,
+          // Daily Rate)": the field says what it wants before the click.
+          fieldsSlot={
+            wantsScalar ? (
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  Quantity or %
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  inputMode="decimal"
+                  className="w-28 rounded border px-2 py-1 text-[12px]"
+                  style={{ borderColor: "var(--color-ct-border2)", color: "var(--color-ct-navy)" }}
+                  value={levelPath[3] ?? scalarValue}
+                  onChange={(e) => {
+                    setScalarValue(e.target.value);
+                    setScalarError(null);
+                  }}
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      setScalarError(null);
+                      return;
+                    }
+                    const n = Number(raw);
+                    setScalarError(
+                      Number.isFinite(n) && n >= 0 && n <= 100 ? null : "Type a number between 0 and 100"
+                    );
+                  }}
+                  aria-invalid={scalarError ? true : undefined}
+                  aria-describedby={scalarError ? "veri-scalar-error" : undefined}
+                />
+                {scalarError && (
+                  <span
+                    id="veri-scalar-error"
+                    role="alert"
+                    className="text-[10.5px]"
+                    style={{ color: "var(--color-veri-status-late)" }}
+                  >
+                    {scalarError}
+                  </span>
+                )}
+              </label>
+            ) : undefined
+          }
           onSubmit={onSubmit}
           // R67 G-04: EXACTLY ONE INSTRUCTION PER STATE. The order is
           // most-specific-first, so a real server refusal is never hidden
@@ -1378,18 +1599,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             submitError ??
             (submitting
               ? "Sending…"
-              : projectId || pendingFunctionId || pendingRawInput || reportId
-                ? undefined
-                : onReportsRoute
-                  ? "Choose a report or type what you need"
-                  : "Pick a project or a module first")
+              : levelPath.length >= 2 && !chainRun
+                ? // R67 C-04: the chain is half-built. Say which answer is
+                  // still missing rather than letting Send fire a submission
+                  // that can only come back blocked.
+                  levelPath.length === 2
+                  ? "Pick a BOQ line"
+                  : "Type quantity or %"
+                : projectId || pendingFunctionId || pendingRawInput || reportId || chainRun
+                  ? undefined
+                  : onReportsRoute
+                    ? "Choose a report or type what you need"
+                    : "Pick a project or a module first")
           }
           // With a module armed -- or a report leaf chosen -- there is
           // something to run, so an empty input is a real submission and Send
           // stays live, which is what the placeholder has always claimed.
           // Without one, the empty input is genuinely blocking and gets the
           // sentence that says so.
-          allowEmptySubmit={Boolean(pendingFunctionId || pendingRawInput || (reportsChainActive && reportId))}
+          allowEmptySubmit={Boolean(pendingFunctionId || pendingRawInput || (reportsChainActive && reportId) || chainRun)}
           emptyInputReason="Type what you need, then press Send."
           placeholder={
             // A Fix click loaded a chain and stopped; the box then asks the

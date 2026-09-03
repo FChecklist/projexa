@@ -240,6 +240,15 @@ export function periodOptionsLevel(): ChainOptionsLevel {
 // CARDS (R67 C-03) -- WHAT A USER CAN START FROM
 // ---------------------------------------------------------------------------
 
+/** One thing a card can start. R67 C-04: band 2's ACTION level. */
+export type CardAction = {
+  id: string;
+  /** The verb the user reads: "Record progress". */
+  label: string;
+  /** The pipeline function this action ends in, when it has one. */
+  functionId: string | null;
+};
+
 export type CardDef = {
   /** Stable key. Not a kit PillKey: the kit's union is closed at 14 and this
    *  catalogue is PROJEXA's own (C-12), so these render beside the kit strip. */
@@ -271,6 +280,14 @@ export type CardDef = {
    * setting nobody can turn on.
    */
   coldStartRoles: readonly string[];
+  /**
+   * R67 C-04: the actions band 2 offers once this card's chain is loaded. A
+   * card with actions asks its question IN BAND 2 rather than sitting as a
+   * chip beside the pills, which is why chipInPillsBand exists.
+   */
+  actions?: readonly CardAction[];
+  /** Whether this card renders as a chip beside the kit's ranked pill strip. */
+  chipInPillsBand: boolean;
 };
 
 export const DESIGN_STUDIO_CARD: CardDef = {
@@ -286,9 +303,43 @@ export const DESIGN_STUDIO_CARD: CardDef = {
   routes: ["/design-studio", "/schedule/log-time"],
   placeholder: "e.g. 3 hours on #12 joinery shop drawings today",
   coldStartRoles: ["designer", "architect", "interior_designer"],
+  chipInPillsBand: true,
 };
 
-export const CARD_CATALOGUE: readonly CardDef[] = [DESIGN_STUDIO_CARD];
+// R67 C-04. The card whose ACTION and STEP levels band 2 walks: on
+// /work-progress the composer asks "What do you want to do?", then "Which BOQ
+// line?", then "How much?" -- the strip filling in as the user clicks. Its
+// own chip is NOT repeated beside the pills, because the user is already
+// standing in it and band 2 is already asking.
+export const WORK_PROGRESS_CARD: CardDef = {
+  id: "work_progress",
+  label: "Work Progress",
+  kind: "action",
+  functionId: null,
+  route: "/work-progress",
+  entitySegment: { id: "work_progress", label: "Work Progress", kind: "action" },
+  routes: ["/work-progress"],
+  placeholder: "e.g. record 50% on EX-01 excavation today",
+  coldStartRoles: [],
+  actions: [{ id: "record_progress", label: "Record progress", functionId: "record_work_progress" }],
+  chipInPillsBand: false,
+};
+
+export const CARD_CATALOGUE: readonly CardDef[] = [DESIGN_STUDIO_CARD, WORK_PROGRESS_CARD];
+
+/** "What do you want to do?" -- band 2's ACTION level for a card. */
+export function actionLevelFor(card: CardDef): ChainOptionsLevel | null {
+  if (!card.actions || card.actions.length === 0) return null;
+  return {
+    legend: "What do you want to do?",
+    kind: "action",
+    options: card.actions.map((a) => ({ id: a.id, label: a.label })),
+  };
+}
+
+export function cardActionById(card: CardDef, id: string): CardAction | null {
+  return card.actions?.find((a) => a.id === id) ?? null;
+}
 
 /** True when `pathname` is inside one of the card's own routes. */
 export function cardOwnsRoute(card: CardDef, pathname: string): boolean {
@@ -307,7 +358,7 @@ export function cardForRoute(pathname: string): CardDef | null {
 export function coldStartCards(role: string | null | undefined, pathname: string): CardDef[] {
   const normalised = (role ?? "").trim().toLowerCase();
   return CARD_CATALOGUE.filter(
-    (c) => c.coldStartRoles.includes(normalised) || cardOwnsRoute(c, pathname)
+    (c) => c.chipInPillsBand && (c.coldStartRoles.includes(normalised) || cardOwnsRoute(c, pathname))
   );
 }
 

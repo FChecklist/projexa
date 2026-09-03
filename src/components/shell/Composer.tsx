@@ -7,7 +7,8 @@
 // imported from the kit, and only ControlStrip resolves to PROJEXA's fork
 // beside this file.
 //
-// TWO CHANGES, both R67 WS-G:
+// THREE CHANGES. The first two are R67 WS-G; the third is R67 C-04 and is
+// documented on the `fieldsSlot` prop below.
 //
 // 1. THE SEND BUTTON WAS WHITE ON SAFFRON -- 2.60:1, a WCAG AA failure on the
 //    single most-clicked control in the product (R-197 / R-260). It keeps the
@@ -94,6 +95,19 @@ export type ComposerProps = {
   allowEmptySubmit?: boolean;
   placeholder?: string;
   attachSlot?: ReactNode;
+  /**
+   * R67 C-04 (a third fork change): BAND 4'S LABELLED SCALAR FIELDS.
+   *
+   * A chain step whose value is a number or a date -- a quantity, a
+   * percentage, a day -- is not a chip row: there are too many answers to
+   * show and the user already knows theirs. It is a field, and it belongs in
+   * the INPUT band beside the thing it is an input to, not in the
+   * conversation band above it. Rendered above the textarea so the label is
+   * read before the box, and copying the /labour/new "Save (Name, Daily
+   * Rate)" pattern: the field says what it wants, and validation happens on
+   * blur rather than after Send.
+   */
+  fieldsSlot?: ReactNode;
 };
 
 export function Composer({
@@ -117,6 +131,7 @@ export function Composer({
   allowEmptySubmit = false,
   placeholder = "Describe what you need, or pick a module above.",
   attachSlot,
+  fieldsSlot,
 }: ComposerProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -199,6 +214,9 @@ export function Composer({
 
         {/* 4. INPUT -- real height, generous padding. Not a single line. */}
         <div className={`shrink-0 px-3 pb-2.5 pt-1${blockedByCaller ? " veri-composer-disabled" : ""}`}>
+          {/* R67 C-04: the chain's scalar values, as labelled fields, beside
+              the thing they are inputs to. */}
+          {fieldsSlot && <div className="mb-1 flex flex-wrap items-end gap-3">{fieldsSlot}</div>}
           <textarea
             ref={taRef}
             value={value}
