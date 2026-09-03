@@ -144,6 +144,16 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/kpi-entries": "FIELD",
   "/kpi-entries/[id]/approve": "FIELD",
   "/kpis": "PM_OR_ABOVE",
+  // R67 lane D22 (item D-68) argued PM_OR_ABOVE for the roster import, because
+  // ITS importer also created vendor master records on an opt-in -- a
+  // commercial decision, at the same tier as the BOQ and programme imports.
+  // That importer and its /labour/import route are gone at the integration
+  // merge (D-34's is the one that survives, see
+  // construction-roster-import-service.ts's header), and with them the vendor
+  // creation the argument rested on. The surviving route is a plain bulk load,
+  // so it keeps D-34's FIELD tier below: the same write, thirty-eight times,
+  // done by the same person on site. If one-click vendor creation is ever
+  // folded in, this is the entry that has to move with it.
   "/labour-roster": "FIELD",
   "/labour-roster/[id]": "FIELD",
   // R67 D-34: bulk roster load. Same tier as adding one worker -- it is the
@@ -265,13 +275,21 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/sales-orders": "PM_OR_ABOVE",
   "/sales-orders/[id]": "PM_OR_ABOVE",
   "/sales-orders/bulk-status": "PM_OR_ABOVE",
-  "/schedule-tracker/import": "PM_OR_ABOVE",
+  // R67 lane D22 (item D-48): "/schedule-tracker/import" is gone -- it proxied
+  // to a VERIDIAN path that never existed. Its real replacement is
+  // "/schedule/import" below, at the same tier: importing a programme rewrites
+  // the whole schedule, which is a PM decision, not a field one.
   "/schedule/baselines": "PM_OR_ABOVE",
+  "/schedule/import": "PM_OR_ABOVE",
   "/schedule/sprints": "PM_OR_ABOVE",
   "/schedule/sprints/[id]": "PM_OR_ABOVE",
   "/schedule/sprints/[id]/issues": "PM_OR_ABOVE",
   "/schedule/tasks": "FIELD",
   "/schedule/tasks/[id]": "FIELD",
+  // R67 lane D22 (item D-49): overruling a completion percentage derived from
+  // the site's own records is a PM judgement, not a field entry -- the site
+  // engineer's route into this number is /work-progress, which stays FIELD.
+  "/schedule/tasks/[id]/completion": "PM_OR_ABOVE",
   "/schedule/workload": "PM_OR_ABOVE",
   "/scope": "PM_OR_ABOVE",
   "/scope/[id]": "PM_OR_ABOVE",
@@ -286,10 +304,13 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // already PM_OR_ABOVE by the "/scope" entry above.
   "/scope/categories": "PM_OR_ABOVE",
   "/scope/categories/[id]": "PM_OR_ABOVE",
-  // NOTE (recorded, not fixed here): this route has zero callers anywhere in
-  // src -- BOQ import exists only as a direct API surface with no
-  // click-reachable UI. Gating it does not make it reachable; that is a
-  // separate product gap.
+  // The NOTE that stood here -- "zero callers anywhere in src, BOQ import
+  // exists only as a direct API surface with no click-reachable UI" -- was
+  // true when it was written and is no longer: R67 lane D22 (item D-52, and
+  // the shared ImportScreen from D-68) gave it /scope/import, reachable from
+  // the "Import" action beside "+ New BOQ" and from the list's empty state.
+  // The tier is unchanged and correct: importing a BOQ rewrites the priced
+  // scope of the whole project.
   "/scope/import": "PM_OR_ABOVE",
   "/scope/line-items/[id]": "PM_OR_ABOVE",
   "/screen-drafts": "FIELD",
@@ -338,10 +359,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/wiki": "FIELD",
   "/wiki/[id]": "FIELD",
   "/work-progress": "FIELD",
-  // R67 D-28: correcting or deleting one progress entry. Same tier as logging
-  // it -- the site engineer who mis-keyed a quantity is the person who has to
-  // be able to fix it, and VERIDIAN re-runs the create path's own validation on
-  // both.
+  // R67 D-28 x R67 lane D22 (item D-77): correcting or deleting one progress
+  // entry is the same act, at the same authority, as recording it -- the site
+  // engineer who typed 500 instead of 50 is the person who has to be able to
+  // fix it, without a PM, and VERIDIAN re-runs the create path's own validation
+  // on both.
   "/work-progress/[id]": "FIELD",
   "/work-progress/activities": "FIELD",
   "/work-progress/photos": "FIELD",

@@ -351,6 +351,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // both of which pass the ?projectId= it needs, never by a standalone sidebar
   // item that could not carry one.
   "/scope/import",
+  // R67 lane D22 (item D-48): the programme import, the third of the three and
+  // exactly the same class as the two above -- reached by the "Import" action
+  // on /schedule, which carries the ?projectId=, never by a sidebar item that
+  // could not.
+  "/schedule/import",
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",

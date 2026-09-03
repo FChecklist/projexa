@@ -120,6 +120,8 @@ async function MoMNewSection({ requestedProjectId }: { requestedProjectId?: stri
       {/* R67 A-03: the create screen is inside one project too -- the shell's
           rail and strip must say which, not "All projects". */}
       <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
+      {/* R67 lane D22 (item D-63): the project's name is what makes the
+          default title specific ("Skyline Tower A - site coordination"). */}
       <MoMCreateClient projectId={project.id} projectName={project.name} />
     </div>
   );

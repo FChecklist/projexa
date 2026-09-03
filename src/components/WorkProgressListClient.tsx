@@ -73,6 +73,7 @@ import PaneState from "@/components/PaneState";
 import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 import { formatDate } from "@/lib/format";
 import { boqLineLabel } from "@/lib/work-progress-report";
+import { boqLineHref } from "@/lib/boq-line-options";
 
 export type Entry = {
   id: string;
@@ -89,6 +90,14 @@ export type Entry = {
   activityName?: string | null;
   boqItemCode?: string | null;
   boqDescription?: string | null;
+  /**
+   * R67 lane D22 (item D-64, rec R-230), folded in at the integration merge:
+   * the BOQ the line lives on. Naming the line was only half of R-230 -- the
+   * cell has to be a way IN to it. Optional for the same reason as the names
+   * above: an older backend answers without it, and the cell then renders as
+   * text instead of as a link rather than producing a broken href.
+   */
+  boqLineBoqId?: string | null;
   unit?: string | null;
 };
 
@@ -220,6 +229,26 @@ export default function WorkProgressListClient({
             percentComplete: (row) => {
               const pct = Number((row as unknown as Entry).percentComplete);
               return <StatusBadge tone={progressTone(pct)} label={`${pct}%`} />;
+            },
+            // R67 lane D22 (item D-64, rec R-230): the line links to ITSELF on
+            // its own BOQ page, so "which line is this, and how much of it is
+            // left" is one click away instead of a copy-paste of a code into a
+            // search box. stopPropagation because the ROW already navigates to
+            // the entry (D-67 above) and a link inside it must not do both.
+            boqLineDescription: (row) => {
+              const entry = row as unknown as Entry;
+              const label = entry.boqLineItemId ? boqLineLabel(entry.boqItemCode, entry.boqDescription) : null;
+              if (!label) return <span className="text-ct-muted">–</span>;
+              if (!entry.boqLineBoqId || !entry.boqLineItemId) return <>{label}</>;
+              return (
+                <Link
+                  href={boqLineHref(entry.boqLineBoqId, entry.boqLineItemId)}
+                  className="underline underline-offset-2"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {label}
+                </Link>
+              );
             },
           }}
         />

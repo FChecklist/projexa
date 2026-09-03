@@ -50,6 +50,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 // owns the breadcrumb, the primary and the message band.
 import { FormScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { FormField } from "@/components/ui/form-field";
+import BoqLinePicker from "@/components/BoqLinePicker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -522,15 +523,36 @@ export default function WorkProgressFormClient({
             className="sm:col-span-2"
             hint={selectedLine ? `${selectedLine.description} · ${selectedLine.unit} · rate ${selectedLine.rate}` : undefined}
           >
-            {(props) => (
-              <Select value={(values.boqLineItemId as string) ?? ""} onValueChange={(v) => setField("boqLineItemId", v)}>
-                <SelectTrigger {...props}><SelectValue placeholder="Choose a BOQ line" /></SelectTrigger>
-                <SelectContent>
-                  {lineItems.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>{l.itemCode ? `${l.itemCode} - ${l.description}` : l.description}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* R67 lane D22 (item D-64, rec R-230), folded in at the
+                integration merge. WHAT THIS REPLACES: a native <select>
+                holding every line in the BOQ, labelled by description alone,
+                in insertion order -- on a 128-line BOQ that is a scroll, not a
+                choice, and it gave no way to tell a PARENT line (whose
+                quantity is delivered through its children and cannot be
+                recorded against) from an ordinary one, so picking the wrong
+                one was silent. The picker searches server-side over
+                /api/scope/lines on both code and description, and shows parent
+                lines disabled WITH the reason rather than hiding them.
+
+                WHY THIS IS THE BOQ LINE FIELD AND NOT "Activity": the item
+                names the Daily Entry's Activity select, but the endpoint it
+                specifies returns BOQ lines, and "parent lines disabled" is a
+                BOQ-line property -- construction_activities has no hierarchy,
+                and activity_id is a separate NOT NULL FK, so swapping the
+                Activity control would make every submission fail.
+
+                NOT folded in, and named rather than dropped quietly: D-64 also
+                wanted the whole-BOQ download gone. The /api/scope/{id} read
+                above stays, because D-55's hint line and its stated failure
+                state are both built from it. The picker removes the
+                unsearchable list; removing that read is a follow-up. */}
+            {() => (
+              <BoqLinePicker
+                projectId={projectId}
+                boqId={selectedBoqId}
+                value={(values.boqLineItemId as string) ?? null}
+                onChange={(lineId) => setField("boqLineItemId", lineId ?? "")}
+              />
             )}
           </FormField>
 

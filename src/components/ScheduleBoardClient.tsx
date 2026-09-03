@@ -158,6 +158,13 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
         <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
           No issues yet.
           {newTaskButton}
+          {/* R67 lane D22 (item D-48): an empty board is exactly where somebody
+              holding a contractor's programme spreadsheet arrives, so the bulk
+              import is offered HERE as well as in the module's create menu.
+              Second door, same destination -- not a second importer. */}
+          <Button variant="outline" size="sm" onClick={() => router.push(`/schedule/import?projectId=${projectId}`)}>
+            Import a programme from Excel
+          </Button>
         </CardContent>
       </Card>
       </ListStateRegion>
@@ -193,7 +200,9 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
                       key={issue.id}
                       draggable
                       onDragStart={(e) => e.dataTransfer.setData("text/issue-id", issue.id)}
-                      onClick={() => router.push(`/schedule/tasks/${issue.id}`)}
+                      // R67 D-77: ?from= carries the tab, so the task page's Back
+                      // returns to the Board rather than the module's default tab.
+                      onClick={() => router.push(`/schedule/tasks/${issue.id}?from=board`)}
                       className={`cursor-pointer rounded-md border border-px-border bg-white p-2.5 text-sm shadow-sm transition-opacity hover:border-px-ink/30 ${movingId === issue.id ? "opacity-50" : ""}`}
                     >
                       <p className="mb-1.5 font-medium text-px-ink">{issue.title}</p>

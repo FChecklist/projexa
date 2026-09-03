@@ -84,6 +84,22 @@ function buildFields(zoneHint: string): CreateField[] {
       help: "Separate names with a comma.",
     },
     { name: "agenda", label: "Agenda", kind: "textarea", wide: true, help: "One item per line." },
+    // R67 lane D22 (item D-58, rec R-187), folded in at the integration merge.
+    // A coordination meeting is minuted WHILE IT RUNS. Before this the screen
+    // named "New Meeting" could not minute a meeting: minutes existed only on
+    // the object page, so a site engineer had to save an empty shell first and
+    // then go hunting for the field. compliance-tracker's createVeriMeeting DTO
+    // already carries `minutes` (this lane widened it), so this is one field,
+    // not a second write path.
+    //
+    // HONEST REDUCTION, in the same terms D-18's is stated above: lane D22 also
+    // captured ACTION ITEMS here, as repeating rows with an owner picker and a
+    // due date, and autosaved the whole form to the device. CreateField has no
+    // repeating-row kind and no local-draft mechanism, and inventing either for
+    // one screen is exactly the per-screen divergence D-67 exists to end. The
+    // action items stay on the object page, one click after the receipt below
+    // lands the user there.
+    { name: "minutes", label: "Minutes", kind: "textarea", wide: true, help: "What was said. You can keep typing after the meeting is created." },
   ];
 }
 
@@ -130,7 +146,13 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
         init: {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          // R67 D-58: minutes travel with the create, when there are any. An
+          // absent field is omitted rather than sent as "", so the DTO's own
+          // "no minutes" state stays distinguishable from "minutes were
+          // deliberately blanked".
+          body: JSON.stringify(
+            values.minutes?.trim() ? { ...body, minutes: values.minutes } : body
+          ),
         },
       };
     },

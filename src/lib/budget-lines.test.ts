@@ -1,4 +1,10 @@
-import { describe, expect, test } from "bun:test";
+/// <reference types="bun-types" />
+// MERGE NOTE (integration train, lane D22 x R67 D-62): both lanes wrote this
+// file from scratch with a local `line()` fixture builder of their own, with
+// DIFFERENT defaults (D-62's is a real 100,000 civil line; D22's is an empty
+// one). Both sets of tests are kept in full, so lane D22's builder is renamed
+// d41Line() rather than one lane's defaults being imposed on the other lane's
+// assertions -- which would have changed what those assertions mean.
 import {
   BUDGET_EXPORT_HEADERS,
   NO_CATEGORY_LABEL,
@@ -32,6 +38,224 @@ function line(over: Partial<BudgetLine> = {}): BudgetLine {
     ...over,
   };
 }
+
+import { describe, expect, test } from "bun:test";
+import {
+  UNCATEGORIZED_LABEL,
+  applyLineItemPatch,
+  budgetCategoryOptions,
+  budgetVariance,
+  budgetVendorOptions,
+  grandTotalTies,
+  groupBudgetLinesByCategory,
+  isOverBudget,
+  lineActual,
+  type BudgetLine,
+} from "./budget-lines";
+
+function d41Line(over: Partial<BudgetLine> & Pick<BudgetLine, "lineItemId">): BudgetLine {
+  return {
+    code: null, description: "line", category: null, quantity: 1, unit: "no", rate: 0,
+    parentLineItemId: null, amount: 0, budgetPercentage: 25, budget: 0,
+    materialAmount: null, manpowerAmount: null, vendorId: null, vendorName: null,
+    vendorAmount: null, variance: null, actual: null, revenue: null,
+    ...over,
+  };
+}
+// Two categories, one vendor amount, one material tag and one manpower tag --
+// the exact fixture shape item D-54's acceptance describes.
+const LINES: BudgetLine[] = [
+  d41Line({ lineItemId: "l1", code: "R60SK", description: "R60 skiphop sub", category: "Civil", quantity: 10, unit: "m2", rate: 650, amount: 6500, budget: 1625, vendorId: "v1", vendorName: "Skiphop", vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200, revenue: 2000 }),
+  d41Line({ lineItemId: "l2", code: "CIV-2", description: "Plaster", category: "Civil", amount: 500, budget: 125 }),
+  d41Line({ lineItemId: "l3", code: "GYP-1", description: "Ceiling grid", category: "Gypsum", amount: 400, budget: 100, vendorId: "v2", vendorName: "Gyproc", vendorAmount: 90, revenue: 50 }),
+  d41Line({ lineItemId: "l4", code: "MISC", description: "Odd job", category: null, amount: 100, budget: 25 }),
+  // A weighted sub-task of l1: 40% of l1's amount, listed but never added on top.
+  d41Line({ lineItemId: "l1a", code: "R60SK.1", description: "Frame", category: "Civil", amount: 2600, budget: 650, parentLineItemId: "l1" }),
+];
+
+describe("lineActual", () => {
+  test("sums vendor + material + manpower", () => {
+    expect(lineActual({ vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200 })).toBe(2200);
+  });
+
+  test("a line nobody has costed reads null, never a fabricated 0", () => {
+    expect(lineActual({ vendorAmount: null, materialAmount: null, manpowerAmount: null })).toBeNull();
+  });
+
+  test("one entered component is enough -- the other two count as 0, not as unknown", () => {
+    expect(lineActual({ vendorAmount: null, materialAmount: 300, manpowerAmount: null })).toBe(300);
+  });
+});
+
+describe("isOverBudget", () => {
+  test("actual above budget is over", () => {
+    expect(isOverBudget(d41Line({ lineItemId: "x", budget: 1625, vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200 }))).toBe(true);
+  });
+  test("an uncosted line is never counted as over budget", () => {
+    expect(isOverBudget(d41Line({ lineItemId: "x", budget: 1625 }))).toBe(false);
+  });
+  test("exactly on budget is not over", () => {
+    expect(isOverBudget(d41Line({ lineItemId: "x", budget: 100, vendorAmount: 100 }))).toBe(false);
+  });
+});
+
+describe("groupBudgetLinesByCategory", () => {
+  test("the category subtotals sum to the Grand Total", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory(LINES);
+    expect(groups.map((g) => g.category)).toEqual(["Civil", "Gypsum", UNCATEGORIZED_LABEL]);
+    expect(groups.reduce((s, g) => s + g.subtotal.amount, 0)).toBe(grandTotal.amount);
+    expect(groups.reduce((s, g) => s + g.subtotal.budget, 0)).toBe(grandTotal.budget);
+    expect(groups.reduce((s, g) => s + g.subtotal.actual, 0)).toBe(grandTotal.actual);
+  });
+
+  test("a weighted sub-task is listed under its category but contributes no money -- never double-counted", () => {
+    const civil = groupBudgetLinesByCategory(LINES).groups[0];
+    expect(civil.lines.map((l) => l.lineItemId)).toEqual(["l1", "l2", "l1a"]);
+    expect(civil.subtotal.amount).toBe(7000); // 6500 + 500 only; l1a's 2600 is a share of l1's 6500
+  });
+
+  test("the Grand Total ties to the BOQ's own root-line total", () => {
+    const { grandTotal } = groupBudgetLinesByCategory(LINES);
+    const rootTotal = LINES.filter((l) => !l.parentLineItemId).reduce((s, l) => s + l.amount, 0);
+    expect(grandTotal.amount).toBe(rootTotal);
+  });
+
+  test("actual is vendor + material + manpower across the whole BOQ", () => {
+    const { grandTotal } = groupBudgetLinesByCategory(LINES);
+    expect(grandTotal.vendorAmount).toBe(1790);
+    expect(grandTotal.materialAmount).toBe(300);
+    expect(grandTotal.manpowerAmount).toBe(200);
+    expect(grandTotal.actual).toBe(2290);
+  });
+
+  test("Uncategorized is always last, wherever it first appears in the data", () => {
+    const reordered = [LINES[3], ...LINES.slice(0, 3)];
+    expect(groupBudgetLinesByCategory(reordered).groups.map((g) => g.category)).toEqual(["Civil", "Gypsum", UNCATEGORIZED_LABEL].sort((a, b) => (a === UNCATEGORIZED_LABEL ? 1 : 0) - (b === UNCATEGORIZED_LABEL ? 1 : 0)));
+  });
+
+  test("selecting one category reduces the Grand Total to exactly that category's subtotal", () => {
+    const all = groupBudgetLinesByCategory(LINES);
+    const civilOnly = groupBudgetLinesByCategory(LINES, ["Civil"]);
+    expect(civilOnly.groups).toHaveLength(1);
+    expect(civilOnly.grandTotal.amount).toBe(civilOnly.groups[0].subtotal.amount);
+    expect(civilOnly.grandTotal.amount).toBe(all.groups[0].subtotal.amount);
+    expect(civilOnly.grandTotal.amount).not.toBe(all.grandTotal.amount);
+  });
+
+  test("the category filter is case-insensitive -- an imported 'civil' line is not silently dropped", () => {
+    const lower = LINES.map((l) => (l.category ? { ...l, category: l.category.toLowerCase() } : l));
+    expect(groupBudgetLinesByCategory(lower, ["Civil"]).grandTotal.amount).toBe(7000);
+  });
+
+  test("an empty or all-blank filter means every category, not none", () => {
+    expect(groupBudgetLinesByCategory(LINES, []).grandTotal.amount).toBe(7500);
+    expect(groupBudgetLinesByCategory(LINES, ["  "]).grandTotal.amount).toBe(7500);
+  });
+
+  test("the vendor filter narrows by vendor id and leaves the totals tying", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory(LINES, undefined, ["v1"]);
+    expect(groups.map((g) => g.category)).toEqual(["Civil"]);
+    expect(grandTotal.amount).toBe(6500);
+    expect(grandTotal.vendorAmount).toBe(1700);
+  });
+
+  test("Uncategorized is selectable by name and matches only lines that truly have none", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory(LINES, [UNCATEGORIZED_LABEL]);
+    expect(groups[0].lines.map((l) => l.lineItemId)).toEqual(["l4"]);
+    expect(grandTotal.amount).toBe(100);
+  });
+
+  test("no lines at all is an empty grouping with zero totals, never NaN", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory([]);
+    expect(groups).toEqual([]);
+    expect(grandTotal).toEqual({ amount: 0, budget: 0, vendorAmount: 0, materialAmount: 0, manpowerAmount: 0, actual: 0, revenue: 0 });
+  });
+
+  // R67 lane D22 (item D-54): Revenue joins the same subtotal arithmetic.
+  test("revenue subtotals per category and ties to the Grand Total", () => {
+    const { groups, grandTotal } = groupBudgetLinesByCategory(LINES);
+    expect(groups.map((g) => g.subtotal.revenue)).toEqual([2000, 50, 0]);
+    expect(groups.reduce((s, g) => s + g.subtotal.revenue, 0)).toBe(grandTotal.revenue);
+    expect(grandTotal.revenue).toBe(2050);
+  });
+});
+
+// R67 lane D22 (item D-54).
+describe("budgetVariance", () => {
+  test("Budget minus Actual -- negative means the line is over", () => {
+    expect(budgetVariance(d41Line({ lineItemId: "x", budget: 1625, vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200 }))).toBe(-575);
+  });
+
+  test("under budget is positive", () => {
+    expect(budgetVariance(d41Line({ lineItemId: "x", budget: 1625, vendorAmount: 1000 }))).toBe(625);
+  });
+
+  test("a line nobody has costed has no variance at all, not a whole-budget saving", () => {
+    expect(budgetVariance(d41Line({ lineItemId: "x", budget: 1625 }))).toBeNull();
+  });
+});
+
+describe("budgetVendorOptions", () => {
+  test("offers only vendors actually named on a line of this BOQ, in first-appearance order", () => {
+    expect(budgetVendorOptions(LINES)).toEqual([
+      { id: "v1", name: "Skiphop" },
+      { id: "v2", name: "Gyproc" },
+    ]);
+  });
+
+  test("a BOQ with no vendors offers none, rather than an empty-labelled row", () => {
+    expect(budgetVendorOptions([d41Line({ lineItemId: "x" })])).toEqual([]);
+  });
+});
+
+describe("grandTotalTies", () => {
+  test("a sub-cent difference between the two independent totals is arithmetic, not a disagreement", () => {
+    expect(grandTotalTies(7500, 7500.004)).toBe(true);
+  });
+  test("a real disagreement does not tie", () => {
+    expect(grandTotalTies(7500, 7600)).toBe(false);
+  });
+});
+
+describe("applyLineItemPatch", () => {
+  const vendorName = (id: string | null) => (id === "v9" ? "New Vendor" : null);
+
+  test("a new Budget % recomputes Budget from Amount, not from the typed string", () => {
+    const patched = applyLineItemPatch(d41Line({ lineItemId: "l1", amount: 6500, budgetPercentage: 25, budget: 1625 }), { budgetPercentage: "30" }, vendorName);
+    expect(patched.budgetPercentage).toBe(30);
+    expect(patched.budget).toBe(1950);
+  });
+
+  test("a new vendor id brings its name with it, so the cell never shows a raw id", () => {
+    const patched = applyLineItemPatch(d41Line({ lineItemId: "l1" }), { vendorId: "v9" }, vendorName);
+    expect(patched.vendorId).toBe("v9");
+    expect(patched.vendorName).toBe("New Vendor");
+  });
+
+  test("editing Material moves Actual with it -- the two columns can never disagree", () => {
+    const before = d41Line({ lineItemId: "l1", vendorAmount: 1700, materialAmount: 300, manpowerAmount: 200, actual: 2200 });
+    expect(applyLineItemPatch(before, { materialAmount: "500" }, vendorName).actual).toBe(2400);
+  });
+
+  test("clearing the last costed field returns Actual to null, never to 0", () => {
+    const before = d41Line({ lineItemId: "l1", materialAmount: 300, actual: 300 });
+    expect(applyLineItemPatch(before, { materialAmount: null }, vendorName).actual).toBeNull();
+  });
+
+  test("fields the server did not answer with are left exactly as they were", () => {
+    const before = d41Line({ lineItemId: "l1", amount: 6500, budget: 1625, vendorAmount: 1700, revenue: 2000 });
+    const patched = applyLineItemPatch(before, { materialAmount: "100" }, vendorName);
+    expect(patched.budget).toBe(1625);
+    expect(patched.vendorAmount).toBe(1700);
+    expect(patched.revenue).toBe(2000);
+  });
+});
+
+describe("budgetCategoryOptions", () => {
+  test("offers every category present, Uncategorized last", () => {
+    expect(budgetCategoryOptions(LINES)).toEqual(["Civil", "Gypsum", UNCATEGORIZED_LABEL]);
+  });
+});
 
 describe("R67 D-62 category and vendor labels", () => {
   test("an unclassified line reads as words, never as an empty cell", () => {

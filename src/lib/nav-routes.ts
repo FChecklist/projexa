@@ -197,6 +197,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/schedule",
   "/schedule/log-time",
   "/schedule/sprints/new",
+  "/schedule/import",
   "/schedule/tasks/[id]",
   "/schedule/tasks/new",
   "/scope",

@@ -20,10 +20,28 @@
 // revising a BOQ does not uncategorise it.
 import { describe, expect, test } from "bun:test";
 import {
-  LINE_FIELD_LABEL, LINE_FIELD_MESSAGE, NO_CATEGORY_CHIP_LABEL, TITLE_REQUIRED_MESSAGE,
-  collectLines, emptyLine, isUntouchedLine, lineMissingFields, missingBoqFields,
-  toDrafts, toPayloadLineItems, unitForLine,
-  type BoqLineItemRow, type LineItemDraft,
+  LINE_FIELD_LABEL,
+  LINE_FIELD_MESSAGE,
+  NO_CATEGORY_CHIP_LABEL,
+  TITLE_REQUIRED_MESSAGE,
+  childPercentNote,
+  collectLines,
+  createBoqSaveDisabledReason,
+  draftBoqTotal,
+  draftLineAmount,
+  draftLineFieldMessages,
+  draftLineMissingFields,
+  draftLineTouched,
+  draftRootAncestor,
+  emptyLine,
+  isUntouchedLine,
+  lineMissingFields,
+  missingBoqFields,
+  toDrafts,
+  toPayloadLineItems,
+  unitForLine,
+  type BoqLineItemRow,
+  type LineItemDraft,
 } from "./boq-helpers";
 
 function line(overrides: Partial<LineItemDraft> = {}): LineItemDraft {
@@ -176,6 +194,138 @@ describe("toDrafts -- revising a BOQ must not uncategorise it", () => {
 describe("NO_CATEGORY_CHIP_LABEL", () => {
   test("is one shared string, so Create/Revise/Object can never show three different words", () => {
     expect(NO_CATEGORY_CHIP_LABEL).toBe("no category");
+  });
+});
+
+// ─── R67 lane D22 (item D-60, recs R-196/R-225) ───────────────────────────
+// The new-BOQ grid's arithmetic and its disabled-with-reason button. The
+// acceptance clause names the empty-form button text literally, so it is
+// pinned here character for character.
+describe("draftRootAncestor", () => {
+  const root = draft({ itemCode: "A", quantity: "100", rate: "10" });
+  const child = draft({ itemCode: "A-1", parentItemCode: "A", breakdownPercentage: "40", quantity: "", rate: "" });
+  const grandchild = draft({ itemCode: "A-1-a", parentItemCode: "A-1", breakdownPercentage: "50", quantity: "", rate: "" });
+
+  test("a root line is its own root", () => {
+    expect(draftRootAncestor(root, [root])).toBe(root);
+  });
+
+  test("walks past the immediate parent to the true root, per the canonical child-rate rule", () => {
+    expect(draftRootAncestor(grandchild, [root, child, grandchild])).toBe(root);
+  });
+
+  test("a parent code nothing declares has no root, rather than a guessed one", () => {
+    expect(draftRootAncestor(draft({ parentItemCode: "GHOST" }), [root])).toBeNull();
+  });
+
+  test("a loop of parents has no root instead of hanging", () => {
+    const a = draft({ itemCode: "A", parentItemCode: "B" });
+    const b = draft({ itemCode: "B", parentItemCode: "A" });
+    expect(draftRootAncestor(a, [a, b])).toBeNull();
+  });
+});
+
+describe("draftLineAmount / draftBoqTotal", () => {
+  const root = draft({ itemCode: "A", quantity: "100", rate: "10" });
+  const child = draft({ itemCode: "A-1", parentItemCode: "A", breakdownPercentage: "40", quantity: "", rate: "" });
+
+  test("a root line's amount is qty x rate", () => {
+    expect(draftLineAmount(root, [root])).toBe(1000);
+  });
+
+  test("a sub-task's amount is the root's amount x its breakdown %, matching what the server stores", () => {
+    expect(draftLineAmount(child, [root, child])).toBe(400);
+  });
+
+  test("an incomplete line has no amount rather than a misleading zero", () => {
+    expect(draftLineAmount(draft({ quantity: "", rate: "" }), [])).toBeNull();
+    expect(draftLineAmount(draft({ itemCode: "A-2", parentItemCode: "A", breakdownPercentage: "" }), [root])).toBeNull();
+  });
+
+  test("the running total counts root lines only, so a weighted sub-task is not double-counted", () => {
+    expect(draftBoqTotal([root, child])).toBe(1000);
+    const second = draft({ itemCode: "B", quantity: "2", rate: "50" });
+    expect(draftBoqTotal([root, child, second])).toBe(1100);
+  });
+});
+
+describe("createBoqSaveDisabledReason", () => {
+  test("an untouched form reads exactly the sentence the acceptance names", () => {
+    expect(createBoqSaveDisabledReason("", [emptyLine()])).toBe("Title, 1 line with Description, Qty, Rate");
+  });
+
+  test("names only what is still missing once part of the form is filled", () => {
+    expect(createBoqSaveDisabledReason("Fit-out", [emptyLine()])).toBe("1 line with Description, Qty, Rate");
+    expect(createBoqSaveDisabledReason("", [draft()])).toBe("Title");
+  });
+
+  test("narrows to the one field a nearly-complete line is missing", () => {
+    expect(createBoqSaveDisabledReason("Fit-out", [draft({ unit: "" })])).toBe("1 line with Unit");
+    expect(createBoqSaveDisabledReason("Fit-out", [draft({ rate: "" })])).toBe("1 line with Rate");
+  });
+
+  test("is null -- the button is enabled -- once a title and one complete line exist", () => {
+    expect(createBoqSaveDisabledReason("Fit-out", [draft()])).toBeNull();
+  });
+
+  test("a sub-task counts as a complete line when it carries a breakdown %, inheriting its unit", () => {
+    const root = draft({ itemCode: "A" });
+    const child = { ...emptyLine(), description: "Sub", itemCode: "A-1", parentItemCode: "A", breakdownPercentage: "40" };
+    expect(createBoqSaveDisabledReason("Fit-out", [root, child])).toBeNull();
+  });
+});
+
+describe("draftLineMissingFields / draftLineTouched", () => {
+  test("a blank row is untouched; any single character makes it real", () => {
+    expect(draftLineTouched(emptyLine())).toBe(false);
+    expect(draftLineTouched({ ...emptyLine(), category: "Civil" })).toBe(true);
+  });
+
+  test("a sub-task needs a breakdown %, not a qty and rate of its own", () => {
+    const root = draft({ itemCode: "A" });
+    const child = { ...emptyLine(), description: "Sub", itemCode: "A-1", parentItemCode: "A" };
+    expect(draftLineMissingFields(child, [root, child])).toEqual(["Breakdown %"]);
+  });
+});
+
+describe("draftLineFieldMessages", () => {
+  const root = draft({ itemCode: "A" });
+
+  test("says which code is missing, using the code the user actually typed", () => {
+    const child = { ...emptyLine(), parentItemCode: "X-9", breakdownPercentage: "50" };
+    expect(draftLineFieldMessages(child, [root, child])).toEqual([
+      { field: "parentItemCode", text: "No line has Item Code X-9" },
+    ]);
+  });
+
+  test("asks for the breakdown % in the words the item specifies", () => {
+    const child = { ...emptyLine(), itemCode: "A-1", parentItemCode: "A" };
+    expect(draftLineFieldMessages(child, [root, child])).toEqual([
+      { field: "breakdownPercentage", text: "Enter the % of the parent this sub-task carries" },
+    ]);
+  });
+
+  test("catches a line pointed at itself", () => {
+    const self = { ...emptyLine(), itemCode: "A", parentItemCode: "A", breakdownPercentage: "50" };
+    expect(draftLineFieldMessages(self, [self])[0]!.text).toBe("A line cannot be its own parent");
+  });
+
+  test("a root line has nothing to say -- an empty Parent code is the normal case", () => {
+    expect(draftLineFieldMessages(root, [root])).toEqual([]);
+  });
+});
+
+describe("childPercentNote", () => {
+  test("reads as the item specifies once children exist", () => {
+    const root = draft({ itemCode: "A" });
+    const c1 = { ...emptyLine(), parentItemCode: "A", breakdownPercentage: "40" };
+    const c2 = { ...emptyLine(), parentItemCode: "A", breakdownPercentage: "35" };
+    expect(childPercentNote([root, c1, c2], "A")).toBe("children total 75% of 100%");
+  });
+
+  test("is silent for a line with no children at all", () => {
+    expect(childPercentNote([draft({ itemCode: "A" })], "A")).toBeNull();
+    expect(childPercentNote([draft({ itemCode: "A" })], undefined)).toBeNull();
   });
 });
 
