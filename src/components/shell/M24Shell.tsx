@@ -111,7 +111,6 @@ import {
   appendTurn,
   conversationKey,
   editInFormRoute,
-  missingFieldLabel,
   paramLabel,
   parseTurns,
   readAsLine,
@@ -165,7 +164,20 @@ import {
 // refusal -- all pure, all asserted in src/lib/gap-card.test.ts.
 import { answersNeededLabel, echoFields, echoLine, looksLikeCreate, refusalFor } from "@/lib/gap-card";
 import { sendLabelFor } from "@/lib/composer-send-state";
-import { maskTechnical, resolveTaskError } from "@/lib/task-errors";
+// R67 C-16: band 2 asks instead of refusing. Which picker answers which
+// missing slot, which question is open right now, and whether the walk is
+// done -- all pure, all asserted in src/lib/chain-walk.test.ts.
+import {
+  chainConfirmTitle,
+  chainReceiptLine,
+  chainRunFor,
+  firstQuestion,
+  levelPathForStep,
+  openQuestionSlots,
+  unansweredSlots,
+  type KnownValues,
+} from "@/lib/chain-walk";
+import { maskTechnical, resolveTaskError, type MissingStep } from "@/lib/task-errors";
 // R67 C-14: the shell message region -- the receipts and failures that have to
 // outlive the navigation that produced them.
 import {
@@ -226,14 +238,24 @@ const EMPTY_GROUPS: GroupedRows = { needsYou: [], running: [], done: [], blocked
 // loaded its chain. The question is asked in the input, in words, from the
 // SAME missing-step vocabulary D-03 uses for the row's own sentence -- so
 // "Pick a BOQ line" on the row and the prompt in the box cannot drift.
-const FIX_PROMPT: Readonly<Record<string, string>> = {
+const FIX_PROMPT: Readonly<Record<MissingStep, string>> = {
   boqLine: "Which BOQ line? Type its code, or open the line on the screen.",
   project: "Which project? Choose it in the top rail, then press Send.",
   value: "How much? Type a quantity or a percentage.",
   // R67 C-13: the timesheet write's own slot. Its D-03 sentence is "Pick a
   // task"; this is the same question in the box, from the same vocabulary.
   task: "Which task? Type its number or a few words from its title.",
+  // R67 C-16: the roster grid answers this one in band 2, so the box says
+  // where the answer is rather than asking for it a second time.
+  worker: "Which worker? Tick them in the crew grid above.",
 };
+
+// R67 C-16: the URL param a module page carries for the project it is showing
+// (/work-progress?projectId=…). DE-30: a question the route has already
+// answered is not asked, which first requires the shell to READ the answer --
+// the composer's project and the page's ?projectId= have been independent
+// since the shell shipped.
+const PROJECT_PARAM = "projectId";
 
 type Project = { id: string; name: string };
 
@@ -439,8 +461,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     kind: "needs_input" | "failed";
     sentence: string;
     verbLabel: string;
-    missingStep: "boqLine" | "project" | "value" | "task" | null;
+    missingStep: MissingStep | null;
     missing: string[];
+    /** R67 C-16: the BOQ line the refused request carried, when it carried one. */
+    itemCode: string | null;
   } | null>(null);
   // R67 C-09: the conversation so far. Hydrated from sessionStorage below, so
   // opening the screen an answer points at does not cost the question.
@@ -450,7 +474,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   const [proposalError, setProposalError] = useState<{
     sentence: string;
     verbLabel: string;
-    missingStep: "boqLine" | "project" | "value" | "task" | null;
+    missingStep: MissingStep | null;
   } | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [turnsReady, setTurnsReady] = useState(false);
@@ -930,6 +954,59 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     [levelPath.length]
   );
 
+  /**
+   * R67 C-16 -- the label of the BOQ line the walk is standing on.
+   *
+   * The chip carries the item CODE (the executor resolves a line by
+   * item_code), so the human words live on the strip segment the click
+   * appended. The depth prefix is the BOQ level's own -- the receipt used to
+   * look for `lvl:1:`, a depth this walk never produces, so it silently fell
+   * back to printing the bare code.
+   */
+  const chainLineLabel = useMemo(
+    () => segments.find((s) => s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}2:`))?.label ?? null,
+    [segments]
+  );
+
+  /**
+   * The ONE place the chain's value is set, from either editor.
+   *
+   * WHY THE CONFIRMATION CARD DOES NOT CARRY ITS OWN NUMBER INPUT. C-09's cards are
+   * editable in place because their values were resolved by the SERVER from a
+   * typed sentence, and correcting a fuzzy match should cost one field. This
+   * value was chosen by the user one click ago, and it already has an editor:
+   * the chips in band 2 and the labelled field in band 4. A second input bound
+   * to the same state would be the duplicate control this programme is
+   * removing -- and worse, it would have to appear the instant the first digit
+   * was typed into the other one, taking the caret with it.
+   */
+  const setChainScalar = useCallback((next: string) => {
+    setScalarValue(next);
+    setScalarError(null);
+    // Typing REPLACES a value a chip set, chip and all. Before this, band 4's
+    // field read `levelPath[3] ?? scalarValue`: once a chip had been clicked
+    // the chip won for both the display and the run, so a correction typed
+    // into the field was accepted, shown nowhere and ignored on Send.
+    setLevelPath((prev) => (prev.length > 3 ? prev.slice(0, 3) : prev));
+    setSegments((prev) => prev.filter((s) => !s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}3:`)));
+  }, []);
+
+  /** "Change value" -- back to the value question, with nothing written. */
+  const changeChainValue = useCallback(() => setChainScalar(""), [setChainScalar]);
+
+  /** "Change line" -- back to the BOQ question, with nothing written. */
+  const changeChainLine = useCallback(() => {
+    setLevelPath((prev) => prev.slice(0, 2));
+    setScalarValue("");
+    setScalarError(null);
+    setSegments((prev) =>
+      prev.filter(
+        (s) =>
+          !s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}2:`) && !s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}3:`)
+      )
+    );
+  }, []);
+
   /** Starting the walk from an action chip: the level path opens with the card. */
   const onActionAdvance = useCallback(
     (seg: { id: string; label: string }) => {
@@ -1048,14 +1125,57 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
    * see chain-options.ts's boqLineOptions() for why the chip carries the item
    * code rather than the row id.
    */
-  const chainRun = useMemo(() => {
-    if (levelPath[0] !== "work_progress" || levelPath[1] !== "record_progress") return null;
-    const itemCode = levelPath[2];
-    if (!itemCode) return null;
-    const percent = Number(levelPath[3] ?? scalarValue);
-    if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
-    return { functionId: "record_work_progress", params: { itemCode, percent } };
-  }, [levelPath, scalarValue]);
+  const chainRun = useMemo(
+    () => chainRunFor({ levelPath, value: scalarValue }),
+    [levelPath, scalarValue]
+  );
+
+  // -------------------------------------------------------------------------
+  // R67 C-16 -- A MISSING SLOT OPENS ITS OWN PICKER
+  // -------------------------------------------------------------------------
+
+  /**
+   * *** THE QUESTION OPENS THE CONTROL THAT ANSWERS IT. ***
+   *
+   * Until C-16 this was three copies of `if (step === "boqLine")` and nothing
+   * at all for the other four steps, so "Pick a worker" or "Pick a task" was a
+   * sentence with no control under it -- a refusal in nicer words.
+   *
+   * It LOADS AND STOPS: setting a level path renders chips. It posts nothing,
+   * and it deliberately cannot -- there is no functionId in scope here.
+   */
+  const openStep = useCallback((step: MissingStep | null | undefined, known: KnownValues = {}) => {
+    const path = levelPathForStep(step, known);
+    if (!path) return false;
+    setLevelPath(path);
+    setScalarValue("");
+    setScalarError(null);
+    return true;
+  }, []);
+
+  /**
+   * R67 C-16 / DE-30 -- WHAT SEND IS STILL WAITING FOR, RIGHT NOW.
+   *
+   * The live question first: from the moment the BOQ chips render, the button
+   * reads "Send (pick a BOQ line)". Before this, that label could only come
+   * from a response, so a user who clicked "Record progress" and looked at the
+   * button saw a bare "Send" for a chain that could not run yet.
+   */
+  const liveSlots = useMemo(() => openQuestionSlots(levelPath, scalarValue), [levelPath, scalarValue]);
+
+  /**
+   * The question the OPEN level is asking, in D-03's own words. It is what
+   * Send's disabled reason says -- and only the LIVE question, never the last
+   * response's, because a reason drawn from a response would outlive the
+   * response and leave Send dead with no way to clear it.
+   */
+  const liveQuestion = useMemo(() => firstQuestion(liveSlots, { projectId }), [liveSlots, projectId]);
+
+  /** The Send LABEL may also fall back to the last response, which cannot deadlock it. */
+  const pendingSlots = useMemo(
+    () => (liveSlots.length > 0 ? liveSlots : sendOutcome?.missing ?? []),
+    [liveSlots, sendOutcome]
+  );
 
   // *** A LEAF CLICK LOADS THE CHAIN AND STOPS. *** It appends segments and
   // nothing else: no POST, no navigation, and -- the rule C-02 exists to
@@ -1822,8 +1942,17 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // A WRITE THAT IS SHORT A SLOT GETS A PICKER, NOT A BLOCKED ROW.
           // This is the whole point of C-05: "record 50% progress on
           // excavation" used to mint a row reading "itemCode is required".
-          if (seg.functionId === "record_work_progress" && seg.missingParams.length > 0) {
-            setLevelPath(["work_progress", "record_progress"]);
+          //
+          // R67 C-16: the picker is now chosen by the SLOT rather than by the
+          // function id, so a worker or a task slot opens its own control
+          // instead of falling through to a sentence with nothing under it --
+          // and DE-30 drops a project the route has already answered before
+          // any of that.
+          const knownLine = typeof seg.params.itemCode === "string" ? seg.params.itemCode : null;
+          const question = firstQuestion(seg.missingParams, { projectId }, { itemCode: knownLine });
+          if (question && openStep(question.step, { itemCode: knownLine })) {
+            // The percentage the sentence already carried travels into the
+            // value field, so answering the line question finishes the job.
             if (typeof seg.params.percent === "number") setScalarValue(String(seg.params.percent));
           }
           return;
@@ -1895,9 +2024,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         // The chain has been run, so the question band 2 was asking is
         // answered: clear the walk and leave the receipt in its place. The
         // strip keeps the sentence, which is the record of what was done.
-        const label = segments.find((s) => s.id.startsWith(`${LEVEL_SEGMENT_PREFIX}1:`))?.label;
         setReceipt({
-          text: `Recorded ${chainRun.params.percent}% on ${label ?? chainRun.params.itemCode}`,
+          // R67 C-16: the line's WORDS, from the segment the click appended.
+          // The old lookup asked for depth 1, which this walk never produces
+          // (an action chip is depth 0 and the BOQ line depth 2), so every
+          // receipt printed the bare item code and the fallback was doing all
+          // the work.
+          text: chainReceiptLine({
+            lineLabel: chainLineLabel ?? chainRun.params.itemCode,
+            percent: chainRun.params.percent,
+          }),
           href: `/work-progress${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
         });
         setLevelPath([]);
@@ -1911,13 +2047,15 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // recognise -- is a sentence rather than silence.
       const outcome = readSendOutcome(d);
       if (outcome.kind === "needs_input" || outcome.kind === "failed") {
+        const sentItemCode =
+          typeof (body as { params?: Record<string, unknown> }).params?.itemCode === "string"
+            ? ((body as { params?: Record<string, unknown> }).params!.itemCode as string)
+            : null;
         const resolved = resolveTaskError({
           code: outcome.code,
           missing: outcome.kind === "needs_input" ? outcome.missing : null,
           raw: outcome.raw,
-          itemCode: typeof (body as { params?: Record<string, unknown> }).params?.itemCode === "string"
-            ? ((body as { params?: Record<string, unknown> }).params!.itemCode as string)
-            : null,
+          itemCode: sentItemCode,
           projectName: project?.name ?? null,
         });
         setSendOutcome({
@@ -1926,10 +2064,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           verbLabel: resolved.verbLabel,
           missingStep: resolved.missingStep,
           missing: outcome.kind === "needs_input" ? outcome.missing : [],
+          // R67 C-16: kept so the verb button can reopen the level for a slot
+          // that only makes sense against a line the request already carried.
+          itemCode: sentItemCode,
         });
         // THE QUESTION OPENS ITS OWN PICKER. A sentence saying "pick a BOQ
         // line" with no chips under it is the same dead end in nicer words.
-        if (resolved.missingStep === "boqLine") setLevelPath(["work_progress", "record_progress"]);
+        // R67 C-16: every step with a picker, not only the BOQ one -- and
+        // "Type quantity or %" opens the value level OF THE LINE the pipeline
+        // already resolved, rather than a sentence with nothing under it.
+        openStep(resolved.missingStep, { itemCode: sentItemCode });
         // The user's own words stay in the box: they have a question to answer
         // and the sentence they typed is half the answer.
         await loadTasks();
@@ -1971,6 +2115,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     reportId,
     periodId,
     chainRun,
+    chainLineLabel,
+    openStep,
     segments,
     project,
     mode,
@@ -2154,10 +2300,15 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       }
       const outcome = readSendOutcome(d);
       if (outcome.kind === "needs_input" || outcome.kind === "failed") {
+        const retriedItemCode =
+          typeof (body as { params?: Record<string, unknown> }).params?.itemCode === "string"
+            ? ((body as { params?: Record<string, unknown> }).params!.itemCode as string)
+            : null;
         const resolved = resolveTaskError({
           code: outcome.code,
           missing: outcome.kind === "needs_input" ? outcome.missing : null,
           raw: outcome.raw,
+          itemCode: retriedItemCode,
           projectName: projectNameRef.current,
         });
         setSendOutcome({
@@ -2166,6 +2317,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           verbLabel: resolved.verbLabel,
           missingStep: resolved.missingStep,
           missing: outcome.kind === "needs_input" ? outcome.missing : [],
+          itemCode: retriedItemCode,
         });
       } else {
         // It worked the second time. The failure sentence goes, rather than
@@ -2230,6 +2382,33 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("popstate", readTabFromUrl);
   }, []);
 
+  // R67 C-16 / DE-30 -- THE COMPOSER ADOPTS THE PROJECT THE ROUTE IS ABOUT.
+  //
+  // The composer's `projectId` and the `?projectId=` every module page reads
+  // have been independent since this shell shipped: standing on
+  // /work-progress?projectId=<Cedar> with nothing chosen in the top rail, the
+  // composer knew of no project at all, so the chain could not be built and
+  // band 2 had to ask a question the screen had already answered.
+  //
+  // Adopted only when the id is one of the org's OWN projects, so a stale or
+  // hand-edited URL cannot point the composer at something the rail cannot
+  // show; never cleared, because a route with no project (the dashboard) is
+  // not a decision to forget the one the user chose. Read the same way this
+  // file already reads ?taskTab -- window.location plus popstate -- rather
+  // than useSearchParams, which would put a Suspense requirement on the
+  // layout that wraps all 53 routes.
+  useEffect(() => {
+    const readProjectFromUrl = () => {
+      const raw = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
+      if (!raw) return;
+      if (!projects.some((p) => p.id === raw)) return;
+      setProjectId((prev) => (prev === raw ? prev : raw));
+    };
+    readProjectFromUrl();
+    window.addEventListener("popstate", readProjectFromUrl);
+    return () => window.removeEventListener("popstate", readProjectFromUrl);
+  }, [pathname, projects]);
+
   // Writes the other direction: a click updates the URL (so it is shareable
   // and bookmarkable) in addition to the local state TaskMaster renders from.
   const onTabChange = useCallback(
@@ -2263,6 +2442,32 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       : proposal.steps[proposal.steps.length - 1] ?? "This entry";
     return echoLine(title, echoFields(proposal.params));
   }, [proposal]);
+
+  /**
+   * R67 C-16 / DE-30 -- the proposal's ONE open question, after the slots the
+   * route has already answered are dropped.
+   *
+   * The count matters as much as the sentence: "Record (1 missing)" and
+   * "1 answer needed" are both computed from this, so a card on
+   * /work-progress?projectId=… never says it is waiting for a project the
+   * screen is already showing.
+   */
+  const proposalQuestion = useMemo(
+    () =>
+      proposal
+        ? firstQuestion(
+            proposal.missingParams,
+            { projectId },
+            { itemCode: typeof proposal.params.itemCode === "string" ? proposal.params.itemCode : null }
+          )
+        : null,
+    [proposal, projectId]
+  );
+
+  const proposalOpenCount = useMemo(
+    () => (proposal ? unansweredSlots(proposal.missingParams, { projectId }).length : 0),
+    [proposal, projectId]
+  );
 
   const proposalRefusal = useMemo(() => {
     if (!proposal || proposal.executable) return null;
@@ -2428,8 +2633,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // outside it. Renders nothing at all when there is nothing to say.
           messages={<ShellMessageRegion onOpen={(href) => router.push(href)} />}
           // R67 C-15: after a Send that came back short a slot, the button
-          // itself names the answer it is waiting for.
-          sendLabel={sendLabelFor(sendOutcome?.missing)}
+          // itself names the answer it is waiting for. R67 C-16: and from the
+          // moment band 2 asks -- the LIVE question wins over the last
+          // response, so clicking "Record progress" makes the button read
+          // "Send (pick a BOQ line)" before anything has been sent at all.
+          sendLabel={sendLabelFor(pendingSlots)}
           chain={chain}
           onModeChange={setMode}
           onCutFrom={onCutFrom}
@@ -2561,9 +2769,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                           // OPENS THE PICKER AND STOPS. It re-runs nothing --
                           // the write that could not resolve is not retried by
                           // a control whose job is to ask a question.
-                          if (sendOutcome.missingStep === "boqLine") {
-                            setLevelPath(["work_progress", "record_progress"]);
-                          }
+                          openStep(sendOutcome.missingStep, { itemCode: sendOutcome.itemCode });
                         }}
                       >
                         {sendOutcome.verbLabel}
@@ -2588,12 +2794,14 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                         {proposal.message}
                       </p>
                     )}
-                    {proposal.missingParams.length > 0 && (
+                    {proposalQuestion && (
                       // ONE QUESTION AT A TIME, in D-03's own words -- never
                       // "itemCode is required". The chips that answer it are
                       // the ChainOptionsPanel below, built from real data.
+                      // R67 C-16 / DE-30: a project the route already carries
+                      // is not one of the questions.
                       <p className="text-[11.5px]" style={{ color: "var(--color-veri-status-needs-you)" }}>
-                        {missingFieldLabel(proposal.missingParams[0])}
+                        {proposalQuestion.label}
                       </p>
                     )}
                     {/* R67 C-12: THE HONEST REFUSAL. The pipeline has no
@@ -2628,9 +2836,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                             // LOADS THE PICKER AND STOPS. It re-runs nothing:
                             // the write that failed is not retried by a
                             // control whose job is to ask a question.
-                            if (proposalError.missingStep === "boqLine") {
-                              setLevelPath(["work_progress", "record_progress"]);
-                            }
+                            openStep(proposalError.missingStep, {
+                              itemCode:
+                                typeof proposal.params.itemCode === "string" ? proposal.params.itemCode : null,
+                            });
                             setProposalError(null);
                           }}
                         >
@@ -2655,13 +2864,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                       // A read still runs -- that is how the answer card gets
                       // its numbers -- but it says so, because "Record" on
                       // something that records nothing is the wrong word.
-                      primaryLabel={
-                        proposal.writes ? recordLabel(proposal.missingParams.length) : "Show me"
-                      }
+                      primaryLabel={proposal.writes ? recordLabel(proposalOpenCount) : "Show me"}
                       primaryDisabledReason={
                         !proposal.executable
                           ? "not available here yet"
-                          : answersNeededLabel(proposal.missingParams.length) ?? undefined
+                          : answersNeededLabel(proposalOpenCount) ?? undefined
                       }
                       onPrimary={() => void onConfirmProposal()}
                       secondaryLabel={editInFormRoute(proposal.functionId, projectId) ? "Edit in form" : undefined}
@@ -2820,7 +3027,53 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                     after it comes from the server through the proxy, with a
                     real loading state and a real error state -- never an
                     empty chip row standing in for either. */}
-                {levelPath.length > 0 ? (
+                {/* R67 C-16 -- WHEN THE WALK IS DONE, BAND 2 STOPS ASKING AND
+                    CONFIRMS. Every chip click up to here loaded a level and
+                    stopped; this card is the first control in the walk that
+                    can write anything, and it writes only when Save is
+                    pressed. Both answers are shown as words with a way back to
+                    each -- the value's own editor is the labelled field in
+                    band 4, which stays where it was rather than being
+                    duplicated inside the card. */}
+                {chainRun ? (
+                  <ConfirmCard
+                    title={chainConfirmTitle({
+                      lineLabel: chainLineLabel ?? chainRun.params.itemCode,
+                      percent: chainRun.params.percent,
+                    })}
+                    error={submitError ?? null}
+                    busy={submitting}
+                    primaryLabel="Save"
+                    onPrimary={() => void onSubmit()}
+                    // Two ways back, one per answer, so a wrong click costs
+                    // that answer and not the whole sentence. "Start over" is
+                    // the strip's own reset control, a few pixels above.
+                    secondaryLabel="Change value"
+                    onSecondary={changeChainValue}
+                    tertiaryLabel="Change line"
+                    onTertiary={changeChainLine}
+                    fields={[
+                      {
+                        id: "boqLine",
+                        label: "BOQ line",
+                        control: (
+                          <span className="text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                            {chainLineLabel ?? chainRun.params.itemCode}
+                          </span>
+                        ),
+                      },
+                      {
+                        id: "percent",
+                        label: "Percent complete",
+                        control: (
+                          <span className="text-[12px]" style={{ color: "var(--color-ct-navy)" }}>
+                            {chainRun.params.percent} %
+                          </span>
+                        ),
+                      },
+                    ]}
+                  />
+                ) : levelPath.length > 0 ? (
                   <>
                   <ChainOptionsPanel
                     level={serverLevel}
@@ -3007,10 +3260,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                   className="w-28 rounded border px-2 py-1 text-[12px]"
                   style={{ borderColor: "var(--color-ct-border2)", color: "var(--color-ct-navy)" }}
                   value={levelPath[3] ?? scalarValue}
-                  onChange={(e) => {
-                    setScalarValue(e.target.value);
-                    setScalarError(null);
-                  }}
+                  onChange={(e) => setChainScalar(e.target.value)}
                   onBlur={(e) => {
                     const raw = e.target.value.trim();
                     if (!raw) {
@@ -3083,15 +3333,18 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             submitError ??
             (submitting
               ? "Sending…"
-              : proposal && proposal.missingParams.length === 0
-                ? "Answer the question above first"
-                : levelPath.length >= 2 && !chainRun
-                ? // R67 C-04: the chain is half-built. Say which answer is
-                  // still missing rather than letting Send fire a submission
-                  // that can only come back blocked.
-                  levelPath.length === 2
-                  ? "Pick a BOQ line"
-                  : "Type quantity or %"
+              : proposal && proposalOpenCount === 0
+                ? // The card above is complete and is the control that writes;
+                  // Send must not go round it. (Before C-16 this said "Answer
+                  // the question above first" in the one state where there is
+                  // no question left to answer.)
+                  "Confirm the card above first"
+                : liveQuestion
+                ? // R67 C-04, generalised by C-16: the chain is half-built.
+                  // The sentence is the OPEN LEVEL's own question from D-03's
+                  // vocabulary -- so the attendance grid no longer reads "Pick
+                  // a BOQ line", which is what a level-depth test produced.
+                  liveQuestion.label
                 : projectId || pendingFunctionId || pendingRawInput || reportId || chainRun
                   ? undefined
                   : onReportsRoute
