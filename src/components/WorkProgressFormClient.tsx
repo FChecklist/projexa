@@ -50,7 +50,19 @@ type Activity = { id: string; name: string; unit: string | null };
 type BoqLineItem = { id: string; itemCode: string | null; description: string; unit: string; rate: string };
 type Boq = { id: string; version: number; status: string; title: string };
 
-export const BOQ_LINE_LABEL = "BOQ line item (optional - needed for the Work Progress Report)";
+/**
+ * R67 D-28 lifted this field out of the collapsed "More details" where nobody
+ * saw it; R67 B-09 then made it REQUIRED whenever the project is measured
+ * against a BOQ, because createProgressEntry refuses such an entry outright
+ * (BOQ_LINE_REQUIRED) and an entry with no line cannot be rolled up or valued.
+ * The label follows the same condition the server enforces, so the form never
+ * calls a field optional that the API will reject for being empty.
+ */
+export const BOQ_LINE_LABEL_REQUIRED = "BOQ line item (required - the Work Progress Report is priced off it)";
+export const BOQ_LINE_LABEL_OPTIONAL = "BOQ line item (optional - this project has no BOQ to link to)";
+export function boqLineLabelFor(projectHasBoq: boolean): string {
+  return projectHasBoq ? BOQ_LINE_LABEL_REQUIRED : BOQ_LINE_LABEL_OPTIONAL;
+}
 export const PERCENT_HINT = "% of this BOQ line; the report uses quantity x rate for amounts";
 export const ENTRY_BASIS_HINT = "Entry basis applies to both the quantity and the percent above.";
 export const QUANTITY_PLACEHOLDER_NO_ACTIVITY = "Pick an activity first";
@@ -141,53 +153,18 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     return () => { cancelled = true; };
   }, [selectedBoqId]);
 
-<<<<<<< HEAD
-  // R67 B-09: whether THIS project is measured against a BOQ at all. The
-  // /api/scope fetch below already answers it, so this needs no extra call.
-  const projectHasBoq = boqs.length > 0;
-  const missingRequired = missingProgressFields(values, projectHasBoq);
-
-  const columns: ScreenColumn[] = [
-    { label: "Activity", field: "activityId", control: "SELECT", type: "text", required: true, fieldStatus: "REQUIRED", options: activities.map((a) => ({ value: a.id, label: a.unit ? `${a.name} (${a.unit})` : a.name })) },
-    // Shown only when the project actually holds more than one BOQ -- with a
-    // single BOQ the choice is not a choice, and an extra control on a site
-    // engineer's form is cost with no benefit (projexa#94's own rule).
-    ...(boqs.length > 1
-      ? [{
-          label: "BOQ", field: "boqId", control: "SELECT", type: "text", required: false, fieldStatus: "OPTIONAL",
-          options: [...boqs]
-            .sort((a, b) => b.version - a.version || a.title.localeCompare(b.title))
-            .map((b) => ({ value: b.id, label: `${b.title} (v${b.version}, ${b.status})` })),
-        } as ScreenColumn]
-      : []),
-    // R67 B-09: REQUIRED whenever the project actually has a BOQ, matching
-    // the one rule the API route now enforces for both callers
-    // (construction-progress-service.createEntry). An entry with no line on a
-    // project measured against a BOQ cannot be rolled up, cannot be valued,
-    // and vanishes from the Work Progress Report -- so the form must ask for
-    // it up front rather than let the server refuse after the click. On a
-    // project with NO BOQ there is nothing to link to and the field stays
-    // optional (and its picker empty), which is why this is derived from
-    // `projectHasBoq` rather than hard-coded either way.
-    { label: "BOQ line", field: "boqLineItemId", control: "SELECT", type: "text", required: projectHasBoq, fieldStatus: projectHasBoq ? "REQUIRED" : "OPTIONAL", options: lineItems.map((l) => ({ value: l.id, label: l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description })) },
-    { label: "Line item description", field: "description", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
-    { label: "Unit", field: "unit", control: "DERIVED", type: "text", fieldStatus: "OPTIONAL" },
-    { label: "Rate", field: "rate", control: "DERIVED", type: "number", fieldStatus: "OPTIONAL" },
-    { label: "Date", field: "entryDate", control: "DATE", type: "date", required: true, fieldStatus: "REQUIRED" },
-    { label: "Quantity done", field: "quantityDone", control: "NUMBER", type: "number", required: true, fieldStatus: "REQUIRED" },
-    { label: "% complete", field: "percentComplete", control: "NUMBER", type: "number", required: true, fieldStatus: "REQUIRED" },
-    { label: "Entry basis", field: "entryBasis", control: "RADIO", type: "text", required: true, fieldStatus: "REQUIRED", options: ENTRY_BASIS_OPTIONS },
-    { label: "Remarks", field: "remarks", control: "TEXT", type: "text", fieldStatus: "OPTIONAL", required: false },
-    { label: "Site photo", field: "photo", control: "FILE", type: "file", fieldStatus: "OPTIONAL", required: false },
-  ];
-=======
   const selectedActivity = activities.find((a) => a.id === values.activityId);
   const selectedLine = lineItems.find((l) => l.id === values.boqLineItemId);
   // The BOQ line's unit wins when a line is chosen, exactly as VERIDIAN's own
   // resolveProgressUnit() decides it for the list and the report -- one rule,
   // not a screen-local second opinion.
   const unit = selectedLine?.unit ?? selectedActivity?.unit ?? null;
->>>>>>> 57f8c07 (r67(D21): D-28 work progress — an object page, readable BOQ lines, a form that reads top to bottom)
+
+  // R67 B-09: whether THIS project is measured against a BOQ at all. The
+  // /api/scope fetch below already answers it, so this needs no extra call.
+  const projectHasBoq = boqs.length > 0;
+  const missingRequired = missingProgressFields(values, projectHasBoq);
+
 
   function setField(field: string, value: unknown) {
     if (field === "boqId") {
@@ -202,14 +179,8 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     setFieldErrors((e) => (e[field] ? { ...e, [field]: "" } : e));
   }
 
-  const missingCount = REQUIRED_FIELDS.filter((f) => values[f] === undefined || values[f] === null || values[f] === "").length;
-
   async function handleSubmit() {
-<<<<<<< HEAD
     const missing = missingRequired;
-=======
-    const missing = REQUIRED_FIELDS.filter((f) => values[f] === undefined || values[f] === null || values[f] === "");
->>>>>>> 57f8c07 (r67(D21): D-28 work progress — an object page, readable BOQ lines, a form that reads top to bottom)
     if (missing.length > 0) {
       // R67 B-09 (DE-22): NAME the fields, do not count them. "2 required
       // fields missing" makes the user hunt; "Activity, BOQ line" does not.
@@ -303,7 +274,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
     return () => window.removeEventListener("online", run);
   }, [scope]);
 
-<<<<<<< HEAD
   // R42 seq23 live-user finding: same fail-after-click gap caught on
   // Permits' Save applies here too -- Log Entry was clickable with required
   // fields still empty. See PermitObjectClient.tsx's own comment for the
@@ -315,8 +285,6 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
   // the user finding out after the click.
   const missingCount = missingRequired.length;
 
-=======
->>>>>>> 57f8c07 (r67(D21): D-28 work progress — an object page, readable BOQ lines, a form that reads top to bottom)
   return (
     <FormScreen
       breadcrumb="Work Progress / Log entry"
@@ -367,7 +335,9 @@ export default function WorkProgressFormClient({ projectId, onLogged }: { projec
           )}
 
           <FormField
-            label={BOQ_LINE_LABEL}
+            label={boqLineLabelFor(projectHasBoq)}
+            required={projectHasBoq}
+            error={fieldErrors.boqLineItemId}
             className="sm:col-span-2"
             hint={selectedLine ? `${selectedLine.description} · ${selectedLine.unit} · rate ${selectedLine.rate}` : undefined}
           >

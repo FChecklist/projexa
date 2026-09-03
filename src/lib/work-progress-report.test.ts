@@ -789,6 +789,9 @@ describe("countUnlinkedEntries / unlinkedEntriesNote -- R67 B-09", () => {
     expect(unlinkedEntriesNote(-1)).toBeNull();
     expect(unlinkedEntriesNote(1)).toBe("1 entry not linked to a BOQ line is not counted");
     expect(unlinkedEntriesNote(4)).toBe("4 entries not linked to a BOQ line are not counted");
+  });
+});
+
 // R67 D-28: the delete confirmation must state what the running total actually
 // becomes. These pin the arithmetic (which is computeLineItemProgress's, reused
 // rather than re-derived) and, just as importantly, pin the HONEST answer when
