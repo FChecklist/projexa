@@ -46,6 +46,15 @@ const HOSTED_REPORTS: Record<string, (params: ReportParams) => string> = {
     if (to) qs.set("to", to);
     return `/materials?${qs.toString()}`;
   },
+  // R67 E-07 (R-114): "Budget Summary" in the picker and the Cost Variance tab
+  // are ONE report reached from two places -- the same rule again. The picker
+  // used to fetch compliance-tracker's ERP-ledger budgetSummary and render it
+  // as a key/value grid; that is the ANNUAL LEDGER budget, a different concept
+  // from the BOQ budget this name means to a QS (see E-06), and rendering the
+  // ledger one under this name is what let three screens disagree. The ledger
+  // report stays available to API callers under its own name; the SCREEN named
+  // "Budget Summary" is the one that shows Sumeet 6.png II(iii)'s columns.
+  "budget-summary": ({ projectId }) => `/scope?tab=variance&projectId=${encodeURIComponent(projectId)}`,
 };
 
 /** True when this report has a screen of its own. */
@@ -94,6 +103,7 @@ export type CatalogDestination = { label: string; href: string };
 export const CATALOG_RUNS_HERE_LABELS: Record<string, string> = {
   "work-progress": "Runs here — Work Progress > Report",
   "material-consumption": "Runs here — Materials > Cost Report",
+  "budget-summary": "Runs here — Scope > Cost Variance",
 };
 
 export function catalogDestination(route: string | null | undefined, params: ReportParams): CatalogDestination | null {
