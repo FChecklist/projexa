@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 import {
   buildManpowerBreakdown,
   buildVendorBreakdown,
@@ -14,6 +16,9 @@ import {
   type Vendor,
 } from "@/lib/work-progress-report";
 
+// lineItems carry `category` as of R67 I-05 (drizzle/0532) -- BoqLineItem
+// already declares it optional, so an older VERIDIAN that does not send it
+// still parses, and those rows fall back to the activity -> category path.
 type BoqResponse = { id: string; status: string; version: number; title: string; lineItems: BoqLineItem[] };
 type VeridianVendor = { id: string; vendorName: string };
 
@@ -22,7 +27,7 @@ type VeridianVendor = { id: string; vendorName: string };
 // vendors) -- see PROGRESS.md for why this needs 5 separate VERIDIAN calls
 // instead of one: PROJEXA stores no construction domain data itself, and
 // each of these was already its own real, separately-scoped endpoint.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -40,6 +45,14 @@ export async function GET(request: NextRequest) {
   // non-superseded, deterministic since PR #1325's createdAt DESC
   // tiebreaker) so every existing caller/test is unaffected.
   const requestedBoqId = searchParams.get("boqId");
+  // R67 lane I (WS-I item I-05, R-177): the Category multi-select on the WPR
+  // parameter bar. Repeatable `category` params (?category=Civil&category=Paint)
+  // rather than one comma-joined value -- a real category name may legitimately
+  // contain a comma, and splitting on it would silently filter for a category
+  // nobody has. Applied server-side, inside buildWorkProgressReport, before the
+  // roll-up, so the subtotals AND the Grand Total both describe the filtered
+  // set and still tie to each other.
+  const categoryFilter = searchParams.getAll("category").filter((c) => c.trim() !== "");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   if (!from || !to) return NextResponse.json({ error: "from and to (YYYY-MM-DD) query params are required" }, { status: 400 });
 
@@ -77,6 +90,7 @@ export async function GET(request: NextRequest) {
       categories: workProgressData.categories ?? [],
       from,
       to,
+      categoryFilter,
     });
     const byManpower = buildManpowerBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], from, to });
     const byVendor = buildVendorBreakdown({ roster: rosterData.roster ?? [], attendance: attendanceData.attendance ?? [], vendors, from, to });
@@ -91,13 +105,22 @@ export async function GET(request: NextRequest) {
       availableBoqs: boqs.map((b) => ({ id: b.id, title: b.title, status: b.status, version: b.version })),
       rows: report.rows, // scope-wise: one row per BoQ line item
       byCategory: report.byCategory,
+      // R67 I-05: every category present BEFORE the filter, so the multi-select
+      // still offers the ones currently filtered out (otherwise selecting
+      // "Civil" would remove every other option from the control that filtered
+      // them) -- plus the filter actually applied, so the UI can render the
+      // parameters it really ran with rather than what it thinks it sent.
+      availableCategories: report.availableCategories,
+      categoryFilter,
+      // R67 B-09: entries this window holds that no BOQ line can claim, and
+      // that are therefore in none of the figures above. Reported so the
+      // screen can say so rather than showing a total the site engineer
+      // knows is short and cannot account for.
+      unlinkedEntryCount: report.unlinkedEntryCount,
       byManpower,
       byVendor,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to generate work progress report" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to generate work progress report");
   }
-}
+});

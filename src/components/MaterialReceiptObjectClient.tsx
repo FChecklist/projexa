@@ -23,8 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateNumeric } from "@/lib/format-date";
-import { formatMoney, formatQty } from "@/lib/format-money";
-import { useCurrencies } from "@/lib/currency";
+import { formatQty } from "@/lib/format-money";
+import { useOrgMoney } from "@/lib/use-org-money";
 
 type Receipt = {
   id: string;
@@ -101,7 +101,11 @@ export function VoidConfirm({
 
 export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: string }) {
   const router = useRouter();
-  const currencies = useCurrencies();
+  // R67 G-05 merge: the org's currency is resolved once for the screen and the
+  // formatter comes back bound to it, so no cell can be rendered with the wrong
+  // currency by forgetting to pass one.
+  const orgMoney = useOrgMoney();
+  const money = orgMoney.money;
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -166,7 +170,7 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
   const isVoided = !!receipt.voidedAt;
 
   // The blast radius, in this receipt's own real numbers.
-  const blastRadius = `Voiding removes ${formatQty(receipt.quantity)} ${unit} from Received to date and ${formatMoney(lineTotal, currencies)} from the Cost Report.`;
+  const blastRadius = `Voiding removes ${formatQty(receipt.quantity)} ${unit} from Received to date and ${money(lineTotal)} from the Cost Report.`;
 
   return (
     <KitObjectScreen
@@ -180,7 +184,7 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
         { label: "Vendor", value: vendorName },
         { label: "Reference", value: receipt.reference ?? "—" },
         { label: "Quantity", value: `${formatQty(receipt.quantity)} ${unit}`.trim() },
-        { label: "Unit Cost", value: formatMoney(receipt.unitCost, currencies) },
+        { label: "Unit Cost", value: money(receipt.unitCost) },
       ]}
       onDelete={isVoided ? undefined : () => setConfirming(true)}
       deleteLabel="Void"
@@ -234,8 +238,8 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
             { label: "Vendor", value: vendorName },
             { label: "Reference", value: receipt.reference ?? "—" },
             { label: "Quantity", value: `${formatQty(receipt.quantity)} ${unit}`.trim() },
-            { label: "Unit Cost", value: formatMoney(receipt.unitCost, currencies) },
-            { label: "Line total", value: formatMoney(lineTotal, currencies) },
+            { label: "Unit Cost", value: money(receipt.unitCost) },
+            { label: "Line total", value: money(lineTotal) },
             { label: "Recorded by", value: receipt.recordedByName ?? "—" },
           ].map((field) => (
             <div key={field.label} className="text-[12.5px]">

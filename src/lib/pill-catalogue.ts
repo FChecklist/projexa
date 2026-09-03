@@ -1,0 +1,235 @@
+// R67 WS-A (A-11, A-12, A-14) -- THE EXPANDED PILL LIST: FIXED, FROZEN, WIRED.
+//
+// THREE ITEMS ASK FOR THE SAME OBJECT, so it is built once, here.
+//
+//   A-11  "Replace the kit's 14 UNIVERSAL_PILLS with a projexa-owned catalogue
+//         module ... and drop universal pills that have no PROJEXA screen."
+//   A-12  "The catalogue is projexa code in src/lib/pill-catalogue.ts, not
+//         platform.mode_pills ... a pill with no wired leaf does not render ...
+//         each pill shows its key hint (for example 'P' for Permits)."
+//   A-14  "The expanded 'All modules' list renders from a fixed catalogue
+//         array ... never from usage."
+//
+// WHAT THIS FILE ADDS OVER card-catalogue.ts, which already owns the CARDS and
+// Sumeet's module order:
+//
+//  1. IT IS THE RENDERED LIST, and it is FROZEN AT MODULE LOAD. Not "sorted
+//     deterministically", not "recomputed identically" -- one array, built
+//     once, returned by identity to every caller for the life of the tab.
+//     A-14 exists because the list used to move: the last pill clicked was
+//     pulled to the front and that order persisted across routes, so the same
+//     control lived somewhere different on every screen and the user had to
+//     re-read the whole row every time. A frozen array cannot regress into
+//     that, whatever a future caller does with it.
+//
+//  2. A PILL WITH NO WIRED DESTINATION DOES NOT RENDER. Four of the kit's
+//     fourteen universal pills -- Email, Policies, Department, Teams -- have no
+//     PROJEXA screen at all. They used to render disabled with the words "not
+//     part of PROJEXA", which is honest but is four permanent non-controls in a
+//     list of twenty. Owner approval D-10 keeps the Platform group so that
+//     "the same name still reaches the same destination"; a name with no
+//     destination in this product reaches nothing, so dropping it takes nothing
+//     away. Every pill that IS still listed goes somewhere real.
+//
+//  3. EVERY REMAINING PILL HAS A REAL DESTINATION, of one of three kinds, and
+//     the kind is data rather than a special case buried in a click handler:
+//       "route"  a shipped page (checked by module-catalogue.test.ts).
+//       "rail"   the top rail's own project control -- this is why "Projects"
+//                survives despite having no /projects page: it is not a dead
+//                end, it is a pointer at the real control, and clicking it
+//                moves keyboard focus there.
+//       "input"  the composer's own box ("Other - type it", A-15).
+//
+//  4. KEY HINTS. One letter per pill, assigned deterministically from the
+//     label, unique across the list. See KEY HINTS below for why the shortcut
+//     itself is Alt+<letter> rather than the bare letter.
+
+import { CARD_CATALOGUE, allModulesEntries, type AllModulesEntry } from "./card-catalogue";
+import { pillTargetFor, type PillTarget } from "./pill-routes";
+
+/**
+ * Where a pill goes. There is no fifth kind, and no pill that renders has none.
+ *
+ * R67 A-17 -- "route" SPLIT INTO TWO, because it was answering two different
+ * questions with one word. A MODULE narrows the sentence and offers its verbs
+ * (D-08 / C-09); a VIEW is a screen and is opened. Both used to be "route",
+ * which is how "Analysis" -- a screen, not a noun -- ended up being treated as
+ * a module with no verbs of its own. "platform" is new and is what lets a name
+ * VERIDIAN owns stay in the list with a real destination instead of being
+ * dropped or rendered permanently disabled.
+ */
+export type PillDestination =
+  /** A module: its verbs render in band 2 (D-08 / C-09). */
+  | "module"
+  /** A named view: it opens. */
+  | "view"
+  /** The top rail's project control. */
+  | "rail"
+  /** The composer's own textarea. */
+  | "input"
+  /** Not part of PROJEXA: band 2 offers the VERIDIAN link. */
+  | "platform";
+
+export type PillEntry = AllModulesEntry & {
+  destination: PillDestination;
+  /** The destination as data, for the kinds that carry one (A-17). */
+  target: PillTarget | null;
+  /**
+   * A single uppercase letter, unique in this list. Null only if the list ever
+   * outgrows the alphabet, which is asserted against in the test.
+   */
+  keyHint: string | null;
+  /**
+   * Supplementary words that do NOT disable the pill -- "pick one in the top
+   * rail" tells the user what will happen, it does not refuse to happen.
+   * `unavailable` (from AllModulesEntry) is the disabling one and is reserved
+   * for the caller's own "you are here" case.
+   */
+  note?: string;
+};
+
+/**
+ * KEY HINTS, AND WHY THE MODIFIER IS NOT OPTIONAL.
+ *
+ * A-12 asks for a key hint per pill "honoured while the input is focused". A
+ * BARE letter cannot be that shortcut: the composer's whole purpose is a
+ * textarea a person types sentences into, and a bare "P" that jumped to Permits
+ * would make every word beginning with P unwritable. So the hint letter is
+ * shown and the chord is Alt+<letter>, which produces no character in a
+ * textarea on any platform this product runs on. The rendered hint says
+ * "Alt+P" rather than "P" for the same reason the rest of this programme
+ * removed silent controls: a label that omits the modifier is a shortcut that
+ * appears not to work.
+ */
+export const SHORTCUT_MODIFIER = "Alt";
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+/** Supplementary words for a destination the user could not otherwise guess. */
+const NOTES: Readonly<Record<PillDestination, string | undefined>> = {
+  module: undefined,
+  view: undefined,
+  rail: "pick one in the top rail",
+  input: undefined,
+  platform: "opens VERIDIAN",
+};
+
+/**
+ * A-17: the destination is looked up in the ROUTE TABLE, by the entry's own key
+ * -- never inferred from whether the catalogue happens to know a module for it.
+ * An entry the table does not name has no destination and does not render.
+ */
+function targetFor(entry: AllModulesEntry): PillTarget | null {
+  if (entry.kind === "other") return null;
+  // A platform entry's id is "platform.<key>"; a module entry's id IS its key.
+  const key = entry.id.startsWith("platform.") ? entry.id.slice("platform.".length) : entry.id;
+  return pillTargetFor(key, entry.label) ?? (entry.moduleId ? { kind: "module", moduleId: entry.moduleId } : null);
+}
+
+/**
+ * One letter per pill: the first letter of its label that nothing above it has
+ * taken, else the first free letter of the alphabet. Deterministic, so the
+ * hint on a pill is the same letter on every machine and in every session --
+ * a shortcut that moved would be worse than none.
+ */
+function withKeyHints(entries: readonly Omit<PillEntry, "keyHint">[]): PillEntry[] {
+  const used = new Set<string>();
+  return entries.map((entry) => {
+    const fromLabel = entry.label.toUpperCase().replace(/[^A-Z]/g, "").split("");
+    const hint = fromLabel.find((l) => !used.has(l)) ?? ALPHABET.find((l) => !used.has(l)) ?? null;
+    if (hint) used.add(hint);
+    return { ...entry, keyHint: hint };
+  });
+}
+
+function build(): readonly PillEntry[] {
+  const wired: Omit<PillEntry, "keyHint">[] = [];
+  for (const entry of allModulesEntries()) {
+    const target = targetFor(entry);
+    const destination: PillDestination | null =
+      entry.kind === "other" ? "input" : target ? target.kind : null;
+    // A-11 / A-12: a pill with no wired destination does not render at all.
+    if (!destination) continue;
+    const note = NOTES[destination];
+    wired.push({
+      ...entry,
+      destination,
+      target,
+      // The disabling flag is the CALLER's ("you are here"); a pointer at the
+      // rail or at VERIDIAN is a note, not a refusal.
+      unavailable: undefined,
+      ...(note ? { note } : {}),
+    });
+  }
+  return Object.freeze(withKeyHints(wired).map((e) => Object.freeze(e)));
+}
+
+/**
+ * THE list. Built once, frozen, and handed out by identity -- see the header:
+ * this is what makes "the expanded list never re-orders" a property of the
+ * data rather than a promise about every future caller.
+ */
+export const PILL_CATALOGUE: readonly PillEntry[] = build();
+
+/** Always the same array, in the same order. Never a copy, never re-sorted. */
+export function pillCatalogue(): readonly PillEntry[] {
+  return PILL_CATALOGUE;
+}
+
+export function pillEntryById(id: string): PillEntry | null {
+  return PILL_CATALOGUE.find((e) => e.id === id) ?? null;
+}
+
+/**
+ * TRUE when a click on this pill is worth recording as usage (review fix).
+ *
+ * Usage exists for ONE purpose: ranking band 3's cards for this user. A key
+ * that cannot be ranked back into a card is not merely useless -- it is
+ * harmful. rankCards() finds neither a card id nor a module for "other",
+ * "platform.email" or "platform.policies", so it pushes them to unknownKeys and
+ * the strip drops them with a console warning; but the server has already spent
+ * one of the six slots in its ranked response on them, so the user's real sixth
+ * card never arrives.
+ *
+ * SO THE TEST IS "COULD BAND 3 PUT THIS ON SCREEN", not "does the key parse".
+ * Resolving to a module is not enough: rankCards() stands a ranked module in
+ * for THAT MODULE'S HIGHEST-WEIGHTED CARD, so a module with no card in
+ * CARD_CATALOGUE (Customers, Vendors) is recognised and then silently skipped,
+ * which spends a server slot to change nothing. Whenever such a module gains a
+ * card its pill starts recording again, with no change here.
+ *
+ * card-catalogue.test.ts asserts both halves: every entry this admits pulls its
+ * own module's card to the front of the ranking, and every entry it excludes
+ * really has nothing to rank.
+ */
+export function isRankablePill(entry: PillEntry): boolean {
+  if (entry.destination !== "module" && entry.destination !== "view") return false;
+  if (!entry.moduleId) return false;
+  return CARD_CATALOGUE.some((card) => card.moduleId === entry.moduleId);
+}
+
+/** The words rendered on the pill and read out as its shortcut. */
+export function shortcutLabel(entry: Pick<PillEntry, "keyHint">): string | null {
+  return entry.keyHint ? `${SHORTCUT_MODIFIER}+${entry.keyHint}` : null;
+}
+
+/**
+ * The pill a keystroke means, or null. Pure so the chord rule -- Alt, and
+ * neither Ctrl nor Meta -- is asserted rather than only observed.
+ *
+ * `code` IS PREFERRED OVER `key` WHEN IT NAMES A LETTER. Holding Alt changes
+ * what a keyboard reports as `key` on several layouts (macOS Alt+P is "π"), so
+ * a shortcut read only from `key` would work on one machine and be inert on
+ * another. `code` is the physical key and is the same everywhere; `key` is
+ * kept as the fallback for environments that do not report a code.
+ */
+export function matchPillShortcut(
+  event: { key: string; code?: string; altKey: boolean; ctrlKey?: boolean; metaKey?: boolean },
+  entries: readonly PillEntry[] = PILL_CATALOGUE
+): PillEntry | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
+  const fromCode = /^Key[A-Z]$/.test(event.code ?? "") ? (event.code as string).slice(3) : null;
+  const key = fromCode ?? (event.key ?? "").toUpperCase();
+  if (key.length !== 1 || !ALPHABET.includes(key)) return null;
+  return entries.find((e) => e.keyHint === key) ?? null;
+}

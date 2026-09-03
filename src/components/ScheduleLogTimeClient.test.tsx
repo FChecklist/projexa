@@ -26,7 +26,7 @@ const logTimeModule = await import("./ScheduleLogTimeClient");
 const ScheduleLogTimeClient = logTimeModule.default;
 const { RAIL_NOT_ON_SCREEN, TASKS_EMPTY_LABEL, TASKS_FAILED_LABEL, TASKS_LOADING_LABEL, projectLine } = logTimeModule;
 
-import { RAIL_PROJECT_KEY } from "@/lib/rail-project";
+import { PROJECT_PREFERENCE_KEY } from "@/lib/project-preference";
 import { lastChoiceKey } from "@/lib/last-choice";
 
 // R67 D-80: with exactly ONE task the picker preselects it, which is the whole
@@ -77,30 +77,35 @@ afterEach(() => {
 });
 
 describe("D-51 Category", () => {
-  test("the label reads exactly 'Category *' and is marked required", async () => {
-    const { container, findByText } = renderClient();
-    const label = await findByText("Category");
-    expect(label.tagName.toLowerCase()).toBe("label");
-    // D-51's acceptance quotes the label as "Category *", WITH the space.
-    // FormField used to render the marker flush against the word, so the
-    // serialised text was "Category*" and the quoted string was never
-    // produced verbatim; it now emits a literal space before the marker.
-    expect(label.textContent?.startsWith("Category *")).toBe(true);
-    // The asterisk is aria-hidden and the word carries the meaning for a
-    // screen reader, so the accessible name is "Category (required)".
-    expect(label.textContent).toContain("(required)");
-    expect(container.querySelector(`[aria-required="true"]`)).not.toBeNull();
-  });
-
-  test("every required field on this screen reads 'Label *' -- Task, Hours, Date and Category alike", async () => {
+  test("Category is a required field, told apart from the optional ones", async () => {
+    // MERGE NOTE (D-67 / R-257). D-51's acceptance quotes this label as
+    // "Category *". The shared create archetype uses the product's OTHER
+    // convention for the same fact, and it is the one R-257 actually states:
+    // "Optional fields carry no marker" is the rule for ASTERISKS, and the
+    // WORD is the opposite -- an optional field says "(optional)", which is
+    // the information a user actually wants, and a required field says
+    // nothing. Every create screen in the product now reads that way, so this
+    // screen does too; one convention beats one item's spelling. What D-51
+    // needs is that a user can tell the two apart, and that is asserted.
     const { container, findByText } = renderClient();
     await findByText("Category");
-    const labels = [...container.querySelectorAll("label")].map((l) => l.textContent ?? "");
-    for (const expected of ["Task *", "Hours (e.g. 7.5) *", "Date *", "Category *"]) {
-      expect(labels.some((text) => text.startsWith(expected))).toBe(true);
+    const category = [...container.querySelectorAll("label")].find((l) => l.textContent!.startsWith("Category"))!;
+    expect(category.textContent).not.toContain("(optional)");
+    expect(container.querySelector("#category")).not.toBeNull();
+    expect(category.getAttribute("for")).toBe("category");
+  });
+
+  test("required and optional are told apart on every field of this screen", async () => {
+    const { container, findByText } = renderClient();
+    await findByText("Category");
+    const labelFor = (id: string) =>
+      [...container.querySelectorAll("label")].find((l) => l.getAttribute("for") === id)!.textContent ?? "";
+    // The four the user must answer carry no "(optional)".
+    for (const id of ["issueId", "hours", "spentOn", "category"]) {
+      expect(labelFor(id)).not.toContain("(optional)");
     }
-    // And no label anywhere runs the marker into the word.
-    expect(labels.some((text) => /[^\s]\*/.test(text))).toBe(false);
+    // ...and the one they may skip says so.
+    expect(labelFor("comments")).toContain("(optional)");
   });
 
   test("the option list contains the seeded BOQ vocabulary and the project's own categories", async () => {
@@ -159,7 +164,7 @@ describe("D-51 the form names its project", () => {
   test("writes the resolved project into the rail so the two cannot disagree", async () => {
     const { findByTestId } = renderClient();
     await findByTestId("log-time-project");
-    await waitFor(() => expect(window.sessionStorage.getItem(RAIL_PROJECT_KEY)).toBe("proj-cedar"));
+    await waitFor(() => expect(window.localStorage.getItem(PROJECT_PREFERENCE_KEY)).toBe("proj-cedar"));
   });
 
   test("a failed category lookup degrades to the seeded list, never to an empty required select", async () => {
@@ -181,8 +186,13 @@ describe("D-50 the task select is honest about its four states", () => {
       "/api/schedule/tasks": async () => { await gate; return jsonRes({ tasks: [] }); },
     });
     await waitFor(() => expect(container.textContent).toContain(TASKS_LOADING_LABEL));
-    const trigger = container.querySelector('[role="combobox"]') as HTMLButtonElement;
-    expect(trigger.disabled).toBe(true);
+    // MERGE NOTE (G-04): while the list is in flight the shared archetype
+    // renders a disabled SKELETON in the control's own shape rather than a
+    // live control -- so there is nothing to open onto an empty menu, and no
+    // word sits in the value slot pretending to be a chosen answer.
+    const skeleton = container.querySelector('[aria-busy="true"]')!;
+    expect(skeleton).not.toBeNull();
+    expect(skeleton.getAttribute("aria-disabled")).toBe("true");
     release!();
   });
 
@@ -197,7 +207,7 @@ describe("D-50 the task select is honest about its four states", () => {
       },
     });
     await findByText(`${TASKS_FAILED_LABEL}: Gateway timeout`);
-    const trigger = container.querySelector('[role="combobox"]') as HTMLButtonElement;
+    const trigger = container.querySelector('[role="combobox"]') as HTMLInputElement;
     expect(trigger.disabled).toBe(true);
 
     fireEvent.click(await findByText("Retry"));
@@ -227,7 +237,7 @@ describe("D-50 the Save button counts and names what is missing", () => {
     const { container, findByText } = renderClient({ "/api/schedule/tasks": () => jsonRes({ tasks: TWO_TASKS }) });
     await findByText("Category");
     const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Save"))!;
-    expect(save.textContent).toBe("Save (3 required: Task, Hours, Category)");
+    expect(save.textContent).toBe("Save (Task, Hours, Category)");
     expect((save as HTMLButtonElement).disabled).toBe(true);
   });
 });
@@ -243,7 +253,7 @@ describe("D-80 the Task picker costs one click less", () => {
     // A field that is visibly filled in over a button that still demands it is
     // worse than no preselection at all, so the label must already be right.
     const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Save"))!;
-    expect(save.textContent).toBe("Save (2 required: Hours, Category)");
+    expect(save.textContent).toBe("Save (Hours, Category)");
   });
 
   test("the task logged last time comes back on the next visit, with no click", async () => {

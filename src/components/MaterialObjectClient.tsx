@@ -7,40 +7,59 @@
 // real Deactivate (isActive: false), matching Labour's Roster/Budget's
 // Cancel/Documents' Dispose convention. No Object Page for Inbound
 // Receipts -- a write-once transaction log, same class as Attendance.
+//
+// R67 G-05 (R-260), second pass. This screen is the OTHER half of the same
+// field: MaterialCreateClient's Unit became a closed <Select> so "bag" and
+// "Bag" cannot both be created, but this edit form still had the free-text
+// <Input>, on the same records, feeding the same unit-grouped cost report. A
+// vocabulary you can only close on one of two doors is not closed. Its Unit
+// Cost facet also glued a currency label straight onto the raw drizzle numeric
+// string ("AED 12.5000"), which is the exact defect format-money.ts removed
+// from MaterialsClient one screen away.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { MATERIAL_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { FormField, type FieldErrors } from "@/components/ui/form-field";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
-import { formatQty } from "@/lib/format-money";
-import { NAME_REQUIRED_MESSAGE, UNIT_REQUIRED_MESSAGE } from "@/components/MaterialCreateClient";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MoneyInput } from "@/components/ui/money-input";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { MATERIAL_UNITS, isMaterialUnit, materialUnitLabel, normaliseMaterialUnit } from "@/lib/material-units";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { EMPTY_VALUE, formatQty } from "@/lib/format-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Material = {
-  id: string; projectId: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean;
-  // R67 D-40: computed by the single-material GET, the same way the master list
-  // computes them, so this page and that list can never disagree.
-  reorderLevel: string | null;
-  receivedToDate?: number;
-  issuedToDate?: number;
-  onHand?: number;
+  id: string;
+  projectId: string;
+  name: string;
+  spec: string | null;
+  unit: string;
+  unitCost: string;
+  isActive: boolean;
+  // R67 D-40: computed by the service (received minus issued, voided receipts
+  // excluded), never stored -- so the master and the Cost Report cannot
+  // disagree. Absent rather than 0 when there is no stock ledger for the item.
+  receivedToDate?: string | number | null;
+  issuedToDate?: string | number | null;
+  onHand?: string | number | null;
+  /** null means "no threshold"; 0 means "flag me the moment it runs out". */
+  reorderLevel?: string | number | null;
 };
 
 export default function MaterialObjectClient({ materialId }: { materialId: string }) {
   const router = useRouter();
-  const currencies = useCurrencies();
-  const label = currencyLabel(undefined, currencies);
+  const orgMoney = useOrgMoney();
   const [material, setMaterial] = useState<Material | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "", reorderLevel: "" });
-  // R67 D-37: the same two required fields as the create screen, validated the
-  // same way, in the same words -- edit mode used to fail with a toast that
-  // named neither field.
-  const [errors, setErrors] = useState<FieldErrors<"name" | "unit">>({});
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
@@ -58,45 +77,30 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
 
   function startEdit() {
     if (!material) return;
+    // normaliseMaterialUnit folds the spellings that already exist ("Bags" ->
+    // "bag") onto the canonical value, so an edit that touches only the NAME
+    // still leaves the unit in the vocabulary. It returns null for anything it
+    // does not recognise, and in that case the raw stored string is kept and
+    // offered back as its own option -- an unrecognised unit is shown, never
+    // silently rewritten to something the record never said.
     setDraft({
       name: material.name,
       spec: material.spec ?? "",
-      unit: material.unit,
+      unit: normaliseMaterialUnit(material.unit) ?? material.unit,
       unitCost: material.unitCost,
-      reorderLevel: material.reorderLevel ?? "",
+      reorderLevel:
+        material.reorderLevel === null || material.reorderLevel === undefined ? "" : String(material.reorderLevel),
     });
-    setErrors({});
     setMode("edit");
   }
 
-  function validateOnBlur(field: "name" | "unit") {
-    const value = field === "name" ? draft.name : draft.unit;
-    const message = field === "name" ? NAME_REQUIRED_MESSAGE : UNIT_REQUIRED_MESSAGE;
-    setErrors((prev) => ({ ...prev, [field]: value.trim() ? undefined : message }));
-  }
-
   async function saveEdit() {
-    if (!draft.name.trim() || !draft.unit.trim()) {
-      setErrors({
-        name: draft.name.trim() ? undefined : NAME_REQUIRED_MESSAGE,
-        unit: draft.unit.trim() ? undefined : UNIT_REQUIRED_MESSAGE,
-      });
-      return;
-    }
+    if (!draft.name.trim() || !draft.unit.trim()) { toast.error("Name and unit are required"); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          spec: draft.spec || null,
-          unit: draft.unit.trim(),
-          unitCost: draft.unitCost ? Number(draft.unitCost) : undefined,
-          // R67 D-40: an emptied field CLEARS the threshold (explicit null),
-          // which is a different fact from "0 -- tell me the moment it runs
-          // out". The service honours that distinction; see updateMaterial().
-          reorderLevel: draft.reorderLevel.trim() === "" ? null : Number(draft.reorderLevel),
-        }),
+        body: JSON.stringify({ reorderLevel: draft.reorderLevel === "" ? null : Number(draft.reorderLevel), name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save material");
@@ -128,6 +132,19 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     }
   }
 
+  // R67 D-67. Deactivating is reversible in the data but not in the UI --
+  // the master list only offers active materials and there is no reactivate
+  // control anywhere -- and it silently removes the item from every receipt
+  // form in the project. One click was not enough deliberation for that.
+  // Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Material",
+    identifier: material?.name ?? null,
+    extra: "and remove it from the Record Receipt form",
+    verb: "Deactivate",
+    run: deactivate,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -136,67 +153,121 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       </div>
     );
   }
-  if (!material) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!material) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
+      label={MATERIAL_OBJECT_BREADCRUMB.label}
+      actions={MATERIAL_OBJECT_BREADCRUMB.actions}
+    />
+  );
+
+  // A stored unit the vocabulary does not recognise. It stays selectable so
+  // the record can be edited without being forced to change a field the editor
+  // may know nothing about.
+  const legacyUnit = draft.unit && !isMaterialUnit(draft.unit) ? draft.unit : null;
 
   return (
-    <ObjectScreen
-      breadcrumb="Materials / Material"
+    <>
+    {/* R67 A-21: the strip reads "<project> › Material OPC 43-grade cement"
+        rather than naming the module, and the project is the one on the record
+        rather than whichever one the top rail was left on. */}
+    <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
+    <KitObjectScreen
+      breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Material" : material.name}
       mode={mode}
       hasDraft={false}
       headerStatus={{ tone: material.isActive ? "done" : "late", label: material.isActive ? "active" : "inactive" }}
-      // R67 D-40: On hand LEADS. What a storekeeper opens this page to find out
-      // is how much is on site; the spec and the planned price are context for
-      // that number, not the headline. Received and issued sit beneath it so
-      // the figure can always be traced to the two movements that produced it.
-      subtitle={
-        material.onHand === undefined
-          ? undefined
-          : `On hand ${formatQty(material.onHand)} ${material.unit} · received ${formatQty(material.receivedToDate)} · issued ${formatQty(material.issuedToDate)}`
-      }
       facets={[
-        { label: "Spec", value: material.spec ?? "—" },
-        { label: "Unit", value: material.unit },
-        { label: "Unit Cost", value: `${label}${material.unitCost}` },
+        // R67 D-40: On hand LEADS -- it is the figure a storekeeper opened this
+        // page for -- with what produced it beneath. An absent figure is the
+        // en-dash, never 0: "no stock ledger for this item" and "none left" are
+        // different facts, and only one of them means stop work.
+        { label: `On hand${material.unit ? ` (${material.unit})` : ""}`, value: formatQty(material.onHand) },
+        { label: "Received to date", value: formatQty(material.receivedToDate) },
+        { label: "Issued to date", value: formatQty(material.issuedToDate) },
         {
           label: "Reorder level",
-          value: material.reorderLevel === null || material.reorderLevel === undefined
-            ? "—"
-            : `${formatQty(material.reorderLevel)} ${material.unit}`,
+          value:
+            material.reorderLevel === null || material.reorderLevel === undefined
+              ? EMPTY_VALUE
+              : `${formatQty(material.reorderLevel)} ${material.unit}`,
         },
+        { label: "Spec", value: material.spec ?? "—" },
+        { label: "Unit", value: materialUnitLabel(material.unit) },
+        // Was `${label}${material.unitCost}` -- a currency label glued to the
+        // raw numeric string drizzle returns, so a rate stored as 12.5000
+        // read "AED 12.5000" here and "AED 12.50" on the list one click away.
+        { label: `Unit Cost${orgMoney.unitSuffix}`, value: orgMoney.money(material.unitCost) },
       ]}
       onEdit={material.isActive && mode === "display" ? startEdit : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={material.isActive && mode === "display" ? deactivate : undefined}
+      onDelete={material.isActive && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
       onBack={() => router.push(`/materials?projectId=${material.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.unit.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.unit.trim() ? "Name and unit are required" : undefined}
       messages={[]}
     >
+      {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
-          <FormField label="Name" required error={errors.name}>
-            {(f) => <Input {...f} value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} onBlur={() => validateOnBlur("name")} />}
-          </FormField>
-          <FormField label="Spec (optional)">
-            {(f) => <Input {...f} value={draft.spec} onChange={(e) => setDraft((d) => ({ ...d, spec: e.target.value }))} placeholder="e.g. 43-grade OPC" />}
-          </FormField>
-          <FormField label="Unit" required error={errors.unit}>
-            {(f) => <Input {...f} value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} onBlur={() => validateOnBlur("unit")} placeholder="e.g. bag, cum, kg" />}
-          </FormField>
-          <FormField label="Unit Cost (optional)">
-            {(f) => <Input {...f} type="number" value={draft.unitCost} onChange={(e) => setDraft((d) => ({ ...d, unitCost: e.target.value }))} />}
-          </FormField>
-          <FormField
-            label="Reorder level (optional)"
-            hint="When On hand falls below this, the master row is flagged Low. Leave empty for no threshold."
-          >
-            {(f) => <Input {...f} type="number" min={0} step="any" value={draft.reorderLevel} onChange={(e) => setDraft((d) => ({ ...d, reorderLevel: e.target.value }))} />}
-          </FormField>
+          <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label>Spec (optional)</Label><Input value={draft.spec} onChange={(e) => setDraft((d) => ({ ...d, spec: e.target.value }))} placeholder="e.g. 43-grade OPC" /></div>
+          {/* R67 G-05: the same closed vocabulary MaterialCreateClient uses.
+              A legacy value outside it is offered back as its own option --
+              visible, keepable, and replaceable in one click -- rather than
+              being dropped by a <Select> that cannot represent it. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="material-unit">Unit</Label>
+            <Select value={draft.unit} onValueChange={(v) => setDraft((d) => ({ ...d, unit: v }))}>
+              <SelectTrigger id="material-unit" className="w-full"><SelectValue placeholder="Pick a unit" /></SelectTrigger>
+              <SelectContent>
+                {legacyUnit && <SelectItem value={legacyUnit}>{legacyUnit} (as recorded)</SelectItem>}
+                {MATERIAL_UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="material-reorder-level">Reorder level (optional)</Label>
+            <Input
+              id="material-reorder-level"
+              type="number"
+              min="0"
+              value={draft.reorderLevel}
+              onChange={(e) => setDraft((d) => ({ ...d, reorderLevel: e.target.value }))}
+              placeholder="e.g. 50"
+            />
+            <p className="text-[12px] text-px-muted">
+              Leave blank for no threshold. 0 flags this material the moment it runs out.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="material-unit-cost">Unit Cost{orgMoney.unitSuffix} (optional)</Label>
+            <MoneyInput
+              id="material-unit-cost"
+              currency={orgMoney.currency}
+              pending={!orgMoney.loaded}
+              value={draft.unitCost}
+              onChange={(e) => setDraft((d) => ({ ...d, unitCost: e.target.value }))}
+            />
+          </div>
         </div>
       )}
-    </ObjectScreen>
+      {/* The facets above prefix the rate with the warning glyph when the org
+          has no currency; this is the one sentence that says what it means. */}
+      {orgMoney.showNotice && (
+        <div className="px-4 pb-3">
+          <CurrencyNotSetNotice currencySet={false} />
+        </div>
+      )}
+    </KitObjectScreen>
+    </>
   );
 }

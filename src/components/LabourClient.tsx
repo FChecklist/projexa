@@ -46,7 +46,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,13 +56,14 @@ import DataLoadError from "@/components/DataLoadError";
 import SkeletonTable from "@/components/SkeletonTable";
 import LabourDailySummaryClient from "@/components/LabourDailySummaryClient";
 import { PageHeading, type PageHeadingAction } from "@/components/PageHeading";
-import { fetchJson } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDayMonthYear } from "@/lib/format-date";
-import { formatMoney, resolveCurrencyCode } from "@/lib/format-money";
-import { useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { EMPTY_VALUE } from "@/lib/format-money";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 import { ATTENDANCE_STATUS_LABEL, loadFailureSentence } from "@/lib/attendance-sheet";
+import { recordCountLabel } from "@/lib/pane-state";
 
 type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
@@ -73,6 +74,9 @@ type Vendor = { id: string; vendorName: string };
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
+// R67 G-04 (R-231): the roster header reads ID | Name | Trade | Company |
+// Daily Rate | Status, and the Daily Rate header carries the currency, so
+// "AED" is stated once instead of forty times down the column.
 const COLUMNS: ScreenColumn[] = [
   { label: "ID", field: "employeeCode", type: "text", importance: "High" },
   { label: "Name", field: "name", type: "text", importance: "High" },
@@ -133,6 +137,18 @@ export function summariseSheets(attendance: readonly AttendanceEntry[]): Attenda
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
+const ATTENDANCE_COLUMNS = ["Date", "Worker", "Status", "Hours", "Cost"];
+
+type PaneError = { status: number | null; message: string | null } | null;
+
+/** What the transport actually said, kept whole for the dictionary to classify. */
+function toPaneError(reason: unknown): PaneError {
+  return {
+    status: reason instanceof ApiError ? reason.status : null,
+    message: reason instanceof Error ? reason.message : null,
+  };
+}
+
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike a generic column-type-driven renderer, the actual
 // cell value for each known field is still this project's own formatting
@@ -146,20 +162,29 @@ function renderRosterCell(
   money: (value: string) => string
 ) {
   switch (field) {
+    // R67 G-04 (R-231): the en-dash for an empty cell, everywhere, never the
+    // em-dash and never a blank.
     case "employeeCode":
-      return <span className="text-px-muted">{r.employeeCode ?? "—"}</span>;
+      return <span className="text-px-muted">{r.employeeCode ?? EMPTY_VALUE}</span>;
     case "name":
       return <span className="font-medium">{r.name}</span>;
     case "trade":
-      return <span className="text-px-muted">{r.trade ?? "—"}</span>;
+      return <span className="text-px-muted">{r.trade ?? EMPTY_VALUE}</span>;
     case "vendorId":
       return <span className="text-px-muted">{vendorName(r.vendorId)}</span>;
+    // R67 G-05: was `${currencyLabel}${r.dailyRate}` -- the raw drizzle
+    // numeric string, so "1200" and "1200.5" rendered with different
+    // precision in the same column. Now the one money formatter: two
+    // decimals, tabular figures, right-aligned, currency in the header.
     case "dailyRate":
       return money(r.dailyRate);
     case "isActive":
-      return <Badge variant={r.isActive ? "default" : "outline"}>{r.isActive ? "active" : "inactive"}</Badge>;
+      // R67 G-02: was <Badge variant="default"> for active -- the saffron
+      // primary fill, on a row that is merely "this worker is on the roster".
+      // active -> sage tick, inactive -> grey circle, both with their word.
+      return <StatusPill status={r.isActive ? "active" : "inactive"} />;
     default:
-      return String((r as unknown as Record<string, unknown>)[field] ?? "—");
+      return String((r as unknown as Record<string, unknown>)[field] ?? EMPTY_VALUE);
   }
 }
 
@@ -191,11 +216,14 @@ export default function LabourClient({
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const currencies = useCurrencies();
+  const orgMoney = useOrgMoney();
   // dailyRate has no per-row currencyId (roster entries are always in the
   // org's base currency) -- same undefined-id "org base currency" lookup the
   // rest of the product uses.
-  const money = useCallback((value: string | number | null) => formatMoney(value, currencies), [currencies]);
+  // R67 G-05 merge: the org's currency is resolved ONCE per screen and the
+  // formatter comes back bound to it, so a cell cannot be rendered with the
+  // wrong currency by forgetting to pass one.
+  const money = useCallback((value: string | number | null) => orgMoney.money(value), [orgMoney]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<{ roster?: string; attendance?: string }>({});
   const [filter, setFilter] = useState<RosterFilterState>({ ...EMPTY_FILTER, ...initialFilter });
@@ -219,11 +247,17 @@ export default function LabourClient({
     ]);
 
     const errors: { roster?: string; attendance?: string } = {};
+    // R67 D-65 merge: a FAILED REFRESH NO LONGER THROWS THE ROWS AWAY. This
+    // used to be `else { setRoster([]); ... }`, which blanked a roster the
+    // user could read a second ago because a refresh failed -- turning a
+    // recoverable error into a screen that says this project has no workers.
+    // The rows stay, and the error sentence beside them says the list may be
+    // out of date.
     if (rosterR.status === "fulfilled") setRoster(rosterR.value.roster ?? []);
-    else { setRoster([]); errors.roster = loadFailureSentence(rosterR.reason, "roster"); }
+    else errors.roster = loadFailureSentence(rosterR.reason, "the roster");
 
     if (attR.status === "fulfilled") setAttendance(attR.value.attendance ?? []);
-    else { setAttendance([]); errors.attendance = loadFailureSentence(attR.reason, "attendance"); }
+    else errors.attendance = loadFailureSentence(attR.reason, "the attendance log");
 
     // Vendors is a display-only lookup (company name); its failure degrades to
     // an em-dash rather than to an alert.
@@ -297,7 +331,7 @@ export default function LabourClient({
     ]);
     // "Daily Rate (AED)" -- the currency belongs in the header, not repeated
     // on every cell, so the column stays sortable as a number in Excel.
-    const code = resolveCurrencyCode(currencies);
+    const code = orgMoney.currency ?? "";
     const csv = toCsv(["S.No", "ID", "Name", "Trade", "Company", code ? `Daily Rate (${code})` : "Daily Rate", "Status"], rows);
     downloadCsv(csvFilename("roster", projectName, new Date().toISOString().slice(0, 10)), csv);
   }
@@ -446,6 +480,13 @@ export default function LabourClient({
                   </TableBody>
                 </Table>
               )}
+              {/* R67 D-65 merge: how many rows this IS, stated as a fact only a
+                  successful read can support. On a failure or while the request
+                  is in flight it renders the en-dash -- "0 records" over a read
+                  that never answered is a claim nobody made. */}
+              <p className="border-t border-px-border px-4 py-2 text-[12px] text-px-muted">
+                {recordCountLabel(loading ? "loading" : loadErrors.roster ? "error" : "ready", roster.length)}
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -504,12 +545,17 @@ export default function LabourClient({
                           <TableCell>{sheet.absent}</TableCell>
                           <TableCell className="text-right tabular-nums">{money(sheet.cost)}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={complete ? "default" : "outline"}
-                              title={`Measured against the ${activeRosterCount} active workers on the roster today`}
-                            >
-                              {complete ? "Complete" : "Partial"}
-                            </Badge>
+                            {/* R67 G-02 merge: not a Badge. `variant="default"`
+                                is the saffron PRIMARY fill, which on a status
+                                chip reads as an action; and colour alone is
+                                never the signal. StatusPillTone carries the
+                                glyph AND the word. */}
+                            <span title={`Measured against the ${activeRosterCount} active workers on the roster today`}>
+                              <StatusPillTone
+                                tone={complete ? "done" : "waiting"}
+                                label={complete ? "Complete" : "Partial"}
+                              />
+                            </span>
                           </TableCell>
                         </TableRow>
                       );

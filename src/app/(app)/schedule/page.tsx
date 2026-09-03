@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
-import { resolveSelectedProject } from "@/lib/project-selection";
+import { resolveRouteProject } from "@/lib/project-selection";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { type RegistryColumn } from "@/components/ScheduleGanttClient";
@@ -36,12 +36,27 @@ async function resolveScheduleTimelineColumns(organizationId: string | null): Pr
 // from the server but isScheduleTab is on the client" (digest 1240219489,
 // confirmed live 2026-08-27, first seen minutes after R57/PR#185 -- which
 // introduced this exact call -- went live).
+// R67 A-13 -- THIS SCREEN RENDERS STRICTLY FROM THE URL.
 //
-// R67 D-44: the bare <PageHeading title="Schedule" /> is gone -- the header
-// band (breadcrumb "Schedule > {project}" plus Filter | Export | Import |
-// + New in that fixed order) is rendered by ScheduleTabsClient through the
-// forked ScreenFrame, because every one of those actions needs a client
-// handler and the project's own name.
+// It used to call resolveSelectedProject(), whose last resort is the org's
+// FIRST project. So /schedule with no ?projectId= showed one project's board,
+// timeline, sprints and timesheet under a heading naming that project, with
+// nothing on screen admitting the choice had been made for the user -- and the
+// top rail, which keeps its own answer, could be naming a different project two
+// lines above. A schedule is a project's schedule; guessing which one is the
+// same class of mistake as logging progress against the wrong project.
+//
+// Now: the URL names the project or the page ASKS for one. Ten reloads of
+// /schedule?projectId=X render X, every time, whatever the rail remembers.
+//
+// R67 D-44 reconciliation: this lane redirected to ?projectId=<resolved> when
+// the URL named none, to stop the rail and the pane disagreeing. A-13 answers
+// the same defect one step earlier and better -- it never resolves a project
+// nobody named, so there is nothing to redirect TO and the screen ASKS. The
+// redirect is therefore retired rather than kept beside it; keeping both would
+// mean a page that both refuses to guess and navigates to its own guess.
+// `q` and `highlight` stay: they are this lane's filter and the "the row you
+// just created" mark, and they are read by ScheduleTabsClient below.
 export default async function SchedulePage({
   searchParams,
 }: {
@@ -49,39 +64,47 @@ export default async function SchedulePage({
 }) {
   const { projectId, tab, q, highlight } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source, missing, unreachable } = await resolveRouteProject(
+    { projectId },
+    null,
+    organizationId
+  );
   const initialTab = isScheduleTab(tab) ? tab : "timeline";
-
-  // R67 D-44, the projexa half of the WS-A "root = top rail OR route projectId"
-  // rule: when this page resolved a project but the URL did not name one, make
-  // the URL say so. Without this the top rail, the composer and the data calls
-  // could each be on a different project with nothing on screen admitting it --
-  // and browser Back from an activity landed on a /schedule with no projectId,
-  // which then re-resolved to whatever the fallback happened to be.
-  //
-  // redirect() must not be called inside a try/catch: it works by throwing.
-  // Next.js answers a GET with a real 3xx, so this REPLACES the history entry
-  // rather than adding one -- Back still leaves the module in one step.
-  if (project && !projectId) {
-    const params = new URLSearchParams({ projectId: project.id });
-    if (tab) params.set("tab", tab);
-    if (q) params.set("q", q);
-    if (highlight) params.set("highlight", highlight);
-    redirect(`/schedule?${params.toString()}`);
-  }
 
   const timelineColumns = project ? await resolveScheduleTimelineColumns(organizationId) : null;
 
   return (
     <>
-      <div className="flex-1 p-6">
+      {/* The shell's rail and strip name what this pane is actually showing --
+          including the case where it is showing nothing because no project was
+          named, which is a fact the top rail must not paper over. */}
+      <ScreenContext moduleId="schedule" project={project} source={source ?? "route"} />
+      {/* R67 D-44: no bare <PageHeading title="Schedule" /> here -- the header
+          band (breadcrumb "Schedule > {project}" plus Filter | Export | Import
+          | + New in that fixed order) is rendered by ScheduleTabsClient through
+          the forked ScreenFrame, because every one of those actions needs a
+          client handler and the project's own name. Rendering both would put
+          two headings on one screen. */}
+      <div className="flex-1 space-y-6 p-6">
         {errorMessage && (
           <Card className="border-px-error-border bg-px-error-light">
             <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
           </Card>
         )}
-        {!errorMessage && !project && (
-          <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
+        {missing && (
+          // The sentence asks for the one decision that is missing. No rows are
+          // rendered underneath it: an empty board beside "Pick a project" would
+          // read as "this project has no tasks".
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-px-muted">Pick a project</CardContent>
+          </Card>
+        )}
+        {unreachable && (
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-px-muted">
+              That project is not on your list — pick a project
+            </CardContent>
+          </Card>
         )}
         {project && (
           <ScheduleTabsClient

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,8 @@ import ScheduleGanttClient, { type RegistryColumn } from "@/components/ScheduleG
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
 import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
-import { ScreenFrame } from "@/components/screens/ScreenFrame";
+import { PageHeading } from "@/components/PageHeading";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { SCHEDULE_TABS, isScheduleTab, type ScheduleTab } from "@/lib/schedule-tabs";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -44,12 +44,20 @@ export { SCHEDULE_TABS, isScheduleTab, type ScheduleTab };
 //
 //   * The page's header was a bare <PageHeading title="Schedule" /> -- no
 //     breadcrumb, no project, and none of the header actions every other module
-//     now has. This component now owns the standard header band (the kit's own
-//     ScreenFrame, forked per D-09 only to make room for a fourth action), in
-//     the fixed order Filter | Export | Import | + New.
+//     now has. This component now owns the standard header band, in the fixed
+//     order Filter | Export | Import | + New.
+//
+//     MERGE NOTE (D-79): that band was originally a fork of the kit's
+//     ScreenFrame, made only to fit a fourth action. Lane D-79's
+//     ListHeaderActions -- already on main and already carrying Manpower and
+//     Materials -- is the product's real answer to the same requirement, and it
+//     brings the "+ New" MENU this fork never had. The fork is therefore
+//     retired and this screen uses the shared control, with Import passed
+//     through its `extraActions` slot so the four-action order still holds.
+//     PageHeading (which grew a breadcrumb slot for D-32) renders the trail.
 //   * '+ New Task' lived inside the Board tab's body, so on Timeline, Phases or
-//     Time there was no way to create an activity at all. It is hoisted above
-//     the TabsList and exists on every tab.
+//     Time there was no way to create an activity at all. It is in the header
+//     band now, so it exists on every tab.
 //   * The tabs were labelled with the data model's words (Sprints, Timesheet).
 //     The VISIBLE labels are now Timeline | Board | Phases | Time; the tab
 //     VALUES are unchanged (timeline|board|sprints|timesheet) so every existing
@@ -220,6 +228,11 @@ export function ScheduleTabsClient({
   const emptyReasonFor = (reason: string) =>
     tasksLoading ? "Loading…" : tasksError ? "Activities did not load" : tasks.length === 0 ? reason : undefined;
 
+  // ListHeaderActions decides "disabled" by the ABSENCE of a handler, so the
+  // two have to agree: a handler is passed only when there is something for it
+  // to act on, and the reason above is what the control then says.
+  const tasksReady = !tasksLoading && !tasksError && tasks.length > 0;
+
   const breadcrumb = useMemo(
     () => (
       <span>
@@ -231,30 +244,44 @@ export function ScheduleTabsClient({
   );
 
   return (
-    <ScreenFrame
-      breadcrumb={breadcrumb}
-      filterAction={{
-        label: "Filter",
-        disabledReason: emptyReasonFor(NO_ACTIVITIES_TO_FILTER),
-        onClick: () => setFilterOpen((open) => !open),
-        testId: "schedule-filter",
-      }}
-      exportAction={{
-        label: "Export",
-        disabledReason: emptyReasonFor(NO_ACTIVITIES_TO_EXPORT),
-        onClick: exportActivities,
-        testId: "schedule-export",
-      }}
-      extraActions={[
-        { label: "Import", disabledReason: IMPORT_UNAVAILABLE_REASON, testId: "schedule-import" },
-      ]}
-      newAction={{
-        label: "+ New",
-        onClick: () => router.push(`/schedule/tasks/new?projectId=${encodeURIComponent(projectId)}`),
-        testId: "schedule-new",
-      }}
-      messages={messages}
-    >
+    <div className="space-y-4">
+      {/* A real <header>: this band is the screen's header, and D-44's
+          acceptance -- four actions, in a fixed order, over a breadcrumb that
+          names the project -- is stated over it. */}
+      <header className="space-y-2">
+      <PageHeading
+        title="Schedule"
+        breadcrumb={breadcrumb}
+      />
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ListHeaderActions
+          module="schedule"
+          tab={tab}
+          projectId={projectId}
+          onFilter={tasksReady ? () => setFilterOpen((open) => !open) : undefined}
+          filterDisabledReason={emptyReasonFor(NO_ACTIVITIES_TO_FILTER)}
+          onExport={tasksReady ? exportActivities : undefined}
+          exportDisabledReason={emptyReasonFor(NO_ACTIVITIES_TO_EXPORT)}
+          extraActions={
+            // D-44's fourth action, in its fixed place between Export and
+            // "+ New". Disabled with a real reason rather than wired, because
+            // /schedule/import does not exist yet -- see IMPORT_UNAVAILABLE_REASON.
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled
+              title={IMPORT_UNAVAILABLE_REASON}
+              data-testid="schedule-import"
+            >
+              Import
+            </Button>
+          }
+        />
+      </div>
+      </header>
+
       <div className="space-y-4 px-4 py-3">
         {/* ONE Radix Tabs root around the list AND the panels: two roots would
             break the aria-controls pairing and the roving focus between the
@@ -270,13 +297,6 @@ export function ScheduleTabsClient({
                 </TabsTrigger>
               ))}
             </TabsList>
-            <Button
-              size="sm"
-              data-testid="schedule-new-task"
-              onClick={() => router.push(`/schedule/tasks/new?projectId=${encodeURIComponent(projectId)}`)}
-            >
-              <Plus className="size-4" /> New Task
-            </Button>
           </div>
 
           <p className="mt-2 text-[13px] text-px-muted">{TAB_CAPTIONS[tab]}</p>
@@ -323,6 +343,24 @@ export function ScheduleTabsClient({
           </TabsContent>
         </Tabs>
       </div>
-    </ScreenFrame>
+
+      {/* M29: "toasts vanish; errors must persist until resolved". ScreenFrame
+          used to render this region; it is rendered here now, unchanged in
+          behaviour -- D-45's baseline failures and D-50's time-logged receipt
+          both land in it. */}
+      {messages.length > 0 && (
+        <div className="space-y-1 px-4 pb-3">
+          {messages.map((message) => (
+            <p
+              key={message.field}
+              role={message.level === "error" ? "alert" : "status"}
+              className={`text-[13px] ${message.level === "error" ? "text-px-error" : "text-px-muted"}`}
+            >
+              {message.text}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

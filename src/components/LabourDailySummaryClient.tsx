@@ -27,8 +27,8 @@ import DataLoadError from "@/components/DataLoadError";
 import SkeletonTable from "@/components/SkeletonTable";
 import { errorMessage, fetchJson } from "@/lib/fetch-json";
 import { formatDateNumeric } from "@/lib/format-date";
-import { formatMoney, resolveCurrencyCode } from "@/lib/format-money";
-import { useCurrencies } from "@/lib/currency";
+
+import { useOrgMoney } from "@/lib/use-org-money";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 import {
   ATTENDANCE_STATUS_GLYPH,
@@ -107,7 +107,11 @@ export default function LabourDailySummaryClient({
   onDateChange: (nextDate: string) => void;
 }) {
   const router = useRouter();
-  const currencies = useCurrencies();
+  // R67 G-05 merge: the org's currency is resolved once for the screen and the
+  // formatter comes back bound to it, so no cell can be rendered with the wrong
+  // currency by forgetting to pass one.
+  const orgMoney = useOrgMoney();
+  const money = orgMoney.money;
   const [summary, setSummary] = useState<DailySummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +148,7 @@ export default function LabourDailySummaryClient({
 
   function exportSummary() {
     if (!summary) return;
-    const code = resolveCurrencyCode(currencies);
+    const code = (orgMoney.currency ?? "");
     const body: unknown[][] = [];
     for (const row of rows) {
       body.push([row.trade, row.present, row.absent, row.halfDay, row.headcount, row.cost]);
@@ -250,7 +254,7 @@ export default function LabourDailySummaryClient({
                       <TableCell className="text-right tabular-nums">{row.absent}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.halfDay}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.headcount}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(row.cost, currencies)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{money(row.cost)}</TableCell>
                     </TableRow>,
                     open ? (
                       <TableRow key={`${row.trade}-people`}>
@@ -276,7 +280,7 @@ export default function LabourDailySummaryClient({
                                   <TableCell className="font-medium">{person.name}</TableCell>
                                   <TableCell className="text-px-muted">{person.company ?? "—"}</TableCell>
                                   <TableCell className="text-right tabular-nums">
-                                    {formatMoney(person.dailyRate, currencies)}
+                                    {money(person.dailyRate)}
                                   </TableCell>
                                   <TableCell>{statusDisplay(person.status)}</TableCell>
                                 </TableRow>
@@ -295,7 +299,7 @@ export default function LabourDailySummaryClient({
                     <TableCell className="text-right tabular-nums">{totals.absent}</TableCell>
                     <TableCell className="text-right tabular-nums">{totals.halfDay}</TableCell>
                     <TableCell className="text-right tabular-nums">{totals.headcount}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(totals.cost, currencies)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(totals.cost)}</TableCell>
                   </TableRow>
                 )}
               </TableBody>

@@ -80,9 +80,17 @@ describe("AttendanceCreateClient (D-80)", () => {
 
   test("while the roster is in flight the field says Loading, not 'no workers'", () => {
     globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch;
-    const { getByLabelText } = render(<AttendanceCreateClient projectId="proj-cedar" />);
-    const field = getByLabelText("Worker") as HTMLInputElement;
-    expect(field.disabled).toBe(true);
-    expect(field.placeholder).toBe("Loading…");
+    const { getByLabelText, queryByText } = render(<AttendanceCreateClient projectId="proj-cedar" />);
+    // R67 G-04 merge: the requirement is unchanged -- an in-flight picker must
+    // not look like an empty roster -- but the archetype answers it better than
+    // this lane's placeholder did. A word in the VALUE SLOT ("Loading…") reads
+    // as a chosen answer; the shared control renders a disabled skeleton in the
+    // field's own shape instead, announced as "Worker, loading", and puts no
+    // word in the slot at all.
+    const field = getByLabelText("Worker, loading");
+    expect(field.getAttribute("aria-busy")).toBe("true");
+    expect(field.getAttribute("aria-disabled")).toBe("true");
+    // The thing that must NOT be said while we are still asking.
+    expect(queryByText(/no workers/i)).toBeNull();
   });
 });

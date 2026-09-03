@@ -54,24 +54,47 @@ export function PageHeading({
   title,
   breadcrumb,
   project,
+  context,
   note,
+  contextNote,
   actions,
 }: {
   title: string;
   breadcrumb?: React.ReactNode;
   project?: string | null;
+  /**
+   * R67 D-20's name for the same fact as `project` -- the scope the screen is
+   * showing. Kept as an alias rather than renamed either way: D-20 ships a
+   * caller (moms/page.tsx) that passes `context`, and this lane's screens pass
+   * `project`, and "the project these rows belong to" is one idea, so it gets
+   * one rendering here rather than two props that could drift apart.
+   */
+  context?: string | null;
   note?: React.ReactNode;
+  /**
+   * R67 D-20: a short parenthetical beside the title -- "(auto-selected)".
+   * Distinct from `note`, which is a full line UNDER the title: this one has
+   * to sit next to the name it qualifies, or it stops qualifying it.
+   */
+  contextNote?: string | null;
   actions?: PageHeadingAction[];
 }) {
+  const scope = project ?? context ?? null;
   return (
     <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         {breadcrumb ? <p className="mb-0.5 text-[12px] text-px-muted">{breadcrumb}</p> : null}
         <h1 className="font-heading text-xl text-ct-navy flex flex-wrap items-baseline gap-x-2">
           <span>{title}</span>
-          {project ? (
-            <span className="text-[15px] font-medium text-[color:var(--color-veri-status-context)]">{project}</span>
+          {scope ? (
+            <>
+              <span aria-hidden="true" className="text-px-muted">
+                -
+              </span>
+              <span className="text-[15px] font-medium text-[color:var(--color-veri-status-context)]">{scope}</span>
+            </>
           ) : null}
+          {contextNote ? <span className="align-middle text-sm text-px-muted">{contextNote}</span> : null}
         </h1>
         {note ? <p className="mt-1 text-[13px] text-px-muted">{note}</p> : null}
       </div>

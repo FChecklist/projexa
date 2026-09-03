@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { formatCompactNumber } from "@/lib/format-number";
 
 // Same validated 5-slot categorical order as ReportChart.tsx (dataviz
 // skill, see ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md) -- fixed order,
 // never cycled, anything past slot 5 folds into a neutral "Other" bucket.
+// R67 WS-G re-valued those five slots to the muted CVD-checked set in
+// globals.css; the references here are unchanged because they were already
+// token references and not hexes.
 const PIE_COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
-const PIE_OTHER_COLOR = "var(--color-px-muted)";
+const PIE_OTHER_COLOR = "var(--status-neutral-text)";
 const PIE_MAX_SLICES = 5;
 
 const barConfig = {
@@ -73,8 +77,16 @@ export function CategoryDistributionCharts({ companyId, projectId }: { companyId
             <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis tickLine={false} axisLine={false} width={56} />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="totalAmount" fill="var(--color-chart-1)" radius={4} />
-            <Bar dataKey="completedAmount" fill="var(--color-chart-2)" radius={4} />
+            {/* R67 WS-G (R-227): radius 0 and the value printed at the bar
+                end, on both series -- the grouped pair is exactly the case
+                where two muted fills are hardest to tell apart, and the
+                printed figure removes the need to. */}
+            <Bar dataKey="totalAmount" fill="var(--color-chart-1)" radius={0}>
+              <LabelList dataKey="totalAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
+            </Bar>
+            <Bar dataKey="completedAmount" fill="var(--color-chart-2)" radius={0}>
+              <LabelList dataKey="completedAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
+            </Bar>
             <ChartLegend content={<ChartLegendContent />} />
           </BarChart>
         </ChartContainer>

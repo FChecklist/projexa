@@ -1,10 +1,10 @@
 import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { resolveSelectedProject } from "@/lib/project-selection";
+import { ProjectRequiredCard } from "@/components/ProjectRequiredCard";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import MaterialsClient, { type RegistryColumn } from "@/components/MaterialsClient";
-import MaterialsProjectChooser from "@/components/MaterialsProjectChooser";
 
 // R46 P8 seq131 (registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns in permits/page.tsx and R46 P8 seq128/seq134's
@@ -69,17 +69,30 @@ async function resolveClosedProjectName(projectId: string, organizationId: strin
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string; materialId?: string }> }) {
   const { projectId, tab, materialId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { projects, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  // R67 D-20 + D-66: this module is per-project, so it OPTS IN to the
+  // honest mode. Without the flag, arriving with no ?projectId= silently
+  // resolved the org's FIRST project and rendered its rows under a rail
+  // reading "All projects" -- and a write made on that screen went to a
+  // project nobody chose.
+  //
+  // R67 D-38 reconciliation: this lane resolved the same defect with its own
+  // client-side chooser. chooseProject() answers it one level down and for
+  // every screen at once (the URL wins, then the rail's own cookie, then a
+  // single-project org), so the chooser is retired and ProjectRequiredCard --
+  // which renders D-38's own sentence AND the list to pick from -- is what the
+  // screen shows instead. The closed-project branch below is kept: it is the
+  // one case neither of those answers.
+  const { project, projects, errorMessage, mode } = await resolveSelectedProject(projectId, organizationId, {
+    allProjectsWhenUnset: true,
+  });
   const registryColumns = await resolveMaterialsListColumns(organizationId);
 
-  const requested = projectId ? projects.find((p) => p.id === projectId) ?? null : null;
-  const onlyProject = projects.length === 1 ? projects[0] : null;
-  const selected = requested ?? onlyProject;
-
-  // A ?projectId= that names nothing in the active list: not a fallback case,
-  // and never someone else's rows.
+  // A ?projectId= that names nothing in the ACTIVE list. chooseProject() has
+  // already declined to substitute a different project for it, so `project` is
+  // null and the id is still worth one question: is it closed, or is it not
+  // ours at all? Never someone else's rows either way.
   const closedProjectName =
-    projectId && !requested ? await resolveClosedProjectName(projectId, organizationId) : null;
+    projectId && !project ? await resolveClosedProjectName(projectId, organizationId) : null;
 
   return (
     <>
@@ -92,15 +105,16 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
             </Card>
           </>
         )}
-
-        {!errorMessage && projects.length === 0 && (
+        {!errorMessage && !project && projects.length === 0 && (
           <>
             <PageHeading title="Materials" />
             <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
           </>
         )}
 
-        {!errorMessage && projects.length > 0 && closedProjectName && projectId && (
+        {/* R67 D-38: a closed project named by the URL is rendered, read-only,
+            under its own name -- not swapped for a different project's rows. */}
+        {!errorMessage && !project && projects.length > 0 && closedProjectName && projectId && (
           <MaterialsClient
             projectId={projectId}
             projectName={closedProjectName}
@@ -111,18 +125,23 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
           />
         )}
 
-        {!errorMessage && projects.length > 0 && !closedProjectName && selected && (
+        {/* Two different answers, told apart at last: "you are looking at
+            the whole org and this module needs one project" is not the
+            same as "this org has no projects". */}
+        {!errorMessage && !project && projects.length > 0 && !closedProjectName && mode === "all" && (
+          <ProjectRequiredCard module="Materials" />
+        )}
+
+        {/* R67 D-65: the name goes with the id so each of the three panes can
+            say what it is waiting for, and for which project. */}
+        {project && (
           <MaterialsClient
-            projectId={selected.id}
-            projectName={selected.name}
+            projectId={project.id}
+            projectName={project.name}
             registryColumns={registryColumns}
             initialTab={tab}
             initialMaterialId={materialId}
           />
-        )}
-
-        {!errorMessage && projects.length > 0 && !closedProjectName && !selected && (
-          <MaterialsProjectChooser projects={projects} tab={tab} />
         )}
       </div>
     </>

@@ -14,7 +14,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { SCOPE_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,8 +27,9 @@ import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
-  boqTotal, withCurrency, childPercentSum, derivedSubQtyRate,
+  boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
 } from "@/lib/boq-helpers";
+import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
 // "late" | "neutral" -- veridian-ui-kit/screens/types.ts). "submitted"
@@ -43,6 +48,10 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R67 lane I (WS-I item I-05, R-177): the org's category list, so the
+  // Category column is a real pick-list here too and not free text that would
+  // invent a new category on every typo.
+  const { categories, failed: categoriesFailed, addLocal } = useBoqCategories();
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
@@ -71,7 +80,10 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
 
   useEffect(() => { load(); }, [boqId]);
 
-  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null }) {
+  // R67 lane I (I-03/I-05): the same PATCH now also carries category and the
+  // material/manpower split -- one write path for every per-line budget field,
+  // not a second endpoint per column.
+  async function saveLineItemBudget(rowId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null; category?: string | null; materialAmount?: number | null; manpowerAmount?: number | null }) {
     setSavingRowId(rowId);
     try {
       const res = await fetch(`/api/scope/line-items/${rowId}`, {
@@ -85,6 +97,25 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
     } finally {
       setSavingRowId(null);
+    }
+  }
+
+  // R67 lane I (I-05): "Add new" from the Category column registers the
+  // category org-wide. A registration failure is surfaced, never swallowed --
+  // but the name is still applied to the line, so nothing the user did is lost.
+  async function registerCategory(name: string) {
+    addLocal(name);
+    try {
+      const res = await fetch("/api/scope/categories", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok && res.status !== 409) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? `"${name}" was applied to this line but could not be added to the category list.`);
+      }
+    } catch {
+      toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
     }
   }
 
@@ -110,6 +141,16 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
     }
   }
 
+  // R67 D-67: deleting a BOQ takes its line items with it, and a QS may
+  // have spent an afternoon building them. The kit fired this from a single
+  // click. Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "BOQ",
+    identifier: boq ? `${boq.title} (v${boq.version})` : null,
+    extra: rows.length > 0 ? `and its ${rows.length} line item${rows.length === 1 ? "" : "s"}` : null,
+    run: () => runAction("delete"),
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -118,14 +159,36 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       </div>
     );
   }
-  if (loading || !boq) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (loading || !boq) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCOPE_OBJECT_BREADCRUMB.label}
+      actions={SCOPE_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const total = boqTotal(rows);
   const isDraft = boq.status === "draft";
 
   return (
-    <ObjectScreen
-      breadcrumb="Scope / Bill of Quantities"
+    <>
+    {/* R67 A-21 -- THE STRIP NAMES THIS BOQ, AND ITS PROJECT.
+        Rendered here, after the fetch, because that is the first moment this
+        page can answer honestly: /scope/<id> resolves nothing on the server and
+        carries no ?projectId=, so before `boq` exists the composer's strip has
+        no title to show and (until now) fell back to whatever project the top
+        rail happened to be on -- which could name a DIFFERENT project than the
+        line items rendered below. The kind word "BOQ" is not written here; it
+        comes from src/lib/object-screens.ts so every screen showing one uses
+        the same word. Renders nothing. */}
+    <ObjectContext moduleId="scope" label={boq.title} projectId={boq.projectId} />
+    <KitObjectScreen
+      breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
       title={boq.title}
       subtitle={`Version ${boq.version}`}
       mode="display"
@@ -137,7 +200,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
       // never a fake-enabled button that fails after the click.
-      onDelete={isDraft ? () => runAction("delete") : undefined}
+      onDelete={isDraft ? removal.request : undefined}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
       // Real Back, preserving ?projectId= — derived from the loaded BOQ
       // itself (same pattern as PermitObjectClient's permit.projectId), not
@@ -152,6 +215,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
           Edit/Delete/Save/Cancel. Every button here maps to a real endpoint
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
+      {removal.card}
       <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
         {isDraft && (
           <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("submit")}>
@@ -179,10 +243,16 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Description</TableHead><TableHead>Unit</TableHead>
+              <TableHead>Description</TableHead>
+              {/* R67 I-05 (R-177): the line's real category, editable in place
+                  and saved through the same PATCH as Budget %/Vendor. */}
+              <TableHead>Category</TableHead>
+              <TableHead>Unit</TableHead>
               <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead className="text-right">Budget %</TableHead><TableHead className="text-right">Budget</TableHead>
+              {/* R67 I-03: the material/manpower split of this line's budget. */}
+              <TableHead className="text-right">Material</TableHead><TableHead className="text-right">Manpower</TableHead>
               <TableHead>Vendor</TableHead><TableHead className="text-right">Vendor Amt</TableHead>
             </TableRow>
           </TableHeader>
@@ -205,9 +275,21 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                     {isSub && r.breakdownPercentage && <span className="ml-2 text-[10px] text-ct-muted">{r.breakdownPercentage}% of parent</span>}
                     {!isSub && childSum !== null && <span className="ml-2 text-[10px] text-ct-muted">(children: {childSum}%)</span>}
                   </TableCell>
+                  <TableCell>
+                    <BoqCategorySelect
+                      value={r.category ?? ""}
+                      categories={categories}
+                      failed={categoriesFailed}
+                      onChange={(next) => saveLineItemBudget(r.id, { category: next.trim() === "" ? null : next })}
+                      onAddNew={registerCategory}
+                    />
+                    {!r.category && (
+                      <span className="ml-1 text-[10px] text-ct-muted">{NO_CATEGORY_CHIP_LABEL}</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
-                  <TableCell className="text-right">{isSub ? (derived ? derived.rate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") : r.rate}</TableCell>
+                  <TableCell className="text-right">{isSub ? (derived ? formatAmount(derived.rate) : "—") : formatAmount(r.rate)}</TableCell>
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input
@@ -220,6 +302,34 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                     />
                   </TableCell>
                   <TableCell className="text-right text-ct-muted">{withCurrency(currencyCode, budget)}</TableCell>
+                  {/* R67 I-03: material/manpower split. Blank means NOT SPLIT
+                      (the placeholder is a dash, never a 0) -- "unsplit" and
+                      "split as zero" are different facts and the report keeps
+                      them apart, so this editor must too. */}
+                  <TableCell className="text-right">
+                    <Input
+                      aria-label="Material amount"
+                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.materialAmount ?? ""} placeholder="—"
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        const amt = raw === "" ? null : Number(raw);
+                        if (raw !== "" && !Number.isFinite(amt)) return;
+                        saveLineItemBudget(r.id, { materialAmount: amt });
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      aria-label="Manpower amount"
+                      type="number" disabled={saving} className="w-24 text-right" defaultValue={r.manpowerAmount ?? ""} placeholder="—"
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        const amt = raw === "" ? null : Number(raw);
+                        if (raw !== "" && !Number.isFinite(amt)) return;
+                        saveLineItemBudget(r.id, { manpowerAmount: amt });
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Select disabled={saving} value={r.vendorId ?? undefined} onValueChange={(vendorId) => saveLineItemBudget(r.id, { vendorId })}>
                       <SelectTrigger className="w-[150px]"><SelectValue placeholder="No vendor" /></SelectTrigger>
@@ -245,6 +355,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
           </TableBody>
         </Table>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

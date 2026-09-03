@@ -7,6 +7,8 @@
 // tests alike.
 import { ApiError } from "./fetch-json";
 
+import { describeReadError } from "./task-errors";
+
 export const ATTENDANCE_STATUSES = ["present", "half_day", "absent"] as const;
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
 
@@ -146,10 +148,22 @@ export function saveFailureSentence(error: unknown): string {
   return "The construction data service didn't answer — nothing was saved.";
 }
 
-/** `subject` is what the user was trying to see, e.g. "roster" or "attendance for this date". */
+/**
+ * `subject` is what the user was trying to see, e.g. "roster" or "attendance
+ * for this date".
+ *
+ * R67 D-65 merge: this used to write its own three sentences. A READ failure
+ * has ONE vocabulary in this product -- src/lib/task-errors.ts's
+ * describeReadError() -- and it is the one every other screen speaks, so
+ * "supabaseKey is required" reads as "file storage is not configured for this
+ * environment" here exactly as it does everywhere else, instead of as this
+ * module's own "the construction data service didn't answer". Keeping a second
+ * dictionary for one screen is how a product ends up with two names for one
+ * failure.
+ */
 export function loadFailureSentence(error: unknown, subject: string): string {
-  const status = error instanceof ApiError ? error.status : 0;
-  if (status === 403) return `You do not have permission to view the ${subject} on this project.`;
-  if (status === 404) return `This project's ${subject} could not be found.`;
-  return `The construction data service didn't answer — the ${subject} could not be loaded.`;
+  return describeReadError(subject, {
+    status: error instanceof ApiError ? error.status : null,
+    message: error instanceof Error ? error.message : null,
+  }).sentence;
 }

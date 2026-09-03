@@ -5,6 +5,8 @@
 // matches this codebase's own established convention of keeping business
 // logic independently testable from the DB/network layer.
 
+import { formatMoney, formatSignedMoney } from "@/lib/format-money";
+
 export type Boq = {
   id: string;
   projectId: string;
@@ -18,7 +20,17 @@ export type Boq = {
 export type LineItemDraft = {
   description: string; unit: string; quantity: string; rate: string;
   itemCode?: string; activityId?: string; parentItemCode?: string; breakdownPercentage?: string;
+  // R67 lane I (WS-I item I-05, R-177): the line's work category (Civil,
+  // Gypsum, ...). Optional and never required to Save -- a line with no
+  // category gets a "no category" chip, which is the item's explicit rule:
+  // surface the gap, never block on it.
+  category?: string;
 };
+
+// R67 lane I (WS-I item I-05): the chip shown beside a line that has no
+// category. One constant so the Create and Revise screens can never drift
+// into two different words for the same state.
+export const NO_CATEGORY_CHIP_LABEL = "no category";
 
 export type BoqLineItemRow = {
   id: string; itemCode: string | null; description: string; unit: string;
@@ -31,6 +43,12 @@ export type BoqLineItemRow = {
   computedBudget?: number | null;
   vendorId?: string | null;
   vendorAmount?: string | null;
+  // R67 lane I (WS-I items I-05 and I-03): the line's category, and the
+  // material/manpower split of its budget. All three are served by VERIDIAN's
+  // BOQ GET and written by the same PATCH /api/scope/line-items/{id}.
+  category?: string | null;
+  materialAmount?: string | null;
+  manpowerAmount?: string | null;
 };
 
 export type Vendor = { id: string; vendorName: string };
@@ -50,7 +68,7 @@ export const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructi
 };
 
 export const emptyLine = (): LineItemDraft => ({
-  description: "", unit: "", quantity: "", rate: "", itemCode: "", parentItemCode: "", breakdownPercentage: "",
+  description: "", unit: "", quantity: "", rate: "", itemCode: "", parentItemCode: "", breakdownPercentage: "", category: "",
 });
 
 export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
@@ -73,17 +91,32 @@ export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
     activityId: row.activityId ?? undefined,
     parentItemCode: row.parentLineItemId ? codeById.get(row.parentLineItemId) : undefined,
     breakdownPercentage: row.breakdownPercentage != null ? String(row.breakdownPercentage) : undefined,
+    // R67 lane I (I-05): a revision starts from the existing scope, so it must
+    // start from the existing CATEGORIES too -- dropping them here would
+    // uncategorise the whole BOQ the first time anyone revised it.
+    category: row.category ?? undefined,
   }));
 }
 
+// R67 G-05 / D-74: these three used `toLocaleString(undefined, ...)`, which
+// resolves to the RUNTIME's locale -- the deployment's on the server pass and
+// the visitor's in the browser. Two different strings for one BOQ amount is a
+// hydration mismatch, and neither of them is the organisation's form. They
+// now all route through THE money module, so a BOQ line and a Materials cell
+// on the same screen cannot disagree about how an amount is written.
+//
+// `pending: true` rather than an absent currency: these helpers are called
+// both with a resolved code and without one, and an absent code would print
+// the warning glyph in front of a figure whose currency the CALLER is showing
+// separately (ScopeCompareClient prefixes the code itself). "We were not told
+// here" is the honest state for a helper that takes the code as an argument.
 export function formatVariation(amount: number): string {
   const sign = amount > 0 ? "+" : "";
-  return `${sign}${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `${sign}${formatMoney(amount, { pending: true })}`;
 }
 
 export function formatAmount(value: string | number | null | undefined): string {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "");
+  return formatMoney(value ?? 0, { pending: true });
 }
 
 // Deliberately NOT currencyLabel() from the shared helper: that returns a
@@ -91,8 +124,16 @@ export function formatAmount(value: string | number | null | undefined): string 
 // on a UAE contractor's BOQ. Here an unresolved currency degrades to the bare
 // number instead - no label is survivable, the wrong label is not.
 export function withCurrency(code: string, value: string | number | null | undefined): string {
-  const n = formatAmount(value);
-  return code ? `${code} ${n}` : n;
+  return formatMoney(value ?? 0, { currency: code || null, pending: !code });
+}
+
+/**
+ * A BOQ variance with its DIRECTION readable without colour -- "▲ AED +2,025".
+ * The signed form the money module already owns; exported here so a BOQ screen
+ * reaching for it does not write a fourth one.
+ */
+export function formatSignedAmount(code: string, value: number | string | null | undefined): string {
+  return formatSignedMoney(value, { currency: code || null, pending: !code });
 }
 
 export function childPercentSum(lines: LineItemDraft[], parentItemCode?: string): number | null {
@@ -144,9 +185,14 @@ export function boqTotal(rows: BoqLineItemRow[]): number {
 // the offending row.
 export function collectLines(lines: LineItemDraft[]): { valid: LineItemDraft[]; error: string | null } {
   const val = (s: string | undefined) => (s ?? "").trim();
+  // R67 lane I (I-05): `category` counts as content. A row where the only
+  // thing the user did was pick a category is a row they MEANT -- dropping it
+  // silently is exactly the R47_SILENT_DROP_01 failure this function exists to
+  // prevent. It is still never REQUIRED (see missingFrom below): a line with
+  // no category saves fine and shows a "no category" chip.
   const isUntouched = (l: LineItemDraft) =>
     !val(l.description) && !val(l.unit) && !val(l.quantity) && !val(l.rate) &&
-    !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage);
+    !val(l.itemCode) && !val(l.parentItemCode) && !val(l.breakdownPercentage) && !val(l.category);
 
   const unitFor = (l: LineItemDraft): string => {
     const own = val(l.unit);
@@ -192,5 +238,9 @@ export function toPayloadLineItems(validLines: LineItemDraft[]) {
     ...(l.activityId ? { activityId: l.activityId } : {}),
     ...(l.parentItemCode?.trim() ? { parentItemCode: l.parentItemCode.trim() } : {}),
     ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
+    // R67 lane I (I-05): omitted entirely when blank, so the server's own
+    // normalizeCategory stores NULL rather than an empty string -- "" and null
+    // must never become two different "no category" values in one column.
+    ...(l.category?.trim() ? { category: l.category.trim() } : {}),
   }));
 }

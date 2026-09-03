@@ -30,15 +30,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
+import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDayMonthYear } from "@/lib/format-date";
-import { formatMoney } from "@/lib/format-money";
+
 import { ATTENDANCE_STATUS_LABEL, loadFailureSentence, type AttendanceStatus } from "@/lib/attendance-sheet";
 
 type RosterEntry = { id: string; projectId: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
@@ -63,7 +65,11 @@ function monthPresets(today = new Date()): { label: string; from: string; to: st
 
 export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   const router = useRouter();
-  const currencies = useCurrencies();
+  // R67 G-05 merge: the org's currency is resolved once for the screen and the
+  // formatter comes back bound to it, so no cell can be rendered with the wrong
+  // currency by forgetting to pass one.
+  const orgMoney = useOrgMoney();
+  const money = orgMoney.money;
   const [entry, setEntry] = useState<RosterEntry | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -170,15 +176,40 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
       </div>
     );
   }
-  if (!entry) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290) merge: the SAME frame the route's own loading.tsx paints,
+  // so the hand-over from the route skeleton to this client is invisible and
+  // the word "Loading" is never alone on the screen. It says what it is waiting
+  // for after 3 s and offers Retry at 8 s, D-04's abort budget. What it
+  // replaced was a bare paragraph whose entire content was the word "Loading",
+  // which is the exact shape object-breadcrumbs.test.ts scans this file for --
+  // so the old markup is described here rather than quoted.
+  if (!entry)
+    return (
+      <KitObjectScreen
+        loading
+        breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
+        label={LABOUR_OBJECT_BREADCRUMB.label}
+        actions={LABOUR_OBJECT_BREADCRUMB.actions}
+      />
+    );
 
   const vendorName = vendors.find((v) => v.id === entry.vendorId)?.vendorName ?? "—";
   const windowCost = attendance.reduce((sum, row) => sum + Number(row.dailyCost || 0), 0);
   const keptRows = lifetimeRows ?? attendance.length;
 
   return (
+    <>
+    {/* R67 A-21: the composer's strip names this worker and their project --
+        "<project> › Worker Ramesh Kumar" -- instead of the module. Published
+        after the fetch, which is when this page first knows either. */}
+    <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
+    {/* R67 D-33 / decision D-09: the KIT's ObjectScreen cannot say
+        "Deactivate" -- its delete control is hard-coded to "Delete", which is
+        the wrong word for a reversible status change that keeps every row.
+        KitObjectScreen is the fork that adds deleteLabel and a display-mode
+        secondaryAction, and nothing else. */}
     <KitObjectScreen
-      breadcrumb="Labour / Worker"
+      breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
       hasDraft={false}
@@ -187,7 +218,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         { label: "ID", value: entry.employeeCode ?? "—" },
         { label: "Trade", value: entry.trade ?? "—" },
         { label: "Company", value: vendorName },
-        { label: "Daily Rate", value: formatMoney(entry.dailyRate, currencies) },
+        { label: "Daily Rate", value: money(entry.dailyRate) },
       ]}
       onEdit={entry.isActive && mode === "display" ? startEdit : undefined}
       // Deactivation is no longer one-way: an inactive worker gets Reactivate
@@ -256,7 +287,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
                 { label: "ID", value: entry.employeeCode ?? "—" },
                 { label: "Trade", value: entry.trade ?? "—" },
                 { label: "Company", value: vendorName },
-                { label: "Daily Rate", value: formatMoney(entry.dailyRate, currencies) },
+                { label: "Daily Rate", value: money(entry.dailyRate) },
                 { label: "Status", value: entry.isActive ? "Active" : "Inactive" },
               ].map((field) => (
                 <div key={field.label} className="text-[12.5px]">
@@ -305,14 +336,14 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
                       <TableCell>{formatDayMonthYear(row.attendanceDate)}</TableCell>
                       <TableCell>{ATTENDANCE_STATUS_LABEL[row.status as AttendanceStatus] ?? row.status}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.hoursWorked ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(row.dailyCost, currencies)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{money(row.dailyCost)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
                 <TableFooter>
                   <TableRow>
                     <TableCell colSpan={3} className="font-semibold">Total cost</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{formatMoney(windowCost, currencies)}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">{money(windowCost)}</TableCell>
                   </TableRow>
                 </TableFooter>
               </Table>
@@ -321,5 +352,6 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         </>
       )}
     </KitObjectScreen>
+    </>
   );
 }

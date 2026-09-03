@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AGGREGATION_LABELS, computeChartData, type AggregationFn } from "./pivot-utils";
+import { formatCompactNumber } from "@/lib/format-number";
 
 type ChartType = "bar" | "line" | "pie";
 
@@ -22,7 +23,11 @@ const PIE_COLORS = [
   "var(--color-chart-4)",
   "var(--color-chart-5)",
 ];
-const PIE_OTHER_COLOR = "var(--color-px-muted)";
+// R67 WS-G: the "Other" bucket keeps a neutral, but it is the readable grey
+// (--status-neutral-text, 7.41:1 on cream) rather than --color-px-muted,
+// which is decorative and does not clear the floor for a mark that carries a
+// labelled category.
+const PIE_OTHER_COLOR = "var(--status-neutral-text)";
 const PIE_MAX_SLICES = 5;
 
 const chartConfig = { value: { label: "Value", color: SERIES_COLOR } } satisfies ChartConfig;
@@ -104,7 +109,22 @@ export function ReportChart({ columns, rows }: { columns: string[]; rows: Record
               <XAxis dataKey="category" tickLine={false} axisLine={false} tickMargin={8} />
               <YAxis tickLine={false} axisLine={false} width={48} />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="value" fill={SERIES_COLOR} radius={4} />
+              {/* R67 WS-G (R-227): radius 0, and the value printed at the bar
+                  end. A rounded cap makes the top of a bar ambiguous against
+                  the gridline it is being read off; the printed number means
+                  the bar's LENGTH stops being the only way to read it, which
+                  is also what exempts the muted fills from the 3:1 non-text
+                  floor (WCAG 1.4.11). */}
+              <Bar dataKey="value" fill={SERIES_COLOR} radius={0}>
+                <LabelList
+                  dataKey="value"
+                  position="top"
+                  offset={6}
+                  className="fill-ct-navy"
+                  fontSize={11}
+                  formatter={(v: number) => formatCompactNumber(v)}
+                />
+              </Bar>
             </BarChart>
           ) : chartType === "line" ? (
             <LineChart data={data} margin={{ left: 8, right: 8 }}>

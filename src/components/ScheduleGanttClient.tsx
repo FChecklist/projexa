@@ -41,7 +41,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import type { FieldMessage, ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { displayScheduleDate, EMPTY_DATE_CELL, toGanttDateFields } from "@/lib/gantt-task-dates";
 import { formatDateNumeric, formatDayMonthYear } from "@/lib/format-date";
@@ -155,7 +157,8 @@ export default function ScheduleGanttClient({
   const [dependencies, setDependencies] = useState<GanttDependency[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [capturing, setCapturing] = useState(false);
 
   const [baselines, setBaselines] = useState<Baseline[]>([]);
@@ -187,16 +190,20 @@ export default function ScheduleGanttClient({
 
   async function loadGantt() {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
       const res = await fetch(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load schedule");
-      setTasks(data.tasks ?? []);
-      setDependencies(data.dependencies ?? []);
-      setMilestones(data.milestones ?? []);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setTasks(Array.isArray(data?.tasks) ? data.tasks : []);
+      setDependencies(Array.isArray(data?.dependencies) ? data.dependencies : []);
+      setMilestones(Array.isArray(data?.milestones) ? data.milestones : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load schedule");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -328,15 +335,34 @@ export default function ScheduleGanttClient({
     }
   }
 
+  // R67 D-46: the timeline's own shape -- three summary tiles and five row
+  // bars -- rather than a spinner in the middle of an empty pane.
   if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+    return (
+      <div className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the schedule" onRetry={() => void loadGantt()} />
+        <div className="flex flex-wrap items-center gap-4">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="min-w-[140px] flex-1">
+              <CardContent className="space-y-2 p-4">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-7 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="shadow-card">
+          <CardContent className="space-y-3 p-4">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   if (error) {
-    return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load schedule: {error}</CardContent>
-      </Card>
-    );
+    return <PaneErrorCard entity="the schedule" error={error} onRetry={() => void loadGantt()} />;
   }
 
   const criticalCount = tasks.filter((t) => t.isCritical).length;
@@ -496,7 +522,24 @@ export default function ScheduleGanttClient({
     <div className="space-y-4">
       <div className="flex flex-wrap items-stretch gap-4">
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "taskCount", "Tasks")}</p><p className="text-2xl font-heading text-px-ink">{tasks.length}</p></CardContent></Card>
-        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p><p className="text-2xl font-heading text-px-error">{criticalCount}</p></CardContent></Card>
+        {/* R67 D-46: a tile that is permanently red says nothing. Zero tasks
+            on the critical path is GOOD NEWS and reads in the ordinary ink
+            tone; only a real count above zero takes the error token, and it
+            takes a glyph and the word "critical" with it -- never colour
+            alone, which is lost to greyscale, to colour-blindness and to a
+            screenshot pasted into a report. */}
+        <Card className="flex-1 min-w-[140px]"><CardContent className="p-4">
+          <p className="text-xs text-px-muted">{columnLabel(labelColumns, "criticalCount", "On Critical Path")}</p>
+          {criticalCount > 0 ? (
+            <p className="flex items-center gap-1.5 text-2xl font-heading text-px-error">
+              <AlertTriangle className="size-5" aria-hidden />
+              {criticalCount}
+              <span className="text-xs font-normal">critical</span>
+            </p>
+          ) : (
+            <p className="text-2xl font-heading text-px-ink">{criticalCount}</p>
+          )}
+        </CardContent></Card>
         <Card className="flex-1 min-w-[140px]"><CardContent className="p-4"><p className="text-xs text-px-muted">{columnLabel(labelColumns, "milestoneCount", "Milestones")}</p><p className="text-2xl font-heading text-px-ink">{milestones.length}</p></CardContent></Card>
         {/* R67 D-45's fourth tile. The one number a PM opens this module for --
             and, until now, the one number the product could not answer. */}

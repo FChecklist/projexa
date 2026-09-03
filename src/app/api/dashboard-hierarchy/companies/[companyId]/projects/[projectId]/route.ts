@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 type ProjectDashboard = {
   projectId: string;
@@ -87,7 +89,7 @@ async function progressAsOf(companyId: string, projectId: string, toDate?: strin
 // stream, so a date range has no real meaning to slice it by; this is
 // disclosed via `budgetIsPeriodTotal` rather than silently ignoring the
 // filter.
-export async function GET(request: NextRequest, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
   const { companyId, projectId } = await params;
   const scope = await requireCompanyScope(companyId);
   if (scope.response) return scope.response;
@@ -121,6 +123,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       toDate: toDate ?? null,
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load project details" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load project details");
   }
-}
+});

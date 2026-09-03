@@ -38,6 +38,7 @@ import { MobileSidebarTrigger } from "@/components/AppSidebar";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import { createClient } from "@/lib/supabase/client";
+import { rememberSelectedProject } from "@/lib/project-cookie";
 import Image from "next/image";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
@@ -63,6 +64,10 @@ export function AppTopbar({
   async function handleLogout() {
     setLoggingOut(true);
     const supabase = createClient();
+    // See AccountMenu: a selected-project cookie that outlives the session
+    // makes the next user's list screens report "there are none" about a
+    // project that was never theirs.
+    rememberSelectedProject(null);
     await supabase.auth.signOut();
     router.push("/login");
   }
@@ -74,7 +79,7 @@ export function AppTopbar({
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="gap-2 px-2 text-ct-navy hover:bg-ct-cloud">
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-ct-saffron text-white text-xs font-bold">{initials}</AvatarFallback>
+            <AvatarFallback className="bg-ct-saffron text-ct-navy text-xs font-bold">{initials}</AvatarFallback>
           </Avatar>
           <span className="hidden max-w-40 truncate md:inline text-sm font-medium">{info?.email || "Account"}</span>
           <ChevronDown className="size-3 text-ct-muted" />

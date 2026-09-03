@@ -7,7 +7,11 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const push = mock((_href: string) => {});
-mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: () => {}, back: () => {} }) }));
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push, prefetch: () => {}, replace: () => {}, back: () => {} }),
+  usePathname: () => "/schedule/tasks/t1",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const ScheduleTaskObjectClient = (await import("./ScheduleTaskObjectClient")).default;
 

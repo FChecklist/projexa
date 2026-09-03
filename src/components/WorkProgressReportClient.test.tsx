@@ -16,7 +16,7 @@
 // the output as an HTML string instead of through a jsdom-backed query API.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
+import { CategoryFilterGroup, ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
 
 function textsOfTag(html: string, tag: string): string[] {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>(.*?)</${tag}>`, "gs");
@@ -137,5 +137,80 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
   test("a real touched value still uses money()'s thousands formatting, not a raw number", () => {
     const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
     expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
+  });
+});
+
+// R67 lane I (WS-I item I-05, R-177): the Category multi-select the item asks
+// for on the WPR parameter bar. Same renderToStaticMarkup approach as above --
+// this asserts the real component's markup, not a description of it.
+const noop = () => {};
+
+describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
+  test("renders one labelled checkbox per available category, with its name", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup
+        available={["Civil", "Electrical", "Paint"]}
+        selected={[]}
+        disabled={false}
+        onToggle={noop}
+        onApply={noop}
+      />
+    );
+    expect(Array.from(html.matchAll(/type="checkbox"/g))).toHaveLength(3);
+    for (const name of ["Civil", "Electrical", "Paint"]) expect(html).toContain(name);
+  });
+
+  test("the group is labelled 'Category' and reachable by its test id", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup available={["Civil"]} selected={[]} disabled={false} onToggle={noop} onApply={noop} />
+    );
+    expect(html).toContain('id="wpr-category-filter-label"');
+    expect(html).toContain("Category");
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-labelledby="wpr-category-filter-label"');
+    expect(html).toContain('data-testid="wpr-category-filter"');
+    expect(html).toContain('data-testid="wpr-category-apply"');
+  });
+
+  test("an EMPTY selection reads 'All categories' -- never as 'nothing matches'", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup
+        available={["Civil", "Electrical"]}
+        selected={[]}
+        disabled={false}
+        onToggle={noop}
+        onApply={noop}
+      />
+    );
+    expect(html).toContain("All categories");
+    expect(html).not.toContain("selected");
+  });
+
+  test("a non-empty selection reports its count, and exactly those boxes are checked", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup
+        available={["Civil", "Electrical", "Paint"]}
+        selected={["Civil", "Paint"]}
+        disabled={false}
+        onToggle={noop}
+        onApply={noop}
+      />
+    );
+    expect(html).toContain("2 selected");
+    expect(Array.from(html.matchAll(/type="checkbox" checked=""/g))).toHaveLength(2);
+  });
+
+  test("no categories at all: renders NOTHING rather than an empty filter box", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup available={[]} selected={[]} disabled={false} onToggle={noop} onApply={noop} />
+    );
+    expect(html).toBe("");
+  });
+
+  test("Apply is disabled while a report is already running", () => {
+    const html = renderToStaticMarkup(
+      <CategoryFilterGroup available={["Civil"]} selected={["Civil"]} disabled onToggle={noop} onApply={noop} />
+    );
+    expect(html).toMatch(/data-testid="wpr-category-apply"[^>]*disabled=""|disabled=""[^>]*data-testid="wpr-category-apply"/);
   });
 });

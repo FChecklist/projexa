@@ -29,10 +29,23 @@ export type BoqLineItem = {
   // was present on the wire and silently invisible to TypeScript here.
   parentLineItemId?: string | null;
   breakdownPercentage?: string | number | null;
+  // R67 lane I (WS-I item I-05, R-177): the line's OWN category, from
+  // compliance.construction_boq_line_items.category (drizzle/0532). This is
+  // now the primary source of a row's categoryName -- see
+  // computeLineItemProgress's own comment for the resolution order and why it
+  // changed.
+  category?: string | null;
 };
 
 export type Activity = { id: string; categoryId: string; name: string; unit?: string | null };
 export type Category = { id: string; name: string };
+
+// R67 lane I (WS-I item I-05, R-177): the bucket a line with no category at
+// all falls into. ONE constant here and one in compliance-tracker's
+// construction-reports-service.ts (UNCATEGORIZED_LABEL) -- they must stay the
+// same word, or a Category filter chosen on this screen would not match the
+// bucket the server-side report produces for the same rows.
+export const UNCATEGORIZED_LABEL = "Uncategorized";
 
 export type ProgressEntry = {
   id: string;
@@ -192,6 +205,17 @@ export function computeLineItemProgress(
 
   const activity = line.activityId ? activitiesById.get(line.activityId) : undefined;
   const category = activity ? categoriesById.get(activity.categoryId) : undefined;
+  // R67 lane I (WS-I item I-05, R-177). CATEGORY RESOLUTION ORDER:
+  //   1. the line's own `category` text (the new column);
+  //   2. failing that, activityId -> activity.categoryId -> category.name
+  //      (what this file did exclusively before, so every pre-existing
+  //      categorised line reports exactly as it always has);
+  //   3. failing both, "Uncategorized".
+  // The direct column wins because most real lines have no activityId at all
+  // -- an imported BOQ never does -- which is precisely why the Category-wise
+  // tab used to put nearly everything in Uncategorized. Trimmed and
+  // blank-checked so a stray "" can never masquerade as a real category name.
+  const directCategory = typeof line.category === "string" && line.category.trim() !== "" ? line.category.trim() : null;
 
   // No `line.activityId ?` guard here anymore -- a line with no activityId
   // at all can still have real Option-B entries keyed by boq_line_item_id,
@@ -270,8 +294,11 @@ export function computeLineItemProgress(
     parentLineItemId: line.parentLineItemId ?? null,
     code: line.itemCode ?? "",
     description: line.description,
-    categoryId: category?.id ?? null,
-    categoryName: category?.name ?? "Uncategorized",
+    // A direct-category row has no constructionCategories id behind it, so
+    // categoryId stays null and the roll-up groups it by NAME instead (see
+    // buildWorkProgressReport's grouping key) -- never by a fabricated id.
+    categoryId: directCategory ? null : (category?.id ?? null),
+    categoryName: directCategory ?? category?.name ?? UNCATEGORIZED_LABEL,
     unit: line.unit,
     rate,
     qtyTotal: qtyTotalBoq,
@@ -418,7 +445,65 @@ export type WorkProgressReport = {
   to: string;
   rows: LineItemProgress[]; // scope-wise: one row per BoQ line item (the base report itself)
   byCategory: ReturnType<typeof rollupBy>;
+  /** R67 I-05: every category name present BEFORE the filter was applied -- what the multi-select offers. */
+  availableCategories: string[];
+  /**
+   * R67 B-09 -- how many entries in this window resolve to NO BOQ line at
+   * all, and are therefore absent from every figure above.
+   *
+   * This report has always silently dropped them: entryBelongsToLine()
+   * claims an entry for a line by boq_line_item_id or, failing that, by
+   * activity, and an entry matching neither simply never appears in any
+   * row. On a project with no BOQ that is the whole day's work. Counting
+   * them here is what lets the screen say so instead of showing a total the
+   * site engineer knows is wrong and cannot explain.
+   */
+  unlinkedEntryCount: number;
 };
+
+/**
+ * Entries inside [from, to] that no line item in this BOQ can claim. Pure and
+ * exported so the rule is testable on its own, and so the number the note
+ * quotes is computed by the same predicate the report itself uses -- not by a
+ * second, drifting definition of "linked".
+ */
+export function countUnlinkedEntries(params: {
+  lineItems: Pick<BoqLineItem, "id" | "activityId">[];
+  entries: ProgressEntry[];
+  from: string;
+  to: string;
+}): number {
+  return params.entries.filter(
+    (e) => inRange(e.entryDate, params.from, params.to) && !params.lineItems.some((line) => entryBelongsToLine(e, line))
+  ).length;
+}
+
+/**
+ * The sentence shown above the table. null when there is nothing to say --
+ * a note that renders "0 entries ..." is noise, and the commonest case is
+ * zero.
+ */
+export function unlinkedEntriesNote(count: number): string | null {
+  if (count <= 0) return null;
+  if (count === 1) return "1 entry not linked to a BOQ line is not counted";
+  return `${count} entries not linked to a BOQ line are not counted`;
+}
+
+/**
+ * R67 lane I (WS-I item I-05, R-177): keeps only the rows whose category is in
+ * `categoryFilter`. Case-insensitive, matching compliance-tracker's own
+ * rollUpLinesByCategory -- a line imported as "civil" must not silently
+ * disappear from a "Civil" filter, which would be a MISSING ROW in a money
+ * report. An empty or all-blank filter means every category, never none:
+ * returning an empty report there would look exactly like "this project has no
+ * BOQ", a different and much more alarming fact.
+ */
+export function filterRowsByCategory(rows: LineItemProgress[], categoryFilter?: string[]): LineItemProgress[] {
+  const cleaned = (categoryFilter ?? []).map((c) => c.trim().toLowerCase()).filter((c) => c !== "");
+  if (cleaned.length === 0) return rows;
+  const wanted = new Set(cleaned);
+  return rows.filter((r) => wanted.has(r.categoryName.toLowerCase()));
+}
 
 /** Builds the scope-wise (base) report plus its category-wise rollup for the [from, to] date range. */
 export function buildWorkProgressReport(params: {
@@ -428,6 +513,8 @@ export function buildWorkProgressReport(params: {
   categories: Category[];
   from: string;
   to: string;
+  /** R67 I-05: applied server-side, before the rollup, so subtotals and the Grand Total both describe the filtered set. */
+  categoryFilter?: string[];
 }): WorkProgressReport {
   const activitiesById = new Map(params.activities.map((a) => [a.id, a]));
   const categoriesById = new Map(params.categories.map((c) => [c.id, c]));
@@ -435,13 +522,42 @@ export function buildWorkProgressReport(params: {
   const ownRows = params.lineItems.map((line) =>
     computeLineItemProgress(line, params.entries, activitiesById, categoriesById, params.from, params.to)
   );
-  const rows = applyWeightedParentRollup(ownRows, lineItemsById);
+  // The weighted parent roll-up runs over EVERY row, before filtering: a
+  // parent's numbers come from its children, so filtering first would silently
+  // change a parent's total whenever a child sat in another category.
+  const allRows = applyWeightedParentRollup(ownRows, lineItemsById);
+  const availableCategories = [...new Set(allRows.map((r) => r.categoryName))].sort((a, b) => {
+    if (a === UNCATEGORIZED_LABEL) return 1;
+    if (b === UNCATEGORIZED_LABEL) return -1;
+    return a.localeCompare(b);
+  });
+  const rows = filterRowsByCategory(allRows, params.categoryFilter);
   const byCategory = rollupBy(
     rows,
-    (r) => r.categoryId ?? "uncategorized",
+    // R67 I-05: grouped by categoryId when there is one, else by the category
+    // NAME -- a direct-category row has no constructionCategories id, and
+    // collapsing every one of them onto the single "uncategorized" key (what
+    // `r.categoryId ?? "uncategorized"` alone would do) would merge Civil,
+    // Gypsum and Paint into one bucket the moment the new column is populated.
+    (r) => r.categoryId ?? `name:${r.categoryName.toLowerCase()}`,
     (r) => r.categoryName
   );
-  return { from: params.from, to: params.to, rows, byCategory };
+  return {
+    from: params.from,
+    to: params.to,
+    rows,
+    byCategory,
+    availableCategories,
+    // R67 B-09: counted over the UNFILTERED entry set, deliberately -- an
+    // entry no line can claim is missing from the report whatever category
+    // filter is applied, so scoping this to the filter would understate it.
+    unlinkedEntryCount: countUnlinkedEntries({
+      lineItems: params.lineItems,
+      entries: params.entries,
+      from: params.from,
+      to: params.to,
+    }),
+  };
 }
 
 // -- Manpower-wise / Vendor-wise --------------------------------------------

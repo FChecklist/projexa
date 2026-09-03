@@ -54,8 +54,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Pencil, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDateNumeric } from "@/lib/format-date";
-import { formatMoney, formatQty, resolveCurrencyCode } from "@/lib/format-money";
-import { useCurrencies, type Currency } from "@/lib/currency";
+import { EMPTY_VALUE, MONEY_CELL_CLASS, formatQty } from "@/lib/format-money";
+import { materialUnitLabel } from "@/lib/material-units";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
 type Material = {
@@ -110,20 +112,28 @@ const RIGHT_ALIGNED_FIELDS = new Set(["unitCost", "receivedToDate", "onHand"]);
 
 const VALID_TABS = new Set(["master", "receipts", "issues", "cost-report"]);
 
+// R67 D-74/G-05: money columns, named by FIELD -- the master's columns come
+// from the registry and can be reordered live. The header carries the
+// currency, the cell is right-aligned with tabular figures.
+const MONEY_FIELDS = new Set(["unitCost"]);
+
 // Per-field cell renderer for the Material Master table -- same reasoning
 // as ChangeOrdersClient.tsx's renderChangeOrderCell: a registry row can
 // still reorder/relabel these 4 columns live (the hard-stop test), looked
 // up by field name so reordering doesn't change what renders. `default`
 // covers any field a future registry row names that this component doesn't
 // know about yet.
-function renderMaterialCell(field: string, m: Material, currencies: Currency[]) {
+function renderMaterialCell(field: string, m: Material, money: (v: number | string | null | undefined) => string) {
   switch (field) {
     case "name":
       return <span className="font-medium">{m.name}</span>;
     case "spec":
-      return <span className="text-px-muted">{m.spec ?? "—"}</span>;
+      return <span className="text-px-muted">{m.spec ?? EMPTY_VALUE}</span>;
     case "unit":
-      return m.unit;
+      // R67 G-05: the stored value is now one of the closed vocabulary, and
+      // this expands it for display ("cum" -> "cum (cubic metre)"). A legacy
+      // row outside the vocabulary shows verbatim rather than blank.
+      return materialUnitLabel(m.unit);
     case "unitCost":
       // R55_MATERIALS_UNITCOST_NO_AED_01: was a bare `m.unitCost`, so the
       // column rendered unlabelled numbers with no currency anywhere on the
@@ -131,7 +141,7 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
       // orders), so this is always the org base currency. R67: through the
       // shared formatter, so "AED 420.00" reads identically here, on the
       // receipts tab and on the Cost Report.
-      return formatMoney(m.unitCost, currencies);
+      return money(m.unitCost);
     // R67 D-40. Quantities are not money: no currency token, and an absent
     // figure is an en-dash, never a confident "0".
     case "receivedToDate":
@@ -163,7 +173,7 @@ function renderMaterialCell(field: string, m: Material, currencies: Currency[]) 
       );
     }
     default:
-      return String((m as unknown as Record<string, unknown>)[field] ?? "—");
+      return String((m as unknown as Record<string, unknown>)[field] ?? EMPTY_VALUE);
   }
 }
 
@@ -260,7 +270,11 @@ export default function MaterialsClient({
     const present = new Set(resolved.map((col) => col.field));
     return [...resolved, ...QUANTITY_COLUMNS.filter((col) => !present.has(col.field))];
   }, [registryColumns]);
-  const currencies = useCurrencies();
+  // R67 G-05 merge: the org's currency is resolved ONCE for the screen and the
+  // formatter comes back bound to it, so no cell can be rendered with the wrong
+  // currency by forgetting to pass one -- and the three tabs cannot disagree.
+  const orgMoney = useOrgMoney();
+  const money = orgMoney.money;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "master");
   const [materialFilter, setMaterialFilter] = useState(initialMaterialId ?? "");
   const [query, setQuery] = useState("");
@@ -507,7 +521,7 @@ export default function MaterialsClient({
   }
 
   function exportMaster() {
-    const code = resolveCurrencyCode(currencies);
+    const code = (orgMoney.currency ?? "");
     const rows = visibleMaterials.map((m, i) => [
       i + 1, m.name, m.spec ?? "", m.unit, m.unitCost,
       // R67 D-40: the export carries the same quantities the table shows -- an
@@ -527,7 +541,7 @@ export default function MaterialsClient({
   // than no export. Relayed through this repo's own RFC-4180 CSV writer; no
   // XLSX/PDF library may exist in projexa.
   function exportCostReport() {
-    const code = resolveCurrencyCode(currencies);
+    const code = (orgMoney.currency ?? "");
     const rows: unknown[][] = report.map((r, i) => [
       i + 1, r.name, r.spec ?? "", r.unit, r.totalQuantityReceived, r.totalCost, r.averageUnitCost,
     ]);
@@ -695,7 +709,7 @@ export default function MaterialsClient({
                               </select>
                             ) : isEditing && col.field === "unitCost" ? (
                               <span className="inline-flex items-center justify-end gap-1">
-                                <span className="text-px-muted">{resolveCurrencyCode(currencies)}</span>
+                                <span className="text-px-muted">{(orgMoney.currency ?? "")}</span>
                                 <Input
                                   autoFocus
                                   type="number"
@@ -713,7 +727,7 @@ export default function MaterialsClient({
                               </span>
                             ) : (
                               <span className={editable ? "inline-flex items-center gap-1" : undefined}>
-                                {renderMaterialCell(col.field, m, currencies)}
+                                {renderMaterialCell(col.field, m, money)}
                                 {editable && (
                                   <Pencil
                                     className="size-3 opacity-0 transition-opacity group-hover:opacity-60"
@@ -851,8 +865,8 @@ export default function MaterialsClient({
                         <TableCell className="text-px-muted">{vendorName(r.vendorId)}</TableCell>
                         <TableCell className="text-px-muted">{r.reference ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatQty(r.quantity)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(r.unitCost, currencies)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(lineTotal(r), currencies)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(r.unitCost)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(lineTotal(r))}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -1040,10 +1054,10 @@ export default function MaterialsClient({
                         </TableCell>
                         <TableCell>{r.unit}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatQty(r.totalQuantityReceived)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(r.totalCost, currencies)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatMoney(r.averageUnitCost, currencies)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(r.totalCost)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(r.averageUnitCost)}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {master ? formatMoney(master.unitCost, currencies) : "—"}
+                          {master ? money(master.unitCost) : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {variance === null ? (
@@ -1051,10 +1065,10 @@ export default function MaterialsClient({
                           ) : variance > 0 ? (
                             // Never colour alone: the clay glyph AND the word.
                             <span className="text-[color:var(--color-veri-status-needs-you)]">
-                              ▲ over {formatMoney(variance, currencies)}
+                              ▲ over {money(variance)}
                             </span>
                           ) : variance < 0 ? (
-                            <span className="text-px-muted">▼ under {formatMoney(Math.abs(variance), currencies)}</span>
+                            <span className="text-px-muted">▼ under {money(Math.abs(variance))}</span>
                           ) : (
                             <span className="text-px-muted">on plan</span>
                           )}
@@ -1070,7 +1084,7 @@ export default function MaterialsClient({
                       {formatQty(report.reduce((sum, r) => sum + r.totalQuantityReceived, 0))}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatMoney(Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100, currencies)}
+                      {money(Math.round(report.reduce((sum, r) => sum + r.totalCost, 0) * 100) / 100)}
                     </TableCell>
                     {/* Averages do not add up, and a sum of averages is a number
                         that means nothing -- so these three stay blank. */}

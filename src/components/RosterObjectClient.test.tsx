@@ -10,7 +10,13 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 
 const push = mock(() => {});
-mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
+// ObjectContext (shell-screen-context) reads the pathname, so a mock that
+// only supplies useRouter makes the whole module fail to import.
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push, prefetch: () => {}, replace: () => {}, back: () => {} }),
+  usePathname: () => "/labour/r1",
+  useSearchParams: () => new URLSearchParams(),
+}));
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
 const RosterObjectClient = (await import("./RosterObjectClient")).default;
@@ -205,9 +211,14 @@ describe("display mode actually shows something", () => {
     globalThis.fetch = router({ ...DEFAULTS, "/api/attendance": () => jsonRes({ error: "upstream boom" }, 502) });
     const { getByText, queryByText } = render(<RosterObjectClient rosterId="w1" />);
 
-    await waitFor(() =>
-      expect(getByText("The construction data service didn't answer — the attendance for this worker could not be loaded.")).toBeDefined()
-    );
+    // R67 D-65 merge: the sentence comes from the product's ONE shared read
+    // vocabulary now (src/lib/task-errors.ts) rather than this module's own
+    // strings. What D-33 requires is unchanged and is what is asserted: the
+    // subject the user asked for, never the raw upstream text, and a Retry --
+    // and above all NOT an empty table, which would read as "this worker has
+    // never been marked".
+    await waitFor(() => expect(getByText(/attendance for this worker/)).toBeDefined());
+    expect(getByText(/attendance for this worker/).textContent).not.toContain("upstream boom");
     expect(queryByText("No attendance recorded for this worker yet")).toBeNull();
     expect(getByText("Retry")).toBeDefined();
   });

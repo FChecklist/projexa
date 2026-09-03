@@ -20,6 +20,15 @@
 // loads, and a failure hands the backend's own sentence plus a Retry to the
 // persistent footer message area rather than replacing the screen with a red
 // card.
+//
+// MERGE NOTE (D-46 / D-07). Two things arrive from main and are kept whole.
+// PaneWaitingCaption names the module at 2 s, counts from 3 s and offers a
+// way out at 8 s -- it sits ABOVE this lane's skeleton rows rather than
+// replacing them, because the two answer different halves of the same wait
+// ("what is coming" and "how long has it been"). And "Open in Design Studio"
+// is the D-07 view switch onto the same hours in Sumeet's own columns; it is
+// the only way that route is reachable by clicking, which nav-routes.test.ts
+// records against its /design-studio allowlist entry.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +36,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { PaneWaitingCaption } from "@/components/PaneState";
+import { ListStateRegion } from "@/components/ListScreenFrame";
 import SkeletonTable from "@/components/SkeletonTable";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDayMonthYear } from "@/lib/format-date";
@@ -64,9 +75,14 @@ export default function ScheduleTimesheetClient({
   const [error, setError] = useState<string | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
 
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // When this attempt began, so PaneWaitingCaption can say how long it has
+    // been rather than only that it is still going.
+    setStartedAt(Date.now());
     try {
       const data = await fetchJson<{ entries?: Entry[] }>(
         `/api/timesheets?projectId=${encodeURIComponent(projectId)}${mineOnly ? "&mine=true" : ""}`
@@ -119,7 +135,10 @@ export default function ScheduleTimesheetClient({
   const totalHours = entries.reduce((sum, e) => sum + Number(e.hours), 0);
 
   return (
-    <div className="space-y-4">
+    <ListStateRegion
+      state={loading ? "loading" : error ? "error" : entries.length > 0 ? "ready" : "empty"}
+      className="space-y-4"
+    >
       {/* Rendered unconditionally: a user who arrived to log time can still do
           it while the list loads, and can still do it when the list failed. */}
       <div className="flex items-center justify-between">
@@ -132,16 +151,26 @@ export default function ScheduleTimesheetClient({
         >
           {mineOnly ? "Showing my entries" : "Show my entries only"}
         </Button>
-        <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}>
-          <Plus className="size-4" /> Log Time
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* R67 D-07: the same hours, laid out for a designer. A view switch,
+              not a second module -- and the only click-path to that route. */}
+          <Button variant="outline" onClick={() => router.push(`/design-studio?projectId=${projectId}`)}>
+            Open in Design Studio
+          </Button>
+          <Button onClick={() => router.push(`/schedule/log-time?projectId=${projectId}`)}>
+            <Plus className="size-4" /> Log Time
+          </Button>
+        </div>
       </div>
       {loading ? (
-        <Card className="shadow-card">
-          <CardContent className="p-0">
-            <SkeletonTable headers={COLUMN_LABELS} rows={3} caption="Loading time entries…" />
-          </CardContent>
-        </Card>
+        <>
+          <PaneWaitingCaption startedAt={startedAt} entity="the timesheet" onRetry={() => void load()} />
+          <Card className="shadow-card">
+            <CardContent className="p-0">
+              <SkeletonTable headers={COLUMN_LABELS} rows={3} caption="Loading time entries…" />
+            </CardContent>
+          </Card>
+        </>
       ) : error ? (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-center gap-3 py-16 text-center text-sm text-px-muted">
@@ -201,6 +230,6 @@ export default function ScheduleTimesheetClient({
           </CardContent>
         </Card>
       )}
-    </div>
+    </ListStateRegion>
   );
 }

@@ -75,3 +75,29 @@ export function resolveCategoryValue(selected: string, otherText: string): strin
   const trimmed = otherText.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
+
+/**
+ * The project's own construction categories, merged with the seed.
+ *
+ * ONE fetch, and it never rejects: a failed lookup degrades to the seeded
+ * vocabulary rather than leaving a REQUIRED select with nothing in it. The
+ * caller therefore has no error branch to render for this field -- a category
+ * list that is merely shorter than it could be is not a failure the user can
+ * act on, and telling them about it would be noise beside a working control.
+ *
+ * The source is GET /api/work-progress/activities, which already returns the
+ * project's categories alongside its activities. See the note at the top of
+ * this file for the one line to repoint when lane I's /api/scope/categories
+ * proxy lands in this repo.
+ */
+export async function loadCategoryNames(projectId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`);
+    if (!res.ok) return mergeCategoryNames([]);
+    const data = (await res.json()) as { categories?: { name?: string | null }[] } | null;
+    const names = (data?.categories ?? []).map((c) => (c?.name ?? "").trim()).filter(Boolean);
+    return mergeCategoryNames(names);
+  } catch {
+    return mergeCategoryNames([]);
+  }
+}

@@ -37,8 +37,8 @@ import SkeletonTable from "@/components/SkeletonTable";
 import { PageHeading } from "@/components/PageHeading";
 import { fetchJson } from "@/lib/fetch-json";
 import { formatDayMonthYear } from "@/lib/format-date";
-import { formatMoney } from "@/lib/format-money";
-import { useCurrencies } from "@/lib/currency";
+
+import { useOrgMoney } from "@/lib/use-org-money";
 import {
   ATTENDANCE_STATUSES,
   ATTENDANCE_STATUS_KEY,
@@ -79,7 +79,11 @@ export default function AttendanceSheetClient({
   attendanceDate: string;
 }) {
   const router = useRouter();
-  const currencies = useCurrencies();
+  // R67 G-05 merge: the org's currency is resolved once for the screen and the
+  // formatter comes back bound to it, so no cell can be rendered with the wrong
+  // currency by forgetting to pass one.
+  const orgMoney = useOrgMoney();
+  const money = orgMoney.money;
 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -109,7 +113,7 @@ export default function AttendanceSheetClient({
 
     const errors: string[] = [];
     const activeRoster = rosterR.status === "fulfilled" ? (rosterR.value.roster ?? []).filter((r) => r.isActive) : [];
-    if (rosterR.status === "rejected") errors.push(loadFailureSentence(rosterR.reason, "roster"));
+    if (rosterR.status === "rejected") errors.push(loadFailureSentence(rosterR.reason, "the roster"));
     setRoster(activeRoster);
 
     const existing = attendanceR.status === "fulfilled" ? attendanceR.value.attendance ?? [] : [];
@@ -179,7 +183,7 @@ export default function AttendanceSheetClient({
         body: JSON.stringify({ projectId, attendanceDate, rows }),
       });
       setSavedLine(
-        `Attendance for ${formatDayMonthYear(result.attendanceDate ?? attendanceDate)} saved — ${result.savedCount} rows, ${formatMoney(result.totalCost, currencies)}`
+        `Attendance for ${formatDayMonthYear(result.attendanceDate ?? attendanceDate)} saved — ${result.savedCount} rows, ${money(result.totalCost)}`
       );
       // The sheet stays on screen in display mode: the supervisor's next act
       // is usually to check what was recorded, not to start again.
@@ -335,7 +339,7 @@ export default function AttendanceSheetClient({
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {cost === null ? <span className="text-px-muted">—</span> : formatMoney(cost, currencies)}
+                        {cost === null ? <span className="text-px-muted">—</span> : money(cost)}
                       </TableCell>
                     </TableRow>
                   );
@@ -352,12 +356,12 @@ export default function AttendanceSheetClient({
                       </TableCell>
                       <TableCell className="text-px-muted">{trade.marked} marked</TableCell>
                       <TableCell />
-                      <TableCell className="text-right tabular-nums">{formatMoney(trade.cost, currencies)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{money(trade.cost)}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow>
                     <TableCell colSpan={6} className="font-semibold">Day total</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{formatMoney(totals.totalCost, currencies)}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">{money(totals.totalCost)}</TableCell>
                   </TableRow>
                 </TableFooter>
               )}

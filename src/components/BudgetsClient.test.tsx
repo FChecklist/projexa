@@ -6,7 +6,7 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { RAIL_PROJECT_KEY } from "@/lib/rail-project";
+import { PROJECT_PREFERENCE_KEY } from "@/lib/project-preference";
 
 const push = mock((_href: string) => {});
 mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: () => {} }) }));
@@ -99,7 +99,7 @@ describe("BudgetsClient -- the landing copy (D-43)", () => {
   });
 
   test("with a project on the rail it is enabled and opens that project's Cost Variance", async () => {
-    window.sessionStorage.setItem(RAIL_PROJECT_KEY, "proj-cedar");
+    window.localStorage.setItem(PROJECT_PREFERENCE_KEY, "proj-cedar");
     const { getByTestId } = renderClient();
 
     await waitFor(() => expect((getByTestId("budgets-boq") as HTMLButtonElement).disabled).toBe(false));

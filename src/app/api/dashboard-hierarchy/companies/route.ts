@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { listUserCompanies } from "@/lib/company-scope";
+import { withTiming } from "@/lib/with-timing";
 
 // "Company" level of the Company -> Department -> Project drill-down: the
 // real list of PROJEXA organizations (tenants) the current user belongs to
@@ -11,9 +12,9 @@ import { listUserCompanies } from "@/lib/company-scope";
 // is already taken by VERIDIAN's unrelated erp_companies (sub-entities
 // within a single org's accounting, e.g. head office vs a subsidiary) --
 // this is a different concept: which org (tenant) is being viewed.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const companies = await listUserCompanies(ctx.user!.id);
   return NextResponse.json({ companies });
-}
+});

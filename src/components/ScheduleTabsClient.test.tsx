@@ -8,6 +8,19 @@
 // breadcrumb text 'Schedule > Cedar Heights Villa - Phase 1'". Both are
 // asserted below against the rendered DOM.
 //
+// MERGE NOTE (D-79). The band was originally a fork of the kit's ScreenFrame,
+// made only to fit a fourth action. Lane D-79's ListHeaderActions -- already on
+// main and already carrying Manpower and Materials -- is the product's real
+// answer to the same requirement, so the fork was retired and this screen now
+// uses the shared control with Import passed through its `extraActions` slot.
+// The ACCEPTANCE is unchanged and is what these tests still assert; two of the
+// mechanics moved with the control and are called out where they are asserted:
+//   * a disabled action states its reason in `title` (the shared control's
+//     convention) rather than appending "(reason)" to the visible label;
+//   * "+ New" is a MENU, so creating a task is open-then-choose -- which is
+//     what D-79's own acceptance asks for, and what puts Sprint and Log time
+//     within reach of the same control.
+//
 // TWO MODULE MOCKS, and why each is unavoidable here:
 //   * "@svar-ui/react-gantt/all.css" -- bun's test runner cannot import a CSS
 //     file, and ScheduleGanttClient imports one at module scope.
@@ -76,7 +89,18 @@ function renderTabs(over: Partial<Record<string, Handler>> = {}, props: { initia
 /** The header band's buttons, in DOM order, by their accessible name. */
 function headerActionNames(container: HTMLElement): string[] {
   const header = container.querySelector("header")!;
-  return [...header.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "");
+  return [...header.querySelectorAll("button")].map((b) =>
+    (b.getAttribute("aria-label") ?? b.textContent ?? "").trim()
+  );
+}
+
+/** One header button, by its accessible name. */
+function headerButton(container: HTMLElement, name: string): HTMLButtonElement {
+  const found = [...container.querySelector("header")!.querySelectorAll("button")].find(
+    (b) => (b.getAttribute("aria-label") ?? b.textContent ?? "").trim() === name
+  );
+  if (!found) throw new Error(`no header button named ${name}`);
+  return found as HTMLButtonElement;
 }
 
 afterEach(() => {
@@ -94,28 +118,32 @@ describe("D-44 header band", () => {
   test("the breadcrumb names the module and the project", async () => {
     const { container } = renderTabs();
     await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
-    const breadcrumb = container.querySelector("header > div")!.textContent!.replace(/\s+/g, " ").trim();
-    expect(breadcrumb).toBe(`Schedule > ${PROJECT_NAME}`);
+    // The breadcrumb is the trail ABOVE the title, so it is read from its own
+    // element rather than from the heading block, which also contains "Schedule"
+    // as the title.
+    const breadcrumb = container.querySelector("header h1")!.previousElementSibling!;
+    expect(breadcrumb.textContent!.replace(/\s+/g, " ").trim()).toBe(`Schedule > ${PROJECT_NAME}`);
   });
 
   test("with no activities, Filter and Export say why, and + New stays enabled", async () => {
-    const { container, findByText } = renderTabs({ "/api/schedule/tasks": () => jsonRes({ tasks: [] }) });
-    await findByText(`(${NO_ACTIVITIES_TO_FILTER})`);
-    await findByText(`(${NO_ACTIVITIES_TO_EXPORT})`);
-    const header = container.querySelector("header")!;
-    const buttons = [...header.querySelectorAll("button")];
-    expect(buttons.find((b) => b.getAttribute("aria-label") === "Filter")!.disabled).toBe(true);
-    expect(buttons.find((b) => b.getAttribute("aria-label") === "Export")!.disabled).toBe(true);
-    expect(buttons.find((b) => b.getAttribute("aria-label") === "+ New")!.disabled).toBe(false);
+    const { container } = renderTabs({ "/api/schedule/tasks": () => jsonRes({ tasks: [] }) });
+    await waitFor(() => expect(headerButton(container, "Filter").disabled).toBe(true));
+    // The reason is stated, and it is the real one -- the shared control puts it
+    // in `title` rather than in the visible label.
+    expect(headerButton(container, "Filter").title).toBe(NO_ACTIVITIES_TO_FILTER);
+    expect(headerButton(container, "Export").disabled).toBe(true);
+    expect(headerButton(container, "Export").title).toBe(NO_ACTIVITIES_TO_EXPORT);
+    // Creating the FIRST activity is exactly what an empty schedule needs, so
+    // this one is never disabled for want of rows.
+    expect(headerButton(container, "+ New").disabled).toBe(false);
   });
 
   test("Import holds its place but does not push a route that does not exist yet", async () => {
-    const { container, findByText } = renderTabs();
-    await findByText(`(${IMPORT_UNAVAILABLE_REASON})`);
-    const importButton = [...container.querySelector("header")!.querySelectorAll("button")].find(
-      (b) => b.getAttribute("aria-label") === "Import"
-    )!;
+    const { container } = renderTabs();
+    await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
+    const importButton = headerButton(container, "Import");
     expect(importButton.disabled).toBe(true);
+    expect(importButton.title).toBe(IMPORT_UNAVAILABLE_REASON);
     fireEvent.click(importButton);
     expect(push).not.toHaveBeenCalled();
   });
@@ -127,13 +155,17 @@ describe("D-44 header band", () => {
     await findByText("Couldn't load this project's activities: Schedule service did not answer");
   });
 
-  test("+ New pushes the create route carrying the project", async () => {
-    const { container } = renderTabs();
+  test("+ New opens the module's create menu and Task carries the project", async () => {
+    const { container, findByRole } = renderTabs();
     await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
-    const newButton = [...container.querySelector("header")!.querySelectorAll("button")].find(
-      (b) => b.getAttribute("aria-label") === "+ New"
-    )!;
-    fireEvent.click(newButton);
+    // D-79: "+ New" opens the module's whole create list with the ACTIVE TAB's
+    // own object first -- two clicks to any of them, and Sprint and Log time
+    // stop being unreachable from the Gantt.
+    fireEvent.click(headerButton(container, "+ New"));
+    const menu = await findByRole("menu");
+    const items = [...menu.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent);
+    expect(items).toContain("Task");
+    fireEvent.click([...menu.querySelectorAll('[role="menuitem"]')].find((i) => i.textContent === "Task")!);
     expect(push).toHaveBeenCalledWith("/schedule/tasks/new?projectId=proj-cedar");
   });
 });
@@ -163,13 +195,15 @@ describe("D-44 tabs", () => {
     await findByText("Move activities between statuses by dragging.");
   });
 
-  test("'New Task' sits outside the tab panels, so creation exists on every tab", async () => {
+  test("creation sits outside the tab panels, so it exists on every tab", async () => {
+    // The point of the item: "+ New Task" used to live inside the Board tab's
+    // body, so on Timeline, Phases or Time there was no way to create an
+    // activity at all. Wherever the control lives, it must not be inside a
+    // panel that only one tab shows.
     const { container } = renderTabs();
-    await waitFor(() => expect(container.querySelector('[data-testid="schedule-new-task"]')).not.toBeNull());
-    const button = container.querySelector('[data-testid="schedule-new-task"]')!;
-    expect(button.closest('[role="tabpanel"]')).toBeNull();
-    fireEvent.click(button);
-    expect(push).toHaveBeenCalledWith("/schedule/tasks/new?projectId=proj-cedar");
+    await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
+    expect(headerButton(container, "+ New").closest('[role="tabpanel"]')).toBeNull();
+    expect(container.querySelector("header")!.closest('[role="tabpanel"]')).toBeNull();
   });
 });
 
@@ -184,11 +218,8 @@ describe("D-44 filter", () => {
     const { container } = renderTabs();
     await waitFor(() => expect(container.querySelector("header")).not.toBeNull());
     expect(container.querySelector("#schedule-filter-title")).toBeNull();
-    const filterButton = [...container.querySelector("header")!.querySelectorAll("button")].find(
-      (b) => b.getAttribute("aria-label") === "Filter"
-    )!;
-    await waitFor(() => expect(filterButton.disabled).toBe(false));
-    fireEvent.click(filterButton);
+    await waitFor(() => expect(headerButton(container, "Filter").disabled).toBe(false));
+    fireEvent.click(headerButton(container, "Filter"));
     await waitFor(() => expect(container.querySelector("#schedule-filter-title")).not.toBeNull());
   });
 });

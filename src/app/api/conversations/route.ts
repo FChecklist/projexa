@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { createClient } from "@/lib/supabase/server";
+import { withTiming } from "@/lib/with-timing";
 
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -29,9 +30,9 @@ export async function GET() {
   });
 
   return NextResponse.json({ conversations });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -54,4 +55,4 @@ export async function POST(request: NextRequest) {
   if (participantsError) return NextResponse.json({ error: participantsError.message }, { status: 500 });
 
   return NextResponse.json(convo, { status: 201 });
-}
+});

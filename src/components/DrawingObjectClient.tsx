@@ -14,7 +14,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+// Not the kit's -- the kit is still imported for everything that was not
+// forked. R67 A-21's ObjectContext is unaffected by the fork and stays.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { DRAWING_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -60,6 +66,18 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     }
   }
 
+  // R67 D-67. Declared before the early returns below, because a hook must
+  // be. The blast radius is spelled out: removing a drawing disposes the
+  // uploaded file with it, and the sentence has to say so before the click,
+  // not after.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Drawing",
+    identifier: d?.name ?? null,
+    extra: "and its uploaded file",
+    verb: "Remove",
+    run: handleDispose,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -68,7 +86,18 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       </div>
     );
   }
-  if (!d) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!d) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
+      label={DRAWING_OBJECT_BREADCRUMB.label}
+      actions={DRAWING_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const kind = d.category === "drawing_3d" ? "3D Walkthrough" : "DWG";
   const disposeDisabledReason = d.isDisposed
@@ -82,8 +111,15 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     : disposing ? "Removing…" : undefined;
 
   return (
-    <ObjectScreen
-      breadcrumb="Drawings & 3D / Drawing"
+    <>
+    {/* R67 A-21: "<project> › Drawing Ground floor plan rev C". This page takes
+        its project from the QUERY STRING rather than from the record (the
+        documents DTO carries no linkedEntityId, per the route's own comment),
+        so an empty string is published as null -- the shell then falls back to
+        the rail, which is honest, instead of resolving a project id of "". */}
+    <ObjectContext moduleId="drawings" label={d.name} projectId={projectId || null} />
+    <KitObjectScreen
+      breadcrumb={DRAWING_OBJECT_BREADCRUMB.breadcrumb}
       title={d.name}
       mode="display"
       hasDraft={false}
@@ -92,11 +128,16 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         { label: "Discipline", value: d.metadata?.discipline ?? "—" },
         { label: "Added", value: d.createdAt.slice(0, 10) },
       ]}
-      onDelete={!d.isDisposed ? handleDispose : undefined}
+      // R67 D-67: the kit renders the Delete button itself and calls
+      // onDelete() straight from onClick, so this used to dispose the
+      // drawing AND its file on ONE click, with no confirmation anywhere.
+      // It now arms the confirm card rendered below.
+      onDelete={!d.isDisposed ? removal.request : undefined}
       deleteDisabledReason={disposeDisabledReason}
       onBack={() => router.push(`/drawings?projectId=${projectId}`)}
       messages={[]}
     >
+      {removal.card}
       <div className="px-4 py-3">
         {d.signedUrl && !d.isDisposed ? (
           <a href={d.signedUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[13px] underline underline-offset-2">
@@ -109,6 +150,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
           <p className="text-sm text-ct-muted">No file link available.</p>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

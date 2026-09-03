@@ -3,129 +3,115 @@
 // Real-screen conversion (2026-08-30): replaces MaterialsClient.tsx's old
 // "Add Material" Dialog popup with a real create screen.
 //
-// R67 D-37 (audit R-096). Three vocabulary/state defects, all of them the same
-// defect from different angles -- the screen knew something the user did not:
+// R67 D-67: onto the shared archetype. Three things change that the
+// hand-rolled version could not do. The primary now READS "Save (Name,
+// Unit)" instead of saying "Save" with the field names hidden in a tooltip
+// nobody hovers. A refused save renders in place, above the buttons, with
+// every value still typed in -- it was a toast, so a user who looked away
+// saw a form that had simply not saved and no reason why. And a successful
+// save lands on the object page with a persistent "Created material Cement
+// OPC 43" rather than a four-second notification.
 //
-//   * The title said "Add Material" while its own breadcrumb said "New
-//     Material" and the button that opens it says "+ New Material". Three names
-//     for one screen. It is "New Material" everywhere now.
-//   * Name and Unit were required by the service but carried no required
-//     marker and no validation: the user found out by watching a disabled Save
-//     button do nothing. They are marked, and they validate on BLUR -- at the
-//     field, in the field's own words -- rather than on submit.
-//   * The Save label keeps this product's counting form ("Save (Name, Unit)"),
-//     which /labour/new already established.
+// R67 D-37 (audit R-096): the title said "Add Material" while its own
+// breadcrumb said "New Material" and the button that opens it says
+// "+ New Material" -- three names for one screen. It is "New Material"
+// everywhere now. D-37's other two points are answered by the archetype
+// itself: the required fields are marked, and the primary counts them
+// ("Save (Name, Unit)"). Its "Unit is required - e.g. bag" blur message is
+// deliberately NOT carried over -- see the note below, a closed vocabulary
+// means there is no wrong unit left to type.
+//
+// R67 G-05 (R-260), merged in from main rather than reverted: Unit is a
+// SELECT over the closed vocabulary in src/lib/material-units.ts, and Unit
+// Cost is a money box carrying the org's currency code as a fixed prefix.
+// The archetype's earlier free-text Unit field asked the user to solve by
+// discipline ("use the same word every time") a defect that is solved
+// structurally by not offering the wrong word -- "bag" and "Bag" split the
+// materials cost report into two rows for one material, and no total is
+// right afterwards.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
-import { Input } from "@/components/ui/input";
-import { FormField, type FieldErrors } from "@/components/ui/form-field";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import { useSubmit } from "@/lib/use-submit";
+import { MATERIAL_UNITS } from "@/lib/material-units";
+import { useOrgMoney } from "@/lib/use-org-money";
+import type { CreateField } from "@/lib/create-screen";
 
-// The exact sentences the audit specifies. "e.g. bag" is carried in the Unit
-// message itself because a unit is the one field a site user has no default
-// intuition for -- the example IS the instruction.
-export const NAME_REQUIRED_MESSAGE = "Name is required";
-export const UNIT_REQUIRED_MESSAGE = "Unit is required — e.g. bag";
+const FIELDS: CreateField[] = [
+  { name: "name", label: "Name", kind: "text", required: true, placeholder: "e.g. Cement OPC 43" },
+  { name: "spec", label: "Spec", kind: "text", placeholder: "e.g. 43-grade OPC" },
+  {
+    name: "unit",
+    label: "Unit",
+    kind: "select",
+    required: true,
+    placeholder: "Pick a unit",
+    options: MATERIAL_UNITS,
+  },
+  { name: "unitCost", label: "Unit Cost", kind: "money", placeholder: "e.g. 28.50" },
+  {
+    // R67 D-40: the threshold the master flags "▲ Low" against. Optional, and
+    // deliberately three-valued: blank means "no threshold", 0 means "flag me
+    // the moment it runs out", and those are different instructions.
+    name: "reorderLevel",
+    label: "Reorder level",
+    kind: "number",
+    placeholder: "e.g. 50",
+    help: "Leave blank for no threshold. 0 flags this material the moment it runs out.",
+  },
+];
 
 export default function MaterialCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [spec, setSpec] = useState("");
-  const [unit, setUnit] = useState("");
-  const [unitCost, setUnitCost] = useState("");
-  const [reorderLevel, setReorderLevel] = useState("");
-  const [errors, setErrors] = useState<FieldErrors<"name" | "unit">>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const orgMoney = useOrgMoney();
 
-  const missing = [...(name.trim() ? [] : ["Name"]), ...(unit.trim() ? [] : ["Unit"])];
+  const moduleHref = `/materials?projectId=${projectId}`;
 
-  // Validation runs on blur, so a field the user has not reached yet is never
-  // shouted at, and a field they left empty says so the moment they leave it.
-  function validateOnBlur(field: "name" | "unit") {
-    const value = field === "name" ? name : unit;
-    const message = field === "name" ? NAME_REQUIRED_MESSAGE : UNIT_REQUIRED_MESSAGE;
-    setErrors((prev) => ({ ...prev, [field]: value.trim() ? undefined : message }));
-  }
-
-  async function createMaterial() {
-    if (missing.length) {
-      setErrors({
-        name: name.trim() ? undefined : NAME_REQUIRED_MESSAGE,
-        unit: unit.trim() ? undefined : UNIT_REQUIRED_MESSAGE,
-      });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const material = await fetchJson<{ id: string }>("/api/materials/master", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+  // Never a toast, and never a reset: the values stay on the form behind the
+  // refusal so a rejected save costs a correction, not a retype.
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Material",
+    buildRequest: () => ({
+      input: "/api/materials/master",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId, name, spec: spec || undefined, unit,
-          unitCost: unitCost ? Number(unitCost) : undefined,
-          // R67 D-40: omitted means "no threshold" (null), which is a different
-          // fact from 0 ("flag me the moment it runs out").
-          reorderLevel: reorderLevel.trim() === "" ? undefined : Number(reorderLevel),
+          projectId,
+          name: values.name,
+          spec: values.spec || undefined,
+          unit: values.unit,
+          unitCost: values.unitCost ? Number(values.unitCost) : undefined,
+          // D-40: "" and "0" are different instructions, so an empty string
+          // must not become 0 and 0 must not become undefined.
+          reorderLevel: values.reorderLevel === "" || values.reorderLevel === undefined ? undefined : Number(values.reorderLevel),
         }),
-      });
-      toast.success("Material added");
-      router.push(`/materials/${material.id}`);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't add material"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (material) => {
+      const id = typeof material?.id === "string" ? material.id : "";
+      if (!id) throw new Error("The server did not confirm a saved material");
+      router.replace(createdHref("/materials", id, values.name));
+    },
+  });
 
   return (
-    <KitObjectScreen
-      breadcrumb="Materials / New Material"
+    <CreateScreen
+      module="Materials"
+      moduleHref={moduleHref}
+      objectLabel="Material"
       title="New Material"
-      mode="create"
-      hasDraft={false}
-      onSave={createMaterial}
-      onCancel={() => router.push(`/materials?projectId=${projectId}`)}
-      onBack={() => router.push(`/materials?projectId=${projectId}`)}
-      saveDisabled={submitting || missing.length > 0}
-      saveDisabledReason={submitting ? "Adding…" : missing.length ? missing.join(", ") : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <FormField label="Name" required error={errors.name}>
-          {(f) => (
-            <Input
-              {...f}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => validateOnBlur("name")}
-            />
-          )}
-        </FormField>
-        <FormField label="Spec (optional)">
-          {(f) => <Input {...f} value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="e.g. 43-grade OPC" />}
-        </FormField>
-        <FormField label="Unit" required error={errors.unit}>
-          {(f) => (
-            <Input
-              {...f}
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              onBlur={() => validateOnBlur("unit")}
-              placeholder="e.g. bag, cum, kg"
-            />
-          )}
-        </FormField>
-        <FormField label="Unit Cost (optional)">
-          {(f) => <Input {...f} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />}
-        </FormField>
-        <FormField
-          label="Reorder level (optional)"
-          hint="When On hand falls below this, the master row is flagged Low. Leave empty for no threshold."
-        >
-          {(f) => <Input {...f} type="number" min={0} step="any" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} />}
-        </FormField>
-      </div>
-    </KitObjectScreen>
+      fields={FIELDS}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
+    />
   );
 }

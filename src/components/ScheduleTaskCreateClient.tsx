@@ -1,404 +1,349 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane F2's item F-19 (audit R-245) asked that
+// a create form's lookup say which of its three states it is in, and that a
+// FAILED lookup never look like "this org has none". Lane D0 rebuilt this
+// screen onto the shared CreateScreen + useSubmit archetype (D-72 / D-67) and
+// implements exactly that rule -- the lookup's failure reaches the form as a
+// banner with Retry and as the primary's own disabled reason, and the empty
+// placeholder is reachable only from a successful read. Under decision D-11
+// the version on main is canonical, and F2's separate useLookup()/
+// LookupFieldError pair is not folded in beside it: that would leave two
+// mechanisms for one rule on one screen. F2's helpers stay in the repo for the
+// create forms that still use them.
+
 // Real-screen conversion (2026-08-30) -- replaces ScheduleBoardClient.tsx's
 // old "New Task" Dialog popup with a real create screen, same fields.
 //
-// ─── R67 D-47 (audit R-121) ─────────────────────────────────────────────────
-// The form could set a title, a type, a priority and a due date. A programme
-// needs the four things it could not send at all: a START, a DURATION, what
-// the activity FOLLOWS, and which BOQ line it earns its value against -- which
-// is why the Timeline it feeds could not draw a bar, could not draw a
-// dependency line, and had nothing to compare against a baseline.
+// R67 D-67: onto the shared archetype, and off the last unguarded
+// `.then((res) => res.json())` read in the construction modules (see
+// src/lib/no-swallowed-http-errors.test.ts's third guard). The type list is
+// a genuine convenience -- the server applies its own default when none is
+// sent -- so its failure does not block the save; it is simply no longer
+// silent, and the select says why it is empty instead of sitting on
+// "Loading…" forever.
 //
-// Four more defects, all of them the form talking past the user:
-//   * Nothing validated until submit, and then only through a toast.
-//   * The Type select's PLACEHOLDER was the word "Loading…" -- a loading state
-//     rendered as if it were a choice. A disabled trigger with a skeleton bar
-//     says the same thing without pretending to be an option.
-//   * The primary button said "Save (Title is required)" and nothing else, so a
-//     form missing two things named one.
-//   * Every optional lookup was swallowed (`/* convenience */`), so a failed
-//     fetch left an empty dropdown with no explanation and no way to retry.
+// R67 G-04 (R-231) states the same rule more precisely and is kept whole:
+// the four states of the Type control, their one instruction each, and the
+// rule that "Loading…" is never a VALUE live in
+// src/lib/schedule-type-state.ts, where they are unit-tested, and are
+// rendered by the archetype's own select. Two situations that used to
+// collapse into one empty list -- "this org has no task types" and "the call
+// failed" -- now read differently, which is what
+// e2e/schedule-task-type-signage.spec.ts asserts in a browser.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { FormField } from "@/components/ui/form-field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import { fetchJson } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import {
-  activitySaveReason,
-  dueDateError,
-  dueDateFromDuration,
-  durationFieldValue,
-  missingActivityFields,
-} from "@/lib/schedule-activity";
+  SCHEDULE_TYPE_HINT,
+  SCHEDULE_TYPE_PLACEHOLDER,
+  scheduleTypeDisabled,
+  scheduleTypesState,
+  type ScheduleTypesState,
+} from "@/lib/schedule-type-state";
+import type { CreateField } from "@/lib/create-screen";
+import { dueDateError, dueDateFromDuration, durationFieldValue } from "@/lib/schedule-activity";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
 type ScheduleTask = { id: string; number?: number; title: string };
-type BoqLineItem = { id: string; itemCode: string | null; description: string | null };
-type Boq = { id: string; lineItems?: BoqLineItem[] };
-
+type BoqLine = { id: string; description?: string | null; itemCode?: string | null };
+type Boq = { lineItems?: BoqLine[] };
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-/** A lookup that feeds one field. A failure degrades that field and offers Retry -- it never empties a dropdown in silence. */
 type Lookup<T> = { rows: T[]; loading: boolean; error: string | null };
-const emptyLookup = <T,>(): Lookup<T> => ({ rows: [], loading: true, error: null });
-
-export const NO_PREDECESSOR_VALUE = "__none__";
+function emptyLookup<T>(): Lookup<T> {
+  return { rows: [], loading: true, error: null };
+}
 
 export default function ScheduleTaskCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [types, setTypes] = useState<Lookup<IssueType>>(emptyLookup<IssueType>());
+  const [types, setTypes] = useState<IssueType[]>([]);
+  const [typesState, setTypesState] = useState<ScheduleTypesState>("loading");
+  const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
+  // R67 D-47: the four things the form could not send at all -- a START, a
+  // DURATION, what the activity FOLLOWS, and which BOQ line it earns its value
+  // against -- which is why the Timeline it feeds could not draw a bar, could
+  // not draw a dependency line, and had nothing to compare against a baseline.
   const [predecessors, setPredecessors] = useState<Lookup<ScheduleTask>>(emptyLookup<ScheduleTask>());
-  const [boqLines, setBoqLines] = useState<Lookup<BoqLineItem>>(emptyLookup<BoqLineItem>());
-  const [typeId, setTypeId] = useState("");
-  const [priority, setPriority] = useState("no_priority");
-  const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  // R67 D-56: a milestone is an activity with a zero-length window (Finish =
-  // Start). Storing it that way needs no column and no migration -- pms_issues
-  // already carries both dates, and "no duration" IS what a milestone means on
-  // a programme. The Timeline draws those rows as diamonds.
-  const [isMilestone, setIsMilestone] = useState(false);
-  const [duration, setDuration] = useState("");
-  const [predecessorId, setPredecessorId] = useState("");
-  const [boqLineItemId, setBoqLineItemId] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [touched, setTouched] = useState<{ title?: boolean; start?: boolean; due?: boolean }>({});
-
-  const loadTypes = useCallback(async () => {
-    setTypes((s) => ({ ...s, loading: true, error: null }));
-    try {
-      const data = await fetchJson<{ types?: IssueType[] }>("/api/schedule/types");
-      const rows = data.types ?? [];
-      setTypes({ rows, loading: false, error: null });
-      // Preselect the org's default type once the list has actually arrived --
-      // never before, so the trigger cannot briefly show a value that is not in
-      // the list.
-      const preferred = rows.find((t) => t.isDefault) ?? rows[0];
-      if (preferred) setTypeId((current) => current || preferred.id);
-    } catch (err) {
-      setTypes({ rows: [], loading: false, error: errorMessage(err, "Couldn't load the activity types") });
-    }
-  }, []);
+  const [boqLines, setBoqLines] = useState<Lookup<BoqLine>>(emptyLookup<BoqLine>());
 
   const loadPredecessors = useCallback(async () => {
-    setPredecessors((s) => ({ ...s, loading: true, error: null }));
+    setPredecessors((prev) => ({ ...prev, loading: true, error: null }));
     try {
       const data = await fetchJson<{ tasks?: ScheduleTask[] }>(
         `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`
       );
       setPredecessors({ rows: data.tasks ?? [], loading: false, error: null });
     } catch (err) {
-      setPredecessors({ rows: [], loading: false, error: errorMessage(err, "Couldn't load this project's activities") });
+      setPredecessors({
+        rows: [],
+        loading: false,
+        error: err instanceof Error && err.message ? err.message : "Could not load this project's activities",
+      });
     }
   }, [projectId]);
 
   const loadBoqLines = useCallback(async () => {
-    setBoqLines((s) => ({ ...s, loading: true, error: null }));
+    setBoqLines((prev) => ({ ...prev, loading: true, error: null }));
     try {
       const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
       setBoqLines({ rows: (data.boqs ?? []).flatMap((b) => b.lineItems ?? []), loading: false, error: null });
     } catch (err) {
-      setBoqLines({ rows: [], loading: false, error: errorMessage(err, "Couldn't load this project's BOQ lines") });
+      setBoqLines({
+        rows: [],
+        loading: false,
+        error: err instanceof Error && err.message ? err.message : "Could not load this project's BOQ lines",
+      });
     }
   }, [projectId]);
 
-  useEffect(() => {
-    void loadTypes();
-  }, [loadTypes]);
   useEffect(() => {
     void loadPredecessors();
     void loadBoqLines();
   }, [loadPredecessors, loadBoqLines]);
 
-  const missing = missingActivityFields({ title, startDate, dueDate });
-  const dueError = dueDateError(startDate, dueDate);
+  const isMilestone = values.isMilestone === "true";
 
   /**
-   * D-56: ticking Milestone collapses the window onto the start date, and
-   * un-ticking it hands the finish date back rather than leaving the form in a
-   * state the user cannot undo.
+   * R67 D-47/D-56. Start, Duration and Finish are three views of ONE window,
+   * so editing any of them re-derives the others rather than letting the form
+   * hold three facts that disagree. Ticking Milestone collapses the window
+   * onto the start date (a milestone IS a zero-length activity) and unticking
+   * hands the finish date back.
    */
-  function onMilestoneChange(next: boolean) {
-    setIsMilestone(next);
-    if (next) {
-      setDueDate(startDate);
-      setDuration("0");
-    }
-  }
+  const handleChange = useCallback((name: string, value: string) => {
+    setValues((v) => {
+      const next = { ...v, [name]: value };
+      if (name === "isMilestone") {
+        if (value === "true") next.dueDate = next.startDate ?? "";
+        return next;
+      }
+      if (v.isMilestone === "true") {
+        // A milestone has no duration to preserve: its finish IS its start.
+        if (name === "startDate") next.dueDate = value;
+        return next;
+      }
+      if (name === "durationDays") {
+        const derived = dueDateFromDuration(next.startDate ?? "", value);
+        if (derived) next.dueDate = derived;
+      } else if (name === "dueDate") {
+        next.durationDays = durationFieldValue(next.startDate ?? "", value);
+      } else if (name === "startDate") {
+        if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
+        else if (next.durationDays) {
+          const derived = dueDateFromDuration(value, next.durationDays);
+          if (derived) next.dueDate = derived;
+        }
+      }
+      return next;
+    });
+  }, []);
 
-  /** Typing a duration moves the finish date; typing a finish date moves the duration. */
-  function onDurationChange(next: string) {
-    setDuration(next);
-    const derived = dueDateFromDuration(startDate, next);
-    if (derived) setDueDate(derived);
-  }
-  function onDueDateChange(next: string) {
-    setDueDate(next);
-    setDuration(durationFieldValue(startDate, next));
-  }
-  function onStartDateChange(next: string) {
-    setStartDate(next);
-    // A milestone has no duration to preserve: its finish IS its start.
-    if (isMilestone) {
-      setDueDate(next);
-      setDuration("0");
-      return;
-    }
-    // Keep whichever of the pair the user last expressed an opinion about: a
-    // typed duration is re-applied from the new start, otherwise the duration
-    // is re-derived from the finish date that is already there.
-    if (duration.trim()) {
-      const derived = dueDateFromDuration(next, duration);
-      if (derived) setDueDate(derived);
-    } else {
-      setDuration(durationFieldValue(next, dueDate));
-    }
-  }
-
-  async function createTask() {
-    if (missing.length || dueError) return;
-    setSubmitting(true);
-    setSaveError(null);
+  const loadTypes = useCallback(async () => {
+    setTypesState("loading");
     try {
-      const data = await fetchJson<{ id?: string; number?: number }>("/api/schedule/tasks", {
+      // fetchJson throws on a non-2xx. The old `.then((res) => res.json())`
+      // let a 502 fall through to `data.types ?? []`, so an upstream failure
+      // was displayed as "this org has no task types" -- different facts.
+      const data = await fetchJson<{ types?: IssueType[] }>("/api/schedule/types");
+      const loaded = data.types ?? [];
+      setTypes(loaded);
+      const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
+      if (defaultType) setValues((v) => ({ ...v, typeId: v.typeId ?? defaultType.id }));
+      setTypesState(scheduleTypesState({ loaded, failed: false }));
+    } catch {
+      setTypes([]);
+      setTypesState(scheduleTypesState({ loaded: null, failed: true }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTypes();
+  }, [loadTypes]);
+
+  const moduleHref = `/schedule?projectId=${projectId}`;
+
+  const typeHint = SCHEDULE_TYPE_HINT[typesState];
+  const fields: CreateField[] = [
+    { name: "title", label: "Title", kind: "text", required: true, placeholder: "e.g. Pour foundation slab", wide: true },
+    {
+      name: "typeId",
+      label: "Type",
+      kind: "select",
+      testId: "schedule-task-type",
+      loading: typesState === "loading",
+      disabled: scheduleTypeDisabled(typesState),
+      placeholder: SCHEDULE_TYPE_PLACEHOLDER[typesState],
+      options: types.map((t) => ({ value: t.id, label: t.name })),
+      // The one instruction for this state, plus -- when the call FAILED
+      // rather than came back empty -- a way to ask again without losing the
+      // title already typed.
+      help: typeHint ? (
+        <>
+          {typeHint}
+          {typesState === "error" && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => void loadTypes()}
+                className="font-medium underline underline-offset-2"
+              >
+                Retry
+              </button>
+            </>
+          )}
+        </>
+      ) : undefined,
+    },
+    {
+      name: "priority",
+      label: "Priority",
+      kind: "select",
+      required: true,
+      options: PRIORITY_OPTIONS.map((p) => ({ value: p, label: p.replace(/_/g, " ") })),
+    },
+    {
+      // R67 D-47: a programme needs a START. Required, and it is what the
+      // duration and the finish are both derived from.
+      name: "startDate",
+      label: "Start Date",
+      kind: "date",
+      required: true,
+    },
+    {
+      name: "durationDays",
+      label: "Duration (days)",
+      kind: "number",
+      placeholder: "e.g. 5",
+      disabled: isMilestone,
+      help: isMilestone ? "A milestone has no duration" : "Or set the finish date - each derives the other",
+    },
+    {
+      name: "dueDate",
+      label: "Due Date",
+      kind: "date",
+      disabled: isMilestone,
+      help: isMilestone ? "Follows the start date" : undefined,
+      validate: (value) => dueDateError(values.startDate ?? "", value),
+    },
+    {
+      // R67 D-56: a milestone is an activity with a zero-length window
+      // (Finish = Start) rather than a flag column -- pms_issues already
+      // carries both dates, and "no duration" IS what a milestone means.
+      name: "isMilestone",
+      label: "Milestone",
+      kind: "checkbox",
+      placeholder: "Milestone (finish is the same day as start)",
+    },
+    {
+      name: "predecessorId",
+      label: "Predecessor",
+      kind: "select",
+      loading: predecessors.loading,
+      placeholder: predecessors.error ? "Predecessors didn't load" : "None",
+      options: predecessors.rows.map((t) => ({
+        value: t.id,
+        label: t.number ? `#${t.number} ${t.title}` : t.title,
+      })),
+      help: predecessors.error ? (
+        <>
+          {predecessors.error}{" "}
+          <button
+            type="button"
+            onClick={() => void loadPredecessors()}
+            className="font-medium underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </>
+      ) : predecessors.loading ? (
+        "The activity this one follows"
+      ) : predecessors.rows.length === 0 ? (
+        // D-47: an empty dropdown says nothing. This one says why it is empty.
+        "No other activities on this project yet - this will be the first"
+      ) : (
+        "The activity this one follows"
+      ),
+    },
+    {
+      name: "boqLineItemId",
+      label: "BOQ item",
+      kind: "select",
+      loading: boqLines.loading,
+      placeholder: boqLines.error ? "BOQ lines didn't load" : "None",
+      options: boqLines.rows.map((l) => ({
+        value: l.id,
+        label: [l.itemCode, l.description].filter(Boolean).join(" - ") || l.id,
+      })),
+      help: boqLines.error ? (
+        <>
+          {boqLines.error}{" "}
+          <button
+            type="button"
+            onClick={() => void loadBoqLines()}
+            className="font-medium underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </>
+      ) : boqLines.loading ? (
+        "The scope line this activity earns its value against"
+      ) : boqLines.rows.length === 0 ? (
+        "No BOQ lines on this project yet - add a BOQ to earn value against it"
+      ) : (
+        "The scope line this activity earns its value against"
+      ),
+    },
+  ];
+
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Task",
+    buildRequest: () => ({
+      input: "/api/schedule/tasks",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          title: title.trim(),
-          typeId: typeId || undefined,
-          priority,
-          startDate,
-          dueDate: dueDate || undefined,
-          durationDays: dueDate ? undefined : duration.trim() ? Number(duration) : undefined,
-          predecessorId: predecessorId && predecessorId !== NO_PREDECESSOR_VALUE ? predecessorId : undefined,
-          boqLineItemId: boqLineItemId || undefined,
+          title: (values.title ?? "").trim(),
+          typeId: values.typeId || undefined,
+          priority: values.priority,
+          startDate: values.startDate,
+          dueDate: values.dueDate || undefined,
+          // Only one of the two is sent: the finish date is authoritative
+          // when the user set it, and the duration is what the service
+          // derives it from when they did not.
+          durationDays: values.dueDate ? undefined : values.durationDays ? Number(values.durationDays) : undefined,
+          predecessorId: values.predecessorId || undefined,
+          boqLineItemId: values.boqLineItemId || undefined,
         }),
-      });
-      toast.success("Task created");
-      // D-47: land on the object in display mode with a receipt, rather than
-      // bouncing to an empty form. The number comes from the row the server
-      // wrote, so the message cannot name an activity that was not created.
-      const created = data?.number ? `?created=${encodeURIComponent(String(data.number))}` : "";
-      router.push(`/schedule/tasks/${data.id}${created}`);
-    } catch (err) {
-      setSaveError(errorMessage(err, "Couldn't create this activity"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+      },
+    }),
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved task");
+      router.replace(createdHref("/schedule/tasks", id, values.title));
+    },
+  });
 
   return (
-    <ObjectScreen
-      breadcrumb="Schedule / New Task"
+    <CreateScreen
+      module="Schedule"
+      moduleHref={moduleHref}
+      objectLabel="Task"
       title="New Task"
-      mode="create"
-      hasDraft={false}
-      onSave={createTask}
-      onCancel={() => router.push(`/schedule?projectId=${projectId}`)}
-      onBack={() => router.push(`/schedule?projectId=${projectId}`)}
-      saveDisabled={submitting || missing.length > 0 || !!dueError}
-      // ObjectScreen renders "Save (<reason>)" itself; src/lib/schedule-activity.ts
-      // owns the whole progression and is asserted there.
-      saveDisabledReason={activitySaveReason(missing, { submitting, blocked: dueError })}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <FormField label="Title" required error={touched.title && !title.trim() ? "Title is required" : undefined}>
-          {(f) => (
-            <Input
-              {...f}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, title: true }))}
-              placeholder="e.g. Pour foundation slab"
-            />
-          )}
-        </FormField>
-
-        <div className="grid grid-cols-2 gap-2">
-          <FormField label="Type" error={types.error ?? undefined}>
-            {(f) =>
-              types.loading ? (
-                // A loading state is never an option in a list: the trigger is
-                // disabled and shows a skeleton bar instead of the word
-                // "Loading…" sitting where a real type would be.
-                <div
-                  {...f}
-                  aria-busy="true"
-                  data-testid="type-loading"
-                  className="flex h-9 w-full items-center rounded-md border border-px-border px-3 opacity-60"
-                >
-                  <Skeleton className="h-4 w-24" />
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={typeId} onValueChange={setTypeId}>
-                    <SelectTrigger {...f} className="min-w-40 flex-1">
-                      <SelectValue placeholder={types.rows.length ? "Select a type" : "No types configured"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {types.rows.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {types.error && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => void loadTypes()}>Retry</Button>
-                  )}
-                </div>
-              )
-            }
-          </FormField>
-          <FormField label="Priority">
-            {(f) => (
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger {...f} className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p.replace(/_/g, " ")}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-          </FormField>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          <FormField
-            label="Start Date"
-            required
-            error={touched.start && !startDate ? "Start date is required" : undefined}
-          >
-            {(f) => (
-              <Input
-                {...f}
-                type="date"
-                value={startDate}
-                onChange={(e) => onStartDateChange(e.target.value)}
-                onBlur={() => setTouched((t) => ({ ...t, start: true }))}
-              />
-            )}
-          </FormField>
-          <FormField
-            label="Duration (days)"
-            hint={isMilestone ? "A milestone has no duration" : "Or set the finish date — each derives the other"}
-          >
-            {(f) => (
-              <Input
-                {...f}
-                type="number"
-                min={0}
-                step={1}
-                value={duration}
-                disabled={isMilestone}
-                title={isMilestone ? "A milestone has no duration" : undefined}
-                onChange={(e) => onDurationChange(e.target.value)}
-              />
-            )}
-          </FormField>
-          <FormField
-            label="Due Date"
-            error={touched.due ? dueError : undefined}
-            hint={isMilestone ? "Follows the start date" : undefined}
-          >
-            {(f) => (
-              <Input
-                {...f}
-                type="date"
-                value={dueDate}
-                disabled={isMilestone}
-                title={isMilestone ? "A milestone finishes on the day it starts" : undefined}
-                onChange={(e) => onDueDateChange(e.target.value)}
-                onBlur={() => setTouched((t) => ({ ...t, due: true }))}
-              />
-            )}
-          </FormField>
-        </div>
-
-        <label className="flex items-center gap-2 text-[13px]">
-          <input
-            type="checkbox"
-            className="size-4"
-            checked={isMilestone}
-            onChange={(e) => onMilestoneChange(e.target.checked)}
-          />
-          <span>Milestone (finish is the same day as start)</span>
-        </label>
-
-        <FormField label="Predecessor (optional)" error={predecessors.error ?? undefined} hint="The activity this one follows">
-          {(f) => (
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={predecessorId} onValueChange={setPredecessorId}>
-                <SelectTrigger {...f} className="min-w-64 flex-1" disabled={predecessors.loading || predecessors.rows.length === 0}>
-                  <SelectValue
-                    placeholder={
-                      predecessors.loading
-                        ? "Loading activities…"
-                        : predecessors.error
-                          ? "Activities did not load"
-                          : predecessors.rows.length === 0
-                            ? "This is the first activity on the project"
-                            : "Select an activity"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_PREDECESSOR_VALUE}>No predecessor</SelectItem>
-                  {predecessors.rows.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.number ? `#${t.number} ` : ""}{t.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {predecessors.error && (
-                <Button type="button" variant="outline" size="sm" onClick={() => void loadPredecessors()}>Retry</Button>
-              )}
-            </div>
-          )}
-        </FormField>
-
-        <FormField label="BOQ item (optional)" error={boqLines.error ?? undefined} hint="The scope line this activity delivers">
-          {(f) => (
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={boqLineItemId} onValueChange={setBoqLineItemId}>
-                <SelectTrigger {...f} className="min-w-64 flex-1" disabled={boqLines.loading || boqLines.rows.length === 0}>
-                  <SelectValue
-                    placeholder={
-                      boqLines.loading
-                        ? "Loading BOQ lines…"
-                        : boqLines.error
-                          ? "BOQ lines did not load"
-                          : boqLines.rows.length === 0
-                            ? "No BOQ lines on this project yet"
-                            : "Select a BOQ line"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {boqLines.rows.map((line) => (
-                    <SelectItem key={line.id} value={line.id}>
-                      {[line.itemCode, line.description].filter(Boolean).join(" — ") || line.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {boqLines.error && (
-                <Button type="button" variant="outline" size="sm" onClick={() => void loadBoqLines()}>Retry</Button>
-              )}
-            </div>
-          )}
-        </FormField>
-
-        {saveError && <p role="alert" className="text-[13px] text-px-error">{saveError}</p>}
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={handleChange}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
+    />
   );
 }

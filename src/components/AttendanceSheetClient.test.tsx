@@ -330,9 +330,13 @@ describe("AttendanceSheetClient -- failures and empty states", () => {
       <AttendanceSheetClient projectId="p1" projectName="Cedar Heights Villa - Phase 1" attendanceDate={TODAY} />
     );
 
-    await waitFor(() =>
-      expect(getByText("The construction data service didn't answer — the roster could not be loaded.")).toBeDefined()
-    );
+    // R67 D-65 merge: the sentence now comes from the product's ONE shared read
+    // vocabulary (src/lib/task-errors.ts) rather than this module's own three
+    // strings, so "supabaseKey is required" reads the same here as everywhere
+    // else. D-03's requirement is what is asserted, and it is unchanged: the
+    // subject the user asked for, never the raw backend text, and a Retry.
+    await waitFor(() => expect(getByText(/Couldn't load the roster/)).toBeDefined());
+    expect(getByText(/Couldn't load the roster/).textContent).not.toContain("boom");
     expect(getByText("Retry")).toBeDefined();
   });
 

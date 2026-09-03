@@ -1,68 +1,75 @@
 "use client";
 
-// R42 seq21 (M28 OBJECT archetype + M29 draft lifecycle + M31 document
-// model). Dynamic header, facets, dual header/item status, document flow,
-// and the FULL draft lifecycle: Edit -> lock+draft -> autosave (debounced
-// ~2s) -> Save (caller validates+writes+deletes draft) -> Cancel (confirm
-// then discard) -> leave without saving (draft kept, editing icon shown).
+// R67 F-34 (audit recommendation R-290) -- FRAME-FIRST LOADING ON OBJECT ROUTES.
 //
-// This component owns NO networking of its own -- every persistence step is
-// a callback prop, so the identical component works against projexa's API
-// routes, compliance-tracker's, or any future product's, per this kit's own
-// reuse principle.
+// MERGE NOTE. Lanes F2 and D3 forked the kit's ObjectScreen independently and
+// -- reading the same decision D-11 §3 ("two different components must never
+// share one import path") -- independently landed on the same name for it.
+// This file is the union of the two: F-34's `loading` variant, and D-33's
+// `deleteLabel` / `secondaryAction`. Each addition is marked at its own site.
+// Keep this fork's diff from the kit small; anything else belongs in a kit
+// release.
 //
-// ─── PROJEXA FORK, R67 (programme decision D-09) ────────────────────────────
-// This file is a COPY of @fchecklist/veridian-ui-kit/src/screens/
-// ObjectScreen.tsx, taken at kit version 0.7.0 (the commit projexa's
-// package.json pins). It is forked, not patched, because the kit's source is
-// not on this machine and is not published -- editing node_modules is erased
-// by CI's `bun install --frozen-lockfile`, and a kit release is out of scope
-// for this programme. Everything else this screen needs (ScreenFrame,
-// StatusBadge, DocumentFlow, the shared types) is still imported FROM the
-// kit, so only this one component diverges.
+// WHY THIS IS NAMED KitObjectScreen AND NOT ObjectScreen (decision D-11
+// addendum). Lanes D0 and F2 both created src/components/screens/ObjectScreen
+// .tsx with incompatible interfaces. D0's is CANONICAL at that path: a
+// PROJEXA-native display-first card with ProjectBreadcrumb, an inline delete
+// confirmation and a persistent footer receipt. This file is the OTHER shape
+// -- a verbatim fork of the KIT's ObjectScreen (ScreenFrame, mode/draft/
+// autosave/messages/documentFlow), which the seven construction object pages
+// below were already importing from @fchecklist/veridian-ui-kit/screens before
+// this lane touched them. Folding those props into D0's component would have
+// meant rewriting seven screens onto a different archetype, so D-11's own
+// escape clause applies: "if a fork must survive for a genuinely different
+// shape, it is renamed (KitObjectScreen) and never sits at the canonical
+// path". Two components never share one import path; nothing is deleted.
 //
-// ─── WHY THE NAME IS KitObjectScreen, NOT ObjectScreen ──────────────────────
-// Lane D0 (merged, projexa #234) put a COMPLETELY DIFFERENT component at
-// src/components/screens/ObjectScreen.tsx: the display-first "one object page
-// for every module" archetype, with its own props (ObjectFacet / Button /
-// Card / ProjectBreadcrumb) and 20+ consumer screens. This file and that one
-// share nothing but a shape of intent.
+// WHY IT IS A FORK AT ALL (programme decision D-09). The item as written asks
+// for a change inside @fchecklist/veridian-ui-kit's own ObjectScreen and a kit
+// release. D-09 forbids both for this programme: the kit source is not on this
+// machine, it is pinned to a git commit, and an edit inside node_modules is
+// erased by CI's `bun install --frozen-lockfile`. So the kit's ObjectScreen is
+// copied here verbatim and extended; EVERYTHING it depends on is still
+// imported from the kit (ScreenFrame, StatusBadge, DocumentFlow, the shared
+// types), so this fork carries the object-screen behaviour and nothing else.
+// Upstreaming the `loading` variant to the kit later is a straight copy of the
+// block below.
 //
-// Decision D-11 §3 settles it: "Two different components must never share one
-// import path", D0's is canonical at the canonical path, and the fork that
-// survives for a genuinely different shape is RENAMED. That is what this is.
-// D-33's literal instruction to write this file at screens/ObjectScreen.tsx
-// is overridden by that decision, as the programme's own rule that a decision
-// beats an item's wording requires.
+// WHAT THE VARIANT FIXES. Every object route in PROJEXA answered a wait with
+// one line:
 //
-// The two are not interchangeable: this one is the kit's full draft/autosave/
-// document-flow lifecycle used by PROJEXA's CREATE forms and the two richest
-// object pages; D0's is the display-first archetype. Left at one path, a
-// rebase would keep whichever side merged last and silently break the other
-// side's consumers.
+//     if (!meeting) return <p className="p-6 …">Loading…</p>;
 //
-// The divergence is exactly two additions, both required by R67 D-33:
+// A word, centred in an empty page, with no breadcrumb, no title, no action bar
+// and nothing for a screen reader to announce. The user cannot tell it apart
+// from a broken screen, and after a save it replaces the record they were just
+// looking at. `<KitObjectScreen loading breadcrumb="Minutes of Meeting /
+// Meeting" label="the meeting" />` renders the SAME frame the loaded screen
+// renders -- the real breadcrumb, a title-shaped skeleton bar, the action bar
+// present and disabled with its reason -- inside a region marked aria-busy, and
+// after three seconds it says what it is waiting for, in the same words the
+// list screens use (ListLoadingWords, F-31). 'Loading…' never stands alone
+// again.
 //
-//   deleteLabel   The kit hard-codes the word "Delete" on the destructive
-//                 footer action. On a worker that word is a lie: the action
-//                 sets isActive=false and keeps every attendance row and
-//                 cost. A screen must be able to call it "Deactivate".
-//   secondaryAction  A display-mode action beside Edit -- D-33 needs
-//                 "Reactivate" on an inactive worker, so deactivation stops
-//                 being one-way in the UI.
-//
-// Anything else that needs to change here should change in the kit and come
-// back through a release; keep this fork's diff from upstream this small.
-import { useEffect, useRef, useState } from "react";
+// The loaded path below is byte-for-byte the kit's, so switching a screen to
+// this fork changes nothing about how it renders once its record has arrived.
+
+
+import { useEffect, useRef } from "react";
 import { Pencil } from "lucide-react";
 import { ScreenFrame, StatusBadge, DocumentFlow } from "@fchecklist/veridian-ui-kit/screens";
 import type { DocumentFlowData, FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ListLoadingWords } from "@/components/ListScreenFrame";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000; // GLOBAL: "autosave debounced ~2s"
 
+/** The reason shown beside every action while the record is still in flight. */
+export const OBJECT_LOADING_REASON = "Loading…";
+
 export type KitObjectScreenMode = "display" | "edit" | "create";
 
-export type KitObjectScreenProps = {
+export type KitObjectScreenLoadedProps = {
+  loading?: false;
   breadcrumb: React.ReactNode;
   title: string; // "New <Object>" until named, per M29 -- caller supplies this already resolved
   subtitle?: string;
@@ -77,11 +84,21 @@ export type KitObjectScreenProps = {
   onCancel?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
   onBack?: () => void;
-  /** FORK: the word on the destructive footer action. Defaults to the kit's "Delete". */
-  deleteLabel?: string;
-  /** FORK: a display-mode action rendered beside Edit, e.g. "Reactivate". */
-  secondaryAction?: { label: string; onClick: () => void | Promise<void>; disabledReason?: string };
   deleteDisabledReason?: string;
+  /**
+   * R67 D-33 fork addition. The kit hard-codes the word "Delete" on the
+   * destructive footer action. On a worker that word is a lie: the action sets
+   * isActive=false and keeps every attendance row and every cost. A screen has
+   * to be able to call it "Deactivate".
+   */
+  deleteLabel?: string;
+  /**
+   * R67 D-33 fork addition. A display-mode action beside Edit -- D-33 needs
+   * "Reactivate" on an inactive worker, so deactivation stops being one-way in
+   * the UI. Display mode only: in edit mode the footer is Save/Cancel and a
+   * third verb there would compete with them.
+   */
+  secondaryAction?: { label: string; onClick: () => void | Promise<void>; disabledReason?: string };
   saveDisabled?: boolean;
   saveDisabledReason?: string; // e.g. "2 required fields"
   onAutosave?: () => void | Promise<void>; // caller reads its own current form state; KitObjectScreen only owns the timing
@@ -90,32 +107,108 @@ export type KitObjectScreenProps = {
   children: React.ReactNode; // FormSection(s) / read-only field display, anchor-section content
 };
 
-export function KitObjectScreen({
-  breadcrumb,
-  title,
-  subtitle,
-  headerStatus,
-  facets,
-  documentFlow,
-  mode,
-  hasDraft,
-  lockedByOther,
-  onEdit,
-  onSave,
-  onCancel,
-  onDelete,
-  onBack,
-  deleteLabel = "Delete",
-  secondaryAction,
-  deleteDisabledReason,
-  saveDisabled,
-  saveDisabledReason,
-  onAutosave,
-  messages,
-  onMessageClick,
-  children,
-}: KitObjectScreenProps) {
+export type KitObjectScreenLoadingProps = {
+  loading: true;
+  /** The module's real breadcrumb literal, so it does not change when the record lands. */
+  breadcrumb: React.ReactNode;
+  /**
+   * What the user is waiting for, in their words -- "the meeting", "the worker".
+   * After 3 s the frame says "Still loading the meeting… 4 s"; at 8 s, D-04's
+   * abort budget, "This is taking longer than usual". Omit only where there is
+   * genuinely no noun for it.
+   */
+  label?: string;
+  /** The action names this screen really has, drawn disabled with their reason. */
+  actions?: string[];
+  /** How many facet slots to outline, so the header does not resize on arrival. */
+  facetCount?: number;
+  onBack?: () => void;
+};
+
+export type KitObjectScreenProps = KitObjectScreenLoadedProps | KitObjectScreenLoadingProps;
+
+/**
+ * The frame an object route paints before its record exists.
+ *
+ * Deliberately NOT a spinner in an empty page: the breadcrumb is real text (a
+ * user who navigated by mistake can tell immediately), the title is a bar the
+ * real title will replace at the same size, and the action bar is present and
+ * disabled rather than absent -- an action that appears late is its own kind of
+ * layout jump, and one that looks live over a screen with no record yet is a
+ * fail-after-click.
+ */
+function KitObjectScreenLoading({ breadcrumb, label, actions = ["Edit"], facetCount = 2, onBack }: KitObjectScreenLoadingProps) {
+  return (
+    <ScreenFrame
+      breadcrumb={
+        <span className="flex items-center gap-2">
+          {onBack && (
+            <button type="button" onClick={onBack} className="text-ct-muted hover:text-ct-navy">
+              ← Back
+            </button>
+          )}
+          {breadcrumb}
+        </span>
+      }
+      footerActions={
+        <>
+          <span className="text-[13px] text-ct-muted">{OBJECT_LOADING_REASON}</span>
+          {actions.map((action) => (
+            <button
+              key={action}
+              type="button"
+              disabled
+              aria-disabled="true"
+              title={OBJECT_LOADING_REASON}
+              className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-muted opacity-60"
+            >
+              {action}
+            </button>
+          ))}
+        </>
+      }
+      messages={[]}
+    >
+      <div data-state="loading" aria-busy="true" data-testid="object-screen-loading">
+        <div className="px-4 py-3 border-b border-ct-border">
+          <div className="flex items-start justify-between gap-3">
+            {/* Title-shaped, title-sized: the real <h1> is text-xl, so the bar
+                is h-6 and the header does not change height on arrival. */}
+            <div
+              className="h-6 w-56 max-w-full animate-pulse rounded bg-ct-cloud"
+              data-testid="object-screen-title-skeleton"
+            />
+          </div>
+          {facetCount > 0 && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3">
+              {Array.from({ length: facetCount }, (_, i) => (
+                <div key={i} className="h-3.5 w-28 animate-pulse rounded bg-ct-cloud" />
+              ))}
+            </div>
+          )}
+        </div>
+        {label ? <ListLoadingWords label={label} /> : null}
+      </div>
+    </ScreenFrame>
+  );
+}
+
+export function KitObjectScreen(props: KitObjectScreenProps) {
+  // Hooks must run in the same order on every render, so the loading branch is
+  // taken AFTER them -- not with an early return above them.
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+  }, []);
+
+  if (props.loading) return <KitObjectScreenLoading {...props} />;
+
+  const {
+    breadcrumb, title, subtitle, headerStatus, facets, documentFlow, mode, hasDraft, lockedByOther,
+    onEdit, onSave, onCancel, onDelete, onBack, deleteDisabledReason, deleteLabel = "Delete", secondaryAction,
+    saveDisabled, saveDisabledReason,
+    onAutosave, messages, onMessageClick, children,
+  } = props;
 
   // Debounced autosave -- fires AUTOSAVE_DEBOUNCE_MS after the LAST call to
   // scheduleAutosave() while in edit/create mode. Exposed via a data
@@ -128,9 +221,6 @@ export function KitObjectScreen({
       void onAutosave();
     }, AUTOSAVE_DEBOUNCE_MS);
   }
-  useEffect(() => () => {
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-  }, []);
 
   const isEditing = mode === "edit" || mode === "create";
 
@@ -156,8 +246,8 @@ export function KitObjectScreen({
           Edit
         </button>
       )}
-      {/* FORK: the secondary display-mode action (e.g. Reactivate). Sits with
-          Edit, on the non-destructive side of the spacer. */}
+      {/* FORK (D-33): the secondary display-mode action, e.g. Reactivate. Sits
+          with Edit, on the non-destructive side of the spacer. */}
       {secondaryAction && (
         <button
           type="button"
@@ -166,10 +256,12 @@ export function KitObjectScreen({
           title={secondaryAction.disabledReason}
           className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {secondaryAction.disabledReason ? `${secondaryAction.label} (${secondaryAction.disabledReason})` : secondaryAction.label}
+          {secondaryAction.disabledReason
+            ? `${secondaryAction.label} (${secondaryAction.disabledReason})`
+            : secondaryAction.label}
         </button>
       )}
-      {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a spacer, not just a gap class, keeps it visually separated. */}
+      {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a spacer, not just a gap class, keeps Delete visually separated. */}
       {onDelete && <div className="flex-1" />}
       {onDelete && (
         <button
@@ -179,7 +271,7 @@ export function KitObjectScreen({
           title={deleteDisabledReason}
           className="rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {/* FORK: was the hard-coded word "Delete". */}
+          {/* FORK (D-33): was the hard-coded word "Delete". */}
           {deleteLabel}
         </button>
       )}
@@ -207,7 +299,7 @@ export function KitObjectScreen({
       messages={messages}
       onMessageClick={onMessageClick}
     >
-      <div data-veri-autosave-trigger onChangeCapture={isEditing ? scheduleAutosave : undefined}>
+      <div data-veri-autosave-trigger onChangeCapture={isEditing ? scheduleAutosave : undefined} data-state="ready">
         <div className="px-4 py-3 border-b border-ct-border">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -238,3 +330,5 @@ export function KitObjectScreen({
     </ScreenFrame>
   );
 }
+
+export default KitObjectScreen;

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // R48_NO_CURRENCY_UI_01: the organisation's base currency, read and written
 // as a single setting from /settings.
@@ -24,7 +26,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // admin check on this path only ever sees "does this org's key have write
 // scope" -- the real per-user gate has to live here, same pattern as
 // PATCH /api/org-members/[id].
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -32,14 +34,11 @@ export async function GET() {
     const data = await callVeridian("/currencies/base", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to load the organization currency" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to load the organization currency");
   }
-}
+});
 
-export async function PUT(request: NextRequest) {
+export const PUT = withTiming("PUT", async function PUT(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const roleError = requireRole(ctx, ROLE_GROUPS.ORG_ADMIN);
@@ -59,9 +58,6 @@ export async function PUT(request: NextRequest) {
     });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof VeridianApiError ? err.message : "Failed to set the organization currency" },
-      { status: err instanceof VeridianApiError ? err.status : 502 }
-    );
+    return veridianErrorResponse(err, "Failed to set the organization currency");
   }
-}
+});

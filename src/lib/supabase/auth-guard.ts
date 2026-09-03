@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "./server";
 import { getClaimsWithRetry } from "./get-claims-with-retry";
+import { recordRequestOrg } from "@/lib/request-timing";
 
 export type AuthUser = { id: string; email: string | null };
 
@@ -152,6 +153,12 @@ export async function requireAuth(): Promise<AuthContext> {
   if (!membership) {
     return { user, organizationId: null, role: null, response: NextResponse.json({ error: "No organization" }, { status: 400 }) };
   }
+
+  // R67 F-28: names the tenant on this request's structured timing line. Done
+  // here rather than in each route so no route has to remember to, and so a
+  // route added tomorrow gets it for free. A pure record: it reads nothing and
+  // changes no behaviour, and outside a withTiming() scope it is a no-op.
+  recordRequestOrg(membership.organization_id);
 
   return { user, organizationId: membership.organization_id, role: membership.role, response: null };
 }

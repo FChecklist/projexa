@@ -107,12 +107,23 @@ describe("the closed failure vocabulary (D-03)", () => {
 
   test("a non-ApiError (a dropped connection, a parse failure) still produces a sentence, never '[object Object]'", () => {
     expect(saveFailureSentence(new Error("fetch failed"))).toBe("The construction data service didn't answer — nothing was saved.");
-    expect(loadFailureSentence(undefined, "roster")).toBe("The construction data service didn't answer — the roster could not be loaded.");
+    // R67 D-65 merge: a READ failure now speaks the product's ONE shared
+    // vocabulary (src/lib/task-errors.ts's describeReadError) rather than this
+    // module's own three sentences, so "supabaseKey is required" reads the same
+    // here as on every other screen. D-03's actual requirement is unchanged and
+    // is what is asserted: never a raw backend string, and always the subject
+    // the user asked for.
+    const sentence = loadFailureSentence(undefined, "roster");
+    expect(sentence).toContain("roster");
+    expect(sentence).not.toContain("[object Object]");
+    expect(sentence.length).toBeGreaterThan(20);
   });
 
   test("load failures name the subject the user asked for", () => {
     expect(loadFailureSentence(new ApiError("x", 502, null), "attendance for this date"))
-      .toBe("The construction data service didn't answer — the attendance for this date could not be loaded.");
+      .toContain("attendance for this date");
+    // The raw upstream text never reaches the user.
+    expect(loadFailureSentence(new ApiError("supabaseKey is required", 500, null), "roster")).not.toContain("supabaseKey");
   });
 });
 

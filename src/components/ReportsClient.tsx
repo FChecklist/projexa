@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,9 @@ import { Loader2, Play } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
+import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
@@ -106,9 +109,17 @@ const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
 // prefixes the same live label ReportOutput's cellValue() would otherwise
 // skip. Built inside ProjectReportsPanel (below) since it needs the live
 // `currencies` list from useCurrencies().
-function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencies>): Record<string, (v: unknown) => string> {
+//
+// R67 G-05 (R-260): the fix above prefixed the currency label onto the RAW
+// value, so a contract value came back "AED 4500000" on one report and
+// "AED 4500000.5" on another -- the same column, two precisions, no
+// grouping. It also rendered the em-dash for an absent value while the rest
+// of the app renders the en-dash. Both now come from the one money
+// formatter, which also means an org with NO currency gets the warning glyph
+// and the footer notice instead of an unexplained bare number.
+function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: unknown) => string> {
   return {
-    contractValue: (v) => (v === null || v === undefined ? "—" : `${currencyLabel(undefined, currencies)}${v}`),
+    contractValue: (v) => orgMoney.money(v as number | string | null | undefined),
   };
 }
 
@@ -128,12 +139,15 @@ function buildProjectStatusFormatters(currencies: ReturnType<typeof useCurrencie
 // AI-ops, custom, plus these same 17 construction reports again via their
 // own report_definitions rows where they exist there too).
 function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
+  const router = useRouter();
   const [reportName, setReportName] = useState("project-status");
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [ranOnce, setRanOnce] = useState(false);
-  const currencies = useCurrencies();
+  const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const orgMoney = useOrgMoney();
 
   // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
   // guards against an out-of-order/stale fetch response overwriting a more
@@ -150,23 +164,47 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
   async function runReport() {
     const myGeneration = ++requestGeneration.current;
     setLoading(true);
+    setRunError(null);
+    setStartedAt(Date.now());
     try {
       const params = new URLSearchParams({ projectId });
       if (reportName === "weekly-project") params.set("weekStart", weekStart);
       const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const reason = typeof data?.error === "string" ? data.error : null;
+        const failure = new Error(reason ?? `Request failed (HTTP ${res.status})`);
+        (failure as Error & { httpStatus?: number }).httpStatus = res.status;
+        throw failure;
+      }
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       setResult(data);
       setRanOnce(true);
     } catch (err) {
       if (myGeneration !== requestGeneration.current) return;
-      toast.error(err instanceof Error && err.message ? err.message : "Could not generate report");
+      // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
+      // so the panel below settled on the flat sentence "Could not generate
+      // this report." while the backend's own reason -- the only thing that
+      // says WHICH report failed and why -- faded with the notification. The
+      // failure is now stated in the panel, through the same dictionary
+      // every other pane uses, with a Retry that re-runs it.
+      setRunError({
+        status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
       setResult(null);
     } finally {
       if (myGeneration === requestGeneration.current) setLoading(false);
     }
   }
+
+  // R67 D-02: ONE Work Progress Report. Selecting "Work Progress" here no
+  // longer runs the slow /api/reports/work-progress path (24.3 s measured,
+  // six fan-out calls) beside the module's own faster, richer report -- it
+  // navigates to /work-progress?tab=report, which runs on arrival with its
+  // parameters in the URL, a BOQ selector, the tie check and an export. Two
+  // screens for one report is the duplication the decision retires.
+  const destination = projexaReportDestination({ id: reportName }, projectId);
 
   return (
     <div className="space-y-4">
@@ -182,29 +220,53 @@ function ProjectReportsPanel({ projectId, reports }: { projectId: string; report
           {reportName === "weekly-project" && (
             <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
           )}
-          <Button onClick={runReport} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
-          </Button>
+          {destination ? (
+            <Button onClick={() => router.push(destination)} data-testid="reports-open-work-progress">
+              <Play className="size-4" /> Open Report
+            </Button>
+          ) : (
+            <Button onClick={runReport} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+            </Button>
+          )}
         </CardContent>
       </Card>
 
       <Card className="shadow-card">
         <CardContent className="p-4">
-          {!ranOnce ? (
-            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
+          {destination ? (
+            <p className="py-10 text-center text-sm text-px-muted">
+              The Work Progress Report opens in the Work Progress module, where the date range, the view and the
+              BOQ version live in the URL and the report runs as soon as it opens.
+            </p>
+          ) : runError ? (
+            <PaneErrorCard
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              error={runError}
+              onRetry={runReport}
+            />
           ) : loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+            <PaneWaitingCaption
+              startedAt={startedAt}
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              onRetry={runReport}
+            />
+          ) : !ranOnce ? (
+            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
           ) : result === null ? (
-            <p className="py-10 text-center text-sm text-px-muted">Could not generate this report.</p>
+            <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
           ) : (
             <ReportOutput
               data={result}
               fieldLabels={REPORT_FIELD_LABELS[reportName]}
-              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(currencies) : undefined}
+              fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
             />
           )}
         </CardContent>
       </Card>
+      {/* R67 G-05: once, at the foot -- explains the warning glyph on every
+          unlabelled figure above, and renders nothing when a currency is set. */}
+      <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }
@@ -238,7 +300,9 @@ export default function ReportsClient({ projectId, registryColumns }: { projectI
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        <ReportCatalogSection />
+        {/* R67 D-02: the catalog needs the project so its Work Progress row can
+            link to the module's real report for THIS project, not a bare route. */}
+        <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>
   );

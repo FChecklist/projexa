@@ -33,9 +33,9 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 import SkeletonTable from "@/components/SkeletonTable";
 import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatMoney } from "@/lib/format-money";
-import { useCurrencies } from "@/lib/currency";
-import { readRailProject, subscribeRailProject } from "@/lib/rail-project";
+
+import { useOrgMoney } from "@/lib/use-org-money";
+import { readStoredProjectId } from "@/lib/project-preference";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 // Priority 17 remaining gap (2026-07-15): erp_budgets.companyId has existed
 // since Wave 70 (createBudget already accepted it) -- this wires the UI
@@ -95,7 +95,7 @@ export const BOQ_BUDGET_LABEL = "Open BOQ budget →";
 
 export default function BudgetsClient({ registryColumns }: { registryColumns?: RegistryColumn[] | null }) {
   const router = useRouter();
-  const currencies = useCurrencies();
+  const orgMoney = useOrgMoney();
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -125,8 +125,10 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
       setBudgets(data.projectBudgets ?? []);
       setLoadError(null);
     } catch (err) {
+      // R67 D-65 merge: the rows are NOT cleared. Blanking the table on a
+      // failed refresh throws away figures the user already had, and an empty
+      // table beside an error is easy to read as "the budgets are gone".
       setLoadError(errorMessage(err, "Couldn't load budgets"));
-      setBudgets([]);
     } finally {
       setLoading(false);
     }
@@ -148,8 +150,12 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
   // R67 D-38's rail selection: the BOQ budget lives on ONE project, so this
   // screen has to know whether one is selected before it can offer that link.
   useEffect(() => {
-    setRailProjectId(readRailProject());
-    return subscribeRailProject(setRailProjectId);
+    // R67 D-38/A-05 merge: the rail's choice is read from the ONE module that
+    // owns it (localStorage + a cookie the server reads). There is no
+    // subscription: the shell's own chooseProject() calls router.refresh()
+    // after it writes, so this screen re-renders with the new answer rather
+    // than listening for it -- one writer, one reader.
+    setRailProjectId(readStoredProjectId());
   }, []);
 
   const selectedProject = useMemo(
@@ -253,7 +259,7 @@ export default function BudgetsClient({ registryColumns }: { registryColumns?: R
                     </span>
                   );
                 }
-                return <span className="text-right tabular-nums">{formatMoney(amount, currencies)}</span>;
+                return <span className="text-right tabular-nums">{orgMoney.money(amount)}</span>;
               },
             }}
           />
