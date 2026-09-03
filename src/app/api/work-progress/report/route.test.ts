@@ -28,6 +28,17 @@ mock.module("@/lib/supabase/auth-guard", () => ({
 }));
 
 mock.module("@/lib/veridian-client", () => ({
+  // R67 MERGE (D-11, lane E2's E-28): the route also composes request.signal
+  // with its own deadline through combineAbortSignals now -- a real function
+  // here (not the identity of either input) so a test that ever inspects the
+  // signal sees the same OR-combinator shape production code gets.
+  combineAbortSignals: (...signals: (AbortSignal | undefined)[]) => {
+    const real = signals.filter((s): s is AbortSignal => !!s);
+    if (real.length === 1) return real[0];
+    const controller = new AbortController();
+    for (const s of real) s.addEventListener("abort", () => controller.abort(s.reason), { once: true });
+    return controller.signal;
+  },
   callVeridian: async (path: string) => {
     requestedPaths.push(path);
     if (path.startsWith("/scope")) {
@@ -113,5 +124,40 @@ describe("GET /api/work-progress/report: the minimum set of VERIDIAN calls", () 
     expect(body.rows).toHaveLength(1);
     expect(body.byCategory[0].name).toBe("Substructure");
     expect(body.byManpower).toEqual([{ trade: "Mason", workerDays: 1, totalCost: 500 }]);
+  });
+});
+
+// R67 E-28 (C-04): `from` is optional -- the effective range comes from the
+// earliest progress entry when the caller does not supply one.
+describe("GET /api/work-progress/report: from is optional (C-04)", () => {
+  test("400 only for a missing `to` -- a missing `from` is not an error", async () => {
+    mockCtx = ctx();
+    requestedPaths = [];
+    const res = await GET(new NextRequest("http://test/api/work-progress/report?projectId=p1"));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("to");
+    expect(body.error).not.toContain("from");
+  });
+
+  test("with no `from`, the effective range starts at the earliest entry, not the query param", async () => {
+    mockCtx = ctx();
+    requestedPaths = [];
+    const res = await GET(new NextRequest("http://test/api/work-progress/report?projectId=p1&to=2026-07-20"));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.fromWasDefaulted).toBe(true);
+    // The mocked /work-progress fixture's one entry is dated 2026-07-12.
+    expect(body.earliestEntryDate).toBe("2026-07-12");
+    expect(body.from).toBe("2026-07-12");
+    const attendance = requestedPaths.find((p) => p.startsWith("/attendance"));
+    expect(attendance).toContain("from=2026-07-12");
+  });
+
+  test("an explicit `from` is still honoured verbatim", async () => {
+    const { body } = await run();
+    expect(body.fromWasDefaulted).toBe(false);
+    expect(body.from).toBe("2026-07-10");
   });
 });

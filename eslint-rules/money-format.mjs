@@ -66,7 +66,8 @@ export const RULE_MESSAGE =
 export const NOT_YET_SWEPT = [
   "src/components/AccountingClient.tsx",
   "src/components/BudgetObjectClient.tsx",
-  "src/components/CategoryDistributionCharts.tsx",
+  // src/components/CategoryDistributionCharts.tsx -- SWEPT (R67 MERGE, D-11):
+  // already uses useOrgMoney()/formatMoney() throughout, no banned method left.
   "src/components/ChangeOrderObjectClient.tsx",
   "src/components/ChangeOrdersClient.tsx",
   // src/components/CostVarianceAnalyticalClient.tsx -- DELETED by R67 D-62.

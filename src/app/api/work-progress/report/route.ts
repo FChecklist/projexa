@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian } from "@/lib/veridian-client";
+import { callVeridian, combineAbortSignals } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 import {
@@ -20,6 +20,13 @@ import {
 // already declares it optional, so an older VERIDIAN that does not send it
 // still parses, and those rows fall back to the activity -> category path.
 type BoqResponse = { id: string; status: string; version: number; title: string; lineItems: BoqLineItem[] };
+
+/**
+ * R67 E-28 (R-244): "a run over 30 s is cancelled server-side". The measured
+ * run is 2.7 s; anything an order of magnitude past that is not a slow report,
+ * it is a report nobody is going to wait for.
+ */
+export const REPORT_DEADLINE_MS = 30_000;
 
 // Real Work Progress Report, assembled from VERIDIAN's real construction
 // data (BoQ line items + progress entries + attendance/labour-roster/
@@ -42,7 +49,35 @@ type BoqResponse = { id: string; status: string; version: number; title: string;
 //      never looks past `to` (see computeLineItemProgress: `d < from`,
 //      `d >= from && d <= to`, `d <= to`), so it is now capped at `to`. The
 //      LOWER bound is deliberately NOT sent: the "previous" column IS the
-//      entries before `from`, and windowing them away would silently zero it.
+//      entries before `from` -- and, per E-28/C-04 below, `from` itself may
+//      not be known yet when this call goes out.
+//
+// R67 MERGE (D-11, lane E2's E-28 x lane F-13). Both lanes touched this exact
+// route and both fixes are real and independent, so both survive:
+//
+//   * F-13's three scoping wins above are kept in full.
+//   * E-28/C-04 -- `from` is now OPTIONAL. The screen used to default it to
+//     the first of the current month and then tell the reader to "Pick a date
+//     range and click Run Report" over a range that was already filled -- and
+//     on a project whose work started in June, a month-to-date default reports
+//     a project as having done nothing. The default now comes from the DATA:
+//     the earliest progress entry this project has, computed from the SAME
+//     work-progress read F-13 already scoped to `dateTo=to` (that call has no
+//     lower bound, so it still carries the true earliest entry). Because the
+//     effective `from` is not known until that read lands, the attendance
+//     call -- the one F-13 scopes with a LOWER bound too -- cannot join the
+//     first Promise.all; it fires right after, still windowed, at the cost of
+//     one sequential round trip only on the (uncommon) defaulted-range path.
+//     An explicit `from` keeps the original all-parallel shape exactly.
+//   * E-28/R-244 -- this report fans out to several upstream calls on a
+//     shared connection pool, and before this it had no way to stop. Two
+//     things now abandon it: the browser giving up (request.signal -- the
+//     Cancel button on the WPR header aborts its fetch, and that reaches
+//     here), and this route's own 30-second deadline. Built with an explicit
+//     AbortController + setTimeout, NOT AbortSignal.timeout() -- see
+//     veridian-client.ts's own header comment: that API never fires its abort
+//     event on Bun 1.3.14 (Windows), the runtime this repo's unit tests run
+//     in, so a deadline built from it would silently never expire there.
 export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -70,19 +105,27 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   // set and still tie to each other.
   const categoryFilter = searchParams.getAll("category").filter((c) => c.trim() !== "");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
-  if (!from || !to) return NextResponse.json({ error: "from and to (YYYY-MM-DD) query params are required" }, { status: 400 });
+  // R67 E-28 (C-04): `from` is now OPTIONAL, and that is the point -- see the
+  // merge note above. `to` is still required here, because a missing end
+  // date is a different mistake from an unspecified start.
+  if (!to) return NextResponse.json({ error: "to (YYYY-MM-DD) query param is required" }, { status: 400 });
 
   const orgId = ctx.organizationId!;
   const qp = `projectId=${encodeURIComponent(projectId)}`;
 
+  // R67 E-28 (R-244): an explicit AbortController + setTimeout, matching
+  // veridian-client.ts's own attemptFetch() -- AbortSignal.timeout() is not
+  // used here for the same reason it was dropped there.
+  const deadlineController = new AbortController();
+  const deadlineTimer = setTimeout(() => deadlineController.abort(), REPORT_DEADLINE_MS);
+  const signal = combineAbortSignals(request.signal, deadlineController.signal);
+
   try {
-    const window = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    const [scopeData, workProgressData, progressData, attendanceData, rosterData] = await Promise.all([
-      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId }),
-      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId }),
-      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}&dateTo=${encodeURIComponent(to)}`, { organizationId: orgId }),
-      callVeridian<{ attendance: Attendance[] }>(`/attendance?${qp}&${window}`, { organizationId: orgId }),
-      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true }),
+    const [scopeData, workProgressData, progressData, rosterData] = await Promise.all([
+      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId, signal }),
+      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId, signal }),
+      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}&dateTo=${encodeURIComponent(to)}`, { organizationId: orgId, signal }),
+      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true, signal }),
     ]);
 
     // Scope-wise / category-wise are computed from the latest, non-superseded
@@ -103,20 +146,55 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     // whole set, not a subset.
     const vendors = vendorsFromRoster(roster);
 
+    const entries = progressData.entries ?? [];
+    // R67 E-28 (C-04): the data-derived default start date. The earliest
+    // progress entry is the first day this project recorded anything, so a
+    // report that starts there covers the whole of it.
+    //
+    // NOT "the project start", which R-244 also names: nothing in this app's
+    // payloads carries one (resolveSelectedProject returns {id, name}, and the
+    // dashboard payload has no start date either), so claiming a project start
+    // here would mean inventing one. With no entries at all there is no
+    // earliest date, and the range collapses to the single day `to` -- an empty
+    // report the screen then explains in words.
+    const earliestEntryDate = entries.reduce<string | null>(
+      (earliest, e) => (earliest === null || e.entryDate < earliest ? e.entryDate : earliest),
+      null
+    );
+    const effectiveFrom = from ?? earliestEntryDate ?? to;
+
+    // R67 F-13: windowed to [effectiveFrom, to] rather than fetched whole and
+    // filtered downstream. Fired after the batch above because `effectiveFrom`
+    // is not known until progressData lands when `from` was not supplied (see
+    // the merge note above) -- an explicit `from` still reaches this point in
+    // the same request, just one microtask later than the fully-parallel path.
+    const attendanceData = await callVeridian<{ attendance: Attendance[] }>(
+      `/attendance?${qp}&from=${encodeURIComponent(effectiveFrom)}&to=${encodeURIComponent(to)}`,
+      { organizationId: orgId, signal }
+    );
+
     const report = buildWorkProgressReport({
       lineItems,
-      entries: progressData.entries ?? [],
+      entries,
       activities: workProgressData.activities ?? [],
       categories: workProgressData.categories ?? [],
-      from,
+      from: effectiveFrom,
       to,
       categoryFilter,
     });
-    const byManpower = buildManpowerBreakdown({ roster, attendance: attendanceData.attendance ?? [], from, to });
-    const byVendor = buildVendorBreakdown({ roster, attendance: attendanceData.attendance ?? [], vendors, from, to });
+    const byManpower = buildManpowerBreakdown({ roster, attendance: attendanceData.attendance ?? [], from: effectiveFrom, to });
+    const byVendor = buildVendorBreakdown({ roster, attendance: attendanceData.attendance ?? [], vendors, from: effectiveFrom, to });
 
     return NextResponse.json({
-      projectId, from, to,
+      projectId,
+      // The range it REALLY ran, so the parameter bar and the URL can show the
+      // truth rather than what the client guessed before it asked.
+      from: effectiveFrom,
+      to,
+      /** null when this project has logged nothing at all. */
+      earliestEntryDate,
+      /** True when `from` was defaulted here rather than chosen by the caller. */
+      fromWasDefaulted: !from,
       boqTitle: latestBoq?.title ?? null,
       boqId: latestBoq?.id ?? null,
       // R36/P5: the full list of this project's BOQs (id/title/status/
@@ -141,6 +219,17 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
       byVendor,
     });
   } catch (err) {
+    // The deadline gets its own words. "The service did not answer" would be
+    // false -- it was still working, and we stopped waiting; the reader's fix
+    // is a narrower range, not a retry of the same thing.
+    if (deadlineController.signal.aborted && !request.signal.aborted) {
+      return NextResponse.json(
+        { error: `The Work Progress Report was still running after ${REPORT_DEADLINE_MS / 1000} s and was cancelled. Narrow the date range and run it again.` },
+        { status: 504 }
+      );
+    }
     return veridianErrorResponse(err, "Failed to generate work progress report");
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 });

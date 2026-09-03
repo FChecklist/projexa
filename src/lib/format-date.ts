@@ -96,32 +96,97 @@ export function formatTime(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
 }
 
+// R67 MERGE (D-11, lane E2's E-30 x lane F-01's own doc comment). F-01 asked
+// for an "Updated HH:MM" line and named this function formatHourMinute() with
+// NO `hour12` option (12-hour, "02:30 PM") -- but no call site of that name
+// ever shipped (grepped clean on main and on this lane both), so there was
+// nothing to collide with in practice, only in the name. E2's E-30 (R-263)
+// needs the SAME name for a REAL, live call site (WorkProgressReportClient's
+// run stamp, "Ran in 2.7 s at 14:02") and specifically needs `hour12: false`:
+// a report timestamp read day-first elsewhere on the same screen and 12-hour
+// here would be its own small inconsistency. Two functions cannot share one
+// export, and the one with an actual reader wins the name; F-01's un-called
+// 12-hour form is dropped rather than kept under a second name nobody would
+// ever import.
+//
+// MERGE NOTE (integration train, lane D22). Lane D22 added a SECOND
+// formatDayMonthYear() here, built on en-GB Intl, for D-63's WhatsApp summary
+// sentence. It is dropped rather than kept beside the one already exported
+// below: that one is the version an earlier merge already chose on merit,
+// because en-GB Intl spells September "Sept" where this product's copy says
+// "Sep", and it returns the en-dash rather than the literal string "Invalid
+// Date". D-63's call sites take the surviving helper, which has the same
+// signature and the day-first form the item asked for.
+
 /**
- * e.g. "02:30 PM" -- hours and minutes only, identical on server and client.
+ * e.g. "14:02" -- the clock time alone, 24-hour, zero-padded.
  *
- * R67 F-01 asks for an "Updated HH:MM" line under the dashboard KPI band, and
- * formatTime() above cannot give it: with no options, toLocaleTimeString
- * includes SECONDS ("2:30:45 PM"). A seconds-precise stamp on a figure that is
- * only refreshed per request reads as a live clock, which is the opposite of
- * what the line is for -- it exists to say how old these numbers are, to the
- * minute. Same pinned locale and time zone as its siblings, for the same
- * hydration reason.
- *
- * MERGE NOTE (integration train, lane D22). Lane D22 added a SECOND
- * formatDayMonthYear() here, built on en-GB Intl, for D-63's WhatsApp summary
- * sentence. It is dropped rather than kept beside the one already exported
- * below: that one is the version an earlier merge already chose on merit,
- * because en-GB Intl spells September "Sept" where this product's copy says
- * "Sep", and it returns the en-dash rather than the literal string "Invalid
- * Date". D-63's call sites take the surviving helper, which has the same
- * signature and the day-first form the item asked for.
+ * R67 E-30 (R-263). The run stamp reads "Ran in 2.7 s at 14:02", and
+ * formatTime() gives "2:30:00 PM" -- seconds nobody needs and a meridiem the
+ * sentence did not ask for. Pinned to the same locale and time zone as every
+ * other helper here for the same hydration reason; `hour12: false` is stated
+ * explicitly because en-US would otherwise ignore the 2-digit hour and print
+ * "2:02 PM".
  */
 export function formatHourMinute(value: Date | string | number): string {
   return new Date(value).toLocaleTimeString(FIXED_LOCALE, {
     timeZone: FIXED_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
+}
+
+/**
+ * e.g. "01-09-2026" -- day-month-year, zero-padded, hyphen separated.
+ *
+ * R67 E-34 / E-31 (R-266 / R-264). The sentences these items specify quote the
+ * date in words: "No progress was recorded between 01-09-2026 and 02-09-2026".
+ * formatDate() gives "9/1/2026", which is the en-US month-first order -- in a
+ * sentence about a range, a reader who reads dates day-first sees a different
+ * range, and there is nothing in "9/1/2026" that says which convention is in
+ * play. Zero-padded day-first with hyphens is unambiguous to both.
+ *
+ * Built from pinned parts, and from the SAME locale and time zone as every
+ * helper here, for the same hydration reason: a date-only value near a day
+ * boundary formats as a different calendar day once the time zone moves.
+ */
+export function formatDateDMY(value: Date | string | number): string {
+  const date = new Date(value);
+  const day = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, day: "2-digit" });
+  const month = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, month: "2-digit" });
+  const year = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, year: "numeric" });
+  return `${day}-${month}-${year}`;
+}
+
+/**
+ * e.g. "25 Aug" -- the short day-and-month form a chart caption uses, where a
+ * full "8/25/2026" is more precision than the sentence needs.
+ *
+ * R67 E-25 (R-211). Built from two pinned parts rather than one
+ * `{ day, month }` option object because that produces "Aug 25" in en-US, and
+ * the caption reads "Only one day logged (25 Aug)". Both parts pin the same
+ * locale and time zone as every other helper here, for the same hydration
+ * reason.
+ */
+export function formatDayMonth(value: Date | string | number): string {
+  const date = new Date(value);
+  const day = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, day: "numeric" });
+  const month = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, month: "short" });
+  return `${day} ${month}`;
+}
+/**
+ * e.g. "03-09-2026 14:02" -- the "as of" stamp every project-dashboard tile
+ * carries.
+ *
+ * R67 E-39 (R-293). Built from the two helpers above rather than from a fresh
+ * toLocaleString call, so the date half cannot read month-first while
+ * formatDateDMY reads day-first two lines away, and the clock half is the same
+ * 24-hour form the report stamps already use. formatDateTime() gives
+ * "9/3/2026, 2:02 PM", which is a third convention on the same screen.
+ */
+export function formatDateTimeDMY(value: Date | string | number): string {
+  return `${formatDateDMY(value)} ${formatHourMinute(value)}`;
 }
 
 /**

@@ -22,7 +22,13 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     date ? `&date=${encodeURIComponent(date)}` : "",
   ].join("");
   try {
-    const data = await callVeridian(`/reports/manpower-cost?projectId=${encodeURIComponent(projectId)}${qs}`, { organizationId: ctx.organizationId! });
+    // format=legacy. R67 E-32 flipped the DEFAULT body of /reports/{name} to
+    // the generic { columns, rows } table. This proxy's own contract is the
+    // manpower-cost handler's payload -- it has answered that shape since
+    // R39/R-C07 and it is not this PR's business to change what a proxy
+    // returns to its callers. The named report screen is where the table
+    // renders; this stays on the shape it published.
+    const data = await callVeridian(`/reports/manpower-cost?format=legacy&projectId=${encodeURIComponent(projectId)}${qs}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load manpower cost report");

@@ -82,7 +82,10 @@ describe("A-17's own list of pill keys", () => {
   test("Tasks, Calendar, Analysis and Dashboard are VIEWS, and open their own URL", () => {
     expect(pillHref(pillTargetFor("tasks")!, "p1")).toBe("/schedule?tab=board&projectId=p1");
     expect(pillHref(pillTargetFor("calendar")!, "p1")).toBe("/schedule?projectId=p1");
-    expect(pillHref(pillTargetFor("analysis")!, "p1")).toBe("/work-progress?tab=analytics&projectId=p1");
+    // R67 MERGE (D-11, lane E2's E-27): analysis-screens.ts's /analysis hub
+    // lists all four analytical screens; this table used to send the pill to
+    // just one of them (Work Progress's own analytics tab).
+    expect(pillHref(pillTargetFor("analysis")!, "p1")).toBe("/analysis?projectId=p1");
     expect(pillHref(pillTargetFor("dashboard")!, "p1")).toBe("/dashboard?projectId=p1");
   });
 

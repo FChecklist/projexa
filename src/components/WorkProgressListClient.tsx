@@ -161,9 +161,13 @@ export default function WorkProgressListClient({
   projectId?: string;
   projectName?: string | null;
   /**
-   * R67 D-29. False when this list is the table half of AnalyticalScreen,
-   * which draws the Filter | Export header itself. See the merge note at the
-   * top of the file.
+   * R67 MERGE (D-11, lane E2's E-24 x lane D0's D-29): the same fix -- this
+   * list is mounted both as /work-progress's own screen (owns its Filter/
+   * Export header) and as AnalyticalScreen's table slot (which draws its own
+   * Filter/Export, so a second pair reading "Filter (Not yet available)"
+   * would sit beside the real ones) -- built independently under inverted
+   * names. D-29's `framed` (default true) is kept as the one name; E-24's
+   * `frameless` had no other reference once this prop won.
    */
   framed?: boolean;
 }) {

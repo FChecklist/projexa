@@ -1644,6 +1644,25 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     [router, setLoaded]
   );
 
+  // R67 MERGE (D-11, lane E2's E-27 x lane A-01..A-20). E2's onPillSelect
+  // (a raw kit-composer click handler: draft-seeding on first click, a
+  // localStorage-only usage ledger, and a hardcoded "analysis" special case)
+  // targeted the composer this shell had BEFORE the A-series fork -- see this
+  // file's own header, "THE COMPOSER IS NOW THE KIT'S OWN, END TO END" /
+  // "PROJEXA's own forks now (src/components/shell/)". A-02 deliberately
+  // deleted draft-seeding as a defect in its own right ("it makes the
+  // composer write words the user did not"), replacing pills with CARDS that
+  // navigate straight to a real route (onCardSelect below, cardHref); A-07
+  // moved usage recording server-side (bumpUsage). Nothing in the current
+  // render tree still passes onPillSelect to anything (PillSelection has no
+  // other reference in this codebase), so it is dropped rather than kept
+  // beside a mechanism it duplicates.
+  //
+  // E-27's real, still-live fix -- Analysis pointed at one of its four
+  // screens instead of the /analysis hub that lists all four -- survives: it
+  // is now A-17's own pill-routes.ts table entry for "analysis", the general
+  // mechanism this architecture actually uses, rather than a one-pill special
+  // case in a handler nothing calls any more.
   // R67 A-07 -- USAGE IS RECORDED ON THE SERVER NOW, not only in this browser.
   //
   // Every card and leaf click was counted in localStorage and nowhere else, so

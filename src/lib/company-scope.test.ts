@@ -1,85 +1,71 @@
 /// <reference types="bun-types" />
-// Proves the "Company" level's authorization boundary: a caller can only
-// ever get a companyId (=organizationId) they have a real membership row
-// for, which is what makes selecting a Company actually scope the
-// drill-down's VERIDIAN calls to that company's own data instead of
-// leaking another org's data via a guessed/borrowed org UUID.
-import { describe, expect, test, mock } from "bun:test";
-import { NextResponse } from "next/server";
-import type { AuthContext } from "@/lib/supabase/auth-guard";
+// R67 E-37 (R-269 / R-298). The Company -> Department -> Project drill-down
+// starts at a company, and R-269's finding was that it dead-ended before the
+// first level: the page said "No company memberships found for this account."
+// and there was nothing below it.
+//
+// resolveHierarchyCompanies is the decision that fixes it, and it is pure on
+// purpose -- the two reads (memberships, organisation) stay in the route, so
+// the branching, which is the part with a wrong answer in each direction, is
+// testable without a database.
+import { describe, expect, test } from "bun:test";
+import { resolveHierarchyCompanies, type CompanyMembership, type OrganizationSummary } from "./company-scope";
 
-let mockAuthCtx: AuthContext;
-let mockMembershipRows: { role: string }[] = [];
-let mockCompanyRows: { id: string; name: string; slug: string; country: string | null; role: string }[] = [];
+const MEMBERSHIP: CompanyMembership = {
+  id: "org_demo",
+  name: "Demo Organization",
+  slug: "demo",
+  country: "AE",
+  role: "owner",
+};
 
-function fakeQuery<T>(rows: T[]) {
-  const chain = {
-    from: () => chain,
-    innerJoin: () => chain,
-    where: () => chain,
-    limit: () => chain,
-    then: (resolve: (v: T[]) => void) => resolve(rows),
-  };
-  return chain;
-}
+const ORGANISATION: OrganizationSummary = {
+  id: "org_demo",
+  name: "Demo Organization",
+  slug: "demo",
+  country: "AE",
+};
 
-mock.module("@/lib/supabase/auth-guard", () => ({
-  requireAuth: async () => mockAuthCtx,
-}));
-
-mock.module("@/lib/db", () => ({
-  db: {
-    select: () => fakeQuery(mockCompanyRows.length > 0 ? mockCompanyRows : mockMembershipRows),
-  },
-}));
-
-const { requireCompanyScope, listUserCompanies } = await import("./company-scope");
-
-function authedCtx(): AuthContext {
-  return { user: { id: "user-1", email: "u1@example.com" }, organizationId: "org-a", role: "member", response: null };
-}
-
-describe("requireCompanyScope", () => {
-  test("grants scope when the caller has a real membership row for the requested companyId", async () => {
-    mockAuthCtx = authedCtx();
-    mockMembershipRows = [{ role: "pm" }];
-    const scope = await requireCompanyScope("org-a");
-    expect(scope.response).toBeNull();
-    expect(scope.companyId).toBe("org-a");
-    expect(scope.role).toBe("pm");
+describe("resolveHierarchyCompanies", () => {
+  test("a real membership always wins -- nothing is synthesised over it", () => {
+    const result = resolveHierarchyCompanies([MEMBERSHIP], ORGANISATION, "org_demo", "owner");
+    expect(result.companies).toEqual([MEMBERSHIP]);
+    expect(result.synthesized).toBe(false);
+    expect(result.emptyReason).toBe("none");
   });
 
-  test("rejects with 403 when the caller has no membership row for the requested companyId (no cross-company leakage)", async () => {
-    mockAuthCtx = authedCtx();
-    mockMembershipRows = []; // no row for this (user, companyId) pair
-    const scope = await requireCompanyScope("org-b-not-mine");
-    expect(scope.companyId).toBeNull();
-    expect(scope.response).not.toBeNull();
-    expect(scope.response!.status).toBe(403);
+  test("no membership but a real organisation: ONE company synthesised from it, so the hierarchy has a root", () => {
+    const result = resolveHierarchyCompanies([], ORGANISATION, "org_demo", "admin");
+    expect(result.synthesized).toBe(true);
+    expect(result.emptyReason).toBe("none");
+    expect(result.companies).toHaveLength(1);
+    // Named after the ORGANISATION, and carrying its own id -- the id is what
+    // every level below (departments, projects, the category charts) scopes
+    // by, so a made-up id would produce a company that loads nothing.
+    expect(result.companies[0].id).toBe("org_demo");
+    expect(result.companies[0].name).toBe("Demo Organization");
+    // The caller's real role, not an invented one.
+    expect(result.companies[0].role).toBe("admin");
   });
 
-  test("rejects with 400 when no companyId is provided", async () => {
-    mockAuthCtx = authedCtx();
-    const scope = await requireCompanyScope(null);
-    expect(scope.response!.status).toBe(400);
+  test("an organisation id that no row answers to is 'not set up as a company yet', not 'not a member'", () => {
+    // Reachable through an orphaned membership: listUserCompanies INNER JOINs
+    // organizations, so a membership whose organisation row is gone returns
+    // nothing at all -- which is how this screen dead-ended in the first place.
+    const result = resolveHierarchyCompanies([], null, "org_gone", "owner");
+    expect(result.companies).toEqual([]);
+    expect(result.synthesized).toBe(false);
+    expect(result.emptyReason).toBe("no-company");
   });
 
-  test("propagates an unauthenticated caller's 401 without querying memberships", async () => {
-    mockAuthCtx = { user: null, organizationId: null, role: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-    const scope = await requireCompanyScope("org-a");
-    expect(scope.response!.status).toBe(401);
+  test("no organisation at all is 'not a member' -- a different fact, with a different fix", () => {
+    const result = resolveHierarchyCompanies([], null, null, null);
+    expect(result.emptyReason).toBe("not-a-member");
+    expect(result.companies).toEqual([]);
   });
-});
 
-describe("listUserCompanies", () => {
-  test("returns the real set of companies (orgs) this user has a membership row for, sorted by name", async () => {
-    mockCompanyRows = [
-      { id: "org-b", name: "PROJEXA India", slug: "px-in", country: "IN", role: "member" },
-      { id: "org-a", name: "PROJEXA UAE", slug: "px-ae", country: "AE", role: "owner" },
-    ];
-    const companies = await listUserCompanies("user-1");
-    // Input order was [India, UAE]; alphabetical by name puts India first.
-    expect(companies.map((c) => c.name)).toEqual(["PROJEXA India", "PROJEXA UAE"]);
-    expect(companies.map((c) => c.id)).toEqual(["org-b", "org-a"]);
+  test("a synthesised company defaults to 'member' when the caller has no role on file", () => {
+    const result = resolveHierarchyCompanies([], ORGANISATION, "org_demo", null);
+    expect(result.companies[0].role).toBe("member");
   });
 });

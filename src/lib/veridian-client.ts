@@ -325,6 +325,27 @@ function isConnectionFailure(err: unknown): boolean {
 // The `timedOut` flag is how a budget abort is told apart from the CALLER's
 // abort: both surface as the same AbortError, and reporting a cancelled
 // request as an upstream timeout would be a lie about VERIDIAN.
+// R67 MERGE (D-11, lane E2's E-28 / R-244). E2 built this alongside its own
+// withCallerSignal()/AbortSignal.timeout() abort mechanism, which is dropped
+// here in favour of F2's setTimeout-based attemptFetch() (see this file's own
+// header: AbortSignal.timeout() never fires on Bun 1.3.14/Windows). This
+// combinator itself never called AbortSignal.timeout -- it is a plain
+// addEventListener OR-combinator over caller-supplied signals -- so it carries
+// none of that bug and is kept: work-progress/report/route.ts composes its
+// own request-scoped deadline with request.signal through it, a shape
+// attemptFetch's single callerSignal parameter does not offer.
+export function combineAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const real = signals.filter((s): s is AbortSignal => !!s);
+  if (real.length === 1) return real[0];
+  const already = real.find((s) => s.aborted);
+  if (already) return already;
+  const controller = new AbortController();
+  for (const signal of real) {
+    signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
 type AttemptOutcome = { res: Response } | { err: unknown; timedOut: boolean };
 
 async function attemptFetch(

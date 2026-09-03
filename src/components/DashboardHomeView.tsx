@@ -187,8 +187,25 @@ const DEFAULT_COLUMNS: ScreenColumn[] = [
   { field: "delayed", label: "Delayed", type: "number", importance: "High" },
 ];
 
+// R67 MERGE (D-11, lane E2 x lane D1): E2's E-21 (R-222) fix folded in here.
+// The registry row for this screen really did read "ACTIVE PROJECTS
+// (HARD-STOP TEST)" in the platform database, and it really was rendered on
+// the product's landing page -- the row is platform data that lives only in
+// Supabase, so the SCREEN refuses it too, whatever the row says. D-02's
+// rewrite happened to drop the one field that carried the polluted label, but
+// every field read through columnLabel is the same registry mechanism, so the
+// same row could carry the same marker on any of them; sanitizing at the one
+// chokepoint they all pass through is the general fix, not a one-field patch.
+function sanitizeScreenLabel(label: string | null | undefined, fallback: string): string {
+  if (!label) return fallback;
+  const stripped = label.replace(/\s*\((?=[^)]*\bTEST\b)[^)]*\)/g, "").trim();
+  if (stripped.length === 0) return fallback;
+  if (/\bTEST\b/.test(stripped)) return fallback;
+  return stripped;
+}
+
 function columnLabel(columns: ScreenColumn[], field: string, fallback: string): string {
-  return columns.find((c) => c.field === field)?.label || fallback;
+  return sanitizeScreenLabel(columns.find((c) => c.field === field)?.label, fallback);
 }
 
 /**

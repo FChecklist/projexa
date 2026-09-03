@@ -74,6 +74,26 @@ afterEach(() => {
   push.mockClear();
 });
 
+// R67 MERGE (D-11, lane E2 x lane D1): E2's E-21 (R-222) acceptance clause,
+// restated against this screen's real columns. D-02's rewrite dropped the
+// specific field the platform's polluted registry row was seeded against
+// ("needsYou"), but columnLabel() sanitizes every field the same way, so this
+// asserts the fix at a field the merged screen actually renders --
+// KPI_REGISTRY_FIELD.projects, i.e. "totalProjects", the field the Projects
+// KPI tile's own title is looked up by (a prior restatement of this test used
+// "project", which nothing reads -- columnLabel() found no match, fell back
+// to the tile's own default title, and the assertion below passed for the
+// wrong reason until this merge actually rendered the fixture and it didn't).
+describe("DashboardHomeView registry labels (E2 E-21 / R-222)", () => {
+  test("'(HARD-STOP TEST)' never renders, even when the registry row still says it", () => {
+    const view = renderHome({
+      registryColumns: [{ field: "totalProjects", label: "PROJECT (HARD-STOP TEST)", type: "text" }],
+    });
+    expect(view.container.textContent ?? "").not.toContain("HARD-STOP TEST");
+    expect(view.getByText("PROJECT")).toBeTruthy();
+  });
+});
+
 describe("DashboardHomeView KPI band (R67 E-19, restated from D-02)", () => {
   test("an org with no budget rows is told so in words", () => {
     const view = renderHome();

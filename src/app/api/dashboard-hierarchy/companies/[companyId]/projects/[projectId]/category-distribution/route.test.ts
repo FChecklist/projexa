@@ -38,10 +38,37 @@ mock.module("@/lib/company-scope", () => ({
   requireCompanyScope: async () => mockScope,
 }));
 
+// R67 E-32 REGRESSION GUARD. VERIDIAN's /reports/{name} now answers with the
+// generic { columns, rows, totals, currency } TABLE by default and only serves
+// the handler's own payload under ?format=legacy. This mock behaves like the
+// real upstream does -- table unless the flag is present -- so a caller that
+// forgets the flag gets a body with no `categories` and this file fails, rather
+// than the chart silently emptying in a browser.
+const askedPaths: string[] = [];
+const CATEGORY_PROGRESS_AS_TABLE = {
+  columns: [
+    { key: "name", label: "Category", unit: "text", align: "left" },
+    { key: "percentComplete", label: "% complete", unit: "percent", align: "right" },
+  ],
+  rows: CATEGORY_PROGRESS.categories.map((c) => ({ name: c.name, percentComplete: c.percentComplete })),
+  currency: "AED",
+};
+const CATEGORY_BOQ_AMOUNTS_AS_TABLE = {
+  columns: [
+    { key: "name", label: "Category", unit: "text", align: "left" },
+    { key: "totalAmount", label: "BOQ amount", unit: "currency", align: "right" },
+  ],
+  rows: CATEGORY_BOQ_AMOUNTS.categories.map((c) => ({ name: c.name, totalAmount: c.totalAmount })),
+  totals: { totalAmount: CATEGORY_BOQ_AMOUNTS.totalAmount },
+  currency: "AED",
+};
+
 mock.module("@/lib/veridian-client", () => ({
   callVeridian: async (path: string) => {
-    if (path.includes("category-boq-amounts")) return CATEGORY_BOQ_AMOUNTS;
-    if (path.includes("category-progress")) return CATEGORY_PROGRESS;
+    askedPaths.push(path);
+    const legacy = path.includes("format=legacy");
+    if (path.includes("category-boq-amounts")) return legacy ? CATEGORY_BOQ_AMOUNTS : CATEGORY_BOQ_AMOUNTS_AS_TABLE;
+    if (path.includes("category-progress")) return legacy ? CATEGORY_PROGRESS : CATEGORY_PROGRESS_AS_TABLE;
     throw new Error(`unexpected path in test: ${path}`);
   },
   VeridianApiError: class VeridianApiError extends Error {
@@ -83,6 +110,20 @@ describe("GET .../category-distribution", () => {
     expect(uncategorized.completedAmount).toBe(0); // no activity link -- no WPR data to attribute completion to
 
     expect(body.totalAmount).toBe(1_000_000);
+  });
+
+  test("both reports are asked for in the legacy shape -- the table has no categoryId to chart", async () => {
+    mockScope = { userId: "user-1", companyId: "org-a", role: "member", response: null };
+    askedPaths.length = 0;
+    const res = await GET(new NextRequest2("http://test/x"), { params: Promise.resolve({ companyId: "org-a", projectId: "proj-1" }) });
+    expect(res.status).toBe(200);
+    expect(askedPaths).toHaveLength(2);
+    for (const path of askedPaths) expect(path).toContain("format=legacy");
+    // And the chart really is usable -- not an empty array quietly produced
+    // from a table body.
+    const body = await res.json();
+    expect(body.categories.length).toBeGreaterThan(0);
+    expect(body.categories[0].categoryId).toBeTruthy();
   });
 
   test("a caller with no real membership in the requested company is rejected before any VERIDIAN call", async () => {

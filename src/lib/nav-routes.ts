@@ -30,6 +30,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/accounting/companies/new",
   "/accounting/journal-entries/[id]",
   "/accounting/journal-entries/new",
+  // R67 E-27 (R-213): the Analysis leaf's real destination.
+  "/analysis",
   "/auth/callback",
   // R67 D-62: these three are now redirects onto /finance/budgets*, kept so
   // every existing link, bookmark and screenshot still lands on the screen it

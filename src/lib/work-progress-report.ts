@@ -682,6 +682,214 @@ export function buildVendorBreakdown(params: { roster: LabourRoster[]; attendanc
   return Array.from(groups.values());
 }
 
+// -- R67 E-34 (R-266): the four views, grouped here rather than on screen ----
+//
+// WHAT THIS IS FOR. The Report tab offers four views -- Scope-wise,
+// Category-wise, Manpower-wise, Vendor-wise -- and switching one must NEVER go
+// back to the server: every view is a different grouping of data the browser
+// already holds. That was already true of the rendering, but the grouping rule
+// lived inline in four separate JSX tables, so there was no way to test "one
+// group per distinct vendor" without a DOM, and no single place that could
+// answer "does this view have anything in it at all".
+//
+// WHY MANPOWER AND VENDOR ARE NOT GROUPED FROM THE LINE ROWS. They cannot be.
+// See this section's own header above: no progress entry in this system carries
+// a vendor or roster attribution, so a per-vendor figure is attendance-cost
+// derived for the project and date range, never a per-BOQ-line split. Grouping
+// `rows` by a vendor field would mean inventing one. So groupRows takes the
+// whole fetched report and picks the right already-real source per view.
+
+export type WorkProgressReportView = "scope" | "category" | "manpower" | "vendor";
+
+export const WORK_PROGRESS_REPORT_VIEWS: WorkProgressReportView[] = ["scope", "category", "manpower", "vendor"];
+
+export const WORK_PROGRESS_VIEW_LABEL: Record<WorkProgressReportView, string> = {
+  scope: "Scope-wise",
+  category: "Category-wise",
+  manpower: "Manpower-wise",
+  vendor: "Vendor-wise",
+};
+
+export function normaliseWorkProgressView(value: string | null | undefined): WorkProgressReportView {
+  return WORK_PROGRESS_REPORT_VIEWS.includes(value as WorkProgressReportView)
+    ? (value as WorkProgressReportView)
+    : "scope";
+}
+
+/** One group in one view: what it is called, how many rows it holds, and the money behind it. */
+export type WorkProgressGroup = {
+  /** Stable within a view -- a category name, a trade, a vendor id, or "all" for the scope view. */
+  key: string;
+  label: string;
+  rowCount: number;
+  /** The group's own money: BOQ value for scope/category, labour cost for manpower/vendor. */
+  amount: number;
+};
+
+/** Everything groupRows can group. Exactly the arrays the report response already carries. */
+export type WorkProgressGroupSource = {
+  rows: Pick<LineItemProgress, "categoryName" | "amtTotal" | "parentLineItemId">[];
+  byManpower?: ManpowerRow[];
+  byVendor?: VendorRow[];
+};
+
+/**
+ * The rows of one view, grouped. Pure, so each view's rule is a unit test
+ * rather than a screenshot.
+ *
+ * scope     -- one group, the whole BOQ, so the view still reports a row count
+ *              and a contract value.
+ * category  -- one group per distinct category NAME, first-seen order, money
+ *              summed over ROOT lines only (a hierarchical child's own amtTotal
+ *              is informational and is never a portion carved out of its
+ *              parent's -- see applyWeightedParentRollup's own comment, and
+ *              sumRootAmtTotal, which applies the identical rule).
+ * manpower  -- one group per distinct trade.
+ * vendor    -- one group per distinct vendor.
+ */
+export function groupRows(source: WorkProgressGroupSource, view: WorkProgressReportView): WorkProgressGroup[] {
+  if (view === "manpower") {
+    return (source.byManpower ?? []).map((r) => ({
+      key: r.trade,
+      label: r.trade,
+      rowCount: r.workerDays,
+      amount: r.totalCost,
+    }));
+  }
+  if (view === "vendor") {
+    return (source.byVendor ?? []).map((r) => ({
+      key: r.vendorId,
+      label: r.vendorName,
+      rowCount: 1,
+      amount: r.totalCost,
+    }));
+  }
+  if (view === "scope") {
+    if (source.rows.length === 0) return [];
+    return [{ key: "all", label: "All BOQ lines", rowCount: source.rows.length, amount: sumRootAmtTotal(source.rows) }];
+  }
+  const groups = new Map<string, WorkProgressGroup>();
+  for (const row of source.rows) {
+    const label = row.categoryName || UNCATEGORIZED_LABEL;
+    const g = groups.get(label) ?? { key: label, label, rowCount: 0, amount: 0 };
+    g.rowCount += 1;
+    // Root lines only, for the same reason sumRootAmtTotal exists.
+    if (!row.parentLineItemId) g.amount += row.amtTotal;
+    groups.set(label, g);
+  }
+  return Array.from(groups.values());
+}
+
+/**
+ * R67 E-35 (R-267 / R-303): the parameter set one WPR result was produced from.
+ * `boqId` is "" for "whichever one the server picks", which is a real, distinct
+ * parameter value and not a missing one.
+ */
+export type WorkProgressReportParams = {
+  projectId: string;
+  from: string;
+  to: string;
+  boqId: string;
+  categories: string[];
+};
+
+/**
+ * R67 E-35 (R-267 / R-303): a comparable fingerprint of the parameters behind a
+ * result.
+ *
+ * WHY IT EXISTS. When a re-run fails, the screen has to answer one question
+ * before it can say anything useful: does the table still on screen describe the
+ * parameters now in the inputs? If it does, keeping it and saying "showing
+ * results from 14:02" is the kindest thing to do. If it does not, the SAME
+ * table is a lie -- last fortnight's numbers sitting under this fortnight's
+ * dates -- and it must go. R-267 and R-303 each asked for one of those two
+ * behaviours; the parameter set is what reconciles them.
+ *
+ * Categories are sorted and trimmed because a filter is a SET: picking Civil
+ * then Paint and picking Paint then Civil are the same report, and a signature
+ * that disagreed would throw away a perfectly good table.
+ */
+export function workProgressParamSignature(p: WorkProgressReportParams): string {
+  const categories = p.categories.map((c) => c.trim()).filter((c) => c !== "");
+  categories.sort();
+  return JSON.stringify([p.projectId, p.from, p.to, p.boqId, categories]);
+}
+
+/**
+ * R67 E-34 (R-266): what each view calls one of its groups, singular and plural.
+ * Beside the labels and the groupings on purpose -- a view that gains a grouping
+ * rule but no noun would caption itself "3 groups", which tells a reader nothing
+ * about what they are looking at.
+ */
+export const WORK_PROGRESS_VIEW_GROUP_NOUN: Record<WorkProgressReportView, [string, string]> = {
+  scope: ["BOQ line", "BOQ lines"],
+  category: ["category", "categories"],
+  manpower: ["trade", "trades"],
+  vendor: ["vendor", "vendors"],
+};
+
+/**
+ * R67 E-34 (R-266): "3 categories", "1 vendor", "18 BOQ lines" -- the caption
+ * under the view switcher, so switching a view visibly re-groups the SAME rows
+ * rather than looking like it fetched a different report.
+ *
+ * The scope view counts ROWS, not groups: it is deliberately one group over the
+ * whole BOQ (see groupRows), so its group count is always 1 and would be a
+ * useless caption. Every other view counts its groups, which is the thing that
+ * changed.
+ */
+export function describeGroups(view: WorkProgressReportView, groups: WorkProgressGroup[]): string {
+  const count = view === "scope" ? (groups[0]?.rowCount ?? 0) : groups.length;
+  const [one, many] = WORK_PROGRESS_VIEW_GROUP_NOUN[view];
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/**
+ * R67 E-34 (R-266): whether ANY progress was recorded in the fetched range.
+ *
+ * The item's rule is "every Percent and Quantity cell in the fetched range is
+ * empty" -- and "empty" here is `touched`, the flag computeLineItemProgress
+ * already sets (see formatProgressCell's own comment): a real computed zero and
+ * a bucket nothing ever touched are both the number 0, and only `touched` tells
+ * them apart. A range in which nothing was logged is a fact worth a sentence; a
+ * range in which everything genuinely progressed by zero is not the same fact
+ * and must not borrow its wording.
+ */
+export function hasRecordedProgress(rows: Pick<LineItemProgress, "touched">[]): boolean {
+  return rows.some((r) => r.touched.prev || r.touched.current || r.touched.total);
+}
+/**
+ * R67 E-36 (R-268). The suggested filename for every Work Progress export:
+ * <project>-work-progress-<from>-<to>.<ext>.
+ *
+ * DELIBERATELY THE SAME RULE THE SERVER USES (compliance-tracker
+ * src/app/api/v1/projexa/work-progress/report/pdf/route.ts, pdfFileName). The
+ * server's Content-Disposition WINS over an <a download> attribute, so for the
+ * PDF and the XLSX this string is only a fallback -- but the CSV is built in
+ * the browser and has no server header at all, so if the two rules differed a
+ * QS would find one report saved under two naming conventions. One rule.
+ *
+ * NFKD then delete the combining marks: without that step the squeeze below
+ * turns each accent into its own separator, so "Villa Aguas" (acute on the A)
+ * would save as "villa-a-guas". ASCII only, because the server's own header
+ * parameter must be, and the two must agree.
+ */
+export function workProgressExportFileName(
+  projectName: string | null | undefined,
+  from: string,
+  to: string,
+  extension: string
+): string {
+  const slug = (projectName ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${slug || "project"}-work-progress-${from}-${to}.${extension}`;
+}
+
 // ---------------------------------------------------------------------------
 // R67 D-28 (R-069): the blast radius of deleting one progress entry.
 //

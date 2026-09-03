@@ -97,7 +97,13 @@ export const PILL_ROUTES: Readonly<Record<string, PillTarget>> = {
 
   // Named views. Each is a screen, not a noun you build a sentence from.
   dashboard: { kind: "view", path: "/dashboard" },
-  analysis: { kind: "view", path: "/work-progress", query: { tab: "analytics" } },
+  // R67 MERGE (D-11, lane E2's E-27 / R-213): this table predates
+  // analysis-screens.ts's /analysis hub, and pointed "Analysis" at just one of
+  // its four screens (Work Progress's own analytics tab). /analysis lists all
+  // four -- the real fix E-27 shipped for the same defect A-17's own header
+  // names Analysis as the example of -- so the pill now opens the hub, not
+  // the one screen this table happened to know about first.
+  analysis: { kind: "view", path: "/analysis" },
   // The kit merges task_master and to_do into ONE pill labelled "Tasks"
   // (pillConfig.ts MERGED_TASKS_PILL / TASKS_PILL_MERGED), which is the pill
   // A-17 maps; both keys resolve to the same board so a stored usage row under

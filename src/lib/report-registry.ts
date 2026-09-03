@@ -21,6 +21,18 @@
 // IS the defect. So every field below is derived, and the only facts this file
 // owns are the two nothing else holds: the SCREEN a report is rendered by, in
 // words a reader would recognise, and the DEFAULT PARAMETERS it opens with.
+//
+// R67 E-22/E-31 (R-199/R-207/R-224/R-264), reconciled at the merge (2026-09-03):
+// lane E2 built an independent placement API (placeCatalogEntry et al.) for
+// the same "what can this app do with a report" question, targeting a catalog
+// UI that in the end wired itself to THIS file's isInReportRegistry /
+// registryDestination instead. Carrying both forward would have reproduced the
+// exact two-tables drift this file's own header warns about -- and the D-02
+// note in report-destinations.ts already recorded that decision once this
+// session for the lane-D/E1 overlap. E2's placement functions are dropped as
+// unused/superseded; the one piece of that file a real component still calls
+// by name -- monthToDateRange, used by ReportCatalogRunner.tsx for the report
+// runner's own default date range -- is kept below, unchanged.
 
 import { monthToDate, isHostedReport, reportDestination, type ReportParams } from "./report-destinations";
 import { reportParameters } from "./report-parameters";
@@ -115,4 +127,33 @@ export function registryDestination(id: string, input: { projectId: string; toda
   const entry = reportRegistryEntry(id);
   if (!entry) return null;
   return reportDestination(id, entry.defaultParams(input));
+}
+
+// ---------------------------------------------------------------------------
+// R67 E-31 (R-264): month-to-date default for the catalog's own inline runner
+// ---------------------------------------------------------------------------
+//
+// ReportCatalogRunner.tsx opens a construction report with a real, filled-in
+// date range rather than an empty pair of fields the reader has to complete
+// themselves. This is a DIFFERENT calendar question than monthToDate() above:
+// that one feeds report-destinations.ts's links and is deliberately UTC (a
+// link is a fact independent of who's looking at it); this one is the range
+// shown to and run by the person looking at the screen right now, so it is
+// built from their LOCAL calendar date.
+
+/**
+ * Month to date -- the first of the current month through today, in the ISO
+ * form every date input and query parameter here uses.
+ *
+ * Takes `today` so the boundary cases are testable rather than dependent on
+ * the clock the suite happens to run at. Built from the LOCAL calendar date,
+ * because "this month" is a thing the reader is in, not a UTC fact -- but the
+ * strings are plain ISO dates, which is what a date input and the API both
+ * expect.
+ */
+export function monthToDateRange(today: Date = new Date()): { from: string; to: string } {
+  const year = today.getFullYear();
+  const month = `${today.getMonth() + 1}`.padStart(2, "0");
+  const day = `${today.getDate()}`.padStart(2, "0");
+  return { from: `${year}-${month}-01`, to: `${year}-${month}-${day}` };
 }

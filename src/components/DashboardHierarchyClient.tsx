@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
+/** R67 E-37: why the companies list came back empty, from resolveHierarchyCompanies. */
+type EmptyReason = "none" | "no-company" | "not-a-member";
 type ProjectSummary = { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number };
 type OrgDashboard = { totalProjects: number; totalBudget: number; totalRevenue: number; totalExpenses: number; projects: ProjectSummary[] };
 type ProjectDetails = {
@@ -116,6 +119,12 @@ export function DashboardHierarchyClient() {
   // from a 200 and a failure is never reachable at all without saying so.
   const [companiesStatus, setCompaniesStatus] = useState<PaneStatus>("loading");
   const [companiesError, setCompaniesError] = useState<string | null>(null);
+  // R67 MERGE (D-11, lane E2's E-37 x lane D0's D-03): the backend
+  // (resolveHierarchyCompanies) already tells the caller WHY an empty list is
+  // empty -- not-a-member vs no-company vs a real synthesised one -- and D-03's
+  // discriminated getJson() carries it through just as cleanly as it carries
+  // the failure message. "none" is the ready-and-populated case.
+  const [companiesEmptyReason, setCompaniesEmptyReason] = useState<EmptyReason>("none");
   const [orgStatus, setOrgStatus] = useState<PaneStatus>("idle");
   const [orgError, setOrgError] = useState<string | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -124,12 +133,14 @@ export function DashboardHierarchyClient() {
   const [companiesAttempt, setCompaniesAttempt] = useState(0);
   const [orgAttempt, setOrgAttempt] = useState(0);
 
-  // Company level: load the current user's real memberships once.
+  // Company level: load the current user's real memberships once, or the one
+  // company the server synthesised from their own organisation when no
+  // membership row names one (R67 E-37 -- see resolveHierarchyCompanies).
   useEffect(() => {
     let live = true;
     setCompaniesStatus("loading");
     setCompaniesError(null);
-    void getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((result) => {
+    void getJson<{ companies: Company[]; emptyReason?: EmptyReason }>("/api/dashboard-hierarchy/companies").then((result) => {
       if (!live) return;
       if (!result.ok) {
         // The rows are NOT cleared: a failed refresh must not destroy a list
@@ -140,6 +151,7 @@ export function DashboardHierarchyClient() {
       }
       const loaded = result.data.companies ?? [];
       setCompanies(loaded);
+      setCompaniesEmptyReason(result.data.emptyReason ?? "none");
       setCompaniesStatus("ready");
       if (loaded.length > 0) setCompanyId((current) => current || loaded[0].id);
     });
@@ -171,7 +183,13 @@ export function DashboardHierarchyClient() {
     };
   }, [companyId]);
 
-  // Project level: the company's (optionally department-filtered) project list.
+  // Project level: the company's (optionally department-filtered) project
+  // list. R67 MERGE (D-11, lane E2's E-23): the From/To range is sent to this
+  // SAME call, not just to the per-project Details read below -- it narrows
+  // revenue and expenses server-side for the whole company chart too, and the
+  // backend route already forwards `from`/`to` alongside `departmentId` (see
+  // [companyId]/dashboard/route.ts). The BOQ-derived budget stays a property
+  // of the BOQ line, not of a period, so a range does not touch it.
   useEffect(() => {
     if (!companyId) return;
     let live = true;
@@ -179,8 +197,12 @@ export function DashboardHierarchyClient() {
     setDetails(null);
     setOrgStatus("loading");
     setOrgError(null);
-    const qs = departmentId !== "__all__" ? `?departmentId=${departmentId}` : "";
-    void getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${qs}`).then((result) => {
+    const qs = new URLSearchParams();
+    if (departmentId !== "__all__") qs.set("departmentId", departmentId);
+    if (fromDate) qs.set("from", fromDate);
+    if (toDate) qs.set("to", toDate);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    void getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${suffix}`).then((result) => {
       if (!live) return;
       if (!result.ok) {
         setOrgError(result.message);
@@ -193,7 +215,7 @@ export function DashboardHierarchyClient() {
     return () => {
       live = false;
     };
-  }, [companyId, departmentId, orgAttempt]);
+  }, [companyId, departmentId, fromDate, toDate, orgAttempt]);
 
   // Details view: Revenue/Budget/Expense/Progress for the selected project, date-range filtered.
   function loadDetails() {
@@ -274,11 +296,29 @@ export function DashboardHierarchyClient() {
           account." is a statement about the ACCOUNT, and it may only be made
           on the strength of a 200 that carried no rows. mayShowEmptyState()
           decides that, here as on every other pane, so it cannot regress into
-          a bare `companies.length === 0` again. */}
+          a bare `companies.length === 0` again.
+          R67 MERGE (D-11, lane E2's E-37): "no rows" is not one fact -- the
+          backend now says WHICH of three it is, and this renders each with
+          its own next step rather than the one flat sentence above. */}
       {companiesStatus === "error" && companiesError && (
         <DataLoadFailure message={companiesError} onRetry={() => setCompaniesAttempt((n) => n + 1)} />
       )}
-      {mayShowEmptyState(companiesStatus, companies.length) && (
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "no-company" && (
+        <div className="space-y-2" data-testid="hierarchy-no-company">
+          <p className="text-sm text-px-ink">This organisation is not set up as a company yet</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" asChild><Link href="/settings">Set up company</Link></Button>
+            <Button size="sm" variant="outline" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+          </div>
+        </div>
+      )}
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "not-a-member" && (
+        <p className="text-sm text-px-ink" data-testid="hierarchy-not-a-member">
+          Your account is not a member of any company yet. Ask an administrator to add you under{" "}
+          <Link href="/settings" className="underline">Settings › Companies</Link>.
+        </p>
+      )}
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "none" && (
         <p className="text-sm text-px-muted">No company memberships found for this account.</p>
       )}
 

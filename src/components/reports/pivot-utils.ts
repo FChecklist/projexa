@@ -108,3 +108,108 @@ export function computeChartData(
 export function formatPivotNumber(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
+
+// ---------------------------------------------------------------------------
+// R67 E-27 (R-213). WHAT A COLUMN ACTUALLY IS.
+//
+// THE BUG THIS EXISTS FOR. ReportChart's initial state was
+// `categoryField = columns[0]` and `valueField = columns[1]`. On every report
+// this app runs, columns[0] is the row's id and columns[1] is its name -- so
+// the chart opened as "a database id on the axis, a project name as the
+// height", which aggregates to zero for every bar. The reader saw a frame of
+// zero-height bars and had to change two dropdowns before the chart said
+// anything. A chart that needs to be repaired before it can be read is not a
+// default, it is a puzzle.
+//
+// The fix is to know what the columns ARE, which nothing in this file did.
+
+export type ColumnKind = "id" | "text" | "number" | "date";
+export type ColumnType = { name: string; kind: ColumnKind };
+
+/**
+ * An id-shaped VALUE: 20+ characters of unbroken letters/digits. cuid and uuid
+ * -without-dashes both match; a real word, a code like "1.2.3", a date and a
+ * money figure all do not. Deliberately not "any long string" -- a
+ * 25-character description must stay text.
+ */
+const ID_LIKE_VALUE = /^[a-z0-9]{20,}$/i;
+
+/** A key that NAMES an id: "id", "projectId", "project_id", "lineItemID". */
+export function isIdColumnName(name: string): boolean {
+  return /(^|[a-z0-9_])id$/i.test(name) && /id$/i.test(name);
+}
+
+/** ISO-ish dates, which is what every report in this app emits. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ]|$)/;
+
+function nonBlank(rows: Record<string, unknown>[], name: string): unknown[] {
+  return rows.map((r) => r[name]).filter((v) => v !== null && v !== undefined && v !== "");
+}
+
+/**
+ * The kind of one column, from its name and its own values. Values win over
+ * the name for number/date (a column called "count" holding "n/a" is text),
+ * and the name wins for ids (a "projectId" column whose ids happen to be short
+ * is still an id, and must still never become an axis).
+ */
+export function inferColumnKind(rows: Record<string, unknown>[], name: string): ColumnKind {
+  if (isIdColumnName(name)) return "id";
+  const values = nonBlank(rows, name);
+  if (values.length === 0) return "text";
+  if (values.every((v) => typeof v === "string" && ID_LIKE_VALUE.test(v))) return "id";
+  if (values.every((v) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))))) {
+    return "number";
+  }
+  if (values.every((v) => typeof v === "string" && ISO_DATE.test(v))) return "date";
+  return "text";
+}
+
+export function inferColumnTypes(rows: Record<string, unknown>[], columns?: string[]): ColumnType[] {
+  const names = columns ?? (rows.length > 0 ? Object.keys(rows[0]) : []);
+  return names.map((name) => ({ name, kind: inferColumnKind(rows, name) }));
+}
+
+export type ChartDefaults = {
+  categoryField: string;
+  valueField: string;
+  agg: AggregationFn;
+  /** A Line option is only offered when there is a real date column to put on the axis. */
+  hasDateColumn: boolean;
+};
+
+/**
+ * The chart's opening state, chosen so the FIRST render says something true:
+ * the first text column is the category, the first numeric column is the
+ * value, and the aggregation is a sum -- except for a percentage, where summing
+ * is meaningless and the average is the figure a reader wants.
+ *
+ * An id is never picked for either role. When a report genuinely has no text
+ * column, the date column stands in as the category (a per-day chart is a real
+ * answer); when it has neither, the chart falls back to counting rows, which is
+ * the only honest thing left to plot.
+ */
+export function chartDefaults(rows: Record<string, unknown>[], columns?: string[]): ChartDefaults {
+  const types = inferColumnTypes(rows, columns);
+  const firstOfKind = (kind: ColumnKind) => types.find((t) => t.kind === kind)?.name;
+
+  const category = firstOfKind("text") ?? firstOfKind("date") ?? types.find((t) => t.kind !== "number")?.name ?? types[0]?.name ?? "";
+  const value = firstOfKind("number") ?? "";
+  const agg: AggregationFn = value === "" ? "count" : /percent|percentage|pct|%/i.test(value) ? "avg" : "sum";
+
+  return { categoryField: category, valueField: value, agg, hasDateColumn: types.some((t) => t.kind === "date") };
+}
+
+/**
+ * The Table tab's drill filter. `bucketKey` is the SAME normalisation
+ * computeChartData groups by, so clicking the bar labelled "(blank)" really
+ * does select the rows whose category is empty, rather than selecting nothing
+ * and looking broken.
+ */
+export function filterRowsByCategory<T extends Record<string, unknown>>(
+  rows: T[],
+  categoryField: string,
+  category: string | null
+): T[] {
+  if (category === null || !categoryField) return rows;
+  return rows.filter((row) => bucketKey(row[categoryField]) === category);
+}

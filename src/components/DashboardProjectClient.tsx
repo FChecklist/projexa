@@ -223,6 +223,24 @@ type RecentEntry = {
 type Pane<T> = { state: KpiTileState; data: T | null; error: string | null };
 const PENDING: Pane<never> = { state: "pending", data: null, error: null };
 
+// R67 MERGE (D-11, lane E2's E-25 / R-211). One point per DAY, not per row --
+// several entries logged the same day used to draw several points and (with
+// the old reverse-and-reduce) could even restart the running total mid-window.
+// Days with no entry are simply absent from the axis, same as before; the
+// cumulative total still only ever grows.
+function cumulativeByDay(entries: RecentEntry[]): { label: string; value: number }[] {
+  const byDay = new Map<string, number>();
+  for (const e of entries) {
+    byDay.set(e.entryDate, (byDay.get(e.entryDate) ?? 0) + Number(e.quantityDone));
+  }
+  const days = Array.from(byDay.keys()).sort();
+  let running = 0;
+  return days.map((day) => {
+    running += byDay.get(day) ?? 0;
+    return { label: day, value: running };
+  });
+}
+
 /** The backend's OWN sentence when it gave one. */
 function reasonText(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -578,7 +596,14 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           ) : recent.state === "error" ? (
             <p role="alert" className="text-[12.5px]" style={{ color: "var(--color-veri-status-late)" }}>{recent.error}</p>
           ) : (
-            <LineChart series={recentEntries.slice().reverse().map((e, i) => ({ label: e.entryDate, value: recentEntries.slice(0, i + 1).reduce((s, r) => s + Number(r.quantityDone), 0) }))} />
+            // R67 MERGE (D-11, lane E2's E-25 / R-211 folded onto F-27's
+            // payload). E2 found the real defect this line used to have: it
+            // plotted one point per ROW rather than per DAY, and its running
+            // total started wherever the (then five-row) window happened to
+            // begin -- not from zero. Grouping by day and accumulating across
+            // days fixes both within whatever `recentEntries` the F-27
+            // payload actually carries.
+            <LineChart series={cumulativeByDay(recentEntries)} />
           )}
         </>
       }
@@ -612,7 +637,13 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         <LinkListCard
           title={labelFor(dashboardLabels, "quickActionsTitle", "Quick actions")}
           items={[
-            { label: "Record progress", onClick: () => router.push(`/work-progress?projectId=${projectId}`) },
+            // R67 MERGE (D-11, lane E2's E-38 / R-296): "came here to type"
+            // deserves the form's caret, not a screen the reader has to find
+            // and click into themselves -- E2's own fix, now expressed through
+            // the one focus convention this app actually wires end to end
+            // (module-catalogue.ts's own "Record progress" card, MoMObjectClient),
+            // which WorkProgressPageClient's formRef effect already reads.
+            { label: "Record progress", onClick: () => router.push(`/work-progress?projectId=${projectId}&tab=entry&focus=activity`) },
             { label: "New BOQ revision", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Import BOQ", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Run WPR", onClick: () => router.push(`/work-progress?projectId=${projectId}&tab=report`) },

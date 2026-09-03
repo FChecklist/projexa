@@ -199,10 +199,15 @@ function CatalogCard({
             {expanded ? "Hide" : (<><Play className="size-3.5" /> Run Report</>)}
           </Button>
           {expanded && entry.definitionId && (
+            // R67 MERGE (D-11, lane E2's E-31 / R-264): ReportCatalogRunner now
+            // pre-fills and auto-runs, and its empty-result sentence names its
+            // subject -- both need what this row already has in scope.
             <ReportCatalogRunner
               definitionId={entry.definitionId}
               supportsCompanyScope={Boolean(entry.supportsCompanyScope)}
               companies={companies}
+              projectId={projectId}
+              subject={entry.name}
             />
           )}
         </>

@@ -1,201 +1,275 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// R67 E-23 (R-206, correction C-07). THE PIE IS GONE.
+//
+// WHAT IT WAS. A pie of each category's share of the BOQ, capped at five
+// slices with everything past slot five folded into a neutral "Other", plus
+// a grouped total-vs-completed bar. Two problems, both real: the cap HID
+// categories -- a project with nine trades showed four of them and a lump --
+// and a pie forces the reader to compare angles when the question ("which
+// trade is the biggest part of this BOQ, and how far through is it?") is a
+// length comparison.
+//
+// WHAT IT IS NOW. One sorted horizontal bar per category, Completed drawn
+// over Total, the share printed after the label as "Civil - 40% of BOQ", and
+// a bar click opening the Work Progress analytics filtered to that category.
+// EVERY category gets a bar -- nothing is hidden -- and the long tail is
+// folded only in the label list beneath, where folding costs the reader
+// nothing.
+//
+// Colours are WS-G's tokens, never a recharts default; the printed share and
+// the printed amounts mean the chart is readable without hovering and without
+// telling two muted fills apart.
+//
+// R67 MERGE (2026-09-03), reconciled against lane E1's own R67 E-02 (R-012)
+// build of this same component: E-23 is a CORRECTION of E-02 on this exact
+// chart (its own id says so), so the no-pie design below is what E-02's
+// conditional-pie version was superseded by. What E-02's version got right
+// and E-23's did not yet have is preserved: the split between a fetching
+// wrapper and a presentational view, because DashboardProjectClient.tsx
+// already fetches this project's category-progress once for its own KPI
+// tiles and renders the presentational half directly (R67 E-02 x F-1) --
+// a second read here would be a second request for a figure the screen
+// already has. So the render logic below is exported as
+// CategoryDistributionChartsView (categories/projectId/money as props, no
+// fetch of its own), and CategoryDistributionCharts is the thin fetching
+// wrapper every OTHER caller uses.
+
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Pie, PieChart, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { formatCompactNumber } from "@/lib/format-number";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { isAllUncategorized } from "@/lib/category-distribution";
+import { MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
-
-// R67 E-02 (R-012), chart 2. WHAT CHANGED AND WHY:
-//
-// 1. THE DATA SOURCE. This used to read
-//    /api/dashboard-hierarchy/companies/{companyId}/projects/{projectId}/category-distribution
-//    -- an endpoint that only existed for the Company drill-down screen, which
-//    this workstream retires. It now reads the PROJECT-SCOPED
-//    GET /api/reports/category-progress, which DashboardProjectClient already
-//    calls, extended (compliance-tracker categoryProgressReport) with the
-//    total and completed amount per category. One project, one report, one
-//    round trip -- and the percentage and the money now come from the same
-//    call, so they cannot describe two different BOQ revisions.
-//
-// 2. THE BARS SAY WHAT THEY MEAN. "Civil 40%" does not tell a reader whether
-//    Civil is a tenth of the job or nine tenths. Each bar is now labelled
-//    "Completed AED n / Total AED n".
-//
-// 3. THE PIE IS CONDITIONAL. Kept only at five categories or fewer, dropped
-//    entirely above that -- the dashboard rule this product follows is "never
-//    a pie with more than 5 segments; prefer a sorted horizontal bar always",
-//    and a sixth "Other" slice answers nothing.
-//
-// 4. EVERY BAR IS A DESTINATION. A category the reader can see and cannot open
-//    is a dead end; each one links to Work Progress > Analytics filtered to it.
-
-// Same validated 5-slot categorical order as ReportChart.tsx (dataviz
-// skill, see ai-os/PIVOT_CHART_TECH_DECISION_2026-07-27.md) -- fixed order,
-// never cycled. R67 WS-G re-valued those five slots to the muted CVD-checked
-// set in globals.css; the references here are unchanged because they were
-// already token references and not hexes.
-const PIE_COLORS = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
-export const PIE_MAX_SLICES = 5;
-
-const barConfig = {
-  totalAmount: { label: "Total", color: "var(--color-chart-1)" },
-  completedAmount: { label: "Completed", color: "var(--color-chart-2)" },
-} satisfies ChartConfig;
+import { formatNumber } from "@/lib/format-number";
 
 export type CategoryEntry = {
   categoryId: string;
   name: string;
   totalAmount: number;
-  sharePercent: number;
+  // R67 MERGE (2026-09-03): optional, not required -- compliance-tracker's
+  // categoryProgressReport (what DashboardProjectClient.tsx's own already-
+  // fetched data comes from) never carries this field, only the dedicated
+  // category-distribution endpoints do. See the presentational view's own
+  // sharePercent() fallback for how a missing value is handled.
+  sharePercent?: number;
   percentComplete: number;
   completedAmount: number;
 };
 
-/**
- * The empty state, in the words the item specifies -- an empty chart panel
- * tells a reader nothing about what to do next, and "Import a BOQ" is what
- * they need to do next.
- */
-export const NO_BOQ_LINES_MESSAGE = "No BOQ line items yet";
+/** How many categories get a named row in the label list beneath the bars. Never how many get a BAR. */
+const LABEL_LIST_LIMIT = 5;
 
-export function analyticsHref(projectId: string, category: string): string {
-  return `/work-progress?projectId=${encodeURIComponent(projectId)}&tab=analytics&category=${encodeURIComponent(category)}`;
+/**
+ * R67 E-33 (R-265): where a bar click goes. The dashboards send the reader to
+ * this category's PROGRESS ENTRIES (the analytics drill they already had); the
+ * Analytics tab, which is already that screen, sends them to the Work Progress
+ * REPORT filtered to the category instead -- the same rule D-02 applies
+ * everywhere else, that there is one Work Progress Report and it lives at
+ * /work-progress?tab=report. A prop rather than a second component, because
+ * everything else about the chart is identical and a fork would be two places
+ * to fix the next time a bar is wrong.
+ */
+export type CategoryDrillTarget = "analytics" | "report";
+
+function categoryHref(projectId: string, name: string, drillTo: CategoryDrillTarget) {
+  const base = `/work-progress?projectId=${encodeURIComponent(projectId)}`;
+  return drillTo === "report"
+    ? `${base}&tab=report&view=category&category=${encodeURIComponent(name)}`
+    : `${base}&tab=analytics&category=${encodeURIComponent(name)}`;
 }
 
 /**
  * Presentational half: takes real categories, draws them. Split out from the
- * fetching wrapper below so the chart's own rules -- the pie cap, the money
- * labels, the links -- are testable without a fetch stub.
+ * fetching wrapper below so the chart's own rules -- every bar, the label
+ * folding, the money labels, the drill target -- are testable without a
+ * fetch stub, and so a caller that already has this project's category data
+ * (DashboardProjectClient.tsx) can render it without a second request.
  */
 export function CategoryDistributionChartsView({
   categories,
   projectId,
   money,
+  drillTo = "analytics",
 }: {
   categories: CategoryEntry[];
   projectId: string;
+  /** The caller's own bound money formatter -- see the MERGE note above for why this is a prop and not a second useOrgMoney() read. */
   money: (value: number | string | null | undefined) => string;
+  drillTo?: CategoryDrillTarget;
 }) {
   if (categories.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-px-muted">
-        {NO_BOQ_LINES_MESSAGE} —{" "}
-        <Link href={`/scope?projectId=${encodeURIComponent(projectId)}`} className="text-px-teal underline">
-          Import a BOQ
-        </Link>
-      </p>
+      <div className="space-y-2 py-6 text-center">
+        <p className="text-sm text-px-muted">No BOQ line items for this project yet</p>
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/scope?projectId=${encodeURIComponent(projectId)}`}>Import BOQ</Link>
+        </Button>
+      </div>
     );
   }
 
-  const byValue = [...categories].sort((a, b) => b.totalAmount - a.totalAmount);
-  const showPie = categories.length <= PIE_MAX_SLICES;
-  const pieData = byValue.map((c) => ({ name: c.name, value: c.sharePercent }));
-  const barData = byValue.map((c) => ({
-    name: c.name,
-    totalAmount: Math.round(c.totalAmount),
-    completedAmount: Math.round(c.completedAmount),
-  }));
+  const sorted = [...categories].sort((a, b) => b.totalAmount - a.totalAmount);
+  const axisMax = sorted.reduce((max, c) => (c.totalAmount > max ? c.totalAmount : max), 0);
+  const width = (value: number) => (axisMax <= 0 ? 0 : Math.max(0.5, (value / axisMax) * 100));
+  // R67 MERGE (2026-09-03): DashboardProjectClient.tsx feeds this view rows
+  // from compliance-tracker's categoryProgressReport (R67 F-14/F-27's own
+  // reused fetch), which carries totalAmount/completedAmount/percentComplete
+  // but never populated sharePercent -- that field only ever came from the
+  // dedicated category-distribution endpoints the fetching wrapper below
+  // calls. Both endpoints answer for the SAME project's WHOLE category
+  // breakdown, so this project's own totalAmount sum is the correct
+  // denominator whenever the caller didn't already do that division upstream.
+  const totalAmount = sorted.reduce((sum, c) => sum + c.totalAmount, 0);
+  const sharePercent = (c: CategoryEntry) => c.sharePercent ?? (totalAmount > 0 ? (c.totalAmount / totalAmount) * 100 : 0);
 
   return (
-    <div className={showPie ? "grid grid-cols-1 gap-6 lg:grid-cols-2" : "space-y-4"}>
-      {showPie && (
-        <div>
-          <h4 className="mb-2 text-sm font-medium text-px-fg">Category share of total BOQ</h4>
-          <ChartContainer config={barConfig} className="aspect-auto h-72 w-full">
-            <PieChart>
-              <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="name" formatter={(value) => `${Number(value).toFixed(1)}%`} />} />
-              <Pie data={pieData} dataKey="value" nameKey="name" label={(entry) => `${entry.name} ${Number(entry.value).toFixed(0)}%`}>
-                {pieData.map((entry, i) => (
-                  <Cell key={entry.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-            </PieChart>
-          </ChartContainer>
-        </div>
-      )}
-
+    <div className="space-y-4">
       <div>
-        <h4 className="mb-2 text-sm font-medium text-px-fg">Completed vs total amount per category</h4>
-        <ChartContainer config={barConfig} className="aspect-auto h-72 w-full">
-          <BarChart data={barData} margin={{ left: 8, right: 8 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
-            <YAxis tickLine={false} axisLine={false} width={56} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            {/* R67 WS-G (R-227): radius 0 and the value printed at the bar
-                end, on both series -- the grouped pair is exactly the case
-                where two muted fills are hardest to tell apart, and the
-                printed figure removes the need to. */}
-            <Bar dataKey="totalAmount" fill="var(--color-chart-1)" radius={0}>
-              <LabelList dataKey="totalAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
-            </Bar>
-            <Bar dataKey="completedAmount" fill="var(--color-chart-2)" radius={0}>
-              <LabelList dataKey="completedAmount" position="top" offset={6} className="fill-ct-navy" fontSize={11} formatter={(v: number) => formatCompactNumber(v)} />
-            </Bar>
-            <ChartLegend content={<ChartLegendContent />} />
-          </BarChart>
-        </ChartContainer>
+        <h4 className="mb-1 text-sm font-medium text-px-fg">Budget and completed value by category</h4>
+        {/* R67 E-40 (R-272): one bar labelled "Uncategorized" is not a
+            distribution. The bar still renders -- that money is real -- but the
+            reader is told why there is only one and where the fix is, so
+            "this project has one trade" and "nobody has assigned categories
+            yet" stop looking identical. */}
+        {isAllUncategorized(sorted) && (
+          <p className="mb-2 text-[11.5px] text-px-muted" data-testid="all-uncategorised">
+            All BOQ lines are uncategorised —{" "}
+            <Link href={`/scope?projectId=${encodeURIComponent(projectId)}`} className="underline">
+              Assign categories in Scope
+            </Link>
+          </p>
+        )}
+        <p className="mb-3 text-[11.5px] text-px-muted">
+          The full bar is the category&apos;s BOQ amount; the darker bar over it is the value completed. Click a bar to
+          {drillTo === "report" ? " open the Work Progress Report for that category." : " see its progress entries."}
+        </p>
+        <ul className="space-y-2.5">
+          {sorted.map((category) => (
+            <li key={category.categoryId}>
+              <Link
+                href={categoryHref(projectId, category.name, drillTo)}
+                className="block rounded-md p-1.5 hover:bg-muted/40"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  {/* The share is printed after the label, in words -- "Civil - 40% of BOQ". */}
+                  <span className="min-w-0 truncate text-[12.5px] text-px-ink">
+                    {category.name} - {formatNumber(sharePercent(category), { fractionDigits: 0 })}% of BOQ
+                  </span>
+                  <span className={`${MONEY_CELL_CLASS} shrink-0 text-[11.5px] text-px-muted`}>
+                    {money(category.completedAmount)} of {money(category.totalAmount)}
+                  </span>
+                </div>
+                <span className="mt-1 block h-2.5 rounded-sm" style={{ width: `${width(category.totalAmount)}%`, backgroundColor: "var(--color-chart-5)" }}>
+                  <span
+                    className="block h-2.5 rounded-sm"
+                    style={{
+                      width: `${category.totalAmount > 0 ? Math.min(100, (category.completedAmount / category.totalAmount) * 100) : 0}%`,
+                      backgroundColor: "var(--color-chart-2)",
+                    }}
+                    aria-hidden
+                  />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      {/* The figures in full, and the destination. A chart a reader cannot open
-          is a dead end, and a compact axis label ("2.1M") is not a figure a QS
-          can check. */}
-      <ul className="space-y-1 lg:col-span-2">
-        {byValue.map((c) => (
-          <li key={c.categoryId} className="text-[12.5px]">
-            <Link href={analyticsHref(projectId, c.name)} className="text-px-ink hover:underline">
-              <span className="font-medium">{c.name}</span>{" "}
-              <span className="tabular-nums text-px-muted">
-                Completed {money(c.completedAmount)} / Total {money(c.totalAmount)} ({c.percentComplete}%)
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {sorted.length > LABEL_LIST_LIMIT && (
+        // Only the LABEL LIST folds. Every category still has its own bar
+        // above -- hiding a trade from the chart is what the capped pie did.
+        <details className="text-[11.5px] text-px-muted">
+          <summary className="cursor-pointer">
+            {sorted.length} categories in this BOQ — show the smallest {sorted.length - LABEL_LIST_LIMIT} by name
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-4">
+            {sorted.slice(LABEL_LIST_LIMIT).map((category) => (
+              <li key={category.categoryId}>
+                {category.name} - {formatNumber(sharePercent(category), { fractionDigits: 0 })}% of BOQ
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
 
+/**
+ * R67 E-29 (R-255): `companyId` is OPTIONAL, because this chart is now mounted
+ * on the project dashboard as well as on the company hierarchy, and the
+ * project dashboard has a project and no company. Both endpoints answer the
+ * same shape from the same pure function (src/lib/category-distribution.ts);
+ * the only difference is which scope the server enforces before answering.
+ */
 export function CategoryDistributionCharts({
-  projectId,
   companyId,
+  projectId,
+  drillTo = "analytics",
+  ariaLabel,
 }: {
-  projectId: string;
-  /**
-   * R67 MERGE (2026-09-03): the Company Dashboard renders this panel for a
-   * project inside a company the reader chose, and the read has to be scoped
-   * to that company's org -- otherwise a member of two orgs would see the
-   * wrong org's categories under the right project's name. Omitted everywhere
-   * else, where the caller's own org is the scope.
-   */
   companyId?: string;
+  projectId: string;
+  drillTo?: CategoryDrillTarget;
+  /** Names the whole chart for a screen reader, when it is mounted where its own heading is not adjacent. */
+  ariaLabel?: string;
 }) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const orgMoney = useOrgMoney();
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setCategories(null);
     setError(false);
-    const query = new URLSearchParams({ projectId });
-    if (companyId) query.set("companyId", companyId);
-    fetch(`/api/reports/category-progress?${query.toString()}`)
+    const url = companyId
+      ? `/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`
+      : `/api/projects/${encodeURIComponent(projectId)}/category-distribution`;
+    return fetch(url)
       .then((res) => {
-        if (!res.ok) throw new Error(`category-progress fetch failed: ${res.status}`);
+        if (!res.ok) throw new Error(`category-distribution fetch failed: ${res.status}`);
         return res.json();
       })
       .then((data) => setCategories(data?.categories ?? []))
       .catch(() => setError(true));
-  }, [projectId, companyId]);
+  }, [companyId, projectId]);
 
-  // A failed read and a genuinely empty BOQ are DIFFERENT answers and must
-  // never render the same way -- the whole reason this component has had a
-  // test since it shipped.
-  if (error) return <p className="py-6 text-center text-sm text-destructive">Unable to load category data. Please try again later.</p>;
-  if (categories === null) return <p className="py-6 text-center text-sm text-px-muted">Loading category distribution...</p>;
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  return <CategoryDistributionChartsView categories={categories} projectId={projectId} money={orgMoney.money} />;
+  if (error) {
+    return (
+      <div className="space-y-2 py-6 text-center">
+        <p role="alert" className="text-sm text-px-error">Couldn&apos;t load category data</p>
+        <Button size="sm" variant="outline" onClick={() => void load()}>Retry</Button>
+      </div>
+    );
+  }
+
+  if (categories === null) {
+    return (
+      <div className="space-y-2" aria-busy="true">
+        <p className="text-xs text-px-muted">Loading budget and completion per category…</p>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="space-y-1">
+            <Skeleton className="h-3 w-48" />
+            <Skeleton className="h-2.5 w-full" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div role={ariaLabel ? "group" : undefined} aria-label={ariaLabel}>
+      <CategoryDistributionChartsView
+        categories={categories}
+        projectId={projectId}
+        money={(v) => orgMoney.money(v, { fractionDigits: 0 })}
+        drillTo={drillTo}
+      />
+    </div>
+  );
 }
