@@ -104,6 +104,8 @@ type ApiTasks = {
 //                    background schedule or an explicit refresh, not on every
 //                    navigation.
 const TASK_PAGE_SIZE = 20;
+/** The backend's own ceiling on ?limit=. A refresh may not ask for more. */
+const TASK_MAX_LIMIT = 200;
 const POLL_FAST_MS = 1_000;
 const POLL_FAST_FOR_MS = 10_000;
 const POLL_SLOW_MS = 5_000;
@@ -194,6 +196,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // a ref written inside loadTasks is read by that effect without adding a
   // render or a dependency that would re-run it.
   const tasksFetchedAtRef = useRef<number | null>(null);
+  /** How many "Show 20 more" pages the user has pulled, so a refresh can ask
+   *  for the list they are actually looking at rather than shrinking it. */
+  const extraPagesRef = useRef(0);
   const optimisticIdsRef = useRef<Set<string>>(new Set());
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
@@ -356,6 +361,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         void refreshShell();
       } else if (event === "SIGNED_OUT") {
         setInfo(null);
+        // Covers the sign-out that happened in ANOTHER tab as well as this
+        // one's own: the cookie is shared by every tab, so whichever tab sees
+        // the event first must clear it.
+        rememberSelectedProject(null);
       }
     });
     return () => sub.subscription.unsubscribe();
@@ -407,7 +416,14 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     const append = Boolean(cursor);
     if (append) setLoadingMore(true);
     try {
-      const qs = new URLSearchParams({ limit: String(TASK_PAGE_SIZE) });
+      // A REFRESH asks for as many rows as the user currently has on screen,
+      // not for one page. Otherwise a five-minute background re-read would
+      // collapse a list they had expanded to sixty rows back down to twenty,
+      // under their cursor, for no reason they could see.
+      const limit = append
+        ? TASK_PAGE_SIZE
+        : Math.min(TASK_MAX_LIMIT, TASK_PAGE_SIZE * (1 + extraPagesRef.current));
+      const qs = new URLSearchParams({ limit: String(limit) });
       if (cursor) qs.set("cursor", cursor);
       const res = await fetch(`/api/tasks?${qs.toString()}`);
       // Status before body: an error body parses perfectly well as JSON, and
@@ -423,13 +439,17 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       const data = (d ?? {}) as ApiTasks;
       setTasksError(null);
       setNextCursor(data.nextCursor ?? null);
-      if (!append) {
-        setCounts({
-          home: Number(data.counts?.total) || 0,
-          approval: Number(data.counts?.needsYou) || 0,
-          queue: Number(data.counts?.running) || 0,
-        });
-      }
+      // Counts are refreshed on an APPENDED page too. They describe the whole
+      // set (the backend computes them from a grouped aggregate, not from the
+      // page it just returned), so a "Show 20 more" that left them alone would
+      // freeze the badges at whatever the first page happened to see -- the
+      // same disagreement between the tabs and the list under them that the
+      // comment above says can never happen.
+      setCounts({
+        home: Number(data.counts?.total) || 0,
+        approval: Number(data.counts?.needsYou) || 0,
+        queue: Number(data.counts?.running) || 0,
+      });
       const g = data.groups ?? {};
       // "Needs you" carries what is stuck on the user: blocked first, because
       // a blocked row is the only loud one and the one that costs time.
@@ -457,7 +477,8 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       };
       setNeedsYou((prev) => merge(prev, pageNeedsYou));
       setWaiting((prev) => merge(prev, pageWaiting));
-      if (!append) tasksFetchedAtRef.current = Date.now();
+      if (append) extraPagesRef.current += 1;
+      else tasksFetchedAtRef.current = Date.now();
     } catch {
       setTasksError("Couldn't reach the task service.");
     } finally {
@@ -472,13 +493,29 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // R67 F-26: and tasks no longer re-read on every navigation either. This
   // shell wraps all 53 app routes, so that read fired on every route change for
   // a list that changes when the USER acts -- and a Send now puts its own row
-  // in directly. The full list is refreshed once per mount and then only on a
-  // five-minute background schedule.
+  // in directly. The full list is read once per mount, re-read on a navigation
+  // that finds it older than five minutes, AND on a real five-minute timer.
   useEffect(() => {
     if (!bootstrapReady) return;
     if (tasksFetchedAtRef.current !== null && Date.now() - tasksFetchedAtRef.current < TASK_REVALIDATE_MS) return;
     void loadTasks();
   }, [loadTasks, bootstrapReady, pathname]);
+
+  // The staleness check above only runs when something re-renders this effect
+  // -- in practice, a navigation. A user who leaves Task Master open on one
+  // route never navigates, so without this timer their pane would never
+  // refresh at all, and a row another user or an executor moved would stay
+  // wrong on screen indefinitely. (Single-row polling covers only the task
+  // this user just sent.) Skipped while the tab is hidden: a background tab
+  // waking up to fetch is cost with no reader, and the focus/visibility
+  // handler above already refreshes on return.
+  useEffect(() => {
+    if (!bootstrapReady) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") void loadTasks();
+    }, TASK_REVALIDATE_MS);
+    return () => clearInterval(id);
+  }, [loadTasks, bootstrapReady]);
 
   // R67 F-26: place ONE row, by id, in whichever group its status belongs to --
   // used by both the optimistic insert after a Send and the single-task poll,
