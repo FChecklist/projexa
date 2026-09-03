@@ -162,18 +162,29 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/invite/[token]",
   "/share/report/[token]",
 
+  // R67 WS-H. The Design Studio is ONE nav entry (/design-studio, in the
+  // DESIGN group beside Mood Boards, FF&E and Floor Plans). Its Review and
+  // Cost analysis halves are TABS of that module -- they are real routes so
+  // a manager can be sent a link straight to the review queue, but putting
+  // all three in the sidebar would advertise one module as three.
+  "/design-studio/review",
+  "/design-studio/cost-analysis",
+  "/design-studio/timesheets/[id]",
+  "/design-studio/timesheets/new",
+
   // Reached from their own parent flow, never from the top-level nav: you
   // open a customer from the customers list, a permit from the permits list,
   // a project dashboard by clicking a project row. Listing these would put an
   // href with no id in it into the sidebar.
   "/customers/[id]",
   "/customers/new",
-  // R67 D-07: the Design Studio timesheet is the same hours the Schedule
-  // module's Timesheet tab lists, laid out in Sumeet's own columns -- reached
-  // from the "Open in Design Studio" control on that tab (see
-  // ScheduleTimesheetClient.tsx), not as a second top-level nav entry for one
-  // module's data.
-  "/design-studio",
+  // R67 D-07 / WS-H MERGE: /design-studio is NO LONGER excused here, because it
+  // is now in the nav for real. Lane D0 listed it as reachable only from the
+  // "Open in Design Studio" control on Schedule > Timesheet; item H-01 requires
+  // "a 'Design Studio' entry to the All-modules DESIGN group beside Mood
+  // Boards, FF&E Specification and Floor Plans", so it is a sidebar item AND
+  // still reachable from that control -- D0's entry point is kept, only its
+  // "not a top-level nav entry" reason is superseded.
   "/permits/[id]",
   "/permits/new",
   // R67 D-67: a logged progress entry's own page, reached by clicking its row
