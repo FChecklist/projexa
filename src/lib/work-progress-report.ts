@@ -13,6 +13,8 @@
 //   Current% = amount done WITHIN [from, to] / total BoQ amount
 //   Total% = cumulative amount done up to and including `to` / total BoQ amount
 
+import { formatDayMonthYearNumeric } from "./format-date";
+
 export type BoqLineItem = {
   id: string;
   activityId: string | null;
@@ -447,7 +449,47 @@ export type WorkProgressReport = {
   byCategory: ReturnType<typeof rollupBy>;
   /** R67 I-05: every category name present BEFORE the filter was applied -- what the multi-select offers. */
   availableCategories: string[];
+  /**
+   * R67 B-09 -- how many entries in this window resolve to NO BOQ line at
+   * all, and are therefore absent from every figure above.
+   *
+   * This report has always silently dropped them: entryBelongsToLine()
+   * claims an entry for a line by boq_line_item_id or, failing that, by
+   * activity, and an entry matching neither simply never appears in any
+   * row. On a project with no BOQ that is the whole day's work. Counting
+   * them here is what lets the screen say so instead of showing a total the
+   * site engineer knows is wrong and cannot explain.
+   */
+  unlinkedEntryCount: number;
 };
+
+/**
+ * Entries inside [from, to] that no line item in this BOQ can claim. Pure and
+ * exported so the rule is testable on its own, and so the number the note
+ * quotes is computed by the same predicate the report itself uses -- not by a
+ * second, drifting definition of "linked".
+ */
+export function countUnlinkedEntries(params: {
+  lineItems: Pick<BoqLineItem, "id" | "activityId">[];
+  entries: ProgressEntry[];
+  from: string;
+  to: string;
+}): number {
+  return params.entries.filter(
+    (e) => inRange(e.entryDate, params.from, params.to) && !params.lineItems.some((line) => entryBelongsToLine(e, line))
+  ).length;
+}
+
+/**
+ * The sentence shown above the table. null when there is nothing to say --
+ * a note that renders "0 entries ..." is noise, and the commonest case is
+ * zero.
+ */
+export function unlinkedEntriesNote(count: number): string | null {
+  if (count <= 0) return null;
+  if (count === 1) return "1 entry not linked to a BOQ line is not counted";
+  return `${count} entries not linked to a BOQ line are not counted`;
+}
 
 /**
  * R67 lane I (WS-I item I-05, R-177): keeps only the rows whose category is in
@@ -502,7 +544,22 @@ export function buildWorkProgressReport(params: {
     (r) => r.categoryId ?? `name:${r.categoryName.toLowerCase()}`,
     (r) => r.categoryName
   );
-  return { from: params.from, to: params.to, rows, byCategory, availableCategories };
+  return {
+    from: params.from,
+    to: params.to,
+    rows,
+    byCategory,
+    availableCategories,
+    // R67 B-09: counted over the UNFILTERED entry set, deliberately -- an
+    // entry no line can claim is missing from the report whatever category
+    // filter is applied, so scoping this to the filter would understate it.
+    unlinkedEntryCount: countUnlinkedEntries({
+      lineItems: params.lineItems,
+      entries: params.entries,
+      from: params.from,
+      to: params.to,
+    }),
+  };
 }
 
 // -- Manpower-wise / Vendor-wise --------------------------------------------
@@ -514,8 +571,32 @@ export function buildWorkProgressReport(params: {
 // here rather than inventing a fake per-line link.
 
 export type Attendance = { id: string; rosterId: string; attendanceDate: string; dailyCost: string | number };
-export type LabourRoster = { id: string; trade: string | null; vendorId: string | null; name: string };
+// R67 F-13 (R-193/R-217): vendorName now comes WITH the roster row (VERIDIAN's
+// listRoster resolves it in the transaction it already holds), which is what
+// let the report stop fetching the whole vendor master as a sixth call purely
+// to turn a vendorId into a name. Optional, so a caller that has an older
+// roster payload still type-checks and still works -- it just falls back to the
+// id, exactly as it did when a vendor row had been deleted.
+export type LabourRoster = { id: string; trade: string | null; vendorId: string | null; name: string; vendorName?: string | null };
 export type Vendor = { id: string; name: string };
+
+/**
+ * The vendors referenced by a roster, from the roster itself.
+ *
+ * This is the whole set byVendor can ever produce -- a vendor nobody on the
+ * roster belongs to cannot have labour cost -- so it replaces the full vendor
+ * master the report used to fetch. A roster row whose vendor row is gone
+ * carries a null name and is left out here, which lands it on
+ * buildVendorBreakdown's existing "fall back to the id" path: the same output
+ * as before, for the same reason.
+ */
+export function vendorsFromRoster(roster: LabourRoster[]): Vendor[] {
+  const byId = new Map<string, string>();
+  for (const r of roster) {
+    if (r.vendorId && r.vendorName) byId.set(r.vendorId, r.vendorName);
+  }
+  return Array.from(byId, ([id, name]) => ({ id, name }));
+}
 
 function inRange(date: string, from: string, to: string) {
   return date >= from && date <= to;
@@ -760,4 +841,117 @@ export function workProgressExportFileName(
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
   return `${slug || "project"}-work-progress-${from}-${to}.${extension}`;
+}
+
+// ---------------------------------------------------------------------------
+// R67 D-28 (R-069): the blast radius of deleting one progress entry.
+//
+// Deleting a progress entry silently moves a project's completion figure. The
+// object page's confirmation therefore has to state, before the click, what
+// the running total actually becomes -- and it must state it using the SAME
+// arithmetic the report and the PDF use, not a second rule invented for a
+// dialog. So this reuses computeLineItemProgress() verbatim, twice: once over
+// the entries as they are, once over the entries with this one removed. That
+// automatically inherits the DELTA/SNAPSHOT convention, the boq_line_item_id
+// preference order, and the amount-weighted percentage, and it cannot drift
+// from them because there is nothing here to drift.
+//
+// The window is deliberately unbounded: "running total" means everything ever
+// recorded against this target, not a report period, so `total` is the reading
+// we want and every entry must fall inside [from, to].
+const ALL_TIME_FROM = "0000-01-01";
+const ALL_TIME_TO = "9999-12-31";
+
+export type ProgressDeleteImpact = {
+  /** The quantity this entry carries -- always known, even with no BOQ line. */
+  quantity: number;
+  /** BOQ line unit when the entry names a line, else the activity's, else null. */
+  unit: string | null;
+  entryDate: string;
+  /** The BOQ line's item code, or null for an activity-only entry. */
+  lineCode: string | null;
+  /**
+   * Running total before and after, as a percentage of the line's contracted
+   * amount. BOTH are null when the entry names no BOQ line (or the line
+   * carries no contracted amount): there is no denominator, so a percentage
+   * would be a fabricated number and the confirmation says so instead.
+   */
+  percentBefore: number | null;
+  percentAfter: number | null;
+};
+
+export function describeProgressDeleteImpact(params: {
+  entry: ProgressEntry;
+  /** Every entry currently known for this project -- filtering to the right target is this function's job, not the caller's. */
+  entries: ProgressEntry[];
+  /** The BOQ line the entry names, when it names one and its figures are known. */
+  line: BoqLineItem | null;
+  unit: string | null;
+}): ProgressDeleteImpact {
+  const { entry, entries, line, unit } = params;
+  const quantity = num(entry.quantityDone);
+
+  if (!line) {
+    return { quantity, unit, entryDate: entry.entryDate, lineCode: null, percentBefore: null, percentAfter: null };
+  }
+
+  const noActivities = new Map<string, Activity>();
+  const noCategories = new Map<string, Category>();
+  const before = computeLineItemProgress(line, entries, noActivities, noCategories, ALL_TIME_FROM, ALL_TIME_TO);
+  const remaining = entries.filter((e) => e.id !== entry.id);
+  const after = computeLineItemProgress(line, remaining, noActivities, noCategories, ALL_TIME_FROM, ALL_TIME_TO);
+
+  // A line with no contracted amount has no denominator: computeLineItemProgress
+  // answers 0 for every percentage in that case, which would read as a real
+  // "drops from 0% to 0%" rather than as "unknown". Say unknown.
+  const hasDenominator = (num(line.amount) || num(line.quantity) * (line.computedRate ?? num(line.rate))) > 0;
+
+  return {
+    quantity,
+    unit: unit ?? line.unit ?? null,
+    entryDate: entry.entryDate,
+    lineCode: line.itemCode ?? null,
+    percentBefore: hasDenominator ? before.percentage.total : null,
+    percentAfter: hasDenominator ? after.percentage.total : null,
+  };
+}
+
+/**
+ * R67 D-28: the delete confirmation's own sentence, in one place, so the
+ * dialog can never say something the arithmetic above does not support.
+ * `fallbackLabel` names the target when the entry has no BOQ line to name
+ * (the activity's name), because "against nothing" is not a sentence.
+ */
+export function progressDeleteConfirmSentence(impact: ProgressDeleteImpact, fallbackLabel: string): string {
+  const unit = impact.unit ? ` ${impact.unit}` : "";
+  const target = impact.lineCode ?? fallbackLabel;
+  const head = `This removes ${impact.quantity}${unit} logged on ${formatDayMonthYearNumeric(impact.entryDate)} against ${target}`;
+  // No denominator means no honest percentage. Say what IS known and stop --
+  // never print "from 0% to 0%", which reads as a real, measured reading.
+  if (impact.percentBefore === null || impact.percentAfter === null) return `${head}. This cannot be undone.`;
+  return `${head}; the running total drops from ${impact.percentBefore}% to ${impact.percentAfter}%.`;
+}
+
+/** What a row shows when the entry names no BOQ line at all. */
+export const NO_BOQ_LINE_LABEL = "–";
+
+/**
+ * R67 D-28: "R60SK-A — R60 skiphop sub", or an en-dash when the entry names no
+ * BOQ line. One function, so the list cell, the object page's facet and its
+ * subtitle cannot render the same entry three ways -- and so neither of them
+ * ever falls back to printing a raw id, which is what the list used to do for
+ * any entry recorded against a revision the screen had not fetched.
+ *
+ * R67 INTEGRATION: F-24 shipped the SAME join first, inline in
+ * WorkProgressListClient, with an EM dash. Two functions at two separators is
+ * exactly what this one exists to prevent, so the component's copy now
+ * delegates here and the em dash wins -- item codes themselves contain hyphens
+ * ("R60SK-A"), which makes a hyphen separator genuinely ambiguous. D-28's own
+ * test string is corrected to the merged separator rather than dropped.
+ */
+export function boqLineLabel(itemCode: string | null | undefined, description: string | null | undefined): string {
+  if (!itemCode && !description) return NO_BOQ_LINE_LABEL;
+  if (!itemCode) return description!;
+  if (!description) return itemCode;
+  return `${itemCode} — ${description}`;
 }

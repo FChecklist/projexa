@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { getOrganizationSummary, listUserCompanies, resolveHierarchyCompanies } from "@/lib/company-scope";
+import { withTiming } from "@/lib/with-timing";
 
 // "Company" level of the Company -> Department -> Project drill-down: the
 // real list of PROJEXA organizations (tenants) the current user belongs to
@@ -12,6 +13,10 @@ import { getOrganizationSummary, listUserCompanies, resolveHierarchyCompanies } 
 // within a single org's accounting, e.g. head office vs a subsidiary) --
 // this is a different concept: which org (tenant) is being viewed.
 //
+// R67 MERGE (D-11, lane E2's E-37 x lane F-28): withTiming() wraps this route
+// like every other one in this family now -- main's own addition, kept
+// because it costs nothing and this route had no reason to be the exception.
+//
 // R67 E-37 (R-269 / R-298). THE LIST IS NEVER SILENTLY EMPTY ANY MORE.
 // listUserCompanies INNER JOINs organizations, so an orphaned membership (a
 // membership row whose organisation row is gone) returned nothing and the
@@ -21,7 +26,7 @@ import { getOrganizationSummary, listUserCompanies, resolveHierarchyCompanies } 
 // now carries WHY it is empty, and when the caller's own organisation can
 // name a company, resolveHierarchyCompanies synthesises one from it (a
 // read-time fallback; nothing is written).
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   // R67 E-37 follow-up. "YOU BELONG TO NO COMPANY" IS AN ANSWER, NOT AN ERROR.
   //
@@ -52,4 +57,4 @@ export async function GET() {
 
   const resolved = resolveHierarchyCompanies(memberships, organisation, ctx.organizationId, ctx.role);
   return NextResponse.json(resolved);
-}
+});

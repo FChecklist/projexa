@@ -16,7 +16,7 @@
 // the output as an HTML string instead of through a jsdom-backed query API.
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CategoryFilterGroup, ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
+import { CategoryFilterGroup, ScopeTable, noProgressText, reportIsEmpty, type LineItemRow } from "./WorkProgressReportClient";
 
 function textsOfTag(html: string, tag: string): string[] {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>(.*?)</${tag}>`, "gs");
@@ -53,12 +53,8 @@ describe("ScopeTable (point 108: banded layout)", () => {
   test("renders three visually separated bands in XLSX order: Percent, then Quantity, then Amount", () => {
     const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
     const headerText = textsOfTag(html, "th");
-    // R67 E-28 (R-244) added "BOQ Qty" -- the line's own CONTRACTED quantity,
-    // beside the quantity done. Named for what it is: R-244 asks for a "PO
-    // Qty" column and nothing in this schema links a BOQ line to a purchase
-    // order, so a "PO Qty" header would be a label over the wrong number.
     expect(headerText).toEqual([
-      "S.No", "Category", "Code", "Description", "Unit", "BOQ Qty", "Rate", "Amt",
+      "S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt",
       "Percent", "Quantity", "Amount",
       "Previous", "Current", "Total", "Previous", "Current", "Total", "Previous", "Current", "Total",
     ]);
@@ -134,6 +130,15 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "qty-current")[0]).toBe("");
     expect(textsByTestId(html, "amt-current")[0]).toBe("");
     // prev WAS touched, so it still renders as a real formatted number.
+    // R67 D-61 briefly changed the money half of this to "5,400.00" on the
+    // grounds that money is two decimals everywhere. It is back to "5,400",
+    // because lane G's G-05 -- already on main -- answered the same finding
+    // differently and better for THIS table: one formatDecimal() helper serves
+    // both the Quantity band and the Amount band here, with the currency named
+    // once in the band heading, precisely so a quantity of 50 Sqm is not
+    // rendered as if it were 50.00 dirhams. Two decimals is the rule for a
+    // money-only column (formatMoney), not for a grid whose columns are
+    // sometimes quantities.
     expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
     expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400");
   });
@@ -143,6 +148,15 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
     expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
   });
 });
+
+// R67 D-61's own ScopeTable money-format block used to sit here. It was
+// DROPPED at the lane G merge: G-05 had already fixed this table's local
+// money(), and fixed it differently -- one formatDecimal() helper serving both
+// the Quantity band and the Amount band, with the currency named once in the
+// band heading and ScopeTable taking no currency prop at all. D-61's tests
+// asserted the prop it no longer has. The behaviour those tests were written to
+// protect is covered by src/lib/format-number.test.ts (the pinned locale and
+// the grouping) and by the "ScopeTable money format" assertions above.
 
 // R67 lane I (WS-I item I-05, R-177): the Category multi-select the item asks
 // for on the WPR parameter bar. Same renderToStaticMarkup approach as above --
@@ -219,37 +233,44 @@ describe("CategoryFilterGroup (I-05: the WPR Category multi-select)", () => {
   });
 });
 
-// R67 E-28 (R-244 / R-254): the three things the table itself had to gain --
-// the contracted quantity beside the quantity done, the first three columns
-// pinned so the amount group is reachable at 1440 px, and a code that links to
-// the BOQ REVISION the report actually ran against.
-describe("ScopeTable (R67 E-28)", () => {
-  test("the BOQ's own contracted quantity is rendered beside rate and amount", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
-    const headers = textsOfTag(html, "th");
-    expect(headers.indexOf("BOQ Qty")).toBe(headers.indexOf("Unit") + 1);
-    expect(html).toContain("472"); // PARENT.qtyTotal, the contracted quantity
+// ─── R67 D-29 (audit R-080) ──────────────────────────────────────────────
+// A report that ran over a window in which nothing happened used to render four
+// empty tables under four tabs, leaving the reader to work out for themselves
+// whether that meant "no progress" or "the report is broken". One sentence
+// answers it. `touched.current` is the flag the report already computes for
+// exactly this distinction -- money() cannot tell a real computed zero from a
+// bucket nothing has ever reached, because both are the number 0.
+describe("R67 D-29: an untouched window says so", () => {
+  const UNTOUCHED: LineItemRow = {
+    lineItemId: "p-2.01", code: "2.01", description: "Screed", categoryName: "Finishes",
+    unit: "Sqm", rate: 60, qtyTotal: 100, amtTotal: 6000, parentLineItemId: null,
+    qty: { prev: 20, current: 0, total: 20, balance: 80 },
+    amt: { prev: 1200, current: 0, total: 1200, balance: 4800 },
+    percentage: { prev: 20, current: 0, total: 20, balance: 80 },
+    touched: { prev: true, current: false, total: true },
+  };
+
+  test("every band untouched and no manpower or vendor rows means no progress in the window", () => {
+    expect(reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [] })).toBe(true);
   });
 
-  test("the first three columns are pinned, on an opaque background", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
-    // sticky needs a background or the scrolled cells show through it.
-    expect(html).toContain("sticky bg-white left-0");
-    expect(html).toContain("sticky bg-white left-12");
-    expect(html).toContain("sticky bg-white left-40");
+  test("one touched line, one manpower row or one vendor row is enough to be a real report", () => {
+    expect(
+      reportIsEmpty({ rows: [{ ...UNTOUCHED, touched: { prev: true, current: true, total: true } }], byManpower: [], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [{ trade: "Mason", workerDays: 4, totalCost: 800 }], byVendor: [] })
+    ).toBe(false);
+    expect(
+      reportIsEmpty({ rows: [UNTOUCHED], byManpower: [], byVendor: [{ vendorId: "v1", vendorName: "Al Noor", totalCost: 900 }] })
+    ).toBe(false);
   });
 
-  test("a code links to the BOQ revision the report ran against, when it knows which", () => {
-    const withBoq = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" boqId="boq-7" />);
-    expect(withBoq).toContain('href="/scope/boq-7"');
-    // ...and falls back to the project's BOQ list when it does not.
-    const withoutBoq = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
-    expect(withoutBoq).toContain('href="/scope?projectId=p1"');
+  test("a BOQ with no lines at all still reads as no progress, not as a broken report", () => {
+    expect(reportIsEmpty({ rows: [], byManpower: [], byVendor: [] })).toBe(true);
   });
 
-  test("the Grand Total row still lands under the Amt column after the new one", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p1" />);
-    expect(html).toContain('colSpan="7"');
-    expect(html).toContain("Grand Total");
+  test("the sentence names the window the user asked for", () => {
+    expect(noProgressText("2026-08-01", "2026-08-31")).toBe("No progress recorded between 2026-08-01 and 2026-08-31");
   });
 });

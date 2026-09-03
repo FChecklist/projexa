@@ -1,185 +1,143 @@
 /// <reference types="bun-types" />
-// R67 E-22 (R-199 / R-207). The acceptance clauses for "reports render as
-// documents", as a render test: choosing a report RUNS it with no button
-// press, the running state says which report is running (the branch that
-// used to be unreachable on a first run), the result is a real table with
-// formatted money in it, the raw project id never reaches the screen, and
-// the document chrome exposes an Export PDF control.
+// R67 F-10 (R-134) acceptance test — the frontend half.
+//
+// /reports is a screen with one select and one button, and it took eight
+// blocking calls to become usable. Then every Run Report was a full round trip
+// with a spinner in place of the result -- including re-running the SAME report
+// on the SAME project a moment later.
+//
+// What is pinned here is that the cache is FAST WITHOUT BEING DISHONEST:
+//   * a remembered result paints immediately, and is labelled as remembered;
+//   * a live run replaces it and drops the label;
+//   * a FAILED live run leaves the last real answer on screen (still labelled)
+//     rather than blanking a panel that had something true in it;
+//   * the cache is keyed per report, so switching reports cannot show the
+//     previous report's figures under the new report's name.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+// Registering twice in one process throws, and `bun test` runs every file in
+// ONE process -- see src/components/ui/form-field.test.tsx's own note.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+// `screen` is intentionally not imported: @testing-library/dom binds it to
+// document.body at module-evaluation time, before GlobalRegistrator.register()
+// has created `document`.
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 mock.module("next/navigation", () => ({
-  useRouter: () => ({ push: mock(() => {}), refresh: mock(() => {}), replace: mock(() => {}) }),
+  useRouter: () => ({ push: mock(() => {}), prefetch: mock(() => {}) }),
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/reports",
 }));
-mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
-import { cleanup, render, waitFor } from "@testing-library/react";
-import ReportsClient from "./ReportsClient";
+// The org-wide catalog tab makes its own unrelated calls; this file is about
+// the Project Reports panel's data path.
+mock.module("@/components/ReportCatalogSection", () => ({
+  ReportCatalogSection: () => <div data-testid="catalog-stub" />,
+}));
 
-const PROJECT_STATUS = {
-  projectId: "g555imnoq4wihavpwc7t64um",
-  projectName: "Cedar Heights Villa - Phase 1",
-  budget: 0,
-  revenue: 0,
-  expenses: 185_000,
-  progressPercent: 60,
-  percentByValue: 25,
-  contractValue: 475_000,
-  projectValue: null,
-  earnedValue: 118_750,
-  taskCount: 4,
-  delayedTaskCount: 1,
-  photoCount: 0,
-};
-
-const BUDGET_VARIANCE = {
-  lines: [
-    { lineItemId: "l1", code: "1.1", description: "Blockwork", category: "Civil", amount: 6500, budgetPercentage: 25, budget: 1625, vendorId: "v1", vendorName: "Al Noor", vendorAmount: 1800, variance: 175 },
-  ],
-  totalBudget: 1625,
-  totalVendorAmount: 1800,
-  totalVariance: 175,
-};
-
-/** Answers every URL this panel really calls. `hold` keeps the report request pending so the running state can be asserted. */
-function stubFetch({ hold = false }: { hold?: boolean } = {}) {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.includes("/api/currencies")) {
-      return new Response(JSON.stringify({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] }), { status: 200 });
-    }
-    if (url.includes("/api/reports/budget-variance")) {
-      return new Response(JSON.stringify(BUDGET_VARIANCE), { status: 200 });
-    }
-    if (url.includes("/api/reports/project-status")) {
-      if (hold) return new Promise<Response>(() => {}); // never settles
-      return new Response(JSON.stringify(PROJECT_STATUS), { status: 200 });
-    }
-    return new Response(JSON.stringify({}), { status: 200 });
-  }) as typeof fetch;
-}
+const ReportsClient = (await import("./ReportsClient")).default;
+const { reportCacheKey, readCachedReport, writeCachedReport, clearCachedReports } =
+  await import("@/lib/report-result-cache");
+const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
 
 afterEach(() => {
   cleanup();
+  clearCachedReports();
+  __resetCurrenciesCacheForTests();
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });
 
-function renderPanel() {
-  return render(
-    <ReportsClient projectId="prj-cedar" projectName="Cedar Heights Villa - Phase 1" generatedBy="rajat" />
-  );
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-describe("ReportsClient -- Project Status renders as a document", () => {
-  test("the report runs on arrival, with no button pressed", async () => {
+const LIVE = { projectName: "Marina Tower", taskCount: 12 };
+const CACHED = { projectName: "Marina Tower", taskCount: 7 };
+
+function stubFetch(handler?: (url: string) => Response) {
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    calls.push(url);
+    if (handler) return handler(url);
+    if (url.includes("/api/reports/")) return jsonRes(LIVE);
+    if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
+    return jsonRes({});
+  }) as typeof fetch;
+  return calls;
+}
+
+describe("ReportsClient — remembered results, honestly labelled", () => {
+  test("a remembered result paints on mount, labelled as the last result", async () => {
     stubFetch();
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("Revenue, budget and expense"));
-    // The old idle prompt is gone -- there is nothing to click first.
-    expect(container.textContent).not.toContain("Pick a report and click Run Report");
+    writeCachedReport(reportCacheKey("project-status", "p1"), CACHED);
+
+    const { getByText } = render(<ReportsClient projectId="p1" />);
+
+    await waitFor(() => expect(getByText(/Showing the last result/)).toBeDefined());
+    // The remembered figure, not the live one -- nothing has been run yet.
+    expect(getByText("7")).toBeDefined();
   });
 
-  test("while it runs, the panel says WHICH report is running and offers Cancel", async () => {
-    stubFetch({ hold: true });
-    const { container, findAllByRole } = renderPanel();
-    // R67 E-30 (R-263): the sentence names the report AND the project.
-    await waitFor(() =>
-      expect(container.textContent).toContain("Running Project Status for Cedar Heights Villa - Phase 1…")
-    );
-    const cancels = await findAllByRole("button", { name: "Cancel" });
-    expect(cancels.length).toBeGreaterThan(0);
-    // The idle prompt must never be what a running report looks like.
-    expect(container.textContent).not.toContain("Choosing a report runs it.");
+  test("with nothing remembered the panel says what to do, and makes no report request", async () => {
+    const calls = stubFetch();
+
+    const { getByText } = render(<ReportsClient projectId="p1" />);
+
+    expect(getByText("Pick a report and click Run Report.")).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls.filter((u) => u.includes("/api/reports/"))).toHaveLength(0);
   });
 
-  test("R67 E-30: the elapsed counter really ticks while the reader waits", async () => {
-    stubFetch({ hold: true });
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("Running Project Status"));
-    // "0 s" immediately, then a real second later "1 s". Without the counter a
-    // reader cannot tell a slow report from a broken one.
-    expect(container.textContent).toContain("0 s");
-    await waitFor(() => expect(container.textContent).toContain("1 s"), { timeout: 3000 });
-  });
-
-  test("R67 E-30: a finished run is stamped with how long it took and when", async () => {
+  test("Run Report replaces the remembered figure with the live one and drops the label", async () => {
     stubFetch();
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    // "Ran in 0.0 s at 14:02" -- the duration and a 24-hour clock, above the
-    // output, so a reader knows whether the numbers are fresh.
-    expect(container.textContent).toMatch(/Ran in \d+\.\d s at \d{2}:\d{2}/);
+    writeCachedReport(reportCacheKey("project-status", "p1"), CACHED);
+
+    const { getByText, queryByText } = render(<ReportsClient projectId="p1" />);
+    await waitFor(() => expect(getByText("7")).toBeDefined());
+
+    fireEvent.click(getByText("Run Report"));
+
+    await waitFor(() => expect(getByText("12")).toBeDefined());
+    expect(queryByText(/Showing the last result/)).toBeNull();
+    // And the live answer is what a later visit will paint from.
+    expect(readCachedReport(reportCacheKey("project-status", "p1"))).toEqual(LIVE);
   });
 
-  test("R67 E-30: Cancel stops the run and says so, rather than spinning forever", async () => {
-    stubFetch({ hold: true });
-    const { container, findAllByRole } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("Running Project Status"));
-    const [cancel] = await findAllByRole("button", { name: "Cancel" });
-    cancel.click();
-    await waitFor(() => expect(container.textContent).toContain("Cancelled. Nothing was run."));
-    expect(container.textContent).not.toContain("Running Project Status");
+  test("a FAILED run leaves the last real answer on screen rather than blanking the panel", async () => {
+    stubFetch((url) => (url.includes("/api/reports/") ? jsonRes({ error: "Reports are not enabled for this organisation" }, 403) : jsonRes({ currencies: [] })));
+    writeCachedReport(reportCacheKey("project-status", "p1"), CACHED);
+
+    const { getByText } = render(<ReportsClient projectId="p1" />);
+    await waitFor(() => expect(getByText("7")).toBeDefined());
+
+    fireEvent.click(getByText("Run Report"));
+
+    // Still there, still labelled as remembered -- and NOT replaced by
+    // "Could not generate this report.", which would have thrown away a true
+    // figure the user was reading.
+    await waitFor(() => expect(getByText(/Showing the last result/)).toBeDefined());
+    expect(getByText("7")).toBeDefined();
   });
 
-  test("money is formatted through the one formatter, with the org currency", async () => {
+  test("the cache is keyed per report -- one report's figures can never appear under another's name", async () => {
     stubFetch();
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    expect(container.textContent).toContain("AED 185,000");
+    writeCachedReport(reportCacheKey("attendance", "p1"), { attendanceOnly: 999 });
+
+    const { getByText, queryByText } = render(<ReportsClient projectId="p1" />);
+
+    // project-status is the default selection and has nothing remembered.
+    expect(getByText("Pick a report and click Run Report.")).toBeDefined();
+    expect(queryByText("999")).toBeNull();
   });
 
-  test("the raw project id never reaches the screen", async () => {
+  test("a report run for one project is never shown for another", async () => {
     stubFetch();
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    expect(container.textContent).not.toContain("g555imnoq4wihavpwc7t64um");
-  });
+    writeCachedReport(reportCacheKey("project-status", "p1"), CACHED);
 
-  test("both progress measures are named in words rather than as JSON keys", async () => {
-    stubFetch();
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("% complete by BOQ value"));
-    expect(container.textContent).toContain("% complete by activity log");
-    expect(container.textContent).not.toContain("percentByValue");
-    expect(container.textContent).not.toContain("progressPercent");
-  });
+    const { getByText } = render(<ReportsClient projectId="p2" />);
 
-  test("the document chrome exposes Export PDF, Export CSV and Share", async () => {
-    stubFetch();
-    const { container, getByRole } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    // Matched by pattern, not by an exact string: R67 E-36 puts a DISABLED
-    // control's reason into its accessible name (aria-label), because the
-    // accessible-name algorithm prefers text content over `title` and a reader
-    // who cannot hover was getting a dead control with no stated reason. So
-    // "Export PDF" is now the start of the name, not the whole of it.
-    expect(getByRole("button", { name: /Export PDF/ })).toBeDefined();
-    expect(getByRole("button", { name: /Export CSV/ })).toBeDefined();
-    expect(getByRole("button", { name: /Share/ })).toBeDefined();
-  });
-
-  test("the header block links the project name to its dashboard", async () => {
-    stubFetch();
-    const { container, getByRole } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    const link = getByRole("link", { name: "Cedar Heights Villa - Phase 1" });
-    expect(link.getAttribute("href")).toBe("/dashboard/project?projectId=prj-cedar");
-  });
-
-  test("a failed run shows the backend's own words and a way to run it again", async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/api/currencies")) return new Response(JSON.stringify({ currencies: [] }), { status: 200 });
-      return new Response(JSON.stringify({ error: "construction is not enabled for this organisation" }), { status: 403 });
-    }) as typeof fetch;
-
-    const { container } = renderPanel();
-    await waitFor(() => expect(container.textContent).toContain("Could not run Project Status"));
-    expect(container.textContent).toContain("construction is not enabled for this organisation");
+    expect(getByText("Pick a report and click Run Report.")).toBeDefined();
   });
 });

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireCompanyScope } from "@/lib/company-scope";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 import {
   buildCategoryDistribution,
   type CategoryBoqAmounts,
@@ -19,7 +21,15 @@ import {
 // same chart and has no company to scope this route by. Two routes, ONE
 // derivation -- see that module's header. This route's own job is unchanged:
 // resolve and enforce the company scope, then ask.
-export async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
+//
+// R67 MERGE (D-11, lane E2 x lane F-13/F-20/F-28): the withTiming() wrapper
+// and veridianErrorResponse() catch are F2's -- kept, since they are the same
+// Server-Timing/typed-error infra every other route in this file's family
+// now carries, and this route had nothing of its own reason not to.
+// CategoryDistributionEntry's own local, duplicate declaration (main's, before
+// this shared module existed) is dropped: category-distribution.ts already
+// exports the identical type, and this route already returns it.
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ companyId: string; projectId: string }> }) {
   const { companyId, projectId } = await params;
   const scope = await requireCompanyScope(companyId);
   if (scope.response) return scope.response;
@@ -35,6 +45,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ com
     ]);
     return NextResponse.json(buildCategoryDistribution(amounts, progress));
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : "Failed to load category distribution" }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, "Failed to load category distribution");
   }
-}
+});

@@ -3,6 +3,7 @@ import {
   UserCog, ShieldAlert, Library,
 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import type { MarketingLocaleProps } from "../marketing-locale";
 import { Reveal } from "../Reveal";
 
 // Original hub-and-spoke visual (CSS only, no diagram library): the center
@@ -21,9 +22,9 @@ const SPOKES = [
   { key: "knowledge", icon: Library },
 ] as const;
 
-export async function ArchitectureDiagram() {
-  const t = await getTranslations("Marketing.howItWorks.architecture");
-  const tCat = await getTranslations("Marketing.moduleCatalog.categories");
+export async function ArchitectureDiagram({ locale }: MarketingLocaleProps) {
+  const t = await getTranslations({ locale, namespace: "Marketing.howItWorks.architecture" });
+  const tCat = await getTranslations({ locale, namespace: "Marketing.moduleCatalog.categories" });
 
   return (
     <section className="border-b border-border bg-background py-20 sm:py-28">

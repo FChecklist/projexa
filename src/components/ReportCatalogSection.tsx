@@ -29,7 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileBarChart, Search } from "lucide-react";
-import { monthToDateRange, placeCatalogEntry, reportSubject } from "@/lib/report-registry";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -67,14 +67,6 @@ const DOMAIN_LABELS: Record<ReportDomain, string> = {
 
 const DOMAIN_ORDER: ReportDomain[] = ["construction", "ERP", "compliance", "custom", "AI-ops"];
 
-// R67 E-28 (R-244): the catalog OPENS on Construction. This is PROJEXA -- the
-// construction reports are the ones a reader here can actually run, and the
-// other four domains are the platform's, reachable in one click. Opening on
-// all five buried seventeen runnable reports under a scroll of cards that all
-// say "Runs in VERIDIAN".
-const DEFAULT_DOMAIN: DomainFilter = "construction";
-type DomainFilter = ReportDomain | "all";
-
 const STATUS_FILTERS = ["all", "built", "data_gap", "planned"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
@@ -93,37 +85,21 @@ function StatusBadge({ status }: { status?: "built" | "data_gap" | "planned" }) 
   );
 }
 
-// R67 E-22 (R-224). WHAT THIS REPLACED, and why it was wrong.
-//
-// Every non-definition card carried one blanket sentence: "Runs on VERIDIAN
-// own dashboard (<route>) -- not yet renderable inside PROJEXA, shown for
-// visibility only." That sentence was FALSE for seventeen of these cards.
-// Every entry whose id starts with "construction-" is one of the reports the
-// Project Reports tab on this very screen already runs. The catalog was
-// telling the reader they could not see a report that was one tab away.
-//
-// The card now states which of three things is true, from
-// src/lib/report-registry.ts: "Runs here" with an Open action,
-// "Runs in VERIDIAN - open there" with the link, or "Not built - data gap"
-// with the reason. No card is a dead end and none of them overstates.
-//
-// R67 E-31 (R-264): the card now carries the reader's CONTEXT into whatever it
-// opens -- the project the shell is on and the current month to date -- so a
-// link arrives at a report that has run rather than at an empty form, and the
-// in-place runner starts with the same defaults filled in.
 function CatalogCard({
   entry,
   companies,
   projectId,
-  range,
 }: {
   entry: FullCatalogEntry;
   companies: Company[];
   projectId: string | null;
-  range: { from: string; to: string };
 }) {
   const [expanded, setExpanded] = useState(false);
-  const placement = placeCatalogEntry(entry, { projectId, from: range.from, to: range.to });
+  // R67 D-02: a catalog row for a report PROJEXA already renders itself is a
+  // link to that screen, not a "not yet viewable here" card. Today that is the
+  // Work Progress Report; the table lives in one place so the picker above and
+  // this row can never send the same name to two different destinations.
+  const projexaDestination = projexaReportDestination(entry, projectId);
 
   return (
     <div className="rounded-lg border border-px-border p-3">
@@ -131,64 +107,61 @@ function CatalogCard({
         <span className="text-sm font-medium text-px-ink">{entry.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusBadge status={entry.status} />
-          <Badge
-            variant="secondary"
-            className={`text-[10px] ${placement.availability === "runs-here" ? "bg-px-teal/10 text-px-teal border-px-teal/30" : ""}`}
-          >
-            {placement.label}
-          </Badge>
+          {entry.source === "static" && !projexaDestination && (
+            <Badge variant="secondary" className="text-[10px]">Not yet viewable here</Badge>
+          )}
+          {entry.source === "definition" && (
+            <Badge variant="secondary" className="text-[10px] bg-px-teal/10 text-px-teal border-px-teal/30">Engine</Badge>
+          )}
         </div>
       </div>
       <p className="text-xs text-px-muted mb-1.5">{entry.description}</p>
 
-      {placement.runsInPlace ? (
+      {projexaDestination ? (
+        <Link
+          href={projexaDestination}
+          className="text-xs font-medium text-px-teal transition-colors hover:text-px-ink"
+          data-testid="catalog-open-in-projexa"
+        >
+          Open this report
+        </Link>
+      ) : entry.source === "static" ? (
+        <p className="text-[10.5px] text-px-muted/80">
+          Runs on VERIDIAN own dashboard ({entry.route}) -- not yet renderable inside PROJEXA, shown for visibility only.
+        </p>
+      ) : (
         <>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="text-xs font-medium text-px-teal hover:text-px-ink transition-colors"
           >
-            {expanded ? "Hide" : placement.action}
+            {expanded ? "Hide" : "Run this report"}
           </button>
           {expanded && entry.definitionId && (
+            // R67 MERGE (D-11, lane E2's E-31 / R-264): ReportCatalogRunner now
+            // pre-fills and auto-runs, and its empty-result sentence names its
+            // subject -- both need what this row already has in scope.
             <ReportCatalogRunner
               definitionId={entry.definitionId}
               supportsCompanyScope={Boolean(entry.supportsCompanyScope)}
               companies={companies}
               projectId={projectId}
-              subject={reportSubject(entry.name)}
+              subject={entry.name}
             />
           )}
         </>
-      ) : placement.href && placement.availability === "runs-here" ? (
-        <Link href={placement.href} className="text-xs font-medium text-px-teal hover:text-px-ink transition-colors">
-          {placement.action} →
-        </Link>
-      ) : placement.href ? (
-        // A VERIDIAN route is a different app the reader has no session in,
-        // so it is stated as such rather than dressed up as an in-app link.
-        <p className="text-[10.5px] text-px-muted/80">
-          {placement.action}: <span className="font-mono">{placement.href}</span>
-        </p>
-      ) : (
-        <p className="text-[10.5px] text-px-muted/80">{placement.note}</p>
       )}
     </div>
   );
 }
 
 export function ReportCatalogSection({ projectId = null }: { projectId?: string | null } = {}) {
-  // R67 E-31: computed once for the whole section, so every card's link and
-  // every card's runner describe the SAME window -- two cards quoting two
-  // ranges because they mounted a millisecond apart is exactly the kind of
-  // disagreement that makes a reader distrust a report.
-  const [range] = useState(() => monthToDateRange());
   const [catalog, setCatalog] = useState<FullCatalogEntry[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [domainFilter, setDomainFilter] = useState<DomainFilter>(DEFAULT_DOMAIN);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,11 +200,10 @@ export function ReportCatalogSection({ projectId = null }: { projectId?: string 
     const q = search.trim().toLowerCase();
     return catalog.filter((e) => {
       if (statusFilter !== "all" && (e.status ?? "built") !== statusFilter) return false;
-      if (domainFilter !== "all" && e.domain !== domainFilter) return false;
       if (q && !e.name.toLowerCase().includes(q) && !e.description.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [catalog, search, statusFilter, domainFilter]);
+  }, [catalog, search, statusFilter]);
 
   // R46 F_028 real root cause (confirmed live against production, 2026-08-25:
   // this exact line threw "Cannot read properties of undefined (reading
@@ -257,14 +229,8 @@ export function ReportCatalogSection({ projectId = null }: { projectId?: string 
     return grouped;
   }, [filtered]);
 
-  // R67 E-22: counted from the SAME placement function the cards render, so
-  // the headline number and the badges can never disagree. It used to count
-  // only report_definitions rows, which is why it under-reported by the
-  // seventeen construction reports this app has always been able to run.
-  const placements = useMemo(() => (catalog ?? []).map((e) => placeCatalogEntry(e)), [catalog]);
-  const runnableHereCount = placements.filter((p) => p.availability === "runs-here").length;
-  const veridianCount = placements.filter((p) => p.availability === "runs-in-veridian").length;
-  const notBuiltCount = placements.filter((p) => p.availability === "not-built").length;
+  const definitionCount = catalog?.filter((e) => e.source === "definition").length ?? 0;
+  const runnableHereCount = catalog?.filter((e) => e.source === "definition" && (e.status ?? "built") === "built").length ?? 0;
 
   return (
     <Card className="shadow-card">
@@ -278,7 +244,7 @@ export function ReportCatalogSection({ projectId = null }: { projectId?: string 
             ? "Loading the full catalog..."
             : loadError
               ? "Could not load the catalog from VERIDIAN -- try again shortly."
-              : `${catalog.length} report/analysis types across the platform -- ${runnableHereCount} run here, ${veridianCount} run in VERIDIAN, ${notBuiltCount} are not built yet. Every card says which it is.`}
+              : `${catalog.length} report/analysis types across the platform -- ${runnableHereCount} of ${definitionCount} run live, right here, through the Reports and Analysis Engine. The rest are either a real data gap (not yet built) or run on VERIDIAN own dashboard only, shown for visibility rather than hidden.`}
         </p>
         <div className="flex flex-wrap items-center gap-2 pt-2">
           <div className="relative w-64">
@@ -304,25 +270,6 @@ export function ReportCatalogSection({ projectId = null }: { projectId?: string 
               </button>
             ))}
           </div>
-          {/* R67 E-28: the domain filter, opening on Construction (PROJEXA).
-              Every other domain is one click away and says how many it holds,
-              so nothing is hidden -- it is just not first. */}
-          <div className="flex flex-wrap gap-1">
-            {(["all", ...DOMAIN_ORDER] as DomainFilter[]).map((d) => (
-              <button
-                key={d}
-                type="button"
-                aria-pressed={domainFilter === d}
-                onClick={() => setDomainFilter(d)}
-                className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${
-                  domainFilter === d ? "bg-px-ink text-white border-px-ink" : "border-px-border text-px-muted hover:bg-muted/50"
-                }`}
-              >
-                {d === "all" ? "All domains" : DOMAIN_LABELS[d]}
-                {catalog !== null && d !== "all" ? ` (${catalog.filter((e) => e.domain === d).length})` : ""}
-              </button>
-            ))}
-          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -342,13 +289,7 @@ export function ReportCatalogSection({ projectId = null }: { projectId?: string 
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {byDomain[domain].map((entry) => (
-                <CatalogCard
-                  key={`${entry.source}-${entry.id}`}
-                  entry={entry}
-                  companies={companies}
-                  projectId={projectId}
-                  range={range}
-                />
+                <CatalogCard key={`${entry.source}-${entry.id}`} entry={entry} companies={companies} projectId={projectId} />
               ))}
             </div>
           </div>

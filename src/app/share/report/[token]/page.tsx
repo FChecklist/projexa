@@ -1,13 +1,22 @@
 import { notFound } from "next/navigation";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 import { buildWorkProgressReport, formatParentOnlyPercent, sumRootAmtTotal, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
+import { formatMoney } from "@/lib/format-money";
 
 // CONS-03's PDF fix and WorkProgressReportClient.tsx's own money() both
 // format plain numbers, no currency code (the code/symbol is a per-org
 // setting this unauthenticated, no-session page has no way to resolve) --
 // matched here rather than inventing a third formatting rule.
+//
+// R67 D-61: that intent is now enforced rather than restated. This page is a
+// Server Component, which is precisely why format-money.ts carries no
+// "use client" -- the same helper the in-app report uses formats this public
+// copy, so a client cannot be shown a share link whose numbers are grouped
+// differently from the screen it was shared from. `currency` is deliberately
+// left unset: this page has no session and therefore no org, and the rule is
+// that a currency is never guessed.
 function money(n: number) {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return formatMoney(n, {});
 }
 
 // Point 118: the PUBLIC, read-only view a share-link token resolves to.

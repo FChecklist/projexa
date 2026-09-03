@@ -1,4 +1,7 @@
-import { formatDate } from "@/lib/format-date";
+// R67 D-74: was format-date.ts's en-US/UTC formatDate, so the Timeline grid
+// read "10/15/2026" beside a date input the browser rendered in its own
+// locale -- two date forms on one screen, neither the organisation's.
+import { formatDate } from "@/lib/format";
 
 // R52 -- fault F_018 ("Timeline view shows fabricated Start/Due dates").
 //

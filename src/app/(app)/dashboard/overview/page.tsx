@@ -1,17 +1,44 @@
-import { redirect } from "next/navigation";
+import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { fetchProjectProgressBars } from "@/lib/dashboard-overview";
+import ProjectsOverviewClient, { type RegistryColumn } from "@/components/ProjectsOverviewClient";
 
-// R67 E-21 (R-205). This route used to be a second, weaker copy of the home
-// screen: a list of per-project progress bars whose numbers came from calling
-// GET /dashboard/{projectId} once per project (src/lib/dashboard-overview.ts's
-// fetchProjectProgressBars, now deleted) -- an N+1 over the VERIDIAN API for a
-// figure /dashboard already had the rows for. getOrgDashboard now returns
-// progressPercent per project on the ONE call the home page makes, so the home
-// page carries the bars and this page has nothing left of its own to show.
-//
-// It REDIRECTS rather than being deleted, and stays registered in
-// src/lib/nav-routes.ts, because the route is linked from real places (saved
-// links, the OVERVIEW nav entry, prior screenshots) and a 404 is a worse
-// answer than the screen the user was actually looking for.
-export default function ProjectsOverviewPage() {
-  redirect("/dashboard");
+// R46 P8 seq124 (M28 registry-model proof, same try/catch/404-is-not-an-error
+// resolver shape as budgets/page.tsx's resolveBudgetsListColumns /
+// scope/page.tsx's resolveBoqCompareColumns). function_id is
+// "dashboard.overview", NOT "dashboard.dashboard" -- this task was
+// originally assigned "dashboard.dashboard", but seq125 (PR #142, merged
+// concurrently with this seq) already claimed that exact function_id for
+// the DIFFERENT /dashboard/project screen (its columns are that screen's
+// KPI-tile labels -- percentByValue/contractValue/budgetVsActual/etc,
+// nothing to do with this page's project-progress-bar list). Reusing it
+// here would have silently served /dashboard/project's labels onto this
+// page, or raced with its resolver over which row is "the" global row for
+// that id (both org_id IS NULL, no uniqueness constraint on function_id
+// alone). "dashboard.overview" is a distinct id for a distinct screen, and
+// leaves seq125's shipped row untouched. A missing or errored registry row
+// is NOT fatal -- ProjectsOverviewClient falls back to its own hardcoded
+// labels when this is null. Data fetching (fetchProjectProgressBars) is
+// completely unrelated to this lookup and untouched by it.
+async function resolveDashboardOverviewLabels(organizationId: string | null): Promise<RegistryColumn[] | null> {
+  try {
+    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/dashboard.overview", {
+      organizationId: organizationId ?? undefined,
+    });
+    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
+  } catch (err) {
+    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
+    console.error("[dashboard/overview/page] screen_definitions resolve failed, falling back to hardcoded labels:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+export default async function ProjectsOverviewPage() {
+  const organizationId = await getServerOrganizationId();
+  const [labels, { bars, errorMessage }] = await Promise.all([
+    resolveDashboardOverviewLabels(organizationId),
+    fetchProjectProgressBars(organizationId),
+  ]);
+
+  return <ProjectsOverviewClient bars={bars} errorMessage={errorMessage} labels={labels} />;
 }

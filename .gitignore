@@ -28,3 +28,9 @@ tsconfig.tsbuildinfo
 /.bun/
 /.run/
 .env*
+
+# R67 F-28: perf-harness.mjs OUTPUT (perf/budgets.json itself is committed).
+# One machine's numbers are not another's, so the measured table is an
+# artifact, never a repo file.
+/perf/perf-results.json
+/perf/perf-results.md

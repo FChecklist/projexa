@@ -1,33 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Loader2, Play } from "lucide-react";
-import { formatDate, formatDateDMY, formatHourMinute, formatTime } from "@/lib/format-date";
+import { Loader2, Play, Share2, Download } from "lucide-react";
+import { formatDate } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
-import { timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
-import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
-import {
-  WORK_PROGRESS_REPORT_VIEWS,
-  WORK_PROGRESS_VIEW_LABEL,
-  describeGroups,
-  formatProgressCell,
-  groupRows,
-  hasRecordedProgress,
-  normaliseWorkProgressView,
-  workProgressExportFileName,
-  workProgressParamSignature,
-  type WorkProgressReportParams,
-  type WorkProgressReportView,
-} from "@/lib/work-progress-report";
+import { formatProgressCell, unlinkedEntriesNote } from "@/lib/work-progress-report";
+import { wprSearchParams, type WprParams, type WprView } from "@/lib/work-progress-report-params";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -66,15 +54,13 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 type BoqOption = { id: string; title: string; status: string; version: number };
 // R67 I-05: availableCategories/categoryFilter are additive -- an older
 // response without them still renders, the multi-select just has nothing to
-// offer until the first run comes back.
-// R67 E-28: `from`/`to` are the range the SERVER really ran -- `from` may have
-// been defaulted there from the project's earliest progress entry, so the
-// screen shows what happened rather than what it asked for.
+// offer until the first run comes back. R67 B-09's unlinkedEntryCount is
+// additive for the same reason.
 type ReportResponse = {
   boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
   rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
   availableCategories?: string[]; categoryFilter?: string[];
-  from?: string; to?: string; earliestEntryDate?: string | null; fromWasDefaulted?: boolean;
+  unlinkedEntryCount?: number;
 };
 
 // R67 G-05 (R-260). This passed `undefined` as the locale, which is the
@@ -219,27 +205,17 @@ export function CategoryFilterGroup({
   );
 }
 
-// R67 E-28 (R-244): the first three identifying columns stay put while the
-// nine-column amount group scrolls, so a QS reading the Amount band at 1440 px
-// can still see which line they are on. `sticky` needs an opaque background or
-// the scrolled cells show through it.
-const stickyCol = "sticky bg-white";
-
-export function ScopeTable({ rows, mode, projectId, boqId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string; boqId?: string | null }) {
+export function ScopeTable({ rows, mode, projectId }: { rows: LineItemRow[]; mode: ThirdColumnMode; projectId: string }) {
   if (rows.length === 0) return <p className="py-10 text-center text-sm text-px-muted">No BoQ line items for this project yet.</p>;
   const thirdLabel = mode === "balance" ? "Balance" : "Total";
   const grand = computeGrandTotal(rows, mode);
-  // R67 E-28: the code links to the BOQ REVISION it belongs to, when the
-  // report knows which one it ran against -- /scope/[id] is the real page for
-  // that revision. Falls back to the project's BOQ list when it does not.
-  const codeHref = boqId ? `/scope/${boqId}` : `/scope?projectId=${projectId}`;
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead rowSpan={2} className={`${stickyCol} left-0`}>S.No</TableHead><TableHead rowSpan={2} className={`${stickyCol} left-12`}>Category</TableHead>
-          <TableHead rowSpan={2} className={`${stickyCol} left-40`}>Code</TableHead><TableHead rowSpan={2}>Description</TableHead>
-          <TableHead rowSpan={2}>Unit</TableHead><TableHead rowSpan={2}>BOQ Qty</TableHead><TableHead rowSpan={2}>Rate</TableHead><TableHead rowSpan={2}>Amt</TableHead>
+          <TableHead rowSpan={2}>S.No</TableHead><TableHead rowSpan={2}>Category</TableHead>
+          <TableHead rowSpan={2}>Code</TableHead><TableHead rowSpan={2}>Description</TableHead>
+          <TableHead rowSpan={2}>Unit</TableHead><TableHead rowSpan={2}>Rate</TableHead><TableHead rowSpan={2}>Amt</TableHead>
           <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Percent</TableHead>
           <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Quantity</TableHead>
           <TableHead colSpan={3} className={`text-center ${bandBorder}`}>Amount</TableHead>
@@ -255,13 +231,13 @@ export function ScopeTable({ rows, mode, projectId, boqId }: { rows: LineItemRow
           const isChild = !!r.parentLineItemId; // WPR-06: percentages are parent-only
           return (
             <TableRow key={r.lineItemId}>
-              <TableCell className={`${stickyCol} left-0`}>{i + 1}</TableCell><TableCell className={`${stickyCol} left-12`}>{r.categoryName}</TableCell>
+              <TableCell>{i + 1}</TableCell><TableCell>{r.categoryName}</TableCell>
               {/* R42 seq24: every item code is a hyperlink to its BOQ (REPORT.GLOBAL) -- ScopeClient is the real, live screen for that line (no BOQ-line OBJECT screen exists; see this seq's own screen_spec finding). */}
-              <TableCell className={`${stickyCol} left-40 font-mono text-xs`}>
-                {r.code ? <Link href={codeHref} className="text-px-ink underline">{r.code}</Link> : "—"}
+              <TableCell className="font-mono text-xs">
+                {r.code ? <Link href={`/scope?projectId=${projectId}`} className="text-px-ink underline">{r.code}</Link> : "—"}
               </TableCell>
               <TableCell>{r.description}</TableCell>
-              <TableCell>{r.unit}</TableCell><TableCell>{money(r.qtyTotal)}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
+              <TableCell>{r.unit}</TableCell><TableCell>{money(r.rate)}</TableCell><TableCell>{money(r.amtTotal)}</TableCell>
 
               <TableCell className={bandBorder} data-testid="pct-prev">{isChild ? "" : `${r.percentage.prev}%`}</TableCell>
               <TableCell data-testid="pct-current">{isChild ? "" : `${r.percentage.current}%`}</TableCell>
@@ -285,7 +261,7 @@ export function ScopeTable({ rows, mode, projectId, boqId }: { rows: LineItemRow
         })}
         {/* R42 seq24: GRAND TOTAL, always visible, never requiring a scroll (REPORT.GLOBAL). */}
         <TableRow className="font-semibold border-t-2 border-px-border" data-testid="grand-total-row">
-          <TableCell colSpan={7}>Grand Total</TableCell>
+          <TableCell colSpan={6}>Grand Total</TableCell>
           <TableCell>{money(grand.amtTotal)}</TableCell>
           <TableCell className={bandBorder} />
           <TableCell /><TableCell />
@@ -357,108 +333,95 @@ function VendorTable({ rows }: { rows: VendorRow[] }) {
   );
 }
 
-/** Today, in the ISO form every date input and every query param here uses. */
-function today() {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * R67 D-29 (audit R-080), lane D1, folded onto lane D-02's URL-state rewrite.
+ * "Every band untouched" -- the report ran, and nothing happened on this
+ * project between those two dates. Four empty tables under four tabs is a
+ * puzzle; one sentence is an answer.
+ *
+ * `touched.current` is the flag the report already computes for exactly this
+ * distinction (see LineItemRow's own comment): money() cannot tell a real
+ * computed zero from a bucket no progress entry has ever reached, because both
+ * are the number 0.
+ *
+ * This is reached only AFTER the `reportError` branch below, so it can never
+ * be the sentence shown over a failed run -- the empty answer and the failed
+ * answer stay distinct, which is the same rule read-outcome.ts enforces for
+ * every list in the product.
+ */
+export function reportIsEmpty(report: Pick<ReportResponse, "rows" | "byManpower" | "byVendor">): boolean {
+  return (
+    report.rows.every((r) => !r.touched.current) &&
+    report.byManpower.length === 0 &&
+    report.byVendor.length === 0
+  );
 }
 
-// R67 E-34 (R-266): the view list, its labels and its URL normalisation moved
-// into src/lib/work-progress-report.ts beside the grouping helpers, so the
-// four names, the four groupings and the ?view= parameter cannot drift apart.
-// Re-exported here because this module's own consumers already import the type
-// from it.
-export type { WorkProgressReportView };
-
-/**
- * R67 E-34 (R-266). The sentence a reader gets when the range they asked for
- * holds no progress at all. Says WHICH range, in a date form that cannot be
- * read month-first by mistake -- "the table is empty" and "you are looking at a
- * fortnight in which nobody logged anything" are different facts, and only the
- * second one tells the reader what to do (widen the range).
- */
-export function noProgressSentence(from: string, to: string): string {
-  return `No progress was recorded between ${formatDateDMY(from)} and ${formatDateDMY(to)}`;
+/** The sentence itself, so its wording is asserted rather than trusted. */
+export function noProgressText(from: string, to: string): string {
+  return `No progress recorded between ${from} and ${to}`;
 }
 
-/**
- * R67 E-28 (R-244 / R-254, D-02). THERE IS ONE WORK PROGRESS REPORT.
- *
- * WHAT WAS WRONG, and what this component now does about each of it.
- *
- * 1. NOTHING RAN UNTIL YOU PRESSED A BUTTON, over a range that was already
- *    filled in, under the instruction "Pick a date range and click Run Report"
- *    (C-04). It runs on arrival now, from the URL's own parameters, and that
- *    sentence is gone.
- *
- * 2. THE DEFAULT RANGE WAS THE CURRENT MONTH. On a project whose work started
- *    in June, a month-to-date default reports it as having done nothing. The
- *    default start now comes from the DATA -- the project's earliest progress
- *    entry, computed server-side from entries the route already fetches -- and
- *    the range that really ran comes back on the response and is shown.
- *
- * 3. A RUN HAD NO STATE. No elapsed counter, no Cancel, no bound. The button
- *    reads "Running... {n} s" with a Cancel beside it, the panel shows a
- *    skeleton of the report's own columns rather than a blank card, completion
- *    prints how long it took and when, and a failure prints the backend's own
- *    words with a Retry -- in the panel AND in the footer, because the
- *    footer's Export buttons are the other thing the reader was about to press.
- *    src/lib/use-timed-run.ts owns the machine; the route's own 30 s deadline
- *    backs it up for work the browser abandoned.
- *
- * 4. EXPORT PDF EXISTED AND NOTHING CALLED IT. The relay has shipped since
- *    point 117 with no button on it. Export now offers PDF and XLSX, both
- *    server-rendered and streamed through the projexa relays (projexa gains no
- *    document library), beside the CSV that was already here -- still honestly
- *    labelled CSV, because that is what it is.
- *
- * 5. SHARE WAS COPY-A-LINK ONLY. "Send on WhatsApp" opens wa.me with the
- *    report named, the period spelled out and the same expiring link.
- *
- * The parameters live in the URL (projectId, from, to, view, boqId) so a run is
- * linkable, and the Reports module and the Full Catalog can both point here
- * (D-02) instead of running a second, slower copy of the same report.
- */
+// R67 MERGE (lane D1 x lane D-02/C-04). Both lanes rewrote this screen's run
+// path. Under decision D-11 the version on main is canonical -- D-02 holds the
+// report's whole state in the URL, runs on arrival, and already replaced
+// D-29's four-second failure TOAST with a `reportError` state rendered beside
+// a Retry (it keeps the toast as well, which is the one part of D-29's
+// complaint that is a matter of taste rather than of truth). So lane D1's own
+// `runError` is dropped as a duplicate of `reportError`, NOT as a rejected
+// idea -- the behaviour D-29 asked for is what ships.
+//
+// What lane D1 had that main did not is above: reportIsEmpty()/noProgressText().
+// A report that ran successfully over a quiet fortnight used to render four
+// empty tables under four tabs and leave the reader to work out which of
+// "nothing happened", "the filter is too narrow" and "it broke" they were
+// looking at.
+//
+// R67 D-02: the report opens with its parameters ALREADY in the URL (the page
+// resolves them through parseWprParams) and runs on arrival. Correction C-04:
+// before this, the range was pre-filled and the screen still said "Pick a date
+// range and click Run Report" -- three clicks to see the current month it could
+// have shown immediately. defaultFrom()/defaultTo() moved into
+// src/lib/work-progress-report-params.ts, where they are shared with the
+// Reports module's link and are actually tested.
 export default function WorkProgressReportClient({
   projectId,
-  projectName,
-  initialFrom,
-  initialTo,
-  initialView,
-  initialBoqId,
+  initialParams,
 }: {
   projectId: string;
-  projectName?: string | null;
-  /** From the page's own searchParams -- read on the server, never through useSearchParams (which forces a Suspense bailout at build time). */
-  initialFrom?: string | null;
-  initialTo?: string | null;
-  initialView?: string | null;
-  initialBoqId?: string | null;
+  initialParams: WprParams;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
-  // "" means "let the server pick the start date from the data" -- see the header.
-  const [from, setFrom] = useState(initialFrom ?? "");
-  const [to, setTo] = useState(initialTo ?? today());
-  // R67 E-35 (R-267 / R-303): the last SUCCESSFUL result never travels alone --
-  // it carries when it was produced and the parameters that produced it, which
-  // is the only way a failed re-run can tell "your table is still true, the
-  // service just hiccuped" from "this table is last month's numbers under this
-  // month's dates". Deliberately kept in state even when the parameters have
-  // moved on: it stays valid FOR ITS OWN parameters, so going back to them
-  // shows it again rather than re-running.
-  const [retained, setRetained] = useState<
-    { report: ReportResponse; ranAt: number; params: WorkProgressReportParams } | null
-  >(null);
-  const report = retained?.report ?? null;
+  const [from, setFrom] = useState(initialParams.from);
+  const [to, setTo] = useState(initialParams.to);
+  const [view, setView] = useState<WprView>(initialParams.view);
+  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<ReportResponse | null>(null);
+  // The backend's own words when the run failed -- so an empty report pane can
+  // never be mistaken for "this project has no progress", the standing rule in
+  // src/lib/read-outcome.ts.
+  const [reportError, setReportError] = useState<string | null>(null);
+  // R67 B-09: the sentence itself is a pure function beside the report's own
+  // maths, so the number the note quotes and the number the tables exclude
+  // can never come from two different definitions of "linked".
+  const unlinkedNote = unlinkedEntriesNote(report?.unlinkedEntryCount ?? 0);
   const [sharing, setSharing] = useState(false);
-  const [view, setView] = useState<WorkProgressReportView>(normaliseWorkProgressView(initialView));
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
   // R36/P5 (B5 decision, cc_spec point 177): a project can have more than one
   // independent BOQ at once -- empty string means "let the server auto-pick
   // the latest, non-superseded one" (the exact previous behaviour); a real
   // id means the user explicitly chose a specific BOQ to report on.
-  const [selectedBoqId, setSelectedBoqId] = useState<string>(initialBoqId ?? "");
+  const [selectedBoqId, setSelectedBoqId] = useState<string>("");
+  // The version the USER explicitly chose, which is what belongs in the URL --
+  // null means "let the server pick the latest", and stays out of the link.
+  // Held separately from selectedBoqId so changing the date range afterwards
+  // cannot silently drop the chosen BOQ out of a shareable URL.
+  const [selectedBoqVersion, setSelectedBoqVersion] = useState<number | null>(initialParams.boqVersion);
+  // D-02 carries the BOQ in the URL as a VERSION (stable and readable), while
+  // the API takes an id. The first response is what maps one to the other, so
+  // a link that names a version is honoured exactly once, on arrival.
+  const wantedBoqVersion = useRef<number | null>(initialParams.boqVersion);
   // R67 lane I (WS-I item I-05, R-177): the Category multi-select. Held here,
   // sent to the server, and APPLIED THERE -- never filtered client-side, or the
   // Grand Total would keep describing rows the table is no longer showing.
@@ -466,451 +429,317 @@ export default function WorkProgressReportClient({
   // The option list comes from the last run (every category present BEFORE the
   // filter), so selecting one never removes the others from the control.
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const run = useTimedRun<ReportResponse>();
-  // `run` is a fresh object every render, but `run.run` is a stable
-  // useCallback -- so the runner can be a dependency directly. It used to be
-  // held in a ref that was WRITTEN during render, which React's own lint rule
-  // forbids for a real reason: a ref written in render is not tracked, so a
-  // concurrent re-render can read a value from a render that was thrown away.
-  const startRun = run.run;
 
   // R42 seq24: recomputed every render (cheap, no memo needed) so it always
   // reflects the current thirdColumnMode toggle -- see checkTies()'s own comment.
   const tieError = report ? checkTies(report.rows, report.byCategory, thirdColumnMode) : null;
 
-  const runReport = useCallback(
-    async (overrides: { boqId?: string; categories?: string[]; from?: string; to?: string } = {}) => {
-      const boqId = overrides.boqId ?? selectedBoqId;
-      const categories = overrides.categories ?? selectedCategories;
-      const rangeFrom = overrides.from ?? from;
-      const rangeTo = overrides.to ?? to;
-
-      const data = await startRun(async (signal) => {
-        const params = new URLSearchParams({ projectId, to: rangeTo });
-        // Omitted on purpose when empty: that is what asks the server for the
-        // data-derived default rather than guessing one here.
-        if (rangeFrom) params.set("from", rangeFrom);
-        if (boqId) params.set("boqId", boqId);
-        // Repeatable, not comma-joined: a real category name may contain a comma.
-        for (const c of categories) params.append("category", c);
-        const res = await fetch(`/api/work-progress/report?${params.toString()}`, { signal });
-        const body = await res.json();
-        // R67 E-35: the SERVER'S OWN WORDS, from `message` first (the field the
-        // item names) and `error` second (what this route actually sends today),
-        // never a status code dressed up as a sentence -- and never a bare
-        // "Something went wrong", which tells the reader nothing they can act on.
-        if (!res.ok) throw new Error(body?.message || body?.error || `the report service answered ${res.status}`);
-        return body as ReportResponse;
-      });
-
-      if (!data) return; // cancelled, timed out or failed -- the hook holds which
-      // R67 E-35: stamped with the RESOLVED parameters, not the requested ones.
-      // The server may pick the start date (see the header) and the BOQ, and
-      // those picks land in this component's own state a line below -- so a
-      // signature built from what was SENT would never match the signature
-      // rebuilt from state, and every re-run would look like a parameter change.
-      setRetained({
-        report: data,
-        ranAt: Date.now(),
-        params: {
-          projectId,
-          from: data.from || rangeFrom,
-          to: rangeTo,
-          boqId: boqId || data.boqId || "",
-          categories,
-        },
-      });
-      // Reflect what the server really ran: its effective range and its BOQ pick.
-      if (data.from && data.from !== rangeFrom) setFrom(data.from);
-      if (!boqId && data.boqId) setSelectedBoqId(data.boqId);
-      // R67 I-05: only ever GROWS the option list. A filtered run legitimately
-      // reports fewer categories present, and shrinking the control to match
-      // would make it impossible to widen the filter again.
-      if (Array.isArray(data.availableCategories)) {
-        setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
-      }
+  // The URL is the report's state (D-02): Back, a reload and a shared link all
+  // restore the same report. replace(), not push(), so re-running does not fill
+  // the history stack with one entry per date tweak.
+  const syncUrl = useCallback(
+    (next: Partial<WprParams>) => {
+      const params: WprParams = {
+        from,
+        to,
+        view,
+        boqVersion: selectedBoqVersion,
+        ...next,
+      };
+      router.replace(`/work-progress?${wprSearchParams(params, projectId).toString()}`, { scroll: false });
     },
-    [projectId, selectedBoqId, selectedCategories, from, to, startRun]
+    [from, to, view, selectedBoqVersion, projectId, router]
   );
 
-  // RUN ON ARRIVAL (C-04). Once, for the parameters the URL brought, and again
-  // whenever the project changes -- deliberately NOT on every keystroke in a
-  // date field, which is why from/to are not dependencies here; the date
-  // inputs re-run explicitly on change instead.
+  const runReport = useCallback(
+    async (options: { boqId?: string; from?: string; to?: string; categories?: string[] } = {}) => {
+      const rangeFrom = options.from ?? from;
+      const rangeTo = options.to ?? to;
+      const categories = options.categories ?? selectedCategories;
+      let boqId = options.boqId ?? selectedBoqId;
+      setLoading(true);
+      setReportError(null);
+      try {
+        // At most two passes, and the second only when the URL named a BOQ
+        // version the server's own auto-pick did not land on. A bounded loop
+        // rather than a recursive call: a self-referencing useCallback cannot
+        // see its own latest value, which is exactly the stale-closure class
+        // this repo's lint rules refuse.
+        for (let pass = 0; pass < 2; pass++) {
+          const params = new URLSearchParams({ projectId, from: rangeFrom, to: rangeTo });
+          if (boqId) params.set("boqId", boqId);
+          // R67 I-05: repeatable, not comma-joined -- a real category name may
+          // contain a comma. Applied SERVER-SIDE, so the subtotals and the
+          // Grand Total both describe the filtered set and still tie.
+          for (const category of categories) params.append("category", category);
+          const res = await fetch(`/api/work-progress/report?${params.toString()}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error);
+          setReport(data);
+          if (!boqId && data.boqId) setSelectedBoqId(data.boqId); // reflect the server's auto-pick back into the dropdown
+          // R67 I-05: only ever GROWS the option list. A filtered run
+          // legitimately reports fewer categories present, and shrinking the
+          // control to match would make it impossible to widen the filter again.
+          if (Array.isArray(data.availableCategories)) {
+            setAvailableCategories((prev) => [...new Set([...prev, ...data.availableCategories!])].sort());
+          }
+
+          // Honour a ?boqVersion= from the URL once, now that the version->id
+          // mapping is known. Cleared before it is used, so it can never loop.
+          const wanted = wantedBoqVersion.current;
+          wantedBoqVersion.current = null;
+          if (wanted === null) break;
+          const match = (data.availableBoqs as BoqOption[] | undefined)?.find((b) => b.version === wanted);
+          if (!match || match.id === data.boqId) break;
+          setSelectedBoqId(match.id);
+          boqId = match.id;
+        }
+      } catch (err) {
+        const message = err instanceof Error && err.message ? err.message : "Couldn't generate the report";
+        toast.error(message);
+        setReportError(message);
+        setReport(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [projectId, from, to, selectedBoqId, selectedCategories]
+  );
+
+  // D-02 / C-04: RUN ON ARRIVAL. Mount only -- every later run is an explicit
+  // user action (Run Report, a BOQ switch), so this must not re-fire when the
+  // date inputs change under the user's fingers.
+  //
+  // THIS SUBSUMES WS-A's ?run=1. A-04's requirement is that the composer's
+  // "Run WPR" card be a verb -- that it must not land the user on a filled-in
+  // form with a Run Report button still to press. D-02/C-04 makes that true of
+  // EVERY arrival, not only the ones carrying the flag, so the card's landing
+  // already runs. Reading the flag as well would add a second condition that
+  // can only ever be redundant, and a ?run=1 that appeared to gate something
+  // it does not gate is worse than no flag: the link still works, it is simply
+  // no longer load-bearing.
+  //
+  // The ref, not the report state, is the guard, for A-04's own reason: a run
+  // that FAILS must not retry itself on every re-render, and the user must be
+  // able to press Run Report again afterwards without the effect fighting
+  // them. It also keeps the effect safe now that runReport's identity changes
+  // with lane I's selectedCategories -- picking a category cannot silently
+  // re-fire the run.
+  const ranOnArrival = useRef(false);
   useEffect(() => {
-    void runReport();
-    // runReport is deliberately not a dependency: it changes on every date
-    // keystroke, and this effect is "run on arrival", not "run on every edit".
-  }, [projectId]);
+    if (ranOnArrival.current) return;
+    ranOnArrival.current = true;
+    void runReport({ from: initialParams.from, to: initialParams.to });
+  }, [runReport, initialParams.from, initialParams.to]);
 
-  // The URL carries the parameters, so a run is linkable and the Reports
-  // module can point at exactly this one (D-02). replace(), not push(): a date
-  // change is not a new page in the reader's history.
-  useEffect(() => {
-    const params = new URLSearchParams({ tab: "report", projectId, view });
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    if (selectedBoqId) params.set("boqId", selectedBoqId);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [router, pathname, projectId, from, to, view, selectedBoqId]);
-
-  const effectiveFrom = report?.from ?? from;
-  const period = effectiveFrom ? `${formatDate(effectiveFrom)} to ${formatDate(to)}` : `up to ${formatDate(to)}`;
-  const exportQuery = `projectId=${encodeURIComponent(projectId)}&from=${encodeURIComponent(effectiveFrom || to)}&to=${encodeURIComponent(to)}&mode=${thirdColumnMode}`;
-  /**
-   * R67 E-36 (R-268): every export of this report is saved under the same
-   * name, built by the same rule the server uses for its Content-Disposition
-   * -- so a QS with three projects' reports in a Downloads folder can tell
-   * them apart, and the CSV (browser-built, no server header) cannot drift
-   * into a second convention.
-   */
-  const exportFileName = (extension: string) =>
-    workProgressExportFileName(projectName, effectiveFrom || to, to, extension);
-
-  /**
-   * R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
-   * arithmetic himself... a TRUST FEATURE"). The CSV is still built here and
-   * still honestly labelled "Export CSV"; PDF and XLSX are SERVER-rendered and
-   * streamed through the relays, because projexa must gain no document library
-   * (C06-13 / D-09).
-   */
-  function exportCsv() {
+  // R42 seq24 (REPORT.GLOBAL "EXPORT XLSX -- raw rows so a QS can check the
+  // arithmetic himself... a TRUST FEATURE"): a real CSV rather than a
+  // binary .xlsx -- Excel opens CSV natively and every value is checkable,
+  // without adding an xlsx-writing dependency to this bundle for one
+  // export button (compliance-tracker's own xlsx package is read-only,
+  // used for BOQ import, not export). Honestly labelled "Export CSV", not
+  // claimed as XLSX. Disabled when the tie check fails -- an export of a
+  // report that doesn't add up is worse than no export.
+  const exportCsv = useCallback(() => {
     if (!report) return;
-    const thirdLabel = thirdColumnMode === "balance" ? "Balance" : "Total";
     const lines = [
-      ["S.No", "Category", "Code", "Description", "Unit", "BOQ Qty", "Rate", "Amt", "% Prev", "% Current", `% ${thirdLabel}`, "Qty Prev", "Qty Current", `Qty ${thirdLabel}`, "Amt Prev", "Amt Current", `Amt ${thirdLabel}`].join(","),
+      ["S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt", "% Prev", "% Current", `% ${thirdColumnMode === "balance" ? "Balance" : "Total"}`, "Qty Prev", "Qty Current", "Qty Third", "Amt Prev", "Amt Current", "Amt Third"].join(","),
       ...report.rows.map((r, i) => [
-        i + 1, `"${r.categoryName}"`, r.code ?? "", `"${r.description}"`, r.unit, r.qtyTotal, r.rate,
+        i + 1, `"${r.categoryName}"`, r.code ?? "", `"${r.description}"`, r.unit, r.rate,
         r.amtTotal, r.parentLineItemId ? "" : r.percentage.prev, r.parentLineItemId ? "" : r.percentage.current, r.parentLineItemId ? "" : r.percentage[thirdColumnMode],
         r.qty.prev, r.qty.current, r.qty[thirdColumnMode], r.amt.prev, r.amt.current, r.amt[thirdColumnMode],
       ].join(",")),
-      ["", "", "", "Grand Total", "", "", "", tieError ? "" : String(computeGrandTotal(report.rows, thirdColumnMode).amtTotal)].join(","),
+      ["", "", "", "Grand Total", "", "", tieError ? "" : String(computeGrandTotal(report.rows, thirdColumnMode).amtTotal)].join(","),
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    // R67 E-36: the same name the PDF and the XLSX get -- this one used to
-    // carry the raw project id, the very string E-22 removed from the screen.
-    a.download = exportFileName("csv");
+    a.href = url; a.download = `wpr-${projectId}-${from}-to-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
+  }, [report, thirdColumnMode, tieError, projectId, from, to]);
 
-  /** Creates the expiring, read-only link both Share actions hand out. */
-  async function createShareLink(): Promise<string> {
-    const res = await fetch("/api/work-progress/report/share", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, from: effectiveFrom || to, to }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error);
-    return data.url as string;
-  }
+  // R67 A-20. The composer's "Export CSV" card is a verb and the FILE is the
+  // whole point of it, so the card navigates here with ?tab=report&run=1&
+  // export=csv and the export happens once the report the effect above ran has
+  // actually arrived. Landing the user on an empty report with an export button
+  // that can do nothing until they press Run would be the same "card that is
+  // really a place" this programme is removing.
+  //
+  // ONCE, and never over a report that does not add up: the tie check is the
+  // same one that disables the button, and "an export of a report that doesn't
+  // add up is worse than no export" (see exportCsv's own comment above). When
+  // the check fails the tie-error card is already on screen saying why.
+  // A-04's ?export=csv still needs the query string. The RUN half of that
+  // effect is gone (D-02/C-04 runs the report on every arrival, so a flag
+  // gating it could only ever be redundant), but the export half is real.
+  const searchParams = useSearchParams();
+  const autoExportRequested = searchParams.get("export") === "csv";
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExportRequested || autoExportedRef.current) return;
+    if (!report || tieError) return;
+    autoExportedRef.current = true;
+    exportCsv();
+  }, [autoExportRequested, report, tieError, exportCsv]);
 
-  // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp Business
-  // API (explicitly ruled out).
+  // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
+  // Business API (explicitly ruled out). Copies the URL so the user can
+  // paste it into WhatsApp themselves.
   async function shareReport() {
     setSharing(true);
     try {
-      const url = await createShareLink();
-      await navigator.clipboard.writeText(url);
-      toast.success("Share link copied.");
+      const res = await fetch("/api/work-progress/report/share", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, from, to }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error);
+      await navigator.clipboard.writeText(data.url);
+      toast.success(`Share link copied — expires ${formatDate(data.expiresAt)}`);
     } catch (err) {
       toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
     } finally {
       setSharing(false);
     }
   }
-
-  // R67 E-28 (R-254) / E-36 (R-268): the same expiring link, handed to
-  // WhatsApp with the report named and the period spelled out -- a bare URL in
-  // a site foreman's chat says nothing about what it is. It creates the link
-  // through the SAME createShareLink() Copy link uses (the MoM object page's
-  // pattern), so there is one share-link path and one expiry rule, not two.
-  async function shareOnWhatsApp() {
-    setSharing(true);
-    try {
-      const url = await createShareLink();
-      const text = `Work Progress Report — ${projectName || "this project"}, ${period}: ${url}`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Couldn't create a share link");
-    } finally {
-      setSharing(false);
-    }
-  }
-
-  const running = run.state === "running";
-  const failed = run.state === "failed" || run.state === "timeout";
-  // R67 E-35: the words that go INTO a banner, not a whole banner sentence --
-  // the two banners below wrap them differently because they are two different
-  // situations. A timeout has no server message by definition (nothing
-  // answered), so the deadline itself is the message.
-  const serverMessage =
-    run.state === "timeout" ? timeoutSentence() : (run.error ?? "the service did not answer");
-  // R67 E-35: does the table on screen still describe what the inputs now say?
-  const currentSignature = workProgressParamSignature({
-    projectId,
-    from,
-    to,
-    boqId: selectedBoqId,
-    categories: selectedCategories,
-  });
-  const retainedIsCurrent = retained !== null && workProgressParamSignature(retained.params) === currentSignature;
-
-  /**
-   * R67 E-35: the rose banner, in the WS-G error colours with the WS-G error
-   * glyph AND the words -- colour is never the only thing carrying the fact.
-   * Its sentence is the whole point of the item: under UNCHANGED parameters it
-   * says what is still on screen and where it came from, so a reader is not
-   * left guessing whether the numbers below are new; under CHANGED parameters
-   * there is nothing below and it says so plainly.
-   */
-  const failureBanner = failed ? (
-    <div
-      role="alert"
-      data-testid="wpr-failure-banner"
-      className="flex items-start gap-2 rounded-md border border-px-error-border bg-px-error-light px-3 py-2 text-[13px] text-px-error"
-    >
-      <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <div className="space-y-2">
-        <p>
-          {retained && retainedIsCurrent
-            ? `The report did not run: ${serverMessage} — showing results from ${formatHourMinute(retained.ranAt)}`
-            : `Could not run the report — ${serverMessage}`}
-        </p>
-        <Button size="sm" variant="outline" onClick={() => void runReport()}>
-          Run again
-        </Button>
-      </div>
-    </div>
-  ) : null;
-
-  const parameterBar = (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="space-y-1.5">
-        <Label htmlFor="wpr-from">From</Label>
-        <Input id="wpr-from" type="date" value={effectiveFrom} onChange={(e) => { setFrom(e.target.value); void runReport({ from: e.target.value }); }} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="wpr-to">To</Label>
-        <Input id="wpr-to" type="date" value={to} onChange={(e) => { setTo(e.target.value); void runReport({ to: e.target.value }); }} />
-      </div>
-      {running ? (
-        <div className="flex items-end gap-2">
-          <Button disabled data-testid="work-progress-report-run">
-            <Loader2 className="size-4 animate-spin" /> Running… {run.elapsedSeconds} s
-          </Button>
-          <Button variant="outline" onClick={() => run.cancel()}>Cancel</Button>
-        </div>
-      ) : (
-        <Button onClick={() => void runReport()} data-testid="work-progress-report-run">
-          <Play className="size-4" /> Run again
-        </Button>
-      )}
-      {report && report.availableBoqs.length > 1 && (
-        <div className="space-y-1.5">
-          <Label>BOQ</Label>
-          <Select
-            value={selectedBoqId || report.boqId || ""}
-            onValueChange={(v) => { setSelectedBoqId(v); void runReport({ boqId: v }); }}
-          >
-            <SelectTrigger className="w-56" data-testid="boq-selector"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {report.availableBoqs.map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.title} (v{b.version}{b.status === "superseded" ? ", superseded" : ""})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      <CategoryFilterGroup
-        available={availableCategories}
-        selected={selectedCategories}
-        disabled={running}
-        onToggle={(name, checked) =>
-          setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
-        }
-        onApply={() => void runReport({ categories: selectedCategories })}
-      />
-      {report && (
-        <div className="space-y-1.5">
-          <Label>Third column</Label>
-          <Select value={thirdColumnMode} onValueChange={(v) => setThirdColumnMode(v as ThirdColumnMode)}>
-            <SelectTrigger className="w-36" data-testid="third-column-mode"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="total">Total</SelectItem>
-              <SelectItem value="balance">Balance</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-    </div>
-  );
-
-  const body = (() => {
-    if (running) {
-      // A skeleton of the report's OWN columns, so the reader can already see
-      // the shape of what is coming instead of a blank card.
-      return (
-        <div className="space-y-2" aria-busy="true" data-testid="wpr-skeleton">
-          <p className="text-sm text-px-muted">Running Work Progress Report… {run.elapsedSeconds} s</p>
-          <div className="flex gap-2">
-            {["S.No", "Category", "Code", "Description", "Percent", "Quantity", "Amount"].map((c) => (
-              <Skeleton key={c} className="h-4 flex-1" />
-            ))}
-          </div>
-          {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-6 w-full" />)}
-        </div>
-      );
-    }
-    // R67 E-35 (R-267 / R-303). THE TABLE GOES when the parameters moved.
-    // R-267 asked to keep a good result visible through a failed re-run;
-    // R-303 asked that stale numbers never sit under new parameters. Both are
-    // right, and the parameter signature is what tells them apart: same
-    // parameters -> the table below is still true and stays, with the banner
-    // over it; different parameters -> it describes a report nobody asked for
-    // any more, and only the banner is honest.
-    if (failed && !retainedIsCurrent) {
-      return (
-        <div className="space-y-3 py-6">
-          {failureBanner}
-        </div>
-      );
-    }
-    if (run.state === "cancelled" && !report) {
-      return <p className="py-10 text-center text-sm text-px-muted">Cancelled. Nothing was run.</p>;
-    }
-    if (!report) return <p className="py-10 text-center text-sm text-px-muted">Loading this project&apos;s Work Progress Report…</p>;
-    // R67 E-34: the SAME rows, regrouped for whichever view is showing. Pure,
-    // synchronous and off the rows already in state -- this is what makes
-    // "switching a view never re-fetches" true by construction rather than by
-    // habit.
-    const groups = groupRows(report, view);
-    // R67 E-34: a range in which nothing was logged is a fact worth saying. It
-    // is NOT the same fact as "this project has no BOQ" (ScopeTable's own empty
-    // state, below), so it is said above a table that may well still have rows
-    // in it -- the BOQ lines exist, the progress against them does not.
-    const noProgress = !hasRecordedProgress(report.rows);
-    return (
-      <div className="space-y-3">
-        {failureBanner}
-        {/* R67 E-35: how old the numbers below are, said once, above them. When
-            the reader has moved the parameters on (they cancelled a re-run, say)
-            the stamp names the range these numbers actually describe rather than
-            letting them read as an answer to the inputs above. */}
-        {retained && (
-          <p className="text-xs text-px-muted" data-testid="wpr-results-from">
-            {retainedIsCurrent
-              ? `Results from ${formatHourMinute(retained.ranAt)}`
-              : `Results from ${formatHourMinute(retained.ranAt)}, for ${formatDateDMY(retained.params.from || retained.params.to)} to ${formatDateDMY(retained.params.to)} — not the range now selected`}
-          </p>
-        )}
-        {/* Four real views over rows already in state -- switching one never
-            re-fetches. The horizontal scroll lives INSIDE this container, so
-            the page itself never scrolls sideways. */}
-        <div role="tablist" aria-label="Work Progress Report view" className="flex flex-wrap gap-1">
-          {WORK_PROGRESS_REPORT_VIEWS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              onClick={() => setView(v)}
-              className={`rounded-md border px-3 py-1.5 text-[13px] ${view === v ? "border-px-ink bg-muted/60 text-px-ink" : "border-px-border text-px-muted"}`}
-            >
-              {WORK_PROGRESS_VIEW_LABEL[v]}
-            </button>
-          ))}
-          <span className="self-center pl-2 text-xs text-px-muted" data-testid="wpr-group-count">
-            {describeGroups(view, groups)}
-          </span>
-        </div>
-        {noProgress && (
-          <p className="text-sm text-px-muted" data-testid="wpr-no-progress">
-            {noProgressSentence(effectiveFrom || to, to)}
-          </p>
-        )}
-        <div className="overflow-x-auto">
-          {view === "scope" && <ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} boqId={report.boqId} />}
-          {view === "category" && <CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} />}
-          {view === "manpower" && <ManpowerTable rows={report.byManpower} />}
-          {view === "vendor" && <VendorTable rows={report.byVendor} />}
-        </div>
-      </div>
-    );
-  })();
 
   return (
-    <ProjexaReportScreen
-      breadcrumb="Work Progress / Report"
-      headerBlock={{
-        project: (
-          <Link href={`/dashboard/project?projectId=${encodeURIComponent(projectId)}`} className="hover:underline">
-            {projectName || "This project"}
-          </Link>
-        ),
-        revision: report?.boqTitle ? `BOQ ${report.boqTitle}` : undefined,
-        period,
-        // How long it took AND when it ran: "as of" without "how long" is what
-        // made a slow report feel broken rather than slow.
-        generatedAt: run.ranAt ? formatTime(run.ranAt) : "—",
-        generatedBy: "this workspace",
-        generatedIn: run.durationMs !== null ? `${(run.durationMs / 1000).toFixed(1)} s` : undefined,
-      }}
-      parameterBar={parameterBar}
-      // REPORT.GLOBAL: subtotals that do not tie say so LOUDLY, and export is
-      // blocked -- an export of a report that does not add up is worse than no
-      // export. R67 E-35: a failed RUN is no longer mirrored into this slot.
-      // E-28 put it here because the footer's Export buttons were the next
-      // thing the reader would press with nothing on screen; now a failure
-      // either leaves a real, still-current result up (whose CSV is built from
-      // those very rows and is perfectly exportable) or leaves no result at
-      // all, in which case every export is already disabled with "run the
-      // report first". Two banners saying the same thing was the only thing
-      // the mirror still bought.
-      tieError={tieError}
-      shareAction={{
-        label: "Share",
-        onClick: () => void shareReport(),
-        disabledReason: sharing ? "Share (creating a link…)" : report ? undefined : "Share (run the report first)",
-      }}
-      shareWhatsAppAction={{
-        // R67 E-36 names this control "Share via WhatsApp"; E-28 shipped it as
-        // "Send on WhatsApp". Two items of the same audit, one control -- E-36
-        // is the later item and the one that fixes the whole action group's
-        // order, so its wording wins and the earlier one is retired here.
-        label: "Share via WhatsApp",
-        onClick: () => void shareOnWhatsApp(),
-        disabledReason: sharing
-          ? "Share via WhatsApp (creating a link…)"
-          : report
-            ? undefined
-            : "Share via WhatsApp (run the report first)",
-      }}
-      exportCsvAction={{
-        label: "Export CSV",
-        onClick: exportCsv,
-        disabledReason: !report ? "Export CSV (run the report first)" : (tieError ?? undefined),
-      }}
-      exportXlsxAction={{
-        label: "Export XLSX",
-        href: report && !tieError ? `/api/work-progress/report/xlsx?${exportQuery}` : undefined,
-        downloadName: exportFileName("xlsx"),
-        disabledReason: !report ? "Export XLSX (run the report first)" : (tieError ?? undefined),
-      }}
-      exportPdfAction={{
-        label: "Export PDF",
-        href: report && !tieError ? `/api/work-progress/report/pdf?${exportQuery}` : undefined,
-        downloadName: exportFileName("pdf"),
-        disabledReason: !report ? "Export PDF (run the report first)" : (tieError ?? undefined),
-      }}
-    >
-      {body}
-    </ProjexaReportScreen>
+    <div className="space-y-4">
+      <Card className="shadow-card">
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="space-y-1.5"><Label>From</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>To</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <Button
+            onClick={() => { syncUrl({ from, to }); void runReport(); }}
+            disabled={loading}
+            data-testid="work-progress-report-run"
+          >
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+          </Button>
+          {report && (
+            <Button onClick={shareReport} disabled={sharing} variant="outline">
+              {sharing ? <Loader2 className="size-4 animate-spin" /> : <Share2 className="size-4" />} Share
+            </Button>
+          )}
+          {report && (
+            <Button onClick={exportCsv} disabled={!!tieError} title={tieError ?? undefined} variant="outline" data-testid="export-csv">
+              <Download className="size-4" /> Export CSV
+            </Button>
+          )}
+          {report && report.availableBoqs.length > 1 && (
+            <div className="space-y-1.5">
+              <Label>BOQ</Label>
+              <Select
+                value={selectedBoqId || report.boqId || ""}
+                onValueChange={(v) => {
+                  setSelectedBoqId(v);
+                  const chosen = report.availableBoqs.find((b) => b.id === v)?.version ?? null;
+                  setSelectedBoqVersion(chosen);
+                  syncUrl({ boqVersion: chosen });
+                  void runReport({ boqId: v });
+                }}
+              >
+                <SelectTrigger className="w-56" data-testid="boq-selector"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {report.availableBoqs.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.title} (v{b.version}{b.status === "superseded" ? ", superseded" : ""})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <CategoryFilterGroup
+            available={availableCategories}
+            selected={selectedCategories}
+            disabled={loading}
+            onToggle={(name, checked) =>
+              setSelectedCategories((prev) => (checked ? [...prev, name] : prev.filter((x) => x !== name)))
+            }
+            onApply={() => void runReport({ boqId: selectedBoqId, categories: selectedCategories })}
+          />
+          {report && (
+            <div className="space-y-1.5">
+              <Label>Third column</Label>
+              <Select value={thirdColumnMode} onValueChange={(v) => setThirdColumnMode(v as ThirdColumnMode)}>
+                <SelectTrigger className="w-36" data-testid="third-column-mode"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="total">Total</SelectItem>
+                  <SelectItem value="balance">Balance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* R42 seq24 (REPORT.GLOBAL): "IF THE SUBTOTALS DO NOT SUM TO THE GRAND
+          TOTAL THE REPORT IS WRONG AND MUST SAY SO LOUDLY, not render
+          anyway." Shown, not hidden -- the tables below still render (a QS
+          still needs to see the numbers to find the bug), only export is blocked. */}
+      {tieError && (
+        <Card className="border-px-error-border bg-px-error-light">
+          <CardContent className="p-4 text-sm text-px-error" data-testid="tie-error">{tieError}</CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-card">
+        <CardContent className="p-4">
+          {loading ? (
+            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : reportError ? (
+            // D-02 / the standing empty-state rule: a failed run says so and
+            // offers the retry. It never falls through to a calm sentence that
+            // reads like an answer.
+            <div role="alert" className="space-y-3 py-10 text-center text-sm text-px-error">
+              <p>Couldn&apos;t load the Work Progress Report: {reportError}</p>
+              <Button variant="outline" size="sm" onClick={() => void runReport()}>Retry</Button>
+            </div>
+          ) : !report ? (
+            <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
+          ) : reportIsEmpty(report) ? (
+            // R67 D-29: one answer instead of four empty tables under four
+            // tabs. Reachable only past the reportError branch above, so it is
+            // never shown over a run that failed.
+            <p className="py-10 text-center text-sm text-px-muted">{noProgressText(from, to)}</p>
+          ) : (
+            <Tabs
+              value={view}
+              onValueChange={(v) => { setView(v as WprView); syncUrl({ view: v as WprView }); }}
+              className="space-y-4"
+            >
+              {/* D-02 holds the chosen view in the URL (value + onValueChange,
+                  never defaultValue), so Back, a reload and a shared link all
+                  reproduce the same report. */}
+              {/* R67 B-09: this report has always silently DROPPED an entry
+                  that no BOQ line can claim. On a project without a BOQ that
+                  is the whole day's work, and the site engineer sees a total
+                  they know is short with nothing to explain it. Now it says
+                  so, above the table, before anyone reads a number. */}
+              {unlinkedNote && (
+                <p
+                  className="rounded-md border border-px-warning-border bg-px-warning-light px-3 py-2 text-[12.5px] text-px-warning"
+                  data-testid="work-progress-report-unlinked-note"
+                >
+                  {unlinkedNote}
+                </p>
+              )}
+              <TabsList>
+                <TabsTrigger value="scope">Scope-wise</TabsTrigger>
+                <TabsTrigger value="category">Category-wise</TabsTrigger>
+                <TabsTrigger value="manpower">Manpower-wise</TabsTrigger>
+                <TabsTrigger value="vendor">Vendor-wise</TabsTrigger>
+              </TabsList>
+              <TabsContent value="scope"><ScopeTable rows={report.rows} mode={thirdColumnMode} projectId={projectId} /></TabsContent>
+              <TabsContent value="category"><CategoryTable rows={report.byCategory} mode={thirdColumnMode} projectId={projectId} /></TabsContent>
+              <TabsContent value="manpower"><ManpowerTable rows={report.byManpower} /></TabsContent>
+              <TabsContent value="vendor"><VendorTable rows={report.byVendor} /></TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

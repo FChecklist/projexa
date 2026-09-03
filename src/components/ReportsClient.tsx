@@ -1,83 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2 } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { ReportOutput } from "@/components/ReportOutput";
 import { ReportCatalogSection } from "@/components/ReportCatalogSection";
-import { ReportDocument } from "@/components/reports/ReportDocument";
-import { ReportTableView } from "@/components/reports/ReportTableView";
-import { isReportTable, reportTableToCsv } from "@/lib/report-table";
-import { ProjexaReportScreen } from "@/components/screens/ProjexaReportScreen";
-import { useOrgMoney } from "@/lib/use-org-money";
+import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-import { formatDateTime, formatHourMinute } from "@/lib/format-date";
-import { WORK_PROGRESS_REPORT_ROUTE } from "@/lib/report-registry";
-import { DEFAULT_RUN_TIMEOUT_MS, timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
-import {
-  NOT_SET,
-  buildAttendanceDocument,
-  buildProjectStatusDocument,
-  buildScopeDocument,
-  buildSitePictureDocument,
-  buildWeeklyProjectDocument,
-  documentToCsv,
-  scopeFilterOptions,
-  type BudgetVariancePayload,
-  type ReportDocumentModel,
-  type ScopePayload,
-} from "@/lib/report-documents";
+import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
+import { projexaReportDestination } from "@/lib/work-progress-report-params";
 
 // R46 P8 seq126 (M28 registry-model proof, REPORT archetype -- function_id
 // "reports.report"): intentionally the same fields as ScreenColumn so a
-// registry row can be passed straight in with no reshaping.
+// registry row (compliance.screen_definitions) can be passed straight in
+// with no reshaping, same pattern as ScopeClient's RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-// R67 E-22 (R-199 / R-207 / R-224) -- REPORTS RENDER AS DOCUMENTS.
-//
-// THREE THINGS WERE WRONG, and this file fixes all three.
-//
-// 1. The result was a key-value card. ReportOutput's generic object renderer
-//    printed the payload's own JSON keys against raw values, so Project
-//    Status read "projectId g555imnoq4wihavpwc7t64um / contractValue 475000 /
-//    percentByValue 25 / progressPercent 60" -- a database key a customer
-//    cannot use, unformatted money, and two differently-derived percentages
-//    disagreeing with nothing saying they measure different things. Sumeet's
-//    named reports each have their own fixed column set; those column sets
-//    now live in src/lib/report-documents.ts as pure builders and render
-//    through one ReportDocument inside the kit's report chrome.
-//
-// 2. The loading branch never showed. The panel rendered
-//    `!ranOnce ? "Pick a report and click Run Report." : loading ? spinner`
-//    -- so on the FIRST run, which is the only run most sessions do, the
-//    spinner branch was unreachable and the idle prompt sat there for the
-//    whole request. The state is now one machine, running always wins, and it
-//    says which report is running.
-//
-//    R67 E-30 (R-263) finished that job: the machine moved into the shared
-//    useTimedRun hook, so the panel also has a live elapsed counter, a real
-//    Cancel, a 20 s deadline with somewhere to go next, and a run stamp
-//    ("Ran in 2.7 s at 14:02") above the output.
-//
-// 3. Nothing ran until the user pressed a button, even though every
-//    parameter already had a default. The report now runs on arrival and on
-//    every parameter change, and the button becomes Cancel while it runs.
-//
-// D-02: "Work Progress" is not run here. There is ONE Work Progress Report
-// and it lives at /work-progress?tab=report; picking it here offers the link.
+// Fallback + canonical list of report VALUES (the API path segment each
+// report actually runs against -- never registry-driven, changing these
+// would break /api/reports/[reportName]). Mirrors the registry seed 1:1 for
+// LABEL text, so there is no visible difference between "resolved from the
+// DB" and this hardcoded default (M28: keep the hardcoded version behind a
+// flag until verified).
 const DEFAULT_REPORT_COLUMNS: ScreenColumn[] = [
   { field: "project-status", label: "Project Status", type: "text", importance: "High" },
   { field: "project-completion", label: "Project Completion", type: "text", importance: "High" },
   { field: "work-progress", label: "Work Progress", type: "text", importance: "High" },
   { field: "category-progress", label: "Category Progress", type: "text", importance: "High" },
-  { field: "weekly-project", label: "Weekly Project", type: "text", importance: "High" },
+  { field: "weekly-project", label: "Weekly Project (needs week start)", type: "text", importance: "High" },
   { field: "attendance", label: "Attendance", type: "text", importance: "High" },
   { field: "manpower-cost", label: "Manpower Cost", type: "text", importance: "High" },
   { field: "site-picture", label: "Site Picture Log", type: "text", importance: "High" },
@@ -96,367 +54,349 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
   return columns.find((c) => c.field === field)?.label || fallback;
 }
 
+// Builds the picker's {value,label} list: VALUES always come from
+// DEFAULT_REPORT_COLUMNS (the fixed, never-registry-driven set of report
+// API paths this page knows how to run); LABELS resolve against the
+// registry row when present, else the same hardcoded text. Only what the
+// user reads changes -- report selection, execution, and the Full Catalog
+// tab are untouched, same "labels only" contract as boq.custom.
 function buildReports(registryColumns: RegistryColumn[] | null | undefined): { value: string; label: string }[] {
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DEFAULT_REPORT_COLUMNS;
   return DEFAULT_REPORT_COLUMNS.map((c) => ({ value: c.field, label: columnLabel(columns, c.field, c.label) }));
 }
 
-/** The reports that have a real column set of their own. Everything else keeps the generic renderer, inside the same document chrome. */
-const NAMED_REPORTS = new Set(["project-status", "weekly-project", "attendance", "site-picture", "scope"]);
-
-/** A named report that needs the budget-variance lines as well as its own payload. */
-const NEEDS_VARIANCE = new Set(["project-status", "scope"]);
-
-// R67 E-30 (R-263). The run state machine is no longer this component's own.
-// It is src/lib/use-timed-run.ts, which owns the AbortController, the
-// one-second elapsed ticker, the 20 s deadline and the six states -- including
-// the three ("failed", "timeout", "cancelled") that this panel used to collapse
-// into one, and which need three different things said to the reader.
-type RunResult = {
-  primary: unknown;
-  variance: BudgetVariancePayload | null;
+// CONS-02 (R46 P4 consistency sweep): project-status's own response
+// legitimately returns two differently-derived, intentionally-distinct
+// percent-complete fields on one payload (percentByValue: value-weighted
+// against the current BOQ; progressPercent: flat average of each
+// activity's latest logged percentComplete, no BOQ scoping -- both real,
+// both documented in construction-dashboard-service.ts#getProjectDashboard()).
+// ReportOutput's generic renderer otherwise shows bare JSON key names, so
+// this page previously showed "percentByValue" and "progressPercent" next
+// to each other with nothing telling a real user they measure different
+// things. Keyed by report value so only project-status is affected; every
+// other report keeps ReportOutput's default bare-key-name display untouched.
+//
+// R55_REPORTS_RUN_REPORT_RAW_DUMP_01: project-status's remaining fields
+// (budget/revenue/expenses/contractValue/projectValue/earnedValue/
+// delayedTaskCount/photoCount/taskCount/projectId/projectName) had no entry
+// here either, so the same raw-camelCase-key-as-label defect applied to
+// all of them, not just the two percent fields above. Adding real labels
+// for the rest closes that gap the same way.
+const REPORT_FIELD_LABELS: Record<string, Record<string, string>> = {
+  "project-status": {
+    percentByValue: "% Complete by BOQ Value",
+    progressPercent: "% Complete by Activity Log",
+    contractValue: "Contract Value",
+    budget: "Budget",
+    revenue: "Revenue",
+    expenses: "Expenses",
+    projectValue: "Project Value",
+    earnedValue: "Earned Value",
+    delayedTaskCount: "Delayed Tasks",
+    photoCount: "Site Photos",
+    taskCount: "Tasks",
+    projectId: "Project ID",
+    projectName: "Project Name",
+  },
 };
 
-function ProjectReportsPanel({
-  projectId,
-  projectName,
-  generatedBy,
-  reports,
-  initialReport,
-}: {
-  projectId: string;
-  projectName: string;
-  generatedBy: string;
-  reports: { value: string; label: string }[];
-  initialReport: string;
-}) {
-  const [reportName, setReportName] = useState(initialReport);
+// R55_REPORTS_CONTRACTVALUE_NO_AED_01: contractValue rendered as a bare
+// number with no currency token -- same defect class as
+// R55_LABOUR_RATE_NO_AED_01/R55_MATERIALS_UNITCOST_NO_AED_01 (PR #182/#183),
+// fixed there with the shared currencyLabel()+useCurrencies() helper.
+// contractValue has no per-row currencyId of its own (same "org base
+// currency" case those two used), so the value-formatter override just
+// prefixes the same live label ReportOutput's cellValue() would otherwise
+// skip. Built inside ProjectReportsPanel (below) since it needs the live
+// `currencies` list from useCurrencies().
+//
+// R67 G-05 (R-260): the fix above prefixed the currency label onto the RAW
+// value, so a contract value came back "AED 4500000" on one report and
+// "AED 4500000.5" on another -- the same column, two precisions, no
+// grouping. It also rendered the em-dash for an absent value while the rest
+// of the app renders the en-dash. Both now come from the one money
+// formatter, which also means an org with NO currency gets the warning glyph
+// and the footer notice instead of an unexplained bare number.
+function buildProjectStatusFormatters(orgMoney: OrgMoney): Record<string, (v: unknown) => string> {
+  return {
+    contractValue: (v) => orgMoney.money(v as number | string | null | undefined),
+  };
+}
+
+// Priority 17 follow-on (CONTROLLER.yaml PRIORITY-17
+// projexa_reports_dispatch_2026_07_16, Owner: "look at the PROJEXA reports
+// gaps and fill it. For customer facing app, reports and analysis is
+// important."): this page previously offered ONLY the fixed 17-report list
+// below (ProjectReportsPanel) -- a real, working, project-scoped view over
+// construction-reports-service.ts, kept as-is, not regressed. EXTENDED
+// (not replaced) with a second tab, "Full Catalog", covering the ~230-entry
+// report_definitions catalog (report-engine-service.ts's
+// getFullReportCatalog()/executeReportDefinition()) that no PROJEXA page
+// consumed before this. The two are genuinely different, both kept: this
+// fixed list needs an active project and only covers 17 construction
+// reports; the catalog tab is org-wide, searchable, and covers every
+// report/analysis type across the whole platform (ERP, compliance,
+// AI-ops, custom, plus these same 17 construction reports again via their
+// own report_definitions rows where they exist there too).
+// R67 F-10 (R-134). A report run is a full round trip that replaces whatever is
+// on screen with a spinner -- including when the user re-runs the SAME report on
+// the SAME project a moment later, or comes back to /reports having just looked
+// at it. Three changes, none of which can make the screen show a figure it did
+// not receive from the server:
+//
+//   1. RESULTS ARE CACHED per (report, project, params) in sessionStorage and
+//      painted immediately while a fresh run replaces them. The reader gets
+//      something to read at once; the number they end up with is still current.
+//      A cached result is LABELLED as such until the live one lands, so nobody
+//      mistakes a remembered figure for a just-computed one.
+//   2. CHANGING THE PICKER PREFETCHES that report, so Run Report is usually
+//      instant instead of starting the round trip on the click.
+//   3. A 20 s ABORT BUDGET, so a hung upstream ends in a message and a usable
+//      screen rather than an indefinite spinner.
+const REPORT_REQUEST_BUDGET_MS = 20_000;
+
+function ProjectReportsPanel({ projectId, reports }: { projectId: string; reports: { value: string; label: string }[] }) {
+  const router = useRouter();
+  const [reportName, setReportName] = useState("project-status");
   const [weekStart, setWeekStart] = useState(() => new Date().toISOString().slice(0, 10));
-  const [scopeCategory, setScopeCategory] = useState<string>("__all__");
-  const [scopeVendor, setScopeVendor] = useState<string>("__all__");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<unknown>(null);
+  const [ranOnce, setRanOnce] = useState(false);
+  const [runError, setRunError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const orgMoney = useOrgMoney();
 
-  // The hook keeps the stale-response guard this component used to own: every
-  // run takes a generation and a late answer from a superseded, cancelled or
-  // timed-out run never commits.
-  const run = useTimedRun<RunResult>({ timeoutMs: DEFAULT_RUN_TIMEOUT_MS });
-  // `run` is a new object each render; `run.run` and `run.reset` are stable
-  // useCallbacks, so they can be dependencies directly.
-  const startRun = run.run;
-  const resetRun = run.reset;
-  const result = run.result;
+  // Priority 19 (Dubai 50-user E2E test + fix pass, "GAP -- Reports" entry):
+  // guards against an out-of-order/stale fetch response overwriting a more
+  // recent one's state -- e.g. the user switches the report type and clicks
+  // "Run Report" again before the first request resolves; without this, a
+  // slower first response landing after a faster second one would silently
+  // clobber the correct, more recent result (or vice versa, a slow response
+  // for a report the user has since navigated away from could still commit
+  // state after the fact). Bumped at the start of every runReport() call;
+  // any resolving fetch whose captured generation no longer matches the
+  // latest is dropped instead of touching state.
+  const requestGeneration = useRef(0);
 
-  const reportLabel = reports.find((r) => r.value === reportName)?.label ?? reportName;
-
-  const runReport = useCallback(async () => {
-    await startRun(async (signal) => {
-      const params = new URLSearchParams({ projectId });
-      if (reportName === "weekly-project") params.set("weekStart", weekStart);
-      // R67 E-32 (R-265). WHICH SHAPE THIS REPORT IS ASKED FOR, and why there
-      // are two.
-      //
-      // VERIDIAN now answers every report as { columns, rows, totals?,
-      // currency } and keeps its own payload behind ?format=legacy for a
-      // release. The five reports E-22 gave a real column set of their own
-      // (report-documents.ts) read those payloads by field -- Sumeet's Project
-      // Status carries a progress block and a subcontractor breakup, his
-      // Attendance sheet a subtotal per trade, his Site Picture sheet a
-      // date-grouped grid -- none of which is a flat table, and all of which is
-      // richer than one. So those five keep asking for legacy; every other
-      // report takes the table, which is what retires the JSON key-value dump
-      // this panel used to fall back to.
-      if (NAMED_REPORTS.has(reportName)) params.set("format", "legacy");
-
-      const requests: Promise<Response>[] = [
-        fetch(`/api/reports/${encodeURIComponent(reportName)}?${params.toString()}`, { signal }),
-      ];
-      if (NEEDS_VARIANCE.has(reportName)) {
-        // The vendor/category detail Sumeet's Project Status and Scope sheets
-        // need lives on budget-variance -- the only report that carries a
-        // vendor and a category per BOQ line. Fetched alongside, never
-        // fabricated from the other payload. Legacy for the same reason: these
-        // builders read `lines`, not a table.
-        requests.push(
-          fetch(`/api/reports/budget-variance?format=legacy&projectId=${encodeURIComponent(projectId)}`, { signal })
-        );
-      }
-
-      const [primaryRes, varianceRes] = await Promise.all(requests);
-      const primary = await primaryRes.json();
-      if (!primaryRes.ok) throw new Error(primary?.error || `The report service answered ${primaryRes.status}`);
-      const variance = varianceRes && varianceRes.ok ? ((await varianceRes.json()) as BudgetVariancePayload) : null;
-      return { primary, variance };
-    });
-  }, [projectId, reportName, weekStart, startRun]);
-
-  // Run on arrival and on every parameter change: every parameter already has
-  // a default, so making the reader press a button first bought nothing.
-  useEffect(() => {
-    if (reportName === "work-progress") {
-      // D-02: this one is a link, not a run. reset() also aborts anything the
-      // previous report left in flight.
-      resetRun();
-      return;
-    }
-    void runReport();
-  }, [runReport, reportName, resetRun]);
-
-  // R67 E-32: the server table, when this report answered as one.
-  const tableResult = result && isReportTable(result.primary) ? result.primary : null;
-
-  const varianceForFilters = result?.variance ?? null;
-  const { categories, vendors } = scopeFilterOptions(varianceForFilters);
-
-  let model: ReportDocumentModel | null = null;
-  if (result && NAMED_REPORTS.has(reportName)) {
-    if (reportName === "project-status") model = buildProjectStatusDocument(result.primary ?? {}, result.variance);
-    else if (reportName === "weekly-project") model = buildWeeklyProjectDocument(result.primary ?? {});
-    else if (reportName === "attendance") model = buildAttendanceDocument(result.primary ?? {});
-    else if (reportName === "site-picture") model = buildSitePictureDocument(result.primary ?? {});
-    else if (reportName === "scope") {
-      model = buildScopeDocument((result.primary ?? {}) as ScopePayload, result.variance, {
-        category: scopeCategory === "__all__" ? null : scopeCategory,
-        vendor: scopeVendor === "__all__" ? null : scopeVendor,
-      });
-    }
-  }
-
-  function exportCsv() {
-    // R67 E-32: a table report exports its own server-declared columns, so the
-    // sheet a reader downloads has exactly the columns they were looking at --
-    // and the same en-dash for a missing value, so a blank cell in the sheet
-    // cannot be read as a zero.
-    const csv = model ? documentToCsv(model, orgMoney.currency) : tableResult ? reportTableToCsv(tableResult) : null;
-    if (csv === null) return;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${reportName}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function share() {
-    const url = `${window.location.origin}/reports?projectId=${encodeURIComponent(projectId)}&report=${encodeURIComponent(reportName)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      // Said plainly: this is a link into the workspace, not a public one.
-      toast.success("Link copied. It opens this report for anyone signed in to this workspace.");
-    } catch {
-      toast.error("Could not copy the link — your browser blocked clipboard access.");
-    }
-  }
-
-  const revision =
-    reportName === "scope" && result?.primary && typeof result.primary === "object" && "boq" in (result.primary as object)
-      ? (() => {
-          const boq = (result.primary as ScopePayload).boq;
-          return boq ? `BOQ revision ${boq.version} (${boq.status})` : `BOQ revision ${NOT_SET}`;
-        })()
-      : undefined;
-
-  const parameterBar = (
-    <div className="flex flex-wrap items-end gap-3 rounded-md border border-px-border p-3">
-      <div className="space-y-1.5">
-        <Label>Report</Label>
-        <Select value={reportName} onValueChange={setReportName}>
-          <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-          <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      {reportName === "weekly-project" && (
-        <div className="space-y-1.5">
-          <Label>Week start</Label>
-          <Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
-        </div>
-      )}
-      {reportName === "scope" && (
-        <>
-          <div className="space-y-1.5">
-            <Label>Category</Label>
-            <Select value={scopeCategory} onValueChange={setScopeCategory}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All categories</SelectItem>
-                {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Vendor</Label>
-            <Select value={scopeVendor} onValueChange={setScopeVendor}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All vendors</SelectItem>
-                {vendors.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </>
-      )}
-      {run.state === "running" ? (
-        <Button variant="outline" onClick={() => run.cancel()}>Cancel</Button>
-      ) : (
-        <Button variant="outline" onClick={() => void runReport()}>Run again</Button>
-      )}
-    </div>
+  // The params that identify THIS run, in one place, so the cache key, the
+  // request and the prefetch cannot drift apart.
+  const currentParams = useCallback(
+    (name: string): Record<string, string> => (name === "weekly-project" ? { weekStart } : {}),
+    [weekStart]
   );
 
-  const body = (() => {
-    if (reportName === "work-progress") {
-      // D-02, stated rather than silently redirecting.
-      return (
-        <div className="space-y-2 py-8 text-center">
-          <p className="text-sm text-px-muted">There is one Work Progress Report, and it runs on its own screen with its date range in the URL.</p>
-          <Button asChild><Link href={`${WORK_PROGRESS_REPORT_ROUTE}&projectId=${encodeURIComponent(projectId)}`}>Open Work Progress Report</Link></Button>
-        </div>
-      );
+  const requestUrl = useCallback(
+    (name: string) => {
+      const params = new URLSearchParams({ projectId, ...currentParams(name) });
+      return `/api/reports/${encodeURIComponent(name)}?${params.toString()}`;
+    },
+    [projectId, currentParams]
+  );
+
+  const cacheKeyFor = useCallback(
+    (name: string) => reportCacheKey(name, projectId, currentParams(name)),
+    [projectId, currentParams]
+  );
+
+  // Paint from cache the moment the selection changes. Safe: the value is
+  // labelled as remembered, and a live run overwrites it with the server's own
+  // answer.
+  useEffect(() => {
+    const cached = readCachedReport(cacheKeyFor(reportName));
+    if (cached !== null) {
+      setResult(cached);
+      setFromCache(true);
+      setRanOnce(true);
+      setRunError(null);
     }
-    // RUNNING always wins. The defect this replaces was an ordering bug: the
-    // panel asked "have we run before?" first, so on a FIRST run -- the only
-    // run most sessions do -- the idle prompt sat there for the whole request.
-    if (run.state === "running") {
-      return (
-        <div className="flex h-40 flex-col items-center justify-center gap-3">
-          <Loader2 className="size-5 animate-spin text-px-muted" aria-hidden />
-          {/* R-263's own sentence, and the counter is what tells a reader
-              "slow" from "broken". */}
-          <p className="text-sm text-px-muted" aria-live="polite">
-            Running {reportLabel} for {projectName}… {run.elapsedSeconds} s
-          </p>
-          <Button size="sm" variant="outline" onClick={() => run.cancel()}>Cancel</Button>
-        </div>
-      );
+  }, [reportName, cacheKeyFor]);
+
+  // Changing the picker warms the next report, so Run Report is usually
+  // instant. Failures are swallowed: a prefetch must never surface an error,
+  // and the real Run that follows reports properly.
+  const prefetchReport = useCallback(
+    (name: string) => {
+      const key = cacheKeyFor(name);
+      if (readCachedReport(key) !== null) return;
+      void fetch(requestUrl(name), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data !== null) writeCachedReport(key, data);
+        })
+        .catch(() => {});
+    },
+    [cacheKeyFor, requestUrl]
+  );
+
+  async function runReport() {
+    const myGeneration = ++requestGeneration.current;
+    const key = cacheKeyFor(reportName);
+    setLoading(true);
+    setRunError(null);
+    setStartedAt(Date.now());
+    try {
+      // A hung upstream must end in a message and a usable screen, not an
+      // indefinite spinner on a page whose whole content is this one panel.
+      const res = await fetch(requestUrl(reportName), { signal: AbortSignal.timeout(REPORT_REQUEST_BUDGET_MS) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const reason = typeof data?.error === "string" ? data.error : null;
+        const failure = new Error(reason ?? `Request failed (HTTP ${res.status})`);
+        (failure as Error & { httpStatus?: number }).httpStatus = res.status;
+        throw failure;
+      }
+      if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
+      setResult(data);
+      setFromCache(false);
+      setRanOnce(true);
+      writeCachedReport(key, data);
+    } catch (err) {
+      if (myGeneration !== requestGeneration.current) return;
+      // R67 D-65: this used to be `toast.error(...)` plus `setResult(null)`,
+      // so the panel below settled on the flat sentence "Could not generate
+      // this report." while the backend's own reason -- the only thing that
+      // says WHICH report failed and why -- faded with the notification. The
+      // failure is now stated in the panel, through the same dictionary
+      // every other pane uses, with a Retry that re-runs it.
+      const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      setRunError({
+        status: (err as Error & { httpStatus?: number })?.httpStatus ?? null,
+        message: aborted
+          ? "The report did not finish in time. Try a narrower range, or run it again."
+          : err instanceof Error && err.message
+            ? err.message
+            : null,
+      });
+      // R67 F-10: a previously cached result is deliberately LEFT on screen
+      // when a fresh run fails. It is still the last real answer the server
+      // gave, and it is still labelled as remembered, so nothing is presented
+      // as current that is not. Only a panel with nothing real to show clears.
+      if (!fromCache) setResult(null);
+    } finally {
+      if (myGeneration === requestGeneration.current) setLoading(false);
     }
-    if (run.state === "timeout") {
-      return (
-        <div className="space-y-3 py-10 text-center">
-          <p role="alert" className="text-sm text-px-error">{timeoutSentence(DEFAULT_RUN_TIMEOUT_MS)}</p>
-          <div className="flex items-center justify-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => void runReport()}>Run again</Button>
-            {/* D-02: the one Work Progress Report, which is measured in
-                seconds where this path was measured in tens of them. */}
-            <Button size="sm" variant="outline" asChild>
-              <Link href={`${WORK_PROGRESS_REPORT_ROUTE}&projectId=${encodeURIComponent(projectId)}`}>
-                Open Work Progress › Report
-              </Link>
-            </Button>
-          </div>
-        </div>
-      );
-    }
-    if (run.state === "failed") {
-      return (
-        <div className="space-y-3 py-10 text-center">
-          <p role="alert" className="text-sm text-px-error">Could not run {reportLabel}: {run.error}</p>
-          <Button size="sm" variant="outline" onClick={() => void runReport()}>Run again</Button>
-        </div>
-      );
-    }
-    if (run.state === "cancelled" && !result) {
-      return <p className="py-10 text-center text-sm text-px-muted">Cancelled. Nothing was run.</p>;
-    }
-    if (!result) return <p className="py-10 text-center text-sm text-px-muted">Choosing a report runs it.</p>;
-    return (
-      <div className="space-y-3">
-        {/* R67 E-30: the run stamp, above the output, in the org's own pinned
-            formatter. "2.7 s" answers "was that slow?" and "14:02" answers
-            "am I looking at a fresh number or one from before lunch?" -- the
-            second question is the one a stale panel cannot answer at all. */}
-        {run.ranAt !== null && run.durationMs !== null && (
-          <p className="text-[12px] text-px-muted">
-            Ran in {(run.durationMs / 1000).toFixed(1)} s at {formatHourMinute(run.ranAt)}
-          </p>
-        )}
-        {model ? (
-          <ReportDocument model={model} orgMoney={orgMoney} />
-        ) : isReportTable(result.primary) ? (
-          // R67 E-32: the twelve reports without a named column set are now
-          // real tables too -- server-declared columns, units and totals,
-          // rendered inside the same document chrome so the header block,
-          // parameter bar and export actions are identical on every report.
-          <ReportTableView table={result.primary} orgMoney={orgMoney} />
-        ) : (
-          // Only reachable against a VERIDIAN deployment older than E-32. Said
-          // in words rather than silently falling back to a JSON dump, because
-          // a dump is exactly what this item removed and a quiet regression to
-          // it would be invisible.
-          <p role="alert" className="py-6 text-center text-sm text-px-error">
-            This report came back in an older format that this screen can no longer render. Refresh, or ask an
-            administrator to update VERIDIAN.
-          </p>
-        )}
-      </div>
-    );
-  })();
+  }
+
+  // R67 D-02: ONE Work Progress Report. Selecting "Work Progress" here no
+  // longer runs the slow /api/reports/work-progress path (24.3 s measured,
+  // six fan-out calls) beside the module's own faster, richer report -- it
+  // navigates to /work-progress?tab=report, which runs on arrival with its
+  // parameters in the URL, a BOQ selector, the tie check and an export. Two
+  // screens for one report is the duplication the decision retires.
+  const destination = projexaReportDestination({ id: reportName }, projectId);
 
   return (
     <div className="space-y-4">
-      <ProjexaReportScreen
-        breadcrumb={`Reports / ${reportLabel}`}
-        headerBlock={{
-          project: <Link href={`/dashboard/project?projectId=${encodeURIComponent(projectId)}`} className="hover:underline">{projectName}</Link>,
-          revision,
-          period: reportName === "weekly-project" ? `Week of ${weekStart}` : undefined,
-          // Provenance for the document itself -- the full date and the
-          // author, which is what an exported or shared sheet needs on it.
-          // How LONG the run took is run feedback, not provenance, and it is
-          // said once above the output (R67 E-30) rather than twice here.
-          generatedAt: run.ranAt !== null ? formatDateTime(run.ranAt) : "—",
-          generatedBy,
-        }}
-        parameterBar={parameterBar}
-        shareAction={{ label: "Share", onClick: () => void share(), disabledReason: result ? undefined : "Share (run the report first)" }}
-        exportCsvAction={{
-          label: "Export CSV",
-          onClick: exportCsv,
-          // R67 E-32: every report now has a fixed column set -- a named
-          // document's own, or the server's declared columns -- so the reason
-          // that used to sit here ("this report has no fixed column set yet")
-          // is no longer true of anything and is gone.
-          disabledReason: model || tableResult ? undefined : "Export CSV (run the report first)",
-        }}
-        exportPdfAction={{
-          label: "Export PDF",
-          // Honest, not a stub: a PDF is rendered SERVER-side (projexa must
-          // gain no PDF library, D-09/C06-13), and the only server renderer
-          // that exists today is the Work Progress one. Until the generic
-          // relay lands, this control says which report can be exported
-          // rather than producing a broken file.
-          disabledReason: "Export PDF (server-rendered; only Work Progress has a renderer today)",
-        }}
-      >
-        {body}
-      </ProjexaReportScreen>
+      <Card className="shadow-card">
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <div className="space-y-1.5">
+            <Label>Report</Label>
+            <Select
+              value={reportName}
+              onValueChange={(name) => {
+                setReportName(name);
+                // R67 F-10: warm the next report on SELECTION, so Run Report is
+                // usually instant instead of starting the round trip on click.
+                prefetchReport(name);
+              }}
+            >
+              <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+              <SelectContent>{reports.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          {reportName === "weekly-project" && (
+            <div className="space-y-1.5"><Label>Week Start</Label><Input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} /></div>
+          )}
+          {destination ? (
+            <Button onClick={() => router.push(destination)} data-testid="reports-open-work-progress">
+              <Play className="size-4" /> Open Report
+            </Button>
+          ) : (
+            <Button onClick={runReport} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run Report
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardContent className="p-4">
+          {destination ? (
+            <p className="py-10 text-center text-sm text-px-muted">
+              The Work Progress Report opens in the Work Progress module, where the date range, the view and the
+              BOQ version live in the URL and the report runs as soon as it opens.
+            </p>
+          ) : runError && result === null ? (
+            <PaneErrorCard
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              error={runError}
+              onRetry={runReport}
+            />
+          ) : loading && result === null ? (
+            <PaneWaitingCaption
+              startedAt={startedAt}
+              entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+              onRetry={runReport}
+            />
+          ) : !ranOnce ? (
+            <p className="py-10 text-center text-sm text-px-muted">Pick a report and click Run Report.</p>
+          ) : result === null ? (
+            <p className="py-10 text-center text-sm text-px-muted">This report returned nothing for the current selection.</p>
+          ) : (
+            // R67 D-65 x F-10. Both lanes' rules apply here at once, and the
+            // ORDER of the two branches above is what makes them compatible:
+            // a failure or a wait with NOTHING real on screen still gets D-65's
+            // error card or waiting caption, but neither is allowed to REPLACE
+            // a remembered answer the reader is already reading. When there is
+            // one, the failure is stated above it and the answer stays, still
+            // labelled as remembered -- so nothing is ever shown as current
+            // that is not, and nothing true is thrown away to say so.
+            <>
+              {runError && (
+                <div className="mb-3">
+                  <PaneErrorCard
+                    entity={`the ${reports.find((r) => r.value === reportName)?.label ?? reportName} report`}
+                    error={runError}
+                    onRetry={runReport}
+                  />
+                </div>
+              )}
+              {(fromCache || loading) && (
+                <p role="status" className="mb-3 text-[12.5px] text-px-muted">
+                  {loading
+                    ? "Showing the last result while this run finishes…"
+                    : "Showing the last result. Click Run Report for current figures."}
+                </p>
+              )}
+              <ReportOutput
+                data={result}
+                fieldLabels={REPORT_FIELD_LABELS[reportName]}
+                fieldFormatters={reportName === "project-status" ? buildProjectStatusFormatters(orgMoney) : undefined}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+      {/* R67 G-05: once, at the foot -- explains the warning glyph on every
+          unlabelled figure above, and renders nothing when a currency is set. */}
       <CurrencyNotSetNotice currencySet={orgMoney.currencySet} loaded={orgMoney.loaded} />
     </div>
   );
 }
 
-export default function ReportsClient({
-  projectId,
-  projectName,
-  generatedBy,
-  registryColumns,
-  requestedReport,
-}: {
-  projectId: string | null;
-  projectName?: string | null;
-  generatedBy?: string | null;
-  registryColumns?: RegistryColumn[] | null;
-  /**
-   * The Full Catalog's "Open" action deep-links here with ?report=<name>.
-   * Read on the SERVER and passed in, deliberately -- useSearchParams() in a
-   * client component forces a Suspense bailout at build time, and this page's
-   * route already reads its own searchParams.
-   */
-  requestedReport?: string | null;
-}) {
+// Priority 17 follow-on: projectId is now nullable -- the org-wide catalog
+// tab does not need one. Only this "Project Reports" tab needs an active
+// project; it now shows its own honest empty state instead of the whole
+// page refusing to render (see reports/page.tsx).
+//
+// R46 P8 seq126: registryColumns is resolved server-side in reports/page.tsx
+// (compliance.screen_definitions, function_id "reports.report", archetype
+// REPORT) and only relabels the report picker -- null/missing is not fatal,
+// buildReports() falls back to DEFAULT_REPORT_COLUMNS.
+export default function ReportsClient({ projectId, registryColumns }: { projectId: string | null; registryColumns?: RegistryColumn[] | null }) {
   const reports = buildReports(registryColumns);
-  const initialReport =
-    requestedReport && reports.some((r) => r.value === requestedReport) ? requestedReport : "project-status";
-
   return (
     <Tabs defaultValue={projectId ? "project" : "catalog"} className="space-y-4">
       <TabsList>
@@ -465,13 +405,7 @@ export default function ReportsClient({
       </TabsList>
       <TabsContent value="project">
         {projectId ? (
-          <ProjectReportsPanel
-            projectId={projectId}
-            projectName={projectName || "This project"}
-            generatedBy={generatedBy || "your account"}
-            reports={reports}
-            initialReport={initialReport}
-          />
+          <ProjectReportsPanel projectId={projectId} reports={reports} />
         ) : (
           <Card className="shadow-card">
             <CardContent className="p-8 text-center text-sm text-px-muted">
@@ -481,9 +415,8 @@ export default function ReportsClient({
         )}
       </TabsContent>
       <TabsContent value="catalog">
-        {/* R67 E-31: the catalog inherits the project this screen is on, so a
-            card's link and its in-place runner both start from the project the
-            reader is looking at rather than from nothing. */}
+        {/* R67 D-02: the catalog needs the project so its Work Progress row can
+            link to the module's real report for THIS project, not a bare route. */}
         <ReportCatalogSection projectId={projectId} />
       </TabsContent>
     </Tabs>

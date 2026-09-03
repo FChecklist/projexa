@@ -15,7 +15,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { SCHEDULE_TASK_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +35,25 @@ type StatusOption = { id: string; name: string };
 
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-export default function ScheduleTaskObjectClient({ taskId }: { taskId: string }) {
+export default function ScheduleTaskObjectClient({
+  taskId,
+  backTo,
+  createdNumber,
+}: {
+  taskId: string;
+  /**
+   * R67 D-44: the list's own URL, carrying the project, the tab and the filter
+   * the user had. Validated by the page before it reaches here.
+   */
+  backTo?: string;
+  /**
+   * R67 D-47: the activity number the create screen just wrote, so this page
+   * opens with "Activity #12 created" in its persistent message area instead of
+   * the create screen bouncing to an empty form. Validated as digits by the
+   * page before it reaches here.
+   */
+  createdNumber?: string;
+}) {
   const router = useRouter();
   const [task, setTask] = useState<Task | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -102,7 +123,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to archive task");
       toast.success("Task archived");
-      router.push(`/schedule?projectId=${task!.projectId}`);
+      router.push(backTo ?? `/schedule?projectId=${task!.projectId}&tab=timeline`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't archive task");
     } finally {
@@ -137,13 +158,30 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       </div>
     );
   }
-  if (!task) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  // R67 F-34 (R-290): the SAME frame the route's own loading.tsx paints, so the
+  // hand-over from the route skeleton to this client is invisible and the word
+  // "Loading" is never alone on the screen. It says what it is waiting for after
+  // 3 s and offers Retry at 8 s, D-04's abort budget.
+  if (!task) return (
+    <KitObjectScreen
+      loading
+      breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
+      label={SCHEDULE_TASK_OBJECT_BREADCRUMB.label}
+      actions={SCHEDULE_TASK_OBJECT_BREADCRUMB.actions}
+    />
+  );
 
   const statusLabel = statuses.find((s) => s.id === task.statusId)?.name ?? task.statusId;
 
   return (
-    <ObjectScreen
-      breadcrumb="Schedule / Task"
+    <>
+    {/* R67 A-21: "<project> › Task #14 Shuttering, ground floor". The number is
+        part of the label because it is how this product identifies a task on
+        every other screen -- the page heading, the board card and the timesheet
+        all lead with it. */}
+    <ObjectContext moduleId="schedule" label={`#${task.number} ${task.title}`} projectId={task.projectId} />
+    <KitObjectScreen
+      breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
       title={`#${task.number} ${task.title}`}
       mode={mode}
       hasDraft={false}
@@ -157,10 +195,12 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
       onCancel={mode === "edit" ? () => { setValues(task); setMode("display"); } : undefined}
       onDelete={!task.isArchived ? handleArchive : undefined}
       deleteDisabledReason={task.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
-      onBack={() => router.push(`/schedule?projectId=${task.projectId}`)}
+      onBack={() => router.push(backTo ?? `/schedule?projectId=${task.projectId}&tab=timeline`)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
-      messages={[]}
+      // R67 D-47: the create screen's receipt, in the persistent message area
+      // rather than a toast that has gone by the time the page paints.
+      messages={createdNumber ? [{ level: "success", text: `Activity #${createdNumber} created` }] : []}
     >
       <div className="space-y-3 px-4 py-3">
         {mode === "edit" ? (
@@ -215,6 +255,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
+    </>
   );
 }

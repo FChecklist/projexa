@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { callVeridian } from "@/lib/veridian-client";
+import { veridianErrorResponse } from "@/lib/veridian-response";
+import { withTiming } from "@/lib/with-timing";
 
 // Premise correction (R42 seq24, found only after committing -- git status
 // showed this file as MODIFIED, not new): this route and a real consumer
@@ -15,7 +17,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // which reports need which extra params. Verified this is NOT a
 // behavioural change for ReportsClient's own existing calls (it never
 // sends any param this route didn't already forward).
-export async function GET(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { reportName } = await params;
@@ -24,6 +26,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}${qs ? `?${qs}` : ""}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof VeridianApiError ? err.message : `Failed to generate ${reportName} report` }, { status: err instanceof VeridianApiError ? err.status : 502 });
+    return veridianErrorResponse(err, `Failed to generate ${reportName} report`);
   }
-}
+});

@@ -1,221 +1,191 @@
 /// <reference types="bun-types" />
-// R67 E-24 (R-210). The item's own acceptance clauses, as a render test:
-// EXACTLY ONE "Filter" and EXACTLY ONE "Export" on the screen (the nested
-// ScreenFrame used to put two of each there), and both "Logged %" and
-// "Earned %" labelled on the chart.
+// R67 MERGE (lane D1's D-29 x lane D0's D-55/D-65 and lane F2's F-24).
+//
+// THIS FILE WAS NOT A MERGE CONFLICT, AND THAT IS WHY IT NEEDED REWRITING.
+// git auto-merged it -- main never touched it -- so it arrived intact,
+// asserting a component that no longer exists. Three of its five tests were
+// pinned to lane D1's own implementation rather than to D-29's requirement:
+//
+//   * "a rejecting /api/scope produces a Retry" and the "Could not load the BOQ
+//     line names" sentence. There is no /api/scope read on this screen any
+//     more. F-24 (compliance-tracker #1579) made VERIDIAN send activityName /
+//     boqItemCode / boqDescription WITH each entry, so the two scope calls that
+//     existed only to translate one column are gone -- which is a stronger
+//     answer to D-29's third defect ("the table waited on the BOQ") than
+//     reordering the awaits was. A test that a removed request fails gracefully
+//     is a test of nothing.
+//   * "no KPI figure is on screen while the read behind it is still running",
+//     asserting the tag LABELS are absent. The merged screen keeps every label
+//     in place and renders the VALUE as an en-dash until a 200 established it
+//     (metricLabel(), unit-tested in src/lib/pane-state.test.ts). D-29's actual
+//     requirement is that a figure is never minted from a read that has not
+//     answered, and the en-dash satisfies it without the tag row changing size
+//     under the reader. Restated as: the value is an en-dash, never a number.
+//
+// D-29's other two findings are asserted below exactly as the item asked, and
+// both are things main did NOT have -- they are what lane D1 folded in:
+// ONE Filter and ONE Export on a screen that had two of each, and the caption
+// that says the two figures beside each other are measured differently.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+// `screen` binds to document.body at module init, before the registrator above
+// has run under bun -- every query here comes from render()'s return value.
+import { cleanup, render, waitFor } from "@testing-library/react";
 
+const push = mock((_: string) => {});
 mock.module("next/navigation", () => ({
-  useRouter: () => ({ push: mock(() => {}), refresh: mock(() => {}), replace: mock(() => {}) }),
+  useRouter: () => ({ push }),
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/work-progress",
 }));
 
-import { cleanup, render, waitFor } from "@testing-library/react";
-import WorkProgressAnalyticalClient from "./WorkProgressAnalyticalClient";
+const mod = await import("./WorkProgressAnalyticalClient");
+const WorkProgressAnalyticalClient = mod.default;
+const { KPI_CAPTION } = mod;
 
-const ENTRIES = [
-  { id: "e1", activityId: "a1", boqLineItemId: "l1", entryDate: "2026-08-25", quantityDone: "10", percentComplete: "60", entryBasis: "DELTA", remarks: null },
-];
-const ACTIVITIES = [{ id: "a1", name: "Blockwork", categoryId: "c1" }];
-const CATEGORY_PROGRESS = { categories: [{ categoryId: "c1", name: "Civil", percentComplete: 60 }] };
-const WPR = {
-  rows: [{ lineItemId: "l1", code: "1.1", description: "Blockwork 200mm" }],
-  byCategory: [{ name: "Civil", percentage: { total: 0 } }],
+const ENTRY = {
+  id: "e1",
+  activityId: "a1",
+  boqLineItemId: "l1",
+  boqItemCode: "1.1",
+  boqDescription: "Blockwork",
+  activityName: "Blockwork",
+  entryDate: "2026-08-14",
+  quantityDone: "12",
+  percentComplete: "40",
+  entryBasis: "quantity",
+  remarks: null,
 };
 
-// R67 E-33: the portfolio report (chart 1) and the category distribution
-// (chart 2), in the shapes their real endpoints answer.
-const PORTFOLIO = {
-  columns: [
-    { key: "project", label: "Project", unit: "text", align: "left" },
-    { key: "revenue", label: "Revenue", unit: "currency", align: "right" },
-  ],
-  rows: [
-    { project: "Cedar Heights Villa - Phase 1", projectId: "prj-cedar", revenue: 475_000, budget: 200_000, budgetSource: "boq", actual: 185_000, earnedValue: 118_750, progressPct: 60 },
-    { project: "Oakwood Residence", projectId: "prj-oak", revenue: 100_000, budget: null, budgetSource: "none", actual: 25_000, earnedValue: 10_000, progressPct: 20 },
-  ],
-  currency: "AED",
-};
-const CATEGORY_DISTRIBUTION = {
-  categories: [
-    { categoryId: "c1", name: "Civil", totalAmount: 4_000_000, sharePercent: 80, percentComplete: 40, completedAmount: 1_600_000 },
-    { categoryId: "c2", name: "General", totalAmount: 1_000_000, sharePercent: 20, percentComplete: 100, completedAmount: 1_000_000 },
-  ],
-};
+const realFetch = globalThis.fetch;
 
-let portfolioStatus = 200;
+function ok(body: unknown) {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+}
 
-/** `holdReport` keeps the slow second round trip pending, which is the state the split load exists for. */
-function stubFetch({ holdReport = false }: { holdReport?: boolean } = {}) {
-  portfolioStatus = 200;
+/** Every read answers, except the ones named in `failing`. */
+function stub(options: { failing?: string[] } = {}) {
+  const failing = options.failing ?? [];
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/api/work-progress/report")) {
-      if (holdReport) return new Promise<Response>(() => {});
-      return new Response(JSON.stringify(WPR), { status: 200 });
+    if (failing.some((f) => url.includes(f))) {
+      return new Response(JSON.stringify({ error: "The construction data service did not respond in time" }), {
+        status: 504,
+        headers: { "content-type": "application/json" },
+      });
     }
-    if (url.includes("/api/work-progress/activities")) return new Response(JSON.stringify({ activities: ACTIVITIES }), { status: 200 });
-    if (url.includes("/api/work-progress")) return new Response(JSON.stringify({ entries: ENTRIES }), { status: 200 });
-    if (url.includes("/api/reports/category-progress")) return new Response(JSON.stringify(CATEGORY_PROGRESS), { status: 200 });
-    // R67 E-33: the two charts Sumeet 5.png asks for, and the endpoints behind
-    // them. `portfolioStatus` lets a test fail JUST that panel.
-    if (url.includes("/api/reports/portfolio/budget-vs-actual")) {
-      if (portfolioStatus !== 200) {
-        return new Response(JSON.stringify({ error: "the portfolio service is down" }), { status: portfolioStatus });
-      }
-      return new Response(JSON.stringify(PORTFOLIO), { status: 200 });
+    if (url.includes("/api/work-progress/activities")) {
+      return ok({ activities: [{ id: "a1", name: "Blockwork", categoryId: "c1" }] });
     }
-    if (url.includes("/category-distribution")) return new Response(JSON.stringify(CATEGORY_DISTRIBUTION), { status: 200 });
-    if (url.includes("/api/currencies")) {
-      return new Response(JSON.stringify({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] }), { status: 200 });
+    if (url.includes("/api/work-progress")) return ok({ entries: [ENTRY] });
+    if (url.includes("/api/reports/category-progress")) {
+      return ok({ categories: [{ categoryId: "c1", name: "Structure", percentComplete: 40 }] });
     }
-    return new Response(JSON.stringify({}), { status: 200 });
-  }) as typeof fetch;
+    return ok({});
+  }) as unknown as typeof fetch;
 }
+
+/** The value rendered beside a KPI tag's label. */
+function kpiValue(container: HTMLElement, label: string): string | null {
+  const labelEl = [...container.querySelectorAll("div")].find((d) => d.textContent === label);
+  return labelEl?.nextElementSibling?.textContent ?? null;
+}
+
+beforeEach(() => {
+  stub();
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // ListScreen keeps its sort/page state here; a clean slate per test.
+  }
+});
 
 afterEach(() => {
   cleanup();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
+  push.mockClear();
+  globalThis.fetch = realFetch;
 });
 
-function occurrences(text: string, needle: string) {
-  return text.split(needle).length - 1;
-}
+describe("WorkProgressAnalyticalClient -- R67 D-29", () => {
+  test("once the reads succeed the figures appear, with the caption that says how they differ", async () => {
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
 
-describe("WorkProgressAnalyticalClient", () => {
-  test("exactly ONE Filter and ONE Export control -- the nested frame is gone", async () => {
-    stubFetch();
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("Civil"));
-    const buttons = Array.from(container.querySelectorAll("button")).map((b) => b.textContent ?? "");
-    expect(buttons.filter((t) => t.includes("Filter"))).toHaveLength(1);
-    expect(buttons.filter((t) => t.includes("Export"))).toHaveLength(1);
-  });
-
-  test("both measures are labelled on the chart", async () => {
-    stubFetch();
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("Civil"));
-    expect(occurrences(container.textContent ?? "", "Logged %")).toBeGreaterThan(0);
-    expect(occurrences(container.textContent ?? "", "Earned %")).toBeGreaterThan(0);
-  });
-
-  test("both figures are printed beside their bars", async () => {
-    stubFetch();
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("60%"));
-    expect(container.textContent).toContain("0%");
-  });
-
-  test("when the measures disagree in the way that has a fix, the screen names the fix", async () => {
-    stubFetch();
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() =>
-      expect(container.textContent).toContain(
-        "Logged progress is not yet linked to BOQ lines, so earned value is 0% - link entries to BOQ lines when recording progress."
-      )
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
+    expect(kpiValue(view.container, "Categories")).toBe("1");
+    expect(kpiValue(view.container, "Avg % Complete (Activity Log)")).toBe("40%");
+    expect(view.getByText(KPI_CAPTION)).toBe(
+      view.getByText("Avg % is a flat average of entries; the bar is value-weighted per category")
     );
   });
 
-  test("the table renders on the FAST round trip, without waiting for the BOQ read", async () => {
-    stubFetch({ holdReport: true });
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    // The entry row is on screen while the report call is still pending...
-    await waitFor(() => expect(container.textContent).toContain("Blockwork"));
-    // ...and the BOQ line shows its REFERENCE, not a claim that it has none.
-    expect(container.textContent).toContain("l1");
-    expect(container.textContent).not.toContain("Blockwork 200mm");
+  test("THE ACCEPTANCE, restated: a figure is never minted from a read that has not answered", async () => {
+    stub({ failing: ["/api/work-progress?"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    // PaneState states a failure twice on purpose -- once in the card and once
+    // in the persistent band below it, so the reason survives after the pane
+    // scrolls out of view. Both are expected; neither is the assertion.
+    await waitFor(() => expect(view.getAllByText(/Couldn't load progress entries/).length).toBeGreaterThan(0));
+    // The two entry-derived figures are en-dashes, NOT zeroes. This is the
+    // defect D-29 and R-002/R-019 both name: "Total entries 0" over a 504 is a
+    // false statement, and worse than a false empty list because a number
+    // carries no hint that anything was ever asked for.
+    expect(kpiValue(view.container, "Total entries")).toBe("—");
+    expect(kpiValue(view.container, "Avg % Complete (Activity Log)")).toBe("—");
+    // The category read succeeded, so ITS figure is real -- one failed read
+    // does not blank the tags that another read established.
+    expect(kpiValue(view.container, "Categories")).toBe("1");
   });
 
-  test("the BOQ line description fills in when the slower read returns", async () => {
-    stubFetch();
-    const { container } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("1.1 -- Blockwork 200mm"));
+  test("the entries' own failure DOES withhold the table, with the reason and a Retry inside the pane", async () => {
+    stub({ failing: ["/api/work-progress?"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    // PaneState states a failure twice on purpose -- once in the card and once
+    // in the persistent band below it, so the reason survives after the pane
+    // scrolls out of view. Both are expected; neither is the assertion.
+    await waitFor(() => expect(view.getAllByText(/Couldn't load progress entries/).length).toBeGreaterThan(0));
+    // The backend's own words survive under the dictionary's sentence.
+    expect(view.container.textContent).toContain("The construction data service did not respond in time");
+    expect(view.getAllByRole("button", { name: /Retry/ }).length).toBeGreaterThan(0);
+    // Never a confident empty state over a failed read.
+    expect(view.queryByText("No progress entries logged yet.")).toBeNull();
   });
 
-  test("both KPI tags are selectable, and the chosen one is marked", async () => {
-    stubFetch();
-    const { container, getByRole } = render(<WorkProgressAnalyticalClient projectId="p1" />);
-    await waitFor(() => expect(container.textContent).toContain("Civil"));
-    // The kit's KpiTag carries the selection itself (`selected`), so there is
-    // exactly one button per tag -- not a button wrapped in a button.
-    const logged = getByRole("button", { name: /Logged %/ });
-    const earned = getByRole("button", { name: /Earned %/ });
-    expect(logged.className).toContain("border-ct-teal");
-    expect(earned.className).not.toContain("border-ct-teal");
-  });
-});
+  test("the CHART's failure does not take the table down with it", async () => {
+    stub({ failing: ["/api/reports/category-progress"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
 
-// R67 E-33 (R-265). Sumeet 5.png's two graphs, on the tab the Analysis pill
-// already targets.
-//
-// The item's acceptance names two <svg> elements. Both charts are built from
-// divs -- see the mounting comment in the component for why (one shared scale,
-// the figure printed on every bar, and a row that is a real link; a charting
-// library gives none of the three) -- so what is asserted here is the part that
-// actually matters to a reader: that both charts are present, carry the exact
-// accessible names the item specifies, and that a category bar opens the Work
-// Progress Report filtered to that category.
-describe("R67 E-33: the two Analytics-tab charts", () => {
-  test("both charts render, under the item's own accessible names", async () => {
-    stubFetch();
-    const { findByRole } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    expect(await findByRole("group", { name: "Revenue, budget and progress by project" })).toBeTruthy();
-    expect(await findByRole("group", { name: "Budget vs completed by category" })).toBeTruthy();
+    // The entries arrived, so the table renders and its figures are real...
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
+    // ...while the chart says what happened to its own read, and the figure
+    // that depends on it stays an en-dash.
+    expect(view.container.textContent).toContain("Couldn't load the category breakdown");
+    expect(kpiValue(view.container, "Categories")).toBe("—");
   });
 
-  test("chart 1 plots one row per project, each a door to that project", async () => {
-    stubFetch();
-    const { container, findByText } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    await findByText("Cedar Heights Villa - Phase 1");
-    expect(container.textContent).toContain("Oakwood Residence");
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(hrefs).toContain("/dashboard/project?projectId=prj-cedar");
-    expect(hrefs).toContain("/dashboard/project?projectId=prj-oak");
+  test("a failed ACTIVITY lookup is reported without withholding anything, and offers a Retry", async () => {
+    // R67 D-29's fourth finding, folded onto the merged read: the activity
+    // lookup is not fatal -- the rows carry their own activity name now -- but
+    // a lookup that failed SILENTLY is how a row renders a raw id with nothing
+    // on screen admitting a read failed.
+    stub({ failing: ["/api/work-progress/activities"] });
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+
+    await waitFor(() => expect(view.container.textContent).toContain("Activity names may show as ids below"));
+    // The table is NOT withheld: the entries answered.
+    expect(kpiValue(view.container, "Total entries")).toBe("1");
+    expect(view.getAllByRole("button", { name: /Retry/ }).length).toBeGreaterThan(0);
   });
 
-  test("chart 1 names the three series in words, never by colour alone", async () => {
-    stubFetch();
-    const { container, findByText } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    await findByText("Cedar Heights Villa - Phase 1");
-    expect(container.textContent).toContain("Revenue");
-    expect(container.textContent).toContain("Budget");
-    expect(container.textContent).toContain("Progress (earned value)");
-  });
+  test("Filter and Export appear ONCE on this screen, not once per nested frame", async () => {
+    const view = render(<WorkProgressAnalyticalClient projectId="p1" />);
+    await waitFor(() => expect(kpiValue(view.container, "Total entries")).toBe("1"));
 
-  test("a project with no budget reads 'Not set' -- never a zero-width bar", async () => {
-    stubFetch();
-    const { container, findByText } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    await findByText("Oakwood Residence");
-    expect(container.textContent).toContain("Not set");
-  });
-
-  test("chart 2's bars open the Work Progress REPORT filtered to that category (D-02)", async () => {
-    stubFetch();
-    const { container, findByText } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    await findByText(/Civil - 80% of BOQ/);
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    const civil = hrefs.find((h) => h?.includes("category=Civil"));
-    expect(civil).toBe("/work-progress?projectId=prj-cedar&tab=report&view=category&category=Civil");
-    // The item's own example: clicking "General" reaches tab=report with the category on it.
-    const general = hrefs.find((h) => h?.includes("category=General"));
-    expect(general).toContain("tab=report");
-    expect(general).toContain("category=General");
-  });
-
-  test("a failed portfolio load leaves the rest of the tab standing, with its own Retry", async () => {
-    stubFetch();
-    portfolioStatus = 500;
-    const { container, findByText } = render(<WorkProgressAnalyticalClient projectId="prj-cedar" />);
-    await findByText(/Couldn't load project data/);
-    expect(container.textContent).toContain("the portfolio service is down");
-    // The category charts and the entries table are untouched by that failure.
-    expect(container.textContent).toContain("Budget vs completed by category");
-    expect(container.textContent).toContain("Progress by scope category");
+    // The whole point of the `framed={false}` fold: this screen draws the
+    // header, and the list it reuses wholesale must not draw a second one.
+    expect(view.getAllByRole("button", { name: /^Filter/ })).toHaveLength(1);
+    expect(view.getAllByRole("button", { name: /^Export/ })).toHaveLength(1);
   });
 });

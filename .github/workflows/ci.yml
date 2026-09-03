@@ -61,6 +61,94 @@ jobs:
           DATABASE_URL: postgresql://postgres:placeholder@localhost:5432/postgres
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+  perf:
+    # R67 F-28 (audit recommendation R-249) -- the per-screen latency budget.
+    #
+    # WHAT IT DOES. Builds the app, starts it locally, and runs
+    # scripts/perf-harness.mjs against http://localhost:3100 with the baseURL
+    # overridden (playwright.config.ts's committed baseURL points at
+    # https://projexa-ai.com, which this job must never measure). The harness
+    # walks the 13 pages in perf/budgets.json, records TTFB / FCP / usable
+    # ([data-state='ready'|'empty'], R67 F-31) / network-idle / API-call count
+    # / slowest single call, probes the backend paths the audit could not price
+    # separately, and exits non-zero naming any row outside its budget.
+    #
+    # WHY IT IS BEHIND A REPOSITORY VARIABLE. The harness measures the REAL
+    # composed app: it logs in with a real seeded account and reads a real
+    # project through VERIDIAN. That needs credentials this repo does not have
+    # yet (PERF_EMAIL / PERF_PASSWORD / PERF_PROJECT_ID plus the Supabase and
+    # VERIDIAN values the app boots with). A job that ran without them would
+    # either fail every PR or -- worse -- pass while measuring a login page,
+    # which is exactly the class of "harness that reports numbers it did not
+    # measure" this item exists to remove. So it is switched off by a
+    # repository VARIABLE (not a secret, so it can be read in `if`) and turns
+    # into a real gate the moment the owner sets:
+    #   Settings > Variables > PERF_HARNESS_ENABLED = true
+    #   Settings > Secrets  > PERF_EMAIL, PERF_PASSWORD, PERF_PROJECT_ID,
+    #                         PERF_SUPABASE_URL, PERF_SUPABASE_ANON_KEY,
+    #                         PERF_DATABASE_URL
+    # Until then the budget is still enforced where it can be honestly
+    # enforced: src/lib/perf-budget.test.ts runs in the Test job above and
+    # fails if the shipped figures are relaxed.
+    name: Perf budget
+    if: ${{ vars.PERF_HARNESS_ENABLED == 'true' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - name: Build
+        run: bun run build
+        env:
+          DATABASE_URL: ${{ secrets.PERF_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PERF_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PERF_SUPABASE_ANON_KEY }}
+      - name: Start the app
+        # nohup + disown, not a bare `&`: the server has to outlive THIS step,
+        # and whether a backgrounded child survives its step's shell is runner
+        # behaviour, not something this workflow states. `break`, not `exit 0`:
+        # `exit` inside the loop would end the step's shell, which is how the
+        # readiness check could "pass" without leaving anything running -- and
+        # the next step then fails with a connection error that reads like a
+        # perf regression.
+        run: |
+          nohup bun run start > /tmp/next.log 2>&1 &
+          disown
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3100/login > /dev/null && break
+            sleep 2
+          done
+          if ! curl -sf http://localhost:3100/login > /dev/null; then
+            echo "the app never became reachable on :3100" >&2
+            exit 1
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.PERF_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PERF_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PERF_SUPABASE_ANON_KEY }}
+      - name: Measure the 13 pages against perf/budgets.json
+        run: bun scripts/perf-harness.mjs
+        env:
+          PERF_BASE_URL: http://localhost:3100
+          PERF_EMAIL: ${{ secrets.PERF_EMAIL }}
+          PERF_PASSWORD: ${{ secrets.PERF_PASSWORD }}
+          PERF_PROJECT_ID: ${{ secrets.PERF_PROJECT_ID }}
+      - name: Server log
+        # A failed measurement is otherwise indistinguishable from a slow one:
+        # this is where "the app crashed on boot" is legible.
+        if: failure()
+        run: cat /tmp/next.log
+      - name: Keep the per-module table
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: |
+            perf/perf-results.json
+            perf/perf-results.md
+
   secret-scan:
     # R60 T9: replaces GitHub's own secret scanning/push protection, which
     # was auto-disabled when this repo went private (GitHub Free has

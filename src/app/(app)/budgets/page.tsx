@@ -1,40 +1,27 @@
-import { PageHeading } from "@/components/PageHeading";
-import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
-import BudgetsClient, { type RegistryColumn } from "@/components/BudgetsClient";
+import { redirect } from "next/navigation";
 
-// R46 P8 seq133 (registry-model proof, same shape as R43 seq2's
-// resolvePermitsListColumns, R46 P8 seq134's resolveVariationsListColumns,
-// and R46 P8 seq128's resolveDocumentsListColumns): resolved server-side so
-// BudgetsClient (a client component) never needs its own
-// Bearer-key-authenticated fetch. A missing or errored registry row is NOT
-// fatal -- BudgetsClient falls back to its own hardcoded COLUMNS when this
-// is null. Unlike documents/change-orders/drawings, Budgets is org-wide
-// rather than project-scoped (no resolveSelectedProject here) -- only
-// organizationId is needed to resolve the row.
-async function resolveBudgetsListColumns(organizationId: string | null): Promise<RegistryColumn[] | null> {
-  try {
-    const definition = await callVeridian<{ columns: RegistryColumn[] }>("/screen-definitions/budget.list", {
-      organizationId: organizationId ?? undefined,
-    });
-    return Array.isArray(definition.columns) && definition.columns.length > 0 ? definition.columns : null;
-  } catch (err) {
-    if (err instanceof VeridianApiError && err.status === 404) return null; // no row seeded yet -- expected, not an error
-    console.error("[budgets/page] screen_definitions resolve failed, falling back to hardcoded columns:", err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
-export default async function BudgetsPage() {
-  const organizationId = await getServerOrganizationId();
-  const registryColumns = await resolveBudgetsListColumns(organizationId);
-
-  return (
-    <>
-      <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Budgets" />
-        <BudgetsClient registryColumns={registryColumns} />
-      </div>
-    </>
-  );
+// R67 D-62 (audit R-202). PROJEXA had ONE door called "Budgets" and it opened
+// the ERP's fiscal-year budget: a screen that needs a fiscal year, a chart of
+// accounts and a cost centre before it can save anything. That is a finance
+// department's budget. The budget a project manager means -- Sumeet's own budget
+// sheet, a percent and a vendor amount per BOQ line -- lives on /scope?tab=budget
+// and had no nav entry at all.
+//
+// So the two are separated: the ERP budget moved to /finance/budgets, where its
+// preconditions read as a finance-module fact rather than as PROJEXA being
+// broken, and the Budgets nav entry now points at the project budget.
+//
+// This route is kept as a redirect rather than deleted. Every link, bookmark and
+// screenshot in circulation says /budgets, and a 404 is a worse answer than the
+// screen the user was asking for.
+//
+// R67 MERGE (D-11, lane D1 x lane D3, 2026-09-03): D3 landed D-43 on THIS file
+// -- it dropped the bare <PageHeading title="Budgets" /> because BudgetsClient
+// now renders the kit's own ScreenFrame header, and two headers stacked is the
+// defect. That change is NOT lost by this file becoming a redirect: it has been
+// applied to src/app/(app)/finance/budgets/page.tsx, which is where D-62 moved
+// the real ERP budgets screen. The registry-column resolver D3 edited here moved
+// with it and is unchanged.
+export default function BudgetsRedirectPage() {
+  redirect("/finance/budgets");
 }

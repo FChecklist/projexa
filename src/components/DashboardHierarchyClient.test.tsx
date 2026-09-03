@@ -48,7 +48,7 @@ afterEach(() => {
 const OLD_SENTENCE = "No company memberships found for this account.";
 
 describe("R67 E-37: the company list says WHY it is empty", () => {
-  test("a failed companies request reads 'Couldn't load your companies' with a Retry, never an empty list", async () => {
+  test("a failed companies request reads a real failure with a Retry, never an empty list", async () => {
     stubFetch((url) =>
       url.endsWith("/api/dashboard-hierarchy/companies")
         ? new Response(JSON.stringify({ error: "boom" }), { status: 500 })
@@ -56,7 +56,12 @@ describe("R67 E-37: the company list says WHY it is empty", () => {
     );
     const { container, getByText } = render(<DashboardHierarchyClient />);
 
-    await waitFor(() => expect(container.textContent).toContain("Couldn't load your companies"));
+    // R67 MERGE (D-11, lane E2's E-37 x lane D0's D-03): D-03's
+    // DataLoadFailure is the one failure sentence every panel on this screen
+    // shares ("so the four panels ... cannot drift into four different ways
+    // of admitting the same thing" -- its own comment) -- kept on merit over
+    // a companies-only wording, and it still carries the backend's own words.
+    await waitFor(() => expect(container.textContent).toContain("Could not load live data: boom"));
     expect(container.textContent).not.toContain(OLD_SENTENCE);
 
     // The Retry really re-issues the request the reader is trying to fix.
@@ -121,9 +126,12 @@ describe("R67 E-37: the company list says WHY it is empty", () => {
     });
     const { container } = render(<DashboardHierarchyClient />);
 
-    // The Filter control states the scope, which is how a reader knows which
-    // company they are looking at without opening anything.
-    await waitFor(() => expect(container.textContent).toContain("Filter: Demo Organization"));
+    // R67 MERGE (D-11, lane E2's E-37): the synthesised company is picked as
+    // the current selection (setCompanyId defaults to the first company) and
+    // its hierarchy loads -- the assertion that actually matters for this
+    // test's own name. E-29's "Filter: <company>" collapsed-summary control
+    // is not part of the merged screen's Company/Department UI (that pair
+    // renders directly, not behind a fold), so it is not asserted here.
     await waitFor(() => expect(container.textContent).toContain("Cedar Heights Villa - Phase 1"));
     expect(container.textContent).not.toContain(OLD_SENTENCE);
   });

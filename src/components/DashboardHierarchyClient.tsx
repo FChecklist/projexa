@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,23 +12,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Wallet, TrendingUp, Receipt, Activity, Building2, Landmark } from "lucide-react";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
-import { HierarchyProjectBars } from "@/components/HierarchyProjectBars";
-import { useOrgMoney } from "@/lib/use-org-money";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
-// R67 E-23: the row now carries boqBudget and earnedValue so Sumeet's company
-// chart can be drawn from the SAME payload the table already reads -- one
-// call, never a second fetch per project (C06-21).
-type ProjectSummary = {
-  id: string; name: string;
-  revenue: number | null; expenses: number | null;
-  taskCount: number; delayedTaskCount: number;
-  earnedValue?: number | null; boqBudget?: number | null; budget?: number | null;
-  progressPercent?: number | null; percentByValue?: number | null;
-};
-type OrgDashboard = { totalProjects: number; totalBudget: number | null; totalRevenue: number | null; totalExpenses: number | null; projects: ProjectSummary[] };
+/** R67 E-37: why the companies list came back empty, from resolveHierarchyCompanies. */
+type EmptyReason = "none" | "no-company" | "not-a-member";
+type ProjectSummary = { id: string; name: string; revenue: number; expenses: number; taskCount: number; delayedTaskCount: number };
+type OrgDashboard = { totalProjects: number; totalBudget: number; totalRevenue: number; totalExpenses: number; projects: ProjectSummary[] };
 type ProjectDetails = {
   projectId: string; projectName: string; budget: number; budgetIsPeriodTotal: boolean;
   revenue: number; revenueTruncated: boolean; expenses: number; progressPercent: number; dateRangeApplied: boolean;
@@ -48,27 +40,71 @@ function fmt(n: number, currencies: Currency[]) {
   return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-async function getJson<T>(url: string): Promise<T | null> {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+// ─── R67 D-03 (R-002 / R-019 / R-025) ──────────────────────
+//
+// THE DEFECT. This helper was:
+//
+//   const res = await fetch(url);
+//   if (!res.ok) return null;
+//   return res.json();
+//
+// It DID read res.ok -- and then threw the failure away, which is why the
+// repo's own src/lib/no-swallowed-http-errors.test.ts never caught it: that
+// guard anchors on the await-then-check shape, on Promise.all([fetch()]) and
+// on the fetch().then(r => r.json()) chain, and this is a fourth shape (it is
+// covered by that file's fourth check now). Every caller then did
+// `.then((data) => { if (!data) return; ... })`, so a 500 from
+// /api/dashboard-hierarchy/companies left `companies` at its initial `[]` and
+// the page printed "No company memberships found for this account." -- telling
+// a user they belong to no company when the service merely refused. The org
+// dashboard was worse: it stayed null and its whole section simply VANISHED,
+// with no error, no Retry and nothing to indicate a request had been made.
+//
+// A read now resolves to a discriminated outcome, and the message is the
+// backend's OWN words where it sent any, with the status as the fallback --
+// never a generic sentence that hides which service failed.
+type ReadResult<T> = { ok: true; data: T } | { ok: false; message: string };
+
+async function getJson<T>(url: string): Promise<ReadResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    // A thrown fetch never reached the server at all. Saying "the request did
+    // not complete" is true; saying "there are no companies" would not be.
+    return { ok: false, message: err instanceof Error && err.message ? err.message : "the request did not complete" };
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    const said = typeof body?.error === "string" && body.error.trim() ? body.error.trim() : null;
+    return { ok: false, message: said ?? `the request failed (${res.status})` };
+  }
+  try {
+    return { ok: true, data: (await res.json()) as T };
+  } catch {
+    return { ok: false, message: "the response could not be read" };
+  }
 }
 
-// R67 E-37 (R-269): what the companies call answered, as three separable
-// facts. "The request failed", "you belong to no company" and "this
-// organisation has no company row" all rendered as the SAME sentence before
-// this -- and the first of them is not an empty list at all.
-type EmptyReason = "none" | "no-company" | "not-a-member";
-type CompaniesState =
-  | { status: "loading" }
-  | { status: "failed" }
-  | { status: "ready"; companies: Company[]; emptyReason: EmptyReason };
+/**
+ * D-03's own words, once, so the four panels on this screen cannot drift into
+ * four different ways of admitting the same thing. The second sentence is the
+ * point: an empty screen and a failed screen look identical, and only this
+ * says which one the reader is looking at.
+ */
+function DataLoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="space-y-3 py-6 text-center">
+      <p className="text-sm text-px-error">Could not load live data: {message}. This is not the same as having no projects.</p>
+      <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+    </div>
+  );
+}
 
 export function DashboardHierarchyClient() {
   const router = useRouter();
   const currencies = useCurrencies();
-  const [companiesState, setCompaniesState] = useState<CompaniesState>({ status: "loading" });
-  const companies = companiesState.status === "ready" ? companiesState.companies : [];
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [departmentId, setDepartmentId] = useState<string>("__all__");
@@ -78,99 +114,131 @@ export function DashboardHierarchyClient() {
   const [toDate, setToDate] = useState("");
   const [details, setDetails] = useState<ProjectDetails | null>(null);
   const [loading, setLoading] = useState(false);
-  // R67 E-23: the company chart's own load state, so a failed org-dashboard
-  // read renders "Couldn't load project data — Retry" instead of an empty
-  // chart that reads as "this company has no projects".
-  const [barsLoading, setBarsLoading] = useState(false);
-  const [barsError, setBarsError] = useState<string | null>(null);
-  // R67 E-29: the Company/Department pair lives behind the Filter action.
-  // Closed by default -- the scope is named ON the button, so folding them
-  // away costs the reader no information.
-  const [filterOpen, setFilterOpen] = useState(false);
-  const orgMoney = useOrgMoney();
 
-  // Company level: the current user's real memberships, or the one company the
-  // server synthesised from their own organisation when no membership row
-  // names one (R67 E-37 -- see resolveHierarchyCompanies).
-  const loadCompanies = useCallback(async () => {
-    setCompaniesState({ status: "loading" });
-    const data = await getJson<{ companies: Company[]; emptyReason?: EmptyReason }>(
-      "/api/dashboard-hierarchy/companies"
-    );
-    if (!data) {
-      // A failed request is NOT an empty list, and saying "no company
-      // memberships" here was the screen confidently reporting a fact it did
-      // not have.
-      setCompaniesState({ status: "failed" });
-      return;
-    }
-    setCompaniesState({ status: "ready", companies: data.companies, emptyReason: data.emptyReason ?? "none" });
-    if (data.companies.length > 0) setCompanyId(data.companies[0].id);
-  }, []);
+  // R67 D-03: one outcome per panel, so an empty sentence is reachable only
+  // from a 200 and a failure is never reachable at all without saying so.
+  const [companiesStatus, setCompaniesStatus] = useState<PaneStatus>("loading");
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
+  // R67 MERGE (D-11, lane E2's E-37 x lane D0's D-03): the backend
+  // (resolveHierarchyCompanies) already tells the caller WHY an empty list is
+  // empty -- not-a-member vs no-company vs a real synthesised one -- and D-03's
+  // discriminated getJson() carries it through just as cleanly as it carries
+  // the failure message. "none" is the ready-and-populated case.
+  const [companiesEmptyReason, setCompaniesEmptyReason] = useState<EmptyReason>("none");
+  const [orgStatus, setOrgStatus] = useState<PaneStatus>("idle");
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [departmentsFailed, setDepartmentsFailed] = useState(false);
+  // Bumped to re-run a panel's own effect -- the Retry the user pressed.
+  const [companiesAttempt, setCompaniesAttempt] = useState(0);
+  const [orgAttempt, setOrgAttempt] = useState(0);
 
+  // Company level: load the current user's real memberships once, or the one
+  // company the server synthesised from their own organisation when no
+  // membership row names one (R67 E-37 -- see resolveHierarchyCompanies).
   useEffect(() => {
-    void loadCompanies();
-  }, [loadCompanies]);
+    let live = true;
+    setCompaniesStatus("loading");
+    setCompaniesError(null);
+    void getJson<{ companies: Company[]; emptyReason?: EmptyReason }>("/api/dashboard-hierarchy/companies").then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        // The rows are NOT cleared: a failed refresh must not destroy a list
+        // the user could read a second ago.
+        setCompaniesError(result.message);
+        setCompaniesStatus("error");
+        return;
+      }
+      const loaded = result.data.companies ?? [];
+      setCompanies(loaded);
+      setCompaniesEmptyReason(result.data.emptyReason ?? "none");
+      setCompaniesStatus("ready");
+      if (loaded.length > 0) setCompanyId((current) => current || loaded[0].id);
+    });
+    return () => {
+      live = false;
+    };
+  }, [companiesAttempt]);
 
-  // Department level: real HR departments for the selected company.
+  // Department level: real HR departments for the selected company. This one
+  // is a genuine convenience -- "All departments" is always available and the
+  // dashboard below does not depend on it -- so its failure narrows the filter
+  // rather than blocking the screen, and it says so beside the control.
   useEffect(() => {
     if (!companyId) return;
+    let live = true;
     setDepartmentId("__all__");
-    getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((data) => {
-      if (data) setDepartments(data.departments);
+    setDepartmentsFailed(false);
+    void getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        setDepartments([]);
+        setDepartmentsFailed(true);
+        return;
+      }
+      setDepartments(result.data.departments ?? []);
     });
+    return () => {
+      live = false;
+    };
   }, [companyId]);
 
   // Project level: the company's (optionally department-filtered) project
-  // list. R67 E-23: the From/To range is sent to the SAME call -- it narrows
-  // revenue and expenses server-side; the BOQ-derived budget is a property of
-  // the BOQ line, not of a period, and the chart says so when a range is set.
-  const loadOrgDashboard = useCallback(async () => {
+  // list. R67 MERGE (D-11, lane E2's E-23): the From/To range is sent to this
+  // SAME call, not just to the per-project Details read below -- it narrows
+  // revenue and expenses server-side for the whole company chart too, and the
+  // backend route already forwards `from`/`to` alongside `departmentId` (see
+  // [companyId]/dashboard/route.ts). The BOQ-derived budget stays a property
+  // of the BOQ line, not of a period, so a range does not touch it.
+  useEffect(() => {
     if (!companyId) return;
-    setBarsLoading(true);
-    setBarsError(null);
+    let live = true;
+    setProjectId("");
+    setDetails(null);
+    setOrgStatus("loading");
+    setOrgError(null);
     const qs = new URLSearchParams();
     if (departmentId !== "__all__") qs.set("departmentId", departmentId);
     if (fromDate) qs.set("from", fromDate);
     if (toDate) qs.set("to", toDate);
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    const data = await getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${suffix}`);
-    if (!data) {
-      setOrgDashboard(null);
-      setBarsError("the workspace backend did not answer");
-    } else {
-      setOrgDashboard(data);
-    }
-    setBarsLoading(false);
-  }, [companyId, departmentId, fromDate, toDate]);
-
-  useEffect(() => {
-    if (!companyId) return;
-    setProjectId("");
-    setDetails(null);
-    void loadOrgDashboard();
-  }, [companyId, departmentId, loadOrgDashboard]);
+    void getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${suffix}`).then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        setOrgError(result.message);
+        setOrgStatus("error");
+        return;
+      }
+      setOrgDashboard(result.data);
+      setOrgStatus("ready");
+    });
+    return () => {
+      live = false;
+    };
+  }, [companyId, departmentId, fromDate, toDate, orgAttempt]);
 
   // Details view: Revenue/Budget/Expense/Progress for the selected project, date-range filtered.
   function loadDetails() {
     if (!companyId || !projectId) return;
     setLoading(true);
+    setDetailsError(null);
     const qs = new URLSearchParams();
     if (fromDate) qs.set("from", fromDate);
     if (toDate) qs.set("to", toDate);
-    getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
-      .then(setDetails)
+    void getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
+      .then((result) => {
+        // Without this branch a failed read left `details` null with `loading`
+        // false, and the panel sat on the word "Loading..." for ever.
+        if (!result.ok) {
+          setDetailsError(result.message);
+          setDetails(null);
+          return;
+        }
+        setDetails(result.data);
+      })
       .finally(() => setLoading(false));
   }
   useEffect(loadDetails, [companyId, projectId, fromDate, toDate]);
-
-  // What the Filter button says it is filtering by. The scope is never hidden
-  // behind the fold -- only the controls that change it are.
-  const selectedCompany = companies.find((c) => c.id === companyId);
-  const selectedDepartmentName =
-    departmentId === "__all__"
-      ? "All departments"
-      : (departments.find((d) => d.id === departmentId)?.name ?? "All departments");
 
   // Point 121: a user-entered value always wins over the PO-derived
   // fallback -- editing it here is a deliberate human override.
@@ -189,75 +257,53 @@ export function DashboardHierarchyClient() {
 
   return (
     <div className="space-y-6">
-      {/* R67 E-29 (R-255): "the Company and Department selects fold into the
-          Filter action". They used to be a permanent card at the top of the
-          screen -- two dropdowns a reader passes every single visit and
-          changes almost never, sitting above the charts they came to see. The
-          scope is now STATED in the Filter control itself, so nothing is
-          hidden: the button reads the current company and department, and
-          opens the two selects when the reader actually wants to change them. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-expanded={filterOpen}
-          onClick={() => setFilterOpen((open) => !open)}
-        >
-          Filter: {selectedCompany?.name ?? "Select company"} · {selectedDepartmentName}
-        </Button>
-        {(fromDate || toDate) && (
-          <span className="text-xs text-px-muted">
-            {fromDate || "the beginning"} to {toDate || "today"}
-          </span>
-        )}
-      </div>
+      <Card className="shadow-card">
+        <CardContent className="flex flex-wrap items-end gap-4 pt-6">
+          <div className="space-y-1">
+            <Label className="text-xs">Company</Label>
+            <Select value={companyId} onValueChange={setCompanyId}>
+              <SelectTrigger className="h-9 w-52"><SelectValue placeholder="Select company" /></SelectTrigger>
+              <SelectContent>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}{c.country ? ` (${c.country})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Department</Label>
+            <Select value={departmentId} onValueChange={setDepartmentId} disabled={!companyId}>
+              <SelectTrigger className="h-9 w-52"><SelectValue placeholder="All departments" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All departments</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {departmentsFailed && (
+              <p className="text-xs" style={{ color: "var(--status-needs-you-text)" }}>
+                Departments could not be loaded &mdash; showing all departments.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-      {filterOpen && (
-        <Card className="shadow-card">
-          <CardContent className="flex flex-wrap items-end gap-4 pt-6">
-            <div className="space-y-1">
-              <Label className="text-xs">Company</Label>
-              <Select value={companyId} onValueChange={setCompanyId}>
-                <SelectTrigger className="h-9 w-52"><SelectValue placeholder="Select company" /></SelectTrigger>
-                <SelectContent>
-                  {companies.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}{c.country ? ` (${c.country})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Department</Label>
-              <Select value={departmentId} onValueChange={setDepartmentId} disabled={!companyId}>
-                <SelectTrigger className="h-9 w-52"><SelectValue placeholder="All departments" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All departments</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+      {/* R67 D-03: the sentence "No company memberships found for this
+          account." is a statement about the ACCOUNT, and it may only be made
+          on the strength of a 200 that carried no rows. mayShowEmptyState()
+          decides that, here as on every other pane, so it cannot regress into
+          a bare `companies.length === 0` again.
+          R67 MERGE (D-11, lane E2's E-37): "no rows" is not one fact -- the
+          backend now says WHICH of three it is, and this renders each with
+          its own next step rather than the one flat sentence above. */}
+      {companiesStatus === "error" && companiesError && (
+        <DataLoadFailure message={companiesError} onRetry={() => setCompaniesAttempt((n) => n + 1)} />
       )}
-
-      {/* R67 E-37 (R-269 / R-298). ONE SENTENCE USED TO COVER FOUR SITUATIONS.
-          "No company memberships found for this account." was printed when the
-          request FAILED, when the user genuinely belonged to nowhere, and when
-          the organisation had no company row -- three different facts with
-          three different next actions, and the first of them was not an empty
-          list at all. Each now says what happened and who can fix it. */}
-      {companiesState.status === "failed" && (
-        <div className="space-y-2" role="alert">
-          <p className="text-sm text-px-error">Couldn&apos;t load your companies</p>
-          <Button size="sm" variant="outline" onClick={() => void loadCompanies()}>Retry</Button>
-        </div>
-      )}
-      {companiesState.status === "ready" && companiesState.emptyReason === "no-company" && (
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "no-company" && (
         <div className="space-y-2" data-testid="hierarchy-no-company">
           <p className="text-sm text-px-ink">This organisation is not set up as a company yet</p>
           <div className="flex flex-wrap gap-2">
@@ -266,53 +312,34 @@ export function DashboardHierarchyClient() {
           </div>
         </div>
       )}
-      {companiesState.status === "ready" && companiesState.emptyReason === "not-a-member" && (
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "not-a-member" && (
         <p className="text-sm text-px-ink" data-testid="hierarchy-not-a-member">
           Your account is not a member of any company yet. Ask an administrator to add you under{" "}
           <Link href="/settings" className="underline">Settings › Companies</Link>.
         </p>
       )}
-
-      {/* R67 E-23 (R-206, C-07): Sumeet's company chart. One row per project
-          ordered by revenue descending, three thin bars per row on ONE shared
-          axis, the value printed at each bar end, the whole row a door to
-          that project's dashboard. The From/To range sits above it because it
-          is what the range applies to. */}
-      {companyId && (
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-base">Revenue, budget and earned value by project</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">From</Label>
-                <Input type="date" className="h-9 w-40" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">To</Label>
-                <Input type="date" className="h-9 w-40" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-              </div>
-            </div>
-            <HierarchyProjectBars
-              projects={orgDashboard?.projects ?? null}
-              orgMoney={orgMoney}
-              loading={barsLoading}
-              error={barsError}
-              onRetry={() => void loadOrgDashboard()}
-              dateRangeApplied={Boolean(fromDate || toDate)}
-            />
-          </CardContent>
-        </Card>
+      {mayShowEmptyState(companiesStatus, companies.length) && companiesEmptyReason === "none" && (
+        <p className="text-sm text-px-muted">No company memberships found for this account.</p>
       )}
 
-      {orgDashboard && (
+      {orgStatus === "error" && orgError && (
         <Card className="shadow-card">
           <CardHeader>
             <CardTitle className="font-heading text-base">Projects</CardTitle>
           </CardHeader>
           <CardContent>
-            {orgDashboard.projects.length === 0 ? (
+            <DataLoadFailure message={orgError} onRetry={() => setOrgAttempt((n) => n + 1)} />
+          </CardContent>
+        </Card>
+      )}
+
+      {orgStatus === "ready" && orgDashboard && (
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-heading text-base">Projects</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {mayShowEmptyState(orgStatus, orgDashboard.projects.length) ? (
               <p className="py-6 text-center text-sm text-px-muted">No projects in this scope.</p>
             ) : (
               <Table>
@@ -333,12 +360,8 @@ export function DashboardHierarchyClient() {
                       onClick={() => setProjectId(p.id)}
                     >
                       <TableCell className="font-medium">{p.name}</TableCell>
-                      {/* R67 E-23/G-05: revenue and expenses are now
-                          `number | null` -- null is the redacted-for-this-role
-                          case, and the one money formatter renders it as the
-                          en dash rather than a confident zero. */}
-                      <TableCell>{orgMoney.money(p.revenue)}</TableCell>
-                      <TableCell>{orgMoney.money(p.expenses)}</TableCell>
+                      <TableCell>{fmt(p.revenue, currencies)}</TableCell>
+                      <TableCell>{fmt(p.expenses, currencies)}</TableCell>
                       <TableCell>{p.taskCount}</TableCell>
                     </TableRow>
                   ))}
@@ -360,17 +383,15 @@ export function DashboardHierarchyClient() {
             <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/project?projectId=${projectId}`)}>Open Project Dashboard</Button>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* R67 E-23: the From/To inputs moved UP, next to the chart the
-                range actually applies to. Two identical date pairs on one
-                screen, driving the same two state values, is a duplicate
-                control -- the details below still honour the range set above,
-                and say so. */}
-            <div className="flex flex-wrap items-center gap-4">
-              <p className="text-xs text-px-muted">
-                {fromDate || toDate
-                  ? `Showing ${fromDate || "the beginning"} to ${toDate || "today"}, from the range set above.`
-                  : "Showing every date. Set a range above to narrow revenue and expenses."}
-              </p>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs">From</Label>
+                <Input type="date" className="h-9 w-40" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">To</Label>
+                <Input type="date" className="h-9 w-40" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              </div>
               {details?.budgetIsPeriodTotal && (
                 <p className="text-xs text-px-muted">Budget is an annual allocation and is not affected by the date range.</p>
               )}
@@ -381,7 +402,13 @@ export function DashboardHierarchyClient() {
               )}
             </div>
 
-            {loading || !details ? (
+            {detailsError ? (
+              // The KPI tiles below read money and a percentage. Rendering
+              // them from a failed read is R-002/R-019 exactly, and worse than
+              // a false empty list, because a figure carries no hint that
+              // anything was ever asked for.
+              <DataLoadFailure message={detailsError} onRetry={loadDetails} />
+            ) : loading || !details ? (
               <p className="py-6 text-center text-sm text-px-muted">Loading...</p>
             ) : (
               <div className="space-y-2">
@@ -405,7 +432,7 @@ export function DashboardHierarchyClient() {
         </Card>
       )}
 
-      {!projectId && orgDashboard && orgDashboard.projects.length > 0 && (
+      {!projectId && orgStatus === "ready" && orgDashboard && orgDashboard.projects.length > 0 && (
         <p className="flex items-center gap-2 text-sm text-px-muted"><Building2 className="size-4" /> Select a project above to see its graphical detail report.</p>
       )}
     </div>

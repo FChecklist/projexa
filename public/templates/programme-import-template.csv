@@ -1,0 +1,6 @@
+Activity,Start,Finish,Duration,Predecessor,Weight,BOQ Code
+Site mobilisation,2026-09-01,2026-09-05,5,,2,
+Blockwork to internal partitions,2026-09-08,2026-09-26,15,Site mobilisation,25,1.00
+Plaster to blockwork,2026-09-29,2026-10-10,10,Blockwork to internal partitions,15,1.01
+Suspended ceiling grid and tiles,2026-10-13,2026-10-31,15,Plaster to blockwork,30,2.00
+Handover,2026-11-02,2026-11-02,0,Suspended ceiling grid and tiles,0,
