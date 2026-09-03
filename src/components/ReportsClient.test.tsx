@@ -153,9 +153,14 @@ describe("ReportsClient -- Project Status renders as a document", () => {
     stubFetch();
     const { container, getByRole } = renderPanel();
     await waitFor(() => expect(container.textContent).toContain("AED 475,000"));
-    expect(getByRole("button", { name: "Export PDF" })).toBeDefined();
-    expect(getByRole("button", { name: "Export CSV" })).toBeDefined();
-    expect(getByRole("button", { name: "Share" })).toBeDefined();
+    // Matched by pattern, not by an exact string: R67 E-36 puts a DISABLED
+    // control's reason into its accessible name (aria-label), because the
+    // accessible-name algorithm prefers text content over `title` and a reader
+    // who cannot hover was getting a dead control with no stated reason. So
+    // "Export PDF" is now the start of the name, not the whole of it.
+    expect(getByRole("button", { name: /Export PDF/ })).toBeDefined();
+    expect(getByRole("button", { name: /Export CSV/ })).toBeDefined();
+    expect(getByRole("button", { name: /Share/ })).toBeDefined();
   });
 
   test("the header block links the project name to its dashboard", async () => {
