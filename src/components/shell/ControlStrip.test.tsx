@@ -14,7 +14,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { ControlStrip } from "./ControlStrip";
 
@@ -33,13 +33,13 @@ const CHAIN: Chain = {
 
 const noop = () => {};
 
-function renderStrip(chain: Chain = CHAIN) {
+function renderStrip(chain: Chain = CHAIN, onHistory: () => void = noop) {
   return render(
     <ControlStrip
       chain={chain}
       onModeChange={noop}
       onCutFrom={noop}
-      onToggleHistory={noop}
+      onHistory={onHistory}
       onHome={noop}
       onReset={noop}
     />
@@ -121,6 +121,21 @@ describe("the fork changed nothing else about the strip", () => {
     expect(getByText("HISTORY")).toBeDefined();
     expect(getByText("HOME")).toBeDefined();
     expect(getByLabelText("Reset the chain")).toBeDefined();
+  });
+
+  test("R67 C-10: HISTORY calls its one handler -- it no longer toggles a drop", () => {
+    // Two controls on this screen were named History. The word stays on the
+    // strip; what it opens is the Task Master's own History tab, which lists
+    // real pipeline_tasks rows. The strip has no disclosure state of its own
+    // any more, so it must not claim one.
+    let called = 0;
+    const { getByText } = renderStrip(CHAIN, () => {
+      called += 1;
+    });
+    const history = getByText("HISTORY");
+    expect(history.getAttribute("aria-expanded")).toBeNull();
+    fireEvent.click(history);
+    expect(called).toBe(1);
   });
 
   test("an empty chain prompts rather than looking broken", () => {

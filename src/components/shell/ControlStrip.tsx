@@ -8,7 +8,16 @@
 // Chain types -- is still imported from the kit, so the chain's two
 // safety-critical rules stay the kit's.
 //
-// THE ONE CHANGE, R67 G-04 (R-231): the chain's ROOT segment no longer
+// THE SECOND CHANGE, R67 C-10: HISTORY is no longer a disclosure control for
+// a drop of the strip's own. Two controls on this screen were named History
+// -- this word and the Task Master's tab -- and the duplicate is merged into
+// the tab, which lists real compliance.pipeline_tasks rows rather than a
+// sessionStorage list of chains. The word stays (M24: "NOTHING ON THE STRIP
+// IS AN ICON-ONLY CONTROL"), and it now focuses that tab. Per correction C-03
+// only the duplicate-control merge stands; the "the drop covers the tabs"
+// claim and its z-index fix were withdrawn and are not implemented.
+//
+// THE FIRST CHANGE, R67 G-04 (R-231): the chain's ROOT segment no longer
 // truncates. Every segment used to carry `max-w-[22ch] truncate`, which meant
 // the project the user had just chosen rendered as
 // "Cedar Heights Villa - Phas...". That is the worst possible thing to clip:
@@ -48,10 +57,14 @@ export type ControlStripProps = {
    *  through cutChainFrom(), which refuses to reach into the root. */
   onCutFrom: (index: number) => void;
   onSegmentClick?: (index: number) => void;
-  onToggleHistory: () => void;
+  /**
+   * R67 C-10: the HISTORY word no longer toggles a drop of its own -- it
+   * focuses the Task Master's History tab, which is the OTHER control that
+   * was called History on this same screen. One name, one destination.
+   */
+  onHistory: () => void;
   onHome: () => void;
   onReset: () => void;
-  historyOpen?: boolean;
 };
 
 export function ControlStrip({
@@ -59,10 +72,9 @@ export function ControlStrip({
   onModeChange,
   onCutFrom,
   onSegmentClick,
-  onToggleHistory,
+  onHistory,
   onHome,
   onReset,
-  historyOpen = false,
 }: ControlStripProps) {
   const empty = chain.segments.length === 0;
 
@@ -159,8 +171,7 @@ export function ControlStrip({
       {/* WORDS, not icons. */}
       <button
         type="button"
-        onClick={onToggleHistory}
-        aria-expanded={historyOpen}
+        onClick={onHistory}
         className="veri-view-tab shrink-0"
         style={{ letterSpacing: "0.02em" }}
       >

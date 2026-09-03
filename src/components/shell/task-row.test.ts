@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  FUNCTION_DISPLAY_NAMES,
+  assertNoUnderscore,
   humaniseFunctionId,
   objectFor,
   startOfDay,
@@ -205,5 +207,116 @@ describe("the tabs actually filter, and each count comes from its own array", ()
     expect(midnight).toBeLessThanOrEqual(NOW);
     expect(new Date(midnight).getHours()).toBe(0);
     expect(new Date(midnight).getMinutes()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-10 -- THE TITLE, AND THE SYSTEM GROUP
+// ---------------------------------------------------------------------------
+
+describe("C-10's acceptance, verbatim", () => {
+  test("toTaskRow builds line 1 as one title, with the D-03 sentence beneath it", () => {
+    const row = toTaskRow(task({ functionId: "record_work_progress", errorCode: "BOQ_LINE_REQUIRED" }), "blocked", {
+      now: NOW,
+    });
+    expect(row.title).toBe("Record Work Progress > New entry");
+    expect(row.detail).toBe("Pick a BOQ line");
+    // The defect this replaces rendered "Record record_work_progress".
+    expect(row.title).not.toContain("_");
+  });
+
+  test("every title in the display registry survives the no-underscore guard", () => {
+    for (const functionId of Object.keys(FUNCTION_DISPLAY_NAMES)) {
+      const row = toTaskRow(task({ functionId }), "needsYou", { now: NOW });
+      expect(row.title).not.toContain("_");
+      expect(row.title.startsWith(row.verb)).toBe(true);
+    }
+  });
+
+  test("a function id nobody registered still reaches a title with no underscore", () => {
+    const row = toTaskRow(task({ functionId: "record_some_brand_new_thing" }), "needsYou", { now: NOW });
+    expect(row.title).toBe("Record Some Brand New Thing");
+    expect(row.title).not.toContain("_");
+  });
+
+  test("a derived chain carrying an underscore is repaired, not rendered raw", () => {
+    // assertNoUnderscore is the last line of defence: the object can come from
+    // a chain step the backend wrote, and that is not a string this repo
+    // controls.
+    const row = toTaskRow(
+      task({ functionId: "nothing_registered", derivedChain: { steps: ["work_progress", "new_entry"] } }),
+      "needsYou",
+      { now: NOW }
+    );
+    expect(row.title).not.toContain("_");
+  });
+});
+
+describe("assertNoUnderscore", () => {
+  test("repairs rather than throws -- a list renderer must not die over a title", () => {
+    expect(assertNoUnderscore("record_work_progress")).toBe("record work progress");
+    expect(assertNoUnderscore("Work Progress > New entry")).toBe("Work Progress > New entry");
+    expect(assertNoUnderscore("a__b")).toBe("a b");
+  });
+});
+
+describe("a failure nobody on site can fix leaves the needs-you list", () => {
+  const infra = (id: string, code: string) =>
+    toTaskRow(task({ id, functionId: "list_leads", errorCode: code }), "blocked", { now: NOW });
+
+  test("the server's own infra code names all resolve to the one sentence", () => {
+    for (const code of ["BACKEND_UNAVAILABLE", "UPSTREAM_TIMEOUT", "POOL_TIMEOUT", "INFRA_UNAVAILABLE"]) {
+      const row = infra("t-" + code, code);
+      expect(row.errorCode).toBe("BACKEND_UNAVAILABLE");
+      expect(row.isSystemFailure).toBe(true);
+      expect(row.detail).toBe("The construction data service didn't answer — nothing was saved");
+      expect(row.actions[0].label).toBe("Retry");
+    }
+  });
+
+  test("a slot the user CAN fill is not a system failure", () => {
+    const row = toTaskRow(task({ functionId: "record_work_progress", errorCode: "BOQ_LINE_REQUIRED" }), "blocked", {
+      now: NOW,
+    });
+    expect(row.isSystemFailure).toBe(false);
+  });
+
+  test("the Home badge counts only what a person can act on, and still SHOWS the rest", () => {
+    const groups: GroupedRows = {
+      blocked: [
+        infra("t-infra", "UPSTREAM_TIMEOUT"),
+        toTaskRow(task({ id: "t-fix", functionId: "record_work_progress", errorCode: "BOQ_LINE_REQUIRED" }), "blocked", {
+          now: NOW,
+        }),
+      ],
+      needsYou: [],
+      running: [],
+      done: [],
+    };
+    const home = tabView(groups, "home", NOW);
+    expect(home.primary.map((r) => r.id)).toEqual(["t-fix"]);
+    expect(home.count).toBe(1);
+    // SHOWN, never hidden: a failure nobody sees is a write silently lost.
+    expect(home.system?.map((r) => r.id)).toEqual(["t-infra"]);
+    expect(home.systemLabel).toBe("System");
+  });
+
+  test("Approval Pending applies the same split, so the two tabs cannot disagree", () => {
+    const groups: GroupedRows = {
+      blocked: [infra("t-infra", "BACKEND_UNAVAILABLE")],
+      needsYou: [toTaskRow(task({ id: "t-fix", functionId: "record_work_progress" }), "needsYou", { now: NOW })],
+      running: [],
+      done: [],
+    };
+    const approval = tabView(groups, "approval-pending", NOW);
+    expect(approval.count).toBe(1);
+    expect(approval.primary.map((r) => r.id)).toEqual(["t-fix"]);
+    expect(approval.system?.map((r) => r.id)).toEqual(["t-infra"]);
+  });
+
+  test("with no system failures the group is absent entirely, not an empty heading", () => {
+    const groups: GroupedRows = { blocked: [], needsYou: [], running: [], done: [] };
+    expect(tabView(groups, "home", NOW).system).toBeUndefined();
+    expect(tabView(groups, "home", NOW).systemLabel).toBeUndefined();
   });
 });

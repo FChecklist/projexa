@@ -183,11 +183,37 @@ export function inferTaskErrorCode(raw: string | null | undefined): TaskErrorCod
   return null;
 }
 
+/**
+ * R67 C-10: the server has its own names for the same infrastructure
+ * failure -- UPSTREAM_TIMEOUT, POOL_TIMEOUT, INFRA_UNAVAILABLE (the code
+ * C-13's migration will backfill). They are ALIASES, not new sentences: D-03's
+ * vocabulary stays closed at five, and every one of these resolves to the one
+ * sentence a person can act on.
+ */
+const SERVER_CODE_ALIASES: Readonly<Record<string, TaskErrorCode>> = {
+  UPSTREAM_TIMEOUT: "BACKEND_UNAVAILABLE",
+  POOL_TIMEOUT: "BACKEND_UNAVAILABLE",
+  INFRA_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+  CONNECT_TIMEOUT: "BACKEND_UNAVAILABLE",
+  SERVICE_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+};
+
 /** A code string from the server, narrowed to the closed set. */
 export function asTaskErrorCode(value: unknown): TaskErrorCode | null {
-  return typeof value === "string" && (TASK_ERROR_CODES as readonly string[]).includes(value)
-    ? (value as TaskErrorCode)
-    : null;
+  if (typeof value !== "string") return null;
+  if ((TASK_ERROR_CODES as readonly string[]).includes(value)) return value as TaskErrorCode;
+  return SERVER_CODE_ALIASES[value.toUpperCase()] ?? null;
+}
+
+/**
+ * R67 C-10: is this a failure the USER can do nothing about?
+ *
+ * It decides which rows leave the needs-you list. A site engineer cannot fix
+ * a pool timeout, and a list that mixes those with "Pick a BOQ line" is a
+ * list whose badge count means nothing.
+ */
+export function isSystemFailureCode(code: TaskErrorCode | null | undefined): boolean {
+  return code === "BACKEND_UNAVAILABLE";
 }
 
 // ---------------------------------------------------------------------------

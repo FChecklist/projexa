@@ -39,8 +39,9 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     onCutFrom: noop,
     onHome: noop,
     onReset: noop,
-    history: [],
-    onLoadChain: noop,
+    // R67 C-10: the composer no longer owns a history drop, so it no longer
+    // takes a history list or a chain loader -- only the word's handler.
+    onHistory: noop,
     value: "",
     onChange: noop,
     onSubmit: noop,

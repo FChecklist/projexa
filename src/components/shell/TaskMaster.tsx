@@ -25,6 +25,13 @@
 // 3. EVERY EMPTY TAB STATES ITS OWN PURPOSE. "Nothing is waiting on you."
 //    under the Completed tab was a wrong sentence, not merely a bland one.
 //
+// AND ONE MORE, R67 C-10:
+//
+// 4. A "SYSTEM" GROUP FOR WHAT NOBODY ON SITE CAN FIX. A pool timeout is not
+//    a decision waiting on a foreman. Those rows are still shown -- hiding a
+//    failure is how a write is silently lost -- but they sit under their own
+//    heading with a Retry, below the divider, and out of the badge count.
+//
 // ------------------------- the kit's own notes ---------------------------
 // M24 -- the LEFT pane (30%). Not a chat thread: chat built one here once and
 // M24 records that as one of the three things it got wrong. This is TASK
@@ -82,6 +89,12 @@ export type TaskMasterProps = {
   primary: TaskGroupView;
   /** Optional: only the Home tab has a second group. */
   secondary?: TaskGroupView;
+  /**
+   * R67 C-10: rows nobody on site can act on -- a pool timeout, an upstream
+   * 5xx. Shown (hiding a failure is how a write is silently lost) but never
+   * counted in a tab's badge.
+   */
+  system?: TaskGroupView;
   /** Loads the chain and opens the screen. NEVER executes. */
   onLoad: (load: ChainLoad) => void;
   /** A row's word button. The caller decides what "fix"/"retry"/"dismiss" do. */
@@ -112,7 +125,10 @@ function Row({
   onRowAction?: (row: ProjexaTaskRow, action: RowAction) => void;
 }) {
   const g = GLYPH[row.state];
-  const line1 = `${row.verb} ${row.object}`;
+  // R67 C-10: the title is built ONCE, in task-row.ts, where the
+  // no-underscore guard lives. Concatenating it here again is how
+  // "Record record_work_progress" got past that guard the first time.
+  const line1 = row.title;
   return (
     <li>
       <div className="rounded-lg hover:bg-[var(--color-ct-cloud)]">
@@ -204,7 +220,7 @@ function Group({
   );
 }
 
-export function TaskMaster({ tabs, activeTab, onTabChange, primary, secondary, onLoad, onRowAction }: TaskMasterProps) {
+export function TaskMaster({ tabs, activeTab, onTabChange, primary, secondary, system, onLoad, onRowAction }: TaskMasterProps) {
   return (
     <div className="flex h-full min-h-0 flex-col" style={{ background: "var(--color-ct-cream)" }}>
       {/* WRAPS, never scrolls horizontally: in the 30% pane five tabs overflow,
@@ -242,11 +258,21 @@ export function TaskMaster({ tabs, activeTab, onTabChange, primary, secondary, o
           <div className="mx-2 my-2 h-px shrink-0" style={{ background: "var(--color-ct-border2)" }} />
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
             <Group group={secondary} onLoad={onLoad} onRowAction={onRowAction} />
+            {system && system.rows.length > 0 && (
+              <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-ct-border2)" }}>
+                <Group group={system} onLoad={onLoad} onRowAction={onRowAction} />
+              </div>
+            )}
           </div>
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-2">
           <Group group={primary} onLoad={onLoad} onRowAction={onRowAction} />
+          {system && system.rows.length > 0 && (
+            <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--color-ct-border2)" }}>
+              <Group group={system} onLoad={onLoad} onRowAction={onRowAction} />
+            </div>
+          )}
         </div>
       )}
     </div>

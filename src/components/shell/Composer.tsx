@@ -7,8 +7,14 @@
 // imported from the kit, and only ControlStrip resolves to PROJEXA's fork
 // beside this file.
 //
-// THREE CHANGES. The first two are R67 WS-G; the third is R67 C-04 and is
-// documented on the `fieldsSlot` prop below.
+// FOUR CHANGES. The first two are R67 WS-G; the third is R67 C-04 (see the
+// `fieldsSlot` prop below); the fourth is R67 C-10 -- the kit's HistoryDrop
+// is no longer rendered, because this screen had TWO controls named History
+// and the composer's own showed a sessionStorage list of chains while the
+// Task Master's tab showed real rows. Per correction C-03 only that
+// duplicate-control merge stands: the "the drop covers the tabs" claim, its
+// z-index fix and its acceptance clause were withdrawn and none of that is
+// implemented here.
 //
 // 1. THE SEND BUTTON WAS WHITE ON SAFFRON -- 2.60:1, a WCAG AA failure on the
 //    single most-clicked control in the product (R-197 / R-260). It keeps the
@@ -41,15 +47,12 @@
 // NO DRAGGING, NO RESIZE HANDLE, NO PIN. M24: "window management is load
 // MOVED, not load removed. The box must size itself."
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   COMPOSER_MAX_HEIGHT_VH,
   COMPOSER_RESTING_HEIGHT,
-  HistoryDrop,
   type Chain,
-  type ChainLoad,
   type ChainMode,
-  type HistoryEntry,
 } from "@fchecklist/veridian-ui-kit/shell";
 import { ControlStrip } from "./ControlStrip";
 import { composerSendState } from "@/lib/composer-send-state";
@@ -62,10 +65,14 @@ export type ComposerProps = {
   onHome: () => void;
   onReset: () => void;
 
-  history: HistoryEntry[];
-  suggestedHistory?: HistoryEntry[];
-  onLoadChain: (load: ChainLoad) => void;
-  onTogglePin?: (key: string) => void;
+  /**
+   * R67 C-10: the HISTORY control no longer opens a drop of its own. Two
+   * controls on this screen were named History -- this one and the Task
+   * Master's own tab -- and the duplicate is merged into the tab, which reads
+   * REAL compliance.pipeline_tasks rows rather than a sessionStorage list of
+   * chains. The word stays on the strip; it now focuses that tab.
+   */
+  onHistory: () => void;
 
   /** 2. CONVERSATION -- rendered only once there is something to show. */
   conversation?: ReactNode;
@@ -117,10 +124,7 @@ export function Composer({
   onSegmentClick,
   onHome,
   onReset,
-  history,
-  suggestedHistory,
-  onLoadChain,
-  onTogglePin,
+  onHistory,
   conversation,
   pills,
   value,
@@ -133,7 +137,6 @@ export function Composer({
   attachSlot,
   fieldsSlot,
 }: ComposerProps) {
-  const [historyOpen, setHistoryOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // The box sizes ITSELF. This is the whole of the sizing logic, and it is
@@ -181,25 +184,16 @@ export function Composer({
             onModeChange={onModeChange}
             onCutFrom={onCutFrom}
             onSegmentClick={onSegmentClick}
-            onToggleHistory={() => setHistoryOpen((o) => !o)}
+            onHistory={onHistory}
             onHome={onHome}
             onReset={onReset}
-            historyOpen={historyOpen}
           />
-          {/* Drops DOWN over the conversation. Absolute, so NOTHING REFLOWS. */}
-          <HistoryDrop
-            open={historyOpen}
-            entries={history}
-            suggested={suggestedHistory}
-            onLoad={(load) => {
-              setHistoryOpen(false);
-              // LOADS AND STOPS. onLoadChain receives a ChainLoad, which has no
-              // way to express execution. See the kit's chain.ts.
-              onLoadChain(load);
-            }}
-            onTogglePin={onTogglePin}
-            onClose={() => setHistoryOpen(false)}
-          />
+          {/* R67 C-10: the kit's HistoryDrop used to hang here. It is gone --
+              not for any z-index reason (correction C-03 WITHDREW that claim
+              and its fix), but because two controls on this screen were named
+              History and one of them showed a sessionStorage list of chains
+              while the other showed real pipeline_tasks rows. The word on the
+              strip now focuses the Task Master's own History tab. */}
         </div>
 
         {/* 2. CONVERSATION -- grows upward as the chain is worked. */}

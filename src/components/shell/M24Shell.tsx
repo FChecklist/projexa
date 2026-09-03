@@ -36,7 +36,6 @@ import {
   type Chain,
   type ChainLoad,
   type ChainMode,
-  type HistoryEntry,
   type PillSelection,
   type PillUsage,
   type RankedPill,
@@ -48,7 +47,7 @@ import {
 // white-on-saffron 2.60:1 text, and a disabled reason that rendered at 11px
 // in the bottom-left corner (behind Next's development badge) and was absent
 // entirely when the button was disabled for an empty input. EVERYTHING ELSE
-// -- AppShell, TopRail, TaskMaster, PillStrip, HistoryDrop, the chain API --
+// -- AppShell, TopRail, PillStrip, the chain API --
 // is still the kit's, imported above.
 import { Composer } from "@/components/shell/Composer";
 // R67 C-01, programme decision D-09: TaskMaster is PROJEXA'S FORK of the kit
@@ -161,7 +160,10 @@ import { createClient } from "@/lib/supabase/client";
 // session, so nobody returns to a view they forgot they set." sessionStorage is
 // exactly that lifetime; localStorage would survive the session and break it.
 const MODE_KEY = "veri.chain.mode";
-const HISTORY_KEY = "veri.chain.history";
+// R67 C-10: the composer's own chain history is gone with the HistoryDrop
+// that displayed it. The Task Master's History tab is now the only History
+// on this screen, and it reads real compliance.pipeline_tasks rows rather
+// than a sessionStorage list of chains that only this browser ever knew.
 const PILL_USAGE_KEY = "veri.pill.usage";
 
 // R55_BUDGETS_TAB_NOT_IN_URL_01 / R55_SCHEDULE_TAB_NOT_IN_URL_01: the Task
@@ -233,7 +235,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [pillUsage, setPillUsage] = useState<PillUsage[]>([]);
   const [rankedPills, setRankedPills] = useState<RankedPill[]>([]);
   // R67 C-01: ONE source for the rows AND the counts. The kit read counts from
@@ -392,8 +393,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     try {
       const m = sessionStorage.getItem(MODE_KEY) as ChainMode | null;
       if (m) setMode(m);
-      const h = sessionStorage.getItem(HISTORY_KEY);
-      if (h) setHistory(JSON.parse(h) as HistoryEntry[]);
       const p = localStorage.getItem(PILL_USAGE_KEY);
       if (p) setPillUsage(JSON.parse(p) as PillUsage[]);
       const d = localStorage.getItem(DISMISSED_KEY);
@@ -2070,6 +2069,19 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 }
               : undefined
           }
+          // R67 C-10: shown, never counted. A pool timeout is not a decision
+          // waiting on a foreman, so it is out of the badge -- but hiding it
+          // would be how a write is silently lost.
+          system={
+            activeView.system
+              ? {
+                  label: activeView.systemLabel ?? "System",
+                  empty: activeView.systemEmpty ?? "Nothing went wrong on our side.",
+                  rows: activeView.system,
+                  twoLine: true,
+                }
+              : undefined
+          }
           onLoad={onLoadChain}
           onRowAction={onRowAction}
         />
@@ -2084,8 +2096,11 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           onCutFrom={onCutFrom}
           onHome={() => router.push(HOME_ROUTE)}
           onReset={onReset}
-          history={history}
-          onLoadChain={onLoadChain}
+          // R67 C-10: ONE History on this screen. The word on the strip now
+          // focuses the Task Master's own History tab, which lists real
+          // compliance.pipeline_tasks rows -- rather than opening a second
+          // control with the same name over a sessionStorage list of chains.
+          onHistory={() => onTabChange("history")}
           value={draft}
           onChange={setDraft}
           // BAND 3 -- the ranked pill set. M24 keeps all 14 universal pills but

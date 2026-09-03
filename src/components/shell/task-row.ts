@@ -20,7 +20,13 @@
 // so every rule below is asserted in task-row.test.ts.
 
 import type { ChainMode } from "@fchecklist/veridian-ui-kit/shell";
-import { maskTechnical, resolveTaskError, type TaskErrorAction, type TaskErrorCode } from "@/lib/task-errors";
+import {
+  isSystemFailureCode,
+  maskTechnical,
+  resolveTaskError,
+  type TaskErrorAction,
+  type TaskErrorCode,
+} from "@/lib/task-errors";
 
 /** M24's closed verb set, the kit's TASK_VERBS. Line 1 always opens with one. */
 export type TaskVerb = "Approve" | "Confirm" | "Sign off" | "Review" | "Import" | "Record";
@@ -70,6 +76,12 @@ export type ProjexaTaskRow = {
   verb: TaskVerb;
   /** The rest of line 1. Never a function id, never carries an underscore. */
   object: string;
+  /**
+   * R67 C-10: line 1, whole: "<Verb> <Object> > <Step>". Built here rather
+   * than concatenated at each render, so the rule that it can never contain
+   * an underscore is enforceable in one place -- and is enforced, below.
+   */
+  title: string;
   /** Line 2. A D-03 sentence for a failure, the user's own words otherwise. */
   detail?: string;
   urgency: "late" | "today" | "later" | "done";
@@ -80,6 +92,11 @@ export type ProjexaTaskRow = {
   functionId: string | null;
   projectId: string | null;
   errorCode: TaskErrorCode | null;
+  /**
+   * R67 C-10: a failure the user can do nothing about (a pool timeout, an
+   * upstream 5xx). These leave the needs-you list entirely -- see tabView.
+   */
+  isSystemFailure: boolean;
   rawInput: string | null;
   /** The task's original params, so a Retry can re-post the IDENTICAL body. */
   params: Record<string, unknown>;
@@ -236,11 +253,15 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
     actions.push({ kind: "dismiss", label: "Dismiss", missingStep: null });
   }
 
+  const verb = verbFor(t.functionId);
+  const object = assertNoUnderscore(maskTechnical(objectFor(t)));
+
   return {
     id: t.id,
     state,
-    verb: verbFor(t.functionId),
-    object: maskTechnical(objectFor(t)),
+    verb,
+    object,
+    title: `${verb} ${object}`,
     detail,
     urgency: group === "blocked" ? "late" : group === "done" ? "done" : "later",
     urgencyLabel: group === "blocked" ? "blocked" : group === "done" ? "done" : "queued",
@@ -254,11 +275,23 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
     functionId: t.functionId ?? null,
     projectId: t.projectId ?? null,
     errorCode: resolved?.code ?? null,
+    isSystemFailure: isSystemFailureCode(resolved?.code ?? null),
     rawInput: t.rawInput ?? null,
     params: t.params ?? {},
     createdAtMs,
     actions,
   };
+}
+
+/**
+ * R67 C-10's guard: "add a guard rejecting underscores in a rendered task
+ * name". It does not throw -- a thrown error in a list renderer would take
+ * the whole pane down over a cosmetic defect -- it REPAIRS: an underscore
+ * becomes a space, so the worst case is a slightly odd title rather than
+ * "record_work_progress" on a site engineer's screen.
+ */
+export function assertNoUnderscore(name: string): string {
+  return name.includes("_") ? name.replace(/_+/g, " ").replace(/\s{2,}/g, " ").trim() : name;
 }
 
 function truncate(text: string, max: number): string {
@@ -284,6 +317,14 @@ export type TabView = {
   secondaryEmpty?: string;
   secondary?: ProjexaTaskRow[];
   /**
+   * R67 C-10: the System group -- rows nobody on site can act on. It is
+   * rendered, because hiding a failure is how a write is silently lost, but
+   * it is NOT part of `count`, so the Home badge means "things you can do".
+   */
+  systemLabel?: string;
+  systemEmpty?: string;
+  system?: ProjexaTaskRow[];
+  /**
    * The number printed in the tab's own label. It is derived from the SAME
    * arrays rendered beneath it, which is why the badge and the list can never
    * disagree -- the defect C-01 was raised for.
@@ -305,7 +346,13 @@ export function startOfDay(now: number): number {
 export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabView {
   // "Needs you" carries what is stuck on the user, blocked first, because a
   // blocked row is the only loud one and the one that costs time.
-  const needsYou = [...groups.blocked, ...groups.needsYou];
+  //
+  // R67 C-10: EXCEPT the ones nobody on site can act on. A pool timeout is
+  // not a decision waiting on a foreman, and a needs-you count that includes
+  // it is a count that cannot be worked down to zero.
+  const all = [...groups.blocked, ...groups.needsYou];
+  const needsYou = all.filter((r) => !r.isSystemFailure);
+  const system = all.filter((r) => r.isSystemFailure);
   const midnight = startOfDay(now);
   const isOlderThanToday = (r: ProjexaTaskRow) => r.createdAtMs !== null && r.createdAtMs < midnight;
 
@@ -315,6 +362,9 @@ export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabVi
         primaryLabel: "Approval pending",
         primaryEmpty: "Nothing waiting for your approval",
         primary: needsYou,
+        systemLabel: system.length > 0 ? "System" : undefined,
+        systemEmpty: system.length > 0 ? "Nothing went wrong on our side." : undefined,
+        system: system.length > 0 ? system : undefined,
         count: needsYou.length,
       };
     case "in-queue":
@@ -350,6 +400,12 @@ export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabVi
         secondaryLabel: "Waiting on others",
         secondaryEmpty: "Nothing outstanding with anyone else.",
         secondary: waiting,
+        systemLabel: system.length > 0 ? "System" : undefined,
+        systemEmpty: system.length > 0 ? "Nothing went wrong on our side." : undefined,
+        system: system.length > 0 ? system : undefined,
+        // The badge counts what a person can DO. System rows are shown but
+        // never counted -- C-10: "so 'Needs you' contains only rows the user
+        // can act on".
         count: needsYou.length + waiting.length,
       };
     }
