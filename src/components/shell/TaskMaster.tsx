@@ -149,13 +149,15 @@ function Row({
         <button
           type="button"
           onClick={() => onLoad(loadChain(row.chain, row.route))}
+          // R67 C-13: "touch targets at least 44 px". This is the control a
+          // site engineer presses on a phone, in gloves.
           className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left"
+          style={{ minHeight: 44 }}
         >
           {/* FIXED COLUMN. The glyph never moves, so the eye can scan it. */}
           <span aria-hidden className="mt-[2px] w-3.5 shrink-0 text-center text-[11px]" style={{ color: g.color }}>
             {g.char}
           </span>
-          <span className="sr-only">{g.label}. </span>
 
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex items-center gap-2">
@@ -165,6 +167,14 @@ function Row({
                 title={line1.length > LINE1_MAX ? line1 : undefined}
               >
                 {line1}
+              </span>
+              {/* R67 C-13: "glyph plus WORD". The glyph was drawn beside a
+                  sr-only label, so on screen the state was carried by a
+                  coloured shape alone -- which ~8% of men cannot read, on a
+                  workforce that skews male. The word is now visible, and the
+                  glyph keeps its fixed column beside it. */}
+              <span className="shrink-0 text-[10px]" style={{ color: g.color }}>
+                {g.label}
               </span>
               <UrgencyPill urgency={row.urgency} label={row.urgencyLabel} />
             </span>
@@ -187,7 +197,9 @@ function Row({
                 type="button"
                 onClick={() => onRowAction(row, action)}
                 className="veri-view-tab"
-                style={{ minHeight: 24 }}
+                // R67 C-13: 44 px, the same rule as the row itself. A word
+                // button on a phone is the control that actually gets pressed.
+                style={{ minHeight: 44 }}
                 aria-label={`${action.label}: ${line1}`}
               >
                 {action.label}

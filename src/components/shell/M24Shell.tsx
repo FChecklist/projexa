@@ -218,6 +218,9 @@ const FIX_PROMPT: Readonly<Record<string, string>> = {
   boqLine: "Which BOQ line? Type its code, or open the line on the screen.",
   project: "Which project? Choose it in the top rail, then press Send.",
   value: "How much? Type a quantity or a percentage.",
+  // R67 C-13: the timesheet write's own slot. Its D-03 sentence is "Pick a
+  // task"; this is the same question in the box, from the same vocabulary.
+  task: "Which task? Type its number or a few words from its title.",
 };
 
 type Project = { id: string; name: string };
@@ -399,7 +402,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [proposalError, setProposalError] = useState<{
     sentence: string;
     verbLabel: string;
-    missingStep: "boqLine" | "project" | "value" | null;
+    missingStep: "boqLine" | "project" | "value" | "task" | null;
   } | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [turnsReady, setTurnsReady] = useState(false);

@@ -50,6 +50,14 @@ export type ApiTask = {
   error?: string | null;
   /** D-03's closed vocabulary, when the server sends it. */
   errorCode?: string | null;
+  /**
+   * R67 C-13: the server's own answer to "can anyone on site do something
+   * about this?" Stated rather than inferred -- the client should not have to
+   * know which codes mean an outage to keep them out of its needs-you badge.
+   * Absent on every row written before C-13, which is why the code is still
+   * consulted as a fallback.
+   */
+  systemFailure?: boolean | null;
   /** The slots the server says are missing, most important first. */
   missing?: string[] | null;
   params?: Record<string, unknown> | null;
@@ -299,9 +307,21 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
       : undefined;
 
   const createdAtMs = parseMs(t.createdAt);
+  const objectRoute = objectRouteFor(t.functionId, t.projectId ?? null);
   const actions: RowAction[] = [];
   if (resolved) {
-    actions.push({ kind: resolved.action, label: resolved.verbLabel, missingStep: resolved.missingStep });
+    // R67 C-13: an "open" action needs somewhere to go. Where the pipeline
+    // cannot run a function AND this product has no screen for it either,
+    // there is no honest button at all -- so the row states the fact and
+    // offers nothing, rather than a control that does nothing.
+    if (resolved.action !== "open" || objectRoute) {
+      actions.push({
+        kind: resolved.action,
+        label: resolved.verbLabel,
+        missingStep: resolved.missingStep,
+        href: resolved.action === "open" ? objectRoute ?? undefined : undefined,
+      });
+    }
   }
   // C-01: "Add 'Dismiss' on blocked rows older than 24 h." A row nobody has
   // fixed in a day is clutter on the one list that is supposed to be the
@@ -313,7 +333,6 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
   // R67 C-11: a done row's own object, reachable. The word carries the id when
   // the row has a readable one, so the link IS the id rather than a bare
   // "View" beside an id printed somewhere else.
-  const objectRoute = objectRouteFor(t.functionId, t.projectId ?? null);
   if (group === "done" && objectRoute) {
     const idLabel = objectIdLabel(t.result);
     actions.push({
@@ -350,7 +369,10 @@ export function toTaskRow(t: ApiTask, group: TaskGroup, ctx: ToTaskRowContext = 
     functionId: t.functionId ?? null,
     projectId: t.projectId ?? null,
     errorCode: resolved?.code ?? null,
-    isSystemFailure: isSystemFailureCode(resolved?.code ?? null),
+    // R67 C-13: the SERVER's answer first, this file's inference second. A row
+    // written before C-13 carries no flag, and those still have to be
+    // classified from the code -- which is what isSystemFailureCode does.
+    isSystemFailure: t.systemFailure === true || isSystemFailureCode(resolved?.code ?? null),
     rawInput: t.rawInput ?? null,
     params: t.params ?? {},
     createdAtMs,

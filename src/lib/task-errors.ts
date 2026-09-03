@@ -32,6 +32,14 @@ export const TASK_ERROR_CODES = [
   "BOQ_LINE_NOT_FOUND",
   "PROJECT_REQUIRED",
   "VALUE_REQUIRED",
+  // R67 C-13: the two codes VERIDIAN's own pipeline already emits and this
+  // dictionary had no sentence for. src/lib/pipeline/function-slots.ts has
+  // declared them since C-03 with the note "every value here has a matching
+  // sentence in PROJEXA's src/lib/task-errors.ts" -- which was not yet true,
+  // so a timesheet short of a task read "Something went wrong" and an
+  // unregistered function offered a Retry that could only fail again.
+  "TASK_REQUIRED",
+  "FUNCTION_NOT_AVAILABLE",
   "BACKEND_UNAVAILABLE",
   "UNKNOWN",
 ] as const;
@@ -45,7 +53,14 @@ export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
  *   "retry" -- re-submit the identical body. Only for transport failures,
  *              where nothing was written and repeating is safe.
  */
-export type TaskErrorAction = "fix" | "retry";
+/**
+ * R67 C-13 adds the third: "open".
+ *   "open"  -- the pipeline cannot run this at all, so the only honest move is
+ *              the screen that can. It executes nothing and retries nothing;
+ *              offering a Retry for a function that is not registered is an
+ *              invitation to fail twice.
+ */
+export type TaskErrorAction = "fix" | "retry" | "open";
 
 export type TaskErrorEntry = {
   code: TaskErrorCode;
@@ -58,7 +73,7 @@ export type TaskErrorEntry = {
    * The chain step this failure is missing, so a "Fix" click knows which
    * picker to open. Null when the failure is not about a missing value.
    */
-  missingStep: "boqLine" | "project" | "value" | null;
+  missingStep: "boqLine" | "project" | "value" | "task" | null;
 };
 
 export const TASK_ERROR_DICTIONARY: Readonly<Record<TaskErrorCode, TaskErrorEntry>> = {
@@ -92,6 +107,22 @@ export const TASK_ERROR_DICTIONARY: Readonly<Record<TaskErrorCode, TaskErrorEntr
     verbLabel: "Type value",
     action: "fix",
     missingStep: "value",
+  },
+  TASK_REQUIRED: {
+    code: "TASK_REQUIRED",
+    template: "Pick a task",
+    verbLabel: "Pick task",
+    action: "fix",
+    missingStep: "task",
+  },
+  FUNCTION_NOT_AVAILABLE: {
+    code: "FUNCTION_NOT_AVAILABLE",
+    // Not "something went wrong": nothing went wrong. The product does not do
+    // this from here yet, and the sentence says so and points somewhere real.
+    template: "PROJEXA can't do that from the composer yet",
+    verbLabel: "Open the screen",
+    action: "open",
+    missingStep: null,
   },
   BACKEND_UNAVAILABLE: {
     code: "BACKEND_UNAVAILABLE",
@@ -169,6 +200,13 @@ const RAW_PATTERNS: ReadonlyArray<[RegExp, TaskErrorCode]> = [
   // executor.ts:48  -> `percent is required`
   [/\b(?:percent|quantity|hours) is required\b/i, "VALUE_REQUIRED"],
   [/\bmust be a number between 0 and 100\b/i, "VALUE_REQUIRED"],
+  // executor.ts executeRecordTimesheet -> the fuzzy task match, both shapes
+  [/\bno task on this project matches\b/i, "TASK_REQUIRED"],
+  [/\bmatches \d+ tasks on this project\b/i, "TASK_REQUIRED"],
+  // run-submission.ts / validate.ts -> the function itself is not available
+  [/\bno executor is registered\b/i, "FUNCTION_NOT_AVAILABLE"],
+  [/\bnot in this module's candidate set\b/i, "FUNCTION_NOT_AVAILABLE"],
+  [/\bis not permitted to execute\b/i, "FUNCTION_NOT_AVAILABLE"],
   // executor.ts:243 / the raw transport failures it now catches
   [/\b(?:ECONN[A-Z]+|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|CONNECT_TIMEOUT|POOL_TIMEOUT)\b/, "BACKEND_UNAVAILABLE"],
   [/\b(?:timed? ?out|timeout|unavailable|internal error|502|503|504)\b/i, "BACKEND_UNAVAILABLE"],
@@ -241,6 +279,8 @@ export type ResolvedTaskError = TaskErrorEntry & {
 };
 
 const MISSING_FIELD_CODES: Readonly<Record<string, TaskErrorCode>> = {
+  task: "TASK_REQUIRED",
+  issueid: "TASK_REQUIRED",
   itemcode: "BOQ_LINE_REQUIRED",
   boqlineitemid: "BOQ_LINE_REQUIRED",
   boqline: "BOQ_LINE_REQUIRED",

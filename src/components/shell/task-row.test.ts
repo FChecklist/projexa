@@ -498,3 +498,70 @@ describe("a done row can be opened", () => {
     expect(objectIdLabel(null)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// R67 C-13 -- system failures leave the needs-you list; a gap gets a screen.
+// ---------------------------------------------------------------------------
+
+describe("the server states whether a failure is anyone's to fix", () => {
+  test("the server's own flag is honoured even when the code is unknown here", () => {
+    const row = toTaskRow(
+      task({ id: "s1", functionId: "list_leads", errorCode: "SOMETHING_NEW", systemFailure: true }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.isSystemFailure).toBe(true);
+  });
+
+  test("a row written before C-13 is still classified from its code", () => {
+    const row = toTaskRow(
+      task({ id: "s2", functionId: "list_leads", error: "write CONNECT_TIMEOUT 3.109.171.244:6543" }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.isSystemFailure).toBe(true);
+    expect(row.detail).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+  });
+
+  test("a fixable failure is never treated as an outage", () => {
+    const row = toTaskRow(
+      task({ id: "s3", functionId: "record_work_progress", errorCode: "BOQ_LINE_REQUIRED" }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.isSystemFailure).toBe(false);
+  });
+
+  test("an unregistered function offers the screen, not a Retry that must fail again", () => {
+    const row = toTaskRow(
+      task({ id: "g1", functionId: "list_customers", projectId: "p1", errorCode: "FUNCTION_NOT_AVAILABLE" }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.detail).toBe("PROJEXA can't do that from the composer yet");
+    const open = row.actions.find((a) => a.kind === "open");
+    expect(open?.label).toBe("Open the screen");
+    expect(open?.href).toBe("/customers?projectId=p1");
+    expect(row.actions.some((a) => a.kind === "retry")).toBe(false);
+  });
+
+  test("with no screen to open, the row states the fact and offers no dead control", () => {
+    const row = toTaskRow(
+      task({ id: "g2", functionId: "list_notices", errorCode: "FUNCTION_NOT_AVAILABLE" }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.detail).toBe("PROJEXA can't do that from the composer yet");
+    expect(row.actions.some((a) => a.kind === "open")).toBe(false);
+  });
+
+  test("a missing timesheet task asks for a task and opens that picker", () => {
+    const row = toTaskRow(
+      task({ id: "t9", functionId: "record_timesheet", errorCode: "TASK_REQUIRED" }),
+      "blocked",
+      { now: NOW }
+    );
+    expect(row.detail).toBe("Pick a task");
+    expect(row.actions[0]).toMatchObject({ kind: "fix", label: "Pick task", missingStep: "task" });
+  });
+});

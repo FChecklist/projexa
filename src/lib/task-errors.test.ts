@@ -27,7 +27,7 @@ describe("D-03: the closed vocabulary", () => {
       expect(entry.code).toBe(code);
       expect(entry.template.length).toBeGreaterThan(0);
       expect(entry.verbLabel.length).toBeGreaterThan(0);
-      expect(["fix", "retry"]).toContain(entry.action);
+      expect(["fix", "retry", "open"]).toContain(entry.action);
     }
   });
 
@@ -173,5 +173,60 @@ describe("resolution order", () => {
     expect(asTaskErrorCode(42)).toBeNull();
     expect(asTaskErrorCode("BOQ_LINE_REQUIRED")).toBe("BOQ_LINE_REQUIRED");
     expect(resolveTaskError({ code: "NOT_A_REAL_CODE" }).code).toBe("UNKNOWN");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-13 -- the two codes VERIDIAN emits that had no sentence here.
+// ---------------------------------------------------------------------------
+
+describe("the timesheet slot and the unregistered function now have words", () => {
+  test("a missing task asks for a task, not 'something went wrong'", () => {
+    const r = resolveTaskError({ code: "TASK_REQUIRED" });
+    expect(r.sentence).toBe("Pick a task");
+    expect(r.verbLabel).toBe("Pick task");
+    expect(r.action).toBe("fix");
+    expect(r.missingStep).toBe("task");
+  });
+
+  test("the executor's own ambiguous-match wording resolves to it too", () => {
+    expect(resolveTaskError({ raw: `"joinery" matches 2 tasks on this project -- name one of them` }).code).toBe(
+      "TASK_REQUIRED"
+    );
+    expect(resolveTaskError({ raw: `no task on this project matches "joinery"` }).code).toBe("TASK_REQUIRED");
+  });
+
+  test("a missing `task` slot maps to it as well", () => {
+    expect(resolveTaskError({ missing: ["task"] }).code).toBe("TASK_REQUIRED");
+    expect(resolveTaskError({ missing: ["issueId"] }).code).toBe("TASK_REQUIRED");
+  });
+
+  test("an unregistered function is a gap with a way out, NOT a Retry", () => {
+    const r = resolveTaskError({ code: "FUNCTION_NOT_AVAILABLE" });
+    expect(r.sentence).toBe("PROJEXA can't do that from the composer yet");
+    expect(r.action).toBe("open");
+    // Retrying something that is not registered fails in exactly the same way.
+    expect(r.action).not.toBe("retry");
+  });
+
+  test("the pipeline's own no-executor wording resolves to it", () => {
+    expect(
+      resolveTaskError({ raw: `no executor is registered for function_id "approve_variation" yet` }).code
+    ).toBe("FUNCTION_NOT_AVAILABLE");
+  });
+
+  test("neither new sentence carries a function id, a parameter or an IP", () => {
+    for (const code of ["TASK_REQUIRED", "FUNCTION_NOT_AVAILABLE"] as const) {
+      const s = resolveTaskError({ code }).sentence;
+      expect(s).not.toMatch(/_/);
+      expect(s).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+    }
+  });
+
+  test("INFRA_UNAVAILABLE, the code C-13's migration backfills, is still one sentence", () => {
+    expect(resolveTaskError({ code: "INFRA_UNAVAILABLE" }).code).toBe("BACKEND_UNAVAILABLE");
+    expect(resolveTaskError({ code: "INFRA_UNAVAILABLE" }).sentence).toBe(
+      "The construction data service didn't answer — nothing was saved"
+    );
   });
 });
