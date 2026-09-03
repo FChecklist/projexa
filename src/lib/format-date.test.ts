@@ -9,7 +9,7 @@
 // runtime-dependent flake.
 import { formatDateTimeMedium } from "./format-date";
 import { describe, expect, test } from "bun:test";
-import { formatDate, formatDateTime, formatTime } from "./format-date";
+import { formatDate, formatDateTime, formatDayMonth, formatTime } from "./format-date";
 
 describe("formatDate", () => {
   test("pins en-US/UTC output regardless of process locale/time zone", () => {
@@ -62,5 +62,20 @@ describe("formatDateTimeMedium (the meeting / MoM shape)", () => {
     const iso = "2026-08-25T14:30:00.000Z";
     expect(formatDateTimeMedium(new Date(iso))).toBe(formatDateTimeMedium(iso));
     expect(formatDateTimeMedium(new Date(iso).getTime())).toBe(formatDateTimeMedium(iso));
+  });
+});
+
+describe("formatDayMonth (R67 E-25)", () => {
+  test("reads day-then-month, which is what the chart caption says", () => {
+    expect(formatDayMonth("2026-08-25")).toBe("25 Aug");
+  });
+
+  test("is pinned to UTC, so a late-evening timestamp does not slide to the next day", () => {
+    expect(formatDayMonth("2026-08-25T23:30:00.000Z")).toBe("25 Aug");
+  });
+
+  test("accepts the same inputs as the other helpers here", () => {
+    expect(formatDayMonth(new Date("2026-01-02T00:00:00.000Z"))).toBe("2 Jan");
+    expect(formatDayMonth(Date.parse("2026-12-31T12:00:00.000Z"))).toBe("31 Dec");
   });
 });

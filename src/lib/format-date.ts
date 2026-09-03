@@ -74,3 +74,20 @@ export function formatDateTimeMedium(value: Date | string | number): string {
     timeStyle: "short",
   });
 }
+
+/**
+ * e.g. "25 Aug" -- the short day-and-month form a chart caption uses, where a
+ * full "8/25/2026" is more precision than the sentence needs.
+ *
+ * R67 E-25 (R-211). Built from two pinned parts rather than one
+ * `{ day, month }` option object because that produces "Aug 25" in en-US, and
+ * the caption reads "Only one day logged (25 Aug)". Both parts pin the same
+ * locale and time zone as every other helper here, for the same hydration
+ * reason.
+ */
+export function formatDayMonth(value: Date | string | number): string {
+  const date = new Date(value);
+  const day = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, day: "numeric" });
+  const month = date.toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE, month: "short" });
+  return `${day} ${month}`;
+}
