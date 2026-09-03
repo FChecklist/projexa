@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { BAR_COLOR_VARS, BUDGET_NOT_DATE_FILTERED_NOTE, buildProjectBarRows, type ProjectBarSource } from "./project-bar-rows";
+import {
+  BAR_COLOR_VARS,
+  BUDGET_NOT_DATE_FILTERED_NOTE,
+  buildProjectBarRows,
+  portfolioRowsToBarSources,
+  type ProjectBarSource,
+} from "./project-bar-rows";
 
 function project(over: Partial<ProjectBarSource> = {}): ProjectBarSource {
   return { id: "p1", name: "Cedar", revenue: 0, boqBudget: null, budget: null, earnedValue: null, ...over };
@@ -86,5 +92,73 @@ describe("buildProjectBarRows", () => {
 
   test("the date-range caveat is one fixed sentence, so two screens cannot word it differently", () => {
     expect(BUDGET_NOT_DATE_FILTERED_NOTE).toBe("Budget is BOQ x budget %, not date-filtered");
+  });
+});
+
+// R67 E-33 (R-265). The adapter that lets the Analytics tab draw the company
+// chart from a REPORT payload instead of the dashboard payload.
+describe("portfolioRowsToBarSources (R67 E-33)", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    projectId: "p1",
+    project: "Cedar Heights Villa - Phase 1",
+    revenue: 475_000,
+    budget: 200_000,
+    budgetSource: "boq",
+    earnedValue: 118_750,
+    progressPct: 60,
+    ...over,
+  });
+
+  test("carries every figure the chart plots", () => {
+    const [source] = portfolioRowsToBarSources([row()]);
+    expect(source).toEqual({
+      id: "p1",
+      name: "Cedar Heights Villa - Phase 1",
+      revenue: 475_000,
+      boqBudget: 200_000,
+      budget: null,
+      earnedValue: 118_750,
+      progressPercent: 60,
+    });
+  });
+
+  test("the SERVER decides which budget it is; this never re-guesses from a null", () => {
+    const [boq] = portfolioRowsToBarSources([row({ budgetSource: "boq" })]);
+    expect(boq.boqBudget).toBe(200_000);
+    expect(boq.budget).toBeNull();
+
+    const [erp] = portfolioRowsToBarSources([row({ budgetSource: "erp" })]);
+    expect(erp.budget).toBe(200_000);
+    expect(erp.boqBudget).toBeNull();
+
+    // ...and the caption that follows from it is the one buildProjectBarRows
+    // already computes, so the two cannot drift.
+    expect(buildProjectBarRows(portfolioRowsToBarSources([row({ budgetSource: "erp" })])).rows[0].budgetSource).toBe("erp");
+  });
+
+  test("a null budget stays null -- never a zero-width bar pretending to be zero", () => {
+    const [source] = portfolioRowsToBarSources([row({ budget: null, budgetSource: "none" })]);
+    expect(source.boqBudget).toBeNull();
+    expect(source.budget).toBeNull();
+    expect(buildProjectBarRows([source]).rows[0].budgetSource).toBe("none");
+  });
+
+  test("a row with no project id is DROPPED, because every row of this chart is a door", () => {
+    expect(portfolioRowsToBarSources([row({ projectId: undefined }), row()])).toHaveLength(1);
+    expect(portfolioRowsToBarSources([row({ projectId: 42 })])).toEqual([]);
+  });
+
+  test("a row with no name falls back to its id rather than rendering a blank row", () => {
+    expect(portfolioRowsToBarSources([row({ project: "" })])[0].name).toBe("p1");
+  });
+
+  test("a non-numeric figure becomes null, not NaN", () => {
+    const [source] = portfolioRowsToBarSources([row({ revenue: "475000", progressPct: null })]);
+    expect(source.revenue).toBeNull();
+    expect(source.progressPercent).toBeNull();
+  });
+
+  test("an empty report is an empty chart, not a crash", () => {
+    expect(portfolioRowsToBarSources([])).toEqual([]);
   });
 });

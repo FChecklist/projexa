@@ -113,4 +113,35 @@ describe("CategoryDistributionCharts", () => {
     expect(container.querySelector("svg")).toBeNull();
     expect(container.textContent).not.toContain("Category share of total BOQ");
   });
+
+  // R67 E-33 (R-265): the same chart, two destinations. The dashboards send a
+  // reader to this category's progress entries; the Analytics tab -- which IS
+  // that screen -- sends them to the Work Progress Report instead (D-02).
+  test("by default a bar opens the category's progress entries", async () => {
+    stubFetch({ categories: [category("Civil", 400, 40)] });
+    const { container } = render(<CategoryDistributionCharts projectId="p-1" />);
+    await waitFor(() => expect(container.textContent).toContain("Civil - 40% of BOQ"));
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/work-progress?projectId=p-1&tab=analytics&category=Civil"
+    );
+  });
+
+  test("drillTo='report' opens the Work Progress Report filtered to that category", async () => {
+    stubFetch({ categories: [category("Civil", 400, 40)] });
+    const { container } = render(<CategoryDistributionCharts projectId="p-1" drillTo="report" />);
+    await waitFor(() => expect(container.textContent).toContain("Civil - 40% of BOQ"));
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/work-progress?projectId=p-1&tab=report&view=category&category=Civil"
+    );
+    // ...and the instruction above the bars says where the click goes.
+    expect(container.textContent).toContain("open the Work Progress Report for that category");
+  });
+
+  test("an ariaLabel names the whole chart, for a mount where its heading is not adjacent", async () => {
+    stubFetch({ categories: [category("Civil", 400, 40)] });
+    const { findByRole } = render(
+      <CategoryDistributionCharts projectId="p-1" ariaLabel="Budget vs completed by category" />
+    );
+    expect(await findByRole("group", { name: "Budget vs completed by category" })).toBeTruthy();
+  });
 });

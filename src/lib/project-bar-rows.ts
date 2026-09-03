@@ -103,3 +103,60 @@ export function buildProjectBarRows(projects: ProjectBarSource[]): { rows: Proje
  * and a misleading one.
  */
 export const BUDGET_NOT_DATE_FILTERED_NOTE = "Budget is BOQ x budget %, not date-filtered";
+
+// ---------------------------------------------------------------------------
+// R67 E-33 (R-265): the same chart, fed from a REPORT instead of a dashboard
+// ---------------------------------------------------------------------------
+//
+// The Analytics tab mounts this chart from VERIDIAN's portfolio budget-vs-actual
+// report -- the {columns, rows} contract E-32 gave every report -- rather than
+// from the org dashboard payload the company screens read. Same component, same
+// arithmetic, one adapter, because a second copy of "which budget is this?" is
+// exactly how a caption comes to disagree with the bar it sits under.
+//
+// The server has ALREADY resolved which budget each row landed on and says so
+// in `budgetSource`, so this maps that answer back onto the two fields
+// buildProjectBarRows reads rather than re-deciding it here from a null check.
+
+/** One row of VERIDIAN's portfolio budget-vs-actual report, as it arrives on the wire. */
+export type PortfolioReportRow = {
+  projectId?: unknown;
+  project?: unknown;
+  revenue?: unknown;
+  budget?: unknown;
+  earnedValue?: unknown;
+  progressPct?: unknown;
+  budgetSource?: unknown;
+};
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Report rows -> the shape buildProjectBarRows already knows.
+ *
+ * A row with no usable project id is DROPPED rather than rendered with a dead
+ * link: every row of this chart is a door, and a door that goes nowhere is
+ * worse than one row fewer.
+ */
+export function portfolioRowsToBarSources(rows: PortfolioReportRow[]): ProjectBarSource[] {
+  const sources: ProjectBarSource[] = [];
+  for (const row of rows) {
+    const id = typeof row.projectId === "string" ? row.projectId : null;
+    if (!id) continue;
+    const budget = numberOrNull(row.budget);
+    const fromBoq = row.budgetSource === "boq";
+    sources.push({
+      id,
+      name: typeof row.project === "string" && row.project !== "" ? row.project : id,
+      revenue: numberOrNull(row.revenue),
+      // The server's own verdict, not a second guess at it.
+      boqBudget: fromBoq ? budget : null,
+      budget: fromBoq ? null : budget,
+      earnedValue: numberOrNull(row.earnedValue),
+      progressPercent: numberOrNull(row.progressPct),
+    });
+  }
+  return sources;
+}

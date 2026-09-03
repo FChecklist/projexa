@@ -48,7 +48,30 @@ const LABEL_LIST_LIMIT = 5;
  * same shape from the same pure function (src/lib/category-distribution.ts);
  * the only difference is which scope the server enforces before answering.
  */
-export function CategoryDistributionCharts({ companyId, projectId }: { companyId?: string; projectId: string }) {
+/**
+ * R67 E-33 (R-265): where a bar click goes. The dashboards send the reader to
+ * this category's PROGRESS ENTRIES (the analytics drill they already had); the
+ * Analytics tab, which is already that screen, sends them to the Work Progress
+ * REPORT filtered to the category instead -- the same rule D-02 applies
+ * everywhere else, that there is one Work Progress Report and it lives at
+ * /work-progress?tab=report. A prop rather than a second component, because
+ * everything else about the chart is identical and a fork would be two places
+ * to fix the next time a bar is wrong.
+ */
+export type CategoryDrillTarget = "analytics" | "report";
+
+export function CategoryDistributionCharts({
+  companyId,
+  projectId,
+  drillTo = "analytics",
+  ariaLabel,
+}: {
+  companyId?: string;
+  projectId: string;
+  drillTo?: CategoryDrillTarget;
+  /** Names the whole chart for a screen reader, when it is mounted where its own heading is not adjacent. */
+  ariaLabel?: string;
+}) {
   const [categories, setCategories] = useState<CategoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const orgMoney = useOrgMoney();
@@ -110,18 +133,29 @@ export function CategoryDistributionCharts({ companyId, projectId }: { companyId
   const axisMax = sorted.reduce((max, c) => (c.totalAmount > max ? c.totalAmount : max), 0);
   const width = (value: number) => (axisMax <= 0 ? 0 : Math.max(0.5, (value / axisMax) * 100));
 
+  // R67 E-33: the Work Progress Report, filtered to this category, is
+  // /work-progress?tab=report&view=category&category=<name> (D-02's one report,
+  // E-34's own view parameter) -- not a second screen that shows the same rows.
+  function categoryHref(name: string) {
+    const base = `/work-progress?projectId=${encodeURIComponent(projectId)}`;
+    return drillTo === "report"
+      ? `${base}&tab=report&view=category&category=${encodeURIComponent(name)}`
+      : `${base}&tab=analytics&category=${encodeURIComponent(name)}`;
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role={ariaLabel ? "group" : undefined} aria-label={ariaLabel}>
       <div>
         <h4 className="mb-1 text-sm font-medium text-px-fg">Budget and completed value by category</h4>
         <p className="mb-3 text-[11.5px] text-px-muted">
-          The full bar is the category&apos;s BOQ amount; the darker bar over it is the value completed. Click a bar to see its progress entries.
+          The full bar is the category&apos;s BOQ amount; the darker bar over it is the value completed. Click a bar to
+          {drillTo === "report" ? " open the Work Progress Report for that category." : " see its progress entries."}
         </p>
         <ul className="space-y-2.5">
           {sorted.map((category) => (
             <li key={category.categoryId}>
               <Link
-                href={`/work-progress?projectId=${encodeURIComponent(projectId)}&tab=analytics&category=${encodeURIComponent(category.name)}`}
+                href={categoryHref(category.name)}
                 className="block rounded-md p-1.5 hover:bg-muted/40"
               >
                 <div className="flex items-baseline justify-between gap-3">

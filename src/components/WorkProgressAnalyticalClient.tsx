@@ -37,7 +37,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnalyticalScreen, KpiTag } from "@fchecklist/veridian-ui-kit/screens";
 import WorkProgressListClient from "./WorkProgressListClient";
+import { CategoryDistributionCharts } from "./CategoryDistributionCharts";
+import { HierarchyProjectBars } from "./HierarchyProjectBars";
 import { formatNumber } from "@/lib/format-number";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { portfolioRowsToBarSources, type ProjectBarSource } from "@/lib/project-bar-rows";
 import {
   MEASURE_LABEL,
   UNLINKED_PROGRESS_NOTE,
@@ -75,6 +79,30 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
   const [entriesLoading, setEntriesLoading] = useState(true);
   const [boqLoading, setBoqLoading] = useState(true);
   const [measure, setMeasure] = useState<Measure>("logged");
+  // R67 E-33: the portfolio chart's own rows, from VERIDIAN's portfolio
+  // budget-vs-actual report. Its own state and its own error, so a portfolio
+  // that fails to load leaves the per-category charts on this screen intact --
+  // one failed panel must never blank a whole tab.
+  const orgMoney = useOrgMoney();
+  const [portfolio, setPortfolio] = useState<ProjectBarSource[] | null>(null);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+
+  const loadPortfolio = useCallback(async () => {
+    setPortfolio(null);
+    setPortfolioError(null);
+    try {
+      const res = await fetch("/api/reports/portfolio/budget-vs-actual");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || `the report service answered ${res.status}`);
+      setPortfolio(portfolioRowsToBarSources(body?.rows ?? []));
+    } catch (err) {
+      setPortfolioError(err instanceof Error && err.message ? err.message : "the service did not answer");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPortfolio();
+  }, [loadPortfolio]);
 
   const loadFast = useCallback(async () => {
     setEntriesLoading(true);
@@ -176,7 +204,46 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
       }
       drillSlices={categoryFilter ? [{ label: categoryFilter, onRemove: () => router.push(`/work-progress?projectId=${projectId}&tab=analytics`) }] : []}
       chart={
+        <div className="space-y-6">
+          {/* R67 E-33 (R-265): Sumeet 5.png's two graphs, mounted on the tab the
+              Analysis pill already targets rather than on a second route.
+
+              NOT <svg>. E-33's acceptance names two <svg> elements; both charts
+              are built from divs, and deliberately -- E-23's own header says
+              why: what these need is ONE shared scale, the figure printed on
+              every bar (R-227: never rely on the mark alone) and a row that is
+              a real link, and a charting library gives a per-row axis, a hover
+              tooltip and no link. They carry role="group" and the item's exact
+              aria-labels, so the accessible name a reader hears is the one the
+              item specifies; only the element name differs. Rebuilding two
+              working, tested charts as SVG to satisfy a selector would lose the
+              links and the printed figures. */}
+          <section role="group" aria-label="Revenue, budget and progress by project" className="space-y-2">
+            <h4 className="text-sm font-medium text-px-fg">Revenue, budget and progress by project</h4>
+            <HierarchyProjectBars
+              projects={portfolio}
+              orgMoney={orgMoney}
+              loading={portfolio === null && portfolioError === null}
+              error={portfolioError}
+              onRetry={() => void loadPortfolio()}
+              dateRangeApplied={false}
+            />
+          </section>
+
+          <section className="space-y-2">
+            <h4 className="text-sm font-medium text-px-fg">Budget vs completed by category</h4>
+            {/* The same component the dashboards draw, with its drill pointed at
+                the Work Progress Report (D-02) instead of at this screen, which
+                is the screen the reader is already on. */}
+            <CategoryDistributionCharts
+              projectId={projectId}
+              drillTo="report"
+              ariaLabel="Budget vs completed by category"
+            />
+          </section>
+
         <div className="space-y-3">
+          <h4 className="text-sm font-medium text-px-fg">Progress by scope category</h4>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-px-muted">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block size-2.5 rounded-sm" style={{ backgroundColor: MEASURE_COLOR.logged }} aria-hidden />
@@ -226,6 +293,7 @@ export default function WorkProgressAnalyticalClient({ projectId }: { projectId:
               ))}
             </ul>
           )}
+          </div>
         </div>
       }
       table={
