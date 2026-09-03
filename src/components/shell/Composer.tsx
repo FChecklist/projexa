@@ -96,6 +96,13 @@ export type ComposerProps = {
   /** Disabled reason, shown in words. Empty/undefined means "not blocked by the caller". */
   disabledReason?: string;
   /**
+   * R67 C-15 / DE-45: the button names the one thing it is still waiting for
+   * -- "Send (pick a BOQ line)". The words come from
+   * src/lib/composer-send-state.ts's sendLabelFor, so the label and the chip
+   * row above it are asking the same question in the same vocabulary.
+   */
+  sendLabel?: string;
+  /**
    * R67 G-04: the sentence for the one state the kit left silent -- the
    * button is disabled because nothing has been typed. A default is supplied
    * so a caller cannot accidentally reintroduce the wordless dead control.
@@ -143,6 +150,7 @@ export function Composer({
   onChange,
   onSubmit,
   disabledReason,
+  sendLabel = "Send",
   emptyInputReason = "Type what you need, then press Send.",
   allowEmptySubmit = false,
   placeholder = "Describe what you need, or pick a module above.",
@@ -270,7 +278,7 @@ export function Composer({
                 className="shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
                 style={{ background: "var(--color-ct-saffron)", color: "var(--color-ct-navy)" }}
               >
-                Send
+                {sendLabel}
               </button>
             </div>
           </div>

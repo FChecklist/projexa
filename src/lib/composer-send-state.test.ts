@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { composerSendState } from "./composer-send-state";
+import { composerSendState, sendLabelFor } from "./composer-send-state";
 
 const EMPTY_REASON = "Type what you need, then press Send.";
 const base = { emptyInputReason: EMPTY_REASON, hasSubmitHandler: true };
@@ -82,5 +82,41 @@ describe("G-04: an armed module makes the empty input a real submission", () => 
     expect(
       composerSendState({ ...base, value: "", allowEmptySubmit: true, disabledReason: "Sending…" })
     ).toEqual({ canSubmit: false, reason: "Sending…" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-15 -- the Send button names the one thing it is waiting for.
+// ---------------------------------------------------------------------------
+
+describe("sendLabelFor", () => {
+  test("C-15's own label", () => {
+    expect(sendLabelFor(["itemCode"])).toBe("Send (pick a BOQ line)");
+  });
+
+  test("nothing outstanding leaves the button alone", () => {
+    expect(sendLabelFor([])).toBe("Send");
+    expect(sendLabelFor(null)).toBe("Send");
+    expect(sendLabelFor(undefined)).toBe("Send");
+  });
+
+  test("ONE question at a time -- only the first slot is named", () => {
+    expect(sendLabelFor(["itemCode", "percent"])).toBe("Send (pick a BOQ line)");
+  });
+
+  test("every slot the pipeline really declares has words", () => {
+    for (const slot of ["itemCode", "percent", "projectId", "hours", "task", "boqLineItemId"]) {
+      expect(sendLabelFor([slot])).not.toBe("Send");
+    }
+  });
+
+  test("an unnamed slot yields plain Send, never the parameter name", () => {
+    const label = sendLabelFor(["someNewSlot"]);
+    expect(label).toBe("Send");
+    expect(label).not.toContain("someNewSlot");
+  });
+
+  test("a blank entry is not a question", () => {
+    expect(sendLabelFor(["  "])).toBe("Send");
   });
 });

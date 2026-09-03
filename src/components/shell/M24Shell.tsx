@@ -61,6 +61,7 @@ import {
   countedTabLabel,
   mergeTabCounts,
   objectFor,
+  objectRouteFor,
   pageNote,
   tabView,
   toTaskRow,
@@ -126,6 +127,8 @@ import {
   previewSteps,
   progressReceiptLine,
   readPreviewSegments,
+  readSendOutcome,
+  savedReceiptLine,
   timingState,
   understoodLine,
   type AnswerRowDto,
@@ -161,6 +164,7 @@ import {
 // R67 C-12: the echo card's sentence, the shortlist rule and the honest
 // refusal -- all pure, all asserted in src/lib/gap-card.test.ts.
 import { answersNeededLabel, echoFields, echoLine, looksLikeCreate, refusalFor } from "@/lib/gap-card";
+import { sendLabelFor } from "@/lib/composer-send-state";
 import { maskTechnical, resolveTaskError } from "@/lib/task-errors";
 // R67 C-14: the shell message region -- the receipts and failures that have to
 // outlive the navigation that produced them.
@@ -421,6 +425,23 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     executable: boolean;
   } | null>(null);
   const [answer, setAnswer] = useState<{ heading: string; rows: AnswerRowDto[] } | null>(null);
+  /**
+   * R67 C-15 -- WHAT THE LAST SEND CAME BACK WITH.
+   *
+   * onSubmit used to check `res.ok` and stop, so a 201 carrying a BLOCKED task
+   * -- which is exactly what "record 2 nos done on R66-1009b" produces when
+   * the line cannot be resolved -- cleared the textarea and showed nothing.
+   * The write had not happened and the only trace was a row in a pane the user
+   * may not have been looking at. This is the state that replaces that
+   * silence: a question with the chip row, or a failure with a Retry.
+   */
+  const [sendOutcome, setSendOutcome] = useState<{
+    kind: "needs_input" | "failed";
+    sentence: string;
+    verbLabel: string;
+    missingStep: "boqLine" | "project" | "value" | "task" | null;
+    missing: string[];
+  } | null>(null);
   // R67 C-09: the conversation so far. Hydrated from sessionStorage below, so
   // opening the screen an answer points at does not cost the question.
   // R67 C-09: a refusal that KEEPS THE CARD. The sentence is D-03's, the
@@ -456,6 +477,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // message region. A ref, so re-reading the task list cannot re-announce the
   // same outage on every poll.
   const reportedSystemIdsRef = useRef<Set<string>>(new Set());
+  // R67 C-15: the exact body the last Send posted, so "Retry" re-submits the
+  // IDENTICAL payload rather than rebuilding one from state the user may have
+  // changed since. Safe to repeat only because the failures it is offered for
+  // are the ones where nothing was written.
+  const lastSendBodyRef = useRef<Record<string, unknown> | null>(null);
   // R67 C-07: declared here, above onReset and openDoor, because both of
   // them clear the tray and a useCallback dependency array is evaluated at
   // RENDER time -- a later const would be a temporal-dead-zone crash, not a
@@ -1729,6 +1755,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     setSubmitting(true);
     setSubmitError(null);
     setBandNote(null);
+    // R67 C-15: the previous answer goes as soon as a new question is asked.
+    setSendOutcome(null);
     // R67 C-09: WHAT THE USER SAID STAYS ON SCREEN. Recorded before the
     // request, not after it, so a failure cannot take the question with it.
     if (typed) pushTurn({ kind: "said", projectId, text: typed });
@@ -1823,6 +1851,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           : pendingFunctionId
             ? { functionId: pendingFunctionId, params: {}, mode, projectId }
             : { rawInput: typed, mode, projectId };
+      // R67 C-15: kept for the Retry control, which must re-post exactly this.
+      lastSendBodyRef.current = body as Record<string, unknown>;
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1873,6 +1903,49 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         setLevelPath([]);
         setScalarValue("");
         setScalarError(null);
+      }
+      // R67 C-15 -- BAND 2 SAYS WHAT HAPPENED, ALWAYS. One of three states,
+      // never an empty silent box: the receipt for a write that landed, the
+      // chip row for a slot the pipeline is short, or D-03's failure sentence
+      // with a Retry. The fourth case -- a response this reader does not
+      // recognise -- is a sentence rather than silence.
+      const outcome = readSendOutcome(d);
+      if (outcome.kind === "needs_input" || outcome.kind === "failed") {
+        const resolved = resolveTaskError({
+          code: outcome.code,
+          missing: outcome.kind === "needs_input" ? outcome.missing : null,
+          raw: outcome.raw,
+          itemCode: typeof (body as { params?: Record<string, unknown> }).params?.itemCode === "string"
+            ? ((body as { params?: Record<string, unknown> }).params!.itemCode as string)
+            : null,
+          projectName: project?.name ?? null,
+        });
+        setSendOutcome({
+          kind: outcome.kind,
+          sentence: resolved.sentence,
+          verbLabel: resolved.verbLabel,
+          missingStep: resolved.missingStep,
+          missing: outcome.kind === "needs_input" ? outcome.missing : [],
+        });
+        // THE QUESTION OPENS ITS OWN PICKER. A sentence saying "pick a BOQ
+        // line" with no chips under it is the same dead end in nicer words.
+        if (resolved.missingStep === "boqLine") setLevelPath(["work_progress", "record_progress"]);
+        // The user's own words stay in the box: they have a question to answer
+        // and the sentence they typed is half the answer.
+        await loadTasks();
+        return;
+      }
+      if (!runningReport && !chainRun) {
+        if (outcome.kind === "recorded") {
+          const result = (outcome.task.result ?? {}) as Record<string, unknown>;
+          const rawId = typeof result.id === "string" && result.id.length <= 12 ? result.id : null;
+          setReceipt({
+            text: savedReceiptLine(objectFor({ functionId: outcome.functionId, derivedChain: null }), rawId),
+            href: objectRouteFor(outcome.functionId, projectId) ?? "/dashboard",
+          });
+        } else {
+          setBandNote(maskTechnical(outcome.text));
+        }
       }
       setDraft("");
       setPendingFunctionId(null);
@@ -2052,6 +2125,61 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       });
     }
   }, [taskData.groups.blocked, taskData.loadedAt, shellMessages, retryTask]);
+
+  /**
+   * R67 C-15 -- "a Retry control that re-submits the same payload".
+   *
+   * The IDENTICAL body, from the ref, not a body rebuilt out of state the user
+   * may have changed since. It is offered only for a `failed` outcome, which
+   * is the case where nothing was written -- so repeating it cannot double
+   * anything.
+   */
+  const onRetryLastSend = useCallback(async () => {
+    const body = lastSendBodyRef.current;
+    if (!body || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) {
+        setSubmitError(
+          d && typeof d.error === "string" && d.error.trim() ? d.error : `Retry failed (HTTP ${res.status})`
+        );
+        return;
+      }
+      const outcome = readSendOutcome(d);
+      if (outcome.kind === "needs_input" || outcome.kind === "failed") {
+        const resolved = resolveTaskError({
+          code: outcome.code,
+          missing: outcome.kind === "needs_input" ? outcome.missing : null,
+          raw: outcome.raw,
+          projectName: projectNameRef.current,
+        });
+        setSendOutcome({
+          kind: outcome.kind,
+          sentence: resolved.sentence,
+          verbLabel: resolved.verbLabel,
+          missingStep: resolved.missingStep,
+          missing: outcome.kind === "needs_input" ? outcome.missing : [],
+        });
+      } else {
+        // It worked the second time. The failure sentence goes, rather than
+        // sitting under a receipt that contradicts it.
+        setSendOutcome(null);
+        if (outcome.kind === "note") setBandNote(maskTechnical(outcome.text));
+      }
+      await loadTasks();
+    } catch {
+      setSubmitError("Couldn't reach the task service.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [submitting, loadTasks]);
 
   const onRowAction = useCallback(
     (row: ProjexaTaskRow, action: RowAction) => {
@@ -2299,6 +2427,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // R67 C-14: the spec's FOOTER MESSAGE AREA, above the box and
           // outside it. Renders nothing at all when there is nothing to say.
           messages={<ShellMessageRegion onOpen={(href) => router.push(href)} />}
+          // R67 C-15: after a Send that came back short a slot, the button
+          // itself names the answer it is waiting for.
+          sendLabel={sendLabelFor(sendOutcome?.missing)}
           chain={chain}
           onModeChange={setMode}
           onCutFrom={onCutFrom}
@@ -2362,6 +2493,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           conversation={
             bandLevel ||
             receipt ||
+            sendOutcome ||
             bandNote ||
             attachCard ||
             importNote ||
@@ -2403,6 +2535,38 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                     {timing.actions.includes("cancel") && (
                       <button type="button" className="veri-view-tab" onClick={onStopRequest}>
                         Cancel
+                      </button>
+                    )}
+                  </p>
+                )}
+
+                {/* R67 C-15 -- WHAT THE LAST SEND CAME BACK WITH. A question
+                    with the control that answers it, or a failure with a
+                    Retry that re-posts the identical body. Never an empty box:
+                    the third case is a sentence, above. */}
+                {sendOutcome && (
+                  <p className="flex flex-wrap items-center gap-2 text-[12px]">
+                    <span role="alert" style={{ color: "var(--color-veri-status-late)" }}>
+                      {sendOutcome.sentence}
+                    </span>
+                    {sendOutcome.kind === "failed" ? (
+                      <button type="button" className="veri-view-tab" disabled={submitting} onClick={onRetryLastSend}>
+                        {sendOutcome.verbLabel}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="veri-view-tab"
+                        onClick={() => {
+                          // OPENS THE PICKER AND STOPS. It re-runs nothing --
+                          // the write that could not resolve is not retried by
+                          // a control whose job is to ask a question.
+                          if (sendOutcome.missingStep === "boqLine") {
+                            setLevelPath(["work_progress", "record_progress"]);
+                          }
+                        }}
+                      >
+                        {sendOutcome.verbLabel}
                       </button>
                     )}
                   </p>

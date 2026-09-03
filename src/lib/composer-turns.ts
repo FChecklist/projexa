@@ -232,3 +232,77 @@ export function answerRowsFrom(result: unknown, limit = 8): AnswerRowDto[] {
   }
   return rows;
 }
+
+// ---------------------------------------------------------------------------
+// R67 C-15 -- AFTER SEND, BAND 2 SAYS WHAT HAPPENED. ONE OF THREE THINGS,
+// NEVER AN EMPTY SILENT BOX.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE DEFECT. onSubmit checked `res.ok` and stopped. A 201 carrying a BLOCKED
+ * task -- which is what "record 2 nos done on R66-1009b" produces when the
+ * line cannot be resolved -- set no band-2 state at all, so the composer
+ * cleared the textarea and showed nothing. The write had not happened, and the
+ * only trace was a row in a pane the user may not have been looking at.
+ *
+ * C-15 closes it: the tasks response resolves to exactly one of three states,
+ * and the fourth case -- a response this reader does not understand -- is a
+ * SENTENCE rather than silence.
+ */
+export type SendOutcome =
+  /** A write landed. The receipt names what was recorded and links to it. */
+  | { kind: "recorded"; task: Record<string, unknown>; functionId: string | null }
+  /** The pipeline is short a slot. The chip row opens; Send says which. */
+  | { kind: "needs_input"; code: string | null; missing: string[]; raw: string | null; functionId: string | null }
+  /** It failed. The D-03 sentence, and a Retry that re-posts the same payload. */
+  | { kind: "failed"; code: string | null; raw: string | null; functionId: string | null }
+  /** Nothing recognisable came back. Said in words, never as an empty box. */
+  | { kind: "note"; text: string };
+
+/** The pipeline's own sentence for a submission that produced no task at all. */
+const NOTHING_CAME_BACK = "That was sent, but nothing came back to show. Nothing was saved.";
+
+/**
+ * Read POST /api/tasks's body into one of the four states above.
+ *
+ * A BLOCKED TASK WITH A MISSING SLOT IS "needs_input", NOT "failed", and the
+ * difference is the whole point: one is a question with a chip row, the other
+ * is a failure with a Retry. Offering a Retry for a missing BOQ line would
+ * re-post the identical body and fail identically.
+ */
+export function readSendOutcome(raw: unknown): SendOutcome {
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const tasks = Array.isArray(body.tasks) ? (body.tasks as Record<string, unknown>[]) : [];
+  const messages = Array.isArray(body.chatMessages)
+    ? (body.chatMessages as unknown[]).filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+    : [];
+
+  // The first task that did NOT succeed is the one worth talking about: a
+  // submission that minted three tasks and blocked one has one thing to say.
+  const failed = tasks.find((t) => t.status === "blocked");
+  const done = tasks.find((t) => t.status === "done");
+
+  if (failed) {
+    const functionId = typeof failed.functionId === "string" ? failed.functionId : null;
+    const code = typeof failed.errorCode === "string" ? failed.errorCode : null;
+    const rawError = typeof failed.error === "string" ? failed.error : null;
+    const missing = Array.isArray(failed.missing)
+      ? (failed.missing as unknown[]).filter((m): m is string => typeof m === "string")
+      : [];
+    if (missing.length > 0) return { kind: "needs_input", code, missing, raw: rawError, functionId };
+    return { kind: "failed", code, raw: rawError, functionId };
+  }
+
+  if (done) {
+    return { kind: "recorded", task: done, functionId: typeof done.functionId === "string" ? done.functionId : null };
+  }
+
+  if (messages.length > 0) return { kind: "note", text: messages[0] };
+  return { kind: "note", text: NOTHING_CAME_BACK };
+}
+
+/** C-15's receipt for a write that is not work progress: "Saved — Timesheet". */
+export function savedReceiptLine(label: string, id: string | null | undefined): string {
+  const tail = (id ?? "").trim();
+  return tail ? `Saved — ${label} ${tail}` : `Saved — ${label}`;
+}

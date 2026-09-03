@@ -10,6 +10,8 @@ import {
   shortDate,
   timingState,
   understoodLine,
+  readSendOutcome,
+  savedReceiptLine,
 } from "./composer-turns";
 
 describe("the Understood line", () => {
@@ -201,5 +203,77 @@ describe("the preview carries the pipeline's own write/executable facts", () => 
     });
     expect(seg.writes).toBe(false);
     expect(seg.executable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R67 C-15 -- one of three answers after Send, and never an empty box.
+// ---------------------------------------------------------------------------
+
+describe("readSendOutcome", () => {
+  test("a blocked task that names a missing slot is a QUESTION, not a failure", () => {
+    const o = readSendOutcome({
+      tasks: [{ status: "blocked", functionId: "record_work_progress", errorCode: "BOQ_LINE_REQUIRED", missing: ["itemCode"] }],
+    });
+    expect(o.kind).toBe("needs_input");
+    if (o.kind !== "needs_input") return;
+    expect(o.missing).toEqual(["itemCode"]);
+    expect(o.code).toBe("BOQ_LINE_REQUIRED");
+  });
+
+  test("a blocked task with nothing missing is a failure, with its code", () => {
+    const o = readSendOutcome({
+      tasks: [{ status: "blocked", errorCode: "INFRA_UNAVAILABLE", error: "write CONNECT_TIMEOUT 1.2.3.4:5432" }],
+    });
+    expect(o.kind).toBe("failed");
+    if (o.kind !== "failed") return;
+    expect(o.code).toBe("INFRA_UNAVAILABLE");
+  });
+
+  test("a done task is a receipt", () => {
+    const o = readSendOutcome({ tasks: [{ status: "done", functionId: "record_work_progress", result: { id: "x" } }] });
+    expect(o.kind).toBe("recorded");
+    if (o.kind !== "recorded") return;
+    expect(o.functionId).toBe("record_work_progress");
+  });
+
+  test("a failure wins over a success -- the one thing worth saying is what did NOT happen", () => {
+    const o = readSendOutcome({
+      tasks: [
+        { status: "done", functionId: "get_construction_project_dashboard" },
+        { status: "blocked", functionId: "record_work_progress", missing: ["itemCode"] },
+      ],
+    });
+    expect(o.kind).toBe("needs_input");
+  });
+
+  test("no task at all falls back to the pipeline's own sentence", () => {
+    const o = readSendOutcome({ tasks: [], chatMessages: ["I can't do that yet: no BOQ on this project"] });
+    expect(o).toEqual({ kind: "note", text: "I can't do that yet: no BOQ on this project" });
+  });
+
+  test("nothing recognisable at all is still WORDS, never an empty box", () => {
+    for (const body of [{}, null, { tasks: "nope" }, { tasks: [], chatMessages: [] }]) {
+      const o = readSendOutcome(body);
+      expect(o.kind).toBe("note");
+      if (o.kind !== "note") return;
+      expect(o.text.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("the fallback says nothing was saved, because nothing was", () => {
+    const o = readSendOutcome({});
+    if (o.kind !== "note") throw new Error("expected a note");
+    expect(o.text).toContain("Nothing was saved");
+  });
+});
+
+describe("savedReceiptLine", () => {
+  test("names the object and its id", () => {
+    expect(savedReceiptLine("Timesheet", "TS-12")).toBe("Saved — Timesheet TS-12");
+  });
+
+  test("with no readable id it still says what was saved", () => {
+    expect(savedReceiptLine("Timesheet", null)).toBe("Saved — Timesheet");
   });
 });
