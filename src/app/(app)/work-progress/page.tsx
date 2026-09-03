@@ -38,7 +38,10 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
             </TabsList>
             <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
             <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
-            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
+            {/* R67 E-03: the project's NAME is passed in so the WhatsApp
+                message and the report caption can say which project this is
+                without a second lookup. */}
+            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} projectName={project.name} /></TabsContent>
           </Tabs>
         )}
       </div>

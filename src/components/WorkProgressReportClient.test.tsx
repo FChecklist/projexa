@@ -18,6 +18,8 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CategoryFilterGroup, ScopeTable, type LineItemRow } from "./WorkProgressReportClient";
 
+const money = (n: number) => `AED ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function textsOfTag(html: string, tag: string): string[] {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>(.*?)</${tag}>`, "gs");
   return Array.from(html.matchAll(re)).map((m) => m[1]);
@@ -51,34 +53,34 @@ const CHILDREN: LineItemRow[] = [child("c1", "Frame"), child("c2", "Gypsum"), ch
 
 describe("ScopeTable (point 108: banded layout)", () => {
   test("renders three visually separated bands in XLSX order: Percent, then Quantity, then Amount", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p-1" money={money} />);
     const headerText = textsOfTag(html, "th");
     expect(headerText).toEqual([
-      "S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt",
+      "S.No", "Category", "Code", "Description", "PO Qty", "Unit", "Rate", "Amt",
       "Percent", "Quantity", "Amount",
       "Previous", "Current", "Total", "Previous", "Current", "Total", "Previous", "Current", "Total",
     ]);
   });
 
   test("the Total-or-Balance label switches with the toggle mode", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="balance" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="balance" projectId="p-1" money={money} />);
     const headerText = textsOfTag(html, "th");
     expect(headerText.filter((t) => t === "Balance")).toHaveLength(3); // one per band
     expect(headerText).not.toContain("Total");
   });
 
   test("item 1.01 with its four children: the PARENT row shows real percentages", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT, ...CHILDREN]} mode="total" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT, ...CHILDREN]} mode="total" projectId="p-1" money={money} />);
     const pctPrev = textsByTestId(html, "pct-prev");
     const pctCurrent = textsByTestId(html, "pct-current");
     const pctThird = textsByTestId(html, "pct-third");
-    expect(pctPrev[0]).toBe("31.79%");
+    expect(pctPrev[0]).toBe("31.8%");
     expect(pctCurrent[0]).toBe("14.3%");
-    expect(pctThird[0]).toBe("46.08%");
+    expect(pctThird[0]).toBe("46.1%");
   });
 
   test("item 1.01 with its four children: CHILD percent cells are blank -- not 0.00, not a number", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT, ...CHILDREN]} mode="total" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT, ...CHILDREN]} mode="total" projectId="p-1" money={money} />);
     const pctPrev = textsByTestId(html, "pct-prev");
     const pctCurrent = textsByTestId(html, "pct-current");
     const pctThird = textsByTestId(html, "pct-third");
@@ -91,8 +93,8 @@ describe("ScopeTable (point 108: banded layout)", () => {
 
   test("a standalone line with no children and no parent (e.g. item 2.01) is not a child -- shows real percentages", () => {
     const standalone: LineItemRow = { ...PARENT, lineItemId: "p-2.01", code: "2.01", parentLineItemId: null };
-    const html = renderToStaticMarkup(<ScopeTable rows={[standalone]} mode="total" />);
-    expect(textsByTestId(html, "pct-third")[0]).toBe("46.08%");
+    const html = renderToStaticMarkup(<ScopeTable rows={[standalone]} mode="total" projectId="p-1" money={money} />);
+    expect(textsByTestId(html, "pct-third")[0]).toBe("46.1%");
   });
 });
 
@@ -112,7 +114,7 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
       percentage: { prev: 75, current: 25, total: 100, balance: 0 },
       touched: { prev: true, current: true, total: true },
     };
-    const html = renderToStaticMarkup(<ScopeTable rows={[frame01]} mode="balance" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[frame01]} mode="balance" projectId="p-1" money={money} />);
     expect(textsByTestId(html, "qty-third")[0]).toBe("-");
     expect(textsByTestId(html, "amt-third")[0]).toBe("-");
   });
@@ -126,17 +128,17 @@ describe("ScopeTable Qty/Amt cells (T-WPR-14-1: dash vs. blank, not a bare 0)", 
       percentage: { prev: 33.33, current: 0, total: 33.33, balance: 66.67 },
       touched: { prev: true, current: false, total: true },
     };
-    const html = renderToStaticMarkup(<ScopeTable rows={[taping]} mode="total" />);
+    const html = renderToStaticMarkup(<ScopeTable rows={[taping]} mode="total" projectId="p-1" money={money} />);
     expect(textsByTestId(html, "qty-current")[0]).toBe("");
     expect(textsByTestId(html, "amt-current")[0]).toBe("");
     // prev WAS touched, so it still renders as a real formatted number.
     expect(textsByTestId(html, "qty-prev")[0]).toBe("50");
-    expect(textsByTestId(html, "amt-prev")[0]).toBe("5,400");
+    expect(textsByTestId(html, "amt-prev")[0]).toBe("AED 5,400.00");
   });
 
-  test("a real touched value still uses money()'s thousands formatting, not a raw number", () => {
-    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" />);
-    expect(textsByTestId(html, "amt-third")[0]).toBe("23,490");
+  test("a real touched money value carries the org currency and two decimals", () => {
+    const html = renderToStaticMarkup(<ScopeTable rows={[PARENT]} mode="total" projectId="p-1" money={money} />);
+    expect(textsByTestId(html, "amt-third")[0]).toBe("AED 23,490.00");
   });
 });
 
