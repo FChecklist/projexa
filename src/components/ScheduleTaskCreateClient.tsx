@@ -2,14 +2,29 @@
 
 // Real-screen conversion (2026-08-30) -- replaces ScheduleBoardClient.tsx's
 // old "New Task" Dialog popup with a real create screen, same fields.
-import { useEffect, useState } from "react";
+//
+// R67 D-67: onto the shared archetype, and off the last unguarded
+// `.then((res) => res.json())` read in the construction modules (see
+// src/lib/no-swallowed-http-errors.test.ts's third guard). The type list is
+// a genuine convenience -- the server applies its own default when none is
+// sent -- so its failure does not block the save; it is simply no longer
+// silent, and the select says why it is empty instead of sitting on
+// "Loading…" forever.
+//
+// R67 G-04 (R-231) states the same rule more precisely and is kept whole:
+// the four states of the Type control, their one instruction each, and the
+// rule that "Loading…" is never a VALUE live in
+// src/lib/schedule-type-state.ts, where they are unit-tested, and are
+// rendered by the archetype's own select. Two situations that used to
+// collapse into one empty list -- "this org has no task types" and "the call
+// failed" -- now read differently, which is what
+// e2e/schedule-task-type-signage.spec.ts asserts in a browser.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { createdHref } from "@/components/CreatedReceipt";
+import { fetchJson } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
 import {
   SCHEDULE_TYPE_HINT,
   SCHEDULE_TYPE_PLACEHOLDER,
@@ -17,130 +32,121 @@ import {
   scheduleTypesState,
   type ScheduleTypesState,
 } from "@/lib/schedule-type-state";
+import type { CreateField } from "@/lib/create-screen";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
 
-// R67 G-04 (R-231): the four states, their one instruction each, and the
-// rule that "Loading…" is never a value all live in
-// src/lib/schedule-type-state.ts, where they are unit-tested. This file
-// renders them.
-
 export default function ScheduleTaskCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
   const [types, setTypes] = useState<IssueType[]>([]);
-  const [typeId, setTypeId] = useState("");
   const [typesState, setTypesState] = useState<ScheduleTypesState>("loading");
-  const [priority, setPriority] = useState("no_priority");
-  const [dueDate, setDueDate] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
 
-  useEffect(() => {
-    fetch("/api/schedule/types")
-      .then((res) => {
-        // A non-OK response used to fall into .then() and produce
-        // `data.types ?? []`, i.e. an empty list -- so a 502 from VERIDIAN
-        // was displayed as "this org has no task types". Those are different
-        // facts and the user is told which one happened.
-        if (!res.ok) throw new Error(`schedule/types ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        const loaded: IssueType[] = data.types ?? [];
-        setTypes(loaded);
-        const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
-        if (defaultType) setTypeId(defaultType.id);
-        setTypesState(scheduleTypesState({ loaded, failed: false }));
-      })
-      // The type dropdown is a convenience -- create still works, because the
-      // server applies the org's default type when none is sent. So this is
-      // reported beside the control, not as a blocking error.
-      .catch(() => setTypesState(scheduleTypesState({ loaded: null, failed: true })));
+  const loadTypes = useCallback(async () => {
+    setTypesState("loading");
+    try {
+      // fetchJson throws on a non-2xx. The old `.then((res) => res.json())`
+      // let a 502 fall through to `data.types ?? []`, so an upstream failure
+      // was displayed as "this org has no task types" -- different facts.
+      const data = await fetchJson<{ types?: IssueType[] }>("/api/schedule/types");
+      const loaded = data.types ?? [];
+      setTypes(loaded);
+      const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
+      if (defaultType) setValues((v) => ({ ...v, typeId: v.typeId ?? defaultType.id }));
+      setTypesState(scheduleTypesState({ loaded, failed: false }));
+    } catch {
+      setTypes([]);
+      setTypesState(scheduleTypesState({ loaded: null, failed: true }));
+    }
   }, []);
 
+  useEffect(() => {
+    void loadTypes();
+  }, [loadTypes]);
 
-  async function createTask() {
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/schedule/tasks", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, title: title.trim(), typeId: typeId || undefined, priority, dueDate: dueDate || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create task");
-      toast.success("Task created");
-      router.push(`/schedule/tasks/${data.id}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't create task");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const moduleHref = `/schedule?projectId=${projectId}`;
+
+  const typeHint = SCHEDULE_TYPE_HINT[typesState];
+  const fields: CreateField[] = [
+    { name: "title", label: "Title", kind: "text", required: true, placeholder: "e.g. Pour foundation slab", wide: true },
+    {
+      name: "typeId",
+      label: "Type",
+      kind: "select",
+      testId: "schedule-task-type",
+      loading: typesState === "loading",
+      disabled: scheduleTypeDisabled(typesState),
+      placeholder: SCHEDULE_TYPE_PLACEHOLDER[typesState],
+      options: types.map((t) => ({ value: t.id, label: t.name })),
+      // The one instruction for this state, plus -- when the call FAILED
+      // rather than came back empty -- a way to ask again without losing the
+      // title already typed.
+      help: typeHint ? (
+        <>
+          {typeHint}
+          {typesState === "error" && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => void loadTypes()}
+                className="font-medium underline underline-offset-2"
+              >
+                Retry
+              </button>
+            </>
+          )}
+        </>
+      ) : undefined,
+    },
+    {
+      name: "priority",
+      label: "Priority",
+      kind: "select",
+      required: true,
+      options: PRIORITY_OPTIONS.map((p) => ({ value: p, label: p.replace(/_/g, " ") })),
+    },
+    { name: "dueDate", label: "Due Date", kind: "date" },
+  ];
+
+  const submit = useSubmit<{ id?: unknown }>({
+    objectLabel: "Task",
+    buildRequest: () => ({
+      input: "/api/schedule/tasks",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          title: (values.title ?? "").trim(),
+          typeId: values.typeId || undefined,
+          priority: values.priority,
+          dueDate: values.dueDate || undefined,
+        }),
+      },
+    }),
+    onSuccess: (data) => {
+      const id = typeof data?.id === "string" ? data.id : "";
+      if (!id) throw new Error("The server did not confirm a saved task");
+      router.replace(createdHref("/schedule/tasks", id, values.title));
+    },
+  });
 
   return (
-    <ObjectScreen
-      breadcrumb="Schedule / New Task"
+    <CreateScreen
+      module="Schedule"
+      moduleHref={moduleHref}
+      objectLabel="Task"
       title="New Task"
-      mode="create"
-      hasDraft={false}
-      onSave={createTask}
-      onCancel={() => router.push(`/schedule?projectId=${projectId}`)}
-      onBack={() => router.push(`/schedule?projectId=${projectId}`)}
-      saveDisabled={submitting || !title.trim()}
-      saveDisabledReason={submitting ? "Creating…" : !title.trim() ? "Title is required" : undefined}
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Title</Label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Pour foundation slab" />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="schedule-task-type">Type</Label>
-            {typesState === "loading" ? (
-              // A disabled skeleton in the control's own shape: it says
-              // "something is coming here", it cannot be opened onto an empty
-              // menu, and it puts no word in the value slot that could be
-              // read as a chosen type. Nothing moves when the real select
-              // replaces it -- same height, same width.
-              <div
-                id="schedule-task-type"
-                aria-busy="true"
-                aria-disabled="true"
-                aria-label="Type, loading"
-                data-testid="schedule-task-type-loading"
-                className="flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 opacity-60"
-              >
-                <Skeleton className="h-4 w-28" />
-              </div>
-            ) : (
-              <Select value={typeId} onValueChange={setTypeId} disabled={scheduleTypeDisabled(typesState)}>
-                <SelectTrigger id="schedule-task-type" className="w-full" data-testid="schedule-task-type">
-                  <SelectValue placeholder={SCHEDULE_TYPE_PLACEHOLDER[typesState]} />
-                </SelectTrigger>
-                <SelectContent>{types.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-              </Select>
-            )}
-            {SCHEDULE_TYPE_HINT[typesState] && (
-              <p className="text-[12px]" style={{ color: "var(--status-needs-you-text)" }}>{SCHEDULE_TYPE_HINT[typesState]}</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label>Priority</Label>
-            <Select value={priority} onValueChange={setPriority}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>{PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="space-y-1.5"><Label>Due Date (optional)</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
+    />
   );
 }

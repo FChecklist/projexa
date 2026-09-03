@@ -6,8 +6,28 @@
 // is clickable and carries its own filters through (GLOBAL: "EVERY NUMBER
 // IS A DOOR" / "A KPI WITH NO DESTINATION MUST NOT SHIP") -- see each
 // onClick below for exactly where it lands and why that's a real screen.
-import { useEffect, useState } from "react";
+//
+// --- R67 D-65: this screen was one thrown TypeError away from a blank page --
+//
+// Every read here was `fetch(...).then(r => r.json())` with the status never
+// checked, and four of the six ended in `.catch(() => ({ x: [] }))`. Two
+// consequences, both on the project's primary screen:
+//
+//   * A 500 on the dashboard call assigned the ERROR BODY to `dashboard`,
+//     after which money(dashboard.expenses) called .toLocaleString on an
+//     undefined. There is no error.tsx under /dashboard/project, so that
+//     throw took the whole route down.
+//   * A failed permits call rendered "Permits Expiring: 0" in the SAGE done
+//     tone with the words "none due soon" -- a confident all-clear on the
+//     one tile whose entire purpose is to warn.
+//
+// Both are now the shared rule: a read that failed says so, and no number,
+// percentage or tone is minted from a call that did not answer.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DashboardScreen,
   KpiCard,
@@ -75,6 +95,16 @@ function money(n: number, currency: Currency | undefined) {
   return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+type PaneError = { status: number | null; message: string | null } | null;
+
+/** What the transport actually said, kept whole for the dictionary to classify. */
+function toPaneError(reason: unknown): PaneError {
+  return {
+    status: reason instanceof ApiError ? reason.status : null,
+    message: reason instanceof Error ? reason.message : null,
+  };
+}
+
 export default function DashboardProjectClient({ projectId, labels }: { projectId: string; labels?: RegistryColumn[] | null }) {
   const router = useRouter();
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
@@ -85,36 +115,81 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const [activities, setActivities] = useState<Activity[]>([]);
   const [permitsExpiring, setPermitsExpiring] = useState<Permit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [dashboardError, setDashboardError] = useState<PaneError>(null);
+  // R67 D-65 / D-03: a PANEL that failed is tracked separately from a panel
+  // that answered with nothing, because the two KPIs read differently.
+  const [permitsFailed, setPermitsFailed] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const [dashRes, curRes, permitsRes, activitiesRes, entriesRes] = await Promise.all([
-        fetch(`/api/dashboard/project/${encodeURIComponent(projectId)}`).then((r) => r.json()),
-        fetch("/api/currencies").then((r) => r.json()).catch(() => ({ currencies: [] })),
-        fetch(`/api/permits?projectId=${encodeURIComponent(projectId)}&withinDays=30`).then((r) => r.json()).catch(() => ({ permits: [] })),
-        fetch(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ activities: [] })),
-        fetch(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => ({ entries: [] })),
-      ]);
-      setDashboard(dashRes);
-      setCurrency((curRes.currencies ?? []).find((c: Currency) => c.isBaseCurrency));
-      setPermitsExpiring(permitsRes.permits ?? []);
-      setActivities(activitiesRes.activities ?? []);
-      setRecent((entriesRes.entries ?? []).slice(0, 5));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setStartedAt(Date.now());
+    setDashboardError(null);
+    setPermitsFailed(false);
 
+    const [dashR, curR, permitsR, activitiesR, entriesR, catR] = await Promise.allSettled([
+      fetchJson<ProjectDashboard>(`/api/dashboard/project/${encodeURIComponent(projectId)}`),
+      fetchJson<{ currencies?: Currency[] }>("/api/currencies"),
+      fetchJson<{ permits?: Permit[] }>(`/api/permits?projectId=${encodeURIComponent(projectId)}&withinDays=30`),
+      fetchJson<{ activities?: Activity[] }>(`/api/work-progress/activities?projectId=${encodeURIComponent(projectId)}`),
+      fetchJson<{ entries?: RecentEntry[] }>(`/api/work-progress?projectId=${encodeURIComponent(projectId)}`),
       // Category breakdown (RIGHT COLUMN, sorted horizontal bar) reuses the
       // ALREADY-REGISTERED "category-progress" report (REPORT_REGISTRY,
       // construction-reports-service.ts) computed server-side (D-4: never
-      // summed in the browser) -- no projexa consumer of this real, working
-      // report existed before this seq.
-      const catRes = await fetch(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()).catch(() => null);
-      setCategories(catRes?.categories ?? []);
-      setLoading(false);
-    }
-    load();
+      // summed in the browser).
+      fetchJson<{ categories?: CategoryRow[] }>(`/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`),
+    ]);
+
+    if (dashR.status === "fulfilled") setDashboard(dashR.value);
+    else setDashboardError(toPaneError(dashR.reason));
+
+    setCurrency(
+      curR.status === "fulfilled" ? (curR.value.currencies ?? []).find((c) => c.isBaseCurrency) : undefined
+    );
+
+    if (permitsR.status === "fulfilled") setPermitsExpiring(permitsR.value.permits ?? []);
+    else setPermitsFailed(true);
+
+    setActivities(activitiesR.status === "fulfilled" ? (activitiesR.value.activities ?? []) : []);
+    setRecent(entriesR.status === "fulfilled" ? (entriesR.value.entries ?? []).slice(0, 5) : []);
+    setCategories(catR.status === "fulfilled" ? (catR.value.categories ?? []) : []);
+    setLoading(false);
   }, [projectId]);
 
-  if (loading || !dashboard) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // R67 D-65: a skeleton in this screen's own shape -- one primary tile and
+  // four secondaries -- rather than the words "Loading…" in the corner, and
+  // the wait is narrated on the shared 2/3/8 s timeline.
+  if (loading && !dashboard) {
+    return (
+      <div className="flex-1 space-y-4 p-6">
+        <PaneWaitingCaption startedAt={startedAt} entity="this project's dashboard" onRetry={() => void load()} />
+        <Skeleton className="h-32 w-full max-w-3xl" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // THE FAULT THIS REPLACES. Every read on this screen was
+  // `fetch(...).then(r => r.json())` with the status never checked. A 500 on
+  // the dashboard call therefore assigned the ERROR BODY to `dashboard`, and
+  // the render below immediately called money(dashboard.expenses) on an
+  // undefined -- a thrown TypeError, on the project's primary screen, with no
+  // error boundary under /dashboard/project to catch it.
+  if (!dashboard) {
+    return (
+      <div className="flex-1 p-6">
+        <PaneErrorCard entity="this project's dashboard" error={dashboardError} onRetry={() => void load()} />
+      </div>
+    );
+  }
 
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
   const hasEv = dashboard.earnedValue !== null && dashboard.contractValue !== null;
@@ -129,8 +204,8 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       // DASHBOARD.PROJECT: "+ New suppressed" -- documented override, this
       // screen answers a question, it doesn't create records.
       newAction={undefined}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering this dashboard is not built yet" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting this dashboard is not built yet" }}
       oneNumber={
         <KpiCard
           size="primary"
@@ -195,14 +270,25 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             // Budget vs actual -> ANALYTICAL cost variance, filtered (DASHBOARD.PROJECT's own row)
             onClick={() => router.push(`/scope?projectId=${projectId}&tab=variance`)}
           />
+          {/* R67 D-65 / D-03. This read used to end in
+              `.catch(() => ({ permits: [] }))`, so a failed permits call
+              rendered "0" in the SAGE done tone with the words "none due
+              soon" -- a confident all-clear on the one tile whose whole
+              purpose is to warn. The count is an en-dash when the read
+              failed, the tone is neutral context, and the destination still
+              works so the user can go and look for themselves. */}
           <KpiCard
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
-            value={String(expiringCount)}
-            trend={{
-              direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
-              tone: expiredCount > 0 ? "late" : expiringCount > 0 ? "needs-you" : "done",
-              label: expiredCount > 0 ? `${expiredCount} already expired` : expiringCount > 0 ? "within 30 days" : "none due soon",
-            }}
+            value={permitsFailed ? "—" : String(expiringCount)}
+            trend={
+              permitsFailed
+                ? { direction: "flat", tone: "context", label: "could not load" }
+                : {
+                    direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
+                    tone: expiredCount > 0 ? "late" : expiringCount > 0 ? "needs-you" : "done",
+                    label: expiredCount > 0 ? `${expiredCount} already expired` : expiringCount > 0 ? "within 30 days" : "none due soon",
+                  }
+            }
             baseline="next 30 days"
             // Permits expiring -> PERMITS.LIST pre-filtered "Expiring 30d" (DASHBOARD.PROJECT's own row, verbatim)
             onClick={() => router.push(`/permits?projectId=${projectId}&withinDays=30`)}

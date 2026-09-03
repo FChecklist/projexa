@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,6 +111,19 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     }
   }
 
+  // R67 D-67. Deactivating is reversible in the data but not in the UI --
+  // the master list only offers active materials and there is no reactivate
+  // control anywhere -- and it silently removes the item from every receipt
+  // form in the project. One click was not enough deliberation for that.
+  // Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Material",
+    identifier: material?.name ?? null,
+    extra: "and remove it from the Record Receipt form",
+    verb: "Deactivate",
+    run: deactivate,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -148,13 +162,14 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       onEdit={material.isActive && mode === "display" ? startEdit : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={material.isActive && mode === "display" ? deactivate : undefined}
+      onDelete={material.isActive && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
       onBack={() => router.push(`/materials?projectId=${material.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.unit.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.unit.trim() ? "Name and unit are required" : undefined}
       messages={[]}
     >
+      {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>

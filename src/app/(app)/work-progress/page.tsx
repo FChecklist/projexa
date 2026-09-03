@@ -6,12 +6,23 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
+import { parseWprParams } from "@/lib/work-progress-report-params";
 import { ScreenContext } from "@/components/shell/shell-screen-context";
 
-export default async function WorkProgressPage({ searchParams }: { searchParams: Promise<{ projectId?: string; tab?: string }> }) {
-  const { projectId, tab } = await searchParams;
+export default async function WorkProgressPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string; tab?: string; from?: string; to?: string; view?: string; boqVersion?: string }>;
+}) {
+  const { projectId, tab, from, to, view, boqVersion } = await searchParams;
   const organizationId = await getServerOrganizationId();
   const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
+  // R67 D-02: the Work Progress Report's four parameters (from, to, view,
+  // boqVersion) are resolved from the URL here, server-side, and handed to the
+  // Report tab -- which runs on arrival with them (correction C-04). A link
+  // from the Reports module, a bookmark and a reload all reproduce the same
+  // report.
+  const reportParams = parseWprParams({ from, to, view, boqVersion }, new Date());
 
   return (
     <>
@@ -42,9 +53,13 @@ export default async function WorkProgressPage({ searchParams }: { searchParams:
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
               <TabsTrigger value="report">Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} /></TabsContent>
-            <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} /></TabsContent>
-            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} /></TabsContent>
+            {/* R67 D-65: the project's NAME goes down with its id, so a
+                waiting pane can say "Loading progress entries for Cedar
+                Heights Villa – Phase 1…" rather than narrating an opaque
+                uuid or nothing at all. */}
+            <TabsContent value="entry" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressPageClient projectId={project.id} projectName={project.name} /></TabsContent>
+            <TabsContent value="analytics" className="h-[calc(100vh-14rem)] min-h-[560px]"><WorkProgressAnalyticalClient projectId={project.id} projectName={project.name} /></TabsContent>
+            <TabsContent value="report"><WorkProgressReportClient projectId={project.id} initialParams={reportParams} /></TabsContent>
           </Tabs>
         )}
       </div>

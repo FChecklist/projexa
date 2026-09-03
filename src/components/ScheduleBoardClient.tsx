@@ -19,7 +19,9 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -39,19 +41,26 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   const router = useRouter();
   const [columns, setColumns] = useState<BoardColumn[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // R67 D-46: the transport's own answer, so the shared dictionary writes the
+  // sentence instead of this screen re-printing a string.
+  const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setStartedAt(Date.now());
     setError(null);
     try {
       const res = await fetch(`/api/board?projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load board");
-      setColumns(data.columns ?? []);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
+        return;
+      }
+      setColumns(Array.isArray(data?.columns) ? data.columns : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load board");
+      setError({ status: null, message: err instanceof Error ? err.message : null });
     } finally {
       setLoading(false);
     }
@@ -96,32 +105,50 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
 
   // Real screen navigation (2026-08-30) -- replaces the old "New Task"
   // Dialog popup with a real create route.
+  //
+  // R67 D-79: this no longer sits in a header row of its own. The module's
+  // header now carries Filter | Export | + New on EVERY tab, and two controls
+  // that create the same object on one screen is the duplicate-control fault
+  // the audit records elsewhere. It stays where it is the only way forward --
+  // inside the empty state.
   const newTaskButton = (
     <Button onClick={() => router.push(`/schedule/tasks/new?projectId=${projectId}`)}><Plus className="size-4" /> New Task</Button>
   );
 
+  // R67 D-46: three board columns, the width they will really be, instead of
+  // a spinner centred in an empty pane.
   if (loading) {
-    return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+    return (
+      <div className="space-y-4">
+        <PaneWaitingCaption startedAt={startedAt} entity="the board" onRetry={() => void load()} />
+        <div className="flex gap-4 overflow-x-auto">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="w-72 shrink-0 space-y-2">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
   if (error) {
-    return (
-      <Card className="border-px-error-border bg-px-error-light">
-        <CardContent className="p-4 text-sm text-px-error">Could not load board: {error}</CardContent>
-      </Card>
-    );
+    return <PaneErrorCard entity="the board" error={error} onRetry={() => void load()} />;
   }
   if (columns.length === 0 || columns.every((c) => c.issues.length === 0)) {
     return (
-      <div className="space-y-4">
-        <div className="flex justify-end">{newTaskButton}</div>
-        <Card><CardContent className="py-16 text-center text-sm text-px-muted">No issues yet.</CardContent></Card>
-      </div>
+      <Card>
+        <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-px-muted">
+          No issues yet.
+          {newTaskButton}
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">{newTaskButton}</div>
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
           <div

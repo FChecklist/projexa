@@ -12,18 +12,29 @@
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
-import { useEffect, useState } from "react";
+// R67 D-55 / D-65 -- THE FAULT THIS SCREEN CARRIED. load() caught its
+// failure into a TOAST and left `docs` at [], so a 504 produced
+//
+//     No documents found for this project.
+//
+// on a project with forty documents, with the only contradiction being a
+// notification that faded after four seconds. R-184's words for it: "'No
+// documents found for this project.' after a 504". The empty sentence is
+// now reachable only through PaneState's mayShowEmptyState(), which takes
+// the read's OUTCOME and not the row count.
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel } from "@/lib/pane-state";
+import { useListRead } from "@/lib/use-list-read";
 
 type Doc = {
   id: string;
@@ -88,28 +99,38 @@ function renderDocumentCell(field: string, d: Doc) {
   }
 }
 
-export default function DocumentsClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function DocumentsClient({
+  projectId,
+  projectName,
+  registryColumns,
+}: {
+  projectId: string;
+  projectName?: string | null;
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const router = useRouter();
-  const [docs, setDocs] = useState<Doc[]>([]);
-  const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
-  async function load() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
-      if (category !== "all") params.set("category", category);
-      const data = await fetchJson(`/api/documents?${params.toString()}`);
-      setDocs(data.documents ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load documents"));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const url = useMemo(() => {
+    const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
+    if (category !== "all") params.set("category", category);
+    return `/api/documents?${params.toString()}`;
+  }, [projectId, category]);
 
-  useEffect(() => { load(); }, [projectId, category]);
+  const read = useListRead<Doc>({
+    url,
+    select: (body) => (body as { documents?: Doc[] })?.documents,
+  });
+  const docs = read.rows;
+
+  // A filtered read that comes back empty is NOT "this project has no
+  // documents" -- it is "no permits, in this project". Saying the first over
+  // the second is how a user concludes the upload never landed.
+  const emptyMessage =
+    category === "all"
+      ? `No documents yet for ${projectName ?? "this project"}.`
+      : `No ${category.replace(/_/g, " ")} documents in ${projectName ?? "this project"}. Clear the category filter to see the rest.`;
 
   return (
     <div className="space-y-4">
@@ -129,13 +150,27 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
         </div>
       </div>
 
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(read.status, docs.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : docs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
-          ) : (
+        <CardContent className="p-4">
+          <PaneState
+            status={read.status}
+            entity="documents"
+            projectName={projectName}
+            startedAt={read.startedAt}
+            error={read.error}
+            rowCount={docs.length}
+            skeletonColumns={columns.map((col) => col.label)}
+            emptyMessage={emptyMessage}
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}>
+                <Plus className="size-4" /> Upload
+              </Button>
+            }
+            lastLoadedAt={read.loadedAt}
+            onRetry={read.reload}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -155,7 +190,7 @@ export default function DocumentsClient({ projectId, registryColumns }: { projec
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
     </div>

@@ -1,6 +1,14 @@
 import { db, veridianCredentials } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
+import { budgetSignal } from "@/lib/screen-budget";
+
+// R67 D-04: re-exported so a module page can write one import
+// (`callVeridian(..., { timeoutMs: VERIDIAN_SCREEN_BUDGET_MS })`) instead of
+// reaching into two files for one call. The number itself lives in
+// src/lib/screen-budget.ts, next to the 3 s "Still loading…" threshold it has
+// to stay consistent with.
+export { VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/screen-budget";
 
 // PROJEXA's only connection to construction data: every call goes through
 // VERIDIAN's /api/v1/projexa/* surface with a Bearer API key. This file
@@ -129,13 +137,31 @@ function isTimeout(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+// R67 D-04. Two additions, both opt-in, both leaving every existing caller
+// byte-for-byte unchanged:
+//
+//   `timeoutMs` -- a per-request budget. The 20 s default above is the
+//   ceiling for ANY call (writes included, sized against Vercel's 300 s
+//   function cap). A module page's READ is a different contract: it streams
+//   its shell immediately and can afford to give up far sooner and SAY SO,
+//   which is what VERIDIAN_SCREEN_BUDGET_MS (8 s) is for. Only callers that
+//   pass it are affected.
+//
+//   `signal` -- the caller's own AbortSignal, composed WITH the budget rather
+//   than replacing it (see budgetSignal), so a superseded request or a closed
+//   stream can cancel early without ever removing the timeout. Passing the
+//   caller's signal straight through as `init.signal` would have done exactly
+//   that, which is the unbounded-fetch failure R46 exists to prevent.
+type FetchBudget = { timeoutMs?: number; signal?: AbortSignal };
+
+async function fetchWithTimeout(url: string, init: RequestInit, budget: FetchBudget = {}): Promise<Response> {
+  const timeoutMs = budget.timeoutMs ?? VERIDIAN_FETCH_TIMEOUT_MS;
   const attempts = VERIDIAN_RETRY_ON_TIMEOUT && isIdempotent(init) ? 2 : 1;
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await fetch(url, { ...init, signal: AbortSignal.timeout(VERIDIAN_FETCH_TIMEOUT_MS) });
+      return await fetch(url, { ...init, signal: budgetSignal(timeoutMs, budget.signal) });
     } catch (err) {
       lastErr = err;
       if (!isTimeout(err)) throw err;
@@ -159,7 +185,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
     // service, and that it was retried -- which is what C19 ERROR_TRUTHFUL
     // asks for. The internal address and the millisecond budget move to
     // `detail`, which is logged here and never returned to a client.
-    const detail = `VERIDIAN request timed out after ${VERIDIAN_FETCH_TIMEOUT_MS}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`;
+    const detail = `VERIDIAN request timed out after ${timeoutMs}ms${attempts > 1 ? " on both attempts" : ""}: ${url}`;
     console.error(`[veridian] ${detail}`);
     throw new VeridianApiError(
       attempts > 1
@@ -228,7 +254,13 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // VERIDIAN's PUT /currencies/base (compliance-tracker PR #1391) -- every
 // prior caller in this file used POST/PATCH for writes, so PUT was simply
 // never needed here before.
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean };
+type CallVeridianOptions = {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  body?: unknown;
+  apiKey?: string;
+  organizationId?: string;
+  root?: boolean;
+} & FetchBudget;
 
 // Priority 15, Wave 2: factored out of callVeridian() so the quotation PDF
 // route (a real binary response, not JSON) can reuse the exact same
@@ -239,15 +271,19 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetchWithTimeout(`${base}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+  const res = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method: options.method ?? "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: "no-store",
     },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    cache: "no-store",
-  });
+    { timeoutMs: options.timeoutMs, signal: options.signal }
+  );
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
@@ -268,16 +304,20 @@ export async function callVeridian<T = unknown>(path: string, options: CallVerid
 // assuming JSON.
 export async function callVeridianBinary(
   path: string,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean } & FetchBudget = {}
 ): Promise<{ body: ArrayBuffer; contentType: string }> {
   const apiKey = await resolveApiKey(options);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetchWithTimeout(`${base}${path}`, {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${apiKey}` },
-    cache: "no-store",
-  });
+  const res = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${apiKey}` },
+      cache: "no-store",
+    },
+    { timeoutMs: options.timeoutMs, signal: options.signal }
+  );
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));
@@ -295,16 +335,20 @@ export async function callVeridianBinary(
 export async function callVeridianUpload<T = unknown>(
   path: string,
   formData: FormData,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean } & FetchBudget = {}
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
-  const res = await fetchWithTimeout(`${base}${path}`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}` },
-    body: formData,
-    cache: "no-store",
-  });
+  const res = await fetchWithTimeout(
+    `${base}${path}`,
+    {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}` },
+      body: formData,
+      cache: "no-store",
+    },
+    { timeoutMs: options.timeoutMs, signal: options.signal }
+  );
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: res.statusText }));

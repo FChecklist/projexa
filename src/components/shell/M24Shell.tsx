@@ -61,9 +61,11 @@ import {
   type ScreenCardView,
 } from "./PillStrip";
 import { cardsFor, chainForScreenCard, hrefForScreenCard, type ScreenCard } from "@/lib/composer-cards";
-// R67 A-16 / decision D-09: the rail is forked too, for one reason -- the kit
-// types `organisationName` as a string, so it cannot render "Organisation
-// unavailable — [Retry]", and the string fallback it forced was a bare em-dash.
+// Decision D-09: the rail is forked, for two reasons that landed in two lanes
+// and are both in the fork -- A-16, because the kit types `organisationName`
+// as a string and so cannot render "Organisation unavailable - [Retry]"; and
+// D-66, because the kit exposes no picker slot, which is why this shell was
+// CYCLING through projects one click at a time under a caret promising a menu.
 import { TopRail } from "./TopRail";
 import { useShellScreen, type ScreenProjectSource } from "./shell-screen-context";
 import {
@@ -130,8 +132,17 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
+import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
-import { LEGACY_FALLBACK_MESSAGE, fixChainFor, legacyToCode, messageFor, rowDetailFor } from "@/lib/task-errors";
+import {
+  LEGACY_FALLBACK_MESSAGE,
+  describeReadError,
+  fixChainFor,
+  legacyToCode,
+  messageFor,
+  rowDetailFor,
+} from "@/lib/task-errors";
+import { asOfLabel } from "@/lib/pane-state";
 
 // R67 A-14 -- THE PINS, AND ONLY THE PINS.
 //
@@ -192,6 +203,28 @@ const RANKED_CARDS_KEY = "veri.pill.ranked";
 const TASK_TAB_PARAM = "taskTab";
 const TASK_TAB_IDS = ["home", "approval-pending", "in-queue", "completed", "history"] as const;
 
+// ─── R67 D-20: the rail-to-page sync contract ────────────────────────────
+//
+// THE SPLIT-BRAIN THIS CLOSES. This shell held its own `projectId` state
+// (below) and the pages under it read `?projectId=` from the URL. Nothing
+// connected the two. So the rail could say "All projects" while /moms
+// rendered Cedar Heights, and switching project in the rail changed the
+// composer's chain root without the page beneath it re-querying anything.
+//
+// THE RULE, one sentence: THE URL WINS. A route that carries ?projectId=
+// sets this shell's state (never the other way round), and switching in the
+// rail writes that same parameter -- preserving every OTHER parameter, so a
+// list's own filter survives a project switch -- which is what makes the
+// page re-query with the new id. The cookie is only a memory of the last
+// choice, consulted when the URL says nothing at all.
+// R67 D-66: the cookie NAME lives in src/lib/project-selection.ts, which the
+// SERVER components that read it also import; the URL-wins rule, the cookie
+// read/write and the resolution effect live in shell/project-context.tsx,
+// where they are unit-tested (project-context.test.tsx). They stood inline
+// here, inside a component that also fetches the org, the project list, the
+// task list and the screen registry -- so the one rule D-04's and D-66's
+// acceptances turn on could not be exercised without standing all of that up.
+
 type OrgInfo = { organization?: { id: string; name: string }; role?: string; email?: string };
 
 // R53's task shape, from GET /api/v1/projexa/tasks (contract: claude_log id=35).
@@ -213,6 +246,13 @@ type ApiTask = {
   legacyError?: string | null;
   rawInput?: string | null;
   mode?: string | null;
+  // R67 D-03's 'needs_input' payload, added additively by
+  // compliance-tracker's GET /api/v1/projexa/tasks. Optional because a row
+  // that failed outside the closed five-code set carries no code at all, and
+  // because an older backend simply will not send these fields.
+  code?: string | null;
+  missing?: string[] | null;
+  errorContext?: { lineCode?: string; boqVersion?: number } | null;
   /** Real column on compliance.pipeline_tasks, selected by the route's own
    *  query and already ordered desc -- used by the History tab's dedup. */
   createdAt?: string | null;
@@ -292,7 +332,13 @@ export function codeFor(t: ApiTask): string | null {
 function toTaskRow(
   t: ApiTask,
   group: "needsYou" | "running" | "done" | "blocked",
-  railProjectId: string | null
+  // A-01: the project a row's destination falls back to when the task itself
+  // names none. D-03: the project NAME the failure sentence uses ("There is no
+  // line 1.01 on Cedar Heights Villa v2"). Two different questions about the
+  // project, so two parameters -- collapsing them would make one of the two
+  // answers wrong.
+  railProjectId: string | null,
+  projectNameById: (id: string | null | undefined) => string | null
 ): TaskRow {
   const steps = t.derivedChain?.steps ?? [];
   const root = t.derivedChain?.root ?? null;
@@ -442,7 +488,21 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   const [info, setInfo] = useState<OrgInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  // The RAIL's own selection. It is no longer the only answer to "which
+  // R67 D-20/D-66 x A-13 -- THE URL STILL WINS, and WS-A's model is how.
+  //
+  // This lane held the shell's project in its own useUrlProjectId(pathname)
+  // hook: the URL, else a px_project cookie. WS-A shipped a strictly richer
+  // answer to the same question -- routeProject, then the record an object
+  // page names, then what the screen itself published, then the rail's
+  // remembered choice -- applying pickProject(), the SAME pure function the
+  // server page applies, which is what stops the rail and the pane
+  // disagreeing at all. Keeping this lane's hook beside it would put two
+  // resolutions back on one screen, which is the defect BOTH items existed to
+  // remove, so the hook is retired here and `projectId` is derived below.
+  // Its precedence rules are tested in src/lib/project-preference.test.ts.
+  //
+  // The rail's own selection. It is no longer the only answer to "which
+  // project": a screen that resolved one from the URL outranks it (A-03). It is no longer the only answer to "which
   // project": a screen that resolved one from the URL outranks it (A-03).
   const [railProjectId, setRailProjectId] = useState<string | null>(null);
   // A-07: the user's own pinned cards, per browser. Pinning is how a user
@@ -453,7 +513,6 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // thing as the last ranking the server sent. See applyRanking() below.
   const [rankedPills, setRankedPills] = useState<RankedEntry[] | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroups>(NO_TASKS);
-  const [tasksError, setTasksError] = useState<string | null>(null);
   // R67 A-16 -- WHOSE STRIP IS THIS? The ranking is a statement about one
   // person's work, so the cache that paints it before the server answers is
   // keyed by the signed-in user. Resolved from this tab's own Supabase session,
@@ -464,6 +523,22 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // A-16: the organisation read failed twice. The rail says so, in the band
   // M24 says is never covered, with the one control that can change it.
   const [orgFailed, setOrgFailed] = useState(false);
+  // R67 D-66: a monotonic counter the shell increments when something OTHER
+  // than the rail asks for the switcher -- the breadcrumb's project name, the
+  // "pick a project" chooser card. A counter rather than a boolean because a
+  // second request has to open the list a second time, and a boolean that is
+  // already true does nothing.
+  const [switcherOpenSignal, setSwitcherOpenSignal] = useState(0);
+  const openSwitcher = useCallback(() => setSwitcherOpenSignal((n) => n + 1), []);
+  // R67 D-55/D-65: what the transport actually said -- a status AND the
+  // backend's words -- not a pre-formatted sentence, so the ONE shared
+  // dictionary in src/lib/task-errors.ts writes what the user reads, exactly
+  // as it already does for a failed task row. WS-A's own two-attempt read
+  // supplies both (see shell-resilience.ts's JsonRead).
+  const [tasksError, setTasksError] = useState<{ status: number | null; message: string | null } | null>(null);
+  // When the rows currently on screen were last true, for the "as of 14:32"
+  // band a failed refresh leaves behind.
+  const [tasksLoadedAt, setTasksLoadedAt] = useState<Date | null>(null);
   // What the SHELL itself could not load, separate from the task read.
   const [shellErrors, setShellErrors] = useState<{ what: string; detail: string }[]>([]);
   // The function the user picked via a pill. When set, submitting takes
@@ -522,14 +597,25 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     setLoadedChain(next);
   }, []);
   const [draft, setDraft] = useState("");
-  const [counts, setCounts] = useState<{ home: number; approval: number; queue: number; done: number }>({
-    home: 0,
-    approval: 0,
-    queue: 0,
+  // R67 D-55: null, not 0. A tab badge reading 0 over a failed read is a
+  // claim nobody made; the kit renders no badge at all for an absent count,
+  // which is the honest rendering of "we have not been told". A-10's `done`
+  // takes the same rule for the same reason -- "this person has never
+  // completed a task" and "we could not ask" are different facts, and the
+  // first-run hint below turns on which one it is.
+  const [counts, setCounts] = useState<{
+    home: number | null;
+    approval: number | null;
+    queue: number | null;
+    done: number | null;
+  }>({
+    home: null,
+    approval: null,
+    queue: null,
     // A-10: whether this account has EVER completed a task. It is the honest
     // signal for "has this person got a save to their name yet", and it comes
     // from the same one call the tabs are counted from -- never a second guess.
-    done: 0,
+    done: null,
   });
   const [tasksLoaded, setTasksLoaded] = useState(false);
 
@@ -798,19 +884,44 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // Extracted from the effect so a successful submit can call it again. The
   // final step of R-80 is that the minted task APPEARS in Task Master, and a
   // list that only loads once on mount cannot show that.
+  // R67 D-03: BOQ_LINE_NOT_FOUND's sentence names the project ("There is no
+  // line 1.01 on Cedar Heights Villa v2 -- pick a line"), and the task rows
+  // carry a projectId, not a name.
   //
+  // A PLAIN DEPENDENCY, not a ref. This lane held the list in a ref so that
+  // loadTasks could keep a stable identity; after the WS-A merge loadTasks no
+  // longer builds rows at all -- it stores the groups RAW and the rows are
+  // derived per tab during render -- so a ref here would be read during
+  // render, which is both a lint error and a real staleness bug: the memo
+  // would not re-run when the project list arrived, and a row's sentence
+  // would keep saying nothing where it should name the project.
+  const projectNameById = useCallback(
+    (id: string | null | undefined) => (id ? projects.find((p) => p.id === id)?.name ?? null : null),
+    [projects]
+  );
+
   // A-16: attempted twice, one second apart, before the pane admits a failure
   // -- and the pane's Retry now calls THIS, not router.refresh(). The refresh
   // re-rendered a server component that does not own this list, so the one
   // control offered on a failed read could not actually retry the read.
+  //
+  // R67 D-55/D-65: what a failure LEAVES BEHIND is as important as that it is
+  // reported. The status and the backend's own words are kept whole for the
+  // shared dictionary; the counts are forgotten rather than kept, because a
+  // badge left over from the last successful read asserts a number THIS read
+  // did not confirm; and the rows are NOT cleared, so a failed refresh leaves
+  // what was true a minute ago on screen, greyed and dated, instead of an
+  // empty pane.
   const loadTasks = useCallback(async () => {
     const read = await readJsonWithRetry<ApiTasks>("/api/tasks?limit=50");
     if (!read.ok) {
-      setTasksError(read.error);
+      setTasksError({ status: read.status, message: read.error });
+      setCounts({ home: null, approval: null, queue: null, done: null });
       return;
     }
     const data = read.data ?? ({} as ApiTasks);
     setTasksError(null);
+    setTasksLoadedAt(new Date());
     setCounts({
       home: Number(data.counts?.total) || 0,
       approval: Number(data.counts?.needsYou) || 0,
@@ -953,6 +1064,13 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // resolves to nothing rather than to a name invented here.
     return projects.find((p) => p.id === id) ?? null;
   }, [screenObject, projects]);
+
+  // R67 D-20/D-66: the writing half this lane wrote -- "switching project
+  // navigates, carrying every OTHER search parameter through untouched so a
+  // list's filter survives the switch" -- is exactly what chooseProject()
+  // below already does, and it answers two cases this lane's version did not
+  // (an object page, and a screen whose URL does not name the project). One
+  // writer, one reader.
 
   // A-13 -- ONE ROOT, AND THE URL WINS. Route, then the record the URL names,
   // then whatever the screen published, then the rail's remembered choice.
@@ -1201,6 +1319,30 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
       router.refresh();
     },
     [routeProjectId, router, screenObject]
+  );
+
+  // R67 D-66 -- ONE ProjectContext. The rail, the breadcrumb, the composer
+  // root and every page read the project from here and from nothing else, so
+  // the disagreement R-253 recorded ("All projects" in the rail over
+  // "Dashboard / Cedar Heights Villa" in the breadcrumb) has no second source
+  // left to come from. `mode` is derived inside the provider, never stored.
+  //
+  // It is declared HERE, below chooseProject, because it hands that writer out
+  // -- there is exactly one function in this shell that changes the project,
+  // and the context publishes that one rather than a second copy of it.
+  const projectScope = useMemo(
+    () => ({
+      projects,
+      project,
+      projectId,
+      projectsLoaded,
+      // WS-A's writer: it remembers the choice for this browser AND for the
+      // server, rewrites the URL where the URL is what names the project, and
+      // leaves an object page rather than pretending the record moved.
+      selectProject: (next: Project | null) => chooseProject(next ? next.id : null),
+      openSwitcher,
+    }),
+    [projects, project, projectId, projectsLoaded, chooseProject, openSwitcher]
   );
 
   // R67 A-03 -- ASK FOR THE PROJECT WHERE THE PROJECT IS CHOSEN. A click that
@@ -1678,14 +1820,18 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const tabs: TaskTab[] = [
-    { id: "home", label: "Home", count: counts.home },
-    { id: "approval-pending", label: "Approval Pending", count: counts.approval },
-    { id: "in-queue", label: "In Queue", count: counts.queue },
+    { id: "home", label: "Home", count: counts.home ?? undefined },
+    { id: "approval-pending", label: "Approval Pending", count: counts.approval ?? undefined },
+    { id: "in-queue", label: "In Queue", count: counts.queue ?? undefined },
     // M24: Completed and History carry no count -- nothing there needs action.
     { id: "completed", label: "Completed" },
     { id: "history", label: "History" },
   ];
   const [activeTab, setActiveTab] = useState<TaskTab["id"]>("home");
+
+  // "Couldn't load your tasks - ... (UPSTREAM_TIMEOUT)." from the same
+  // dictionary a failed task row uses. Never "Nothing is waiting on you."
+  const taskReadError = tasksError ? describeReadError("your tasks", tasksError) : null;
 
   // R55_BUDGETS_TAB_NOT_IN_URL_01: the tab was pure local state, never
   // written to the URL -- a hard reload always fell back to "home", the
@@ -1735,7 +1881,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
   // The rows are already newest-first: the route orders by created_at desc.
   const { needsYouRows, waitingRows } = useMemo(() => {
     const rows = (list: ApiTask[], group: "needsYou" | "running" | "done" | "blocked") =>
-      list.map((t) => toTaskRow(t, group, projectId));
+      list.map((t) => toTaskRow(t, group, projectId, projectNameById));
     switch (activeTab) {
       case "approval-pending":
         return { needsYouRows: rows(taskGroups.needsYou, "needsYou"), waitingRows: [] };
@@ -1755,7 +1901,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
                 : t.status === "blocked"
                   ? "blocked"
                   : "needsYou";
-          const row = toTaskRow(t, group, projectId);
+          const row = toTaskRow(t, group, projectId, projectNameById);
           const key = `${row.verb} ${row.object}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -1773,7 +1919,7 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           waitingRows: [...rows(taskGroups.running, "running"), ...rows(taskGroups.done, "done")],
         };
     }
-  }, [activeTab, taskGroups, projectId]);
+  }, [activeTab, taskGroups, projectId, projectNameById]);
 
   // R67 A-02/A-06 -- NO STALE CHAIN ACROSS A NAVIGATION.
   //
@@ -2147,9 +2293,9 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           </Suspense>
           <TopRail
             brand={<span className="text-[13px] font-semibold tracking-tight">PROJEXA</span>}
-            // A-16: "Organisation unavailable — [Retry]" when two attempts
-            // failed, "Loading…" until the first answers, and the name once it
-            // has. A lone "—" is not one of the reachable states any more.
+            // A-16: "Organisation unavailable - [Retry]" when two attempts
+            // failed, "Loading..." until the first answers, and the name once
+            // it has. A lone "-" is not one of the reachable states any more.
             organisation={
               <>
                 <span>{orgLabel.text}</span>
@@ -2166,17 +2312,26 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
               </>
             }
             project={railLabelProject}
-            onSwitchProject={() => {
-              // Cycles through real projects and back through the null state.
-              // M24: "THE PROJECT SELECTOR NEEDS A NULL STATE ('All projects')
-              // so CRM, pipeline and org-level work are reachable." The cycle
-              // starts from the project actually on show, which after A-03 may
-              // be the one the SCREEN resolved rather than the last one clicked.
-              if (projects.length === 0) return;
-              const i = projects.findIndex((p) => p.id === projectId);
-              const next = i === projects.length - 1 ? null : (projects[i + 1] ?? projects[0]);
-              chooseProject(next ? next.id : null);
-            }}
+            // R67 D-66/D-04 -- A REAL LIST, NOT A CYCLE. The rail's control was
+            // onSwitchProject: one click advanced to the NEXT project, so with
+            // five projects reaching the third cost three clicks and there was
+            // no moment at which the user could see what they were choosing
+            // from -- under a "▾" promising a menu that never opened. M24's own
+            // sentence is why that matters: "THE PROJECT MUST BE VISIBLE AT ALL
+            // TIMES ... logging progress against the wrong project is the most
+            // expensive mistake available in this product", and a control you
+            // cannot see the options of is how that mistake gets made.
+            //
+            // Choosing writes through A-13's chooseProject(), so every rule
+            // that answer already carries -- the remembered preference, the
+            // URL rewrite on a screen whose URL names the project, the
+            // deliberate departure from an object page -- applies unchanged.
+            projects={projects}
+            onSelectProject={(next) => chooseProject(next ? next.id : null)}
+            // R67 D-66: the breadcrumb's project name and the "pick a project"
+            // chooser card both open THIS list rather than each growing a
+            // switcher of their own.
+            openSignal={switcherOpenSignal}
             search={<SearchTrigger />}
             alerts={<NotificationBell />}
             account={<AccountMenu email={info?.email} />}
@@ -2209,33 +2364,60 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <div className="min-h-0 flex-1">
-        {tasksError ? (
+        {taskReadError ? (
           // Never an empty list in place of an error -- that is the exact
           // defect this codebase has shipped repeatedly, and it makes a broken
-          // backend indistinguishable from "you have nothing to do". The
-          // backend's OWN words, with a retry that costs one click.
+          // backend indistinguishable from "you have nothing to do".
+          //
+          // R67 D-55/D-65: the kit's TaskMaster prints "Nothing is waiting on
+          // you." whenever BOTH lists are empty, so on a failure it is
+          // rendered only when real rows survive from an earlier read --
+          // greyed, and labelled with when they were true. The sentence comes
+          // from the one shared dictionary, and Retry re-issues the read
+          // rather than reloading the whole route.
           <div className="flex h-full flex-col">
-            <div className="m-2 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
-              {/* A-16 -- ONE LINE, then the backend's own words under it. The
-                  notice names the thing that failed in the user's language;
-                  the detail is kept because it is the only sentence that can
-                  tell an operator WHY, and hiding it in a tooltip would lose
-                  it. Retry calls the task read itself: the old control called
-                  router.refresh(), which re-renders a server component that
-                  does not own this list, so the one control offered on a
-                  failure could not actually retry it. */}
+            <div className="m-2 shrink-0 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+              {/* ONE LINE, then the backend's own words under it. The sentence
+                  is the shared dictionary's (src/lib/task-errors.ts), so
+                  "supabaseKey is required" reads here exactly as it does on
+                  every other screen, and a 401 is offered no Retry because
+                  retrying will not fix a permission. The detail is kept
+                  because it is the only sentence that can tell an operator
+                  WHY, and hiding it in a tooltip would lose it.
+
+                  A-16: Retry calls the task read itself. The old control
+                  called router.refresh(), which re-renders a server component
+                  that does not own this list -- so the one control offered on
+                  a failure could not actually retry it. */}
               <p role="alert" className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
-                <span>{TASKS_UNAVAILABLE}</span>
-                <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
-                  Retry
-                </button>
+                <span>{taskReadError.sentence}</span>
+                {taskReadError.retryable && (
+                  <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
+                    Retry
+                  </button>
+                )}
               </p>
-              {tasksError && (
+              {taskReadError.detail && (
                 <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
-                  {tasksError}
+                  {taskReadError.detail}
                 </p>
               )}
             </div>
+            {needsYouRows.length + waitingRows.length > 0 && (
+              <div className="min-h-0 flex-1 opacity-70">
+                <p className="px-3 pb-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  Showing what loaded {asOfLabel(tasksLoadedAt) ?? "earlier"}.
+                </p>
+                <TaskMaster
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                  needsYou={needsYouRows}
+                  waitingOnOthers={waitingRows}
+                  onLoad={onLoadChain}
+                />
+              </div>
+            )}
           </div>
         ) : (
         <TaskMaster
@@ -2352,25 +2534,16 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
-          // R67 A-01: ONE state-derived sentence. It renders in the strip and
-          // is reused verbatim as this button's tooltip and accessible name --
-          // it is never printed twice, and the four strings it replaces
-          // ("Select a module to begin", "Pick a project or a module first",
-          // and the two placeholders below) are gone.
+          // R67 A-01/A-19: ONE state-derived sentence, rendered in the strip
+          // and reused verbatim as this button's tooltip and accessible name.
           //
-          // THIS REPLACES LANE G'S disabledReason/emptyInputReason/
-          // allowEmptySubmit TRIO (r67(G) #229) RATHER THAN SITTING BESIDE IT,
-          // and the replacement is deliberate. G's rule was "there is no state
-          // in which Send is dead and unexplained", and it bought that with a
-          // separate sentence rendered next to the button. Those props do not
-          // exist on this fork any more: A-19 moved the explanation INTO the
-          // button's own label ("Send (pick a project, say what you need)"),
-          // which keeps G's rule and makes it stronger -- the words are now the
-          // control's accessible name, so a screen reader announces the same
-          // sentence the eye reads, and the empty-input state G had to add
-          // emptyInputReason for is one of the things missingThings() lists.
-          // Keeping both mechanisms would print the reason twice, which is the
-          // duplicate-instruction defect BOTH lanes were sent to remove.
+          // THIS REPLACES THIS LANE'S disabledReason PROP, which the forked
+          // Composer no longer accepts. The rule D-66 attached to it -- "the
+          // reason names the RAIL, because that is where a project is chosen,
+          // rather than leaving the user to find the control" -- is not lost:
+          // A-03 moves keyboard focus to the rail's project control when a
+          // click cannot proceed without one, which is the same instruction
+          // acted on rather than merely written down.
           instruction={instruction}
           // A-10: the button is named for what it will do, and never becomes
           // "Sending..." -- a spinner sits beside it instead.
@@ -2421,7 +2594,10 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
         />
       }
     >
-      {children}
+      {/* R67 D-66: everything under the shell -- every module page, every
+          breadcrumb, every chooser card -- reads the project from here.
+          Nothing below this line derives its own. */}
+      <ProjectScopeProvider value={projectScope}>{children}</ProjectScopeProvider>
     </AppShell>
   );
 }

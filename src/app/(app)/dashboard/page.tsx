@@ -1,7 +1,10 @@
+import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import DashboardHomeView, { type OrgDashboard, type CurrencyRow, type RegistryColumn } from "@/components/DashboardHomeView";
+import DashboardProjectClient from "@/components/DashboardProjectClient";
 import ModuleDirectory from "@/components/shell/ModuleDirectory";
+import { dashboardScope, PROJECT_COOKIE } from "@/lib/project-selection";
 
 // R46 P8 seq123 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard"): same pattern as permits/page.tsx's
@@ -24,7 +27,27 @@ async function resolveDashboardColumns(organizationId: string | null): Promise<R
   }
 }
 
-export default async function DashboardPage() {
+// R67 D-66 -- HOME follows the project context.
+//
+// "/dashboard renders the portfolio when the context is All and the project
+// dashboard when a project is set; /dashboard/project stays a deep link that
+// sets the context."
+//
+// Until now /dashboard ALWAYS rendered the org portfolio, whatever the rail
+// said -- so a user who picked Cedar Heights in the top bar and then clicked
+// HOME landed on a screen about every project, with the rail still naming
+// one. That is the same split-brain R-253 recorded in the breadcrumb, in the
+// one place a user returns to most often.
+//
+// The order of sources is the WS-A root rule's: the URL wins, then the
+// px_project cookie the rail writes. There is deliberately NO projects[0]
+// fallback -- that is the fault D-20 removed, and the home screen is the
+// loudest possible place to re-introduce it.
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string }>;
+}) {
   let data: OrgDashboard | null = null;
   let errorMessage: string | null = null;
   let currencies: CurrencyRow[] = [];
@@ -67,6 +90,24 @@ export default async function DashboardPage() {
   // user still lands on their numbers first, while a new user -- who has none
   // of the earned affordances (history, pinning, ranking) -- can still see
   // every module the product has, grouped by domain.
+  // The scope is decided from the org's REAL project list, so a stale cookie
+  // naming a project this org can no longer see is discarded rather than
+  // followed into a blank screen.
+  const { projectId } = await searchParams;
+  const remembered = (await cookies()).get(PROJECT_COOKIE)?.value ?? null;
+  const scope = dashboardScope(data?.projects ?? [], projectId, remembered);
+
+  if (scope.project) {
+    // The project dashboard renders its own "Dashboard / <project name>"
+    // breadcrumb from the payload it fetches, so the rail and the breadcrumb
+    // are naming the same project by construction.
+    return (
+      <div className="flex-1">
+        <DashboardProjectClient projectId={scope.project.id} labels={registryColumns} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-4">
       <DashboardHomeView userName={userName} data={data} currencies={currencies} errorMessage={errorMessage} registryColumns={registryColumns} />

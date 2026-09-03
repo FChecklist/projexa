@@ -41,7 +41,7 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
         {!errorMessage && !project && (
           <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>
         )}
-        {project && <DrawingsClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && <DrawingsClient projectId={project.id} projectName={project.name} registryColumns={registryColumns} />}
       </div>
     </>
   );

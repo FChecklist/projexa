@@ -17,9 +17,40 @@
 // changed and why; this file only renders what that module decides, and adds
 // the two things a pure function cannot: the header band (status at header
 // level as well as item level) and the filtered-view banner.
-import { useEffect, useMemo, useState } from "react";
+//
+// ─── R67 D-65 / D-59 / D-71: THE READ IS NO LONGER ALLOWED TO LIE ───────
+//
+// BEFORE, in full:
+//
+//   fetch(`/api/permits?...`)
+//     .then((r) => r.json())            // status never read
+//     .then((data) => setPermits(data.permits ?? []))   // error body -> []
+//     .finally(() => setLoading(false));
+//
+// A 500 parsed cleanly as JSON, `data.permits` came back undefined, `?? []`
+// produced an empty array, and the kit's ListScreen then rendered "0
+// records" and "No permits yet for this project." -- on a project with
+// permits, with no error anywhere on screen and no way to tell a broken
+// backend from an empty one. There was not even a catch: a network failure
+// left the spinner up forever.
+//
+// AFTER: the outcome is held (loading | error | ready) and PaneState decides
+// what may be said. The empty sentence is reachable only from a 200. The
+// kit's ListScreen is rendered ONLY when there are rows to put in it --
+// per D-09 the kit stays unchanged, and handing it rows:[] is precisely how
+// its own "0 records" got onto a failed screen.
+//
+// D-71 finishes the job: the twenty lines of load-state bookkeeping that
+// stood here are now useListRead(), the one shared list hook, so the rule
+// lives in a tested module instead of being re-typed per screen.
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ListScreen, ScreenFrame, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { PaneState } from "@/components/PaneState";
+import { useListRead } from "@/lib/use-list-read";
+import { recordCountLabel } from "@/lib/pane-state";
 import { StatusPillTone } from "@/components/ui/status-pill";
 import {
   parseWithinDays,
@@ -57,27 +88,35 @@ const COLUMNS: ScreenColumn[] = [
 
 export default function PermitsListClient({
   projectId,
+  projectName,
   withinDays,
   registryColumns,
 }: {
   projectId: string;
+  projectName?: string | null;
   withinDays?: string;
   registryColumns?: RegistryColumn[] | null;
 }) {
   const router = useRouter();
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [loading, setLoading] = useState(true);
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
 
-  useEffect(() => {
-    const params = new URLSearchParams({ projectId });
-    if (withinDays) params.set("withinDays", withinDays);
-    else params.set("all", "true");
-    fetch(`/api/permits?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => setPermits(data.permits ?? []))
-      .finally(() => setLoading(false));
-  }, [projectId, withinDays]);
+  const params = new URLSearchParams({ projectId });
+  if (withinDays) params.set("withinDays", withinDays);
+  else params.set("all", "true");
+
+  // Rows already held are deliberately NOT cleared by a failed refresh -- the
+  // hook keeps them and dates them; see PaneState's "as of 14:32" band.
+  const {
+    rows: permits,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Permit>({
+    url: `/api/permits?${params.toString()}`,
+    select: (body) => (body as { permits?: Permit[] } | null)?.permits,
+  });
 
   // R67 G-01: "Default the sort to endDate ascending so the most urgent
   // permit is first." Done here rather than asking the API for an order,
@@ -108,13 +147,25 @@ export default function PermitsListClient({
       // NEVER FAIL-AFTER-CLICK. A disabled action shows WHY beside it."
       // Filter/Export aren't built for this module yet -- say so instead of
       // faking availability.
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
+      // R67 D-59: "(Not yet available)" was the placeholder on both, and the
+      // shared ListHeaderActions on Labour/Materials/Schedule says something
+      // real. Two conventions for the same disabled control is the finding.
+      // Export names the honest reason it has TODAY -- an empty list has
+      // nothing to export -- and falls back to the not-built sentence.
+      exportAction={{
+        label: "Export",
+        disabledReason: permits.length === 0 ? "Export — no rows to export" : "Exporting permits is not built yet",
+      }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering permits is not built yet" }}
       // R67 G-01: status at HEADER level as well as item level. Same three
       // glyphs, same three tones, same counts as the rows beneath -- so the
       // answer to "is anything wrong here" costs no scanning.
+      // Gated on a SUCCESSFUL read, not merely on "not loading": over a 500
+      // the counts are all zero, and this band would then assert "No permits
+      // on this project yet." -- the same false-empty claim D-65 removed from
+      // the list itself.
       headerMessageStrip={
-        loading ? null : (
+        status !== "ready" ? null : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {filtered && (
               <span className="flex flex-wrap items-center gap-2">
@@ -144,24 +195,47 @@ export default function PermitsListClient({
       }
       messages={[]}
     >
-      {loading ? (
-        <p className="px-4 py-6 text-[13px] text-ct-muted">Loading…</p>
-      ) : (
-        <ListScreen
-          functionId="permits.list"
-          columns={columns}
-          rows={rows as unknown as Record<string, unknown>[]}
-          getRowId={(row) => row.id as string}
-          onRowClick={(row) => router.push(`/permits/${row.id}`)}
-          emptyStateLabel="No permits yet for this project."
-          renderCell={{
-            daysToExpiry: (row) => {
-              const status = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
-              return <StatusPillTone tone={status.tone} label={status.label} />;
-            },
-          }}
-        />
-      )}
+      <div className="px-1 pb-1">
+        {/* The record count is an en-dash until a read has actually
+            succeeded -- "0 records" over a 500 is a claim nobody made. */}
+        <p className="px-3 py-2 text-[12px] text-px-muted">{recordCountLabel(status, permits.length)}</p>
+        <PaneState
+          status={status}
+          entity="permits"
+          projectName={projectName}
+          startedAt={startedAt}
+          error={error}
+          rowCount={permits.length}
+          lastLoadedAt={loadedAt}
+          skeletonColumns={columns.map((c) => c.label)}
+          emptyMessage="No permits yet for this project."
+          emptyAction={
+            <Button size="sm" onClick={() => router.push(`/permits/new?projectId=${projectId}`)}>
+              <Plus className="size-4" aria-hidden /> New
+            </Button>
+          }
+          onRetry={reload}
+        >
+          {/* R67 G-01: the rows are the SORTED ones, so the list and the
+              header counts above are computed from one array and cannot
+              disagree. The cell renders what permit-status.ts decides -- a
+              glyph and words, never a bare signed number in a chip. */}
+          <ListScreen
+            functionId="permits.list"
+            columns={columns}
+            rows={rows as unknown as Record<string, unknown>[]}
+            getRowId={(row) => row.id as string}
+            onRowClick={(row) => router.push(`/permits/${row.id}`)}
+            emptyStateLabel="No permits yet for this project."
+            renderCell={{
+              daysToExpiry: (row) => {
+                const rowStatus = permitStatus((row as unknown as Permit).daysToExpiry, windowDays);
+                return <StatusPillTone tone={rowStatus.tone} label={rowStatus.label} />;
+              },
+            }}
+          />
+        </PaneState>
+      </div>
     </ScreenFrame>
   );
 }

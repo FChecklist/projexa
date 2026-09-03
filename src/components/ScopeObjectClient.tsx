@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
-  boqTotal, withCurrency, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
+  boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
@@ -138,6 +139,16 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
     }
   }
 
+  // R67 D-67: deleting a BOQ takes its line items with it, and a QS may
+  // have spent an afternoon building them. The kit fired this from a single
+  // click. Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "BOQ",
+    identifier: boq ? `${boq.title} (v${boq.version})` : null,
+    extra: rows.length > 0 ? `and its ${rows.length} line item${rows.length === 1 ? "" : "s"}` : null,
+    run: () => runAction("delete"),
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -176,7 +187,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
       ]}
       // Real Delete, gated exactly on the backend's own rule (draft-only) —
       // never a fake-enabled button that fails after the click.
-      onDelete={isDraft ? () => runAction("delete") : undefined}
+      onDelete={isDraft ? removal.request : undefined}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
       // Real Back, preserving ?projectId= — derived from the loaded BOQ
       // itself (same pattern as PermitObjectClient's permit.projectId), not
@@ -191,6 +202,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
           Edit/Delete/Save/Cancel. Every button here maps to a real endpoint
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
+      {removal.card}
       <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
         {isDraft && (
           <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("submit")}>
@@ -264,7 +276,7 @@ export default function ScopeObjectClient({ boqId }: { boqId: string }) {
                   </TableCell>
                   <TableCell className="text-ct-muted">{r.unit}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
-                  <TableCell className="text-right">{isSub ? (derived ? derived.rate.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") : r.rate}</TableCell>
+                  <TableCell className="text-right">{isSub ? (derived ? formatAmount(derived.rate) : "—") : formatAmount(r.rate)}</TableCell>
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
                   <TableCell className="text-right">
                     <Input
