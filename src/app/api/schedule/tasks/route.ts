@@ -19,10 +19,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// R67 D-47: an ACTIVITY, not just a titled issue. The body is forwarded whole,
-// so startDate / durationDays / predecessorId / boqLineItemId reach
-// createScheduleActivity() on the VERIDIAN side, which validates the two ids
-// and derives the finish date from the duration. startDate is checked here too
+// R67 D-47: an ACTIVITY, not just a titled issue. startDate / durationDays /
+// predecessorId / boqLineItemId are forwarded to createScheduleActivity() on
+// the VERIDIAN side, which validates the two ids against the org and derives the
+// finish date from the duration. startDate is checked here too
 // so the form gets the same refusal without a round trip -- a programme
 // activity with no start cannot be drawn on a timeline, cannot have a
 // duration, and cannot be compared to a baseline.

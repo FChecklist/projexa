@@ -241,8 +241,9 @@ export default function ScheduleGanttClient({
     // the module slower still.
     void Promise.all([loadGantt(), loadBaselines()]);
     // loadGantt is stable-by-construction (it closes over projectId only); the
-    // baseline loader is the memoised one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // baseline loader is the memoised one, and its own chain bottoms out at
+    // emitMessage, which has no dependencies at all -- so this effect runs once
+    // per project, not once per render.
   }, [projectId, loadBaselines]);
 
   useEffect(() => {
