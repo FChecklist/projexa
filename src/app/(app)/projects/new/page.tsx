@@ -8,9 +8,14 @@ import ProjectCreateClient, { type ProductOption } from "@/components/ProjectCre
 // the browser and the create screen renders with its picker already filled.
 // The read is bounded by the shared screen budget so a hung upstream costs
 // this screen 8 s, not the whole function timeout.
+// A page component may only return JSX: Next's generated route types reject a
+// NextResponse here, which is why `return ctx.response` compiled under
+// `tsc --noEmit` and still failed `next build`. Every other page in this app
+// (see dashboard/page.tsx) reads the context and returns nothing else --
+// redirecting an unauthenticated visitor is the proxy's job, over the
+// protected-route list scripts/generate-protected-routes.mjs emits.
 export default async function NewProjectPage() {
   const ctx = await requireAuth();
-  if (ctx.response) return ctx.response;
 
   let products: ProductOption[] = [];
   let productsError: string | null = null;
