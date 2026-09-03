@@ -46,6 +46,37 @@ describe("MODULE_CATALOGUE", () => {
     const prefixes = MODULE_CATALOGUE.flatMap((m) => m.prefixes);
     expect(new Set(prefixes).size).toBe(prefixes.length);
   });
+
+  // R67 B-02. The item quotes these two prompts verbatim, so they are asserted
+  // as literals rather than by shape: the whole complaint behind R-117 was that
+  // /budgets advertised nothing the composer could DO, and a paraphrase would
+  // let that regress silently.
+  test("B-02: /budgets offers both prompts the item quotes, verbatim", () => {
+    const budgets = MODULE_CATALOGUE.find((m) => m.id === "budgets");
+    expect(budgets?.examples).toEqual([
+      "Set budget % to 30 on all civil lines",
+      "Show budget vs actual by category for this project",
+    ]);
+  });
+
+  test("B-02: /scope offers the one of the two that is a scope edit", () => {
+    const scope = MODULE_CATALOGUE.find((m) => m.id === "scope");
+    expect(scope?.examples).toContain("Set budget % to 30 on all civil lines");
+    // The budget REPORT prompt stays on /budgets -- offering it here would
+    // point a user at the wrong screen.
+    expect(scope?.examples).not.toContain("Show budget vs actual by category for this project");
+  });
+
+  // Not asserted, and deliberately so: a module's placeholder is NOT always
+  // "e.g. <first example>" -- lane A gives some screens a different resting
+  // sentence. The two routes B-02 owns follow that pattern; the invariant is
+  // not general, so it is not claimed as one.
+  test("B-02: the two routes it owns rest on their own first example", () => {
+    for (const id of ["budgets", "scope"]) {
+      const mod = MODULE_CATALOGUE.find((m) => m.id === id);
+      expect(mod?.placeholder).toBe(`e.g. ${mod?.examples[0]}`);
+    }
+  });
 });
 
 describe("moduleForPathname", () => {

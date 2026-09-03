@@ -75,17 +75,48 @@ export class VeridianApiError extends Error {
   // their `Server-Timing: upstream;dur=` header.
   readonly code: VeridianErrorCode | null;
   readonly durationMs: number;
+  /**
+   * R67 B-09 (decision D-03) -- the upstream's CLOSED-VOCABULARY RULE REFUSAL.
+   *
+   * VERIDIAN no longer answers a rule violation with an English sentence; it
+   * answers with {code, missing} and PROJEXA composes the words from
+   * src/lib/task-errors.ts. Before this, that body reached `errorBody.error`
+   * as `undefined` and every coded refusal degraded to the generic "VERIDIAN
+   * API request failed (400)" -- the code was thrown away one line before it
+   * would have been useful. Both are optional, so nothing that still returns
+   * `{error}` changes shape.
+   *
+   * R67 MERGE (lane B x lane F2) -- WHY THIS IS `ruleCode` AND NOT `code`.
+   * Lane B named this field `code`; lane F-20 independently gave the same
+   * class a `code` of its own. They are two DIFFERENT closed vocabularies:
+   * F-20's is the four-value TRANSPORT classification (VeridianErrorCode:
+   * UPSTREAM_TIMEOUT / UPSTREAM_500 / STORAGE_UNAVAILABLE / NETWORK), which
+   * decides the HTTP status and whether Retry-After is honest; B-09's is the
+   * BUSINESS-RULE vocabulary (BOQ_LINE_REQUIRED, ...) the browser turns into
+   * a sentence. Collapsing them into one field would either widen
+   * VeridianErrorCode to `string` -- breaking veridian-response.ts's
+   * RETRYABLE_CODES lookup, which is what makes the retry advice truthful --
+   * or force a rule code into a set it does not belong to. They never co-occur
+   * (a rule refusal is a 4xx, where F-20's `code` is null by design), so they
+   * get one field each and both survive intact. The HTTP wire shape is
+   * unchanged: /api/work-progress still answers {code, missing}.
+   */
+  readonly ruleCode?: string;
+  readonly missing?: string[];
   constructor(
     message: string,
     public status: number,
     detail?: string,
     code: VeridianErrorCode | null = null,
-    durationMs = 0
+    durationMs = 0,
+    coded?: { code?: unknown; missing?: unknown }
   ) {
     super(message);
     this.detail = detail;
     this.code = code;
     this.durationMs = durationMs;
+    this.ruleCode = typeof coded?.code === "string" ? coded.code : undefined;
+    this.missing = Array.isArray(coded?.missing) ? coded.missing.filter((m): m is string => typeof m === "string") : undefined;
   }
 }
 
@@ -435,7 +466,17 @@ type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE
 // through as an anonymous 500. It is a specific, fixable operator condition
 // and now says so.
 async function throwForResponse(res: Response, durationMs: number): Promise<never> {
-  const errorBody = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+  // R67 MERGE (lane B x lane F2): `code`/`missing` are read here too. Lane B
+  // parsed the error body inline at each of the three call sites so a B-09
+  // rule refusal would stop degrading to the generic "VERIDIAN API request
+  // failed (400)". F-20 had already made this function the ONE place a failed
+  // response becomes an error, so B's parse moves here and covers all three
+  // sites at once -- B's fix intact, F-20's single owner intact.
+  const errorBody = await res.json().catch(() => ({ error: res.statusText })) as {
+    error?: string;
+    code?: unknown;
+    missing?: unknown;
+  };
   const message = errorBody.error ?? `VERIDIAN API request failed (${res.status})`;
   const code: VeridianErrorCode | null = /supabasekey is required/i.test(message)
     ? "STORAGE_UNAVAILABLE"
@@ -449,7 +490,8 @@ async function throwForResponse(res: Response, durationMs: number): Promise<neve
     res.status,
     code === "STORAGE_UNAVAILABLE" ? `upstream reported: ${message}` : undefined,
     code,
-    durationMs
+    durationMs,
+    errorBody
   );
 }
 

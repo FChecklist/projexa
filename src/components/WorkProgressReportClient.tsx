@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Play, Share2, Download } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
 import { formatDecimal } from "@/lib/format-number";
-import { formatProgressCell } from "@/lib/work-progress-report";
+import { formatProgressCell, unlinkedEntriesNote } from "@/lib/work-progress-report";
 
 // Point 11 (Rajat, 21 Aug: "SHOW BOTH TOTAL AND BALANCE, USER CHOOSES"):
 // the third column of every band can read either total (previous +
@@ -53,11 +53,13 @@ type VendorRow = { vendorId: string; vendorName: string; totalCost: number };
 type BoqOption = { id: string; title: string; status: string; version: number };
 // R67 I-05: availableCategories/categoryFilter are additive -- an older
 // response without them still renders, the multi-select just has nothing to
-// offer until the first run comes back.
+// offer until the first run comes back. R67 B-09's unlinkedEntryCount is
+// additive for the same reason.
 type ReportResponse = {
   boqTitle: string | null; boqId: string | null; availableBoqs: BoqOption[];
   rows: LineItemRow[]; byCategory: CategoryRow[]; byManpower: ManpowerRow[]; byVendor: VendorRow[];
   availableCategories?: string[]; categoryFilter?: string[];
+  unlinkedEntryCount?: number;
 };
 
 // R67 G-05 (R-260). This passed `undefined` as the locale, which is the
@@ -341,6 +343,10 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ReportResponse | null>(null);
+  // R67 B-09: the sentence itself is a pure function beside the report's own
+  // maths, so the number the note quotes and the number the tables exclude
+  // can never come from two different definitions of "linked".
+  const unlinkedNote = unlinkedEntriesNote(report?.unlinkedEntryCount ?? 0);
   const [sharing, setSharing] = useState(false);
   // Point 11: component state only -- never persisted, never sent to the API.
   const [thirdColumnMode, setThirdColumnMode] = useState<ThirdColumnMode>("total");
@@ -563,6 +569,19 @@ export default function WorkProgressReportClient({ projectId }: { projectId: str
             <p className="py-10 text-center text-sm text-px-muted">Pick a date range and click Run Report.</p>
           ) : (
             <Tabs defaultValue="scope" className="space-y-4">
+              {/* R67 B-09: this report has always silently DROPPED an entry
+                  that no BOQ line can claim. On a project without a BOQ that
+                  is the whole day's work, and the site engineer sees a total
+                  they know is short with nothing to explain it. Now it says
+                  so, above the table, before anyone reads a number. */}
+              {unlinkedNote && (
+                <p
+                  className="rounded-md border border-px-warning-border bg-px-warning-light px-3 py-2 text-[12.5px] text-px-warning"
+                  data-testid="work-progress-report-unlinked-note"
+                >
+                  {unlinkedNote}
+                </p>
+              )}
               <TabsList>
                 <TabsTrigger value="scope">Scope-wise</TabsTrigger>
                 <TabsTrigger value="category">Category-wise</TabsTrigger>

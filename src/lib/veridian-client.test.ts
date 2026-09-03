@@ -224,6 +224,63 @@ describe("the closed code set", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// R67 MERGE (lane B x lane F2) -- THE TWO VOCABULARIES STAY APART.
+// ---------------------------------------------------------------------------
+//
+// B-09 gave VeridianApiError a `code` carrying the upstream's BUSINESS-RULE
+// refusal (BOQ_LINE_REQUIRED); F-20 gave the same class a `code` carrying the
+// four-value TRANSPORT classification. Merging the two lanes forced a choice,
+// and the choice was one field each: `ruleCode` for B-09, `code` for F-20.
+//
+// These assertions exist because the tempting "simplification" -- folding
+// ruleCode back into code -- is silently destructive. It would either widen
+// VeridianErrorCode to `string`, which breaks veridian-response.ts's
+// RETRYABLE_CODES membership test and so makes the Retry-After advice
+// dishonest, or drop the rule code, which sends the Daily Entry form back to
+// printing "VERIDIAN API request failed (400)" instead of "Pick a BOQ line".
+describe("R67 merge: a rule refusal and a transport failure use different fields", () => {
+  test("a coded 400 carries ruleCode + missing, and NO transport code", async () => {
+    // Exactly what compliance-tracker's progress route answers for B-09:
+    // {code, missing} and no `error` prose at all.
+    stubJson(400, { code: "BOQ_LINE_REQUIRED", missing: ["boqLine"] });
+
+    let thrown: unknown = null;
+    try {
+      await callVeridian("/work-progress", { ...KEY, method: "POST", body: { projectId: "p1" } });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(VeridianApiError);
+    const e = thrown as VeridianApiError;
+    // B-09's half: the rule code survives the trip. Before the merge fix it
+    // was thrown away, and the refusal degraded to the generic sentence.
+    expect(e.ruleCode).toBe("BOQ_LINE_REQUIRED");
+    expect(e.missing).toEqual(["boqLine"]);
+    // F-20's half: a 4xx is a real answer, so it gets no infrastructure code
+    // and must never be advertised as retryable.
+    expect(e.code).toBeNull();
+    expect(e.status).toBe(400);
+  });
+
+  test("a transport failure carries the transport code and NO ruleCode", async () => {
+    stubJson(500, { error: "boq rollup failed" });
+
+    let thrown: unknown = null;
+    try {
+      await callVeridian("/work-progress", { ...KEY, method: "POST", body: {} });
+    } catch (err) {
+      thrown = err;
+    }
+
+    const e = thrown as VeridianApiError;
+    expect(e.code).toBe("UPSTREAM_500");
+    expect(e.ruleCode).toBeUndefined();
+    expect(e.missing).toBeUndefined();
+  });
+});
+
 describe("caller cancellation", () => {
   test("an aborted caller is not reported as an upstream timeout", async () => {
     stubNeverResolves();

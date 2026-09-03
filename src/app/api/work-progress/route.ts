@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
@@ -29,6 +29,22 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     const data = await callVeridian("/work-progress", { organizationId: ctx.organizationId!, method: "POST", body: { ...body, actorEmail: ctx.user?.email ?? null } });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
+    // R67 B-09 (D-03): a rule violation comes back as a CODE, and it is
+    // forwarded as a code. The words are composed in the browser, from
+    // src/lib/task-errors.ts, so the Daily Entry form and the composer print
+    // the same sentence for the same failure.
+    //
+    // R67 MERGE (lane B x lane F2): the field is `err.ruleCode` now -- see
+    // VeridianApiError, where B-09's business-rule vocabulary and F-20's
+    // transport vocabulary were given one field each rather than being
+    // collapsed into a single `code`. The WIRE SHAPE IS UNCHANGED: this still
+    // answers {code, missing}, which is what WorkProgressFormClient reads.
+    // Everything that is NOT a rule refusal keeps falling through to F-20's
+    // veridianErrorResponse(), so a hung or dead upstream still gets its
+    // typed code, its 503 + Retry-After and its Server-Timing header.
+    if (err instanceof VeridianApiError && err.ruleCode) {
+      return NextResponse.json({ code: err.ruleCode, missing: err.missing ?? [] }, { status: err.status });
+    }
     return veridianErrorResponse(err, "Failed to log progress");
   }
 });
