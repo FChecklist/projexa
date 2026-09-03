@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
@@ -95,6 +96,13 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     : disposing ? "Removing…" : undefined;
 
   return (
+    <>
+    {/* R67 A-21: "<project> › Drawing Ground floor plan rev C". This page takes
+        its project from the QUERY STRING rather than from the record (the
+        documents DTO carries no linkedEntityId, per the route's own comment),
+        so an empty string is published as null -- the shell then falls back to
+        the rail, which is honest, instead of resolving a project id of "". */}
+    <ObjectContext moduleId="drawings" label={d.name} projectId={projectId || null} />
     <ObjectScreen
       breadcrumb="Drawings & 3D / Drawing"
       title={d.name}
@@ -128,5 +136,6 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         )}
       </div>
     </ObjectScreen>
+    </>
   );
 }

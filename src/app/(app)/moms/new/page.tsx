@@ -5,6 +5,7 @@ import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { MOMS_TEXT } from "@/lib/moms-list";
 import MoMCreateClient from "@/components/MoMCreateClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 // R67 D-20. THE DEFECT: this route used to call resolveSelectedProject()
 // with no opt-out, so arriving here with no ?projectId= silently resolved to
@@ -21,7 +22,11 @@ import MoMCreateClient from "@/components/MoMCreateClient";
 export default async function MoMNewPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, projects, errorMessage } = await resolveSelectedProject(projectId, organizationId, {
+  // R67 D-20: this screen REQUIRES a project -- a meeting saved under a
+  // silently-chosen one can be Published, which locks it server-side -- so it
+  // declines the last-resort pick and asks instead. `projects` is what it asks
+  // WITH, and `source` is what the shell's rail is told.
+  const { project, projects, errorMessage, source } = await resolveSelectedProject(projectId, organizationId, {
     allProjectsWhenUnset: true,
   });
 
@@ -77,6 +82,9 @@ export default async function MoMNewPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="flex-1">
+      {/* R67 A-03: the create screen is inside one project too -- the shell's
+          rail and strip must say which, not "All projects". */}
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
       <MoMCreateClient projectId={project.id} projectName={project.name} />
     </div>
   );

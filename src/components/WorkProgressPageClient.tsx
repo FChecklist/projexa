@@ -24,7 +24,8 @@
 //
 // The reads now live in src/lib/work-progress-reads.ts, where they are
 // tested, and this file holds only the outcome the list branches on.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import WorkProgressFormClient from "./WorkProgressFormClient";
 import WorkProgressListClient from "./WorkProgressListClient";
 import {
@@ -76,6 +77,29 @@ export default function WorkProgressPageClient({
     void load();
   }, [load]);
 
+  // R67 A-04. The composer's "Record progress" card is a verb, so it must put
+  // the cursor where the work starts -- the form's first field, Activity --
+  // rather than dropping the user on the screen to find it. The card navigates
+  // here with ?focus=activity and this puts focus on the control.
+  //
+  // WHY querySelector AND NOT AN id: the form is the kit's FormScreen, whose
+  // FieldRenderer generates every control id with React's useId(), so there is
+  // no stable id to target from outside. The Activity column is declared first
+  // in WorkProgressFormClient's own columns array and is a SELECT, so the
+  // first <select> inside the form column IS Activity. If that ever stops
+  // being true the focus simply lands elsewhere -- it cannot break the page.
+  const formRef = useRef<HTMLDivElement>(null);
+  const focusRequest = useSearchParams().get("focus");
+  useEffect(() => {
+    if (focusRequest !== "activity") return;
+    const control = formRef.current?.querySelector<HTMLSelectElement>("select");
+    control?.focus();
+    control?.scrollIntoView({ block: "center" });
+  // R67 D-55 replaced this pane's `loading` boolean with a real outcome, so
+  // the focus effect re-runs when the read SETTLES rather than when a flag
+  // flips -- which is the moment the Activity select actually exists.
+  }, [focusRequest, status]);
+
   const activityNameById = new Map(activities.map((a) => [a.id, a.name]));
   const boqLineDescriptionById = new Map(
     lineItems.map((l) => [l.id, l.itemCode ? `${l.itemCode} -- ${l.description}` : l.description])
@@ -97,7 +121,7 @@ export default function WorkProgressPageClient({
           startedAt={startedAt}
         />
       </div>
-      <div className="min-h-0 border border-ct-border rounded-md overflow-hidden">
+      <div ref={formRef} className="min-h-0 border border-ct-border rounded-md overflow-hidden">
         <WorkProgressFormClient projectId={projectId} onLogged={() => void load()} />
       </div>
     </div>

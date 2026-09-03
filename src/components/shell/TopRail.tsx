@@ -1,6 +1,15 @@
 "use client";
 
-// R67 D-66 / D-04 -- PROJEXA's FORK of the kit's TopRail.
+// R67 D-66 / D-04 / A-16 -- PROJEXA's FORK of the kit's TopRail.
+//
+// TWO LANES FORKED THIS FILE FOR TWO REASONS AND BOTH ARE KEPT. D-66 needed a
+// real project SELECTOR (below); A-16 needed the organisation slot to be able
+// to carry a sentence and a control -- "Organisation unavailable - [Retry]" --
+// instead of the bare em-dash the kit's `organisationName: string` produced,
+// which is indistinguishable from a name still loading, an org with no name,
+// and a 500. The two changes touch different halves of the rail and compose
+// without either being weakened: `organisation` is a ReactNode, and the
+// project control is a listbox.
 //
 // WHY A FORK AND NOT A KIT CHANGE: programme decision D-09. The
 // @fchecklist/veridian-ui-kit source is not on this machine and is consumed
@@ -25,6 +34,10 @@
 // This fork opens a real list: "All projects" on top, then every project,
 // with the current one marked -- one click to open, one to choose.
 //
+// Everything else -- the band's own rule, the project null state, the tint,
+// the aria-live on the project name -- is the kit's, verbatim, and must stay
+// that way.
+//
 // WHAT IS DELIBERATELY NOT HERE: a per-project status glyph. The item asks
 // for one, but PROJEXA's /api/projects returns id and name only, and
 // VERIDIAN's dashboard summary behind it carries no project status column at
@@ -38,14 +51,17 @@ export type TopRailProject = { id: string; name: string };
 
 export type TopRailProps = {
   brand: ReactNode;
-  organisationName: string;
+  /**
+   * A-16: a NODE, not a string. The organisation slot has to be able to carry
+   * "Organisation unavailable - [Retry]", which is a sentence and a control.
+   */
+  organisation: ReactNode;
   /** null renders M24's null state -- "All projects". */
   project: TopRailProject | null;
   /** Every project the user may switch to. Empty while the list is loading. */
   projects: TopRailProject[];
   /** null means "All projects". */
   onSelectProject: (project: TopRailProject | null) => void;
-  onSwitchOrganisation?: () => void;
   /**
    * R67 D-66: a monotonic counter the shell increments when something ELSE
    * asks for the switcher -- the breadcrumb's project name, the "pick a
@@ -64,11 +80,10 @@ export const ALL_PROJECTS_LABEL = "All projects";
 
 export function TopRail({
   brand,
-  organisationName,
+  organisation,
   project,
   projects,
   onSelectProject,
-  onSwitchOrganisation,
   openSignal,
   search,
   alerts,
@@ -129,20 +144,11 @@ export function TopRail({
         /
       </span>
 
-      {onSwitchOrganisation ? (
-        <button
-          type="button"
-          onClick={onSwitchOrganisation}
-          className="rounded px-1.5 py-0.5 text-[12px] hover:underline"
-          style={{ color: "var(--color-ct-slate)" }}
-        >
-          {organisationName}
-        </button>
-      ) : (
-        <span className="text-[12px]" style={{ color: "var(--color-ct-slate)" }}>
-          {organisationName}
-        </span>
-      )}
+      {/* A-16: whatever the shell hands over -- the org's name, or
+          "Organisation unavailable" beside a real Retry button. */}
+      <span className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-ct-slate)" }}>
+        {organisation}
+      </span>
 
       <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>
         /

@@ -2,6 +2,7 @@
 
 import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import M24Shell from "@/components/shell/M24Shell";
+import { ShellScreenProvider } from "@/components/shell/shell-screen-context";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
 // cc_spec point 187). It is the ONE place that governs all 53 app routes, so
@@ -42,9 +43,15 @@ import M24Shell from "@/components/shell/M24Shell";
 // second instance here used to duplicate every toast.error() call, because
 // both instances subscribe to the same global sonner store.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  // R67 A-03: ShellScreenProvider must sit ABOVE M24Shell, because the pages
+  // that publish their resolved project are rendered as its children -- the
+  // shell reads what the screen inside it resolved, rather than resolving a
+  // second, independent answer of its own and disagreeing with the pane.
   return (
     <VeriChatProvider>
-      <M24Shell>{children}</M24Shell>
+      <ShellScreenProvider>
+        <M24Shell>{children}</M24Shell>
+      </ShellScreenProvider>
     </VeriChatProvider>
   );
 }

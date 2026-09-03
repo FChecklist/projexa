@@ -7,6 +7,7 @@ import WorkProgressPageClient from "@/components/WorkProgressPageClient";
 import WorkProgressReportClient from "@/components/WorkProgressReportClient";
 import WorkProgressAnalyticalClient from "@/components/WorkProgressAnalyticalClient";
 import { parseWprParams } from "@/lib/work-progress-report-params";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 export default async function WorkProgressPage({
   searchParams,
@@ -15,7 +16,7 @@ export default async function WorkProgressPage({
 }) {
   const { projectId, tab, from, to, view, boqVersion } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, source } = await resolveSelectedProject(projectId, organizationId);
   // R67 D-02: the Work Progress Report's four parameters (from, to, view,
   // boqVersion) are resolved from the URL here, server-side, and handed to the
   // Report tab -- which runs on arrival with them (correction C-04). A link
@@ -25,6 +26,11 @@ export default async function WorkProgressPage({
 
   return (
     <>
+      {/* R67 A-04: this pane shows ONE project's entries, so the rail and the
+          composer must name that project rather than "All projects". When the
+          URL did not name it, the page picked it -- and says so, which is why
+          the source is published and not just the id. */}
+      <ScreenContext moduleId="work-progress" project={project} source={source ?? "auto"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading title="Work Progress" />
         {errorMessage && (

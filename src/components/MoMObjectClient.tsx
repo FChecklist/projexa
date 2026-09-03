@@ -20,12 +20,13 @@
 // Once published, meeting-level fields AND minutes lock server-side
 // (assertEditable) -- the UI mirrors that by hiding Edit/Save-Minutes
 // rather than letting a click 409.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { AUTOSAVE_IDLE_MS, autosaveIsSendable, autosaveLabel, type AutosaveStatus } from "@/lib/autosave";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,6 +48,35 @@ type Meeting = {
 type ShareLink = { id: string; token: string; expiresAt: string; revokedAt: string | null; createdAt: string };
 
 const STATUS_TONE: Record<string, StatusTone> = { draft: "neutral", published: "done" };
+
+/**
+ * R67 A-20 -- THE COMPOSER'S OBJECT-PAGE CARDS PUT THE CURSOR ON THE REAL
+ * CONTROL. "Save minutes" and "Share via WhatsApp" are both live on THIS page,
+ * so those cards navigate here with ?focus=minutes / ?focus=share and this
+ * focuses the control they name -- rather than doing it, which would make a
+ * card execute a write from one click, or doing nothing, which would land the
+ * user on a long page to find the button themselves. Same shape as A-04's
+ * ?focus=activity on the Work Progress form, and the targets are explicit
+ * data-focus attributes rather than a positional querySelector, because both
+ * controls are this file's own markup.
+ *
+ * IT IS A SEPARATE COMPONENT BEHIND A SUSPENSE BOUNDARY -- the convention this
+ * repo already uses for useSearchParams() (search-command.tsx's
+ * SearchDialogWithProject, M24Shell's RouteProjectIdReader), because reading it
+ * in the page's own component opts the route out of static rendering. It is
+ * mounted only once the meeting has loaded, which is when the controls it looks
+ * for exist. It renders nothing.
+ */
+function FocusRequest() {
+  const focus = useSearchParams().get("focus");
+  useEffect(() => {
+    if (!focus) return;
+    const control = document.querySelector<HTMLElement>(`[data-focus="${focus}"]`);
+    control?.focus();
+    control?.scrollIntoView({ block: "center" });
+  }, [focus]);
+  return null;
+}
 
 export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const router = useRouter();
@@ -337,6 +367,19 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
   const isPublished = meeting.status === "published";
 
   return (
+    <>
+      {/* A-20: mounted here, after the meeting has loaded, so the control the
+          composer's card named already exists when the focus is applied. */}
+      <Suspense fallback={null}>
+        <FocusRequest />
+      </Suspense>
+      {/* R67 A-21 -- THE STRIP NAMES THIS MEETING. Same reason and same moment
+          as the focus request above: the meeting is fetched in the browser, so
+          the title and the project only exist once it has arrived.
+          `meeting.projectId` is genuinely nullable here -- a meeting can be
+          filed against no project at all -- and null is published as null
+          rather than being replaced with the rail's guess. */}
+      <ObjectContext moduleId="moms" label={meeting.title} projectId={meeting.projectId} />
     <ObjectScreen
       breadcrumb="Minutes of Meeting / Meeting"
       title={mode === "edit" ? "Edit Meeting" : meeting.title}
@@ -414,7 +457,7 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
 
           <div>
             <h4 className="mb-1.5 font-semibold text-ct-navy text-sm">Minutes</h4>
-            <Textarea value={minutesDraft} onChange={(e) => setMinutesDraft(e.target.value)} rows={8} placeholder="Type live meeting notes here…" disabled={isPublished} />
+            <Textarea data-focus="minutes" value={minutesDraft} onChange={(e) => setMinutesDraft(e.target.value)} rows={8} placeholder="Type live meeting notes here…" disabled={isPublished} />
             <div className="mt-2 flex items-center gap-2">
               {!isPublished && (
                 <Button size="sm" onClick={saveMinutes} disabled={busy === "minutes"}>{busy === "minutes" ? "Saving…" : "Save Minutes"}</Button>
@@ -503,12 +546,13 @@ export default function MoMObjectClient({ meetingId }: { meetingId: string }) {
                 })}
               </ul>
             )}
-            <Button size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
+            <Button data-focus="share" size="sm" variant="outline" disabled={busy === "share"} onClick={createShareLink}>
               {busy === "share" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Create Share Link &amp; Send via WhatsApp
             </Button>
           </div>
         </div>
       )}
     </ObjectScreen>
+    </>
   );
 }

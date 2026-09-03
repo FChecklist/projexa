@@ -24,79 +24,31 @@
 // still render. The default is honest about knowing nothing: no projects, no
 // selection, and a switcher that cannot be opened.
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { PROJECT_COOKIE } from "@/lib/project-selection";
+import { createContext, useContext, useMemo } from "react";
 
 export type ScopedProject = { id: string; name: string };
 
-// ─── THE URL WINS ────────────────────────────────────────────────────────
+// ─── WHERE "THE URL WINS" NOW LIVES ──────────────────────────────────────
 //
-// R67 D-20's reading half, extracted out of M24Shell so it is TESTABLE. It
-// used to be an inline effect inside a shell that also fetches the org, the
-// project list, the task list and the screen registry, so nothing could
-// exercise the precedence rule without standing all of that up -- and the
-// rule is precisely what D-04's and D-66's acceptances turn on. A regression
-// that let the cookie win over the URL would have shipped green.
+// This module briefly carried the shell's own resolution -- useUrlProjectId(),
+// reading ?projectId= on mount, on route change and on popstate, with a
+// px_project cookie behind it. WS-A shipped a strictly richer answer to the
+// same question, and the shell applies that one: the URL, then the record an
+// object page names, then what the screen itself published, then the user's
+// remembered rail choice -- through pickProject() in
+// src/lib/project-preference.ts, which the SERVER page applies too. One rule,
+// applied by both halves, is what stops the rail and the pane disagreeing;
+// keeping a second resolution here would have put the split-brain back.
 //
-// THE RULE, one sentence: a ?projectId= in the URL always decides. The cookie
-// is a memory of the user's last choice, consulted ONCE and only when the URL
-// says nothing at all -- never as an override, and never again after the URL
-// has spoken.
-export const PROJECT_PARAM = "projectId";
-const PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-
-export function readProjectCookie(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.split("; ").find((c) => c.startsWith(`${PROJECT_COOKIE}=`));
-  if (!match) return null;
-  const value = decodeURIComponent(match.slice(PROJECT_COOKIE.length + 1));
-  return value || null;
-}
-
-export function writeProjectCookie(projectId: string | null) {
-  if (typeof document === "undefined") return;
-  // A project id the user picked themselves -- not a credential, not
-  // personal data. Lax so it is not sent on cross-site requests at all.
-  document.cookie = projectId
-    ? `${PROJECT_COOKIE}=${encodeURIComponent(projectId)}; path=/; max-age=${PROJECT_COOKIE_MAX_AGE}; SameSite=Lax`
-    : `${PROJECT_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
-}
-
-/**
- * The shell's resolved project id, and the setter the switcher writes through.
- *
- * Re-reads on mount, on every route change (`pathname`), and on back/forward
- * (`popstate`) -- the same three triggers the Task Master's tab param uses,
- * and `window.location.search` rather than useSearchParams so the shell, which
- * wraps all 53 routes, does not put every one of them behind a Suspense
- * boundary it does not otherwise need.
- */
-export function useUrlProjectId(pathname: string): [string | null, (next: string | null) => void] {
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const adoptedCookie = useRef(false);
-
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const fromUrl = new URLSearchParams(window.location.search).get(PROJECT_PARAM);
-      if (fromUrl) {
-        adoptedCookie.current = true;
-        setProjectId(fromUrl);
-        writeProjectCookie(fromUrl);
-        return;
-      }
-      if (!adoptedCookie.current) {
-        adoptedCookie.current = true;
-        const remembered = readProjectCookie();
-        if (remembered) setProjectId(remembered);
-      }
-    };
-    syncFromUrl();
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
-  }, [pathname]);
-
-  return [projectId, setProjectId];
-}
+// So the hook is gone rather than left exported and unused: dead code with
+// passing tests beside it describes a rule the product does not follow, which
+// is worse than no code at all. Its precedence rules are tested in
+// src/lib/project-preference.test.ts (the URL over the remembered choice, a
+// remembered project the user can no longer reach ignored, one project not
+// being a choice, and the same URL resolving the same way ten times).
+//
+// What remains here is what this lane actually contributed and the product
+// still uses: ONE published scope, with `mode` derived rather than stored.
 
 /**
  * Whether this screen is showing ONE project or the whole portfolio.

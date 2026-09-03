@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen, FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
+import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type Permit = {
@@ -173,6 +174,13 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const missingCount = mode === "edit" ? REQUIRED_COLUMNS.filter((c) => !values[c.field]).length : 0;
 
   return (
+    <>
+    {/* R67 A-21: "<project> › Permit Building permit - Villa 21". The name is
+        published as it stands: a permit with no name yet publishes an empty
+        label, and objectSegmentFor() then leaves the module segment in place
+        rather than rendering the bare word "Permit", which would name a screen
+        that does not exist. */}
+    <ObjectContext moduleId="permits" label={permit.name} projectId={permit.projectId} />
     <ObjectScreen
       breadcrumb="Permits / Permit"
       title={permit.name || "New Permit"}
@@ -246,5 +254,6 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       />
       <FormSection title="More details" columns={OPTIONAL_COLUMNS} values={values} mode={mode} onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} defaultOptionalCollapsed />
     </ObjectScreen>
+    </>
   );
 }

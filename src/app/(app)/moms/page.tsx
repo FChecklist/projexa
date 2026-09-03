@@ -5,6 +5,7 @@ import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { defaultMomsRange, parseMomsFilter, type MomsFilter } from "@/lib/moms-list";
 import MoMsClient, { type RegistryColumn } from "@/components/MoMsClient";
+import { ScreenContext } from "@/components/shell/shell-screen-context";
 
 // R46 P8 seq129 (registry-model proof, same shape as R43 seq2's
 // resolvePermitsListColumns in permits/page.tsx, R46 P8 seq134's
@@ -48,7 +49,11 @@ export default async function MoMsPage({
 }) {
   const params = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, projects, errorMessage, mode, fellBack } = await resolveSelectedProject(
+  // R67 D-20 opts this screen into the all-projects mode; R67 A-03 needs the
+  // SOURCE so the rail can admit to a choice the user did not make. One call
+  // answers both -- `fellBack` is derived from `source`, so the heading's
+  // "(auto-selected)" and the rail's cannot disagree.
+  const { project, projects, errorMessage, mode, fellBack, source } = await resolveSelectedProject(
     params.projectId,
     organizationId,
     { allProjectsWhenUnset: true }
@@ -69,6 +74,10 @@ export default async function MoMsPage({
 
   return (
     <>
+      {/* R67 A-03: tell the shell what this screen resolved, so the top rail
+          and the composer's strip name the same project the pane is showing
+          instead of reading "All projects" beside one project's meetings. */}
+      <ScreenContext moduleId="moms" project={project} source={source ?? "auto"} />
       <div className="flex-1 space-y-6 p-6">
         <PageHeading
           title="Minutes of Meeting"

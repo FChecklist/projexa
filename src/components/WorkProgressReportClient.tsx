@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -459,6 +459,22 @@ export default function WorkProgressReportClient({
   // D-02 / C-04: RUN ON ARRIVAL. Mount only -- every later run is an explicit
   // user action (Run Report, a BOQ switch), so this must not re-fire when the
   // date inputs change under the user's fingers.
+  //
+  // THIS SUBSUMES WS-A's ?run=1. A-04's requirement is that the composer's
+  // "Run WPR" card be a verb -- that it must not land the user on a filled-in
+  // form with a Run Report button still to press. D-02/C-04 makes that true of
+  // EVERY arrival, not only the ones carrying the flag, so the card's landing
+  // already runs. Reading the flag as well would add a second condition that
+  // can only ever be redundant, and a ?run=1 that appeared to gate something
+  // it does not gate is worse than no flag: the link still works, it is simply
+  // no longer load-bearing.
+  //
+  // The ref, not the report state, is the guard, for A-04's own reason: a run
+  // that FAILS must not retry itself on every re-render, and the user must be
+  // able to press Run Report again afterwards without the effect fighting
+  // them. It also keeps the effect safe now that runReport's identity changes
+  // with lane I's selectedCategories -- picking a category cannot silently
+  // re-fire the run.
   const ranOnArrival = useRef(false);
   useEffect(() => {
     if (ranOnArrival.current) return;
@@ -474,7 +490,7 @@ export default function WorkProgressReportClient({
   // used for BOQ import, not export). Honestly labelled "Export CSV", not
   // claimed as XLSX. Disabled when the tie check fails -- an export of a
   // report that doesn't add up is worse than no export.
-  function exportCsv() {
+  const exportCsv = useCallback(() => {
     if (!report) return;
     const lines = [
       ["S.No", "Category", "Code", "Description", "Unit", "Rate", "Amt", "% Prev", "% Current", `% ${thirdColumnMode === "balance" ? "Balance" : "Total"}`, "Qty Prev", "Qty Current", "Qty Third", "Amt Prev", "Amt Current", "Amt Third"].join(","),
@@ -491,7 +507,31 @@ export default function WorkProgressReportClient({
     a.href = url; a.download = `wpr-${projectId}-${from}-to-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }
+  }, [report, thirdColumnMode, tieError, projectId, from, to]);
+
+  // R67 A-20. The composer's "Export CSV" card is a verb and the FILE is the
+  // whole point of it, so the card navigates here with ?tab=report&run=1&
+  // export=csv and the export happens once the report the effect above ran has
+  // actually arrived. Landing the user on an empty report with an export button
+  // that can do nothing until they press Run would be the same "card that is
+  // really a place" this programme is removing.
+  //
+  // ONCE, and never over a report that does not add up: the tie check is the
+  // same one that disables the button, and "an export of a report that doesn't
+  // add up is worse than no export" (see exportCsv's own comment above). When
+  // the check fails the tie-error card is already on screen saying why.
+  // A-04's ?export=csv still needs the query string. The RUN half of that
+  // effect is gone (D-02/C-04 runs the report on every arrival, so a flag
+  // gating it could only ever be redundant), but the export half is real.
+  const searchParams = useSearchParams();
+  const autoExportRequested = searchParams.get("export") === "csv";
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExportRequested || autoExportedRef.current) return;
+    if (!report || tieError) return;
+    autoExportedRef.current = true;
+    exportCsv();
+  }, [autoExportRequested, report, tieError, exportCsv]);
 
   // Point 118: a plain, expiring, read-only link -- NOT the WhatsApp
   // Business API (explicitly ruled out). Copies the URL so the user can
