@@ -21,12 +21,24 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   }
 });
 
+// R67 D-47: an ACTIVITY, not just a titled issue. startDate / durationDays /
+// predecessorId / boqLineItemId are forwarded to createScheduleActivity() on
+// the VERIDIAN side, which validates the two ids against the org and derives
+// the finish date from the duration. startDate is checked here too so the form
+// gets the same refusal without a round trip -- a programme activity with no
+// start cannot be drawn on a timeline, cannot have a duration, and cannot be
+// compared to a baseline.
+const ACTIVITY_FIELDS = ["startDate", "durationDays", "predecessorId", "boqLineItemId"] as const;
+
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
   if (!body.projectId || !body.title) {
     return NextResponse.json({ error: "projectId and title are required" }, { status: 400 });
+  }
+  if (!body.startDate) {
+    return NextResponse.json({ error: "startDate is required" }, { status: 400 });
   }
   try {
     const data = await callVeridian("/schedule", { organizationId: ctx.organizationId!, method: "POST", body });

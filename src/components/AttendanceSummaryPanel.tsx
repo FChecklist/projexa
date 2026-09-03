@@ -89,7 +89,16 @@ export default function AttendanceSummaryPanel({
 
   useEffect(() => { void load(); }, [load]);
 
-  const ties = summary?.reconciliation.ties !== false;
+  // D3 x D21 merge fix. This read was `summary?.reconciliation.ties` -- the
+  // optional chain stopped one property short, so a 200 whose body lacks
+  // `reconciliation` threw a TypeError during render. React then unmounted the
+  // whole subtree, and because this panel sits at the TOP of the Attendance
+  // tab, the tab went blank: D-30's "Mark the whole day" and F-25's day control
+  // both disappeared with it. Pre-existing on main and latent there; the merge
+  // is what put this panel above D3's controls, so completing the chain is part
+  // of the merge. A missing reconciliation block now reads as "ties", which is
+  // the same permissive answer this line already gave for `ties: undefined`.
+  const ties = summary?.reconciliation?.ties !== false;
   const exportDisabledReason = !summary || summary.rows.length === 0
     ? "Nothing to export"
     : !ties

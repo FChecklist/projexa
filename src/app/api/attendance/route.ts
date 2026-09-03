@@ -4,22 +4,42 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
+// R67 F-25 (R-241) + D-30/D-33, reconciled. Attendance is a DATED question and
+// also a question ABOUT SOMEONE, and this proxy used to forward projectId
+// alone -- so the Manpower screen pulled a project's whole attendance log on
+// every landing, for a tab it opens closed, and any narrowing had to happen in
+// the browser. VERIDIAN's listAttendance() filters all of it server-side.
+//
+// Two lanes narrowed it from different ends and BOTH are kept:
+//   * F-25's dated question: ?date= for one day, ?from=/?to= for an inclusive
+//     range, each validated as a plain ISO date here rather than concatenated
+//     blind into the upstream URL.
+//   * D-30/D-33's subject: ?rosterId= for one worker, and ?attendanceDate= --
+//     the name the daily sheet's own POST body uses, kept so the sheet reads
+//     back exactly what it wrote.
+//
+// rosterId ALONE is a legitimate query: a worker's history is not scoped to one
+// project, which is why projectId is no longer unconditionally required. One of
+// the two still is, or the request would ask for the org's entire ledger.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const SUBJECT_PARAMS = ["projectId", "rosterId"] as const;
+const DATE_PARAMS = ["attendanceDate", "date", "from", "to"] as const;
+
 export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
-  const projectId = request.nextUrl.searchParams.get("projectId");
-  if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
-  // R67 F-25 (R-241) x F-06 (R-088/R-094) -- the same fault, found by two
-  // lanes. The attendance log grows as workers x days and this proxy used to
-  // forward projectId alone, so the Manpower screen pulled a project's whole
-  // history on every landing for a tab it opens closed. ?date= asks for one
-  // day; ?from=/?to= for an inclusive range. Each is validated as a plain ISO
-  // date here rather than concatenated blind into the upstream URL, and
-  // VERIDIAN's listAttendance validates them again on its own side.
-  const params = new URLSearchParams({ projectId });
-  for (const key of ["date", "from", "to"] as const) {
+
+  const params = new URLSearchParams();
+  for (const key of SUBJECT_PARAMS) {
     const value = request.nextUrl.searchParams.get(key);
-    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) params.set(key, value);
+    if (value) params.set(key, value);
+  }
+  if (!params.has("projectId") && !params.has("rosterId")) {
+    return NextResponse.json({ error: "projectId or rosterId query param is required" }, { status: 400 });
+  }
+  for (const key of DATE_PARAMS) {
+    const value = request.nextUrl.searchParams.get(key);
+    if (value && ISO_DATE.test(value)) params.set(key, value);
   }
   try {
     const data = await callVeridian(`/attendance?${params.toString()}`, { organizationId: ctx.organizationId! });

@@ -109,7 +109,12 @@ describe("MaterialCreateClient on the create archetype", () => {
   test("the screen says where it is and how to leave", () => {
     const { container } = render(<MaterialCreateClient projectId="p-cedar" />);
     expect(container.textContent).toContain("Materials");
-    expect(container.textContent).toContain("Add Material");
+    // R67 D-37 merge: the title was "Add Material" while this screen's own
+    // breadcrumb said "New Material" and the button that opens it says
+    // "+ New Material" -- three names for one screen. It is "New Material"
+    // everywhere now, so the breadcrumb and the heading agree.
+    expect(container.textContent).toContain("New Material");
+    expect(container.textContent).not.toContain("Add Material");
     expect(container.textContent).toContain("Back");
     expect(container.textContent).toContain("Cancel");
   });

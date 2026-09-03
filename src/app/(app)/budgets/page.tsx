@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { PageHeading } from "@/components/PageHeading";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import { resolveRegistryColumns } from "@/lib/screen-definitions";
 import { resolveBudgetCompanies } from "@/lib/budget-lookups";
@@ -31,9 +30,18 @@ import BudgetsClient, { BUDGETS_FALLBACK_COLUMN_LABELS, type RegistryColumn } fr
 const BUDGET_COLUMNS_TTL_SECONDS = 600;
 
 export default async function BudgetsPage() {
+  // R67 D-43: no <PageHeading title="Budgets" /> here -- BudgetsClient renders
+  // the kit's own ScreenFrame header (breadcrumb + Filter | Export | + New in
+  // that fixed order), the same way PermitsListClient does, so this module's
+  // header cannot drift from every other module's. Two headings would also
+  // have made the streaming frame below draw a title the real screen then drew
+  // again.
+  //
+  // R67 F-08: the data-dependent subtree stays behind <Suspense>, so the frame
+  // -- carrying the REAL column headers -- is in the first flush of HTML while
+  // the registry row and the companies list are still being read.
   return (
     <div className="flex-1 space-y-6 p-6">
-      <PageHeading title="Budgets" />
       <Suspense
         fallback={
           <TableLoadingRows

@@ -1,177 +1,445 @@
 /// <reference types="bun-types" />
-// R67 F-07 (R-100/R-106) acceptance test — the runnable half.
+// R67 D-37 acceptance, asserted against the real component.
 //
-// The item's acceptance is a Playwright run with request interception against
-// a live server pair, which this lane may not start. Its one non-timing
-// assertion is the one that catches the regression, and it is asserted here
-// against the real component:
-//
-//   "exactly one materials data request (…/materials/master…) fires before
-//    the first tab click"
-//
-// The fault: /materials fired THREE requests on mount -- the master, the
-// receipts ledger and the server cost report -- behind a single loading flag,
-// for a two-row table, on a page measured at TTFB 2006 ms / LCP 3244 ms. Only
-// the master is on screen when the page opens.
-//
-// The third of those three is gone for good: the Cost Report is now derived
-// from the receipts the browser already holds (src/lib/material-cost-report.ts,
-// arithmetic identical to the server's so the two cannot disagree).
+// The item's own acceptance is a Playwright walk against
+// http://localhost:3100. This session is forbidden from starting a dev server,
+// so the same strings and the same behaviours are asserted here against the
+// real DOM (happy-dom + @testing-library/react, the setup this repo already
+// uses -- see AttendanceSheetClient.test.tsx). What is NOT covered by this
+// substitution, and is stated rather than implied: real Next.js routing, real
+// network latency and the real VERIDIAN responses behind the proxies.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in
-// ONE process -- see src/components/ui/form-field.test.tsx's own note.
+// ONE process -- see PayrollClient.test.tsx's own comment.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-// `screen` is intentionally not imported: @testing-library/dom binds it to
-// document.body at module-evaluation time, before GlobalRegistrator.register()
-// has created `document`.
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
+const push = mock(() => {});
+const prefetch = mock(() => {});
 mock.module("next/navigation", () => ({
-  useRouter: () => ({ push: mock(() => {}), prefetch: mock(() => {}) }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push, prefetch }),
+  usePathname: () => "/materials",
 }));
 
 const MaterialsClient = (await import("./MaterialsClient")).default;
-const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
 
-afterEach(() => {
-  cleanup();
-  __resetCurrenciesCacheForTests();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
-});
+const CEMENT = {
+  id: "mat-cement", name: "Cement OPC 53", spec: "53 grade", unit: "bag", unitCost: "420", isActive: true,
+  reorderLevel: null as string | null, receivedToDate: 200, issuedToDate: 80, onHand: 120,
+};
+const STEEL = {
+  id: "mat-steel", name: "Steel rebar 12mm", spec: null, unit: "kg", unitCost: "3", isActive: true,
+  reorderLevel: null as string | null, receivedToDate: 0, issuedToDate: 0, onHand: 0,
+};
+
+const REPORT_ROW = {
+  materialId: CEMENT.id,
+  name: CEMENT.name,
+  spec: CEMENT.spec,
+  unit: "bag",
+  totalQuantityReceived: 50,
+  totalCost: 21750,
+  averageUnitCost: 435,
+};
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-// Radix's TabsTrigger switches on mousedown, not on the click that follows it.
-function activateTab(trigger: HTMLElement) {
-  fireEvent.mouseDown(trigger, { button: 0 });
-  fireEvent.click(trigger);
-}
+type Handler = () => Response | Promise<Response>;
 
-const MATERIALS = [
-  { id: "m1", name: "OPC 53 Cement", spec: "53 grade", unit: "bag", unitCost: "24.5", isActive: true },
-];
-const RECEIPTS = [
-  { id: "rc1", materialId: "m1", receivedDate: "2026-08-20", quantity: "100", unitCost: "24.5", vendorId: null },
-  { id: "rc2", materialId: "m1", receivedDate: "2026-08-25", quantity: "50", unitCost: "25.5", vendorId: null },
-];
-
-function stubFetch() {
-  const calls: string[] = [];
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+function router(handlers: Record<string, Handler>) {
+  return (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
-    calls.push(url);
-    if (url.includes("/api/materials/master")) return jsonRes({ materials: MATERIALS });
-    // R67 INTEGRATION: the cost report is a SERVER read on the merged screen
-    // (D-4: never summed in the browser), so the suite stubs it like any other
-    // endpoint. Its figure is the same 3,725.00 the old client-side derivation
-    // produced -- 100 x 24.5 + 50 x 25.5 -- so the arithmetic under test is
-    // unchanged; only who does it moved, back to where D-4 says it belongs.
-    if (url.includes("/api/construction-materials/cost-report")) {
-      return jsonRes({
-        report: [
-          { materialId: "m1", name: "OPC 53 Cement", spec: null, unit: "bag", totalQuantityReceived: 150, totalCost: 3725, averageUnitCost: 24.833333 },
-        ],
-      });
+    // Longest path first so "/api/materials/master" is not swallowed by
+    // "/api/materials".
+    for (const path of Object.keys(handlers).sort((a, b) => b.length - a.length)) {
+      if (url.includes(path)) return handlers[path]();
     }
-    if (url.includes("/api/materials")) return jsonRes({ receipts: RECEIPTS });
-    if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
-    return jsonRes({});
+    throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
-  return calls;
 }
 
-// The derived Total Cost cell, matched by its digits.
-const totalCostCell = (content: string) => content.includes("3,725.00");
+const CURRENCIES = { currencies: [{ id: "c1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] };
 
-const materialsDataCalls = (calls: string[]) =>
-  calls.filter((u) => u.includes("/api/materials") || u.includes("/api/construction-materials"));
+function handlers(over: Partial<Record<string, Handler>> = {}): Record<string, Handler> {
+  return {
+    "/api/materials/master": () => jsonRes({ materials: [CEMENT, STEEL] }),
+    "/api/materials/issues": () => jsonRes({ issues: [] }),
+    "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
+    "/api/materials": () => jsonRes({ receipts: [] }),
+    "/api/vendors": () => jsonRes({ vendors: [] }),
+    "/api/currencies": () => jsonRes(CURRENCIES),
+    ...over,
+  } as Record<string, Handler>;
+}
 
-describe("MaterialsClient — one data call on landing", () => {
-  test("exactly one materials data request fires before any tab click, and it is the master", async () => {
-    const calls = stubFetch();
+// Radix Tabs unmounts the inactive TabsContent, so a tab's own strings are
+// only in the DOM when that tab is the open one -- which is exactly why the
+// three loading flags had to be split in the first place.
+function renderClient(over: Partial<Record<string, Handler>> = {}, initialTab?: string) {
+  globalThis.fetch = router(handlers(over));
+  return render(
+    <MaterialsClient
+      projectId="p1"
+      projectName="Cedar Heights Villa - Phase 1"
+      registryColumns={null}
+      initialTab={initialTab}
+    />
+  );
+}
 
-    const { getByText } = render(<MaterialsClient projectId="p1" />);
-    await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
+// R67 F-10 (integration). The currency list is memoised for the lifetime of the
+// tab -- one /api/currencies request per session instead of one per screen --
+// and `bun test` runs every file in ONE process, so that memo outlives a test.
+// This file already clears sessionStorage below for the same reason; the memo's
+// in-flight promise lives in module scope and needs its own reset, or the
+// second test in the file renders against the first test's fetch stub.
+const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
 
-    const data = materialsDataCalls(calls);
-    expect(data).toHaveLength(1);
-    expect(data[0]).toContain("/api/materials/master");
+afterEach(() => {
+  cleanup();
+  __resetCurrenciesCacheForTests();
+  push.mockClear();
+  prefetch.mockClear();
+  // @ts-expect-error -- test-only global fetch stub cleanup
+  delete globalThis.fetch;
+});
+
+describe("MaterialsClient -- per-tab loading (D-37)", () => {
+  test("the Material Master paints while the receipts ledger and the cost report are still in flight", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+
+    const { getByText, getByTestId } = renderClient({
+      "/api/materials": async () => { await gate; return jsonRes({ receipts: [] }); },
+      "/api/construction-materials/cost-report": async () => { await gate; return jsonRes({ report: [] }); },
+    });
+
+    // The master's rows AND its header actions are live while the other two
+    // tabs' fetches are still open -- which is the whole point of splitting the
+    // single loading flag.
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    expect((getByTestId("materials-new") as HTMLButtonElement).disabled).toBe(false);
+
+    release!();
   });
 
-  // R67 INTEGRATION (lane F1 onto main). CORRECTED, AND THE CORRECTION IS THE
-  // POINT. Lane F1 derived the Cost Report in the browser from the receipts it
-  // had already fetched, and asserted the server endpoint was never called.
-  // That is the opposite of decision D-4 -- "computed server-side, never summed
-  // in the browser" -- which the merged screen follows, and which matters here
-  // because a total the browser computes from one page of receipts is a
-  // DIFFERENT number from the one the ledger holds. So the assertion is
-  // inverted: the report comes from the server, and it is fetched ONCE, only
-  // when its tab is opened. F1's real property -- the landing does not pay for
-  // a tab nobody opened -- is asserted above and below, and is unchanged.
-  test("the Cost Report tab reads the server report, once, and only when opened", async () => {
-    const calls = stubFetch();
+  test("the receipts tab paints while the master is still in flight -- the split works in both directions", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
 
-    const { getByText, getByRole } = render(<MaterialsClient projectId="p1" />);
-    await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
+    const { getByText, queryByText } = renderClient({
+      "/api/materials/master": async () => { await gate; return jsonRes({ materials: [CEMENT] }); },
+    }, "receipts");
 
-    // Nothing is paid for a tab that has not been opened.
-    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(0);
+    await waitFor(() => expect(getByText("No receipts recorded yet —")).toBeDefined());
+    expect(queryByText("Loading receipts for Cedar Heights Villa - Phase 1…")).toBeNull();
 
-    activateTab(getByRole("tab", { name: "Cost Report" }));
-
-    // 3725 = 100 x 24.5 + 50 x 25.5, the figure getMaterialCostReport()
-    // produces server-side. Matched on the DIGITS rather than the whole
-    // rendered string: R67 G-05 owns how a money cell is presented (grouping,
-    // the currency code, the warning glyph when the org has none), and this
-    // test is about the figure, not that presentation.
-    await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
-    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(1);
+    release!();
+    await waitFor(() => expect(queryByText("Add a material first")).toBeNull());
   });
 
-  // CORRECTED alongside the test above: the two tabs no longer SHARE one
-  // receipts read, because the Cost Report has its own server read. What must
-  // still hold -- and is what F1 was protecting -- is that each pane is fetched
-  // exactly once and is not re-fetched when the user comes back to it.
-  test("each tab is fetched once, and returning to one does not re-fetch it", async () => {
-    const calls = stubFetch();
-    const receiptsCalls = () => calls.filter((u) => u.includes("/api/materials") && !u.includes("master"));
+  test("each table loads behind a skeleton built from its own real column labels, not a spinner", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
 
-    const { getByText, getByRole } = render(<MaterialsClient projectId="p1" />);
-    await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
+    const { getByText, getAllByText } = renderClient({
+      "/api/materials/master": async () => { await gate; return jsonRes({ materials: [CEMENT] }); },
+    });
 
-    activateTab(getByRole("tab", { name: "Inbound Receipts" }));
-    await waitFor(() => expect(receiptsCalls()).toHaveLength(1));
+    await waitFor(() => expect(getByText("Loading materials for Cedar Heights Villa - Phase 1…")).toBeDefined());
+    // The skeleton's header row is the honest one: the real labels.
+    expect(getAllByText("Unit Cost").length).toBeGreaterThan(0);
+    expect(getAllByText("Open").length).toBeGreaterThan(0);
 
-    activateTab(getByRole("tab", { name: "Cost Report" }));
-    await waitFor(() => expect(getByText(totalCostCell)).toBeDefined());
+    release!();
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+  });
+});
 
-    // Back to a pane that has already answered: no second read.
-    activateTab(getByRole("tab", { name: "Inbound Receipts" }));
-    expect(receiptsCalls()).toHaveLength(1);
-    expect(calls.filter((u) => u.includes("cost-report"))).toHaveLength(1);
+describe("MaterialsClient -- empty states carry a next step (D-37)", () => {
+  test("an empty master says what to do next instead of only that it is empty", async () => {
+    const { getByText, getAllByText } = renderClient({
+      "/api/materials/master": () => jsonRes({ materials: [] }),
+      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+    });
+
+    await waitFor(() => expect(getByText("No materials in the master yet —")).toBeDefined());
+    // The header action and the empty-state action share the one label.
+    expect(getAllByText("+ New Material").length).toBeGreaterThan(0);
   });
 
-  test("a failing receipts ledger shows its own error and leaves the master table intact", async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/materials/master")) return jsonRes({ materials: MATERIALS });
-      if (url.includes("/api/materials")) return jsonRes({ error: "Receipts ledger unavailable" }, 502);
-      if (url.includes("/api/currencies")) return jsonRes({ currencies: [] });
-      return jsonRes({});
+  test("with an empty master the receipts tab keeps Record Receipt visible and says 'Add a material first'", async () => {
+    const { getByText, getByTestId } = renderClient({
+      "/api/materials/master": () => jsonRes({ materials: [] }),
+      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+    }, "receipts");
+
+    await waitFor(() => expect(getByText("Add a material first")).toBeDefined());
+    const record = getByTestId("materials-record-receipt") as HTMLButtonElement;
+    // Visible, not hidden -- and disabled, with the reason beside it.
+    expect(record.textContent).toContain("Record Receipt");
+    expect(record.disabled).toBe(true);
+  });
+
+  test("an empty Cost Report explains how it fills in", async () => {
+    const { getByText } = renderClient({
+      "/api/construction-materials/cost-report": () => jsonRes({ report: [] }),
+    }, "cost-report");
+
+    await waitFor(() =>
+      expect(getByText("No receipts to report yet — the Cost Report fills in as receipts are recorded")).toBeDefined()
+    );
+  });
+});
+
+describe("MaterialsClient -- no click is silent (D-37)", () => {
+  test("clicking a master row shows 'Opening…' on that row and pushes the object route", async () => {
+    const { getByText, getAllByText } = renderClient();
+
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    fireEvent.click(getByText("Cement OPC 53").closest("tr")!);
+
+    expect(getAllByText("Opening…").length).toBeGreaterThan(0);
+    expect(push).toHaveBeenCalledWith("/materials/mat-cement");
+  });
+
+  test("the header '+ New Material' becomes 'Opening…' on click", async () => {
+    const { getByTestId } = renderClient();
+
+    await waitFor(() => expect((getByTestId("materials-new") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByTestId("materials-new"));
+
+    const button = getByTestId("materials-new") as HTMLButtonElement;
+    expect(button.textContent).toBe("Opening…");
+    expect(button.disabled).toBe(true);
+    expect(push).toHaveBeenCalledWith("/materials/new?projectId=p1");
+  });
+});
+
+describe("MaterialsClient -- the master finally carries a quantity (D-40)", () => {
+  test("Received to date and On hand are columns on the master", async () => {
+    const { getByText } = renderClient();
+
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    expect(getByText("Received to date")).toBeDefined();
+    expect(getByText("On hand")).toBeDefined();
+    expect(getByText("200")).toBeDefined();
+    expect(getByText("120")).toBeDefined();
+  });
+
+  test("a registry row that predates the quantity columns does not hide them", async () => {
+    globalThis.fetch = router(handlers());
+    const { getByText } = render(
+      <MaterialsClient
+        projectId="p1"
+        projectName="Cedar Heights Villa - Phase 1"
+        registryColumns={[{ label: "Material", field: "name", type: "text", importance: "High" }]}
+      />
+    );
+
+    await waitFor(() => expect(getByText("Material")).toBeDefined());
+    expect(getByText("On hand")).toBeDefined();
+  });
+
+  test("below its reorder level a row is flagged with the glyph AND the word, never colour alone", async () => {
+    const { getByText, queryByText } = renderClient({
+      "/api/materials/master": () => jsonRes({ materials: [{ ...CEMENT, reorderLevel: "150" }, STEEL] }),
+    });
+
+    await waitFor(() => expect(getByText("▲ Low")).toBeDefined());
+    // Steel has no threshold at all, so it is never "Low" -- an absent
+    // threshold is not a threshold of zero.
+    expect(queryByText("▲ Low")!.textContent).toBe("▲ Low");
+  });
+
+  test("with no reorder level nothing is flagged", async () => {
+    const { getByText, queryByText } = renderClient();
+    await waitFor(() => expect(getByText("Cement OPC 53")).toBeDefined());
+    expect(queryByText("▲ Low")).toBeNull();
+  });
+
+  test("the Issues tab lists what left the store and offers Record Issue", async () => {
+    const { getByText, getByTestId } = renderClient({
+      "/api/materials/issues": () => jsonRes({
+        issues: [{ id: "iss-1", materialId: "mat-cement", issuedDate: "2026-09-01", quantity: "80", boqLineItemId: null, issuedTo: "Falcon gang 3", note: null }],
+      }),
+    }, "issues");
+
+    await waitFor(() => expect(getByText("Falcon gang 3")).toBeDefined());
+    expect(getByText("Issued to")).toBeDefined();
+    expect((getByTestId("materials-record-issue") as HTMLButtonElement).textContent).toContain("Record Issue");
+  });
+
+  test("an empty Issues tab says so and offers the way in", async () => {
+    const { getByText } = renderClient({}, "issues");
+    await waitFor(() => expect(getByText("Nothing issued to site yet —")).toBeDefined());
+  });
+});
+
+describe("MaterialsClient -- a closed project is read-only (D-38)", () => {
+  test("the rose banner is shown and every write carries its reason", async () => {
+    globalThis.fetch = router(handlers());
+    const { getByText, getByTestId } = render(
+      <MaterialsClient
+        projectId="p1"
+        projectName="Marina Tower Fit-out"
+        registryColumns={null}
+        readOnlyReason="This project is closed — materials are read-only"
+      />
+    );
+
+    await waitFor(() => expect(getByText("This project is closed — materials are read-only")).toBeDefined());
+    const newMaterial = getByTestId("materials-new") as HTMLButtonElement;
+    expect(newMaterial.textContent).toBe("+ New Material (This project is closed — materials are read-only)");
+    expect(newMaterial.disabled).toBe(true);
+  });
+});
+
+describe("MaterialsClient -- the Cost Report explains the 420 vs 435 disagreement (D-37)", () => {
+  test("Master Unit Cost and Variance vs master are shown, with the glyph AND the word", async () => {
+    const { getByText } = renderClient({}, "cost-report");
+
+    await waitFor(() => expect(getByText("Master Unit Cost")).toBeDefined());
+    expect(getByText("Variance vs master")).toBeDefined();
+    expect(
+      getByText("Avg Unit Cost is the average price actually received; the master's Unit Cost is the planned price")
+    ).toBeDefined();
+    // 435 received against a 420 master -> 15 over, in the org currency.
+    expect(getByText("▲ over AED 15.00")).toBeDefined();
+  });
+
+  test("a material received BELOW its master price reads 'under', not a bare negative number", async () => {
+    const { getByText } = renderClient({
+      "/api/construction-materials/cost-report": () =>
+        jsonRes({ report: [{ ...REPORT_ROW, averageUnitCost: 400, totalCost: 20000 }] }),
+    }, "cost-report");
+
+    await waitFor(() => expect(getByText("▼ under AED 20.00")).toBeDefined());
+  });
+});
+
+// ─────────────────────────── R67 D-57 (audit R-186) ─────────────────────────
+// One money format across the three tabs, quantity on the master, a Line total
+// on the ledger, and a Cost Report that has a window and a total.
+const { lineTotal, receiptsTotal, defaultReportFrom } = await import("./MaterialsClient");
+
+describe("D-57 line totals and the report window (pure)", () => {
+  test("a line total is quantity x unit cost, rounded to the cent", () => {
+    expect(lineTotal({ quantity: "50", unitCost: "435" })).toBe(21750);
+    expect(lineTotal({ quantity: "1.5", unitCost: "3.33" })).toBe(5);
+  });
+
+  test("a receipt with NO unit cost has no line total -- null, not a confident zero", () => {
+    expect(lineTotal({ quantity: "50", unitCost: null })).toBeNull();
+    expect(lineTotal({ quantity: "50", unitCost: "" })).toBeNull();
+    expect(lineTotal({ quantity: "abc", unitCost: "435" })).toBeNull();
+  });
+
+  test("the ledger total excludes voided receipts, exactly as VERIDIAN's own aggregate does", () => {
+    expect(receiptsTotal([
+      { quantity: "50", unitCost: "435", voidedAt: null },
+      { quantity: "10", unitCost: "400", voidedAt: "2026-09-01T00:00:00.000Z" },
+      { quantity: "5", unitCost: null, voidedAt: null },
+    ])).toBe(21750);
+  });
+
+  test("the default From is the ledger's own earliest receipt, and blank when there is no ledger", () => {
+    expect(defaultReportFrom([
+      { receivedDate: "2026-08-28" },
+      { receivedDate: "2026-07-04" },
+      { receivedDate: "2026-09-02" },
+    ])).toBe("2026-07-04");
+    expect(defaultReportFrom([])).toBe("");
+  });
+});
+
+describe("D-57 the same money string on every tab", () => {
+  const RECEIPT = {
+    id: "rec-1", materialId: CEMENT.id, receivedDate: "2026-08-28", quantity: "50", unitCost: "435",
+    vendorId: null, reference: "DN-4471", voidedAt: null, voidReason: null,
+  };
+
+  // Radix Tabs unmounts the inactive TabsContent (see this file's own note
+  // above), so the two tabs are opened as two renders rather than by clicking
+  // between them -- the assertion is about the STRING each tab prints for the
+  // same item, which is unaffected by how the tab was reached.
+  test("the cement item reads 'AED 435.00' as a unit cost on the Inbound ledger, and its line total is 'AED 21,750.00'", async () => {
+    const { container, findByText } = renderClient(
+      { "/api/materials": () => jsonRes({ receipts: [RECEIPT] }) },
+      "receipts"
+    );
+    await findByText("DN-4471");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("DN-4471"))!;
+    expect(row.textContent).toContain("AED 435.00");
+    expect(row.textContent).toContain("AED 21,750.00");
+  });
+
+  test("the SAME item reads the SAME two strings on the Cost Report", async () => {
+    const { container, findByText } = renderClient(
+      { "/api/materials": () => jsonRes({ receipts: [RECEIPT] }) },
+      "cost-report"
+    );
+    await findByText("Cement OPC 53");
+    const reportRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Cement OPC 53"))!;
+    expect(reportRow.textContent).toContain("AED 435.00");
+    expect(reportRow.textContent).toContain("AED 21,750.00");
+  });
+
+  test("the master shows 'Received to date' equal to the receipt quantity, and a null On hand is an en-dash that says why", async () => {
+    const { container, findByText } = renderClient({
+      "/api/materials/master": () => jsonRes({
+        materials: [{ ...CEMENT, receivedToDate: 50, issuedToDate: 0, onHand: null }],
+      }),
+    });
+    await findByText("Cement OPC 53");
+    const row = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.includes("Cement OPC 53"))!;
+    expect(row.textContent).toContain("50");
+    expect(container.querySelector('[title="No stock ledger for this item"]')).not.toBeNull();
+  });
+});
+
+describe("D-57 the Cost Report's window, total and export", () => {
+  test("the window is sent to the server, not applied in the browser", async () => {
+    const urls: string[] = [];
+    const { findByText, getByTestId } = renderClient(
+      {
+        "/api/construction-materials/cost-report": () => jsonRes({ report: [REPORT_ROW] }),
+        "/api/materials": () => jsonRes({ receipts: [{
+          id: "rec-1", materialId: CEMENT.id, receivedDate: "2026-07-04", quantity: "50", unitCost: "435",
+          vendorId: null, reference: null, voidedAt: null, voidReason: null,
+        }] }),
+      },
+      "cost-report"
+    );
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return realFetch(input as RequestInfo);
     }) as typeof fetch;
 
-    const { getByText, getByRole } = render(<MaterialsClient projectId="p1" />);
-    await waitFor(() => expect(getByText("OPC 53 Cement")).toBeDefined());
+    // The From field is seeded from the ledger's own earliest receipt.
+    await waitFor(() => expect((getByTestId("cost-report-apply") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByTestId("cost-report-apply"));
+    await waitFor(() => expect(urls.some((u) => u.includes("cost-report") && u.includes("from=2026-07-04"))).toBe(true));
+    expect(urls.some((u) => u.includes("cost-report") && u.includes("to="))).toBe(true);
+    await findByText("Cement OPC 53");
+  });
 
-    activateTab(getByRole("tab", { name: "Inbound Receipts" }));
+  test("the report foots with a Total row, and Export says why it cannot run on an empty report", async () => {
+    const { container, findByText, getByTestId } = renderClient({}, "cost-report");
+    await findByText("Cement OPC 53");
+    const totalRow = [...container.querySelectorAll("tbody tr")].find((r) => r.textContent?.startsWith("Total"))!;
+    expect(totalRow).toBeDefined();
+    expect(totalRow.textContent).toContain("AED 21,750.00");
+    expect((getByTestId("cost-report-export") as HTMLButtonElement).disabled).toBe(false);
 
-    // The backend's own words, not an invented generic message.
-    await waitFor(() => expect(getByText(/Receipts ledger unavailable/)).toBeDefined());
+    cleanup();
+    const empty = renderClient({ "/api/construction-materials/cost-report": () => jsonRes({ report: [] }) }, "cost-report");
+    await empty.findByText(/No receipts to report yet/);
+    expect(empty.getByTestId("cost-report-export").textContent).toBe("Export (Nothing to export)");
   });
 });

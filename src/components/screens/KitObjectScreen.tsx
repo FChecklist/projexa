@@ -2,6 +2,14 @@
 
 // R67 F-34 (audit recommendation R-290) -- FRAME-FIRST LOADING ON OBJECT ROUTES.
 //
+// MERGE NOTE. Lanes F2 and D3 forked the kit's ObjectScreen independently and
+// -- reading the same decision D-11 §3 ("two different components must never
+// share one import path") -- independently landed on the same name for it.
+// This file is the union of the two: F-34's `loading` variant, and D-33's
+// `deleteLabel` / `secondaryAction`. Each addition is marked at its own site.
+// Keep this fork's diff from the kit small; anything else belongs in a kit
+// release.
+//
 // WHY THIS IS NAMED KitObjectScreen AND NOT ObjectScreen (decision D-11
 // addendum). Lanes D0 and F2 both created src/components/screens/ObjectScreen
 // .tsx with incompatible interfaces. D0's is CANONICAL at that path: a
@@ -113,6 +121,20 @@ export type KitObjectScreenLoadedProps = {
    */
   editDisabledReason?: string;
   deleteDisabledReason?: string;
+  /**
+   * R67 D-33 fork addition. The kit hard-codes the word "Delete" on the
+   * destructive footer action. On a worker that word is a lie: the action sets
+   * isActive=false and keeps every attendance row and every cost. A screen has
+   * to be able to call it "Deactivate".
+   */
+  deleteLabel?: string;
+  /**
+   * R67 D-33 fork addition. A display-mode action beside Edit -- D-33 needs
+   * "Reactivate" on an inactive worker, so deactivation stops being one-way in
+   * the UI. Display mode only: in edit mode the footer is Save/Cancel and a
+   * third verb there would compete with them.
+   */
+  secondaryAction?: { label: string; onClick: () => void | Promise<void>; disabledReason?: string };
   saveDisabled?: boolean;
   saveDisabledReason?: string; // e.g. "2 required fields"
   onAutosave?: () => void | Promise<void>; // caller reads its own current form state; KitObjectScreen only owns the timing
@@ -218,8 +240,13 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
   if (props.loading) return <KitObjectScreenLoading {...props} />;
 
   const {
+    // D3 x D21 merge: the union of the two lanes' additions. D3 contributed
+    // `deleteLabel` (default "Delete", so no other screen changes) and
+    // `secondaryAction`; D21 contributed `headerActions` and
+    // `editDisabledReason`. Nothing is dropped -- each prop has its own caller.
     breadcrumb, title, subtitle, headerStatus, headerActions, facets, documentFlow, mode, hasDraft, lockedByOther,
-    onEdit, onSave, onCancel, onDelete, onBack, editDisabledReason, deleteDisabledReason, saveDisabled, saveDisabledReason,
+    onEdit, onSave, onCancel, onDelete, onBack, editDisabledReason, deleteDisabledReason,
+    deleteLabel = "Delete", secondaryAction, saveDisabled, saveDisabledReason,
     onAutosave, messages, onMessageClick, children,
   } = props;
 
@@ -282,6 +309,21 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
           {editDisabledReason && <span className="text-[11px] font-normal">({editDisabledReason})</span>}
         </button>
       )}
+      {/* FORK (D-33): the secondary display-mode action, e.g. Reactivate. Sits
+          with Edit, on the non-destructive side of the spacer. */}
+      {secondaryAction && (
+        <button
+          type="button"
+          onClick={() => secondaryAction.onClick()}
+          disabled={!!secondaryAction.disabledReason}
+          title={secondaryAction.disabledReason}
+          className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {secondaryAction.disabledReason
+            ? `${secondaryAction.label} (${secondaryAction.disabledReason})`
+            : secondaryAction.label}
+        </button>
+      )}
       {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a spacer, not just a gap class, keeps Delete visually separated. */}
       {(onDelete || deleteDisabledReason) && <div className="flex-1" />}
       {(onDelete || deleteDisabledReason) && (
@@ -292,7 +334,11 @@ export function KitObjectScreen(props: KitObjectScreenProps) {
           title={deleteDisabledReason}
           className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Delete
+          {/* FORK (D-33): was the hard-coded word "Delete". D3 x D21 merge --
+              D3 made the word a prop, D21 made the reason visible text rather
+              than a title-only tooltip. Both apply: the control names the act
+              it performs AND says out loud why it is not offered. */}
+          {deleteLabel}
           {deleteDisabledReason && <span className="text-[11px]">({deleteDisabledReason})</span>}
         </button>
       )}

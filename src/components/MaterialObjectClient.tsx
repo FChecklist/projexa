@@ -32,9 +32,26 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { MATERIAL_UNITS, isMaterialUnit, materialUnitLabel, normaliseMaterialUnit } from "@/lib/material-units";
 import { useOrgMoney } from "@/lib/use-org-money";
+import { EMPTY_VALUE, formatQty } from "@/lib/format-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
-type Material = { id: string; projectId: string; name: string; spec: string | null; unit: string; unitCost: string; isActive: boolean };
+type Material = {
+  id: string;
+  projectId: string;
+  name: string;
+  spec: string | null;
+  unit: string;
+  unitCost: string;
+  isActive: boolean;
+  // R67 D-40: computed by the service (received minus issued, voided receipts
+  // excluded), never stored -- so the master and the Cost Report cannot
+  // disagree. Absent rather than 0 when there is no stock ledger for the item.
+  receivedToDate?: string | number | null;
+  issuedToDate?: string | number | null;
+  onHand?: string | number | null;
+  /** null means "no threshold"; 0 means "flag me the moment it runs out". */
+  reorderLevel?: string | number | null;
+};
 
 export default function MaterialObjectClient({ materialId }: { materialId: string }) {
   const router = useRouter();
@@ -42,7 +59,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const [material, setMaterial] = useState<Material | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
-  const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "" });
+  const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "", reorderLevel: "" });
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
@@ -71,6 +88,8 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       spec: material.spec ?? "",
       unit: normaliseMaterialUnit(material.unit) ?? material.unit,
       unitCost: material.unitCost,
+      reorderLevel:
+        material.reorderLevel === null || material.reorderLevel === undefined ? "" : String(material.reorderLevel),
     });
     setMode("edit");
   }
@@ -81,7 +100,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     try {
       const res = await fetch(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
+        body: JSON.stringify({ reorderLevel: draft.reorderLevel === "" ? null : Number(draft.reorderLevel), name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save material");
@@ -165,6 +184,20 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       hasDraft={false}
       headerStatus={{ tone: material.isActive ? "done" : "late", label: material.isActive ? "active" : "inactive" }}
       facets={[
+        // R67 D-40: On hand LEADS -- it is the figure a storekeeper opened this
+        // page for -- with what produced it beneath. An absent figure is the
+        // en-dash, never 0: "no stock ledger for this item" and "none left" are
+        // different facts, and only one of them means stop work.
+        { label: `On hand${material.unit ? ` (${material.unit})` : ""}`, value: formatQty(material.onHand) },
+        { label: "Received to date", value: formatQty(material.receivedToDate) },
+        { label: "Issued to date", value: formatQty(material.issuedToDate) },
+        {
+          label: "Reorder level",
+          value:
+            material.reorderLevel === null || material.reorderLevel === undefined
+              ? EMPTY_VALUE
+              : `${formatQty(material.reorderLevel)} ${material.unit}`,
+        },
         { label: "Spec", value: material.spec ?? "—" },
         { label: "Unit", value: materialUnitLabel(material.unit) },
         // Was `${label}${material.unitCost}` -- a currency label glued to the
@@ -200,6 +233,20 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
                 {MATERIAL_UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="material-reorder-level">Reorder level (optional)</Label>
+            <Input
+              id="material-reorder-level"
+              type="number"
+              min="0"
+              value={draft.reorderLevel}
+              onChange={(e) => setDraft((d) => ({ ...d, reorderLevel: e.target.value }))}
+              placeholder="e.g. 50"
+            />
+            <p className="text-[12px] text-px-muted">
+              Leave blank for no threshold. 0 flags this material the moment it runs out.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="material-unit-cost">Unit Cost{orgMoney.unitSuffix} (optional)</Label>

@@ -1,155 +1,201 @@
 /// <reference types="bun-types" />
-// R67 F-08 (R-112) acceptance test — the runnable half of the list assertion.
-//
-// The item's acceptance is a Playwright timing run ("the column header
-// 'Annual Amount' visible within 700 ms"). The property behind that number is
-// what is asserted here, without a server: the header is on screen on the
-// FIRST render, before any response has resolved, because the loading state is
-// a skeleton carrying the real headers rather than a bare spinner.
-//
-// The second half of the fault was that the list could not be read at all: it
-// showed a name and a status, and neither WHICH YEAR nor HOW MUCH. Those two
-// columns now come from the row payload (VERIDIAN's listBudgets folds them on
-// inside the transaction it already holds), so they cost no extra request.
+// R67 D-43 acceptance, asserted against the real component rather than a
+// Playwright walk (this session may not start a dev server).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-// Registering twice in one process throws, and `bun test` runs every file in
-// ONE process -- see src/components/ui/form-field.test.tsx's own note.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-// `screen` is intentionally not imported: @testing-library/dom binds it to
-// document.body at module-evaluation time, before GlobalRegistrator.register()
-// has created `document`.
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { PROJECT_PREFERENCE_KEY } from "@/lib/project-preference";
 
-mock.module("next/navigation", () => ({
-  useRouter: () => ({ push: mock(() => {}), prefetch: mock(() => {}) }),
-  useSearchParams: () => new URLSearchParams(),
-}));
+const push = mock((_href: string) => {});
+mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: () => {} }) }));
 
 const BudgetsClient = (await import("./BudgetsClient")).default;
-const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
-
-afterEach(() => {
-  cleanup();
-  __resetCurrenciesCacheForTests();
-  // @ts-expect-error -- test-only global fetch stub cleanup
-  delete globalThis.fetch;
-});
 
 function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-const BUDGETS = [
-  {
-    id: "b1",
-    name: "FY26 Site Works",
-    fiscalYearId: "fy1",
-    fiscalYearName: "FY 2026",
-    annualAmount: 125000.5,
-    companyId: null,
-    costCenterId: null,
-    status: "approved",
-    actionIfExceeded: "warn",
-  },
-  {
-    id: "b2",
-    name: "Legacy",
-    fiscalYearId: "fy-gone",
-    fiscalYearName: null,
-    annualAmount: 0,
-    companyId: null,
-    costCenterId: null,
-    status: "draft",
-    actionIfExceeded: null,
-  },
-];
+type Handler = () => Response | Promise<Response>;
 
-function stubFetch(budgets: unknown[] = BUDGETS, options: { never?: boolean } = {}) {
-  const calls: string[] = [];
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+function router(handlers: Record<string, Handler>) {
+  return (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
-    calls.push(url);
-    if (options.never) return new Promise<Response>(() => {}); // never resolves
-    if (url.includes("/api/project-budgets")) return jsonRes({ projectBudgets: budgets });
-    // R67 G-05 (integration): a REAL base-currency row. The merged screen
-    // formats money through useOrgMoney, and with `currencies: []` these rows
-    // render through the "no currency set" path -- a warning glyph and no code
-    // -- which is a degraded state, not the one a user normally sees. Same
-    // reasoning ScopeClient.test.tsx states for its own fixture.
-    if (url.includes("/api/currencies")) {
-      return jsonRes({ currencies: [{ id: "c-1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] });
+    for (const path of Object.keys(handlers).sort((a, b) => b.length - a.length)) {
+      if (url.includes(path)) return handlers[path]();
     }
-    return jsonRes({});
+    throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
-  return calls;
 }
 
-describe("BudgetsClient", () => {
-  test("the real headers, including 'Annual Amount', are on screen on the first render -- before any response resolves", () => {
-    stubFetch(BUDGETS, { never: true });
+const PROJECTS = [{ id: "proj-cedar", name: "Cedar Heights Villa - Phase 1" }];
+const FISCAL_YEARS = [{ id: "fy1", yearName: "FY 2026" }];
 
-    const { getByText } = render(<BudgetsClient />);
+const BUDGET = {
+  id: "bud-1", name: "Site budget 2026", fiscalYearId: "fy1", companyId: null, costCenterId: null,
+  status: "draft", actionIfExceeded: null,
+};
 
-    // No waitFor: this is the very first painted frame.
-    expect(getByText("Name")).toBeDefined();
-    expect(getByText("Fiscal Year")).toBeDefined();
-    expect(getByText("Annual Amount")).toBeDefined();
-    expect(getByText("Status")).toBeDefined();
-  });
+function handlers(over: Partial<Record<string, Handler>> = {}): Record<string, Handler> {
+  return {
+    "/api/project-budgets": () => jsonRes({ projectBudgets: [] }),
+    "/api/companies": () => jsonRes({ companies: [] }),
+    "/api/fiscal-years": () => jsonRes({ fiscalYears: FISCAL_YEARS }),
+    "/api/projects": () => jsonRes({ projects: PROJECTS }),
+    "/api/organization": () => jsonRes({ organization: { id: "o1", name: "Skyline Builders" }, role: "pm" }),
+    "/api/currencies": () => jsonRes({ currencies: [{ id: "c1", code: "AED", name: "Dirham", symbol: null, isBaseCurrency: true }] }),
+    ...over,
+  } as Record<string, Handler>;
+}
 
-  test("the fiscal year and the amount render from the row payload -- no second request per budget", async () => {
-    const calls = stubFetch();
+function renderClient(over: Partial<Record<string, Handler>> = {}) {
+  globalThis.fetch = router(handlers(over));
+  return render(<BudgetsClient registryColumns={null} />);
+}
 
-    const { getByText } = render(<BudgetsClient />);
+function headerButtonTexts(container: HTMLElement): string[] {
+  return [...container.querySelectorAll("button")]
+    .map((b) => b.textContent ?? "")
+    .filter((t) => t.startsWith("Filter") || t.startsWith("Export") || t.startsWith("+ New"));
+}
 
-    await waitFor(() => expect(getByText("FY26 Site Works")).toBeDefined());
-    expect(getByText("FY 2026")).toBeDefined();
-    // R67 G-05 (integration): the amount is formatted by the ONE money
-    // formatter every list in this product now uses -- "AED 125,000.50", the
-    // same shape LabourClient renders. It was a bare "125,000.50" while this
-    // screen formatted money itself. The fact asserted is unchanged: the
-    // payload's own amount, to two places, with no per-row request.
-    expect(getByText("AED 125,000.50")).toBeDefined();
+afterEach(() => {
+  cleanup();
+  push.mockClear();
+  try { window.sessionStorage.clear(); } catch {}
+  // @ts-expect-error -- test-only global fetch stub cleanup
+  delete globalThis.fetch;
+});
 
-    // Exactly one budgets request for two rows.
-    expect(calls.filter((u) => u.includes("/api/project-budgets"))).toHaveLength(1);
-  });
+describe("BudgetsClient -- the landing copy (D-43)", () => {
+  test("the sub-copy speaks to the user and names where the OTHER budget lives", async () => {
+    const { getByText, queryByText } = renderClient();
 
-  test("an unresolvable fiscal year is an em-dash, never the raw id", async () => {
-    const calls = stubFetch();
-
-    const { getByText, queryByText } = render(<BudgetsClient />);
-
-    await waitFor(() => expect(getByText("Legacy")).toBeDefined());
-    expect(queryByText("fy-gone")).toBeNull();
-    expect(calls.length).toBeGreaterThan(0);
-  });
-
-  test("the companies filter comes from props -- the list makes no /api/companies request of its own", async () => {
-    const calls = stubFetch();
-
-    const { getByText } = render(
-      <BudgetsClient
-        companies={[{ id: "c1", companyName: "Skyline", abbr: "SKY", parentCompanyId: null, isGroup: false, defaultCurrencyId: null, country: null, dateOfIncorporation: null, isActive: true }]}
-      />
+    await waitFor(() =>
+      expect(
+        getByText("Annual budgets by account and fiscal year. For the budget against each BOQ line, open Scope of Work › Cost Variance.")
+      ).toBeDefined()
     );
-
-    await waitFor(() => expect(getByText("FY26 Site Works")).toBeDefined());
-    expect(calls.filter((u) => u.includes("/api/companies"))).toHaveLength(0);
+    // The changelog sentence is gone.
+    expect(queryByText(/no more guessing an opaque ID/)).toBeNull();
   });
 
-  test("a failing budgets request shows the backend's own words, not 'No budgets found.'", async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/project-budgets")) return jsonRes({ error: "ERP module is not enabled for this organisation" }, 403);
-      return jsonRes({ currencies: [] });
+  test("the empty state names the org and offers TWO next steps -- never 'No budgets found.'", async () => {
+    const { getByText, queryByText } = renderClient();
+
+    await waitFor(() => expect(getByText("No budgets yet for Skyline Builders")).toBeDefined());
+    expect(getByText("+ New Budget")).toBeDefined();
+    expect(queryByText("No budgets found.")).toBeNull();
+  });
+
+  test("with no project on the rail, the BOQ route says why it cannot be taken", async () => {
+    const { getByTestId } = renderClient();
+
+    await waitFor(() => expect(getByTestId("budgets-boq")).toBeDefined());
+    const boq = getByTestId("budgets-boq") as HTMLButtonElement;
+    expect(boq.textContent).toBe("Open BOQ budget → (Pick a project first)");
+    expect(boq.disabled).toBe(true);
+  });
+
+  test("with a project on the rail it is enabled and opens that project's Cost Variance", async () => {
+    window.localStorage.setItem(PROJECT_PREFERENCE_KEY, "proj-cedar");
+    const { getByTestId } = renderClient();
+
+    await waitFor(() => expect((getByTestId("budgets-boq") as HTMLButtonElement).disabled).toBe(false));
+    expect((getByTestId("budgets-boq") as HTMLButtonElement).textContent).toBe("Open BOQ budget →");
+
+    fireEvent.click(getByTestId("budgets-boq"));
+    expect(push).toHaveBeenCalledWith("/scope?tab=cost-variance&projectId=proj-cedar");
+  });
+
+  test("'+ New Budget' opens the create route", async () => {
+    const { getByTestId } = renderClient();
+    await waitFor(() => expect(getByTestId("budgets-new")).toBeDefined());
+    fireEvent.click(getByTestId("budgets-new"));
+    expect(push).toHaveBeenCalledWith("/budgets/new");
+  });
+});
+
+describe("BudgetsClient -- the standard header trio (D-43)", () => {
+  test("Filter | Export | + New render in that DOM order, with reasons while there are no rows", async () => {
+    const { container, getByText } = renderClient();
+
+    await waitFor(() => expect(getByText("No budgets yet for Skyline Builders")).toBeDefined());
+    const texts = headerButtonTexts(container);
+    expect(texts[0]).toContain("Filter");
+    expect(texts[1]).toContain("Export");
+    expect(texts[2]).toContain("+ New");
+    expect(texts[0]).toContain("No budgets to filter");
+    expect(texts[1]).toContain("No budgets to export");
+  });
+
+  test("once rows exist the two are usable again", async () => {
+    const { container, getByText } = renderClient({
+      "/api/project-budgets": () => jsonRes({ projectBudgets: [BUDGET] }),
+    });
+
+    await waitFor(() => expect(getByText("Site budget 2026")).toBeDefined());
+    const texts = headerButtonTexts(container);
+    expect(texts[0]).toBe("Filter");
+    expect(texts[1]).toBe("Export");
+  });
+});
+
+describe("BudgetsClient -- the list is meaningful once rows exist (D-43)", () => {
+  // R67 D-43 x F-08 (integration). This fixture is the LEGACY path: a row that
+  // carries fiscalYearId but no fiscalYearName, i.e. a VERIDIAN older than the
+  // change that resolves the name upstream. The id-to-name lookup still runs
+  // for it, so the assertion is unchanged -- but it is now awaited, because the
+  // lookup is no longer fired on mount for every visit. It is fired only when a
+  // loaded row turns out to lack a name, which is the whole point of F-08 and
+  // is asserted directly by the test below.
+  test("Fiscal Year is resolved to its NAME, not left as an opaque id", async () => {
+    const { getByText } = renderClient({
+      "/api/project-budgets": () => jsonRes({ projectBudgets: [BUDGET] }),
+    });
+
+    await waitFor(() => expect(getByText("Site budget 2026")).toBeDefined());
+    expect(getByText("Fiscal Year")).toBeDefined();
+    await waitFor(() => expect(getByText("FY 2026")).toBeDefined());
+  });
+
+  // R67 F-08. THE ROUND TRIP THIS ITEM REMOVES. /budgets used to fetch the
+  // whole fiscal-year list on every visit purely to turn one id per row into
+  // one string. listBudgets now resolves the name inside the transaction it
+  // already holds, so when the row carries it, that request is not made at all.
+  test("a row that carries its own year name costs NO /api/fiscal-years request", async () => {
+    const requested: string[] = [];
+    const inner = router(handlers({
+      "/api/project-budgets": () =>
+        jsonRes({ projectBudgets: [{ ...BUDGET, fiscalYearName: "FY 2026" }] }),
+    }));
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requested.push(typeof input === "string" ? input : input.toString());
+      return inner(input, init);
     }) as typeof fetch;
 
-    const { getByText, queryByText } = render(<BudgetsClient />);
+    const { getByText } = render(<BudgetsClient registryColumns={null} />);
 
-    await waitFor(() => expect(getByText(/ERP module is not enabled/)).toBeDefined());
-    expect(queryByText("No budgets found.")).toBeNull();
+    await waitFor(() => expect(getByText("Site budget 2026")).toBeDefined());
+    await waitFor(() => expect(getByText("FY 2026")).toBeDefined());
+    expect(requested.some((u) => u.includes("/api/fiscal-years"))).toBe(false);
+  });
+
+  test("an Annual Amount the list DTO carries is formatted in the org currency", async () => {
+    const { getByText } = renderClient({
+      "/api/project-budgets": () => jsonRes({ projectBudgets: [{ ...BUDGET, annualAmount: "150000" }] }),
+    });
+
+    await waitFor(() => expect(getByText("AED 150,000.00")).toBeDefined());
+  });
+
+  test("a failing upstream is an error with Retry, never an empty list", async () => {
+    const { getByText, queryByText } = renderClient({
+      "/api/project-budgets": () => jsonRes({ error: "The ERP module didn't answer" }, 502),
+    });
+
+    await waitFor(() => expect(getByText("Couldn't load budgets: The ERP module didn't answer")).toBeDefined());
+    expect(queryByText("No budgets yet for Skyline Builders")).toBeNull();
   });
 });
