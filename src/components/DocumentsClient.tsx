@@ -1,5 +1,22 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // R46 P8 seq128: registry-driven LIST archetype, same pattern R43 seq2
 // established for permits.list and R46 P8 seq134 established for
 // variations.list (see PermitsListClient.tsx's and ChangeOrdersClient.tsx's
@@ -12,25 +29,31 @@
 // screen_definitions row returns null (404/error), same "keep the
 // hardcoded version behind a flag until verified" contract as permits and
 // change-orders.
+// R67 D-55 / D-65 -- THE FAULT THIS SCREEN CARRIED. load() caught its
+// failure into a TOAST and left `docs` at [], so a 504 produced
 //
-// R67 F-18: the documents now normally arrive as props, fetched by
-// documents/page.tsx on the server inside its Suspense boundary. The category
-// filter still refetches on the client -- useModuleList keys on the whole URL,
-// so changing the category is exactly the case that SHOULD go to the network,
-// and it aborts the previous request when it does.
-import { useState } from "react";
+//     No documents found for this project.
+//
+// on a project with forty documents, with the only contradiction being a
+// notification that faded after four seconds. R-184's words for it: "'No
+// documents found for this project.' after a 504". The empty sentence is
+// now reachable only through PaneState's mayShowEmptyState(), which takes
+// the read's OUTCOME and not the row count.
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { formatDate } from "@/lib/format-date";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel } from "@/lib/pane-state";
+import { useListRead } from "@/lib/use-list-read";
 import { DOCUMENTS_LIST_COLUMNS } from "@/lib/module-list-columns";
-import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
-import { AsOfStamp } from "@/components/AsOfStamp";
+import { type ModuleListInitial } from "@/lib/module-list-state";
 
 // Exported so documents/page.tsx can type the rows it fetches server-side.
 export type Doc = {
@@ -49,8 +72,6 @@ export type Doc = {
 // RegistryColumn.
 export type RegistryColumn = ScreenColumn;
 
-// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
-// this screen's loading skeleton draws the same column heads this table does.
 
 const CATEGORIES = ["all", "permit", "drawing", "contract", "certificate", "license", "site_photo", "other"];
 
@@ -92,35 +113,55 @@ function renderDocumentCell(field: string, d: Doc) {
 
 export default function DocumentsClient({
   projectId,
+  projectName,
   registryColumns,
   initial = null,
 }: {
   projectId: string;
+  projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what documents/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
   initial?: ModuleListInitial<Doc>;
 }) {
   const router = useRouter();
   const [category, setCategory] = useState("all");
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DOCUMENTS_LIST_COLUMNS;
 
-  const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
-  if (category !== "all") params.set("category", category);
+  const url = useMemo(() => {
+    const params = new URLSearchParams({ linkedEntityType: "project", linkedEntityId: projectId });
+    if (category !== "all") params.set("category", category);
+    return `/api/documents?${params.toString()}`;
+  }, [projectId, category]);
 
-  // The server prefetched the UNFILTERED list, which is what "all" renders --
-  // so the first paint is free and only a real category change costs a fetch.
-  const { rows: docs, error, loading, asOf } = useModuleList<Doc>({
-    initial: category === "all" ? initial : null,
-    url: `/api/documents?${params.toString()}`,
-    pick: (d) => d.documents as Doc[] | undefined,
-    context: "documents",
+  const read = useListRead<Doc>({
+    url,
+    select: (body) => (body as { documents?: Doc[] })?.documents,
+    // The page prefetches the DEFAULT ("all categories") read only; changing
+    // the category is exactly the case that should go to the network.
+    initial,
   });
+  const docs = read.rows;
+
+  // A filtered read that comes back empty is NOT "this project has no
+  // documents" -- it is "no permits, in this project". Saying the first over
+  // the second is how a user concludes the upload never landed.
+  const emptyMessage =
+    category === "all"
+      ? `No documents yet for ${projectName ?? "this project"}.`
+      : `No ${category.replace(/_/g, " ")} documents in ${projectName ?? "this project"}. Clear the category filter to see the rest.`;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-px-muted">
           Documents linked directly to this project (permits, drawings, site photos, etc.). Records attached to a
-          specific RFI, work progress entry, or other item are visible from that record. <AsOfStamp at={asOf} />
+          specific RFI, work progress entry, or other item are visible from that record.
         </p>
         <div className="flex items-center gap-2">
           <Select value={category} onValueChange={setCategory}>
@@ -133,16 +174,27 @@ export default function DocumentsClient({
         </div>
       </div>
 
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(read.status, docs.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : error ? (
-            // Never an empty table over a failed read.
-            <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
-          ) : docs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No documents found for this project.</p>
-          ) : (
+        <CardContent className="p-4">
+          <PaneState
+            status={read.status}
+            entity="documents"
+            projectName={projectName}
+            startedAt={read.startedAt}
+            error={read.error}
+            rowCount={docs.length}
+            skeletonColumns={columns.map((col) => col.label)}
+            emptyMessage={emptyMessage}
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/documents/upload?projectId=${projectId}`)}>
+                <Plus className="size-4" /> Upload
+              </Button>
+            }
+            lastLoadedAt={read.loadedAt}
+            onRetry={read.reload}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -162,7 +214,7 @@ export default function DocumentsClient({
                 ))}
               </TableBody>
             </Table>
-          )}
+          </PaneState>
         </CardContent>
       </Card>
     </div>

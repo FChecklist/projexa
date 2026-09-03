@@ -1,14 +1,34 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this list's data path:
+// lane D0 onto useListRead()/PaneState, lane F2 onto useModuleList()/
+// ListScreenFrame. Under decision D-11 the version on main is canonical, so
+// useListRead() and PaneState stay and lane F2's two distinct capabilities are
+// folded into them rather than duplicated beside them:
+//
+//   * F-18's SERVER-SEEDED FIRST PAINT. The page fetched these rows already,
+//     inside its Suspense boundary; `initial` hands them straight to the hook,
+//     which then makes no round trip on first paint. A server-side failure
+//     seeds the error state -- never a spinner, never an empty table.
+//   * F-18's SHARED COLUMN CONSTANTS. The fallback labels come from
+//     src/lib/module-list-columns.ts, the same list the page's loading skeleton
+//     draws, so a skeleton head and a table head can no longer disagree.
+//
+// F-31's machine-readable data-state was folded into PaneState itself, so it
+// covers this screen (and every other) without a second wrapper.
+
 // Wave 143 (Drawings & 3D module): DWG file uploads + 3D walkthrough
 // files/links, per project -- same Card/Table/Dialog primitives as
 // PermitsClient.tsx, same VERIDIAN documents-table-with-category backend
 // (category='drawing'|'drawing_3d').
 //
-// R67 F-18: the drawings now normally arrive as props, fetched by
-// drawings/page.tsx on the server inside its Suspense boundary, so this list
-// paints filled on first render. useModuleList keeps the client fetch for a
-// project switch and gives it an AbortController.
+// R67 D-65 / D-59 / D-71: the failure path used to be a toast.error() inside
+// the catch, which left `drawings` at [] and so rendered "No drawings or 3D
+// walkthroughs yet." over a 504 -- and once the toast faded, that sentence
+// was the only thing left on screen. The outcome is now held and PaneState
+// decides what may be said; the empty sentence needs a 200. D-71 replaces
+// this screen's copy of the load-state bookkeeping with the one shared list
+// hook, so permits and drawings cannot drift apart again.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,11 +37,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LayoutPanelLeft, ExternalLink, Plus, Box } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { PaneState } from "@/components/PaneState";
 import { formatDate } from "@/lib/format-date";
+import { useListRead } from "@/lib/use-list-read";
 import { DRAWINGS_LIST_COLUMNS } from "@/lib/module-list-columns";
-import { useModuleList, type ModuleListInitial } from "@/lib/use-module-list";
-import { AsOfStamp } from "@/components/AsOfStamp";
-import ListScreenFrame from "@/components/ListScreenFrame";
+import { type ModuleListInitial } from "@/lib/module-list-state";
+import { recordCountLabel } from "@/lib/pane-state";
 
 // Exported so drawings/page.tsx can type the rows it fetches server-side.
 export type Drawing = {
@@ -45,8 +66,6 @@ export type RegistryColumn = ScreenColumn;
 // compliance.screen_definitions row for drawings.list doesn't exist yet
 // (404) or the call errors -- the "Open" action column is intentionally
 // NOT part of it and is always rendered separately below.
-// R67 F-18: the fallback labels moved to src/lib/module-list-columns.ts so
-// this screen's loading skeleton draws the same column heads this table does.
 
 function renderDrawingCell(column: ScreenColumn, d: Drawing) {
   switch (column.field) {
@@ -77,29 +96,42 @@ function renderDrawingCell(column: ScreenColumn, d: Drawing) {
 
 export default function DrawingsClient({
   projectId,
+  projectName,
   registryColumns,
   initial = null,
 }: {
   projectId: string;
+  projectName?: string | null;
   registryColumns?: RegistryColumn[] | null;
+  /**
+   * R67 F-18: what drawings/page.tsx already fetched on the server for this
+   * project. Present, the hook starts ANSWERED and makes no round trip on
+   * first paint; a server-side failure starts it in the error state, never on
+   * a spinner and never on an empty table. Only the first url is seeded, so a
+   * project switch or a filter change still reads normally.
+   */
   initial?: ModuleListInitial<Drawing>;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : DRAWINGS_LIST_COLUMNS;
-
-  const { rows: drawings, error, loading, asOf, reload } = useModuleList<Drawing>({
-    initial,
+  // Rows already held survive a failed refresh -- see PaneState.
+  const {
+    rows: drawings,
+    status,
+    startedAt,
+    loadedAt,
+    error,
+    reload,
+  } = useListRead<Drawing>({
     url: `/api/drawings?projectId=${encodeURIComponent(projectId)}`,
-    pick: (d) => d.drawings as Drawing[] | undefined,
-    context: "drawings",
+    select: (body) => (body as { drawings?: Drawing[] } | null)?.drawings,
+    initial,
   });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-px-muted">
-          DWG drawings and 3D walkthroughs for this project. <AsOfStamp at={asOf} />
-        </p>
+        <p className="text-sm text-px-muted">DWG drawings and 3D walkthroughs for this project.</p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>
             <Link href={`/floor-plans?projectId=${projectId}`}><Box className="size-4" /> Floor Plans / 3D Walkthrough</Link>
@@ -111,16 +143,25 @@ export default function DrawingsClient({
       </div>
 
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {/* R67 F-31: data-state / aria-busy, and "Still loading drawings…
-              <n> s" once the wait stops being ordinary. */}
-          <ListScreenFrame label="drawings" loading={loading} error={error} rowCount={drawings.length} onRetry={reload}>
-          {error ? (
-            // Never an empty table over a failed read.
-            <p role="alert" className="py-10 text-center text-sm text-px-error">{error}</p>
-          ) : drawings.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No drawings or 3D walkthroughs yet.</p>
-          ) : (
+        <CardContent className="p-2">
+          <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(status, drawings.length)}</p>
+          <PaneState
+            status={status}
+            entity="drawings"
+            projectName={projectName}
+            startedAt={startedAt}
+            error={error}
+            rowCount={drawings.length}
+            lastLoadedAt={loadedAt}
+            skeletonColumns={[...columns.map((c) => c.label), "Open"]}
+            emptyMessage="No drawings yet for this project."
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/drawings/new?projectId=${projectId}`)}>
+                <Plus className="size-4" aria-hidden /> New
+              </Button>
+            }
+            onRetry={reload}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -146,8 +187,7 @@ export default function DrawingsClient({
                 ))}
               </TableBody>
             </Table>
-          )}
-          </ListScreenFrame>
+          </PaneState>
         </CardContent>
       </Card>
     </div>

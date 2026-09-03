@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 // R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { LABOUR_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
@@ -114,7 +114,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
   // "Loading" is never alone on the screen. It says what it is waiting for after
   // 3 s and offers Retry at 8 s, D-04's abort budget.
   if (!entry) return (
-    <ObjectScreen
+    <KitObjectScreen
       loading
       breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       label={LABOUR_OBJECT_BREADCRUMB.label}
@@ -130,7 +130,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
         "<project> › Worker Ramesh Kumar" -- instead of the module. Published
         after the fetch, which is when this page first knows either. */}
     <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={LABOUR_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Worker" : entry.name}
       mode={mode}
@@ -167,7 +167,7 @@ export default function RosterObjectClient({ rosterId }: { rosterId: string }) {
           <div className="space-y-1.5"><Label>Daily Rate</Label><Input type="number" value={draft.dailyRate} onChange={(e) => setDraft((d) => ({ ...d, dailyRate: e.target.value }))} /></div>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

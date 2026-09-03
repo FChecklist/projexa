@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 // R67 F-34 (D-09): ObjectScreen comes from the FORK (it gains the `loading`
 // variant); FormSection and the screen types are still the kit's.
 import { FormSection, type ScreenColumn, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { PERMIT_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
@@ -172,7 +172,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   // "Loading" is never alone on the screen. It says what it is waiting for after
   // 3 s and offers Retry at 8 s, D-04's abort budget.
   if (!permit) return (
-    <ObjectScreen
+    <KitObjectScreen
       loading
       breadcrumb={PERMIT_OBJECT_BREADCRUMB.breadcrumb}
       label={PERMIT_OBJECT_BREADCRUMB.label}
@@ -196,7 +196,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
         rather than rendering the bare word "Permit", which would name a screen
         that does not exist. */}
     <ObjectContext moduleId="permits" label={permit.name} projectId={permit.projectId} />
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={PERMIT_OBJECT_BREADCRUMB.breadcrumb}
       title={permit.name || "New Permit"}
       subtitle={permit.permitNumber ?? undefined}
@@ -268,7 +268,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
         onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))}
       />
       <FormSection title="More details" columns={OPTIONAL_COLUMNS} values={values} mode={mode} onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} defaultOptionalCollapsed />
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

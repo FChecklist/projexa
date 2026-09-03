@@ -161,8 +161,20 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // href with no id in it into the sidebar.
   "/customers/[id]",
   "/customers/new",
+  // R67 D-07: the Design Studio timesheet is the same hours the Schedule
+  // module's Timesheet tab lists, laid out in Sumeet's own columns -- reached
+  // from the "Open in Design Studio" control on that tab (see
+  // ScheduleTimesheetClient.tsx), not as a second top-level nav entry for one
+  // module's data.
+  "/design-studio",
   "/permits/[id]",
   "/permits/new",
+  // R67 D-67: a logged progress entry's own page, reached by clicking its row
+  // on Work Progress > Daily Entry. It is where the site photo attached to
+  // that entry lives -- which was reachable from nowhere in the UI before --
+  // and it needs the entry id and the project, so a sidebar href for it could
+  // not be written.
+  "/work-progress/[id]",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",
@@ -249,6 +261,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/procurement/requisitions/new",
   "/procurement/rfqs/[id]",
   "/procurement/rfqs/new",
+  // R67 D-01 / correction C-01: the home screen's Create Project dialog became
+  // a real create route. Reached by the "Create Project" button on /dashboard
+  // and on /dashboard/overview -- the same class as /invoices/new above, not a
+  // standalone sidebar destination.
+  "/projects/new",
   "/punch-list/[id]",
   "/punch-list/new",
   "/purchase-orders/new",

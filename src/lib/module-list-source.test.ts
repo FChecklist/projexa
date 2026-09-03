@@ -120,7 +120,19 @@ describe("resolveProjectForModule", () => {
   test("a ?projectId= is trusted outright -- no validation round trip", async () => {
     const { resolveProjectForModule } = await loadModule();
     const resolved = await resolveProjectForModule("url-project", "org-1");
-    expect(resolved).toEqual({ projectId: "url-project", errorMessage: null, source: "route" });
+    // R67 MERGE: the shape gained `mode` and `projectName` when lane D0's D-20
+    // opt-in and D-65's project-named panes were folded in. The property this
+    // test protects is unchanged and is the two counters below: a ?projectId=
+    // costs NO network call, so `projectName` is null here BY DESIGN -- a name
+    // lookup on this path would be exactly the round trip F-18 removed. The
+    // pages that need the name resolve it in their own Promise.all instead.
+    expect(resolved).toEqual({
+      projectId: "url-project",
+      errorMessage: null,
+      source: "route",
+      mode: "project",
+      projectName: null,
+    });
     expect(projectsCalls).toBe(0);
     expect(fallbackCalls).toBe(0);
   });

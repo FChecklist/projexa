@@ -14,28 +14,38 @@
 // grouped statement over construction_boq_line_items. The Compare BUTTON still
 // fetches the full diff on demand -- that is the detail view, and it is one
 // deliberate click, not a page-load cost.
+//
+// R67 MERGE (lane D0 x lane F2). Both lanes rewrote this screen's waiting
+// behaviour. Under decision D-11 the version on main is canonical, so the
+// PRESENTATION is lane D0's: PaneState, the four-state vocabulary, the
+// project-named empty sentence, "as of 14:32" over rows kept through a failed
+// refresh, and recordCountLabel's en-dash for a count nobody has. The DATA
+// PATH is lane F2's: seeded from the server, one list call with
+// ?include=variation, and no per-row fan-out. F-31's machine-readable
+// data-state is not lost either -- it was folded into PaneState itself, so it
+// now covers every screen rather than the thirteen F2 had converted.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type SemanticStatus } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-// Loader2 is gone with G-05's spinner: R67 F-31 replaced that bare spinner with
-// ListScreenFrame, which says WHAT is loading and for how long. useCurrencies
+// Loader2 is gone with G-05's spinner: F-31/D-65 replaced that bare spinner
+// with PaneState, which says WHAT is loading and for how long. useCurrencies
 // is gone too -- G-05's useOrgMoney() resolves the org's currency itself, and
 // this file no longer formats any money by hand.
 import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import { formatDate } from "@/lib/format-date";
+// R67 D-74 keeps the ORG date form; R67 G-05 owns the money.
+import { formatDate } from "@/lib/format";
 import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
-import DataLoadError from "@/components/DataLoadError";
-import ListScreenFrame from "@/components/ListScreenFrame";
+import PaneState from "@/components/PaneState";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -103,25 +113,22 @@ const BOQ_STATUS: Record<string, SemanticStatus> = {
 // the loading spinner never resolved to either real rows or the empty state
 // below, across multiple reloads. Root cause: every fetch() in load() had NO
 // timeout of its own. The Next.js routes it calls ARE already bounded
-// (veridian-client.ts's fetchWithTimeout: 20s x up to 2 attempts server-side),
-// but this component had no way to enforce that assumption -- if it ever
-// breaks (a network-layer hang between browser and the server, a slow edge
-// hop), `loading` had no way back to `false` and the UI spun forever with no
-// retry affordance. Set comfortably above the server's own worst case (40s)
-// so this never fires under normal slow-but-succeeding conditions, and only
-// catches a genuine hang.
+// (veridian-client.ts's fetchWithTimeout), but this component had no way to
+// enforce that assumption -- if it ever breaks (a network-layer hang between
+// browser and the server, a slow edge hop), the pane had no way back out of
+// `loading` and the UI spun forever with no retry affordance.
 const LOAD_TIMEOUT_MS = 50_000;
 
 function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-// R67 G-05: formatVariation() lived here and passed `undefined` as the locale
-// -- the exact hydration bug src/lib/format-date.ts exists to prevent, since
-// the server formats in ITS locale and the browser in the visitor's. It also
-// carried its meaning in colour (green for up, red for down). Both are gone:
-// the figure now comes from the one money formatter, and its DIRECTION is a
-// glyph plus an explicit sign ("▲ AED +2,025"), rendered in ink.
+// R67 G-05 / D-74: formatVariation() lived here and passed `undefined` as the
+// locale -- the exact hydration bug src/lib/format-date.ts exists to prevent,
+// since the server formats in ITS locale and the browser in the visitor's. It
+// also carried its meaning in colour (green for up, red for down). Both are
+// gone: the figure now comes from the one money formatter, and its DIRECTION
+// is a glyph plus an explicit sign ("▲ AED +2,025"), rendered in ink.
 //
 // F-23's and F-29's own formatVariation()/formatMoney() went the same way and
 // for the same reason -- they hardcoded "en-US" and prepended a bare currency
@@ -149,18 +156,33 @@ export function formatDeltaPct(pct: number | null | undefined): string | null {
 
 export default function ScopeClient({
   projectId,
+  projectName,
   listColumns,
   initial = null,
 }: {
   projectId: string;
+  projectName?: string | null;
   listColumns?: RegistryColumn[] | null;
   initial?: ModuleListInitial<Boq>;
 }) {
   const router = useRouter();
   const boqListColumns = listColumns && listColumns.length > 0 ? listColumns : BOQ_LIST_COLUMNS;
   const [boqs, setBoqs] = useState<Boq[]>(initial?.rows ?? []);
-  const [loading, setLoading] = useState(initial === null);
-  const [loadError, setLoadError] = useState<string | null>(initial?.errorMessage ?? null);
+  // R67 D-65: a boolean plus a message string could not express "the rows on
+  // screen are from an earlier read", which is the state this pane is in
+  // most often -- /scope is the slowest read in the product (the N+1
+  // transactions the repo map records). R67 F-18: a payload the SERVER
+  // already fetched starts ANSWERED, never loading -- and a server-side
+  // failure starts as `error`, so the screen says why rather than sitting on
+  // a spinner that will never resolve.
+  const [status, setStatus] = useState<PaneStatus>(
+    initial ? (initial.errorMessage ? "error" : "ready") : "loading"
+  );
+  const [readError, setReadError] = useState<{ status: number | null; message: string | null } | null>(
+    initial?.errorMessage ? { status: null, message: initial.errorMessage } : null
+  );
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(initial && !initial.errorMessage ? new Date() : null);
   // The list the server sent answers THIS project; a switch still fetches.
   const listFromServerFor = useRef(initial ? projectId : null);
 
@@ -173,39 +195,42 @@ export default function ScopeClient({
   const orgMoney = useOrgMoney();
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    const listAlreadyLoaded = listFromServerFor.current === projectId;
-    if (!listAlreadyLoaded) {
-      setLoading(true);
-      setLoadError(null);
+    if (listFromServerFor.current === projectId) {
+      // The server already fetched this exact list, variation included --
+      // there is nothing left to go to the network for.
+      listFromServerFor.current = null;
+      return;
     }
+    setStatus("loading");
+    setStartedAt(Date.now());
+    setReadError(null);
     try {
-      if (listAlreadyLoaded) {
-        // The server already fetched this exact list, variation included --
-        // there is nothing left to go to the network for.
-        listFromServerFor.current = null;
-        return;
-      }
       const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}&include=variation`, {
         signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
       });
       if (signal?.aborted) return;
       setBoqs(data.boqs ?? []);
+      setLoadedAt(new Date());
+      setStatus("ready");
     } catch (err) {
       // A cancelled read is not a failure and must not reach a screen the
       // user has already left.
       if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) return;
       // A timed-out AbortSignal surfaces as a bare "TimeoutError"/"AbortError"
-      // with no useful .message -- errorMessage() would render something like
-      // "Couldn't load scope of work: signal timed out". Give the timeout case
-      // its own honest, actionable copy instead; every other failure keeps
-      // the real backend reason via errorMessage() (C19 ERROR_TRUTHFUL).
-      const msg = isTimeoutError(err)
-        ? "Couldn't load scope of work: the construction data service is taking too long to respond. Retry."
-        : errorMessage(err, "Couldn't load scope of work");
-      setLoadError(msg);
-      toast.error(msg);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
+      // with no useful .message. The shared dictionary
+      // (src/lib/task-errors.ts) classifies that as UPSTREAM_TIMEOUT and
+      // writes the sentence, so the special case here is only about handing
+      // it words it can classify -- the copy itself is no longer this
+      // screen's to invent (C19 ERROR_TRUTHFUL, one vocabulary per D-65).
+      setReadError({
+        status: err instanceof ApiError ? err.status : null,
+        message: isTimeoutError(err)
+          ? "The construction data service timed out."
+          : err instanceof Error && err.message
+            ? err.message
+            : null,
+      });
+      setStatus("error");
     }
     // `initial` is intentionally not a dependency: it is a server payload
     // object, read only on the seeded first run, and listing it would re-run
@@ -226,24 +251,27 @@ export default function ScopeClient({
         <Button onClick={() => router.push(`/scope/new?projectId=${projectId}`)}><Plus className="size-4" /> New BOQ</Button>
       </div>
 
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, boqs.length)}</p>
+
       <Card className="shadow-card">
-        <CardContent className="p-0">
-          {/* R67 F-31: data-state / aria-busy on the region, and after 3 s the
-              wait says "Still loading BOQ revisions… <n> s" -- this is the
-              screen R66 caught spinning forever with nothing to read and no
-              way to retry. */}
-          <ListScreenFrame
-            label="BOQ revisions"
-            loading={loading}
-            error={loadError}
+        <CardContent className="p-4">
+          <PaneState
+            status={status}
+            entity="the scope of work"
+            projectName={projectName}
+            startedAt={startedAt}
+            error={readError}
             rowCount={boqs.length}
+            skeletonColumns={[...boqListColumns.map((c) => c.label), "Actions"]}
+            emptyMessage={`No BOQs yet for ${projectName ?? "this project"}.`}
+            emptyAction={
+              <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
+                <Plus className="size-4" /> New BOQ
+              </Button>
+            }
+            lastLoadedAt={loadedAt}
             onRetry={() => void load()}
           >
-          {loadError ? (
-            <DataLoadError messages={[loadError]} onRetry={load} />
-          ) : boqs.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No BOQs yet for this project.</p>
-          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -335,8 +363,7 @@ export default function ScopeClient({
                 })}
               </TableBody>
             </Table>
-          )}
-          </ListScreenFrame>
+          </PaneState>
         </CardContent>
       </Card>
       {/* R67 G-05: said once, at the foot of the screen -- it explains the

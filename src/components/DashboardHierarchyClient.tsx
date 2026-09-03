@@ -12,6 +12,7 @@ import { DashboardCard } from "@/components/ui/dashboard-card";
 import { Wallet, TrendingUp, Receipt, Activity, Building2, Landmark } from "lucide-react";
 import { CategoryDistributionCharts } from "@/components/CategoryDistributionCharts";
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
+import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
@@ -36,10 +37,65 @@ function fmt(n: number, currencies: Currency[]) {
   return `${currencyLabel(undefined, currencies)}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-async function getJson<T>(url: string): Promise<T | null> {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+// ─── R67 D-03 (R-002 / R-019 / R-025) ──────────────────────
+//
+// THE DEFECT. This helper was:
+//
+//   const res = await fetch(url);
+//   if (!res.ok) return null;
+//   return res.json();
+//
+// It DID read res.ok -- and then threw the failure away, which is why the
+// repo's own src/lib/no-swallowed-http-errors.test.ts never caught it: that
+// guard anchors on the await-then-check shape, on Promise.all([fetch()]) and
+// on the fetch().then(r => r.json()) chain, and this is a fourth shape (it is
+// covered by that file's fourth check now). Every caller then did
+// `.then((data) => { if (!data) return; ... })`, so a 500 from
+// /api/dashboard-hierarchy/companies left `companies` at its initial `[]` and
+// the page printed "No company memberships found for this account." -- telling
+// a user they belong to no company when the service merely refused. The org
+// dashboard was worse: it stayed null and its whole section simply VANISHED,
+// with no error, no Retry and nothing to indicate a request had been made.
+//
+// A read now resolves to a discriminated outcome, and the message is the
+// backend's OWN words where it sent any, with the status as the fallback --
+// never a generic sentence that hides which service failed.
+type ReadResult<T> = { ok: true; data: T } | { ok: false; message: string };
+
+async function getJson<T>(url: string): Promise<ReadResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    // A thrown fetch never reached the server at all. Saying "the request did
+    // not complete" is true; saying "there are no companies" would not be.
+    return { ok: false, message: err instanceof Error && err.message ? err.message : "the request did not complete" };
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    const said = typeof body?.error === "string" && body.error.trim() ? body.error.trim() : null;
+    return { ok: false, message: said ?? `the request failed (${res.status})` };
+  }
+  try {
+    return { ok: true, data: (await res.json()) as T };
+  } catch {
+    return { ok: false, message: "the response could not be read" };
+  }
+}
+
+/**
+ * D-03's own words, once, so the four panels on this screen cannot drift into
+ * four different ways of admitting the same thing. The second sentence is the
+ * point: an empty screen and a failed screen look identical, and only this
+ * says which one the reader is looking at.
+ */
+function DataLoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="space-y-3 py-6 text-center">
+      <p className="text-sm text-px-error">Could not load live data: {message}. This is not the same as having no projects.</p>
+      <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+    </div>
+  );
 }
 
 export function DashboardHierarchyClient() {
@@ -56,42 +112,108 @@ export function DashboardHierarchyClient() {
   const [details, setDetails] = useState<ProjectDetails | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // R67 D-03: one outcome per panel, so an empty sentence is reachable only
+  // from a 200 and a failure is never reachable at all without saying so.
+  const [companiesStatus, setCompaniesStatus] = useState<PaneStatus>("loading");
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
+  const [orgStatus, setOrgStatus] = useState<PaneStatus>("idle");
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [departmentsFailed, setDepartmentsFailed] = useState(false);
+  // Bumped to re-run a panel's own effect -- the Retry the user pressed.
+  const [companiesAttempt, setCompaniesAttempt] = useState(0);
+  const [orgAttempt, setOrgAttempt] = useState(0);
+
   // Company level: load the current user's real memberships once.
   useEffect(() => {
-    getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((data) => {
-      if (!data) return;
-      setCompanies(data.companies);
-      if (data.companies.length > 0) setCompanyId(data.companies[0].id);
+    let live = true;
+    setCompaniesStatus("loading");
+    setCompaniesError(null);
+    void getJson<{ companies: Company[] }>("/api/dashboard-hierarchy/companies").then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        // The rows are NOT cleared: a failed refresh must not destroy a list
+        // the user could read a second ago.
+        setCompaniesError(result.message);
+        setCompaniesStatus("error");
+        return;
+      }
+      const loaded = result.data.companies ?? [];
+      setCompanies(loaded);
+      setCompaniesStatus("ready");
+      if (loaded.length > 0) setCompanyId((current) => current || loaded[0].id);
     });
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [companiesAttempt]);
 
-  // Department level: real HR departments for the selected company.
+  // Department level: real HR departments for the selected company. This one
+  // is a genuine convenience -- "All departments" is always available and the
+  // dashboard below does not depend on it -- so its failure narrows the filter
+  // rather than blocking the screen, and it says so beside the control.
   useEffect(() => {
     if (!companyId) return;
+    let live = true;
     setDepartmentId("__all__");
-    getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((data) => {
-      if (data) setDepartments(data.departments);
+    setDepartmentsFailed(false);
+    void getJson<{ departments: Department[] }>(`/api/dashboard-hierarchy/companies/${companyId}/departments`).then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        setDepartments([]);
+        setDepartmentsFailed(true);
+        return;
+      }
+      setDepartments(result.data.departments ?? []);
     });
+    return () => {
+      live = false;
+    };
   }, [companyId]);
 
   // Project level: the company's (optionally department-filtered) project list.
   useEffect(() => {
     if (!companyId) return;
+    let live = true;
     setProjectId("");
     setDetails(null);
+    setOrgStatus("loading");
+    setOrgError(null);
     const qs = departmentId !== "__all__" ? `?departmentId=${departmentId}` : "";
-    getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${qs}`).then(setOrgDashboard);
-  }, [companyId, departmentId]);
+    void getJson<OrgDashboard>(`/api/dashboard-hierarchy/companies/${companyId}/dashboard${qs}`).then((result) => {
+      if (!live) return;
+      if (!result.ok) {
+        setOrgError(result.message);
+        setOrgStatus("error");
+        return;
+      }
+      setOrgDashboard(result.data);
+      setOrgStatus("ready");
+    });
+    return () => {
+      live = false;
+    };
+  }, [companyId, departmentId, orgAttempt]);
 
   // Details view: Revenue/Budget/Expense/Progress for the selected project, date-range filtered.
   function loadDetails() {
     if (!companyId || !projectId) return;
     setLoading(true);
+    setDetailsError(null);
     const qs = new URLSearchParams();
     if (fromDate) qs.set("from", fromDate);
     if (toDate) qs.set("to", toDate);
-    getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
-      .then(setDetails)
+    void getJson<ProjectDetails>(`/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}?${qs.toString()}`)
+      .then((result) => {
+        // Without this branch a failed read left `details` null with `loading`
+        // false, and the panel sat on the word "Loading..." for ever.
+        if (!result.ok) {
+          setDetailsError(result.message);
+          setDetails(null);
+          return;
+        }
+        setDetails(result.data);
+      })
       .finally(() => setLoading(false));
   }
   useEffect(loadDetails, [companyId, projectId, fromDate, toDate]);
@@ -139,21 +261,45 @@ export function DashboardHierarchyClient() {
                 ))}
               </SelectContent>
             </Select>
+            {departmentsFailed && (
+              <p className="text-xs" style={{ color: "var(--status-needs-you-text)" }}>
+                Departments could not be loaded &mdash; showing all departments.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {companies.length === 0 && (
+      {/* R67 D-03: the sentence "No company memberships found for this
+          account." is a statement about the ACCOUNT, and it may only be made
+          on the strength of a 200 that carried no rows. mayShowEmptyState()
+          decides that, here as on every other pane, so it cannot regress into
+          a bare `companies.length === 0` again. */}
+      {companiesStatus === "error" && companiesError && (
+        <DataLoadFailure message={companiesError} onRetry={() => setCompaniesAttempt((n) => n + 1)} />
+      )}
+      {mayShowEmptyState(companiesStatus, companies.length) && (
         <p className="text-sm text-px-muted">No company memberships found for this account.</p>
       )}
 
-      {orgDashboard && (
+      {orgStatus === "error" && orgError && (
         <Card className="shadow-card">
           <CardHeader>
             <CardTitle className="font-heading text-base">Projects</CardTitle>
           </CardHeader>
           <CardContent>
-            {orgDashboard.projects.length === 0 ? (
+            <DataLoadFailure message={orgError} onRetry={() => setOrgAttempt((n) => n + 1)} />
+          </CardContent>
+        </Card>
+      )}
+
+      {orgStatus === "ready" && orgDashboard && (
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-heading text-base">Projects</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {mayShowEmptyState(orgStatus, orgDashboard.projects.length) ? (
               <p className="py-6 text-center text-sm text-px-muted">No projects in this scope.</p>
             ) : (
               <Table>
@@ -216,7 +362,13 @@ export function DashboardHierarchyClient() {
               )}
             </div>
 
-            {loading || !details ? (
+            {detailsError ? (
+              // The KPI tiles below read money and a percentage. Rendering
+              // them from a failed read is R-002/R-019 exactly, and worse than
+              // a false empty list, because a figure carries no hint that
+              // anything was ever asked for.
+              <DataLoadFailure message={detailsError} onRetry={loadDetails} />
+            ) : loading || !details ? (
               <p className="py-6 text-center text-sm text-px-muted">Loading...</p>
             ) : (
               <div className="space-y-2">
@@ -240,7 +392,7 @@ export function DashboardHierarchyClient() {
         </Card>
       )}
 
-      {!projectId && orgDashboard && orgDashboard.projects.length > 0 && (
+      {!projectId && orgStatus === "ready" && orgDashboard && orgDashboard.projects.length > 0 && (
         <p className="flex items-center gap-2 text-sm text-px-muted"><Building2 className="size-4" /> Select a project above to see its graphical detail report.</p>
       )}
     </div>

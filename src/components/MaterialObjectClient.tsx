@@ -20,8 +20,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 // R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { MATERIAL_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
+import { useDeleteConfirmation } from "@/components/DeleteConfirmation";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,6 +113,19 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     }
   }
 
+  // R67 D-67. Deactivating is reversible in the data but not in the UI --
+  // the master list only offers active materials and there is no reactivate
+  // control anywhere -- and it silently removes the item from every receipt
+  // form in the project. One click was not enough deliberation for that.
+  // Declared before the early returns below, because a hook must be.
+  const removal = useDeleteConfirmation({
+    objectLabel: "Material",
+    identifier: material?.name ?? null,
+    extra: "and remove it from the Record Receipt form",
+    verb: "Deactivate",
+    run: deactivate,
+  });
+
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
@@ -125,7 +139,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   // "Loading" is never alone on the screen. It says what it is waiting for after
   // 3 s and offers Retry at 8 s, D-04's abort budget.
   if (!material) return (
-    <ObjectScreen
+    <KitObjectScreen
       loading
       breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       label={MATERIAL_OBJECT_BREADCRUMB.label}
@@ -144,7 +158,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
         rather than naming the module, and the project is the one on the record
         rather than whichever one the top rail was left on. */}
     <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Material" : material.name}
       mode={mode}
@@ -161,13 +175,14 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       onEdit={material.isActive && mode === "display" ? startEdit : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
-      onDelete={material.isActive && mode === "display" ? deactivate : undefined}
+      onDelete={material.isActive && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={deactivating ? "Deactivating…" : undefined}
       onBack={() => router.push(`/materials?projectId=${material.projectId}`)}
       saveDisabled={saving || !draft.name.trim() || !draft.unit.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.name.trim() || !draft.unit.trim() ? "Name and unit are required" : undefined}
       messages={[]}
     >
+      {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
           <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
@@ -205,7 +220,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
           <CurrencyNotSetNotice currencySet={false} />
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

@@ -1,6 +1,10 @@
 // R67 lane B (B-06 / B-08 / B-10, programme decision D-03) -- THE ONE PLACE
 // A PIPELINE FAILURE BECOMES A SENTENCE.
 //
+// This file also carries the READ-error vocabulary (D-65) -- see the second
+// half, below the pipeline dictionary. One file, because item D-65 is explicit:
+// "extend that file, do not start a second dictionary".
+//
 // Before this file, compliance-tracker composed the English and PROJEXA
 // rendered it verbatim. The R66 walkthrough shows exactly what that produced
 // on a real screen: "itemCode is required", "no project resolved for this
@@ -388,4 +392,118 @@ export function legacyToCode(stored: string | null | undefined): TaskErrorCode |
 /** Every code with its sentence, for the test that proves the three rules. */
 export function allMessages(sample: TaskErrorParams = {}): { code: TaskErrorCode; message: string }[] {
   return TASK_ERROR_CODES.map((code) => ({ code, message: DICTIONARY[code].message(sample) }));
+}
+
+// ─── R67 D-65: THE READ-ERROR HALF OF THE SAME DICTIONARY ────────────────
+//
+// Everything above is a PIPELINE failure: a task the backend refused, with a
+// code and a Fix chain. What follows is the other way a screen fails -- a GET
+// that did not come back -- and item D-65 is explicit that it belongs in this
+// file: "extend that file, do not start a second dictionary". A product with
+// two error vocabularies says "the construction data service didn't answer" on
+// one screen and something else on the next for the same 504.
+//
+// The two halves share the sanitiser below and nothing else: a read failure
+// has no Fix chain (there is no field to fill in) and a task failure has no
+// Retry-worthiness question (the row is already blocked).
+
+const UNSAFE_PATTERNS: RegExp[] = [
+  /\b\d{1,3}(?:\.\d{1,3}){3}\b/, // an IP address
+  /\bhttps?:\/\//i, // a URL
+  /[A-Za-z0-9.-]+:\d{2,5}\b/, // host:port
+  /\b[a-z]+[A-Z][A-Za-z]*\b/, // a camelCase parameter name (itemCode, projectId)
+  /"[a-z0-9]+(?:_[a-z0-9]+)+"/, // a quoted snake_case function id
+  /\bfunction_id\b/i,
+];
+
+const GENERIC_FAILURE = "That didn't run. Nothing was saved.";
+
+/**
+ * The backend's own words, but only when they are safe to show. Decision D-03's
+ * rule is absolute: no camelCase parameter name, no function id, no host:port.
+ * Everything else the server writes is human prose authored in this project and
+ * is passed through unchanged, because the real reason is what a user can act on.
+ */
+export function sanitiseBackendMessage(raw: string | null | undefined): string {
+  const text = (raw ?? "").trim();
+  if (!text) return GENERIC_FAILURE;
+  return UNSAFE_PATTERNS.some((pattern) => pattern.test(text)) ? GENERIC_FAILURE : text;
+}
+
+export const READ_ERROR_CODES = [
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_ERROR",
+  "STORAGE_UNAVAILABLE",
+  "NOT_AUTHORISED",
+  "NOT_FOUND",
+] as const;
+
+export type ReadErrorCode = (typeof READ_ERROR_CODES)[number];
+
+// The two backend messages this product is known to surface verbatim, each
+// translated once, here, instead of at every screen that can hit them.
+//
+//   "supabaseKey is required" -- a real message a user has seen. It names an
+//   internal variable and tells them nothing; the true statement is that
+//   file storage is not set up.
+//   a timeout -- the client already turns this into human prose
+//   (veridian-client.ts), and this is where a screen turns it into a code.
+const STORAGE_MESSAGE = /supabasekey is required|supabase_?key/i;
+const TIMEOUT_MESSAGE = /did not respond in time|timed out|timeout|ETIMEDOUT|ECONNRESET/i;
+
+/**
+ * What kind of read failure this was, from what the transport actually told
+ * us. Never a guess: with neither a recognised status nor a recognised
+ * message, the answer is the generic UPSTREAM_ERROR, which says only that
+ * the call failed -- which is all we know.
+ */
+export function classifyReadError(input: { status?: number | null; message?: string | null }): ReadErrorCode {
+  const message = (input.message ?? "").trim();
+  if (STORAGE_MESSAGE.test(message)) return "STORAGE_UNAVAILABLE";
+  if (input.status === 401 || input.status === 403) return "NOT_AUTHORISED";
+  if (input.status === 404) return "NOT_FOUND";
+  if (input.status === 504 || input.status === 408 || TIMEOUT_MESSAGE.test(message)) return "UPSTREAM_TIMEOUT";
+  return "UPSTREAM_ERROR";
+}
+
+const READ_ERROR_REASON: Record<ReadErrorCode, string> = {
+  UPSTREAM_TIMEOUT: "the construction data service didn't answer",
+  UPSTREAM_ERROR: "the construction data service returned an error",
+  STORAGE_UNAVAILABLE: "file storage is not configured for this environment",
+  NOT_AUTHORISED: "you don't have access to it",
+  NOT_FOUND: "it isn't there any more",
+};
+
+export type ReadErrorDescription = {
+  /** "Couldn't load permits — the construction data service didn't answer (UPSTREAM_TIMEOUT)." */
+  sentence: string;
+  /** The backend's own words, kept when they are safe to show. */
+  detail: string | null;
+  /** Whether Retry is worth offering: a 401 or a 404 will not fix itself. */
+  retryable: boolean;
+  /** The persistent footer band's line. */
+  footer: string;
+  code: ReadErrorCode;
+};
+
+/**
+ * The one sentence a failed pane shows. `entity` is the plural noun the user
+ * would use -- "permits", "drawings", "your tasks" -- so the sentence reads
+ * as English rather than as a template.
+ */
+export function describeReadError(
+  entity: string,
+  input: { status?: number | null; message?: string | null }
+): ReadErrorDescription {
+  const code = classifyReadError(input);
+  const detail = input.message?.trim() ? sanitiseBackendMessage(input.message) : null;
+  return {
+    sentence: `Couldn't load ${entity} — ${READ_ERROR_REASON[code]} (${code}).`,
+    // A message we replaced wholesale carries no information the sentence
+    // above does not already carry, so it is dropped rather than repeated.
+    detail: detail && detail !== GENERIC_FAILURE ? detail : null,
+    retryable: code !== "NOT_AUTHORISED" && code !== "NOT_FOUND",
+    footer: "1 error on this screen",
+    code,
+  };
 }

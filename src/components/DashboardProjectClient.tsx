@@ -30,6 +30,28 @@
 //     fetches a second list to translate a column.
 //
 // Six requests, one of them serial, became four independent ones.
+//
+// R67 MERGE (lane D0 x lane F2). Lane D0 (item D-65) fixed the two faults this
+// screen carried and BOTH fixes are kept:
+//
+//   * A 500 on the dashboard call used to assign the ERROR BODY to
+//     `dashboard`, after which money(dashboard.expenses) called
+//     .toLocaleString on an undefined. There is no error.tsx under
+//     /dashboard/project, so that throw took the whole route down. readJson()
+//     below reads the STATUS before the body, and a failed dashboard read now
+//     renders D0's PaneErrorCard -- one sentence from the shared dictionary,
+//     with the Retry that re-issues the read.
+//   * A failed permits read rendered "Permits Expiring: 0" in the SAGE done
+//     tone with the words "none due soon" -- a confident all-clear on the one
+//     tile whose entire purpose is to warn. That figure no longer comes from a
+//     permits call at all (see below); it comes from the dashboard payload, so
+//     the same rule now holds through the same guard: no number, percentage or
+//     tone is minted from a call that did not answer.
+//
+// What is F2's and stays: the per-card rendering. D0's version still held the
+// whole screen behind one `loading` flag; here only a FAILED dashboard read is
+// a whole-screen state, because there is genuinely nothing to draw without it.
+// Every other figure paints the moment its own answer lands.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -42,6 +64,7 @@ import {
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
 import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
+import { PaneErrorCard } from "@/components/PaneState";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -114,16 +137,32 @@ function reasonText(err: unknown, fallback: string): string {
 /** Reads a JSON endpoint, treating a non-2xx as a failure rather than as data --
  *  an error body parses perfectly well, and reading it as data is how a failed
  *  request becomes a confident 0 on a dashboard. */
+class ReadFailed extends Error {
+  readonly status: number | null;
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ReadFailed";
+    this.status = status;
+  }
+}
+
 async function readJson<T>(url: string, signal: AbortSignal, fallbackMessage: string): Promise<T> {
   const res = await fetch(url, { signal });
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body?.error as string | undefined) ?? `${fallbackMessage} (HTTP ${res.status})`);
+  // R67 D-65: the STATUS is read before the body. An error body parses
+  // perfectly well, and reading it as data is how a failed request becomes a
+  // confident 0 on a dashboard -- and, on this screen, a thrown TypeError.
+  // The status travels with the message because the shared dictionary uses it
+  // to decide whether a Retry could help at all.
+  if (!res.ok) {
+    throw new ReadFailed((body?.error as string | undefined) ?? `${fallbackMessage} (HTTP ${res.status})`, res.status);
+  }
   return body as T;
 }
 
 // TC-90: AED with NO rupee sign and NO lakh/crore grouping -- "en-US" gives
 // plain thousands-comma grouping regardless of locale; deliberately not
-// "en-IN" (lakh grouping) and never a hardcoded "₹" fallback.
+// "en-IN" (lakh grouping) and never a hardcoded "â‚¹" fallback.
 function money(n: number, currency: Currency | undefined) {
   return `${currency ? currency.code + " " : ""}${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
@@ -133,6 +172,9 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   const dashboardLabels = labels && labels.length > 0 ? labels : DEFAULT_LABELS;
 
   const [dashboard, setDashboard] = useState<Pane<ProjectDashboard>>(PENDING);
+  // The transport's own status for the dashboard read, kept beside the
+  // sentence so PaneErrorCard can decide whether Retry is offered at all.
+  const [dashboardStatus, setDashboardStatus] = useState<number | null>(null);
   const [currency, setCurrency] = useState<Currency | undefined>(undefined);
   const [categories, setCategories] = useState<Pane<CategoryRow[]>>(PENDING);
   const [recent, setRecent] = useState<Pane<RecentEntry[]>>(PENDING);
@@ -148,9 +190,13 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         signal,
         "Couldn't load the project dashboard"
       )
-        .then((data) => setDashboard({ state: "ready", data, error: null }))
+        .then((data) => {
+          setDashboard({ state: "ready", data, error: null });
+          setDashboardStatus(null);
+        })
         .catch((err) => {
           if (signal.aborted) return;
+          setDashboardStatus(err instanceof ReadFailed ? err.status : null);
           setDashboard({ state: "error", data: null, error: reasonText(err, "Couldn't load the project dashboard.") });
         });
 
@@ -198,6 +244,28 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
     load(controller.signal);
     return () => controller.abort();
   }, [load]);
+
+  // R67 D-65: the ONE whole-screen state. Every other figure is its own pane
+  // and paints when its own answer lands, but with no dashboard payload there
+  // is no project name, no budget and no permit count to draw -- so this says
+  // what failed, in the shared dictionary's words, with the Retry that
+  // re-issues the read. Four tiles each repeating the same sentence would be
+  // the same information four times.
+  if (dashboard.state === "error") {
+    return (
+      <div className="flex-1 p-6">
+        <PaneErrorCard
+          entity="this project's dashboard"
+          error={{ status: dashboardStatus, message: dashboard.error }}
+          onRetry={() => {
+            const controller = new AbortController();
+            setDashboard(PENDING);
+            load(controller.signal);
+          }}
+        />
+      </div>
+    );
+  }
 
   const d = dashboard.data;
   const hasEv = d !== null && d.earnedValue !== null && d.contractValue !== null;

@@ -1,103 +1,146 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Lane F2's item F-19 (audit R-245) asked that
+// a create form's lookup say which of its three states it is in, and that a
+// FAILED lookup never look like "this org has none". Lane D0 rebuilt this
+// screen onto the shared CreateScreen + useSubmit archetype (D-72 / D-67) and
+// implements exactly that rule -- the lookup's failure reaches the form as a
+// banner with Retry and as the primary's own disabled reason, and the empty
+// placeholder is reachable only from a successful read. Under decision D-11
+// the version on main is canonical, and F2's separate useLookup()/
+// LookupFieldError pair is not folded in beside it: that would leave two
+// mechanisms for one rule on one screen. F2's helpers stay in the repo for the
+// create forms that still use them.
+
 // Real-screen conversion (2026-08-30) -- replaces ScheduleTimesheetClient.tsx's
 // old "Log Time" Dialog popup with a real create screen. A separate screen
 // from the Task Object Page's own inline "Log Time" action (ScheduleTaskObjectClient.tsx)
 // because this one's real job is picking WHICH task to log against, when
 // the user hasn't navigated to a specific task first.
 //
-// R67 F-19 (R-245): the task lookup is REQUIRED -- there is nothing to log
-// time against without it -- so its failure is reported twice: beside the
-// field ("Couldn't load tasks — Retry") and inside the primary button
-// ("Save (Task list failed to load)"), rather than leaving the user with an
-// empty dropdown and a Save that can never succeed.
-import { useState } from "react";
+// R67 D-46: THE FIRST DEFECT. The task fetch was swallowed --
+// `.catch(() => { /* task dropdown is a convenience */ })` -- so when the
+// activities read failed the dropdown was simply empty, Save stayed disabled,
+// and its reason read "Task, hours, and date are required": the form blamed
+// the user for a backend failure and gave them no way to fix it, because
+// there was no task to pick. That fix is kept, on the archetype's own
+// banner + extraMissing rather than on a hand-rolled paragraph.
+//
+// R67 D-72 / D-67: THE SECOND. This was the last construction create screen
+// still on the kit's ObjectScreen in mode="create", and the only one where
+// BOTH outcomes of a save were a toast:
+//
+//     if (!issueId || !hours || !spentOn) { toast.error(...); return; }
+//     ...
+//     toast.success("Time logged");
+//     ...
+//     catch { toast.error(err.message) }
+//
+// so a refused POST left a form that looked exactly as it had before the
+// click, with the reason already fading; the guard on the first line meant a
+// click could produce no request at all and no lasting evidence either way;
+// and there was no ceiling on the request, so a hung upstream left "Logging…"
+// on the button indefinitely. All three are the shared submit's job now.
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { requiredLookupFailure, useLookup } from "@/lib/use-lookup";
-import { LookupFieldError } from "@/components/LookupFieldError";
+import { CreateScreen } from "@/components/screens/CreateScreen";
+import { PaneErrorCard } from "@/components/PaneState";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+import { useSubmit } from "@/lib/use-submit";
+import type { CreateField } from "@/lib/create-screen";
 
 type Task = { id: string; number: number; title: string };
 
 export default function ScheduleLogTimeClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const taskLookup = useLookup<Task>({
-    url: `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`,
-    pick: (d) => d.tasks as Task[] | undefined,
-    label: "tasks",
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksError, setTasksError] = useState<{ status: number | null; message: string | null } | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({
+    spentOn: new Date().toISOString().slice(0, 10),
   });
-  const [issueId, setIssueId] = useState("");
-  const [hours, setHours] = useState("");
-  const [spentOn, setSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
-  const [activityType, setActivityType] = useState("");
-  const [comments, setComments] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  const taskListFailure = requiredLookupFailure(taskLookup, "Task list");
-
-  async function logTime() {
-    if (!issueId || !hours || !spentOn) {
-      toast.error("Task, hours, and date are required");
-      return;
-    }
-    setSubmitting(true);
+  const loadTasks = useCallback(async () => {
+    setTasksError(null);
     try {
-      const res = await fetch("/api/timesheets", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueId, hours, spentOn, activityType: activityType || undefined, comments: comments || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to log time");
-      toast.success("Time logged");
-      router.push(`/schedule?projectId=${projectId}&tab=timesheet`);
+      const data = await fetchJson<{ tasks?: Task[] }>(
+        `/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`
+      );
+      setTasks(Array.isArray(data.tasks) ? data.tasks : []);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't log time");
-    } finally {
-      setSubmitting(false);
+      setTasks([]);
+      setTasksError({
+        status: err instanceof ApiError ? err.status : null,
+        message: err instanceof Error && err.message ? err.message : null,
+      });
     }
-  }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
+  const timesheetHref = `/schedule?projectId=${encodeURIComponent(projectId)}&tab=timesheet`;
+
+  const fields: CreateField[] = [
+    {
+      name: "issueId",
+      label: "Task",
+      kind: "select",
+      required: true,
+      placeholder: tasksError ? "Could not be loaded" : "Select a task",
+      options: tasks.map((t) => ({ value: t.id, label: `#${t.number} ${t.title}` })),
+      wide: true,
+    },
+    { name: "hours", label: "Hours", kind: "number", required: true, placeholder: "e.g. 2" },
+    { name: "spentOn", label: "Date", kind: "date", required: true },
+    { name: "activityType", label: "Activity Type", kind: "text", placeholder: "e.g. Development, Site Visit" },
+    { name: "comments", label: "Comments", kind: "text", wide: true },
+  ];
+
+  const submit = useSubmit({
+    objectLabel: "Time entry",
+    buildRequest: () => ({
+      input: "/api/timesheets",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueId: values.issueId,
+          hours: values.hours,
+          spentOn: values.spentOn,
+          activityType: values.activityType || undefined,
+          comments: values.comments || undefined,
+        }),
+      },
+    }),
+    // A time entry has no object page -- it is a line in the timesheet -- so
+    // the destination is the tab it just joined.
+    onSuccess: () => router.replace(timesheetHref),
+  });
 
   return (
-    <ObjectScreen
-      breadcrumb="Schedule / Log Time"
+    <CreateScreen
+      module="Schedule"
+      moduleHref={timesheetHref}
+      objectLabel="Time entry"
       title="Log Time"
-      mode="create"
-      hasDraft={false}
-      onSave={logTime}
-      onCancel={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
-      onBack={() => router.push(`/schedule?projectId=${projectId}&tab=timesheet`)}
-      saveDisabled={submitting || !issueId || !hours || !spentOn || taskListFailure !== null}
-      saveDisabledReason={
-        submitting
-          ? "Logging…"
-          : // A failed REQUIRED lookup is the more useful reason: "Task, hours
-            // and date are required" would blame the user for a field they
-            // cannot fill.
-            (taskListFailure ??
-              (!issueId || !hours || !spentOn ? "Task, hours, and date are required" : undefined))
+      fields={fields}
+      values={values}
+      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      // A task that cannot be chosen is not the user's omission. The reason
+      // names the real blocker rather than the field it makes unfillable.
+      extraMissing={tasksError ? ["this project's activities could not be loaded"] : []}
+      banner={
+        tasksError ? (
+          <PaneErrorCard entity="this project's activities" error={tasksError} onRetry={() => void loadTasks()} />
+        ) : undefined
       }
-      messages={[]}
-    >
-      <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          <Label>Task</Label>
-          <Select value={issueId} onValueChange={setIssueId} disabled={taskLookup.status !== "ready"}>
-            <SelectTrigger className="w-full"><SelectValue placeholder={taskLookup.status === "ready" ? "Select a task" : taskLookup.placeholder} /></SelectTrigger>
-            <SelectContent>{taskLookup.options.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>
-          </Select>
-          <LookupFieldError lookup={taskLookup} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={spentOn} onChange={(e) => setSpentOn(e.target.value)} /></div>
-        </div>
-        <div className="space-y-1.5"><Label>Activity Type (optional)</Label><Input value={activityType} onChange={(e) => setActivityType(e.target.value)} placeholder="e.g. Development, Site Visit" /></div>
-        <div className="space-y-1.5"><Label>Comments (optional)</Label><Input value={comments} onChange={(e) => setComments(e.target.value)} /></div>
-      </div>
-    </ObjectScreen>
+      failure={submit.failure}
+      onRetry={submit.submit}
+      saving={submit.saving}
+      saved={submit.saved}
+      onSubmit={submit.submit}
+      onCancel={() => router.push(timesheetHref)}
+    />
   );
 }

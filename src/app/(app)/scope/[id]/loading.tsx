@@ -3,13 +3,13 @@
 // screen before page.tsx has resolved anything -- and, combined with the same
 // frame inside the object client's own waiting state, the screen never falls
 // back to a bare "Loading..." between the two.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { SCOPE_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 
 export default function Loading() {
   return (
     <div className="flex-1">
-      <ObjectScreen
+      <KitObjectScreen
         loading
         breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
         label={SCOPE_OBJECT_BREADCRUMB.label}

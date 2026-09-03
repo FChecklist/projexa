@@ -7,6 +7,27 @@ import { unstable_cache } from "next/cache";
 // A no-op outside a timed scope (server components, scripts).
 import { recordUpstream } from "@/lib/request-timing";
 
+// R67 D-04: re-exported so a module page can write one import
+// (`callVeridian(..., { timeoutMs: VERIDIAN_SCREEN_BUDGET_MS })`) instead of
+// reaching into two files for one call. The number itself lives in
+// src/lib/screen-budget.ts, next to the 3 s "Still loading…" threshold it has
+// to stay consistent with.
+//
+// R67 MERGE (lane D0 x lane F2). Lane D0 gave this file an opt-in `timeoutMs`
+// and `signal` implemented with screen-budget's budgetSignal(), which composes
+// AbortSignal.timeout() with the caller's signal. Lane F2 replaced the whole
+// abort mechanism because AbortSignal.timeout() NEVER FIRES on Bun 1.3.14
+// (Windows) -- the runtime this repo's unit tests execute in -- so the budget
+// was untestable and any Bun-hosted execution had no timeout at all. The
+// explicit AbortController + setTimeout in attemptFetch() below does exactly
+// what budgetSignal() promised (a per-call budget composed WITH the caller's
+// own cancellation, never replacing it) and does it on both runtimes. D0's
+// PUBLIC SURFACE is kept unchanged, so the four callers that pass
+// `{ timeoutMs: VERIDIAN_SCREEN_BUDGET_MS }` are untouched; budgetSignal()
+// itself stays exported and tested in screen-budget.ts for callers outside
+// this file.
+export { VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/screen-budget";
+
 // PROJEXA's only connection to construction data: every call goes through
 // VERIDIAN's /api/v1/projexa/* surface with a Bearer API key. This file
 // never runs in the browser (server components / route handlers only) --
@@ -454,7 +475,12 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // R67 F-20: `signal` lets a caller cancel a call it no longer needs -- a client
 // pane that unmounted, a project the user switched away from. It composes with
 // the 8 s budget rather than replacing it (see attemptSignal above).
-type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal };
+// R67 D-04: `timeoutMs` is the per-request budget a module page opts into. It
+// defaults to VERIDIAN_FETCH_TIMEOUT_MS (8 s), which is the same figure
+// VERIDIAN_SCREEN_BUDGET_MS carries, so the four D-04 callers behave exactly
+// as they did before this merge -- the value is now the default rather than an
+// override.
+type CallVeridianOptions = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number };
 
 // R67 F-20: one place that turns a non-2xx VERIDIAN response into a typed
 // error, so all four transports (JSON, raw, binary, multipart) classify a
@@ -515,7 +541,8 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
       body: options.body ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
     },
-    options.signal
+    options.signal,
+    options.timeoutMs
   );
 
   if (!res.ok) await throwForResponse(res, durationMs);
@@ -597,7 +624,7 @@ export async function callVeridianResult<T = unknown>(
 // assuming JSON.
 export async function callVeridianBinary(
   path: string,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<{ body: ArrayBuffer; contentType: string }> {
   const apiKey = await resolveApiKey(options);
 
@@ -610,8 +637,8 @@ export async function callVeridianBinary(
       headers: { "Authorization": `Bearer ${apiKey}` },
       cache: "no-store",
     },
-    undefined,
-    VERIDIAN_UPLOAD_TIMEOUT_MS
+    options.signal,
+    options.timeoutMs ?? VERIDIAN_UPLOAD_TIMEOUT_MS
   );
 
   if (!res.ok) await throwForResponse(res, durationMs);
@@ -627,7 +654,7 @@ export async function callVeridianBinary(
 export async function callVeridianUpload<T = unknown>(
   path: string,
   formData: FormData,
-  options: { apiKey?: string; organizationId?: string; root?: boolean } = {}
+  options: { apiKey?: string; organizationId?: string; root?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<T> {
   const apiKey = await resolveApiKey(options);
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
@@ -642,8 +669,8 @@ export async function callVeridianUpload<T = unknown>(
       body: formData,
       cache: "no-store",
     },
-    undefined,
-    VERIDIAN_UPLOAD_TIMEOUT_MS
+    options.signal,
+    options.timeoutMs ?? VERIDIAN_UPLOAD_TIMEOUT_MS
   );
 
   if (!res.ok) await throwForResponse(res, durationMs);

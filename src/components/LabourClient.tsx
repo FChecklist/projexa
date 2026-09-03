@@ -1,67 +1,107 @@
 "use client";
 
+// R67 MERGE (lane D0 x lane F2). Both lanes rebuilt this screen's reads.
+//
+//   * Lane F2 (items F-25 / F-30, audit R-241 / R-274) fixed three things:
+//     landing on Roster no longer fetches the attendance log and the vendor
+//     list as well (the tab the user is looking at waited on two answers they
+//     had not asked for); attendance is a DATED question, so it asks for one
+//     day with a real date control and a "Show earlier days" range rather than
+//     pulling the whole log; and vendors come from the shell bootstrap the
+//     session already holds, so this screen asks for them not at all.
+//   * Lane D0 (items D-65 / D-79) gave both panes the shared PaneState
+//     presentation and the tab-aware header actions. Under decision D-11 that
+//     presentation is canonical, and its tests (LabourClient.test.tsx) stay
+//     exactly as they are.
+//
+// So: F2's per-pane state machine PRODUCES the state, D0's PaneState DECIDES
+// WHAT THE SCREEN SAYS -- the union D-11's addendum describes.
+
 // R46 P8 seq132: registry-driven LIST archetype, same pattern R43 seq2
-// established for permits.list (see DocumentsClient.tsx's header comment for
-// the full history). This screen never adopted the kit's ListScreen -- it's a
-// plain shadcn Table -- so only the Roster tab's 6 real data columns
-// (ID/Name/Trade/Company/Daily Rate/Status) are registry-driven: COLUMNS is the
-// fallback used when labour/page.tsx's server-side resolve of the
-// manpower.list screen_definitions row returns null. The Attendance tab is a
-// separate transactional log and stays hardcoded, as does the row-index (S.No)
-// column, which is not real data.
+// established for permits.list and R46 P8 seq128/seq134/seq127 established
+// for documents.list/variations.list/drawings.list (see DocumentsClient.tsx's
+// header comment for the full history). This screen never adopted the
+// kit's ListScreen component -- it's a plain shadcn Table -- so only the
+// Roster tab's 6 real data columns (ID/Name/Trade/Company/Daily Rate/
+// Status) are registry-driven: COLUMNS is now the fallback used when
+// labour/page.tsx's server-side resolve of the manpower.list
+// screen_definitions row returns null (404/error), same "keep the
+// hardcoded version behind a flag until verified" contract as permits,
+// documents, drawings and change-orders. The Attendance tab is a separate
+// transactional log (not the "manpower list" itself) and stays fully
+// hardcoded, same as Documents' category filter or ChangeOrders' Actions
+// column staying outside their registry-driven columns. The row-index
+// (S.No) column is likewise not real data and stays hardcoded, always
+// rendered first.
 //
 // Real-screen conversion (2026-08-30): the "Add Worker"/"Mark Attendance"
 // Dialog popups are gone -- Add Worker routes to a real create screen
 // (RosterCreateClient.tsx), roster rows route to a real Object Page
-// (RosterObjectClient.tsx). Mark Attendance routes to a real create screen
-// (AttendanceCreateClient.tsx) -- no Object Page for attendance rows, a
-// write-once daily transaction log.
+// (RosterObjectClient.tsx, which gained real Edit/Deactivate this
+// conversion -- updateRosterEntry() didn't exist before). Mark Attendance
+// routes to a real create screen (AttendanceCreateClient.tsx) -- no Object
+// Page for attendance rows, a write-once daily transaction log same as
+// Expenses/Stock Entries. Also fixes the same uncontrolled-Tabs-no-URL-sync
+// bug found and fixed repeatedly this session.
 //
-// R67 F-18: the ROSTER arrives as a prop, fetched by labour/page.tsx on the
-// server inside its Suspense boundary, so the tab this screen opens on paints
-// filled on first render.
+// --- R67 D-65: the two panels adopt PaneState -----------------------------
 //
-// R67 F-25 (audit recommendation R-241) -- THE ATTENDANCE LOG IS NOT FETCHED
-// UNTIL SOMEONE ASKS FOR IT, AND THEN ONLY FOR A DAY.
+// This screen was already better than most: it held a per-panel error and
+// never printed an empty sentence over a failure. Two things were still
+// wrong, and both are why D-65 exists.
 //
-// This screen used to Promise.allSettled the roster, THE WHOLE UNDATED
-// ATTENDANCE LOG and the vendor list on every landing, although it opens on
-// Roster and shows not one attendance row until the user switches tab. A site
-// with 40 workers produces 40 rows a day, so that payload grows without bound
-// for a table nobody asked to see.
+//  1. A WORDLESS SPINNER. A Loader2 in a 128px box says something is
+//     happening and nothing about what; when it resolves, a six-column table
+//     appears and the whole page moves. The skeleton is the table's own
+//     shape, and the wait is narrated -- named at 2 s, counted from 3 s,
+//     offered a way out at 8 s.
+//  2. A FAILED REFRESH THREW THE ROWS AWAY. `else { setRoster([]); ... }`
+//     blanked a roster the user could read a second ago because a REFRESH
+//     failed. The rows are kept now and labelled with when they were true.
 //
-//   - Attendance is its own pane (src/lib/pane-state.ts), loaded when the
-//     Attendance tab is actually opened, and scoped to ONE DAY -- today by
-//     default -- with a real date picker and a "Show earlier days" control for
-//     the week behind it.
-//   - Vendors come from the session store the shell already filled (R67 F-21),
-//     so this screen makes no request for them at all, and neither does
-//     /labour/new (RosterCreateClient seeds its own lookup from the same
-//     store).
+// The failure sentence comes from the one shared dictionary
+// (src/lib/task-errors.ts) rather than errorMessage()'s "Roster: <raw text>",
+// so "supabaseKey is required" reads as "file storage is not configured for
+// this environment" here exactly as it does on every other screen.
+//
+// The project name comes from D-66's ProjectContext rather than a new prop:
+// the waiting line names the project, and there must be exactly one answer
+// to which project that is.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { errorMessage } from "@/lib/fetch-json";
 import { Button } from "@/components/ui/button";
 import { StatusPill, StatusPillTone, type StatusTone } from "@/components/ui/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { fetchJson } from "@/lib/fetch-json";
-import DataLoadError from "@/components/DataLoadError";
-import ListScreenFrame from "@/components/ListScreenFrame";
-import { Plus } from "lucide-react";
-import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+import { PaneState } from "@/components/PaneState";
 import { MANPOWER_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { isAbortError, type ModuleListInitial } from "@/lib/module-list-state";
-import { errorPane, idlePane, loadingPane, needsLoad, paneIsBusy, readyPane, seededPane, type Pane } from "@/lib/pane-state";
-import { useShell } from "@/lib/shell-store";
 import { EARLIER_DAYS, attendanceQuery, localDay } from "@/lib/attendance-query";
-import { formatDate } from "@/lib/format-date";
+import { useShell } from "@/lib/shell-store";
+import {
+  errorPane,
+  idlePane,
+  loadingPane,
+  needsLoad,
+  readyPane,
+  seededPane,
+  type Pane,
+} from "@/lib/pane-state";
+import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
+import { useProjectScope } from "@/components/shell/project-context";
+import { ListHeaderActions } from "@/components/ListHeaderActions";
+import { Plus } from "lucide-react";
+import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+// R67 D-74 keeps the ORG's date form here; R67 G-05 owns the money, through
+// the one formatter in format-money.ts.
+import { formatDate } from "@/lib/format";
 import { EMPTY_VALUE, MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 
-// Exported so labour/page.tsx can type the rows it fetches server-side.
+// Exported so labour/page.tsx can type the roster it fetches server-side (F-18).
 export type RosterEntry = { id: string; name: string; employeeCode: string | null; trade: string | null; skillLevel: string | null; vendorId: string | null; dailyRate: string; isActive: boolean };
 type AttendanceEntry = { id: string; rosterId: string; attendanceDate: string; status: string; hoursWorked: string | null; dailyCost: string };
 type Vendor = { id: string; vendorName: string };
@@ -73,10 +113,9 @@ export type RegistryColumn = ScreenColumn;
 
 // R67 G-04 (R-231): the roster header reads ID | Name | Trade | Company |
 // Daily Rate | Status, and the Daily Rate header carries the currency, so
-// "AED" is stated once instead of forty times down the column. Those exact
-// heads now live in MANPOWER_LIST_COLUMNS (F-18 moved them there so the loading
-// skeleton draws the same table), which is byte-for-byte what G-04 specified --
-// so the local copy that used to sit here is gone rather than duplicated.
+// "AED" is stated once instead of forty times down the column.
+// R67 F-18: the fallback labels live in src/lib/module-list-columns.ts so
+// this table and the page's loading skeleton cannot disagree about a head.
 
 /** The money column, so the header can carry the unit and the cell can be right-aligned. */
 const MONEY_FIELDS = new Set(["dailyRate"]);
@@ -101,6 +140,24 @@ const ATTENDANCE_TONE: Record<string, StatusTone> = {
 
 const VALID_TABS = new Set(["roster", "attendance"]);
 
+const ATTENDANCE_COLUMNS = ["Date", "Worker", "Status", "Hours", "Cost"];
+
+type PaneError = { status: number | null; message: string | null } | null;
+
+/** What the transport actually said, kept whole for the dictionary to classify. */
+/** The one sentence a failed pane carries. PaneState hands it to the shared
+ *  dictionary, which is what turns "supabaseKey is required" into words. */
+function paneMessage(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : "the request did not complete";
+}
+
+function toPaneError(reason: unknown): PaneError {
+  return {
+    status: reason instanceof ApiError ? reason.status : null,
+    message: reason instanceof Error ? reason.message : null,
+  };
+}
+
 // Per-field cell renderer -- this screen isn't built on the kit's
 // ListScreen, so unlike a generic column-type-driven renderer, the actual
 // cell value for each known field is still this project's own formatting
@@ -124,6 +181,9 @@ function renderRosterCell(field: string, r: RosterEntry, vendorName: (id: string
     // precision in the same column. Now the one money formatter: two
     // decimals, tabular figures, right-aligned, currency in the header.
     case "dailyRate":
+      // R67 D-74: was `{label}{raw string}` -- "AED 180" beside "AED 21750.00"
+      // two tabs away, and unformatted for a five-figure rate. The cell that
+      // holds this carries MONEY_CELL_CLASS, so the figures line up.
       return <span>{money(r.dailyRate)}</span>;
     case "isActive":
       // R67 G-02: was <Badge variant="default"> for active -- the saffron
@@ -144,36 +204,37 @@ export default function LabourClient({
   projectId: string;
   registryColumns?: RegistryColumn[] | null;
   initialTab?: string;
+  /** R67 F-18 / F-30: the roster labour/page.tsx already fetched on the server,
+   *  in the same upstream transaction as the day's attendance summary. */
   initialRoster?: ModuleListInitial<RosterEntry>;
 }) {
   const router = useRouter();
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : MANPOWER_LIST_COLUMNS;
   const [activeTab, setActiveTab] = useState(initialTab && VALID_TABS.has(initialTab) ? initialTab : "roster");
-  // dailyRate and dailyCost have no per-row currencyId (roster entries are
-  // always in the org's base currency), which is exactly what useOrgMoney()
-  // resolves -- and, when the org has no currency row at all, what makes it
-  // render the bare number behind a warning glyph instead of guessing. It
-  // replaces F-25's raw useCurrencies()/currencyLabel() pair here.
-  const orgMoney = useOrgMoney();
-  // F-25: roster and attendance are Panes (declared below), not the three bare
-  // useState arrays with one shared `loading` flag that used to sit here --
-  // vendors now arrive with the /api/shell bootstrap, so /labour asks for them
-  // not at all, and a failed attendance read can no longer read as an empty
-  // roster.
-
   // R67 F-25: the vendor list is a session-scoped lookup the shell bootstrap
-  // already holds. This screen makes no request for it. A failed bootstrap
+  // already holds, so this screen makes no request for it. A failed bootstrap
   // degrades the Company column to an em-dash, exactly as a failed fetch did --
   // it was always a display-only lookup, never an alert.
   const shell = useShell();
   const vendors = (shell.vendors ?? []) as Vendor[];
-
-  const [roster, setRoster] = useState<Pane<RosterEntry>>(() =>
+  // dailyRate and dailyCost have no per-row currencyId (roster entries are
+  // always in the org's base currency), which is exactly what useOrgMoney()
+  // resolves -- and, when the org has no currency row at all, what makes it
+  // render the bare number behind a warning glyph instead of guessing.
+  const orgMoney = useOrgMoney();
+  const { project } = useProjectScope();
+  const projectName = project?.name ?? null;
+  // F-25: roster and attendance are each their own Pane, so a failed
+  // attendance read can no longer read as an empty roster, and the tab the
+  // user is on never waits on the tab they are not.
+  const [rosterPane, setRosterPane] = useState<Pane<RosterEntry>>(() =>
     initialRoster ? seededPane(initialRoster.rows, initialRoster.errorMessage, Date.now()) : idlePane<RosterEntry>()
   );
-  const [attendance, setAttendance] = useState<Pane<AttendanceEntry>>(idlePane<AttendanceEntry>);
+  const [attendancePane, setAttendancePane] = useState<Pane<AttendanceEntry>>(idlePane<AttendanceEntry>);
   const [attendanceDay, setAttendanceDay] = useState(() => localDay());
   const [showEarlier, setShowEarlier] = useState(false);
+  const [rosterStartedAt, setRosterStartedAt] = useState<number | null>(null);
+  const [attendanceStartedAt, setAttendanceStartedAt] = useState<number | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -187,22 +248,25 @@ export default function LabourClient({
 
   const loadRoster = useCallback(
     async (force = false) => {
-      if (!force && !needsLoad(roster)) return;
       const controller = abortRef.current;
-      setRoster((prev) => loadingPane(prev));
+      if (!force && !needsLoad(rosterPaneRef.current)) return;
+      setRosterPane((prev) => loadingPane(prev));
+      setRosterStartedAt(Date.now());
       try {
         const data = await fetchJson<{ roster?: RosterEntry[] }>(
           `/api/labour-roster?projectId=${encodeURIComponent(projectId)}`,
           { signal: controller?.signal }
         );
         if (controller?.signal.aborted) return;
-        setRoster(readyPane(data.roster ?? [], Date.now()));
+        setRosterPane(readyPane(data.roster ?? [], Date.now()));
       } catch (err) {
         if (isAbortError(err, controller?.signal)) return;
-        setRoster((prev) => errorPane(prev, errorMessage(err, "Roster")));
+        // The rows are NOT cleared: a failed refresh must not destroy a roster
+        // the user could read a second ago. PaneState labels them "as of".
+        setRosterPane((prev) => errorPane(prev, paneMessage(err)));
       }
     },
-    [projectId, roster]
+    [projectId]
   );
 
   // Attendance is ALWAYS re-read when the day or the range changes -- that is
@@ -210,45 +274,54 @@ export default function LabourClient({
   const loadAttendance = useCallback(
     async (day: string, earlier: boolean) => {
       const controller = abortRef.current;
-      setAttendance((prev) => loadingPane(prev));
+      setAttendancePane((prev) => loadingPane(prev));
+      setAttendanceStartedAt(Date.now());
       try {
         const data = await fetchJson<{ attendance?: AttendanceEntry[] }>(attendanceQuery(projectId, day, earlier), {
           signal: controller?.signal,
         });
         if (controller?.signal.aborted) return;
-        setAttendance(readyPane(data.attendance ?? [], Date.now()));
+        setAttendancePane(readyPane(data.attendance ?? [], Date.now()));
       } catch (err) {
         if (isAbortError(err, controller?.signal)) return;
-        setAttendance((prev) => errorPane(prev, errorMessage(err, "Attendance")));
+        setAttendancePane((prev) => errorPane(prev, paneMessage(err)));
       }
     },
     [projectId]
   );
 
+  // Synced in an effect, never during render -- loadRoster() reads it to decide
+  // whether the pane has already answered.
+  const rosterPaneRef = useRef(rosterPane);
+  useEffect(() => {
+    rosterPaneRef.current = rosterPane;
+  });
+
   // Landing: the roster only, and only when the server did not already send it.
   // Attendance stays untouched until its own tab is opened -- unless the user
   // deep-linked straight to it with ?tab=attendance.
-  // Synced in an effect, never during render -- see MaterialsClient's own
-  // panesRef for the same reasoning.
-  const rosterPaneRef = useRef(roster);
-  useEffect(() => {
-    rosterPaneRef.current = roster;
-  });
   useEffect(() => {
     if (needsLoad(rosterPaneRef.current)) void loadRoster();
     if (activeTab === "attendance") void loadAttendance(attendanceDay, showEarlier);
-    // Deliberately mount-only per project: the tab handler below owns every
-    // later load, and re-running this on a tab change would double-fetch.
+    // Deliberately mount-only per project: goToTab owns every later load, and
+    // re-running this on a tab change would double-fetch.
   }, [projectId]);
 
-  // G-05's shared EMPTY_VALUE rather than a literal en-dash; F-25's roster is a
-  // Pane, so the rows come from roster.rows.
+  const roster = rosterPane.rows;
+  const attendance = attendancePane.rows;
+  const rosterStatus = rosterPane.status;
+  const attendanceStatus = attendancePane.status;
+  const rosterError: PaneError = rosterPane.error ? { status: null, message: rosterPane.error } : null;
+  const attendanceError: PaneError = attendancePane.error ? { status: null, message: attendancePane.error } : null;
+  const rosterLoadedAt = rosterPane.asOf ? new Date(rosterPane.asOf) : null;
+  const attendanceLoadedAt = attendancePane.asOf ? new Date(attendancePane.asOf) : null;
+
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || EMPTY_VALUE;
-  const workerName = (id: string) => roster.rows.find((r) => r.id === id)?.name ?? id;
+  const workerName = (id: string) => roster.find((r) => r.id === id)?.name ?? id;
 
   function goToTab(tab: string) {
     setActiveTab(tab);
-    if (tab === "attendance" && needsLoad(attendance)) void loadAttendance(attendanceDay, showEarlier);
+    if (tab === "attendance" && needsLoad(attendancePane)) void loadAttendance(attendanceDay, showEarlier);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", tab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
@@ -269,34 +342,49 @@ export default function LabourClient({
   return (
     <>
     <Tabs value={activeTab} onValueChange={goToTab} className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="roster">Roster</TabsTrigger>
-        <TabsTrigger value="attendance">Attendance</TabsTrigger>
-      </TabsList>
+      {/* R67 D-79: the header trio, once, ABOVE the tabs. Each tab used to
+          carry exactly one create button -- its own -- so marking attendance
+          from the Roster meant finding the Attendance tab first. This is
+          tab-aware, so it appears on every tab and offers that tab's own
+          object first while still listing the whole module. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="roster">Roster</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+        </TabsList>
+        <ListHeaderActions
+          module="labour"
+          tab={activeTab}
+          projectId={projectId}
+          filterDisabledReason="Filtering the roster is not built yet"
+          exportDisabledReason="Exporting the roster is not built yet"
+          // Attendance is written against a roster entry, so it stays in the
+          // menu and says why rather than disappearing on an empty project.
+          createDisabledReasons={roster.length === 0 ? { Attendance: "Add a worker to the roster first" } : {}}
+        />
+      </div>
 
       <TabsContent value="roster" className="space-y-4">
-        <div className="flex justify-end">
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Add
-              Worker" Dialog popup with a real create route. */}
-          <Button onClick={() => router.push(`/labour/new?projectId=${projectId}`)}><Plus className="size-4" /> Add Worker</Button>
-        </div>
         <Card className="shadow-card">
-          <CardContent className="p-0">
-            {/* R67 F-31: the roster region carries data-state / aria-busy, and
-                a wait past 3 s says "Still loading roster… <n> s" instead of
-                spinning silently. */}
-            <ListScreenFrame
-              label="roster"
-              loading={paneIsBusy(roster)}
-              error={roster.error}
-              rowCount={roster.rows.length}
+          <CardContent className="p-2">
+            <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(rosterStatus, roster.length)}</p>
+            <PaneState
+              status={rosterStatus}
+              entity="the roster"
+              projectName={projectName}
+              startedAt={rosterStartedAt}
+              error={rosterError}
+              rowCount={roster.length}
+              lastLoadedAt={rosterLoadedAt}
+              skeletonColumns={["S.No", ...columns.map((c) => c.label)]}
+              emptyMessage="No workers on the roster yet."
+              emptyAction={
+                <Button size="sm" onClick={() => router.push(`/labour/new?projectId=${projectId}`)}>
+                  <Plus className="size-4" aria-hidden /> Add Worker
+                </Button>
+              }
               onRetry={() => void loadRoster(true)}
             >
-            {roster.error ? (
-              <div className="p-4"><DataLoadError messages={[roster.error]} onRetry={() => loadRoster(true)} /></div>
-            ) : roster.rows.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">No workers on the roster yet.</p>
-            ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -312,7 +400,7 @@ export default function LabourClient({
                 <TableBody>
                   {/* Real screen navigation (2026-08-30) -- rows open the
                       real Object Page, where Edit/Deactivate now live. */}
-                  {roster.rows.map((r, i) => (
+                  {roster.map((r, i) => (
                     <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/labour/${r.id}`)}>
                       <TableCell className="text-px-muted">{i + 1}</TableCell>
                       {columns.map((col) => (
@@ -324,56 +412,61 @@ export default function LabourClient({
                   ))}
                 </TableBody>
               </Table>
-            )}
-            </ListScreenFrame>
+            </PaneState>
           </CardContent>
         </Card>
       </TabsContent>
 
       <TabsContent value="attendance" className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* R67 F-25: the day is a real, visible control, so "which day am I
-              looking at?" is answered on screen rather than assumed. */}
-          <div className="flex items-center gap-2">
-            <label htmlFor="attendance-day" className="text-sm text-px-muted">Day</label>
-            <input
-              id="attendance-day"
-              type="date"
-              value={attendanceDay}
-              max={localDay()}
-              onChange={(e) => pickDay(e.target.value)}
-              className="h-9 rounded-md border border-px-border bg-transparent px-2 text-sm"
-            />
-            <Button variant="ghost" size="sm" onClick={toggleEarlier}>
-              {showEarlier ? `Show only ${formatDate(attendanceDay)}` : "Show earlier days"}
-            </Button>
-          </div>
-          {/* Real screen navigation (2026-08-30) -- replaces the old "Mark
-              Attendance" Dialog popup with a real create route. */}
-          <Button disabled={roster.rows.length === 0} onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}><Plus className="size-4" /> Mark Attendance</Button>
+        {/* R67 F-25: the day is a real, visible control, so "which day am I
+            looking at?" is answered on screen rather than assumed. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="attendance-day" className="text-sm text-px-muted">Day</label>
+          <input
+            id="attendance-day"
+            type="date"
+            value={attendanceDay}
+            max={localDay()}
+            onChange={(e) => pickDay(e.target.value)}
+            className="h-9 rounded-md border border-px-border bg-transparent px-2 text-sm"
+          />
+          <Button variant="ghost" size="sm" onClick={toggleEarlier}>
+            {showEarlier ? `Show only ${formatDate(attendanceDay)}` : "Show earlier days"}
+          </Button>
         </div>
         <Card className="shadow-card">
-          <CardContent className="p-0">
-            <ListScreenFrame
-              label="attendance"
-              loading={paneIsBusy(attendance)}
-              error={attendance.error}
-              rowCount={attendance.rows.length}
+          <CardContent className="p-2">
+            <p className="px-2 py-1 text-[12px] text-px-muted">{recordCountLabel(attendanceStatus, attendance.length)}</p>
+            <PaneState
+              status={attendanceStatus}
+              entity="attendance"
+              projectName={projectName}
+              startedAt={attendanceStartedAt}
+              error={attendanceError}
+              rowCount={attendance.length}
+              lastLoadedAt={attendanceLoadedAt}
+              skeletonColumns={ATTENDANCE_COLUMNS}
+              emptyMessage={
+                showEarlier
+                  ? `No attendance recorded in the ${EARLIER_DAYS} days to ${formatDate(attendanceDay)}.`
+                  : `No attendance recorded on ${formatDate(attendanceDay)}.`
+              }
+              emptyAction={
+                <Button
+                  size="sm"
+                  disabled={roster.length === 0}
+                  title={roster.length === 0 ? "Add a worker to the roster first" : undefined}
+                  onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}
+                >
+                  <Plus className="size-4" aria-hidden /> Mark Attendance
+                </Button>
+              }
               onRetry={() => void loadAttendance(attendanceDay, showEarlier)}
             >
-            {attendance.error ? (
-              <div className="p-4"><DataLoadError messages={[attendance.error]} onRetry={() => loadAttendance(attendanceDay, showEarlier)} /></div>
-            ) : attendance.rows.length === 0 ? (
-              <p className="py-10 text-center text-sm text-px-muted">
-                {showEarlier
-                  ? `No attendance recorded in the ${EARLIER_DAYS} days to ${formatDate(attendanceDay)}.`
-                  : `No attendance recorded on ${formatDate(attendanceDay)}.`}
-              </p>
-            ) : (
               <Table>
                 <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Worker</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Hours</TableHead><TableHead className="text-right">Cost{orgMoney.unitSuffix}</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {attendance.rows.map((a) => (
+                  {attendance.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="text-px-muted">{formatDate(a.attendanceDate)}</TableCell>
                       <TableCell className="font-medium">{workerName(a.rosterId)}</TableCell>
@@ -392,8 +485,7 @@ export default function LabourClient({
                   ))}
                 </TableBody>
               </Table>
-            )}
-            </ListScreenFrame>
+            </PaneState>
           </CardContent>
         </Card>
       </TabsContent>

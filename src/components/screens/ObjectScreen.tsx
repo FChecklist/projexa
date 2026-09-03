@@ -1,277 +1,181 @@
 "use client";
 
-// R67 F-34 (audit recommendation R-290) -- FRAME-FIRST LOADING ON OBJECT ROUTES.
+// R67 D-67 -- ONE object page for every module.
 //
-// WHY THIS FILE IS A FORK (programme decision D-09). The item as written asks
-// for a change inside @fchecklist/veridian-ui-kit's own ObjectScreen and a kit
-// release. D-09 forbids both for this programme: the kit source is not on this
-// machine, it is pinned to a git commit, and an edit inside node_modules is
-// erased by CI's `bun install --frozen-lockfile`. So ObjectScreen.tsx is copied
-// here verbatim and extended; EVERYTHING it depends on is still imported from
-// the kit (ScreenFrame, StatusBadge, DocumentFlow, the shared types), so this
-// fork carries the object-screen behaviour and nothing else. Upstreaming the
-// `loading` variant to the kit later is a straight copy of the block below.
+// R-257: "ObjectScreen (display-first with the word actions Edit | Delete |
+// Back, Delete separated from Edit, footer message slot, autosave slot)."
 //
-// WHAT THE VARIANT FIXES. Every object route in PROJEXA answered a wait with
-// one line:
+// Four decisions this makes once, so twenty object pages cannot each make
+// them differently:
 //
-//     if (!meeting) return <p className="p-6 …">Loading…</p>;
-//
-// A word, centred in an empty page, with no breadcrumb, no title, no action bar
-// and nothing for a screen reader to announce. The user cannot tell it apart
-// from a broken screen, and after a save it replaces the record they were just
-// looking at. `<ObjectScreen loading breadcrumb="Minutes of Meeting / Meeting"
-// label="the meeting" />` renders the SAME frame the loaded screen renders --
-// the real breadcrumb, a title-shaped skeleton bar, the action bar present and
-// disabled with its reason -- inside a region marked aria-busy, and after three
-// seconds it says what it is waiting for, in the same words the list screens use
-// (ListLoadingWords, F-31). 'Loading…' never stands alone again.
-//
-// The loaded path below is byte-for-byte the kit's, so switching a screen to
-// this fork changes nothing about how it renders once its record has arrived.
+//  1. DISPLAY FIRST. The page opens showing what the record IS. An object
+//     page that opens as an edit form makes reading a record cost a decision
+//     about whether you are about to change it.
+//  2. DELETE IS SEPARATED FROM EDIT. Not adjacent, not the same size, not
+//     the same tone. Delete sits after a gap, in the muted word style, and
+//     it never fires on its own click.
+//  3. THE CONFIRM IS INLINE AND NAMES THE BLAST RADIUS. "Delete permit
+//     BP-2026-0142 and its PDF? This cannot be undone." -- not "Are you
+//     sure?", and not a modal: PROJEXA's one remaining popup was removed by
+//     D-01 and this is not the place to add a new one.
+//  4. THE FOOTER MESSAGE IS PERSISTENT. "Created permit BP-2026-0142" has to
+//     survive being read. A toast that fades is how a user ends up unsure
+//     whether the save happened.
 
-import { useEffect, useRef, useState } from "react";
-import { Pencil } from "lucide-react";
-import { ScreenFrame, StatusBadge, DocumentFlow } from "@fchecklist/veridian-ui-kit/screens";
-import type { DocumentFlowData, FieldMessage, StatusTone } from "@fchecklist/veridian-ui-kit/screens";
-import { ListLoadingWords } from "@/components/ListScreenFrame";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 
-const AUTOSAVE_DEBOUNCE_MS = 2000; // GLOBAL: "autosave debounced ~2s"
+export type ObjectFacet = { label: string; value: React.ReactNode };
 
-/** The reason shown beside every action while the record is still in flight. */
-export const OBJECT_LOADING_REASON = "Loading…";
-
-export type ObjectScreenMode = "display" | "edit" | "create";
-
-export type ObjectScreenLoadedProps = {
-  loading?: false;
-  breadcrumb: React.ReactNode;
-  title: string; // "New <Object>" until named, per M29 -- caller supplies this already resolved
-  subtitle?: string;
-  headerStatus?: { tone: StatusTone; label: string }; // dual header/item status -- this is the HEADER half (M31)
-  facets?: { label: string; value: string }[];
-  documentFlow?: DocumentFlowData;
-  mode: ObjectScreenMode;
-  hasDraft: boolean; // an existing draft the user left mid-edit (editing icon, M29)
-  lockedByOther?: { userId: string; lockExpiresAt: string } | null;
-  onEdit?: () => void | Promise<void>;
-  onSave?: () => void | Promise<void>;
-  onCancel?: () => void | Promise<void>;
-  onDelete?: () => void | Promise<void>;
-  onBack?: () => void;
-  deleteDisabledReason?: string;
-  saveDisabled?: boolean;
-  saveDisabledReason?: string; // e.g. "2 required fields"
-  onAutosave?: () => void | Promise<void>; // caller reads its own current form state; ObjectScreen only owns the timing
-  messages: FieldMessage[];
-  onMessageClick?: (message: FieldMessage) => void;
-  children: React.ReactNode; // FormSection(s) / read-only field display, anchor-section content
+export type ObjectScreenProps = {
+  module: string;
+  moduleHref: string;
+  /** "Permit", "BOQ", "Progress entry". */
+  objectLabel: string;
+  /** The record's own name, as the <h1>. */
+  title: string;
+  /** Small context pairs under the title -- "Project: Cedar Heights Villa". */
+  facets?: ObjectFacet[];
+  onEdit?: () => void;
+  /** Omit entirely where the module has no delete path -- never a dead control. */
+  onDelete?: {
+    /** The whole sentence, from deleteConfirmation(). */
+    confirmation: string;
+    run: () => void | Promise<void>;
+    /** Why the control is unavailable. Renders it disabled with the reason. */
+    disabledReason?: string;
+  };
+  /** A persistent line under the actions: "Created permit BP-2026-0142". */
+  footerMessage?: React.ReactNode;
+  /** "Saving… / Saved 12:04" for screens that autosave. */
+  autosave?: React.ReactNode;
+  /** A failure raised by an action on this page. */
+  error?: string | null;
+  children: React.ReactNode;
 };
 
-export type ObjectScreenLoadingProps = {
-  loading: true;
-  /** The module's real breadcrumb literal, so it does not change when the record lands. */
-  breadcrumb: React.ReactNode;
-  /**
-   * What the user is waiting for, in their words -- "the meeting", "the worker".
-   * After 3 s the frame says "Still loading the meeting… 4 s"; at 8 s, D-04's
-   * abort budget, "This is taking longer than usual". Omit only where there is
-   * genuinely no noun for it.
-   */
-  label?: string;
-  /** The action names this screen really has, drawn disabled with their reason. */
-  actions?: string[];
-  /** How many facet slots to outline, so the header does not resize on arrival. */
-  facetCount?: number;
-  onBack?: () => void;
-};
-
-export type ObjectScreenProps = ObjectScreenLoadedProps | ObjectScreenLoadingProps;
-
-/**
- * The frame an object route paints before its record exists.
- *
- * Deliberately NOT a spinner in an empty page: the breadcrumb is real text (a
- * user who navigated by mistake can tell immediately), the title is a bar the
- * real title will replace at the same size, and the action bar is present and
- * disabled rather than absent -- an action that appears late is its own kind of
- * layout jump, and one that looks live over a screen with no record yet is a
- * fail-after-click.
- */
-function ObjectScreenLoading({ breadcrumb, label, actions = ["Edit"], facetCount = 2, onBack }: ObjectScreenLoadingProps) {
-  return (
-    <ScreenFrame
-      breadcrumb={
-        <span className="flex items-center gap-2">
-          {onBack && (
-            <button type="button" onClick={onBack} className="text-ct-muted hover:text-ct-navy">
-              ← Back
-            </button>
-          )}
-          {breadcrumb}
-        </span>
-      }
-      footerActions={
-        <>
-          <span className="text-[13px] text-ct-muted">{OBJECT_LOADING_REASON}</span>
-          {actions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              disabled
-              aria-disabled="true"
-              title={OBJECT_LOADING_REASON}
-              className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-muted opacity-60"
-            >
-              {action}
-            </button>
-          ))}
-        </>
-      }
-      messages={[]}
-    >
-      <div data-state="loading" aria-busy="true" data-testid="object-screen-loading">
-        <div className="px-4 py-3 border-b border-ct-border">
-          <div className="flex items-start justify-between gap-3">
-            {/* Title-shaped, title-sized: the real <h1> is text-xl, so the bar
-                is h-6 and the header does not change height on arrival. */}
-            <div
-              className="h-6 w-56 max-w-full animate-pulse rounded bg-ct-cloud"
-              data-testid="object-screen-title-skeleton"
-            />
-          </div>
-          {facetCount > 0 && (
-            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3">
-              {Array.from({ length: facetCount }, (_, i) => (
-                <div key={i} className="h-3.5 w-28 animate-pulse rounded bg-ct-cloud" />
-              ))}
-            </div>
-          )}
-        </div>
-        {label ? <ListLoadingWords label={label} /> : null}
-      </div>
-    </ScreenFrame>
-  );
-}
-
-export function ObjectScreen(props: ObjectScreenProps) {
-  // Hooks must run in the same order on every render, so the loading branch is
-  // taken AFTER them -- not with an early return above them.
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-  }, []);
-
-  if (props.loading) return <ObjectScreenLoading {...props} />;
-
-  const {
-    breadcrumb, title, subtitle, headerStatus, facets, documentFlow, mode, hasDraft, lockedByOther,
-    onEdit, onSave, onCancel, onDelete, onBack, deleteDisabledReason, saveDisabled, saveDisabledReason,
-    onAutosave, messages, onMessageClick, children,
-  } = props;
-
-  // Debounced autosave -- fires AUTOSAVE_DEBOUNCE_MS after the LAST call to
-  // scheduleAutosave() while in edit/create mode. Exposed via a data
-  // attribute hook so the caller's field onChange can trigger it without
-  // ObjectScreen needing to know the field shape.
-  function scheduleAutosave() {
-    if (!onAutosave) return;
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = setTimeout(() => {
-      void onAutosave();
-    }, AUTOSAVE_DEBOUNCE_MS);
-  }
-
-  const isEditing = mode === "edit" || mode === "create";
-
-  const footerActions: React.ReactNode = isEditing ? (
-    <>
-      <button
-        type="button"
-        onClick={() => onSave?.()}
-        disabled={saveDisabled}
-        title={saveDisabled ? saveDisabledReason : undefined}
-        className="rounded-md bg-ct-teal px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Save{saveDisabled && saveDisabledReason ? ` (${saveDisabledReason})` : ""}
-      </button>
-      <button type="button" onClick={() => onCancel?.()} className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px] text-ct-navy">
-        Cancel
-      </button>
-    </>
-  ) : (
-    <>
-      {onEdit && (
-        <button type="button" onClick={() => onEdit()} className="rounded-md bg-ct-navy px-3 py-1.5 text-[13px] font-medium text-white">
-          Edit
-        </button>
-      )}
-      {/* Destructive actions are never adjacent to common ones (GLOBAL) -- a spacer, not just a gap class, keeps Delete visually separated. */}
-      {onDelete && <div className="flex-1" />}
-      {onDelete && (
-        <button
-          type="button"
-          onClick={() => onDelete()}
-          disabled={!!deleteDisabledReason}
-          title={deleteDisabledReason}
-          className="rounded-md border border-[color:var(--color-veri-status-late)] px-3 py-1.5 text-[13px] text-[color:var(--color-veri-status-late)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Delete
-        </button>
-      )}
-    </>
-  );
-
-  const headerMessageStrip = lockedByOther
-    ? `Locked by another user until ${new Date(lockedByOther.lockExpiresAt).toLocaleTimeString()}`
-    : undefined;
+export function ObjectScreen({
+  module,
+  moduleHref,
+  objectLabel,
+  title,
+  facets = [],
+  onEdit,
+  onDelete,
+  footerMessage,
+  autosave,
+  error,
+  children,
+}: ObjectScreenProps) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   return (
-    <ScreenFrame
-      breadcrumb={
-        <span className="flex items-center gap-2">
-          {onBack && (
-            <button type="button" onClick={onBack} className="text-ct-muted hover:text-ct-navy">
-              ← Back
-            </button>
-          )}
-          {breadcrumb}
-        </span>
-      }
-      headerMessageStrip={headerMessageStrip}
-      footerActions={footerActions}
-      messages={messages}
-      onMessageClick={onMessageClick}
-    >
-      <div data-veri-autosave-trigger onChangeCapture={isEditing ? scheduleAutosave : undefined} data-state="ready">
-        <div className="px-4 py-3 border-b border-ct-border">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h1 className="font-heading text-xl text-ct-navy flex items-center gap-2">
-                {title}
-                {hasDraft && !isEditing && <Pencil className="size-3.5 text-ct-muted" aria-label="Draft in progress" />}
-              </h1>
-              {subtitle && <p className="text-[13px] text-ct-muted mt-0.5">{subtitle}</p>}
-            </div>
-            {headerStatus && <StatusBadge tone={headerStatus.tone} label={headerStatus.label} />}
-          </div>
-          {facets && facets.length > 0 && (
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 mt-3">
+    <div className="flex-1 space-y-4 p-6">
+      <ProjectBreadcrumb module={module} moduleHref={moduleHref} trail={[title]} backHref={moduleHref} />
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-xl text-ct-navy">{title}</h1>
+          {facets.length > 0 && (
+            <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-px-muted">
               {facets.map((f) => (
-                <div key={f.label} className="text-[12.5px]">
-                  <dt className="text-ct-muted inline">{f.label}: </dt>
-                  <dd className="text-ct-navy inline font-medium">{f.value}</dd>
+                <div key={f.label} className="flex gap-1">
+                  <dt>{f.label}:</dt>
+                  <dd className="text-ct-navy">{f.value}</dd>
                 </div>
               ))}
             </dl>
           )}
         </div>
 
-        {children}
-
-        {documentFlow && <DocumentFlow data={documentFlow} />}
+        {/* Word actions, in R-257's order, with Delete pushed away from Edit
+            by a real gap rather than sitting next to it in the same tone. */}
+        <div className="flex items-center gap-2">
+          {autosave && <span className="mr-2 text-[12px] text-px-muted">{autosave}</span>}
+          {onEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              Edit
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => router.push(moduleHref)}>
+            Back
+          </Button>
+          {onDelete && (
+            <span className="ml-6 inline-flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-px-error"
+                disabled={Boolean(onDelete.disabledReason) || deleting}
+                title={onDelete.disabledReason}
+                onClick={() => setConfirming(true)}
+              >
+                Delete
+              </Button>
+              {onDelete.disabledReason && <span className="text-xs text-px-muted">{onDelete.disabledReason}</span>}
+            </span>
+          )}
+        </div>
       </div>
-    </ScreenFrame>
+
+      {confirming && onDelete && (
+        <div
+          role="alertdialog"
+          aria-label="Confirm delete"
+          className="rounded-lg border border-px-error-border bg-px-error-light p-4 text-sm"
+        >
+          <p className="flex items-start gap-2 text-px-error">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {onDelete.confirmation}
+          </p>
+          <div className="mt-3 flex items-center gap-2 pl-6">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await onDelete.run();
+                } finally {
+                  setDeleting(false);
+                  setConfirming(false);
+                }
+              }}
+            >
+              {deleting ? "Deleting…" : `Delete ${objectLabel.toLowerCase()}`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
+          {error}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="p-6">{children}</CardContent>
+      </Card>
+
+      {/* The receipt. Persistent, not a toast -- it is the only proof on
+          screen that the save the user just made actually landed. */}
+      {footerMessage && (
+        <div role="status" className="rounded-md border border-px-border bg-white px-3 py-2 text-[12px] text-px-muted">
+          {footerMessage}
+        </div>
+      )}
+    </div>
   );
 }
 

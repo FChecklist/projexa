@@ -55,8 +55,8 @@ export default function CostVarianceAnalyticalClient({ projectId }: { projectId:
   return (
     <AnalyticalScreen
       breadcrumb="Scope of Work / Cost variance"
-      filterAction={{ label: "Filter", disabledReason: "Not yet available" }}
-      exportAction={{ label: "Export", disabledReason: "Not yet available" }}
+      filterAction={{ label: "Filter", disabledReason: "Filtering the cost variance report is not built yet" }}
+      exportAction={{ label: "Export", disabledReason: "Exporting the cost variance report is not built yet" }}
       newAction={undefined}
       kpiTags={
         <>

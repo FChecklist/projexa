@@ -1,150 +1,127 @@
 /// <reference types="bun-types" />
-// R67 F-34 (R-290). The acceptance is a Playwright screenshot at 300 ms of a
-// navigation into /moms/<id> with the record delayed: the DOM must carry the
-// breadcrumb text and an aria-busy element, and the literal "Loading…" must not
-// stand alone. Every one of those is a property of this component, so it is
-// asserted here, where it can be run without a server -- the Playwright run is
-// then a check that the component is actually mounted on those routes, not the
-// only place the rule exists.
+// R67 D-67 -- the object archetype, rendered.
 //
-// Queries come from the render RESULT, never from `screen`: the happy-dom
-// global is registered at module scope and @testing-library's `screen` binds to
-// document.body at ITS import time, which is earlier. (Same note as
-// ListScreenFrame.test.tsx.)
+// R-257's four rules, asserted: display first, Delete separated from Edit,
+// an inline confirmation that names the blast radius (not "are you sure",
+// and not a modal -- D-01 removed PROJEXA's last popup and this is not the
+// place to add one), and a footer receipt that persists rather than fading.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-GlobalRegistrator.register();
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { ObjectScreen, OBJECT_LOADING_REASON } from "./ObjectScreen";
-import { MOM_OBJECT_BREADCRUMB, OBJECT_BREADCRUMBS } from "@/lib/object-breadcrumbs";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
+  usePathname: () => "/permits/x",
+}));
+
+const { ObjectScreen } = await import("./ObjectScreen");
+const { ProjectScopeProvider } = await import("../shell/project-context");
+const { deleteConfirmation } = await import("@/lib/create-screen");
 
 afterEach(cleanup);
 
-describe("ObjectScreen loading variant", () => {
-  test("the breadcrumb is real text while the record is still in flight", () => {
-    const { getByText } = render(
-      <ObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
-    );
-    // The exact literal the acceptance screenshots for.
-    expect(getByText(/Minutes of Meeting/)).toBeDefined();
-  });
+const CEDAR = { id: "p-cedar", name: "Cedar Heights Villa - Phase 1" };
 
-  test("the waiting region is marked busy and states its loading data-state", () => {
-    const { container } = render(<ObjectScreen loading breadcrumb="Permits / Permit" />);
-    const region = container.querySelector("[data-testid='object-screen-loading']")!;
-    expect(region.getAttribute("aria-busy")).toBe("true");
-    expect(region.getAttribute("data-state")).toBe("loading");
-  });
-
-  test("the title is a bar, not the word 'Loading…' -- and that word never stands alone", () => {
-    const { container, queryByText } = render(
-      <ObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
-    );
-    expect(container.querySelector("[data-testid='object-screen-title-skeleton']")).not.toBeNull();
-    // "Loading…" appears ONLY as the reason beside a disabled action, never as
-    // the whole answer: there is a breadcrumb and a title bar beside it.
-    const loadingText = queryByText(OBJECT_LOADING_REASON);
-    expect(loadingText).not.toBeNull();
-    expect(container.textContent).toContain("Minutes of Meeting");
-  });
-
-  test("the action bar is present and disabled with its reason, not absent", () => {
-    const { getByRole } = render(
-      <ObjectScreen loading breadcrumb="Permits / Permit" actions={["Edit"]} />
-    );
-    const edit = getByRole("button", { name: "Edit" }) as HTMLButtonElement;
-    expect(edit.disabled).toBe(true);
-    expect(edit.getAttribute("title")).toBe(OBJECT_LOADING_REASON);
-  });
-
-  test("each screen outlines the actions it really has -- a BOQ revision is never offered Edit", () => {
-    const { queryByRole, getByRole } = render(
+function renderScreen(props: Partial<Parameters<typeof ObjectScreen>[0]> = {}) {
+  return render(
+    <ProjectScopeProvider
+      value={{
+        projects: [CEDAR],
+        project: CEDAR,
+        projectId: CEDAR.id,
+        projectsLoaded: true,
+        selectProject: () => {},
+        openSwitcher: () => {},
+      }}
+    >
       <ObjectScreen
-        loading
-        breadcrumb={OBJECT_BREADCRUMBS.scope.breadcrumb}
-        actions={OBJECT_BREADCRUMBS.scope.actions}
-      />
-    );
-    expect(queryByRole("button", { name: "Edit" })).toBeNull();
-    expect(getByRole("button", { name: "Create Revision" })).toBeDefined();
-  });
-
-  test("after three seconds it says what it is waiting for, in the user's own noun", async () => {
-    const { findByText } = render(
-      <ObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
-    );
-    // Real elapsed time, not fake timers: the assertion is that a user staring
-    // at the screen is told something, not that the component reads a constant.
-    const words = await findByText(/Still loading the meeting/, {}, { timeout: 6000 });
-    expect(words.textContent).toMatch(/Still loading the meeting…\s*\d+\s*s/);
-  }, 10000);
-
-  test("nothing is said for the first three seconds -- an ordinary wait is not narrated", () => {
-    const { queryByText } = render(
-      <ObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} label={MOM_OBJECT_BREADCRUMB.label} />
-    );
-    expect(queryByText(/Still loading/)).toBeNull();
-  });
-
-  test("a screen with no noun for what it is waiting on simply shows the frame", () => {
-    const { container } = render(<ObjectScreen loading breadcrumb="Schedule / Task" />);
-    expect(container.textContent).toContain("Schedule / Task");
-    expect(container.textContent).not.toContain("Still loading");
-  });
-});
-
-describe("ObjectScreen loaded variant -- unchanged from the kit's", () => {
-  test("renders the title, the breadcrumb, the children and a ready data-state", () => {
-    const { container, getByText } = render(
-      <ObjectScreen
-        breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb}
-        title="Site walkthrough 12 Aug"
-        mode="display"
-        hasDraft={false}
-        messages={[]}
+        module="Permits"
+        moduleHref="/permits"
+        objectLabel="Permit"
+        title="BP-2026-0142"
+        facets={[{ label: "Project", value: CEDAR.name }]}
+        {...props}
       >
-        <p>the record</p>
+        <p>Issued 12 Jan 2026</p>
       </ObjectScreen>
-    );
-    expect(getByText("Site walkthrough 12 Aug")).toBeDefined();
-    expect(getByText("the record")).toBeDefined();
-    expect(container.querySelector("[data-state='ready']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='object-screen-loading']")).toBeNull();
+    </ProjectScopeProvider>
+  );
+}
+
+describe("ObjectScreen", () => {
+  test("opens in display mode -- the record, not a form", () => {
+    const { container, queryByRole } = renderScreen();
+    expect(container.textContent).toContain("BP-2026-0142");
+    expect(container.textContent).toContain("Issued 12 Jan 2026");
+    expect(queryByRole("textbox")).toBeNull();
   });
 
-  test("Edit is live once the record is there, and Save carries its disabled reason in edit mode", () => {
-    const display = render(
-      <ObjectScreen breadcrumb="Permits / Permit" title="Fire NOC" mode="display" hasDraft={false} messages={[]} onEdit={() => {}}>
-        <p>fields</p>
-      </ObjectScreen>
-    );
-    const edit = display.getByRole("button", { name: "Edit" }) as HTMLButtonElement;
-    expect(edit.disabled).toBe(false);
-    cleanup();
-
-    const editing = render(
-      <ObjectScreen
-        breadcrumb="Permits / Permit" title="Fire NOC" mode="edit" hasDraft={false} messages={[]}
-        saveDisabled saveDisabledReason="2 required fields"
-      >
-        <p>fields</p>
-      </ObjectScreen>
-    );
-    expect(editing.getByRole("button", { name: "Save (2 required fields)" })).toBeDefined();
+  test("the facet states which project the record belongs to", () => {
+    const { container } = renderScreen();
+    expect(container.textContent).toContain("Project");
+    expect(container.textContent).toContain("Cedar Heights Villa - Phase 1");
   });
 
-  test("the breadcrumb is the SAME string loading and loaded, so it cannot rewrite itself on arrival", async () => {
-    const loading = render(<ObjectScreen loading breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} />);
-    const whileLoading = loading.container.textContent ?? "";
-    cleanup();
-    const loaded = render(
-      <ObjectScreen breadcrumb={MOM_OBJECT_BREADCRUMB.breadcrumb} title="Kickoff" mode="display" hasDraft={false} messages={[]}>
-        <p>fields</p>
-      </ObjectScreen>
-    );
-    expect(whileLoading).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
-    expect(loaded.container.textContent).toContain(MOM_OBJECT_BREADCRUMB.breadcrumb);
-    await waitFor(() => expect(true).toBe(true));
+  test("Delete does not fire on its own click -- it asks first, naming what goes", () => {
+    let deleted = 0;
+    const { getByRole, container } = renderScreen({
+      onEdit: () => {},
+      onDelete: {
+        confirmation: deleteConfirmation("Permit", "BP-2026-0142", "and its PDF"),
+        run: () => {
+          deleted += 1;
+        },
+      },
+    });
+
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+    expect(deleted).toBe(0);
+    expect(container.textContent).toContain("Delete permit BP-2026-0142 and its PDF? This cannot be undone.");
+    // Not a modal: the record is still on screen behind the question.
+    expect(container.textContent).toContain("Issued 12 Jan 2026");
+  });
+
+  test("confirming actually deletes; cancelling does not", async () => {
+    let deleted = 0;
+    const { getByRole } = renderScreen({
+      onDelete: { confirmation: "Delete permit BP-2026-0142? This cannot be undone.", run: () => { deleted += 1; } },
+    });
+
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+    fireEvent.click(getByRole("button", { name: "Cancel" }));
+    expect(deleted).toBe(0);
+
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+    // The confirm handler awaits run(), so the state settles a microtask
+    // later -- act() is what lets React flush that before the assertion.
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Delete permit" }));
+    });
+    expect(deleted).toBe(1);
+  });
+
+  test("a module with no delete path renders no Delete control at all -- never a dead one", () => {
+    const { queryByRole } = renderScreen({ onEdit: () => {} });
+    expect(queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  test("a delete that is blocked says why, beside the disabled control", () => {
+    const { getByRole, container } = renderScreen({
+      onDelete: { confirmation: "…", run: () => {}, disabledReason: "This permit is referenced by a work order" },
+    });
+    expect((getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(container.textContent).toContain("This permit is referenced by a work order");
+  });
+
+  test("the footer receipt is a persistent status line, not a toast", () => {
+    const { getByRole } = renderScreen({ footerMessage: "Created permit BP-2026-0142" });
+    expect(getByRole("status").textContent).toBe("Created permit BP-2026-0142");
+  });
+
+  test("the autosave slot renders where a screen has one", () => {
+    const { container } = renderScreen({ autosave: "Saved 12:04" });
+    expect(container.textContent).toContain("Saved 12:04");
   });
 });

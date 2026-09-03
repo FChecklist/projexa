@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 // R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
-import { ObjectScreen } from "@/components/screens/ObjectScreen";
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { SCHEDULE_TASK_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { Input } from "@/components/ui/input";
@@ -145,7 +145,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
   // "Loading" is never alone on the screen. It says what it is waiting for after
   // 3 s and offers Retry at 8 s, D-04's abort budget.
   if (!task) return (
-    <ObjectScreen
+    <KitObjectScreen
       loading
       breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
       label={SCHEDULE_TASK_OBJECT_BREADCRUMB.label}
@@ -162,7 +162,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
         every other screen -- the page heading, the board card and the timesheet
         all lead with it. */}
     <ObjectContext moduleId="schedule" label={`#${task.number} ${task.title}`} projectId={task.projectId} />
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
       title={`#${task.number} ${task.title}`}
       mode={mode}
@@ -235,7 +235,7 @@ export default function ScheduleTaskObjectClient({ taskId }: { taskId: string })
           </div>
         )}
       </div>
-    </ObjectScreen>
+    </KitObjectScreen>
     </>
   );
 }

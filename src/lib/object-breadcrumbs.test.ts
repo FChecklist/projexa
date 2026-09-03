@@ -53,9 +53,9 @@ describe("every object route paints its frame before its record", () => {
       expect(existsSync(loadingPath(route.segment))).toBe(true);
     });
 
-    test(`${name}'s loading.tsx mounts the loading ObjectScreen with ${route.constName}`, () => {
+    test(`${name}'s loading.tsx mounts the loading KitObjectScreen with ${route.constName}`, () => {
       const source = readFileSync(loadingPath(route.segment), "utf8");
-      expect(source).toContain('from "@/components/screens/ObjectScreen"');
+      expect(source).toContain('from "@/components/screens/KitObjectScreen"');
       expect(source).toContain(route.constName);
       expect(source).toContain("loading");
       // The literal must NOT be re-typed here -- that is exactly the drift the
@@ -66,8 +66,9 @@ describe("every object route paints its frame before its record", () => {
     test(`${route.client} renders the same frame while it waits, and no bare "Loading…"`, () => {
       const source = clientSource(route.client);
       // The fork, not the kit's ObjectScreen: the kit has no loading variant and
-      // D-09 forbids changing it.
-      expect(source).toContain('import { ObjectScreen } from "@/components/screens/ObjectScreen"');
+      // D-09 forbids changing it. Decision D-11 renamed the fork to
+      // KitObjectScreen so lane D0's own ObjectScreen keeps the canonical path.
+      expect(source).toContain('import { KitObjectScreen } from "@/components/screens/KitObjectScreen"');
       expect(source).not.toContain('import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens"');
       // The exact shape this item removes: a paragraph whose whole content is
       // the word Loading.

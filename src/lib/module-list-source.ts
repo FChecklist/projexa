@@ -36,6 +36,7 @@ import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { PROJECT_COOKIE } from "@/lib/project-cookie";
 import type { ProjectSource } from "@/lib/project-preference";
+import type { ProjectSelectionMode, ResolveProjectOptions } from "@/lib/project-selection";
 import { timeUpstream } from "@/lib/debug-latency";
 
 // Written by the top rail when the user switches project (see
@@ -85,6 +86,29 @@ export type ResolvedModuleProject = {
   projectId: string | null;
   errorMessage: string | null;
   /**
+   * R67 MERGE (lane D0's D-20 / D-66). "No project chosen" and "this org has
+   * no projects" are different answers and a screen must be able to tell them
+   * apart: a module that OPTS IN with `allProjectsWhenUnset` gets mode "all"
+   * rather than having the org's first project silently chosen for it -- the
+   * defect where a BOQ revision was created against a project nobody picked.
+   * The fast path never produces "all": a `?projectId=` or the rail's own
+   * remembered cookie IS a choice the user made.
+   */
+  mode: ProjectSelectionMode;
+  /**
+   * The project's own name, but ONLY when resolving it cost nothing -- that is,
+   * when the /dashboard hop had to happen anyway. On the fast path it is null
+   * BY DESIGN: this function's whole purpose is to answer without a network
+   * call, and looking a name up here would put the round trip F-18 removed
+   * straight back on the critical path of every module page.
+   *
+   * A caller that needs the name (D-65's waiting caption, the project-named
+   * empty sentence) resolves it with getProjectName() inside its OWN
+   * Promise.all, concurrently with the list read it is making anyway -- so it
+   * costs no extra wall time and, with the 60 s per-org cache warm, no request.
+   */
+  projectName: string | null;
+  /**
    * R67 WS-A (A-04): HOW the project was chosen, in A-05's own vocabulary, so
    * the rail can admit to a choice it made for the user rather than presenting
    * a guess as a decision they took. F-18's fast path maps onto it directly:
@@ -127,20 +151,38 @@ async function cookieProjectStillBelongs(projectId: string, organizationId: stri
  */
 export async function resolveProjectForModule(
   requestedProjectId: string | undefined,
-  organizationId: string | null
+  organizationId: string | null,
+  options?: ResolveProjectOptions
 ): Promise<ResolvedModuleProject> {
   const { projectId: fast, source } = await resolveProjectIdFastWithSource(requestedProjectId);
-  if (fast && source === "url") return { projectId: fast, errorMessage: null, source: "route" };
+  if (fast && source === "url") {
+    return { projectId: fast, errorMessage: null, source: "route", mode: "project", projectName: null };
+  }
   if (fast && (await cookieProjectStillBelongs(fast, organizationId))) {
-    return { projectId: fast, errorMessage: null, source: "preference" };
+    // The cookie path already consulted cachedProjects() to check the id still
+    // belongs to this caller, so the name is free here.
+    return {
+      projectId: fast,
+      errorMessage: null,
+      source: "preference",
+      mode: "project",
+      projectName: await getProjectName(fast, organizationId),
+    };
   }
   const { resolveSelectedProject } = await import("@/lib/project-selection");
   const {
     project,
     errorMessage,
+    mode,
     source: chosen,
-  } = await resolveSelectedProject(undefined, organizationId);
-  return { projectId: project?.id ?? null, errorMessage, source: project ? chosen : null };
+  } = await resolveSelectedProject(undefined, organizationId, options);
+  return {
+    projectId: project?.id ?? null,
+    errorMessage,
+    source: project ? chosen : null,
+    mode,
+    projectName: project?.name ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
