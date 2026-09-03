@@ -30,7 +30,15 @@ afterEach(() => {
   delete globalThis.fetch;
 });
 
-function mount(categories: string[] = ["Joinery", "Gypsum", "Paint", "Civil", "Misc"]) {
+// The org's EDITABLE category list, in the shape /api/scope/categories really
+// returns since R67 lane I: rows of compliance.construction_boq_categories,
+// not bare strings. The grid reads that one table -- there is no second
+// vocabulary anywhere in the product.
+const ORG_CATEGORIES = ["Civil", "Gypsum", "Joinery", "Paint", "Electrical", "Plumbing", "Misc"].map((name, i) => ({
+  id: `cat-${i + 1}`, name, isActive: true,
+}));
+
+function mount(categories: { id: string; name: string; isActive: boolean }[] = ORG_CATEGORIES) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/api/scope/categories")) {
@@ -132,8 +140,16 @@ describe("ScopeCreateClient line grid (D-24)", () => {
     expect(getByRole("button", { name: /^Save \(/ }).textContent).not.toContain("Line 2");
   });
 
-  test("the per-line Category select is fed by the org's own picklist", async () => {
+  test("the per-line Category select is fed by the org's own editable picklist, not a list this screen invents", async () => {
     const { getByLabelText } = mount();
+    // Lane I's BoqCategorySelect labels its trigger "Line 1 Category" through
+    // the same aria-label convention the rest of the grid uses.
     await waitFor(() => expect(getByLabelText("Line 1 Category")).toBeDefined());
+  });
+
+  test("an org that has retired every category still renders the control -- Category is optional, never a blocker", async () => {
+    const { getByLabelText, queryByText } = mount([]);
+    await waitFor(() => expect(getByLabelText("Line 1 Category")).toBeDefined());
+    expect(queryByText(/Couldn't load/)).toBeNull();
   });
 });

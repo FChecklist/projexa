@@ -55,6 +55,15 @@ type Photo = { id: string; fileName: string; url: string | null; createdAt: stri
 
 export const NO_PHOTO_LABEL = "No site photo attached";
 
+/**
+ * The sentence a FAILED photo lookup gets, which must never be NO_PHOTO_LABEL.
+ * "We could not fetch the photos" and "there are no photos" are different
+ * facts, and telling a site engineer their evidence was never attached when
+ * the endpoint is simply down is the worse of the two errors this screen can
+ * make -- it invites them to re-upload something that is already there.
+ */
+export const PHOTOS_UNAVAILABLE_LABEL = "Couldn't load the site photos for this entry.";
+
 const ENTRY_BASIS_OPTIONS = [
   { value: "DELTA", label: "Delta -- this entry adds to progress already logged" },
   { value: "SNAPSHOT", label: "Snapshot -- this entry replaces the running total" },
@@ -68,6 +77,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
   const [siblings, setSiblings] = useState<ProgressEntryDetail[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photosError, setPhotosError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -102,7 +112,13 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
     ]);
     setActivities(activityRes.status === "fulfilled" ? (activityRes.value.activities ?? []) : []);
     setSiblings(siblingRes.status === "fulfilled" ? (siblingRes.value.entries ?? []) : []);
-    setPhotos(photoRes.status === "fulfilled" ? (photoRes.value.photos ?? []) : []);
+    if (photoRes.status === "fulfilled") {
+      setPhotos(photoRes.value.photos ?? []);
+      setPhotosError(null);
+    } else {
+      setPhotos([]);
+      setPhotosError(errorMessage(photoRes.reason, PHOTOS_UNAVAILABLE_LABEL));
+    }
   }, [entryId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -285,7 +301,12 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
               shown back anywhere. It is the evidence the entry exists. */}
           <section>
             <h3 className="text-[13px] font-semibold text-px-ink">Site photos</h3>
-            {photos.length === 0 ? (
+            {photosError ? (
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-px-error">
+                <span>{photosError}</span>
+                <button type="button" className="underline" onClick={() => void load()}>Retry</button>
+              </p>
+            ) : photos.length === 0 ? (
               <p className="mt-1 text-[13px] text-px-muted">{NO_PHOTO_LABEL}</p>
             ) : (
               <ul className="mt-2 flex flex-wrap gap-3">

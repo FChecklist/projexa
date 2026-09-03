@@ -71,6 +71,7 @@ export default function BoqCategorySelect({
   onChange,
   onAddNew,
   showLabel = false,
+  ariaLabel = "Category",
 }: {
   value: string;
   categories: BoqCategory[];
@@ -81,6 +82,12 @@ export default function BoqCategorySelect({
   onAddNew: (name: string) => void;
   /** Render the visible "Category" label. Shown on the first row only; every other row still gets an aria-label. */
   showLabel?: boolean;
+  /**
+   * R67 D-24: the accessible name, so a GRID of these can distinguish its rows
+   * ("Line 2 Category"). "Category" alone is ambiguous the moment a screen
+   * renders more than one, which is every BOQ with more than one line.
+   */
+  ariaLabel?: string;
 }) {
   const id = useId();
   const [addingNew, setAddingNew] = useState(false);
@@ -114,7 +121,7 @@ export default function BoqCategorySelect({
         <Input
           id={id}
           ref={newInputRef}
-          aria-label="Category"
+          aria-label={ariaLabel}
           placeholder="Category"
           defaultValue={addingNew ? "" : value}
           onBlur={(e) => (addingNew ? commitNew(e.target.value) : onChange(e.target.value.trim()))}
@@ -132,7 +139,7 @@ export default function BoqCategorySelect({
       {showLabel && <label htmlFor={id} className="mb-1 block text-xs text-ct-muted">Category</label>}
       <select
         id={id}
-        aria-label="Category"
+        aria-label={ariaLabel}
         className="h-9 w-full rounded-md border border-ct-border bg-transparent px-2 text-sm"
         value={known || value.trim() === "" ? value : value.trim()}
         onChange={(e) => {
