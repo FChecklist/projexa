@@ -58,6 +58,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { createClient } from "@/lib/supabase/client";
+import { ANALYSIS_ROUTE } from "@/lib/analysis-screens";
 
 // M24: "MODE is sticky WITHIN a session and RESETS to Projects on a new
 // session, so nobody returns to a view they forgot they set." sessionStorage is
@@ -482,10 +483,20 @@ export default function M24Shell({ children }: { children: React.ReactNode }) {
     // making the existing typed-path classifier the real destination
     // instead of a dead end. The "add detail first" placeholder text below
     // was already promising this was possible; it just never happened.
+    // R67 E-27 (R-213): the Analysis leaf has a real destination now
+    // (/analysis, the four analytical screens), so its FIRST click opens it
+    // rather than seeding a draft. Deliberately ONE pill and not a general
+    // pill->route table: the general mechanism is the pill catalogue's own
+    // (its function ids and nav paths are platform data), and this is the one
+    // leaf the audit recorded as landing nowhere at all.
+    if (sel.pillKey === "analysis") {
+      router.push(projectId ? `${ANALYSIS_ROUTE}?projectId=${encodeURIComponent(projectId)}` : ANALYSIS_ROUTE);
+      return;
+    }
     if (!knownFunctionId) {
       setDraft((prev) => (prev.trim() ? prev : sel.label));
     }
-  }, []);
+  }, [router, projectId]);
 
   // THE SUBMIT. R53's POST /api/v1/projexa/tasks takes EITHER shape, so there
   // is ONE input and ONE Send -- which is what M24's band rule requires.

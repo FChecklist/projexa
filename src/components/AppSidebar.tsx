@@ -10,6 +10,7 @@ import {
   CalendarClock, ShieldCheck, UserCog, IdCard, Banknote, Briefcase,
   TrendingUp, UserPlus, Handshake, FileSpreadsheet, ShoppingCart, Contact2,
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
+  LineChart,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
 import { filterShippedNav } from "@/lib/nav-routes";
@@ -130,6 +131,10 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { labelKey: "items.kpis", href: "/kpis", icon: Target },
       { labelKey: "items.reports", href: "/reports", icon: BarChart3 },
+      // R67 E-27 (R-213): the Analysis leaf's real destination -- the four
+      // analytical screens were only reachable as tabs inside four other
+      // modules, so "Analysis" itself led nowhere.
+      { labelKey: "items.analysis", href: "/analysis", icon: LineChart },
       { labelKey: "items.aiCopilot", href: "/copilot", icon: Bot },
       // Priority 17 Wave 1: org-wide reference material over
       // knowledge-base-service.ts -- not project-scoped, unlike every other

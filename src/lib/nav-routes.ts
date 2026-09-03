@@ -29,6 +29,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/accounting/companies/new",
   "/accounting/journal-entries/[id]",
   "/accounting/journal-entries/new",
+  // R67 E-27 (R-213): the Analysis leaf's real destination.
+  "/analysis",
   "/auth/callback",
   "/budgets",
   "/budgets/[id]",
