@@ -104,6 +104,34 @@ describe("resolveApiKey: AR-04 fail-loud guard (R43_EXEC_01 regression guard)", 
     await expect(resolveApiKey({ organizationId: "org-with-no-credentials-row" })).rejects.toBeInstanceOf(VeridianApiError);
   });
 
+  test("throws instead of using the shared VERIDIAN_API_KEY when the credentials lookup is DB-unreachable (PR #207)", async () => {
+    process.env.VERIDIAN_API_KEY = "shared-platform-key";
+    mock.module("drizzle-orm", () => ({ eq: (_col: unknown, val: string) => ({ __mockEq: true, val }) }));
+    mock.module("@/lib/db", () => ({
+      db: {
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              limit: () => Promise.reject(new Error("connection refused (simulated DB outage)")),
+            }),
+          }),
+        }),
+      },
+      veridianCredentials: { organizationId: "organization_id" },
+    }));
+    const { resolveApiKey, VeridianApiError } = await import("./veridian-client");
+
+    let resolved: string | null = null;
+    let thrown: unknown = null;
+    try {
+      resolved = await resolveApiKey({ organizationId: "org-with-no-credentials-row" });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(resolved).toBeNull();
+    expect(thrown).toBeInstanceOf(VeridianApiError);
+  });
+
   test("an explicit apiKey passed by the caller always wins, even over a resolvable organizationId", async () => {
     mockDbWithRows([{ organizationId: "org-a", veridianApiKey: "key-for-org-a" }]);
     const { resolveApiKey } = await import("./veridian-client");
