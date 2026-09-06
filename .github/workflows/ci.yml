@@ -41,6 +41,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # R76 (2026-09-06, Vercel deploy lockdown, A3-03): fails the job
+      # outright if the Layer 3 drift-guard test file is missing, independent
+      # of whatever `bun test` below would or wouldn't catch on its own --
+      # deleting a test silently drops its assertions rather than failing
+      # anything. See platform.crr_ruling R76-RULING-01 (compliance-tracker
+      # DB, project pcrjmlpuqsbocqfwoxod).
+      - name: Guard against deleting the Vercel-lockdown drift test
+        run: test -f src/lib/vercel-lockdown.test.ts || (echo "::error::src/lib/vercel-lockdown.test.ts is missing -- this is the Layer 3 drift guard for the Vercel deploy lockdown (R76-RULING-01). Restore it, do not just let this fail silently." && exit 1)
       - run: bun test --isolate
   build:
     name: Build
