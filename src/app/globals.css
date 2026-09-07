@@ -115,6 +115,18 @@
   --text-xs: 11.5px;
   --text-xs--line-height: 1.45;
 
+  /* ─── 2026-09-07: the top rail's tint, per the frozen mock ──────────────
+     The mock's header band is a pale lavender (`--c-purple-50, #EEEDFE`
+     in its own placeholder variables). Unlike the KPI/pill tints above,
+     this one cannot be derived from an existing token with color-mix() --
+     there is no purple hue anywhere in this app's real palette
+     (navy/saffron/teal/coral-ish) to derive it from. Same situation as
+     the "Semantic Colors" block below, added PROJEXA-local for the same
+     reason: the kit doesn't have this hue yet, so it is declared here
+     rather than invented ad hoc at each call site. Used only by
+     TopRail.tsx's own header background. */
+  --color-topbar-tint: #EEEDFE;
+
   /* ─── Semantic Colors (unchanged -- veridian-ui-kit doesn't define
      success/warning/error/info tones yet; these stay PROJEXA-local until
      it does) ─── */

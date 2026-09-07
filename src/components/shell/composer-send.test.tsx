@@ -54,7 +54,6 @@ describe("the Send button's name is the whole of the reason", () => {
     const { container } = renderComposer();
     const send = sendButton(container);
     expect(send.getAttribute("aria-label")).toBe("Send (pick a project, say what you need)");
-    expect(send.textContent).toBe("Send (pick a project, say what you need)");
     expect((send as HTMLButtonElement).disabled).toBe(true);
     // The strip's own question survives as the hover title -- supplementary
     // text (A-18), never a second sentence inside the accessible name.
@@ -71,8 +70,14 @@ describe("the Send button's name is the whole of the reason", () => {
   test("no separate reason text node sits beside the button", () => {
     const { container } = renderComposer();
     const row = sendButton(container).parentElement!;
-    // Every text node in that row belongs to the button itself.
-    expect(row.textContent).toBe("Send (pick a project, say what you need)");
+    // 2026-09-07: Send is now a small icon inset in the textarea's own
+    // corner (visual-only re-skin, matching the frozen mock), not a worded
+    // button -- so the row's visible text is empty, not the label. The
+    // actual rule this test protects -- no SEPARATE text node repeating or
+    // contradicting the reason -- still holds; it is just that the reason
+    // itself is no longer visible text anywhere in this row, only the
+    // button's own accessible name (asserted above).
+    expect(row.textContent).toBe("");
     expect(row.querySelector("[role='alert']")).toBeNull();
   });
 

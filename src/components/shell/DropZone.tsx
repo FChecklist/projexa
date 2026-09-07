@@ -22,6 +22,7 @@
 //    never a false success and never a bare 500.
 
 import { useRef, useState } from "react";
+import { Paperclip } from "lucide-react";
 import { acceptList, formatSize, type AttachPolicy } from "@/lib/attachments";
 
 /** One file in the tray. `error` is the words the chip shows. */
@@ -98,14 +99,30 @@ export function DropZone({
       }}
     >
       <div className="flex flex-wrap items-center gap-2">
+        {/* 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
+            direction): a compact attach icon -- the "pin" beside the input
+            the owner asked for -- instead of a full-width worded button.
+            Nothing about what this control DOES changes: same onClick
+            (opens the same hidden file input), same disabled state, same
+            drag-over highlight. The word (`policy.label`, e.g. "Attach PDF,
+            up to 25 MB") is not lost -- same as the Pin control's own
+            recent re-skin, it moves into the accessible name and the hover
+            title, which is where a screen reader and a mouse-hover already
+            read it from; a paperclip is about as close to a universally
+            understood glyph as an icon gets, unlike an arbitrary symbol.
+            `veri-icon-btn`'s normal fixed 30x30 is overridden with an
+            explicit 44x44 so the real hit area does not shrink along with
+            the drawn icon. */}
         <button
           type="button"
           disabled={disabled}
           onClick={() => inputRef.current?.click()}
-          className="veri-view-tab shrink-0 disabled:opacity-40"
-          style={dragging ? { borderColor: "var(--color-ct-teal)" } : undefined}
+          aria-label={policy.label}
+          title={policy.label}
+          className="veri-icon-btn shrink-0 disabled:opacity-40"
+          style={{ width: 44, height: 44, background: dragging ? "var(--color-ct-cloud)" : undefined }}
         >
-          {policy.label}
+          <Paperclip aria-hidden size={16} color={dragging ? "var(--color-ct-teal)" : undefined} />
         </button>
         <input
           ref={inputRef}

@@ -133,7 +133,11 @@ export function TopRail({
       className="flex h-9 shrink-0 items-center gap-3 border-b px-3"
       style={{
         borderColor: "var(--color-ct-border)",
-        background: "var(--color-ct-cream)",
+        // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
+        // direction): the mock's header band is a pale lavender, not the
+        // kit's cream. Nothing about this bar's behaviour, project-switcher
+        // logic, or accessibility changes -- only this one background.
+        background: "var(--color-topbar-tint)",
       }}
     >
       <div className="flex items-center" style={{ color: "var(--color-ct-navy)" }}>

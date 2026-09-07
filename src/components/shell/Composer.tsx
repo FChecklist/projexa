@@ -78,6 +78,7 @@
 //      SCALAR FIELDS, for a chain step whose answer is a number or a date.
 
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import {
   COMPOSER_MAX_HEIGHT_VH,
   COMPOSER_RESTING_HEIGHT,
@@ -405,116 +406,107 @@ export function Composer({
               in a box whose button writes to a project. The ink and the grey
               are separate classes now, and neither depends on what the words
               happen to say. */}
-          <textarea
-            ref={taRef}
-            value={value}
-            onChange={(e) => {
-              lastTypedRef.current = e.target.value;
-              onChange(e.target.value);
-            }}
-            onFocus={(e) => {
-              // A-19 -- A VALUE THAT ARRIVED ON ITS OWN IS SELECTED ON FOCUS,
-              // "so it reads as typed text". A chain replay or a prefill puts a
-              // whole sentence in the box that the user did not write; selecting
-              // it says, in the one convention every text field already uses,
-              // "this is a draft you may replace" -- the next keystroke
-              // replaces it instead of appending to the middle of someone
-              // else's sentence. A value the user typed themselves is never
-              // touched: their cursor is theirs.
-              if (value && value !== lastTypedRef.current) e.currentTarget.select();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !sendDisabled && onSubmit) {
-                e.preventDefault();
-                onSubmit();
-              }
-            }}
-            rows={2}
-            placeholder={placeholder}
-            aria-label="Describe the task"
-            className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--color-ct-navy)] outline-none placeholder:text-[var(--color-ct-muted)]"
-            style={{ minHeight: 46 }}
-          />
-          {examples && (
-            <div className="pt-0.5 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
-              {examples}
-            </div>
-          )}
-          {/* A-10 -- ONE ROW: the failure line sits immediately left of the
-              button, on the same line, at a 44 px minimum height. It used to
-              float above the textarea, where the box's own growth could push
-              it out of the reading path at exactly the moment it mattered.
-
-              2026-09-07 -- ONE ROW, BUT NEVER ONE ROW OF GARBLED TEXT. Found
-              live on /permits, /documents, /scope and /work-progress (any
-              screen with an attach policy) at a short viewport, confirmed
-              with elementFromPoint sampling: DropZone's own button is
-              `shrink-0` and unclamped by design (DropZone.tsx's own rule --
-              "A WORD, NEVER AN ICON ALONE, AND THE LIMITS ARE IN THE WORD" --
-              "Attach PDF, up to 25 MB" must stay whole, not fold into
-              "Attach P…" the way a mid-sentence CSS clip would leave it).
-              Its `flex-1 min-w-0` wrapper (M24Shell.tsx) correctly shrinks
-              to share this row with Send, but shrinking the WRAPPER can't
-              shrink a shrink-0 BUTTON inside it -- the button just renders
-              at its full width regardless and, with nothing here to clip it,
-              paints straight over Send. Truncating the label was rejected
-              (it is exactly the failure this file's own comment above
-              argues against for the error line). `flex-wrap` is the fix
-              that keeps both rules: at normal widths nothing changes, one
-              row, exactly as A-10 asks; only when there is genuinely not
-              enough width for both controls at their full, readable size
-              does Send drop to its own second line instead of overlapping
-              the attach button's words. */}
-          <div className="mt-1 flex flex-wrap min-h-[44px] items-center gap-2">
-            {attachSlot}
-            {/* THE FOOTER LINE IS EMPTY UNLESS SOMETHING FAILED. The next
-                question lives in the strip; printing it here as well was how
-                one state came to show two contradicting sentences. */}
-            {errorMessage && (
-              <p role="alert" className="min-w-0 text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
-                {errorMessage}
-              </p>
-            )}
-            {/* The spinner sits BESIDE the button, so the label can stay put. */}
-            {busy && (
-              <span
-                aria-hidden
-                className="ml-auto inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent"
-                style={{ borderColor: "var(--color-ct-border2)", borderTopColor: "transparent" }}
-              />
-            )}
-            {/* NO FAIL-AFTER-CLICK: when the action cannot succeed the button
-                is disabled and the reason is the strip's own sentence, carried
-                here as the tooltip and the accessible name rather than printed
-                a second time in grey. */}
-            {/* R67 A-19 -- THE LABEL IS THE WHOLE OF THE ACCESSIBLE NAME.
-                It used to be "<label> — <the strip's question>" whenever Send
-                was disabled, so the button announced one sentence and read
-                another, and the reason was said twice on one screen: once in
-                the strip and once here. A-19 puts the reason INSIDE the label
-                ("Send (pick a project, say what you need)") and leaves nothing
-                beside the button to disagree with it. The strip's question
-                stays as the hover title, which A-18 already settled is
-                supplementary text and never the only label. */}
+          {/* 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock
+              (owner direction: existing wiring stays, only the drawing
+              changes). The mock's Send is a small circular icon INSET in
+              the textarea's own bottom-right corner, not a separate full-
+              width worded button below it. Every prop this button reads
+              (onSubmit/sendDisabled/busy/sendLabel/instruction) and every
+              accessibility guarantee (A-19's "the reason is the whole of
+              the accessible name", A-18's 44px minimum) is unchanged --
+              only HOW it is drawn moves. The button's own box stays a real
+              44x44 hit area (`style={{width:44,height:44}}` below); a
+              smaller `<span>` inside it draws the compact circle the mock
+              shows, so the VISIBLE affordance is small while the CLICKABLE
+              one is not -- a strictly visual change, not a touch-target
+              regression. `pr-9` on the textarea keeps typed text from
+              running underneath it, the same reason the mock's own
+              textarea carries extra right padding. */}
+          <div className="relative">
+            <textarea
+              ref={taRef}
+              value={value}
+              onChange={(e) => {
+                lastTypedRef.current = e.target.value;
+                onChange(e.target.value);
+              }}
+              onFocus={(e) => {
+                // A-19 -- A VALUE THAT ARRIVED ON ITS OWN IS SELECTED ON FOCUS,
+                // "so it reads as typed text". A chain replay or a prefill puts a
+                // whole sentence in the box that the user did not write; selecting
+                // it says, in the one convention every text field already uses,
+                // "this is a draft you may replace" -- the next keystroke
+                // replaces it instead of appending to the middle of someone
+                // else's sentence. A value the user typed themselves is never
+                // touched: their cursor is theirs.
+                if (value && value !== lastTypedRef.current) e.currentTarget.select();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !sendDisabled && onSubmit) {
+                  e.preventDefault();
+                  onSubmit();
+                }
+              }}
+              rows={2}
+              placeholder={placeholder}
+              aria-label="Describe the task"
+              className="w-full resize-none bg-transparent pr-9 text-[13px] leading-relaxed text-[var(--color-ct-navy)] outline-none placeholder:text-[var(--color-ct-muted)]"
+              style={{ minHeight: 46 }}
+            />
             <button
               type="button"
+              data-testid="composer-send"
               onClick={onSubmit}
               disabled={sendDisabled}
               aria-busy={busy}
               aria-label={sendLabel}
               title={instruction || sendLabel}
-              className={`${busy ? "" : "ml-auto "}rounded-lg px-3 text-[12px] font-medium disabled:opacity-40`}
-              style={{
-                // WS-G tokens, no new colour: navy on saffron. White on saffron
-                // was the contrast failure this replaces.
-                background: "var(--color-ct-saffron)",
-                color: "var(--color-ct-navy)",
-                minHeight: 44,
-                minWidth: 44,
-              }}
+              className="absolute bottom-0 right-0 flex items-center justify-center disabled:opacity-40"
+              style={{ width: 44, height: 44 }}
             >
-              {sendLabel}
+              <span
+                aria-hidden
+                className="flex items-center justify-center rounded-lg"
+                style={{
+                  // WS-G tokens, no new colour: navy on saffron. White on
+                  // saffron was the contrast failure this replaces.
+                  width: 26,
+                  height: 26,
+                  background: "var(--color-ct-saffron)",
+                  color: "var(--color-ct-navy)",
+                }}
+              >
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <ArrowUp size={13} />}
+              </span>
             </button>
+          </div>
+          {examples && (
+            <div className="pt-0.5 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+              {examples}
+            </div>
+          )}
+          {/* 2026-09-07 -- Send moved into the textarea's own corner (above),
+              matching the mock, so this row is now attach + the failure
+              line only. A-10's actual rule -- the failure is immediately
+              visible, in the reading path, not floating disconnected from
+              the control it explains -- still holds: it is still directly
+              below the input, still `min-h-0`/no fixed height so it never
+              gets clipped, just no longer sharing a row with a button that
+              no longer lives here. `flex-wrap` stays as the safety net from
+              the same fix this comment used to document -- now doing far
+              less work, since attach is a compact icon rather than a full
+              worded button, but still correct if a very long error message
+              and a very narrow viewport ever coincide. */}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {attachSlot}
+            {/* THE FOOTER LINE IS EMPTY UNLESS SOMETHING FAILED. The next
+                question lives in the strip; printing it here as well was how
+                one state came to show two contradicting sentences. */}
+            {errorMessage && (
+              <p role="alert" className="min-w-0 flex-1 text-[11.5px]" style={{ color: "var(--color-veri-status-late)" }}>
+                {errorMessage}
+              </p>
+            )}
           </div>
         </div>
       </div>

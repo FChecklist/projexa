@@ -54,13 +54,17 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
   return render(<Composer {...props} />);
 }
 
-/** The Send button, found by role rather than by the exact word "Send": A-19
- *  renames it for what it will do ("Save progress", "Run") and appends what is
- *  missing ("Send (pick a project)"), so an equality on "Send" would silently
- *  stop finding it. It is the last button in the composer's footer row. */
+/** The Send button, found by a stable test hook rather than by DOM position
+ *  or the exact word "Send": A-19 renames it for what it will do ("Save
+ *  progress", "Run") and appends what is missing ("Send (pick a project)"),
+ *  so an equality on "Send" would silently stop finding it. 2026-09-07:
+ *  Send moved from "the last button in the footer row" to sitting inside
+ *  the textarea's own corner (visual-only re-skin, matching the frozen
+ *  mock) -- DOM position is no longer reliable once an attachSlot's own
+ *  button can render after it, so this now targets the button's own
+ *  `data-testid` instead. */
 const sendButton = (container: HTMLElement) => {
-  const buttons = Array.from(container.querySelectorAll("button"));
-  const found = buttons[buttons.length - 1];
+  const found = container.querySelector('[data-testid="composer-send"]');
   if (!found) throw new Error("no Send button rendered");
   return found as HTMLButtonElement;
 };
@@ -68,9 +72,16 @@ const sendButton = (container: HTMLElement) => {
 const textarea = (container: HTMLElement) => container.querySelector("textarea") as HTMLTextAreaElement;
 
 describe("Send is navy on saffron, not white on saffron", () => {
-  test("the button paints from the two tokens that measure 5.55:1", () => {
+  // 2026-09-07: Send's outer <button> is now just a 44x44 hit-box (visual-
+  // only re-skin, matching the frozen mock's compact circular send icon);
+  // the saffron/navy pair that used to be the button's own inline style
+  // moved to the small `<span>` inside it that draws the visible circle.
+  // The rule itself -- navy on saffron, never white -- is unchanged.
+  const sendCircle = (container: HTMLElement) => sendButton(container).querySelector("span")!;
+
+  test("the circle paints from the two tokens that measure 5.55:1", () => {
     const { container } = renderComposer({ value: "log 2 hours" });
-    const style = sendButton(container).getAttribute("style") ?? "";
+    const style = sendCircle(container).getAttribute("style") ?? "";
     expect(style).toContain("var(--color-ct-saffron)");
     expect(style).toContain("var(--color-ct-navy)");
     // The failure this replaced. If white ever comes back, this fails.
@@ -85,7 +96,7 @@ describe("Send is navy on saffron, not white on saffron", () => {
     // text-primary-foreground` never applies and the inline pair is the only
     // thing carrying the contrast.
     expect(btn.className).not.toContain("bg-primary");
-    expect(btn.getAttribute("style")).toContain("background");
+    expect(sendCircle(container).getAttribute("style")).toContain("background");
   });
 });
 
@@ -109,7 +120,13 @@ describe("Send is navy on saffron, not white on saffron", () => {
 // state maps to a label) and composer-send.test.tsx ("every label chain-status
 // can produce reaches the button unchanged").
 describe("a disabled Send still always has words -- now IN the button", () => {
-  test("the reason is the button's visible label AND its accessible name", () => {
+  // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
+  // direction): Send is now a small circular icon inset in the textarea's
+  // own corner, not a worded button, so the label is no longer VISIBLE
+  // text -- same pattern as the Pin/Attach re-skins. A-19's actual rule
+  // survives unchanged: the reason is the WHOLE of the accessible name,
+  // announced on focus, never a second sentence beside the control.
+  test("the reason is the button's accessible name", () => {
     const { container } = renderComposer({
       value: "",
       canSend: false,
@@ -118,7 +135,6 @@ describe("a disabled Send still always has words -- now IN the button", () => {
     });
     const btn = sendButton(container);
     expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toBe("Send (pick a project, say what you need)");
     // A-19: the accessible name is EXACTLY the label, with nothing appended --
     // the button can never announce one sentence and read another.
     expect(btn.getAttribute("aria-label")).toBe("Send (pick a project, say what you need)");
@@ -130,7 +146,7 @@ describe("a disabled Send still always has words -- now IN the button", () => {
     const { container } = renderComposer({ value: "", canSend: false, sendLabel: "Send (say what you need)" });
     const btn = sendButton(container);
     expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toBe("Send (say what you need)");
+    expect(btn.getAttribute("aria-label")).toBe("Send (say what you need)");
   });
 
   test("EXACTLY ONE instruction -- the old reason slot is gone, not duplicated", () => {
@@ -152,14 +168,19 @@ describe("a disabled Send still always has words -- now IN the button", () => {
     expect(printed.length).toBeLessThanOrEqual(1);
   });
 
-  test("the words sit ON the control, at a 44px target, not at 11px in the corner", () => {
+  test("the accessible name is a real touch target, not 11px in the corner", () => {
     // G's finding was that the kit put the reason at 11px in the bottom-left
-    // of the viewport, behind Next's dev badge. It is now the button's label,
-    // which A-18 sizes as a real touch target.
+    // of the viewport, behind Next's dev badge. It is the button's accessible
+    // name now, and A-18 still sizes the button itself as a real touch
+    // target -- 2026-09-07's visual re-skin makes the DRAWN circle smaller
+    // (matching the mock) but keeps the button's own hit box at a full
+    // 44x44 via explicit width/height (not min-width/min-height, which an
+    // absolutely-positioned button needs an explicit size for regardless).
     const { container } = renderComposer({ value: "", canSend: false, sendLabel: "Send (say what you need)" });
     const btn = sendButton(container);
     const style = btn.getAttribute("style") ?? "";
-    expect(style).toContain("min-height: 44px");
+    expect(style).toContain("width: 44px");
+    expect(style).toContain("height: 44px");
     expect(btn.className).not.toContain("text-[11px]");
   });
 });
@@ -169,7 +190,7 @@ describe("a live Send has no extra words at all", () => {
     const { container } = renderComposer({ value: "log 2 hours", canSend: true, sendLabel: "Send", instruction: "" });
     const btn = sendButton(container);
     expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe("Send");
+    expect(btn.getAttribute("aria-label")).toBe("Send");
     expect(container.querySelector("#veri-composer-send-reason")).toBeNull();
     expect(textarea(container).getAttribute("aria-describedby")).toBeNull();
     // Nothing failed, so the footer's alert line is absent entirely.
@@ -183,7 +204,7 @@ describe("a live Send has no extra words at all", () => {
     // whole decision, computed by chain-status from the armed action.
     const { container } = renderComposer({ value: "", canSend: true, sendLabel: "Save progress" });
     expect(sendButton(container).disabled).toBe(false);
-    expect(sendButton(container).textContent).toBe("Save progress");
+    expect(sendButton(container).getAttribute("aria-label")).toBe("Save progress");
   });
 
   test("a real FAILURE is a different thing and keeps its own line", () => {
@@ -192,7 +213,7 @@ describe("a live Send has no extra words at all", () => {
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toBe("Nothing was saved");
     // ...and it does not rename the button (A-10 follow-up).
-    expect(sendButton(container).textContent).toBe("Send");
+    expect(sendButton(container).getAttribute("aria-label")).toBe("Send");
   });
 });
 
@@ -233,7 +254,10 @@ describe("the Send label", () => {
 
   test("it carries the outstanding answer when the caller supplies one", () => {
     const { container } = renderComposer({ value: "record 50%", sendLabel: "Send (pick a BOQ line)" });
-    const labels = Array.from(container.querySelectorAll("button")).map((b) => b.textContent);
+    // 2026-09-07: the label is the accessible name now (Send is an icon,
+    // not visible text -- see the describe blocks above), so this checks
+    // aria-label across every button rather than visible textContent.
+    const labels = Array.from(container.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"));
     expect(labels).toContain("Send (pick a BOQ line)");
     // The old label is GONE, not sitting beside it -- two Send buttons would
     // be two answers to the same question.

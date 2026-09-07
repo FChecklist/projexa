@@ -3604,10 +3604,25 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // R67 A-02: two worked examples in the module's own vocabulary, so a
           // site engineer sees what a sentence this box accepts looks like
           // before typing one.
+          //
+          // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
+          // direction): the mock renders each example as its own small
+          // bordered chip, not one combined "e.g. X · Y" sentence. A-02's
+          // actual content -- both worked examples, in the module's own
+          // words -- is unchanged; only the two are now two elements
+          // instead of one.
           examples={
             promptModule ? (
-              <span>
-                e.g. “{promptModule.examples[0]}” · “{promptModule.examples[1]}”
+              <span className="flex flex-wrap gap-1">
+                {promptModule.examples.map((ex) => (
+                  <span
+                    key={ex}
+                    className="rounded-full border px-1.5 py-0.5"
+                    style={{ borderColor: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
+                  >
+                    {ex}
+                  </span>
+                ))}
               </span>
             ) : undefined
           }

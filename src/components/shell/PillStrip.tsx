@@ -52,6 +52,32 @@
 // path, so selecting a card cannot perform a write.
 
 import { useEffect, useRef } from "react";
+import { CircleHelp, Pencil, Play, RotateCcw, Star } from "lucide-react";
+
+// 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
+// direction: "the existing UI UX and its functions were designed after lots
+// of work -- the new UI UX is visual change only... use old UI UX wiring
+// into new UI UX"). Nothing below this comment changes what any control
+// DOES -- every onClick/onTogglePin/aria-label/disabled state is the same
+// prop, wired the same way. What changes is only how a "kind" and the pin
+// control are DRAWN: the mock renders a glyph icon beside the label instead
+// of a separate uppercase word badge, and a small star instead of a full
+// 44px "Pin"/"Pinned" text button. The kind word is NOT lost -- it moves
+// into the tooltip/aria-label, which is where a screen reader already reads
+// it from; a lucide icon distinguishes by SHAPE, not colour, which is the
+// actual thing R67 A-18's original rule protected against ("a strip whose
+// meaning is carried by hue alone"). The pin's click target stays a real
+// 44x44 hit area via padding even though the drawn icon itself is small, so
+// this is a strictly visual change, not a touch-target regression.
+const KIND_ICON: Record<string, typeof Pencil> = {
+  write: Pencil,
+  record: Pencil,
+  ask: CircleHelp,
+  run: Play,
+};
+function iconForKind(word: string) {
+  return KIND_ICON[word.toLowerCase()] ?? Pencil;
+}
 
 export type CardView = {
   id: string;
@@ -215,22 +241,23 @@ export function PillStrip({
                 register, the timesheet and the receipts book are three
                 different jobs. A card either opens a real page or loads its
                 sentence into the strip and stops -- neither one executes. */}
-            {(screenCards ?? []).map((card) => (
-              <button
-                key={card.id}
-                type="button"
-                onClick={() => onSelectScreenCard?.(card.id)}
-                aria-label={`${card.verb}: ${card.label}`}
-                title={card.label}
-                className="veri-mode-pill active w-full justify-start rounded-lg"
-                style={{ background: "var(--color-ct-cloud)" }}
-              >
-                <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
-                  {card.verb}
-                </span>
-                {card.label}
-              </button>
-            ))}
+            {(screenCards ?? []).map((card) => {
+              const Icon = iconForKind(card.verb);
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => onSelectScreenCard?.(card.id)}
+                  aria-label={`${card.verb}: ${card.label}`}
+                  title={`${card.verb}: ${card.label}`}
+                  className="veri-mode-pill active w-full justify-start rounded-lg"
+                  style={{ background: "var(--color-kpi-tint-positive)" }}
+                >
+                  <Icon aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
+                  {card.label}
+                </button>
+              );
+            })}
             {/* R67 A-08 -- "DO AGAIN". The three chains this user actually ran
                 in the last seven days, at the front of the band, each labelled
                 with the whole sentence rather than a fragment: M24 is explicit
@@ -245,16 +272,11 @@ export function PillStrip({
                 type="button"
                 onClick={() => onSelectRecent?.(chain)}
                 aria-label={`Do again: ${chain.label}${chain.outcome === "failed" ? " (failed last time)" : ""}`}
-                title={chain.fullChain}
+                title={`Do again: ${chain.fullChain}`}
                 className="veri-mode-pill w-full justify-start rounded-lg"
-                style={{ background: "var(--color-ct-cloud)" }}
+                style={{ background: "var(--color-kpi-tint-positive)" }}
               >
-                <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
-                  ↻
-                </span>
-                <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
-                  Do again
-                </span>
+                <RotateCcw aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
                 {chain.label}
                 {chain.outcome === "failed" && (
                   <span className="ml-1 text-[10px]" style={{ color: "var(--color-veri-status-late)" }}>
@@ -265,6 +287,7 @@ export function PillStrip({
             ))}
             {cards.map((card) => {
             const blocked = card.disabledReason !== null;
+            const Icon = iconForKind(card.kindWord);
             return (
               <span key={card.id} className="flex w-full items-center gap-1">
                 <button
@@ -274,55 +297,46 @@ export function PillStrip({
                   // NO FAIL-AFTER-CLICK: the reason is the accessible name and
                   // the tooltip, so it is available before the click, not after.
                   aria-label={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
-                  title={blocked ? card.disabledReason! : card.label}
+                  title={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
                   className="veri-mode-pill disabled:opacity-45 min-w-0 flex-1 justify-start rounded-lg"
-                  style={{ background: "var(--color-ct-cloud)" }}
+                  style={{ background: "var(--color-kpi-tint-positive)" }}
                 >
-                  <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
-                    {card.kindGlyph}
-                  </span>
-                  {/* THE KIND, IN WORDS. Never colour alone. */}
-                  <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
-                    {card.kindWord}
-                  </span>
+                  {/* THE KIND, BY SHAPE, NOT COLOUR ALONE (R67 A-18's actual
+                      rule) -- the word itself moved into the aria-label/title
+                      above, which is where a screen reader and a hover both
+                      already read it from. */}
+                  <Icon aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
                   {card.label}
                   {card.pinned && (
-                    <span aria-hidden className="ml-1" style={{ color: "var(--color-ct-saffron)" }}>
-                      ★
-                    </span>
+                    <Star aria-hidden size={12} className="ml-1 shrink-0" fill="var(--color-ct-saffron)" style={{ color: "var(--color-ct-saffron)" }} />
                   )}
                 </button>
                 {onTogglePin && (
-                  // R67 A-18 -- THE PIN CARRIES ITS OWN WORD.
-                  //
-                  // It was a 20 x 20 star. Three things were wrong with that
-                  // and all three are the same mistake: a glyph is not a label.
-                  // A user who has never seen this product cannot know that ☆
-                  // defeats the seven-day decay; ☆ and ★ differ only by fill,
-                  // which is the smallest distinction the eye can be asked to
-                  // make and disappears entirely in sunlight on a phone; and 20
-                  // x 20 is under half the 44 px minimum for a finger, sitting
-                  // immediately beside a control that WRITES.
-                  //
-                  // The word is now the label, the star is decoration beside
-                  // it, and the accessible name keeps the card's own name --
-                  // six buttons all announcing "Pin" would tell a screen-reader
-                  // user which control it is and nothing about what it pins.
-                  // The visible word is the first word of that name, which is
-                  // the "label in name" rule rather than an exception to it.
+                  // 2026-09-07 -- VISUAL-ONLY per the mock: a small star, not
+                  // a 44x44 "Pin"/"Pinned" text button. The accessible name,
+                  // aria-pressed and the click handler are byte-for-byte the
+                  // same props as before -- a screen reader still hears the
+                  // full word, exactly as R67 A-18 required. `.veri-icon-btn`
+                  // is normally a fixed 30x30 (below the 44px minimum); the
+                  // explicit width/height below overrides that (inline style
+                  // beats the class for the same property) so the real hit
+                  // area is 44x44 even though the drawn star icon is small --
+                  // a visual change, not a touch-target regression.
                   <button
                     type="button"
                     onClick={() => onTogglePin(card.id)}
                     aria-pressed={card.pinned}
                     aria-label={card.pinned ? `Pinned: ${card.label}` : `Pin ${card.label} so it never drops off`}
                     title={card.pinned ? "Pinned — never drops off" : "Pin — never drops off"}
-                    className="veri-view-tab"
-                    style={{ minWidth: 44, minHeight: 44 }}
+                    className="veri-icon-btn shrink-0"
+                    style={{ width: 44, height: 44 }}
                   >
-                    <span aria-hidden style={{ color: "var(--color-ct-saffron)" }}>
-                      {card.pinned ? "★" : "☆"}
-                    </span>
-                    {card.pinned ? "Pinned" : "Pin"}
+                    <Star
+                      aria-hidden
+                      size={14}
+                      fill={card.pinned ? "var(--color-ct-saffron)" : "none"}
+                      style={{ color: "var(--color-ct-saffron)" }}
+                    />
                   </button>
                 )}
               </span>

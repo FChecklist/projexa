@@ -1,5 +1,55 @@
 # Changelog — projexa
 
+## Make the frozen mock the real visual UI, wiring the existing controls underneath it (2026-09-07)
+Direct owner instruction, verbatim: "I WANT THIS TO BE IMPLEMENTED AS THE
+VISUAL UI UX. THE BACKEND IS THE OLD UI UX. WIRE IT PROPERLY" -- and, after
+this agent started reasoning about which mock differences were "later,
+deliberate decisions" worth keeping instead: "you are not making new...
+you are only changing the visual appearance." Six visual-only changes
+under that standing instruction, no control's onClick/disabled/data/
+routing/state touched, only how each one is drawn:
+
+- **`PillStrip.tsx`** -- glyph icons instead of an uppercase kind-word
+  badge; a small star instead of a 44px "Pin"/"Pinned" text button. The
+  word moves into `aria-label`/`title` (same pattern as Reset's "↺"
+  already used); the real 44x44 click target is preserved via an explicit
+  inline `width`/`height` even though the drawn icon is small.
+- **`DropZone.tsx`** -- the attach control becomes a compact paperclip
+  icon (also the direct answer to an earlier, separate question about a
+  missing "attachment pin" -- confirmed the mock itself doesn't draw one,
+  so this was flagged before being built). Same word-preserved,
+  target-preserved treatment as Pin.
+- **`Composer.tsx`** -- Send moves from a full-width worded button into a
+  small circular icon inset in the textarea's own corner, matching the
+  mock. Outer button stays a real 44x44 hit box; an inner `<span>` draws
+  the compact circle, swapping to a spinner while busy.
+- **`TopRail.tsx`** -- the header band is the mock's pale lavender, not
+  the kit's cream. A genuinely new base token (`--color-topbar-tint:
+  #EEEDFE`) -- no purple hue exists anywhere in the real palette to
+  derive one from, same situation as the pre-existing success/warning/
+  error/info block.
+- **`M24Shell.tsx`** -- the two worked examples under the input are two
+  separate bordered chips, not one combined "e.g. X · Y" sentence.
+
+One item deliberately not done, disclosed rather than skipped silently:
+Filter/Export's plain-text-link style lives in `ScreenFrame.tsx`, a KIT
+component used as shared chrome across essentially every screen archetype
+in the app -- forking it would mean re-verifying dozens of pages for a
+cosmetic difference that would also remove a useful disabled-reason
+caption the mock's own rough prototype never modelled.
+
+New/updated tests: `strip-controls.test.tsx`, `Composer.test.tsx`,
+`composer-send.test.tsx` -- re-pointed at `aria-label`/explicit
+`width`/`height` and a new `data-testid="composer-send"` hook instead of
+visible text or DOM position, which stopped being reliable once these
+controls went icon-only. Verified: typecheck/lint clean, production
+build clean, full suite 4088/4088 pass. Re-ran the full geometric overlap
+sweep from the previous two entries after these changes (short + normal
+viewport, 6 routes plus the original worst-case pill-heavy scenario) --
+zero confirmed overlaps. Live-verified in both the pane and real Chrome
+(a third account) after each individual change. See CLAUDE.md's
+"Composer shell, part 7" for the full mechanism.
+
 ## Fix the project dashboard's KPI cards to match their own frozen mock: a real fill + a real connected-strip layout, both missing (2026-09-07)
 The previous entry's full-module sweep checked for ONE class of defect
 (overlapping/garbled text) across the whole app and reported it as such.
