@@ -57,7 +57,24 @@
 //
 // See platform.crr_ruling / the change document this session produced for
 // the full before/after reasoning and the mockup iterations that led here.
-
+//
+// ADDENDUM, 2026-09-07 -- `chainRail`. The mockup discussion that produced
+// the composer relocation above kept going past it, through 16 more
+// iterations, to one more explicit decision: the composer's chain-so-far
+// (the same sentence ControlStrip.tsx already shows on the left, e.g. "All
+// modules / Work progress / By activity", each segment removable) should
+// ALSO be visible at the top of the right (ERP) pane -- the owner's own
+// words, verbatim: "Merge it into the right panel's top rail." The first
+// pass at this fork stopped short of that: it moved the composer correctly
+// but never added this, which is the gap the owner flagged when comparing
+// the shipped shell against the frozen mock. `chainRail` is that slot --
+// optional, rendered by the caller (see ChainRail.tsx, which hides itself
+// whenever the chain is empty or just the project root, so a page with no
+// in-progress composer selection shows nothing extra here and its own
+// existing breadcrumb/PageHeading stays the only navigation line, avoiding
+// a duplicate project name in the common case). It reuses the SAME `chain`
+// state M24Shell.tsx already threads to <Composer> -- no new state, no
+// change to any of the ~90 individual page files under src/app/(app).
 import type { ReactNode } from "react";
 // COMPOSER_RESTING_HEIGHT is defined in the KIT's own Composer.tsx, not this
 // repo's fork of it (that file only re-imports the constant, it does not
@@ -83,12 +100,27 @@ export type AppShellProps = {
    * that always renders the pills band needs this). Zero by default.
    */
   composerReserveExtra?: number;
+  /**
+   * See the ADDENDUM above. A thin, optional strip rendered at the very top
+   * of the RIGHT (ERP) pane, above `children` -- the composer's chain, made
+   * visible from the right side too. Renders nothing (undefined/null) on a
+   * screen with no in-progress composer chain, so it adds zero height and
+   * zero visual noise on the common path.
+   */
+  chainRail?: ReactNode;
 };
 
 /** M24: LEFT 30% / RIGHT 70%. Unchanged from the kit. */
 export const LEFT_PANE_PERCENT = 30;
 
-export function AppShell({ topRail, taskMaster, children, composer, composerReserveExtra = 0 }: AppShellProps) {
+export function AppShell({
+  topRail,
+  taskMaster,
+  children,
+  composer,
+  composerReserveExtra = 0,
+  chainRail,
+}: AppShellProps) {
   return (
     // h-[100svh], not h-dvh -- unchanged from the kit; see its own comment on
     // why svh is the stable choice against a mobile URL bar.
@@ -123,8 +155,19 @@ export function AppShell({ topRail, taskMaster, children, composer, composerRese
         </aside>
 
         {/* The ERP pane: no bottom padding reserved any more -- the composer
-            never overlays this pane, so it gets its full height back. */}
+            never overlays this pane, so it gets its full height back.
+            chainRail sits inside the SAME scroll container as `children`
+            (not a sibling with its own scroll region -- there is no reason
+            to add a second one) but pinned via position:sticky so it reads
+            as a top rail, staying visible while the routed screen's own
+            content scrolls beneath it. It renders nothing on the common
+            path (no in-progress chain), so it costs zero height then. */}
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
+          {chainRail ? (
+            <div className="sticky top-0 z-10" style={{ background: "var(--color-ct-cream)" }}>
+              {chainRail}
+            </div>
+          ) : null}
           {children}
         </main>
       </div>

@@ -1,5 +1,27 @@
 # Changelog — projexa
 
+## Add the composer's chain to the right panel's top rail — the frozen mock's decision the first pass missed (2026-09-07)
+The owner reported the shipped composer relocation (`9745f54`) looked "vastly
+different" from the mockup review it came from. Recovered the actual frozen
+mock from the session transcript and found one concrete, high-confidence gap:
+the final agreed design merges the composer's chain into the right panel's
+top rail ("Merge it into the right panel's top rail — show the mock," the
+owner's own last instruction before freezing it), which the first pass never
+built. Fixed: `AppShell.tsx` gained a `chainRail` slot; new
+`ChainRail.tsx` renders the chain there, reusing the exact same
+`chain`/`onCutFrom` state already computed for the left `ControlStrip` — no
+new state, no changes to any page file. Hides itself whenever there's no
+in-progress composer selection, so it never duplicates a page's own
+breadcrumb. Two other things the mock asked for (a literal "Back" button;
+removing the pinned "Needs You" card) were investigated and deliberately
+NOT built, because they collide with a separate, older, foundational design
+spec ("M24") already reasoned into `ControlStrip.tsx`/`TaskMaster.tsx` that
+the from-scratch mock had no visibility into — see `CLAUDE.md`'s "Composer
+shell, part 2" section for the full reasoning and evidence trail. Verified
+live (chain appears and stays in sync on both sides; Remove on either
+collapses both) plus 3 consecutive clean full-suite runs (4069/4069) and a
+clean production build.
+
 ## Never run the service worker against local dev; corrects a prior "isolated Turbopack bug" misdiagnosis (2026-09-07)
 `src/app/sw.js/route.ts`'s `CACHE_NAME` falls back to the fixed string `"local-dev"`
 whenever `VERCEL_GIT_COMMIT_SHA` is unset (every `bun run dev` run), so its own

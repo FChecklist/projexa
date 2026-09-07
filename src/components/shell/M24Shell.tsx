@@ -39,6 +39,12 @@ import {
 // header comment for why, and ./AppShell.tsx's header for exactly what
 // changed (only where the composer renders; everything else is untouched).
 import { AppShell } from "./AppShell";
+// ChainRail is a new file (2026-09-07, same day as the fork above) that
+// mirrors ControlStrip's chain segments into AppShell's new chainRail slot
+// -- see that component's own header for why it is a separate file rather
+// than a second <ControlStrip>, and why it renders nothing on the common
+// (bare-root-chain) path.
+import { ChainRail } from "./ChainRail";
 // R67 C-01, programme decision D-09 / R67-PART-B governance decision #1:
 // TaskMaster is PROJEXA'S FORK of the kit file (not the kit's own, which MAIN
 // used before this reconciliation). The kit renders two fixed groups whatever
@@ -3118,6 +3124,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // network requests. See veridian-ui-kit's AppShell.tsx/Composer.tsx
       // for the full mechanism this constant accounts for.
       composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
+      // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
+      // below for <Composer>'s own ControlStrip -- no new state. See
+      // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
+      chainRail={<ChainRail chain={chain} onCutFrom={onCutFrom} />}
       topRail={
         // MERGE NOTE: A-13's rail replaces F-18's inline cookie write here.
         // chooseProject() already calls writeStoredProjectId() -- the one
