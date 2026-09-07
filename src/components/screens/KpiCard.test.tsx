@@ -95,3 +95,37 @@ describe("KpiCard typography (R67 D-61)", () => {
     }
   });
 });
+
+// 2026-09-07 -- the frozen project-dashboard mock (owner-supplied, "Harbor
+// View Corporate HQ") renders every KPI tile with a fill: teal for an
+// ordinary figure, coral for one that needs attention. The card had no fill
+// at all before this round -- border only -- which is what the owner's
+// mock-vs-shipped comparison caught. "late" is this app's one loud/warning
+// tone (see globals.css); everything else, including no trend at all, is
+// the calmer default.
+describe("KpiCard fill (mock-fidelity fix, 2026-09-07)", () => {
+  test("a late trend gets the warn fill", () => {
+    const view = render(<KpiCard label="Spend" value="AED 1,250,000" trend={{ direction: "up", tone: "late", label: "over budget" }} baseline="budget AED 900,000" />);
+    expect(view.container.innerHTML).toContain("--color-kpi-tint-warn");
+    expect(view.container.innerHTML).not.toContain("--color-kpi-tint-positive");
+  });
+
+  test("every other tone gets the positive fill, not the warn one", () => {
+    for (const tone of ["context", "needs-you", "done"] as const) {
+      const view = render(<KpiCard label="Spend" value="AED 1" trend={{ direction: "flat", tone, label: "x" }} baseline="y" />);
+      expect(view.container.innerHTML).toContain("--color-kpi-tint-positive");
+      expect(view.container.innerHTML).not.toContain("--color-kpi-tint-warn");
+      cleanup();
+    }
+  });
+
+  test("no trend at all (e.g. Project Value: Not set) still gets the positive fill, not left unfilled", () => {
+    const view = render(<KpiCard label="Project Value" value="Not set" baseline="overridable per project" />);
+    expect(view.container.innerHTML).toContain("--color-kpi-tint-positive");
+  });
+
+  test("an explicit null trend is treated the same as no trend -- positive fill, not a crash", () => {
+    const view = render(<KpiCard label="Permits expiring" value="0" trend={null} baseline="next 30 days" />);
+    expect(view.container.innerHTML).toContain("--color-kpi-tint-positive");
+  });
+});

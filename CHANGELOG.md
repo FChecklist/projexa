@@ -1,5 +1,45 @@
 # Changelog — projexa
 
+## Fix the project dashboard's KPI cards to match their own frozen mock: a real fill + a real connected-strip layout, both missing (2026-09-07)
+The previous entry's full-module sweep checked for ONE class of defect
+(overlapping/garbled text) across the whole app and reported it as such.
+It never re-opened `/dashboard/project` and compared its OWN KPI-card
+styling against its OWN frozen mock, because those cards
+(`DashboardProjectClient.tsx` / `KpiCard.tsx`) are page-specific, not
+part of the shared shell the sweep covered. Asked directly why it still
+didn't match after that sweep was reported done, the honest answer:
+"no overlap bugs" and "matches every frozen mock" are different claims,
+and letting the first sound like the second was the actual gap.
+
+Doing that specific comparison found two real, concrete differences:
+
+- **No fill at all.** The mock renders every KPI tile with a background
+  -- teal for an ordinary figure, coral for the one needing attention
+  ("Budget vs Actual ... over budget"). The shipped card was border-only,
+  no fill. Fixed with two new tokens (`--color-kpi-tint-positive`,
+  `--color-kpi-tint-warn`), derived via `color-mix()` from tokens that
+  already exist and already carry the right meaning (`--color-ct-teal`,
+  `--color-veri-status-late`) rather than typed-in hex -- the correct
+  reading of this codebase's own "add a new semantic token if one is
+  genuinely missing" rule, which an earlier same-day fix (the composer
+  pill background) had read too conservatively.
+- **Four separate boxes instead of one connected strip.** The mock's KPI
+  row is one continuous bordered strip with thin dividers between cells;
+  the kit's own `DashboardScreen` layout gives every tile its own
+  separate rounded box with real gaps between them. Fixed by forking
+  `DashboardScreen.tsx` (one bordered container, `divide-x`/`divide-y`
+  instead of `gap`) and giving `KpiCard.tsx`/`DashboardKpiTile.tsx` a
+  `bare` mode that drops a tile's own border/rounding for exactly this
+  case.
+
+New tests: `KpiCard.test.tsx` (+4, locking in which tone gets which
+fill). Verified: typecheck/lint clean, production build clean, full
+suite clean (4088/4088 pass). Re-ran the previous entry's overlap sweep
+against this page specifically (short + normal viewport, three
+different projects) after the layout change -- zero confirmed overlaps,
+confirming the new layout didn't reopen that class of bug. See
+`CLAUDE.md`'s "Composer shell, part 6" for the full mechanism.
+
 ## Fix four real overlap bugs found by a full-module, geometry-verified sweep of every route (2026-09-07)
 The owner rejected the previous entry's "looks clean" read of a screenshot --
 proven wrong by their own Edge/Chrome screenshots showing genuine

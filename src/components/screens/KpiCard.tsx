@@ -48,6 +48,13 @@ export type KpiCardProps = {
   visual?: ReactNode; // a <Sparkline> or <BulletChart>
   size?: "primary" | "secondary"; // primary = the ONE number (2-3x larger), secondary = supporting KPI card
   onClick?: () => void;
+  /** 2026-09-07 -- true when this card is one cell of a connected KPI strip
+   *  (DashboardScreen's forked "one bordered row, thin dividers between
+   *  cells" layout, matching the frozen dashboard mock) rather than its own
+   *  free-standing tile. Drops this card's OWN border/rounding -- the strip
+   *  draws the outer border and the divider lines instead -- and keeps
+   *  everything else (padding, the tint fill, typography) unchanged. */
+  bare?: boolean;
 };
 
 const ARROW: Record<KpiTrend["direction"], string> = { up: "↑", down: "↓", flat: "→" };
@@ -63,13 +70,25 @@ export const KPI_VALUE_CLASS: Record<"primary" | "secondary", string> = {
   secondary: "font-sans font-semibold tabular-nums text-[20px] leading-tight text-ct-navy mt-1",
 };
 
-export function KpiCard({ label, value, trend, baseline, visual, size = "secondary", onClick }: KpiCardProps) {
+export function KpiCard({ label, value, trend, baseline, visual, size = "secondary", onClick, bare = false }: KpiCardProps) {
   const Wrapper = onClick ? "button" : "div";
+  // 2026-09-07 -- the frozen project-dashboard mock renders every KPI tile
+  // with a fill: teal for an ordinary/positive figure, coral for one that
+  // needs attention (the mock's own "Budget vs Actual ... over budget"
+  // example). The card had no fill at all before this -- border only --
+  // which is the concrete gap the owner's mock-vs-shipped comparison found.
+  // "late" is the one tone this app already treats as the sole loud/warning
+  // colour (see globals.css); everything else (context/needs-you/done, or
+  // no trend at all -- e.g. "Project value: Not set") reads as the calmer,
+  // default tint, matching the mock's own binary teal/coral split rather
+  // than inventing a four-way scheme the mock never demonstrated.
+  const fill = trend?.tone === "late" ? "var(--color-kpi-tint-warn)" : "var(--color-kpi-tint-positive)";
   return (
     <Wrapper
       type={onClick ? "button" : undefined}
       onClick={onClick}
-      className={`block w-full text-left rounded-md border border-ct-border p-3 ${onClick ? "cursor-pointer hover:border-ct-teal" : ""}`}
+      className={`block w-full text-left p-3 ${bare ? "" : "rounded-md border border-ct-border"} ${onClick ? "cursor-pointer hover:border-ct-teal" : ""}`}
+      style={{ background: fill }}
     >
       <div className="text-[12.5px] text-ct-muted">{label}</div>
       <div className={KPI_VALUE_CLASS[size]}>

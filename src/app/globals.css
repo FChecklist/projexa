@@ -46,6 +46,29 @@
   --color-px-steel: var(--color-ct-teal);
   --color-px-steel-hover: var(--color-ct-teal);
 
+  /* ─── 2026-09-07: KPI card fill tints, matching the frozen project-
+     dashboard mock's teal/coral cards (PROJEXA_UI_UX mock, "Harbor View
+     Corporate HQ") ────────────────────────────────────────────────────
+     PROJEXA-local by the same D-09 pattern as every other block in this
+     file: the kit's token file is not edited, these are declared here,
+     after the kit's own @import, and shadow nothing the kit owns.
+
+     The mock's own placeholder variables (`--c-teal-50: #E1F5EE`,
+     `--c-coral-50: #FAECE7`) were never real tokens -- it was a
+     standalone prototype, not wired to this app's actual palette. Per
+     this file's own rule (line ~37: do not reintroduce a local hex
+     value, reuse or derive from a real token), these are derived with
+     color-mix() from tokens that already exist and already carry the
+     right meaning, rather than typed in as fresh, driftable hex:
+     positive/neutral from --color-ct-teal (the app's real teal, which
+     the mock's own naming was clearly approximating), warn from
+     --color-veri-status-late (already documented above/in the kit as
+     "the ONLY loud colour", reserved for late/error). Deriving instead
+     of hand-picking means both tints move automatically if either base
+     token is ever retuned. */
+  --color-kpi-tint-positive: color-mix(in srgb, var(--color-ct-teal) 9%, white);
+  --color-kpi-tint-warn: color-mix(in srgb, var(--color-veri-status-late) 12%, white);
+
   /* ─── R67 WS-G status TEXT tones (R-197 / R-214 / R-227 / R-260) ────────
      PROJEXA-local by programme decision D-09: the kit's token file is NOT
      edited and no kit release is cut, so these are declared here, AFTER the

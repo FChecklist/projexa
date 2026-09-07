@@ -111,12 +111,15 @@ import { useRouter } from "next/navigation";
 import { useOpenDoor } from "@/components/shell/shell-chain-context";
 import { doorById, doorRoute } from "@/lib/card-catalogue";
 import {
-  DashboardScreen,
   BulletChart,
   LineChart,
   LinkListCard,
   type ScreenColumn,
 } from "@fchecklist/veridian-ui-kit/screens";
+// 2026-09-07 -- DashboardScreen is now the PROJEXA fork (see that file's own
+// header): the mock-vs-shipped comparison found the top KPI row needs one
+// connected bordered strip, not four separately-boxed tiles with gaps.
+import { DashboardScreen } from "@/components/screens/DashboardScreen";
 import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
 import { PaneErrorCard } from "@/components/PaneState";
 // R67 E-02 (R-012), chart 2: the percent-only kit BarChart below is replaced by
@@ -449,6 +452,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         // destination and a header button or composer chip that opens the
         // same door still agrees with this tile.
         <DashboardKpiTile
+          bare
           state={dashboard.state}
           error={dashboard.error}
           size="primary"
@@ -477,6 +481,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
       secondaryKpis={
         <>
           <DashboardKpiTile
+            bare
             state={dashboard.state}
             error={dashboard.error}
             label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
@@ -499,6 +504,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               the honest "neither a manual value nor any linked PO exists yet"
               state, matching every other null-safe KPI on this screen. */}
           <DashboardKpiTile
+            bare
             state={dashboard.state}
             error={dashboard.error}
             label={labelFor(dashboardLabels, "projectValue", "Project Value")}
@@ -526,6 +532,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               That is real follow-up work for DOORS, not something to paper
               over here. */}
           <DashboardKpiTile
+            bare
             state={dashboard.state}
             error={dashboard.error}
             label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
@@ -564,6 +571,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
               Expiring soon' and open /permits?withinDays=30", through
               project.permits_expiring. */}
           <DashboardKpiTile
+            bare
             state={dashboard.state}
             error={dashboard.error}
             label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}

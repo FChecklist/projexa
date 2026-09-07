@@ -38,8 +38,11 @@
 import { KpiCard, type KpiCardProps } from "@/components/screens/KpiCard";
 
 /** The same frame the kit's KpiCard draws, so a tile does not resize when its
- *  figure lands. */
-const CARD_CLASS = "block w-full text-left rounded-md border border-ct-border p-3";
+ *  figure lands. `bare` drops the border/rounding for a cell inside a
+ *  connected KPI strip -- see KpiCard.tsx's own `bare` doc comment. */
+function cardClass(bare: boolean) {
+  return `block w-full text-left p-3 ${bare ? "" : "rounded-md border border-ct-border"}`;
+}
 
 export type KpiTileState = "pending" | "ready" | "error";
 
@@ -48,6 +51,7 @@ export function DashboardKpiTile({
   error,
   size = "secondary",
   label,
+  bare = false,
   ...card
 }: Omit<KpiCardProps, "value" | "trend" | "baseline"> & {
   state: KpiTileState;
@@ -58,11 +62,11 @@ export function DashboardKpiTile({
   baseline?: string;
 }) {
   if (state === "ready" && card.value !== undefined && card.trend && card.baseline !== undefined) {
-    return <KpiCard label={label} size={size} {...(card as Omit<KpiCardProps, "label" | "size">)} />;
+    return <KpiCard label={label} size={size} bare={bare} {...(card as Omit<KpiCardProps, "label" | "size">)} />;
   }
 
   return (
-    <div className={CARD_CLASS} aria-busy={state === "pending"}>
+    <div className={cardClass(bare)} aria-busy={state === "pending"}>
       <div className="text-[12.5px] text-ct-muted">{label}</div>
       {state === "pending" ? (
         <>
