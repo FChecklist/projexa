@@ -1,5 +1,32 @@
 # Changelog — projexa
 
+## Fix the process-wide `mock.module()` export-drop race behind the recurring "1 fail, 1 error" flake (2026-09-07)
+`src/app/(app)/project-scoped-page-error-isolation.test.tsx`'s `mock.module("@/lib/veridian-client", ...)`
+provided only `{ VeridianApiError, callVeridian }`, silently dropping every other real
+export (`VERIDIAN_SCREEN_BUDGET_MS` included) for the rest of the process from the moment
+it ran. That same file's own subsequent dynamic imports (`./meetings/page`,
+`./punch-list/page`) pull in `project-selection.ts`, which imports
+`VERIDIAN_SCREEN_BUDGET_MS` from the same module — throwing a module-link `SyntaxError`
+outside any `test()` callback, which bun reports as `# Unhandled error between tests` and
+the JUnit reporter doesn't attribute to any testcase at all. This is what had been
+surfacing, unexplained, as a different single flaky test in most full-suite runs for
+days. Fixed by spreading the real module before overriding, the same pattern this file
+already used correctly for its `next/navigation`/`auth-guard` mocks. Verified via 3
+consecutive clean full-suite runs, 4067/4067 pass each time. See `CLAUDE.md`'s "Test-suite
+gotcha" section for the full mechanism.
+
+## Reposition the composer into the left pane; restore Company Dashboard; dedupe Design Studio nav entry (commit `9745f54`, 2026-09-07)
+Forked `AppShell.tsx` from `@fchecklist/veridian-ui-kit/shell` into
+`src/components/shell/AppShell.tsx` (joining `Composer.tsx`/`ControlStrip.tsx`/
+`TopRail.tsx`/`PillStrip.tsx` in the same established fork pattern) so the composer mounts
+inside the left Task Master pane instead of as a full-width overlay spanning both panes —
+per the owner's explicit direction after an extensive UI/UX mockup review. No other shell
+file changed. Also fixed two real, pre-existing nav bugs found while verifying this:
+restored "Company Dashboard" (`/dashboard/hierarchy`, still a full working page, wrongly
+delisted on a false redirect-equivalence claim — resolves F_023) and removed a genuine
+duplicate "Design Studio" nav entry (a real duplicate-React-key bug). See `CLAUDE.md`'s
+"Composer/Task Master shell" section for the full mechanism and verification.
+
 Per compliance-tracker's `docs/DOCUMENTATION_STANDARDS.md` (R46 P9 seq36 --
 the standard is written once, in compliance-tracker, and applies to both
 repos per the work order's own `where_to`): this file is seeded from

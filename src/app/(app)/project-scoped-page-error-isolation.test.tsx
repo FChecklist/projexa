@@ -114,7 +114,25 @@ class FakeVeridianApiError extends Error {
 // proven not to fail closed.
 let behavior: "ok" | "timeout" | "no-credentials" = "ok";
 
+// Same process-wide mock.module() hazard as next/navigation and auth-guard
+// above, and the exact bug this comment previously failed to apply the fix
+// to: this file's own dynamic imports below (meetings/page, punch-list/page)
+// pull in project-selection.ts, which imports VERIDIAN_SCREEN_BUDGET_MS
+// (among other real exports: VERIDIAN_ORIGIN, resolveApiKey,
+// VERIDIAN_FETCH_TIMEOUT_MS, ...) from this same module. Replacing the
+// module wholesale with only { VeridianApiError, callVeridian } dropped
+// every one of those, so whichever import chain first resolved
+// "@/lib/veridian-client" against this mock threw "Export named
+// 'VERIDIAN_SCREEN_BUDGET_MS' not found in module" at module-link time --
+// outside any single test() callback, hence bun logging it as "Unhandled
+// error between tests" (undercounted by the JUnit reporter, and attributed
+// to whichever file's import happened to lose the race) rather than a
+// normal assertion failure. Spreading the real module first, same as the
+// other two mocks in this file, keeps every real export intact and
+// overrides only what this file actually needs to fake.
+const RealVeridianClient = await import("@/lib/veridian-client");
 mock.module("@/lib/veridian-client", () => ({
+  ...RealVeridianClient,
   VeridianApiError: FakeVeridianApiError,
   callVeridian: async () => {
     if (behavior === "timeout") {

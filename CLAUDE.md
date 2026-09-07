@@ -83,16 +83,77 @@ connection) is an OWNER action, not done by this block** — filed as an urgent 
 owner register (see `VERCEL_DEPLOY_OWNER_GUIDE.md`). Until done, Layers 1-3 stop the
 ordinary git-push and CI-config paths; they do not revoke the credential itself.
 
-**A real, unrelated regression was found while running this block's own local gate,
-not fixed (needs product judgment, out of R76's scope):** `src/components/
-dashboard-hierarchy-no-ffe-redirect.test.ts` (guarding fault F_023) asserts
-`VISIBLE_NAV_SECTIONS` still has a `labelKey: "items.companyDashboard"` entry pointed at
-`/dashboard/hierarchy`. It does not — confirmed by reading `AppSidebar.tsx`'s full
-46-entry `NAV_SECTIONS` list directly, no `companyDashboard` key exists anywhere in it.
-The underlying page (`src/app/(app)/dashboard/hierarchy/page.tsx`) still exists; only the
-sidebar link to it is gone. Whether this was a deliberate nav restructuring (test should
-be retired) or an accidental drop (nav item should be restored) needs a product decision
-this note deliberately does not make.
+**The `dashboard-hierarchy-no-ffe-redirect.test.ts` / "Company Dashboard" gap noted here
+by R76 is now FIXED (2026-09-07, commit `9745f54`)** — resolved by restoring, not
+retiring: `/dashboard/hierarchy` was confirmed by direct read to still be a full, working,
+recently-improved page (org resolution, a real empty state, the Company→Department→Project
+drill-down), not reduced to a redirect like its sibling `/dashboard/overview` actually was —
+so the nav entry was restored rather than the test weakened. `F_023` is green.
+
+## Composer/Task Master shell — `AppShell.tsx` joined the fork, 2026-09-07
+
+After an extensive owner-directed UI/UX review, `AppShell.tsx` was forked from
+`@fchecklist/veridian-ui-kit/shell` into `src/components/shell/AppShell.tsx` — the same
+established pattern already used for `Composer.tsx`/`ControlStrip.tsx`/`TopRail.tsx`/
+`PillStrip.tsx` (the kit is a pinned, unpublished git dependency with no source in this
+repo; a `node_modules` edit is erased on the next `bun install --frozen-lockfile`).
+
+**What changed:** WHERE the composer (chat box) mounts, nothing else. The kit's original
+docks the composer as a full-width `position:absolute` overlay spanning both the Task
+Master pane and the routed ERP pane. The owner's direction was to confine it to the left
+(Task Master) pane instead. The fork makes the `<aside>` `position:relative` and mounts
+`{composer}` as its own child rather than a sibling of the aside+main row — `Composer.tsx`
+itself needed zero changes, since its existing `absolute inset-x-0 bottom-0` simply
+resolves against a narrower positioned ancestor now. `LEFT_PANE_PERCENT` (30/70) and every
+other shell file are untouched. Full before/after reasoning and verification: see the
+`9745f54` commit message, and (delivered to the owner, not checked into this repo)
+`PROJEXA_UI_UX_Change_Document_Part1.md`/`Part2.md`.
+
+Two real, pre-existing nav bugs were found and fixed alongside this (not part of the
+repositioning itself): the Company Dashboard restoration above, and a genuine duplicate
+"Design Studio" nav entry (same `/design-studio` href added twice by two different
+commits — a real duplicate-React-key bug) removed, per `nav-routes.test.ts`'s own
+allowlist.
+
+**Applying this to other VERIDIAN AI OS products:** the real fix belongs in
+`@fchecklist/veridian-ui-kit` itself, a separate repository this codebase has no write
+access to. Any other product consuming that kit's `AppShell`/`Composer`/`TaskMaster` shell
+needs the identical fork applied in its own repo until the kit is fixed at the source —
+not confirmed to include `compliance-tracker`, whose own shell (`AppSidebar`/`AppHeader`)
+predates and is architecturally distinct from this M24 kit pattern.
+
+## Test-suite gotcha: `mock.module()` on a real module must spread it, or `bun test --isolate` still isn't safe against it (found + fixed 2026-09-07)
+
+`bun test`'s `mock.module()` replaces a module **for the rest of the process** the moment
+it runs — `--isolate` (see Commands below) only isolates *some* leakage patterns, not
+this one, because the hazard here is inside a single file's own dynamic-import chain, not
+cross-file leakage. If a test does
+`mock.module("@/some/real-module", () => ({ oneExport: fakeImpl }))` instead of
+`mock.module("@/some/real-module", () => ({ ...(await import("@/some/real-module")),
+oneExport: fakeImpl }))`, every OTHER real export of that module silently disappears for
+any code that imports it afterward — including the test file's own subsequent dynamic
+imports.
+
+Found live in `src/app/(app)/project-scoped-page-error-isolation.test.tsx`: its
+`mock.module("@/lib/veridian-client", ...)` provided only `{ VeridianApiError,
+callVeridian }`, dropping `VERIDIAN_SCREEN_BUDGET_MS` (and every other real export). That
+same file's own dynamic imports two lines later (`./meetings/page`, `./punch-list/page`)
+pull in `project-selection.ts`, which imports `VERIDIAN_SCREEN_BUDGET_MS` from the same
+module — so it threw `SyntaxError: Export named 'VERIDIAN_SCREEN_BUDGET_MS' not found`
+at module-link time, **outside any single `test()` callback**. bun logs that as
+`# Unhandled error between tests` and the JUnit reporter (`--reporter=junit`) doesn't
+attribute it to any testcase at all (`failures="0"` in its own root tag even while the
+console reporter shows "1 fail, 1 error") — which is exactly why this had been surfacing
+across full-suite runs for days as an unexplained, seemingly-random single flake, a
+different specific test implicated each run. It wasn't random: it was this one file's
+own mock, racing against whichever other test happened to import the same real module's
+other exports first. Fixed by spreading the real module first, same pattern this exact
+file already used correctly for its `next/navigation` and `@/lib/supabase/auth-guard`
+mocks two blocks above (see that file's own comments). Confirmed via 3 consecutive clean
+full-suite runs (4067/4067 pass, 0 fail each time) after the fix, versus the prior best of
+4061/4062 across 6+ runs before it. If a future `mock.module()` call on a real (not
+synthetic) module ever provides only a subset of that module's exports, apply the same
+fix — don't assume `--isolate` alone covers it.
 
 ## Commands
 - `bun install` — install dependencies
