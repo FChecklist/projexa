@@ -160,6 +160,29 @@ export type ComposerProps = {
   fieldsSlot?: ReactNode;
   /** Lets the shell put the cursor in the box (reset, "Other…", prefill). */
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
+  /**
+   * 2026-09-07 -- MEASURED, NOT GUESSED. Found live while verifying
+   * AppShell.tsx's unified left-pane card (that file's own ADDENDUM 2):
+   * AppShell reserves COMPOSER_RESTING_HEIGHT + composerReserveExtra of
+   * padding at the bottom of the Task Master scroll area so this
+   * absolutely-positioned box never covers a task row -- but that sum was a
+   * STATIC guess (112 + 96 = 208px), and this component's real height is not
+   * static. It grows with however many "Frequent actions" pills are ranked,
+   * whether a "Do again" recent-chain row is showing, and whether any pill
+   * without a chosen project prints its own "Choose project" sub-line.
+   * Measured live in one real state (Home tab, a fresh chain, several
+   * pills): this component rendered at 446px while only 208px was reserved
+   * -- a 238px shortfall that visibly covered "Pick line"/"Dismiss" on the
+   * task rows above it. F_019's own comment already named this general
+   * failure mode ("the composer's real resting height is always taller than
+   * AppShell's own default reserve") for the ERP pane; this is the same
+   * class of bug on the Task Master side. Fixed by reporting this
+   * component's OWN actual rendered height on every change (a
+   * ResizeObserver on its root, below) through this callback, rather than
+   * tuning yet another magic constant -- the caller (M24Shell.tsx) turns
+   * that into the real composerReserveExtra AppShell needs.
+   */
+  onHeightChange?: (px: number) => void;
 };
 
 export function Composer({
@@ -188,12 +211,29 @@ export function Composer({
   attachSlot,
   fieldsSlot,
   textareaRef,
+  onHeightChange,
 }: ComposerProps) {
   const ownRef = useRef<HTMLTextAreaElement>(null);
   const taRef = textareaRef ?? ownRef;
   // R67 A-19 -- WHAT THE USER LAST TYPED, so a value that arrived some other
   // way can be told apart from one they wrote. See the focus handler below.
   const lastTypedRef = useRef("");
+
+  // See onHeightChange's own doc comment above. Observes THIS component's
+  // real root (the absolutely-positioned box that actually grows/shrinks),
+  // not a proxy for it -- an ordinary wrapper around an absolutely-positioned
+  // child would report zero height, since an absolutely-positioned element
+  // is taken out of normal flow and contributes nothing to a parent's box.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !onHeightChange) return;
+    const report = () => onHeightChange(el.getBoundingClientRect().height);
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
 
   // The box sizes ITSELF. This is the whole of the sizing logic, and it is
   // deliberately not user-controllable.
@@ -208,6 +248,7 @@ export function Composer({
 
   return (
     <div
+      ref={rootRef}
       className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end px-3 pb-3"
       style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` }}
     >
@@ -215,18 +256,50 @@ export function Composer({
           renders nothing at all when there is nothing to say, so it costs the
           input band no height on a phone. */}
       {messages}
-      {/* FULL WIDTH ACROSS BOTH PANES. Not confined to one pane. */}
+      {/*
+          2026-09-07: lost its own rounded-xl/border/shadow-sm/white
+          background here -- AppShell.tsx's ADDENDUM 2 now wraps this
+          component together with TaskMaster in ONE shared card (matching the
+          frozen mock's single continuous surface), so a second, independent
+          card border/shadow directly underneath TaskMaster's own content
+          read as two stacked panels rather than the mock's one. The growth
+          mechanism itself (min/maxHeight, the outer absolute wrapper above)
+          is completely unchanged -- only the visual chrome moved up a level.
+      */}
       <div
-        className="pointer-events-auto relative flex w-full flex-col overflow-visible rounded-xl border shadow-sm"
+        className="pointer-events-auto relative flex w-full flex-col overflow-visible"
         style={{
           minHeight: COMPOSER_RESTING_HEIGHT,
           maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh`,
-          background: "#fff",
-          borderColor: "var(--color-ct-border2)",
         }}
       >
-        {/* 1. CONTROL STRIP -- and the one instruction, rendered here only. */}
-        <div className="relative shrink-0 border-b" style={{ borderColor: "var(--color-ct-border)" }}>
+        {/*
+            2026-09-07 -- REORDERED to match the frozen mock's own vertical
+            sequence ("Frequent actions" prominent near the top; "the
+            All modules / Tasks / Back / Home control bar sits right above
+            the chat box"). Band NUMBERS/PROP NAMES are unchanged (pills is
+            still "band 3", conversation "band 2" in every comment
+            elsewhere in this file and in M24Shell.tsx that names them by
+            prop) -- only where each one renders moved. This is safe for the
+            conversation band's own grow-upward flex-1 mechanic: flexbox
+            gives a flex-1 child whatever space is left over regardless of
+            its position among shrink-0 siblings in the same column, so
+            reordering these three blocks changes layout ORDER only, not
+            the sizing math.
+        */}
+        {/* PILLS ("Frequent actions" + screen cards) -- now first. */}
+        {pills && (
+          <div className="shrink-0 px-3 pb-1.5 pt-2" style={{ borderColor: "var(--color-ct-border)" }}>
+            {pills}
+          </div>
+        )}
+
+        {/* CONVERSATION -- grows upward as the chain is worked. */}
+        {conversation && <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">{conversation}</div>}
+
+        {/* CONTROL STRIP -- and the one instruction, rendered here only.
+            Moved to sit just above the input, per the frozen mock. */}
+        <div className="relative shrink-0 border-t" style={{ borderColor: "var(--color-ct-border)" }}>
           <ControlStrip
             chain={chain}
             onCutFrom={onCutFrom}
@@ -239,17 +312,7 @@ export function Composer({
           />
         </div>
 
-        {/* 2. CONVERSATION -- grows upward as the chain is worked. */}
-        {conversation && <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">{conversation}</div>}
-
-        {/* 3. PILLS */}
-        {pills && (
-          <div className="shrink-0 px-3 pb-1.5 pt-1" style={{ borderColor: "var(--color-ct-border)" }}>
-            {pills}
-          </div>
-        )}
-
-        {/* 4. INPUT -- real height, generous padding. Not a single line. */}
+        {/* INPUT -- real height, generous padding. Not a single line. */}
         <div className="shrink-0 px-3 pb-2.5 pt-1">
           {/* R67 C-04: the chain's scalar values, as labelled fields, beside
               the thing they are inputs to. */}

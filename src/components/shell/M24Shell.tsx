@@ -25,6 +25,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   COMPOSER_PILLS_BAND_RESERVE,
+  COMPOSER_RESTING_HEIGHT,
   OptionChain,
   cutChainFrom,
   loadChain,
@@ -702,6 +703,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // put the cursor there rather than describing what the user should do next.
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [showAllPills, setShowAllPills] = useState(false);
+  // 2026-09-07 -- see Composer.tsx's onHeightChange doc comment. Seeded with
+  // the same static guess AppShell used before this fix (112 + 96 = 208) so
+  // there is no flash of unreserved space before the first real measurement
+  // lands a paint or two later.
+  const [composerHeight, setComposerHeight] = useState(COMPOSER_RESTING_HEIGHT + COMPOSER_PILLS_BAND_RESERVE);
   // R67 A-15 -- the user chose "Other - type it". It adds no segment and asks
   // no new question; it puts the cursor in the box, shows an example of what
   // this box takes, and makes the Send button name what it is waiting for.
@@ -3130,7 +3136,15 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // (document.elementFromPoint), not the button, and produced zero
       // network requests. See veridian-ui-kit's AppShell.tsx/Composer.tsx
       // for the full mechanism this constant accounts for.
-      composerReserveExtra={COMPOSER_PILLS_BAND_RESERVE}
+      // 2026-09-07: was the static COMPOSER_PILLS_BAND_RESERVE constant --
+      // see Composer.tsx's onHeightChange doc comment for why that
+      // undercounted in real states (pills + a recent chain + per-pill
+      // "Choose project" lines) and this is now measured instead. Never
+      // negative: composerHeight already includes COMPOSER_RESTING_HEIGHT,
+      // and AppShell adds that constant again on top of whatever this is,
+      // so this is "how much MORE than the resting height was measured",
+      // floored at the same minimum the static constant always guaranteed.
+      composerReserveExtra={Math.max(COMPOSER_PILLS_BAND_RESERVE, composerHeight - COMPOSER_RESTING_HEIGHT)}
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
@@ -3320,6 +3334,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           chain={chain}
           onCutFrom={onCutFrom}
           onBack={onBack}
+          onHeightChange={setComposerHeight}
           // R67-PART-B decision #5: the shell message region -- adopted as-is.
           // No lane-A equivalent existed (its notice/submitError were local
           // useState scoped to this one Send handler); this is generically

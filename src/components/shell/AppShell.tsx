@@ -58,6 +58,31 @@
 // See platform.crr_ruling / the change document this session produced for
 // the full before/after reasoning and the mockup iterations that led here.
 //
+// ADDENDUM 2, 2026-09-07 -- ONE SHARED CARD. The owner's own words,
+// comparing the shipped shell against the frozen mock: "apply frozen mock
+// ... keep functionality and flow of existing so that filepath are same."
+// The frozen mock's left pane is ONE continuous white card -- Frequent
+// actions, the chip row, the control bar and the input all share one
+// border/background, nothing floats over anything else. What had shipped
+// instead was two visually disconnected pieces: TaskMaster (kit) on a plain
+// cream background, with Composer.tsx's OWN separately-carded white
+// rounded-border box floating over it lower down -- correct data, correct
+// controls, but reading as two stacked panels rather than the mock's one.
+// Fixed by moving the card chrome UP a level: this aside now wraps
+// {taskMaster} and {composer} together in ONE rounded/bordered white
+// container; TaskMaster.tsx's own background changed from
+// --color-ct-cream to transparent so it blends into that shared card
+// (functionality untouched -- see that file's own note); Composer.tsx's
+// root lost its OWN border/shadow/white-background (now redundant/doubled)
+// but kept its `position:absolute inset-x-0 bottom-0` growth mechanism
+// unchanged, anchored to this new wrapper instead of the aside directly.
+// The wrapper deliberately has NO overflow-hidden, for the same reason the
+// aside itself never did (see below): the composer is meant to grow
+// upward past its resting height while composing a long message, and
+// clipping it here would cut that off. Its own inner scrollable content
+// (TaskMaster's list) already contains itself via its own overflow-y-auto,
+// so nothing else needs the clip.
+//
 // ADDENDUM, 2026-09-07 -- `chainRail`. The mockup discussion that produced
 // the composer relocation above kept going past it, through 16 more
 // iterations, to one more explicit decision: the composer's chain-so-far
@@ -81,6 +106,12 @@ import type { ReactNode } from "react";
 // define or re-export it) -- so this import goes straight to the kit, same
 // as this repo's own Composer.tsx does for the same constant.
 import { COMPOSER_RESTING_HEIGHT } from "@fchecklist/veridian-ui-kit/shell";
+
+// ADDENDUM 3, 2026-09-07 -- see Composer.tsx's own header for why
+// `composerReserveExtra` is now measured live rather than a fixed constant
+// passed in from M24Shell.tsx. This file's own math (paddingBottom =
+// COMPOSER_RESTING_HEIGHT + composerReserveExtra) is unchanged -- only what
+// the caller now puts into composerReserveExtra changed.
 
 export type AppShellProps = {
   /** <TopRail />. Always visible, never covered by the composer. */
@@ -135,23 +166,56 @@ export function AppShell({
             constraint on the aside itself, so the composer may grow upward
             past its resting height without being clipped. */}
         <aside
-          className="relative flex min-h-0 shrink-0 flex-col border-r"
+          className="flex min-h-0 shrink-0 flex-col border-r p-2"
           style={{
             width: `${LEFT_PANE_PERCENT}%`,
             borderColor: "var(--color-ct-border)",
           }}
           aria-label="Task Master"
         >
+          {/* ADDENDUM 2 above -- the one shared card. `position:relative` moved
+              here (off the aside) so Composer.tsx's `absolute inset-x-0
+              bottom-0` anchors to THIS box -- the card's own width, not the
+              aside's padded outer edge. Deliberately no overflow-hidden: see
+              the ADDENDUM for why clipping here would break the composer's
+              grow-upward behaviour. */}
           <div
-            className="min-h-0 flex-1 overflow-y-auto"
-            style={{
-              paddingBottom: COMPOSER_RESTING_HEIGHT + composerReserveExtra,
-              scrollbarGutter: "stable",
-            }}
+            className="relative flex min-h-0 flex-1 flex-col rounded-xl border"
+            style={{ background: "#fff", borderColor: "var(--color-ct-border2)" }}
           >
-            {taskMaster}
+            {/*
+                ADDENDUM 4, 2026-09-07 -- A REAL HEIGHT, NOT SCROLL PADDING.
+                This reserved the composer's space as `paddingBottom` inside
+                the scrollable box, which only clears the composer once the
+                list is scrolled all the way to ITS OWN end -- it does nothing
+                for a list with more content than fits one screen (this one
+                routinely has 30-40+ rows), because at a resting scroll
+                position (top, or anywhere before the very end) whatever rows
+                fall in the composer's fixed on-screen region render right
+                behind it and the composer's z-index wins, covering their
+                "Pick line"/"Dismiss"/"Choose project" buttons. Measured live:
+                a scroll position showing rows 2-6 had SIX real action buttons
+                sitting directly underneath the composer, completely
+                unreachable. This predates today's unified-card change (the
+                very first AppShell fork used the same paddingBottom
+                technique) -- it read as "the composer floats over stuff"
+                before, and reads as a broken merged card now, but the root
+                cause and the fix are the same either way: give the list box
+                itself a real, physically shorter height (not virtual
+                scroll-end padding), so at ANY scroll position its own content
+                never extends into the region the composer occupies.
+            */}
+            <div
+              className="min-h-0 overflow-y-auto rounded-t-xl"
+              style={{
+                height: `calc(100% - ${COMPOSER_RESTING_HEIGHT + composerReserveExtra}px)`,
+                scrollbarGutter: "stable",
+              }}
+            >
+              {taskMaster}
+            </div>
+            {composer}
           </div>
-          {composer}
         </aside>
 
         {/* The ERP pane: no bottom padding reserved any more -- the composer

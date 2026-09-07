@@ -246,7 +246,17 @@ describe("the Send label", () => {
       messages: <p data-testid="region">Saved — Permit P-12</p>,
     });
     const region = container.querySelector("[data-testid='region']");
-    const box = container.querySelector(".rounded-xl");
+    // 2026-09-07: was `.rounded-xl` -- that class (and its border/shadow/
+    // white-background siblings) moved to AppShell.tsx's shared card wrapper
+    // when Composer.tsx and TaskMaster started sharing one visual surface
+    // (see Composer.tsx's own note at this exact div). `.pointer-events-auto`
+    // is the one class unique to this box both before and after that move
+    // (the outer wrapper above it is deliberately pointer-events-none, so
+    // clicks pass through the empty space it reserves while growing). The
+    // RULE this test protects -- messages sits as a sibling BEFORE the box,
+    // not inside it -- is completely unchanged; only which class identifies
+    // the box in a DOM query changed.
+    const box = container.querySelector(".pointer-events-auto");
     expect(region).toBeTruthy();
     expect(box).toBeTruthy();
     expect(box!.contains(region)).toBe(false);

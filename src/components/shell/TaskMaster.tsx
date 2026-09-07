@@ -281,7 +281,13 @@ function Group({
 
 export function TaskMaster({ tabs, activeTab, onTabChange, primary, secondary, system, onLoad, onRowAction }: TaskMasterProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col" style={{ background: "var(--color-ct-cream)" }}>
+    // 2026-09-07: was --color-ct-cream (a distinct beige tone). AppShell.tsx's
+    // ADDENDUM 2 now wraps this component and Composer.tsx together in ONE
+    // shared white card (matching the frozen mock's single continuous
+    // surface); a differently-tinted background here read as two panels
+    // stacked rather than one. Design-only -- every tab, row, count and
+    // action below is unchanged.
+    <div className="flex h-full min-h-0 flex-col" style={{ background: "transparent" }}>
       {/* WRAPS, never scrolls horizontally: in the 30% pane five tabs overflow,
           and M24 is explicit that the answer to a name not fitting is never to
           widen the pane. */}

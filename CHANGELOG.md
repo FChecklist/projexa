@@ -1,5 +1,41 @@
 # Changelog — projexa
 
+## Unify the left panel into one card, fix a real task-row overlap bug, reorder to match the frozen mock (2026-09-07)
+Rebuilt the frozen mock as an actual served webpage (from its saved widget
+source) so it could be screenshotted and compared against the live app
+directly, rather than from memory. Found and fixed two real defects, not
+just style differences:
+
+- **Two disconnected surfaces instead of one card.** `TaskMaster` sat on a
+  plain `--color-ct-cream` background with `Composer.tsx`'s own
+  independently-carded white box floating below it. `AppShell.tsx` now
+  wraps both together in one shared rounded/bordered white card;
+  `TaskMaster.tsx`'s background is now transparent; `Composer.tsx` lost its
+  own now-redundant border/shadow (its `position:absolute` growth mechanism
+  is unchanged).
+- **A real overlap bug.** The composer's reserved space was a static guess
+  (208px) that undercounted its real height (measured at 446px in an
+  ordinary state) — and `paddingBottom`-based reservation only clears an
+  overlay once scrolled to a list's own end, which never happens with 30+
+  real tasks. Verified geometrically: up to 15 real "Pick line"/"Dismiss"
+  buttons were genuinely unreachable underneath the composer. Fixed by
+  measuring the composer's actual height live (`ResizeObserver` in
+  `Composer.tsx`, reported via a new `onHeightChange` prop) and reserving a
+  real, physically shorter box height (not scroll padding) in
+  `AppShell.tsx`. Reverified geometrically clean at every scroll position.
+
+Also reordered `Composer.tsx`'s internal bands (pills → conversation →
+control strip → input) to match the mock's own sequence ("Frequent
+actions" near the top, the control bar just above the input) — safe for
+the conversation band's flex-1 mechanic, confirmed by the suite staying
+green. One test re-pointed at a still-valid but relocated selector
+(`.pointer-events-auto` instead of `.rounded-xl`, which moved to
+`AppShell.tsx`) — not a regression, a stale query.
+
+Verified: typecheck/lint clean, production build clean (full route
+manifest, zero errors), full suite 3 consecutive clean runs (4082/4082
+pass). See `CLAUDE.md`'s "Composer shell, part 3" for the full mechanism.
+
 ## Add a real Back control, and remove the redundant "Needs you" heading, per explicit direction (2026-09-07)
 The prior entry below disclosed two things the frozen mock asked for that
 were deliberately not built, because they appeared to collide with an
