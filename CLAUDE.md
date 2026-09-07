@@ -122,6 +122,36 @@ needs the identical fork applied in its own repo until the kit is fixed at the s
 not confirmed to include `compliance-tracker`, whose own shell (`AppSidebar`/`AppHeader`)
 predates and is architecturally distinct from this M24 kit pattern.
 
+## Dev-tooling gotcha: the app's own service worker must never run against local dev (found + fixed 2026-09-07 — corrects a prior misdiagnosis)
+
+A commit this same day (`9745f54`, verifying the AppShell/nav fixes above) had documented
+`/dashboard` intermittently failing under `next dev`'s Turbopack compiler with "Module ...
+was instantiated ... but the module factory is not available" as an **isolated Turbopack
+dev-mode bug** — surviving full `.next` cache clears and complete process restarts, so
+judged non-blocking dev-tooling noise. **That diagnosis was wrong.** The real cause: this
+app's own service worker (`src/app/sw.js/route.ts`, registered by
+`ServiceWorkerRegister.tsx`) derives its `CACHE_NAME` from `VERCEL_GIT_COMMIT_SHA`, falling
+back to the fixed literal string `"local-dev"` whenever that's unset — true for every
+`bun run dev` run. Its own `activate` handler purges any cache whose name isn't the current
+`CACHE_NAME`, but since that name never changes between local dev-server restarts, the purge
+never fires locally, even though Turbopack's dev-mode `/_next/static/*` chunk contents DO
+change on every restart (unlike production's genuinely content-hashed, immutable chunk
+URLs, which is the only case this SW's cache-first logic was designed for). A browser that
+had ever registered this SW kept serving an old cached chunk — one built before
+`AppSidebar.tsx`'s `DraftingCompass` import was removed — no matter how many times the
+dev server or `.next` cache was reset, because neither touches the browser's own Cache
+Storage. Confirmed directly: `navigator.serviceWorker.getRegistrations()` showed a live
+registration at scope `http://localhost:3100/` backing a cache literally named
+`projexa-shell-local-dev`; unregistering it and deleting that cache fixed the page
+immediately, with zero source changes. **Fixed at the source**, not just worked around:
+`ServiceWorkerRegister.tsx` now never calls `register()` in `NODE_ENV === "development"` —
+instead it unregisters any existing registration and deletes any `projexa-shell-*` cache on
+mount, so a developer who already has a poisoned registration from before this fix is
+self-healed on their next page load with no manual console commands needed. Regression
+guard: `src/components/ServiceWorkerRegister.test.tsx`. The SW's own stated purpose (an
+offline app shell for a field site worker with no signal) is a production concern with zero
+meaning on `localhost`, so there is no tradeoff here — it should never have run in dev.
+
 ## Test-suite gotcha: `mock.module()` on a real module must spread it, or `bun test --isolate` still isn't safe against it (found + fixed 2026-09-07)
 
 `bun test`'s `mock.module()` replaces a module **for the rest of the process** the moment

@@ -1,5 +1,18 @@
 # Changelog — projexa
 
+## Never run the service worker against local dev; corrects a prior "isolated Turbopack bug" misdiagnosis (2026-09-07)
+`src/app/sw.js/route.ts`'s `CACHE_NAME` falls back to the fixed string `"local-dev"`
+whenever `VERCEL_GIT_COMMIT_SHA` is unset (every `bun run dev` run), so its own
+activate-time cache purge never fires locally even though Turbopack's dev-mode chunk
+contents change on every restart. A browser that ever registered this SW kept serving
+stale cached chunks indefinitely — surviving full `.next` cache clears and complete
+process restarts, since neither touches the browser's own Cache Storage — which a same-day
+commit (`9745f54`) had misdiagnosed as an "isolated Turbopack dev-mode bug." Fixed at the
+source: `ServiceWorkerRegister.tsx` now never registers the SW in development, and
+self-heals any pre-existing registration/cache from before this fix. New regression guard:
+`src/components/ServiceWorkerRegister.test.tsx`. See `CLAUDE.md`'s "Dev-tooling gotcha"
+section for the full mechanism.
+
 ## Fix the process-wide `mock.module()` export-drop race behind the recurring "1 fail, 1 error" flake (2026-09-07)
 `src/app/(app)/project-scoped-page-error-isolation.test.tsx`'s `mock.module("@/lib/veridian-client", ...)`
 provided only `{ VeridianApiError, callVeridian }`, silently dropping every other real
