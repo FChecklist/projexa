@@ -77,7 +77,7 @@
 //  11. R67 C-04 (WS-C, kept -- see `fieldsSlot` below): BAND 4'S LABELLED
 //      SCALAR FIELDS, for a chain step whose answer is a number or a date.
 
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   COMPOSER_MAX_HEIGHT_VH,
   COMPOSER_RESTING_HEIGHT,
@@ -225,11 +225,36 @@ export function Composer({
   // child would report zero height, since an absolutely-positioned element
   // is taken out of normal flow and contributes nothing to a parent's box.
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // 2026-09-07 -- FOUND LIVE: a ResizeObserver-only measurement went stale
+  // under real use. Reproduced and measured directly: after clicking a
+  // pill that needs a project (opening the project-picker AND its own
+  // pills together), the composer's real height grew to 537px while the
+  // reservation this component had last reported was still 381px (269 +
+  // COMPOSER_RESTING_HEIGHT) -- a 156px gap that persisted for multiple
+  // seconds, not a one-frame race. ResizeObserver reports changes to an
+  // element's OWN computed box; exactly why it missed this particular
+  // growth (some combination of how many DOM nodes changed at once in one
+  // React commit, and this component's `flex flex-col justify-end` root
+  // computing its used height from overflowing children rather than a
+  // simple property change) wasn't fully isolated, but the fix does not
+  // depend on isolating it: a `useLayoutEffect` with NO dependency array
+  // runs after every single commit, synchronously, before the browser
+  // paints -- so it re-measures every time this component's own render
+  // output could have changed the DOM, independent of whether
+  // ResizeObserver's own change-detection happens to fire. The
+  // ResizeObserver stays too, as a genuinely separate case this effect
+  // cannot cover on its own: a size change with no React re-render at all
+  // (e.g. a web font finishing its load and reflowing text width/height).
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el || !onHeightChange) return;
+    onHeightChange(el.getBoundingClientRect().height);
+  });
   useEffect(() => {
     const el = rootRef.current;
     if (!el || !onHeightChange) return;
     const report = () => onHeightChange(el.getBoundingClientRect().height);
-    report();
     const observer = new ResizeObserver(report);
     observer.observe(el);
     return () => observer.disconnect();
@@ -328,8 +353,28 @@ export function Composer({
           </div>
         )}
 
-        {/* CONVERSATION -- grows upward as the chain is worked. */}
-        {conversation && <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">{conversation}</div>}
+        {/*
+            CONVERSATION -- grows upward as the chain is worked.
+
+            2026-09-07 -- same class of bug as the pills band's own fix
+            above, found the same way (a live repro + geometric bounding-rect
+            checks, not a screenshot glance): `flex-1` alone does not cap this
+            band's growth, because the outer wrapper's height is "auto,
+            clamped by max-height" rather than a fixed value flex-1 siblings
+            can divide up predictably -- when this band's own content (the
+            project-picker chip list, in the repro that found this) is large
+            enough, it can grow past where CONTROL STRIP/INPUT below it are
+            laid out, genuinely overlapping them rather than being clipped by
+            its own overflow-y-auto (that only clips once ITS box is
+            correctly bounded, which is exactly what was missing). Same fix:
+            an explicit `maxHeight` safety cap, so this band shrinks and
+            scrolls internally instead of encroaching on the bands after it.
+        */}
+        {conversation && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2" style={{ maxHeight: "40vh" }}>
+            {conversation}
+          </div>
+        )}
 
         {/* CONTROL STRIP -- and the one instruction, rendered here only.
             Moved to sit just above the input, per the frozen mock. */}
@@ -398,8 +443,29 @@ export function Composer({
           {/* A-10 -- ONE ROW: the failure line sits immediately left of the
               button, on the same line, at a 44 px minimum height. It used to
               float above the textarea, where the box's own growth could push
-              it out of the reading path at exactly the moment it mattered. */}
-          <div className="mt-1 flex min-h-[44px] items-center gap-2">
+              it out of the reading path at exactly the moment it mattered.
+
+              2026-09-07 -- ONE ROW, BUT NEVER ONE ROW OF GARBLED TEXT. Found
+              live on /permits, /documents, /scope and /work-progress (any
+              screen with an attach policy) at a short viewport, confirmed
+              with elementFromPoint sampling: DropZone's own button is
+              `shrink-0` and unclamped by design (DropZone.tsx's own rule --
+              "A WORD, NEVER AN ICON ALONE, AND THE LIMITS ARE IN THE WORD" --
+              "Attach PDF, up to 25 MB" must stay whole, not fold into
+              "Attach P…" the way a mid-sentence CSS clip would leave it).
+              Its `flex-1 min-w-0` wrapper (M24Shell.tsx) correctly shrinks
+              to share this row with Send, but shrinking the WRAPPER can't
+              shrink a shrink-0 BUTTON inside it -- the button just renders
+              at its full width regardless and, with nothing here to clip it,
+              paints straight over Send. Truncating the label was rejected
+              (it is exactly the failure this file's own comment above
+              argues against for the error line). `flex-wrap` is the fix
+              that keeps both rules: at normal widths nothing changes, one
+              row, exactly as A-10 asks; only when there is genuinely not
+              enough width for both controls at their full, readable size
+              does Send drop to its own second line instead of overlapping
+              the attach button's words. */}
+          <div className="mt-1 flex flex-wrap min-h-[44px] items-center gap-2">
             {attachSlot}
             {/* THE FOOTER LINE IS EMPTY UNLESS SOMETHING FAILED. The next
                 question lives in the strip; printing it here as well was how

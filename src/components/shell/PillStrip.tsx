@@ -182,7 +182,23 @@ export function PillStrip({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Things you can do">
+      {/*
+          2026-09-07 -- FULL-WIDTH ROWS, PER THE FROZEN MOCK. This band was a
+          `flex flex-wrap` of compact inline pills; the frozen mock's own
+          "Frequent actions" is a `flex-direction:column` stack of full-width
+          rows, each on its own light background. Applied here to the screen's
+          own verbs + "Do again" + the ranked cards -- the actual "Frequent
+          actions" content -- NOT to "All modules" or the expanded catalog
+          below, which stay their own compact, wrapping pill style (the mock
+          never depicted those as full-width rows; they read as a directory to
+          browse, not a list of frequent shortcuts). `--color-ct-cloud` is
+          reused rather than a new colour: it is already this app's row tint
+          (TaskMaster's own rows use it on hover), so this reads as "a list of
+          rows", consistent with the rest of the shell, not a new visual
+          language of its own. Every prop, handler, aria-label and disabled
+          state below is unchanged -- this is a layout/style pass only.
+      */}
+      <div className="flex flex-col gap-1" role="group" aria-label="Things you can do">
         {loading ? (
           <>
             <SkeletonCards />
@@ -206,7 +222,8 @@ export function PillStrip({
                 onClick={() => onSelectScreenCard?.(card.id)}
                 aria-label={`${card.verb}: ${card.label}`}
                 title={card.label}
-                className="veri-mode-pill active"
+                className="veri-mode-pill active w-full justify-start rounded-lg"
+                style={{ background: "var(--color-ct-cloud)" }}
               >
                 <span className="mr-1 text-[10px] uppercase tracking-wide" style={{ color: "var(--color-ct-muted)" }}>
                   {card.verb}
@@ -229,7 +246,8 @@ export function PillStrip({
                 onClick={() => onSelectRecent?.(chain)}
                 aria-label={`Do again: ${chain.label}${chain.outcome === "failed" ? " (failed last time)" : ""}`}
                 title={chain.fullChain}
-                className="veri-mode-pill"
+                className="veri-mode-pill w-full justify-start rounded-lg"
+                style={{ background: "var(--color-ct-cloud)" }}
               >
                 <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
                   ↻
@@ -248,7 +266,7 @@ export function PillStrip({
             {cards.map((card) => {
             const blocked = card.disabledReason !== null;
             return (
-              <span key={card.id} className="inline-flex items-center">
+              <span key={card.id} className="flex w-full items-center gap-1">
                 <button
                   type="button"
                   onClick={() => onSelect(card.id)}
@@ -257,7 +275,8 @@ export function PillStrip({
                   // the tooltip, so it is available before the click, not after.
                   aria-label={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
                   title={blocked ? card.disabledReason! : card.label}
-                  className="veri-mode-pill disabled:opacity-45"
+                  className="veri-mode-pill disabled:opacity-45 min-w-0 flex-1 justify-start rounded-lg"
+                  style={{ background: "var(--color-ct-cloud)" }}
                 >
                   <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
                     {card.kindGlyph}
@@ -312,11 +331,15 @@ export function PillStrip({
           </>
         )}
 
+        {/* self-start: everything above is now a flex-col of full-width rows
+            (this container's default cross-axis stretch would otherwise
+            widen this toggle to match them), but this is a compact nav
+            link, not a frequent-action row -- it keeps its natural size. */}
         <button
           type="button"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
-          className="veri-mode-pill"
+          className="veri-mode-pill self-start"
           style={{ color: "var(--color-ct-muted)" }}
         >
           {expanded ? "Show fewer" : "All modules"}

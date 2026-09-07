@@ -1,5 +1,64 @@
 # Changelog — projexa
 
+## Fix four real overlap bugs found by a full-module, geometry-verified sweep of every route (2026-09-07)
+The owner rejected the previous entry's "looks clean" read of a screenshot --
+proven wrong by their own Edge/Chrome screenshots showing genuine
+overlapping text -- and asked for every module re-checked with real
+geometry, not a glance, in more than one browser, re-verified after each
+fix. The overlap-detection script itself needed fixing first: a plain
+bounding-rect diff has two false-positive modes (elements clipped by a
+scroll ancestor still report their un-clipped position; two boxes can
+geometrically overlap with no visible pixel collision because paint order
+cleanly resolves which one is drawn). Fixed with a two-stage check --
+clip each rect to its scrolling ancestors, then confirm any remaining
+candidate with `elementFromPoint` grid-sampling -- and reused for the
+whole sweep below.
+
+Four real bugs found and fixed, all in shared shell components (so each
+reproduced on every project-scoped module, not just where first found):
+
+- **`ControlStrip.tsx`** -- the current-page chip's wrapper was `min-w-0`
+  while its own button is deliberately `shrink-0`; the wrapper shrank
+  below the button's real width and, with no clipping of its own, the
+  button painted over the "Which project?" hint text next to it. Fixed by
+  making the root segment's wrapper `shrink-0` too, matching its child.
+- **`Composer.tsx`** -- the `ResizeObserver`-only height report could go
+  stale under real use (156px gap held for multiple seconds, not a one-
+  frame race). Fixed by adding a no-dependency-array `useLayoutEffect`
+  that re-measures on every render, alongside the existing observer.
+- **`M24Shell.tsx` + `Composer.tsx`** -- once the height report above was
+  fixed, two `flex-1` bands with no explicit ceiling (the pinned task list,
+  the conversation band) could render past their allocated box under a
+  genuine squeeze. Fixed with `overflow-y-auto` on the task-list wrapper
+  and a `maxHeight: 40vh` cap on the conversation band, both no-ops in the
+  normal case.
+- **`DropZone.tsx` + `M24Shell.tsx`** -- the attach button (`shrink-0` by
+  design; its label must never fold mid-word) painted over the Send
+  button on every screen with a long attach-policy label. Root cause:
+  the attach column's `flex-1` sets an explicit `0%` flex-basis, which is
+  what `flex-wrap`'s line-fitting decision uses -- not its rendered
+  content -- so the wrap algorithm never saw it needed more room. Fixed
+  with `flex-none` on the column (a real, content-based hypothetical
+  size) plus `flex-wrap` on the row, so Send correctly drops to its own
+  line instead of overlapping when there truly isn't room.
+
+Full sweep: every route in the app's nav catalogue (~48 routes) re-checked
+at the exact short viewport that exposed the first bug, in both the
+default state and the pill-heavy state that surfaced the worst of it --
+zero confirmed overlaps everywhere. Cross-checked independently in real
+Chrome (a separate account) on the previously-broken routes -- zero
+confirmed overlaps there too. Microsoft Edge remains unreachable by any
+tool this session has (only one Chrome instance ever shows in
+`list_connected_browsers`); that gap is unresolved and needs either the
+owner connecting the extension there or the manual DevTools steps done
+directly.
+
+Verified: typecheck/lint clean (1 pre-existing unrelated warning,
+unchanged), production build clean, full suite 4 consecutive clean runs
+across this and the prior session (4084/4084 pass, 0 fail every time). See
+`CLAUDE.md`'s "Composer shell, part 5" for the full mechanism, including
+two disproven fix attempts worth not retrying.
+
 ## Fix a real short-viewport overflow bug and a touch-target inconsistency, found by a two-browser checklist sweep (2026-09-07)
 Systematic re-check requested after the previous entry: real Chrome (via
 the Claude in Chrome extension) and the dev-tooling preview pane, both

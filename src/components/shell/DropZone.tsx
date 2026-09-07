@@ -69,7 +69,21 @@ export function DropZone({
 
   return (
     <div
-      className="flex min-w-0 flex-col gap-1"
+      // 2026-09-07 -- the second half of the fix that started in
+      // M24Shell.tsx/Composer.tsx (see the comments there): `min-w-0` here
+      // told the CSS box-sizing algorithm "this component's automatic
+      // minimum width is 0", which suppresses propagating this component's
+      // TRUE minimum -- the attach button below is `shrink-0` on purpose
+      // and never gets smaller than its own full label -- up through this
+      // wrapper to whatever flex row places DropZone next to something
+      // else (here, the composer's Send button). With a long policy label
+      // ("Attach photos, JPG/PNG, up to 10 MB") the outer row's
+      // `flex-wrap` never saw a true minimum big enough to trigger
+      // wrapping, and the button rendered over Send instead. Dropping
+      // `min-w-0` lets this component honestly report how wide it needs
+      // to be; the file-chip list below (`<li className="... min-w-0 ...">`)
+      // keeps its OWN min-w-0 for filename truncation, unaffected.
+      className="flex flex-col gap-1"
       onDragOver={(e) => {
         if (disabled) return;
         e.preventDefault();

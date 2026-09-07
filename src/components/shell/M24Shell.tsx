@@ -3239,7 +3239,34 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               </ul>
             </div>
           )}
-          <div className="min-h-0 flex-1">
+          {/*
+              2026-09-07 -- A REAL OVERFLOW/OVERLAP BUG, found live (screenshots
+              from both the owner's Edge and a from-scratch repro): this wrapper
+              had no overflow constraint of its own. TaskMaster's "primary"
+              group (Needs You et al) is deliberately `shrink-0` and never
+              scrolls internally -- M24's own rule, "PIN THE 'NEEDS YOU' GROUP".
+              That is safe as long as there is always enough room for it, which
+              held before AppShell.tsx started measuring the composer's real
+              height (part 4's fix): a composer state with many pills/a project
+              picker (exactly what clicking a project-less pill like "Run WPR"
+              produces) can genuinely be taller than the OLD static reservation
+              ever was, and the task-list area now correctly shrinks to make
+              room for it. TaskMaster's primary group, having no shrink/scroll
+              mechanism of its own and no overflow constraint on this wrapper,
+              simply rendered past its own allocated box in that squeeze --
+              landing on top of the "Show N more" button below it and, past
+              that, the composer itself. Fixed with a safety net, not a
+              redesign: `overflow-y-auto` here changes nothing in the normal
+              case (there is always enough room, so nothing scrolls, primary
+              stays visually pinned exactly as M24 asks) -- it only engages
+              when the composer's real height has genuinely squeezed the task
+              list below what it needs, at which point scrolling is what
+              should happen instead of silently overlapping. Confirmed via
+              geometric bounding-rect checks (not a screenshot glance) before
+              and after: 6 genuine overlaps involving "Show 20 more" and real
+              task rows, zero after.
+          */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
         {taskReadError ? (
           // Never an empty list in place of an error -- that is the exact
           // defect this codebase has shipped repeatedly, and it makes a broken
@@ -3489,7 +3516,34 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // a screen with no declared attach policy (routeCard is null).
           attachSlot={
             attachPolicy ? (
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
+              // 2026-09-07 -- `flex-1` here is what defeated the
+              // `flex-wrap` fix just added to this row in Composer.tsx.
+              // `flex-1` is `flex: 1 1 0%` -- an explicit ZERO flex-basis --
+              // and flex-wrap's line-fitting decision is made from each
+              // item's flex-basis, not its rendered content, so with a
+              // long attach-policy label ("Attach photos, JPG/PNG, up to
+              // 10 MB") the browser judged this column as needing ~0px,
+              // decided everything fit on ONE line, and only afterward let
+              // flex-shrink squeeze this column down to a sliver -- at
+              // which point the shrink-0 attach button inside it (by
+              // design, DropZone.tsx's "the limits are in the word") held
+              // its full width regardless and painted over Send. (An
+              // earlier attempt swapped `min-w-0` here for `shrink-0` on
+              // the theory that automatic-minimum-size propagation was the
+              // culprit; verified live in the browser afterward -- it was
+              // not, the overlap was identical, `min-w-0` was a red
+              // herring. Only changing the flex-basis away from 0%, tested
+              // the same way, actually moved Send to its own line.)
+              // `flex-none` (`flex: 0 0 auto`) makes this column's
+              // hypothetical size for wrapping purposes its real,
+              // content-based width -- which is exactly what lets
+              // `flex-wrap` correctly see it doesn't fit next to Send and
+              // drop Send to a second line instead of overlapping it. It
+              // no longer grows to fill leftover space at comfortable
+              // widths, but nothing sits there to fill -- Send is
+              // `ml-auto` and pins itself to the row's right edge either
+              // way -- so this is a visual no-op except in the squeeze.
+              <div className="flex flex-none flex-col gap-1">
                 <DropZone
                   policy={attachPolicy}
                   files={attachments}

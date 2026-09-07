@@ -157,7 +157,33 @@ export function ControlStrip({
               const cuttable = canCutAt(chain, i);
               const isLast = i === chain.segments.length - 1;
               return (
-                <span key={seg.id} className="flex min-w-0 items-center gap-1">
+                <span
+                  key={seg.id}
+                  // 2026-09-07 -- A REAL, VISIBLE OVERLAP, found live on
+                  // /schedule (and any other project-scoped screen opened
+                  // with no project picked yet) at a short viewport, and
+                  // confirmed with elementFromPoint sampling, not a
+                  // screenshot glance: this wrapper was `min-w-0` for EVERY
+                  // segment, but the ROOT segment's own button (above) is
+                  // deliberately `shrink-0` -- G-04's reasoning that the
+                  // project/page name must never be visually cut. `min-w-0`
+                  // tells flexbox "you may shrink this wrapper below its
+                  // content's width", which the wrapper then did -- down to
+                  // 20px against the button's real 62px -- while the button
+                  // inside, being shrink-0, refused to shrink to match and,
+                  // with no overflow-hidden of its OWN on this wrapper,
+                  // rendered past its box and directly on top of the prompt
+                  // span that follows it ("Schedule" over "Which project?
+                  // Choose one..."). The wrapper's own sizing now agrees
+                  // with its child's: shrink-0 for the root (reserve its
+                  // real width, exactly like the button already demands),
+                  // min-w-0 for every other segment (unchanged -- those use
+                  // `truncate`/`max-w-[22ch]` on the button and are meant to
+                  // shrink). The prompt span after this one keeps min-w-0
+                  // and does the yielding instead, which is what its own
+                  // `truncate` span was already built to do.
+                  className={seg.kind === "root" ? "flex shrink-0 items-center gap-1" : "flex min-w-0 items-center gap-1"}
+                >
                   {i > 0 && (
                     <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>
                       ›
