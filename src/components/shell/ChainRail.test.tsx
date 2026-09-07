@@ -77,6 +77,19 @@ describe("once the composer has built something past the root, the chain appears
       expect(name.length).toBeGreaterThan(0);
     }
   });
+
+  // 2026-09-07 -- found in a full-checklist screenshot/AI-vision re-review:
+  // this file originally sized Remove/Back at 32x24, smaller than the 44px
+  // minimum R67 A-18 sets and ControlStrip.tsx's own (x)/HOME/Reset/Back all
+  // meet -- the same "remove a chain segment" action having two different
+  // minimum touch targets depending on which side of the screen it's
+  // clicked from. Locks the fix in.
+  test("Remove meets the same 44px minimum touch target as ControlStrip's own (R67 A-18)", () => {
+    const { getByLabelText } = renderRail(CHAIN);
+    const remove = getByLabelText("Remove Work Progress and everything after it") as HTMLButtonElement;
+    expect(remove.style.minWidth).toBe("44px");
+    expect(remove.style.minHeight).toBe("44px");
+  });
 });
 
 describe("Back -- the same second entry point ControlStrip.tsx offers", () => {
@@ -87,6 +100,13 @@ describe("Back -- the same second entry point ControlStrip.tsx offers", () => {
     expect(back.disabled).toBe(false);
     fireEvent.click(back);
     expect(calls).toBe(1);
+  });
+
+  test("meets the same 44px minimum touch target as ControlStrip's own Back (R67 A-18)", () => {
+    const { getByLabelText } = renderRail(CHAIN);
+    const back = getByLabelText("Back one step") as HTMLButtonElement;
+    expect(back.style.minWidth).toBe("44px");
+    expect(back.style.minHeight).toBe("44px");
   });
 
   // Root-only/empty chains render nothing at all (see above), so Back is

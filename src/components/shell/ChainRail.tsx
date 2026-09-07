@@ -38,6 +38,20 @@
 // why it is cutChainFrom() aimed at the last segment, not a new mechanism):
 // this is the SAME onBack the left side calls, given a second entry point
 // here so the right pane offers it too, exactly as the mock described.
+//
+// TOUCH TARGETS, 2026-09-07 CORRECTION: this file originally sized Back and
+// Remove at 32x24 to keep the rail visually thin. Found in a full-checklist
+// re-review (screenshots + a real-Chrome pass) that this was inconsistent
+// with R67 A-18, the 44px-minimum rule ControlStrip.tsx's own ×/Remove/HOME/
+// Reset/Back all follow on the left -- the same product, on the same screen,
+// with two different minimum touch-target sizes for the same action
+// (removing a chain segment) depending on which side of the app you click
+// it from. Fixed to the same 44px minimum: the row's own height grows to
+// fit, same as ControlStrip already does ("the row's own padding comes down
+// as the controls in it grow to their 44 px minimum, so the strip stays one
+// band rather than becoming two") -- a slightly taller rail is the correct
+// tradeoff, not a smaller target on a control that removes part of what the
+// user built.
 import { canCutAt, type Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { truncateSegmentLabel } from "@/lib/module-catalogue";
 
@@ -72,7 +86,7 @@ export function ChainRail({ chain, onCutFrom, onBack }: ChainRailProps) {
         aria-label="Back one step"
         title="Back one step"
         className="veri-view-tab shrink-0 disabled:opacity-40"
-        style={{ minWidth: 32, minHeight: 24, fontSize: "11px" }}
+        style={{ minWidth: 44, minHeight: 44 }}
       >
         <span aria-hidden>‹</span> Back
       </button>
@@ -109,7 +123,7 @@ export function ChainRail({ chain, onCutFrom, onBack }: ChainRailProps) {
                 aria-label={`Remove ${seg.label} and everything after it`}
                 title={`Remove ${seg.label} and everything after it`}
                 className="veri-view-tab"
-                style={{ minWidth: 32, minHeight: 24, fontSize: "11px" }}
+                style={{ minWidth: 44, minHeight: 44 }}
               >
                 Remove
               </button>

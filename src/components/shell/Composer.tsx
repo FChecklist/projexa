@@ -287,9 +287,43 @@ export function Composer({
             reordering these three blocks changes layout ORDER only, not
             the sizing math.
         */}
-        {/* PILLS ("Frequent actions" + screen cards) -- now first. */}
+        {/*
+            PILLS ("Frequent actions" + screen cards) -- now first.
+
+            2026-09-07 -- FOUND ON A SHORT REAL-CHROME WINDOW (404px inner
+            height, verified via real Chrome, not just the pane): this band
+            was `shrink-0` -- always rendered at its full natural height,
+            never allowed to shrink. On a tall viewport that is harmless
+            (COMPOSER_MAX_HEIGHT_VH's 62vh comfortably covers pills +
+            control strip + input). At 404px, 62vh is only 250px, and a full
+            ranked-pill list alone needs more than that -- with the outer
+            wrapper's `overflow-visible` (needed so the composer can grow
+            upward past its resting height) and no shrink on this band, the
+            excess didn't scroll or clip: it pushed the control strip and
+            the input band DOWN, off the bottom of the composer's own box,
+            past where any visible border implied they'd be. Measured live:
+            the control strip and the Send button rendered 117-220px below
+            the composer's own reported bottom edge -- present in the DOM,
+            reachable by scrolling the page, but invisible in the space the
+            card visually implies they occupy.
+
+            Fixed the same way `conversation` already handles its own
+            unbounded growth two lines below: `min-h-0` (overrides the
+            content-based automatic minimum size `overflow:visible` flex
+            items get by default, letting this band actually shrink instead
+            of forcing an overflow) + `overflow-y-auto` (once shrunk below
+            its natural height, extra pills scroll internally) + an explicit
+            `maxHeight` safety cap, so a very short viewport still reserves
+            real room for the control strip and input below it rather than
+            letting pills claim unbounded space before those bands get a
+            look-in. PillStrip.tsx itself is untouched -- this only bounds
+            its container.
+        */}
         {pills && (
-          <div className="shrink-0 px-3 pb-1.5 pt-2" style={{ borderColor: "var(--color-ct-border)" }}>
+          <div
+            className="min-h-0 shrink overflow-y-auto px-3 pb-1.5 pt-2"
+            style={{ borderColor: "var(--color-ct-border)", maxHeight: "40vh" }}
+          >
             {pills}
           </div>
         )}

@@ -1,5 +1,36 @@
 # Changelog — projexa
 
+## Fix a real short-viewport overflow bug and a touch-target inconsistency, found by a two-browser checklist sweep (2026-09-07)
+Systematic re-check requested after the previous entry: real Chrome (via
+the Claude in Chrome extension) and the dev-tooling preview pane, both
+screenshotted and compared against the frozen mock, before and after a
+written checklist. Found two real issues in the files the previous entry
+had just changed:
+
+- **A viewport-height-dependent overflow bug.** Real Chrome's actual test
+  window was 404px tall; `COMPOSER_MAX_HEIGHT_VH` (62, the kit's own
+  constant) resolves to only 250px there, and the pills band was
+  `shrink-0` (never allowed to shrink). Measured directly: a full pill list
+  needed more than the entire budget, and with `overflow-visible` on the
+  outer wrapper (required for the composer's own grow-upward behavior) and
+  no shrink on pills, the excess pushed the control strip and Send button
+  117-220px below the composer's own reported bottom edge -- present in the
+  DOM, invisible in the card's own implied bounds. Fixed the same way
+  `conversation` already handles unbounded growth: `min-h-0` +
+  `overflow-y-auto` + a `40vh` cap on the pills band in `Composer.tsx`, so
+  it shrinks and scrolls internally instead of displacing what's below it.
+- **A touch-target inconsistency.** `ChainRail.tsx`'s Back/Remove buttons
+  were sized 32x24 -- smaller than the 44px minimum R67 A-18 sets and
+  `ControlStrip.tsx`'s own identical controls meet, so the same action had
+  two different minimum touch targets depending which side of the screen
+  it was clicked from. Fixed to 44px, matching `ControlStrip.tsx`.
+
+New tests: `ChainRail.test.tsx` (+2, asserting the exact 44px minimum on
+both buttons). Verified: typecheck/lint clean, production build clean,
+full suite 3 consecutive clean runs (4084/4084 pass). See `CLAUDE.md`'s
+"Composer shell, part 4" for the full mechanism, including why this needed
+a real browser to find (Happy DOM/jsdom don't model real layout overflow).
+
 ## Unify the left panel into one card, fix a real task-row overlap bug, reorder to match the frozen mock (2026-09-07)
 Rebuilt the frozen mock as an actual served webpage (from its saved widget
 source) so it could be screenshotted and compared against the live app
