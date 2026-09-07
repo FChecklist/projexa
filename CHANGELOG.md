@@ -1,5 +1,30 @@
 # Changelog — projexa
 
+## Two more real mock differences found on a pixel-level re-read: label casing and a list that should have been a table (2026-09-08)
+Owner re-sent the mock at full resolution: "make sure this is 100% copied
+as it is." A genuinely precise read against the live page (not a glance)
+found two things the previous three entries had missed:
+
+- **KPI label casing.** The mock's labels are sentence case ("% complete
+  by BOQ value", "Contract value", etc.); the shipped page had them in
+  Title Case. Fixed in `DashboardProjectClient.tsx`'s `DEFAULT_LABELS`
+  and each tile's own inline fallback -- confirmed this fallback (not a
+  registry response) is what actually renders here before touching it.
+- **"Recent progress entries" was a bulleted list of links, not a
+  table.** Rebuilt as an `Activity | % complete | Date` table matching
+  the mock, keeping the exact same data, the exact same click-through
+  (same onClick, same route) on the Activity cell -- only the markup
+  changed.
+
+Verified: typecheck/lint clean, full suite 4088/4088 pass (two apparent
+mid-run failures, both unrelated to this change, reproduced clean 3x in
+isolation -- a pre-existing cross-file test-isolation flake already
+documented in this file), production build clean. Live-verified in both
+the pane and real Chrome (hard-reloaded), including against a project
+with real recent-progress data to prove the new table renders actual
+rows, not just its empty state. See CLAUDE.md's "Composer shell, part 9"
+for the full mechanism.
+
 ## Match Filter/Export to the mock too ("exactly means exactly"), record one deliberate non-match instead of reintroducing a fixed bug (2026-09-07)
 Direct follow-up after the previous entry's Filter/Export gap was disclosed
 as skipped on account of blast radius. Re-examined and found the risk was

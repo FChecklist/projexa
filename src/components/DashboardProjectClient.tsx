@@ -155,10 +155,14 @@ export type RegistryColumn = ScreenColumn;
 // "resolved from the DB" and "resolved from this hardcoded default" (M28:
 // keep the hardcoded version behind a flag until verified).
 const DEFAULT_LABELS: ScreenColumn[] = [
-  { field: "percentByValue", label: "% Complete by BOQ Value", type: "text" },
-  { field: "contractValue", label: "Contract Value", type: "text" },
-  { field: "budgetVsActual", label: "Budget vs Actual", type: "text" },
-  { field: "permitsExpiring", label: "Permits Expiring", type: "text" },
+  // 2026-09-07 -- VISUAL-ONLY, per the frozen mock ("copy it exactly...
+  // exactly means exactly"): sentence case, not Title Case, matching the
+  // mock's own "% complete by BOQ value" / "Contract value" / etc. The
+  // FIELD keys, and everything these labels are wired to, are unchanged.
+  { field: "percentByValue", label: "% complete by BOQ value", type: "text" },
+  { field: "contractValue", label: "Contract value", type: "text" },
+  { field: "budgetVsActual", label: "Budget vs actual", type: "text" },
+  { field: "permitsExpiring", label: "Permits expiring", type: "text" },
   { field: "progressOverTimeHeading", label: "Progress logged over time", type: "text" },
   { field: "progressByCategoryHeading", label: "Progress by scope category", type: "text" },
   { field: "quickActionsTitle", label: "Quick actions", type: "text" },
@@ -464,7 +468,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           // BOQ scoping). Without the distinguishing word here, a user
           // following that link sees a second unlabelled "percent complete"
           // number that disagrees with the one they just clicked.
-          label={labelFor(dashboardLabels, "percentByValue", "% Complete by BOQ Value")}
+          label={labelFor(dashboardLabels, "percentByValue", "% complete by BOQ value")}
           value={hasEv ? `${d!.percentByValue}%` : "No BOQ yet"}
           trend={{ direction: "flat", tone: "context", label: hasEv ? `Earned ${money(d!.earnedValue!, currency)}` : "Import a BOQ to see this" }}
           baseline={hasEv ? `of ${money(d!.contractValue!, currency)} contract value` : ""}
@@ -484,7 +488,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             bare
             state={dashboard.state}
             error={dashboard.error}
-            label={labelFor(dashboardLabels, "contractValue", "Contract Value")}
+            label={labelFor(dashboardLabels, "contractValue", "Contract value")}
             value={hasEv ? money(d!.contractValue!, currency) : "—"}
             trend={{ direction: "flat", tone: "context", label: "parent BOQ lines only" }}
             baseline="latest BOQ revision"
@@ -507,7 +511,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             bare
             state={dashboard.state}
             error={dashboard.error}
-            label={labelFor(dashboardLabels, "projectValue", "Project Value")}
+            label={labelFor(dashboardLabels, "projectValue", "Project value")}
             value={d ? formatProjectValue(d.projectValue, (n) => money(n, currency)) : "Not set"}
             // R67 D-62: THIS project's source, not a restatement of the rule.
             trend={{ direction: "flat", tone: "context", label: projectValueCaption(d?.projectValueSource ?? null) }}
@@ -535,7 +539,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             bare
             state={dashboard.state}
             error={dashboard.error}
-            label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs Actual")}
+            label={labelFor(dashboardLabels, "budgetVsActual", "Budget vs actual")}
             value={d ? money(d.expenses, currency) : ""}
             /* R67 D-02: with no budget set there is nothing to be over, so the
                card states the spend, says the budget is missing, drops the
@@ -574,7 +578,7 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             bare
             state={dashboard.state}
             error={dashboard.error}
-            label={labelFor(dashboardLabels, "permitsExpiring", "Permits Expiring")}
+            label={labelFor(dashboardLabels, "permitsExpiring", "Permits expiring")}
             value={String(expiringCount)}
             trend={{
               direction: expiredCount > 0 ? "up" : expiringCount > 0 ? "flat" : "down",
@@ -670,18 +674,40 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
           ) : recentEntries.length === 0 ? (
             <p className="text-[12.5px] text-ct-muted">No entries logged yet.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {recentEntries.map((e) => (
-                <li key={e.id}>
-                  <button type="button" onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)} className="text-[12.5px] text-ct-teal hover:underline">
-                    {/* R67 F-24: the activity's NAME comes with the entry -- this
-                        list used to fetch the whole activity list to translate
-                        it, and rendered a raw id when that missed. */}
-                    {e.entryDate} — {e.activityName ?? "—"} ({e.percentComplete}%)
-                  </button>
-                </li>
-              ))}
-            </ul>
+            // 2026-09-07 -- VISUAL-ONLY, per the frozen mock ("copy it
+            // exactly... exactly means exactly"): a real table (Activity |
+            // % complete | Date), matching the mock's own, rather than a
+            // bulleted list of links. R67 F-24's actual fix -- the
+            // activity's real NAME travels with the entry, not a raw id --
+            // is unchanged; each row's Activity cell is still the same
+            // button, with the same onClick, navigating to the same
+            // work-progress analytics tab as before.
+            <table className="w-full text-[12.5px]" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: "var(--color-ct-muted)" }} className="text-left">
+                  <th className="pb-1.5 pr-2 font-medium">Activity</th>
+                  <th className="pb-1.5 px-2 font-medium">% complete</th>
+                  <th className="pb-1.5 pl-2 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentEntries.map((e) => (
+                  <tr key={e.id} className="border-t" style={{ borderColor: "var(--color-ct-border)" }}>
+                    <td className="py-1.5 pr-2">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/work-progress?projectId=${projectId}&tab=analytics`)}
+                        className="text-ct-teal hover:underline"
+                      >
+                        {e.activityName ?? "—"}
+                      </button>
+                    </td>
+                    <td className="py-1.5 px-2 text-ct-navy">{e.percentComplete}%</td>
+                    <td className="py-1.5 pl-2 text-ct-navy">{e.entryDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       }
