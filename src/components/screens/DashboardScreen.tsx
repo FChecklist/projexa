@@ -27,7 +27,16 @@
 // trend/breakdown charts below, the quick-actions/recent-activity row) is
 // untouched -- the mock never depicted those differently from what already
 // ships, so nothing there was reworked on a guess.
-import { ScreenFrame, type HeaderActionState } from "@fchecklist/veridian-ui-kit/screens";
+//
+// 2026-09-07 -- ScreenFrame is now THIS FILE'S OWN fork too (./ScreenFrame),
+// not the kit's, for the same "copy the mock exactly, object by object"
+// direction: Filter/Export are plain text links in the mock, not bordered
+// buttons. Forking ScreenFrame just for THIS one call site -- rather than
+// changing the kit's copy, which ~50 other screens (every ObjectScreen/
+// ListScreen/EditScreen/CreateScreen) still import unmodified -- keeps the
+// blast radius to exactly the one archetype the mock actually depicts.
+import { ScreenFrame } from "./ScreenFrame";
+import type { HeaderActionState } from "@fchecklist/veridian-ui-kit/screens";
 import type { ReactNode } from "react";
 
 export type DashboardScreenProps = {

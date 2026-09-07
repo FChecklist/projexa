@@ -1,5 +1,28 @@
 # Changelog — projexa
 
+## Match Filter/Export to the mock too ("exactly means exactly"), record one deliberate non-match instead of reintroducing a fixed bug (2026-09-07)
+Direct follow-up after the previous entry's Filter/Export gap was disclosed
+as skipped on account of blast radius. Re-examined and found the risk was
+avoidable: `DashboardScreen.tsx` was already this programme's own fork, so
+forking the kit's `ScreenFrame.tsx` too and re-pointing only that one
+import (not the kit's copy, not any of the ~50 other screens that use it)
+gets the mock's plain-text Filter/Export with zero effect anywhere else --
+confirmed the org-wide "/dashboard" doesn't even use this archetype, so
+it's unaffected too.
+
+Also found, while implementing this, a genuine reason NOT to change one
+more thing to match: this screen's money formatting was deliberately
+changed by an earlier fix (a documented "R67 D-61") specifically because
+showing whole units here while the linked `/scope` screen showed decimals
+made the *same* contract value read two different ways on two connected
+screens -- a real bug, not an old opinion the mock should override.
+Recorded rather than silently reverted or silently left unexplained.
+
+Verified: typecheck clean, full suite 4088/4088 pass, lint clean,
+production build clean. Live-checked in both the pane and real Chrome
+(hard-reloaded) -- zero confirmed overlaps on a fresh sweep. See
+CLAUDE.md's "Composer shell, part 8" for the full mechanism.
+
 ## Make the frozen mock the real visual UI, wiring the existing controls underneath it (2026-09-07)
 Direct owner instruction, verbatim: "I WANT THIS TO BE IMPLEMENTED AS THE
 VISUAL UI UX. THE BACKEND IS THE OLD UI UX. WIRE IT PROPERLY" -- and, after
