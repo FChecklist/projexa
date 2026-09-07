@@ -24,7 +24,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  AppShell,
   COMPOSER_PILLS_BAND_RESERVE,
   OptionChain,
   cutChainFrom,
@@ -36,6 +35,10 @@ import {
   type ChainMode,
   type ChainOption,
 } from "@fchecklist/veridian-ui-kit/shell";
+// AppShell is forked from the kit as of 2026-09-07 -- see this file's own
+// header comment for why, and ./AppShell.tsx's header for exactly what
+// changed (only where the composer renders; everything else is untouched).
+import { AppShell } from "./AppShell";
 // R67 C-01, programme decision D-09 / R67-PART-B governance decision #1:
 // TaskMaster is PROJEXA'S FORK of the kit file (not the kit's own, which MAIN
 // used before this reconciliation). The kit renders two fixed groups whatever
@@ -111,9 +114,10 @@ import {
 // R67 A-01 / decision D-09: the composer, its control strip and its pill strip
 // are PROJEXA's own forks now (src/components/shell/), because the programme
 // changes their behaviour and the kit is a pinned dependency whose source is
-// not in this repo. Everything the programme does NOT change -- AppShell,
-// TaskMaster, the chain functions, the tokens -- still comes from the kit
-// above, so the fork stays as small as the change requires.
+// not in this repo. AppShell joined the fork on 2026-09-07 for the same
+// reason (see ./AppShell.tsx's own header) -- everything the programme does
+// NOT change -- TaskMaster, the chain functions, the tokens -- still comes
+// from the kit above, so the fork stays as small as the change requires.
 //
 // LANE G FORKED THE SAME TWO FILES (r67(G) #229, colour-signage-tokens) and
 // this branch rebases on top of it, so both lanes' reasons for forking now

@@ -71,8 +71,21 @@ describe("single <main> landmark per page (R48_DUAL_MAIN_LANDMARK_01)", () => {
   // ui/sidebar.tsx's SidebarInset is the one legitimate <main> in this tree:
   // an unmounted shadcn primitive (nothing imports SidebarInset), kept as
   // shipped.
+  //
+  // shell/AppShell.tsx joined the exemption on 2026-09-07: it is the fork of
+  // @fchecklist/veridian-ui-kit/shell's own AppShell.tsx (see that file's
+  // header for why AppShell was forked -- repositioning the composer into the
+  // left pane per the owner's direction), and it is THE SAME single shell
+  // landmark this whole rule is protecting, not a second one. Before the
+  // fork, this exact <main> lived in node_modules and this scan (which only
+  // walks src/components) never saw it; forking it into src/ makes the scan
+  // see it for the first time, with no change in how many <main> elements
+  // actually render per page. Confirmed by reading the fork itself: it
+  // renders exactly one <main>, in the same role (wrapping the routed ERP
+  // screen) as the kit's original.
   const componentOffenders = tsxFilesUnder(join(process.cwd(), "src", "components"))
     .filter((f) => !f.endsWith(join("ui", "sidebar.tsx")))
+    .filter((f) => !f.endsWith(join("shell", "AppShell.tsx")))
     .filter(opensAMainLandmark);
 
   test("the (app) tree is actually being walked", () => {
