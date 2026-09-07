@@ -283,6 +283,26 @@ describe("the tabs actually filter, and each count comes from its own array", ()
     expect(view.count).toBe(6);
   });
 
+  // 2026-09-07: Home's primary group carries no heading text any more --
+  // "Needs you" was a second name for what the "Home" tab label directly
+  // above it already says. This is a DESIGN-ONLY change: the rows, the
+  // secondary group and its own label, the count, and TaskMaster.tsx's own
+  // "pin the primary group above the divider whenever secondary exists"
+  // behaviour (which keys off `secondary` being present, not off this
+  // label) are all unchanged -- asserted by the untouched test above.
+  test("Home's primary group has no label -- the tab name already says it", () => {
+    const view = tabView(groups, "home", NOW);
+    expect(view.primaryLabel).toBe("");
+    // Every OTHER tab still gets its own real label -- this is Home-specific.
+    expect(tabView(groups, "approval-pending", NOW).primaryLabel).toBe("Approval pending");
+    expect(tabView(groups, "in-queue", NOW).primaryLabel).toBe("In queue");
+    expect(tabView(groups, "completed", NOW).primaryLabel).toBe("Completed");
+    expect(tabView(groups, "history", NOW).primaryLabel).toBe("History");
+    // "Waiting on others" is a real, non-redundant label (nothing above it
+    // already says this) and is untouched.
+    expect(tabView(groups, "home", NOW).secondaryLabel).toBe("Waiting on others");
+  });
+
   test("every tab states its own purpose when it is empty", () => {
     const empty: GroupedRows = { blocked: [], needsYou: [], running: [], done: [] };
     expect(tabView(empty, "approval-pending", NOW).primaryEmpty).toBe("Nothing waiting for your approval");

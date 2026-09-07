@@ -51,6 +51,7 @@ function renderControlStrip(loaded = false) {
     <ControlStrip
       chain={CHAIN}
       onCutFrom={() => {}}
+      onBack={() => {}}
       onHome={() => {}}
       onReset={() => {}}
       prompt=""

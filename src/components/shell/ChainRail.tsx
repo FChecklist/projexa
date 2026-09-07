@@ -31,13 +31,13 @@
 // ("All modules / Work progress / By activity"), and exactly when a
 // removable segment exists for this rail to be useful for at all.
 //
-// WHY cutChainFrom() AND NOT A SEPARATE "BACK": the kit's own chain.ts says
-// so directly, in cutChainFrom's doc comment: "M24's replacement for a Back
-// button, 'shown on the thing being removed'." Clicking Remove on an
-// earlier segment already steps back past everything after it, in one
-// click -- which is what a Back button would do one step at a time, so a
-// second control here would be the same duplicate-control problem this
-// codebase already reasons about explicitly elsewhere.
+// BACK, 2026-09-07 ADDENDUM: the frozen mock's own words were "The right
+// panel's own back/forward arrows... drive the identical history -- I
+// didn't build two separate systems, just two entry points into one." Same
+// rule as ControlStrip.tsx's own Back button (see that file's header for
+// why it is cutChainFrom() aimed at the last segment, not a new mechanism):
+// this is the SAME onBack the left side calls, given a second entry point
+// here so the right pane offers it too, exactly as the mock described.
 import { canCutAt, type Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { truncateSegmentLabel } from "@/lib/module-catalogue";
 
@@ -46,13 +46,18 @@ export type ChainRailProps = {
   /** Same contract as ControlStrip's onCutFrom: MUST route through
    *  cutChainFrom(), which refuses to reach into the root. */
   onCutFrom: (index: number) => void;
+  /** Same onBack passed to Composer/ControlStrip -- one handler, two entry
+   *  points, per the mock's own stated intent. */
+  onBack: () => void;
 };
 
-export function ChainRail({ chain, onCutFrom }: ChainRailProps) {
+export function ChainRail({ chain, onCutFrom, onBack }: ChainRailProps) {
   // The bare root (project only, nothing built past it yet) is the common
   // case on every page load and every HOME/Reset -- render nothing then, so
   // this never duplicates the page's own breadcrumb.
   if (chain.segments.length <= 1) return null;
+
+  const canGoBack = canCutAt(chain, chain.segments.length - 1);
 
   return (
     <nav
@@ -60,6 +65,20 @@ export function ChainRail({ chain, onCutFrom }: ChainRailProps) {
       className="flex min-w-0 items-center gap-1 overflow-x-auto border-b px-3 py-1.5 text-[12px]"
       style={{ borderColor: "var(--color-ct-border)" }}
     >
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={!canGoBack}
+        aria-label="Back one step"
+        title="Back one step"
+        className="veri-view-tab shrink-0 disabled:opacity-40"
+        style={{ minWidth: 32, minHeight: 24, fontSize: "11px" }}
+      >
+        <span aria-hidden>‹</span> Back
+      </button>
+      <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>
+        ›
+      </span>
       {chain.segments.map((seg, i) => {
         const cuttable = canCutAt(chain, i);
         const isLast = i === chain.segments.length - 1;

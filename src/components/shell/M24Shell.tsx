@@ -1608,6 +1608,13 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     [chain, draft]
   );
 
+  // 2026-09-07 -- BACK, per the frozen mock's four-control set (ControlStrip
+  // .tsx's own ADDENDUM has the full reasoning). Not a new mechanism: one
+  // call to the exact same onCutFrom above, aimed at the last segment, so
+  // stepping back one level carries every side effect (x) already has --
+  // including clearing a draft that still just says the removed word.
+  const onBack = useCallback(() => onCutFrom(chain.segments.length - 1), [onCutFrom, chain.segments.length]);
+
   // R67 A-09 -- RESET CLEARS EVERYTHING THE USER CAN SEE.
   //
   // It used to clear the segments and nothing else: the typed draft stayed in
@@ -3127,7 +3134,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
-      chainRail={<ChainRail chain={chain} onCutFrom={onCutFrom} />}
+      chainRail={<ChainRail chain={chain} onCutFrom={onCutFrom} onBack={onBack} />}
       topRail={
         // MERGE NOTE: A-13's rail replaces F-18's inline cookie write here.
         // chooseProject() already calls writeStoredProjectId() -- the one
@@ -3312,6 +3319,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         <Composer
           chain={chain}
           onCutFrom={onCutFrom}
+          onBack={onBack}
           // R67-PART-B decision #5: the shell message region -- adopted as-is.
           // No lane-A equivalent existed (its notice/submitError were local
           // useState scoped to this one Send handler); this is generically

@@ -149,6 +149,37 @@ describe("each tab renders its OWN groups, headings and empty sentence", () => {
     restore();
   });
 
+  // 2026-09-07: Home's real primaryLabel is now "" (task-row.ts's tabView),
+  // since it duplicated the "Home" tab label directly above it. This is the
+  // rendering half of that change: an empty label prints no heading element
+  // at all -- not an empty, oddly-padded one -- while every row, the row's
+  // own state word/glyph, and a genuinely-labelled secondary group are all
+  // completely unaffected.
+  test("an empty group label renders no heading at all (Home's real shape now)", () => {
+    const { queryByText, getByText, getAllByText, container, restore } = renderPane({
+      primary: group({ label: "" }),
+      secondary: group({
+        label: "Waiting on others",
+        empty: "Nothing outstanding with anyone else.",
+        rows: [row({ id: "t2", state: "running", title: "Review Budget > Cedar Heights", detail: undefined })],
+      }),
+    });
+    // No heading paragraph reading the old duplicate label...
+    expect(queryByText("Needs you", { selector: "p" })).toBeNull();
+    // ...but the row's own state word (a DIFFERENT thing -- C-13's glyph
+    // label, not the group heading) is still exactly where it always was.
+    expect(getAllByText("Needs you").length).toBeGreaterThanOrEqual(1);
+    // The row itself, and the genuinely-labelled secondary group, are
+    // completely unaffected by the primary group's label being empty.
+    expect(getByText("Record Work Progress > New entry")).toBeTruthy();
+    expect(getByText("Waiting on others")).toBeTruthy();
+    expect(getByText("Review Budget > Cedar Heights")).toBeTruthy();
+    // No stray empty <p> left behind taking up space for nothing.
+    const emptyHeadings = Array.from(container.querySelectorAll("p")).filter((p) => p.textContent === "");
+    expect(emptyHeadings).toHaveLength(0);
+    restore();
+  });
+
   test("*** AN EMPTY TAB STATES ITS OWN PURPOSE, not another tab's ***", () => {
     const { getByText, queryByText, restore } = renderPane({
       activeTab: "approval-pending",

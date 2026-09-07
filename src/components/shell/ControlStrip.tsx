@@ -61,7 +61,19 @@
 // UNCHANGED AND DELIBERATELY SO: the (x) still routes through cutChainFrom()
 // via the caller, canCutAt() still refuses to offer one on the root, and the
 // grammar is still ENTITY > ACTION > STEP read as one sentence.
-
+//
+// ADDENDUM, 2026-09-07 -- BACK. The mockup review's frozen mock asked for a
+// dedicated Back control (its final four: "All modules | Tasks | Back |
+// Home"). This file's own header above already explains why the (x) is not
+// a second Back button in spirit -- cutChainFrom's own doc comment calls it
+// "M24's replacement for a Back button" -- but the owner asked for the
+// mock's literal version anyway, functionality unchanged: Back is not a new
+// mechanism, it is the SAME cutChainFrom() the (x) buttons already use,
+// aimed at exactly one segment -- the last one -- so one click steps back
+// exactly one level, same as clicking (x) on the second-to-last segment
+// already did. canGoBack reuses canCutAt on that same index, so Back is
+// disabled in precisely the cases removing the last segment would already
+// refuse (an empty chain, or a chain that is only the root).
 import { canCutAt, type Chain } from "@fchecklist/veridian-ui-kit/shell";
 import { truncateSegmentLabel } from "@/lib/module-catalogue";
 
@@ -71,6 +83,10 @@ export type ControlStripProps = {
    *  through cutChainFrom(), which refuses to reach into the root. */
   onCutFrom: (index: number) => void;
   onSegmentClick?: (index: number) => void;
+  /** 2026-09-07: steps back exactly one segment -- see the ADDENDUM above.
+   *  The caller is expected to implement this as onCutFrom(last index), so
+   *  it is one mechanism with two entry points, not two mechanisms. */
+  onBack: () => void;
   onHome: () => void;
   onReset: () => void;
   /**
@@ -104,12 +120,17 @@ export function ControlStrip({
   chain,
   onCutFrom,
   onSegmentClick,
+  onBack,
   onHome,
   onReset,
   prompt,
   loaded,
 }: ControlStripProps) {
   const empty = chain.segments.length === 0;
+  // Same rule an (x) on the last segment already follows -- canCutAt refuses
+  // at or before the root, so Back is disabled exactly when there is nothing
+  // left behind the current position to step back into.
+  const canGoBack = !empty && canCutAt(chain, chain.segments.length - 1);
 
   return (
     // A-18: the row's own padding comes down as the controls in it grow to
@@ -251,6 +272,26 @@ export function ControlStrip({
           </button>
         </span>
       )}
+
+      {/* 2026-09-07 -- BACK, per the frozen mock's four-control set. Same
+          word-not-glyph, 44 px rule as HOME/Reset beside it (R67 A-18).
+          Disabled (not hidden) when there is nothing to step back into, so
+          the control's position never shifts and a screen reader still
+          finds it, matching how the (x) buttons are offered/withheld. */}
+      <button
+        type="button"
+        onClick={onBack}
+        disabled={!canGoBack}
+        aria-label="Back one step"
+        title="Back one step"
+        className="veri-view-tab shrink-0 disabled:opacity-40"
+        style={{ minWidth: 44, minHeight: 44 }}
+      >
+        <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+          ‹
+        </span>
+        Back
+      </button>
 
       {/* WORDS, not icons. HISTORY is deliberately absent -- see the header.
           A-18: sized with the row, so the three controls at this end are one

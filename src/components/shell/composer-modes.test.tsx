@@ -51,6 +51,7 @@ function renderStrip(mode: ChainMode) {
         ],
       }}
       onCutFrom={() => {}}
+      onBack={() => {}}
       onHome={() => {}}
       onReset={() => {}}
       prompt="Pick an action above or type what you need on Permits"

@@ -788,7 +788,19 @@ export function tabView(groups: GroupedRows, tab: TaskTabId, now: number): TabVi
     default: {
       const waiting = [...groups.running, ...groups.done];
       return {
-        primaryLabel: "Needs you",
+        // 2026-09-07: was "Needs you" -- a second name for the same thing the
+        // "Home" tab directly above it already says, per the owner's UI/UX
+        // review comparing the shipped shell against the frozen mock (which
+        // does the same reconciliation the mock's "Needs you" chip did: one
+        // name for one place, not a tab label and a heading disagreeing).
+        // DESIGN ONLY -- every field below this line is unchanged: the same
+        // rows (blocked-first, needs-you filtered from system failures), the
+        // same M24 pin-above-the-divider behaviour in TaskMaster.tsx (which
+        // triggers on `secondary` being present, not on this label), the same
+        // "Waiting on others" secondary group, the same badge count. Empty
+        // string renders no heading at all (TaskMaster.tsx's Group guards on
+        // it), not a visible blank line.
+        primaryLabel: "",
         primaryEmpty: "Nothing is waiting on you.",
         primary: needsYou,
         secondaryLabel: "Waiting on others",

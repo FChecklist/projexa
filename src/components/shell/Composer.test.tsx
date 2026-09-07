@@ -41,6 +41,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
   const props: ComposerProps = {
     chain: CHAIN,
     onCutFrom: noop,
+    onBack: noop,
     onHome: noop,
     onReset: noop,
     instruction: "",

@@ -41,8 +41,10 @@ const noop = () => {};
 // kept a HISTORY shortcut wired to `onHistory`; this merge keeps WS-A's
 // fuller removal (see ControlStrip.tsx's own header), so `onHistory` stays
 // gone here too.
-function renderStrip(chain: Chain = CHAIN) {
-  return render(<ControlStrip chain={chain} onCutFrom={noop} onHome={noop} onReset={noop} />);
+function renderStrip(chain: Chain = CHAIN, overrides: { onBack?: () => void } = {}) {
+  return render(
+    <ControlStrip chain={chain} onCutFrom={noop} onBack={overrides.onBack ?? noop} onHome={noop} onReset={noop} />
+  );
 }
 
 /** The segment buttons, in chain order. HOME/(reset)/Remove are excluded.
@@ -139,11 +141,13 @@ describe("the fork changed nothing else about the strip", () => {
     const { getByText, getByLabelText, getAllByText, container } = renderStrip();
     expect(getByText("HOME")).toBeDefined();
     expect(getByLabelText("Reset the chain")).toBeDefined();
+    // 2026-09-07: Back joined the same word-not-glyph set.
+    expect(getByLabelText("Back one step")).toBeDefined();
     // One per cuttable segment -- two here, so this must not be getByText.
     expect(getAllByText("Remove").length).toBeGreaterThan(0);
     // No control anywhere on the strip is labelled by a glyph alone.
     for (const btn of Array.from(container.querySelectorAll("button"))) {
-      const name = (btn.textContent ?? "").replace(/[✕×↺›]/g, "").trim();
+      const name = (btn.textContent ?? "").replace(/[✕×↺›‹]/g, "").trim();
       expect(name.length).toBeGreaterThan(0);
     }
   });
@@ -174,5 +178,38 @@ describe("the fork changed nothing else about the strip", () => {
     for (const label of ["Projects", "Customers", "Vendors"]) {
       expect(queryByText(label)).toBeNull();
     }
+  });
+});
+
+// 2026-09-07 -- BACK. Per the frozen mock's four-control set ("All modules |
+// Tasks | Back | Home"), added alongside HOME/Reset rather than replacing
+// either -- see this file's own ADDENDUM header for why it is the SAME
+// cutChainFrom() the (x) buttons already use, aimed at the last segment, not
+// a new mechanism. These tests cover exactly that: the caller decides what
+// "back one step" means (onBack), this component only decides when the
+// control is offered.
+describe("Back steps back exactly one segment (2026-09-07 addendum)", () => {
+  test("enabled and calls onBack when there is a non-root segment to remove", () => {
+    const onBack = () => {
+      calls += 1;
+    };
+    let calls = 0;
+    const { getByLabelText } = renderStrip(CHAIN, { onBack });
+    const back = getByLabelText("Back one step") as HTMLButtonElement;
+    expect(back.disabled).toBe(false);
+    fireEvent.click(back);
+    expect(calls).toBe(1);
+  });
+
+  test("disabled on a chain that is only the root -- nothing behind it to step into", () => {
+    const { getByLabelText } = renderStrip({ mode: "projects", segments: [{ id: "p1", label: "Solo Project", kind: "root" }] });
+    const back = getByLabelText("Back one step") as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
+  });
+
+  test("disabled on a genuinely empty chain -- same rule as an unrooted chain", () => {
+    const { getByLabelText } = renderStrip({ mode: "projects", segments: [] });
+    const back = getByLabelText("Back one step") as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
   });
 });

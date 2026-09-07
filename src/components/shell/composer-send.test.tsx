@@ -30,6 +30,7 @@ function renderComposer(props: Partial<Parameters<typeof Composer>[0]> = {}) {
     <Composer
       chain={CHAIN}
       onCutFrom={() => {}}
+      onBack={() => {}}
       onHome={() => {}}
       onReset={() => {}}
       instruction="Which project? Choose one in the top rail"
@@ -130,6 +131,7 @@ describe("a value the user did not type reads as a draft they may replace", () =
         <Composer
           chain={CHAIN}
           onCutFrom={() => {}}
+          onBack={() => {}}
           onHome={() => {}}
           onReset={() => {}}
           instruction=""

@@ -1,5 +1,37 @@
 # Changelog — projexa
 
+## Add a real Back control, and remove the redundant "Needs you" heading, per explicit direction (2026-09-07)
+The prior entry below disclosed two things the frozen mock asked for that
+were deliberately not built, because they appeared to collide with an
+older, foundational design spec this codebase calls "M24". The owner's
+answer: build the mock's literal version anyway, keeping the functionality
+as in the original -- only the design/presentation changes. Both landed as
+design-only changes with zero functional regressions:
+
+- **Back**: `M24Shell.tsx`'s `onBack` is `onCutFrom(chain.segments.length -
+  1)` -- the exact same function every Remove button already calls, not a
+  second mechanism. Rendered in `ControlStrip.tsx` (alongside HOME/Reset,
+  neither removed) and `ChainRail.tsx` (a second entry point to the same
+  handler, per the mock's own "two entry points into one"), disabled via
+  the same `canCutAt` check Remove already uses.
+- **"Needs you" heading removed**: re-reading the ACTUAL local TaskMaster
+  fork in use (not the kit file a prior pass in this same investigation
+  mistakenly read) showed the M24 pin-above-divider behavior is real and
+  untouched; what was actually redundant was `task-row.ts` giving the Home
+  tab's primary group a heading, `"Needs you"`, that duplicates the
+  already-visible `"Home"` tab label above it. `primaryLabel` is now `""`
+  for Home only; `TaskMaster.tsx` renders no heading element when a label
+  is empty. Every row, the row's own per-item state word, the pinning
+  mechanism, and the "Waiting on others" secondary group are unchanged.
+
+New tests: `ChainRail.test.tsx` (new, 8 tests), +3 in `ControlStrip.test.tsx`,
++1 each in `task-row.test.ts` and `TaskMaster.test.tsx`. 6 pre-existing
+test files needed a real `onBack` added now that it's a required prop --
+`tsc --noEmit` missed this because `tsconfig.json` excludes `*.test.tsx`
+from typechecking; `bun test` is the gate that actually catches it. Full
+suite 3 consecutive clean runs (4082/4082), typecheck/lint/build all clean.
+See `CLAUDE.md`'s "Composer shell, part 2" section for the full mechanism.
+
 ## Add the composer's chain to the right panel's top rail — the frozen mock's decision the first pass missed (2026-09-07)
 The owner reported the shipped composer relocation (`9745f54`) looked "vastly
 different" from the mockup review it came from. Recovered the actual frozen

@@ -227,9 +227,15 @@ function Group({
   const twoLine = group.twoLine ?? true;
   return (
     <>
-      <p className="px-2 pb-1 text-[11px] font-semibold" style={{ color: "var(--color-ct-navy)" }}>
-        {group.label}
-      </p>
+      {/* 2026-09-07: an empty label (task-row.ts's Home-tab primary, since the
+          "Home" tab directly above already says this) renders no heading at
+          all -- not an empty, oddly-padded <p>. Every other tab still gets
+          its own label exactly as before. */}
+      {group.label && (
+        <p className="px-2 pb-1 text-[11px] font-semibold" style={{ color: "var(--color-ct-navy)" }}>
+          {group.label}
+        </p>
+      )}
       {group.rows.length === 0 ? (
         // M24: "EMPTY STATES MUST PROMPT, NEVER LOOK BROKEN" -- and, C-01,
         // must say what THIS tab is for rather than borrowing another's words.

@@ -47,6 +47,7 @@ function renderStrip(chain: ReturnType<typeof objectChain>, prompt = "") {
     <ControlStrip
       chain={chain}
       onCutFrom={() => {}}
+      onBack={() => {}}
       onHome={() => {}}
       onReset={() => {}}
       prompt={prompt}

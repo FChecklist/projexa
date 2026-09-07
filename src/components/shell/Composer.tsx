@@ -89,6 +89,10 @@ export type ComposerProps = {
   chain: Chain;
   onCutFrom: (index: number) => void;
   onSegmentClick?: (index: number) => void;
+  /** 2026-09-07: threaded straight through to ControlStrip's own Back button
+   *  -- see that file's ADDENDUM. Composer.tsx itself has no chain logic of
+   *  its own to add here, same as onCutFrom/onHome/onReset above it. */
+  onBack: () => void;
   onHome: () => void;
   onReset: () => void;
 
@@ -162,6 +166,7 @@ export function Composer({
   chain,
   onCutFrom,
   onSegmentClick,
+  onBack,
   onHome,
   onReset,
   instruction,
@@ -226,6 +231,7 @@ export function Composer({
             chain={chain}
             onCutFrom={onCutFrom}
             onSegmentClick={onSegmentClick}
+            onBack={onBack}
             onHome={onHome}
             onReset={onReset}
             prompt={instruction}
