@@ -233,13 +233,30 @@ test("R-80 one full pill path works end to end", async ({ page }) => {
       chosenUrl = page.url();
       break;
     }
-    // Verb model (D-08): the pill narrows the sentence, the VERB navigates.
-    const verbs = page.getByRole("group", { name: "Things you can do" }).getByRole("button");
-    if ((await verbs.count()) > 0) {
-      await verbs.first().click({ timeout: 10_000 }).catch(() => {});
+    // The "Things you can do" group is PillStrip's Frequent-actions band, and
+    // it is NOT this pill's verbs. PillStrip.tsx:291 renders `screenCards`,
+    // which M24Shell.tsx:3510 supplies as `selectedModule ? [] : screenCardViews`
+    // -- the CURRENT SCREEN's own leaves, keyed by route and tab, and empty
+    // once a module is selected.
+    //
+    // Recorded because I got this wrong and filed a fault on it. Reading the
+    // band after clicking Permits showed ["Add drawing", "Upload document",
+    // "Run report", ...] and I reported it as "the Permits pill offers no
+    // permit verb". It offers none because this band was never its verbs; it
+    // was the dashboard's, correctly labelled "Frequent actions" on screen.
+    // The product was right and the reading was wrong.
+    //
+    // What this branch therefore tests is still real and still worth having --
+    // a pill click followed by a frequent action reaches a destination that
+    // renders -- so it is kept, and only the name it reports is corrected. A
+    // test that follows a MODULE's own leaves is a different test and does not
+    // exist yet.
+    const frequentActions = page.getByRole("group", { name: "Things you can do" }).getByRole("button");
+    if ((await frequentActions.count()) > 0) {
+      await frequentActions.first().click({ timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(1200);
       if (page.url() !== before) {
-        chosenLabel = `${label} -> verb`;
+        chosenLabel = `${label} -> frequent action`;
         chosenUrl = page.url();
         break;
       }
