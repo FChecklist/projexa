@@ -152,6 +152,57 @@ describe("aria-pressed: is THIS pill's route what is on screen?", () => {
   });
 });
 
+// R81 -- AND THE SAME PREDICATE DECIDES THE GREYING.
+//
+// M24Shell used to answer "is this pill's route on screen" TWICE with two
+// different questions: aria-pressed asked about the DESTINATION (this function),
+// while the "you are here" greying asked about the pill's MODULE. A module is
+// coarser than a destination whenever the destination carries a query, so a
+// pill was disabled on screens it does not open -- and a control that would
+// work, refusing to, is A-01's dead end pointing the other way. The shell now
+// derives both from this one call. These are the URLs where the two answers
+// used to differ, asserted as the destination question, which is the right one.
+describe("R81: a query-carrying view is not 'here' on its screen's other tabs", () => {
+  test("Tasks is live on every schedule tab except the board", () => {
+    const tasks = pillTargetFor("tasks")!;
+    // /schedule with no ?tab= renders the TIMELINE (schedule/page.tsx:119,
+    // `isScheduleTab(tab) ? tab : "timeline"`), so the bare path is a real
+    // screen the board pill can still take you away from.
+    expect(isPillRouteOpen(tasks, "/schedule", "")).toBe(false);
+    expect(isPillRouteOpen(tasks, "/schedule", "tab=timeline")).toBe(false);
+    expect(isPillRouteOpen(tasks, "/schedule", "tab=sprints")).toBe(false);
+    expect(isPillRouteOpen(tasks, "/schedule", "tab=timesheet")).toBe(false);
+    // ...and on the module's create pages, which are not the board either.
+    expect(isPillRouteOpen(tasks, "/schedule/tasks/new", "")).toBe(false);
+    expect(isPillRouteOpen(tasks, "/schedule/log-time", "")).toBe(false);
+    expect(isPillRouteOpen(tasks, "/schedule", "tab=board")).toBe(true);
+  });
+
+  test("Policies is live on the other /grc tabs and on its create pages", () => {
+    const policies = pillTargetFor("policies")!;
+    expect(isPillRouteOpen(policies, "/grc", "")).toBe(false);
+    expect(isPillRouteOpen(policies, "/grc", "tab=risks")).toBe(false);
+    expect(isPillRouteOpen(policies, "/grc/risks/new", "")).toBe(false);
+    expect(isPillRouteOpen(policies, "/grc", "tab=policies")).toBe(true);
+  });
+
+  test("Analysis is live on /work-progress and 'here' only on /analysis", () => {
+    const analysis = pillTargetFor("analysis")!;
+    expect(isPillRouteOpen(analysis, "/work-progress", "")).toBe(false);
+    expect(isPillRouteOpen(analysis, "/work-progress", "tab=analytics")).toBe(false);
+    expect(isPillRouteOpen(analysis, "/analysis", "")).toBe(true);
+  });
+
+  test("Department is 'here' on the tab it opens -- it has no module to grey it", () => {
+    // moduleForPill("department") is null (the `employees` module lists
+    // "departments"), so the old module-based greying could never fire here and
+    // the pill sat live and dead on the very screen it opens.
+    const department = pillTargetFor("department")!;
+    expect(isPillRouteOpen(department, "/employees", "tab=departments")).toBe(true);
+    expect(isPillRouteOpen(department, "/employees", "tab=people")).toBe(false);
+  });
+});
+
 describe("the words and the link the platform line uses", () => {
   test("the sentence is the item's own", () => {
     expect(NOT_IN_PROJEXA).toBe("Not part of PROJEXA — open VERIDIAN");

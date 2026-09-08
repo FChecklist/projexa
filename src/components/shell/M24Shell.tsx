@@ -209,7 +209,6 @@ import {
   moduleRoute,
   noProjectPromptFor,
   normalisePathname,
-  pillPointsAtCurrentScreen,
   type ModuleDef,
   type ModuleLeaf,
 } from "@/lib/module-catalogue";
@@ -2914,20 +2913,39 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // no-dead-end rule A-01 applied to the ranked band.
   const allModules: ModuleEntryView[] = useMemo(
     () =>
-      PILL_CATALOGUE.map((entry: PillEntry) => ({
-        id: entry.id,
-        label: entry.label,
-        shortcut: shortcutLabel(entry),
-        note: entry.note,
-        // R67 A-17: "the pill carries aria-pressed while its route is open".
-        // For a view that is its own pathname AND its own query -- a pill for
-        // /schedule?tab=board is not open while the timeline is showing.
-        pressed: entry.target ? isPillRouteOpen(entry.target, pathname ?? "", routeSearch) : false,
-        unavailable:
-          entry.moduleId && pillPointsAtCurrentScreen(entry.moduleId, entry.label, pathname ?? "")
-            ? "you are here"
-            : undefined,
-      })),
+      PILL_CATALOGUE.map((entry: PillEntry) => {
+        // ONE QUESTION, ONE ANSWER. "is this pill's route what is on screen"
+        // decides BOTH aria-pressed and the "you are here" greying, so the two
+        // are the same boolean and cannot disagree.
+        //
+        // THEY USED TO. `pressed` asked about the DESTINATION (A-17's rule:
+        // the pathname AND every query value the destination names), while
+        // `unavailable` asked about the MODULE -- and a module is coarser than
+        // a destination whenever the destination carries a query. So "Tasks"
+        // (/schedule?tab=board) was greyed out on /schedule?tab=timeline and on
+        // /schedule/tasks/new, where clicking it would have changed the URL and
+        // shown the board; "Policies" (/grc?tab=policies) was greyed on every
+        // /grc tab and every /grc create page. A-01 forbids offering a pill
+        // whose only destination is the screen you are standing on -- and a
+        // pill greyed out on a screen it does not open is the same defect
+        // pointing the other way: a control that works, refusing to.
+        //
+        // For a MODULE pill the two predicates are already identical -- no
+        // module prefix nests inside another (module-catalogue.test.ts asserts
+        // no prefix is claimed twice, and none is a parent of another), so
+        // "longest prefix wins" and "one of this module's prefixes matches"
+        // agree on every path -- which is why this narrows the greying to
+        // exactly the query-carrying views and changes nothing else.
+        const routeOpen = entry.target ? isPillRouteOpen(entry.target, pathname ?? "", routeSearch) : false;
+        return {
+          id: entry.id,
+          label: entry.label,
+          shortcut: shortcutLabel(entry),
+          note: entry.note,
+          pressed: routeOpen,
+          unavailable: routeOpen ? "you are here" : undefined,
+        };
+      }),
     [pathname, routeSearch]
   );
 

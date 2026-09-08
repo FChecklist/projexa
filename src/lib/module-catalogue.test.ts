@@ -47,6 +47,63 @@ describe("MODULE_CATALOGUE", () => {
     expect(new Set(prefixes).size).toBe(prefixes.length);
   });
 
+  // R81 -- AND NO PREFIX IS A PARENT OF ANOTHER MODULE'S. This is the premise
+  // M24Shell's greying now rests on. Two predicates answer "is the user inside
+  // this module": moduleForPathname() takes the LONGEST matching prefix across
+  // the whole catalogue, while isPillRouteOpen()'s module arm asks only whether
+  // ONE OF THIS MODULE'S OWN prefixes matches. They agree on every path exactly
+  // as long as no prefix nests inside another -- add "/schedule/tasks" as a
+  // module of its own and they would disagree on /schedule/tasks/new, where the
+  // shell would start greying the parent module's pill on the child's screens.
+  // The uniqueness test above does not cover that: "/schedule" and
+  // "/schedule/tasks" are two distinct strings.
+  test("R81: no route prefix nests inside another module's", () => {
+    const all = MODULE_CATALOGUE.flatMap((m) => m.prefixes.map((prefix) => ({ id: m.id, prefix })));
+    const nested = all.flatMap((outer) =>
+      all
+        .filter((inner) => inner.id !== outer.id && inner.prefix.startsWith(`${outer.prefix}/`))
+        .map((inner) => `${outer.id} "${outer.prefix}" contains ${inner.id} "${inner.prefix}"`)
+    );
+    expect(nested).toEqual([]);
+  });
+
+  // R81 -- THE DEFECT CLASS BEHIND THE ANALYSIS PILL, ASSERTED AWAY.
+  //
+  // "analysis" was both the `analysis` module's own id and an alias listed on
+  // `work-progress`. moduleForPill() scanned in array order, so the alias at
+  // index 6 beat the name at index 38 and the Analysis pill resolved to Work
+  // Progress -- greyed out as "you are here" on a screen it does not open, and
+  // live on /analysis, which it does. moduleForPill() now prefers a NAME over
+  // an ALIAS, which makes that particular collision decidable; these two
+  // assertions cover the half precedence cannot decide, and the half it can,
+  // so neither shape can come back silently.
+  test("R81: no alias is claimed by two modules", () => {
+    const owners = new Map<string, string[]>();
+    for (const mod of MODULE_CATALOGUE) {
+      for (const key of mod.pillKeys) {
+        const norm = normalisePillKey(key);
+        owners.set(norm, [...(owners.get(norm) ?? []), mod.id]);
+      }
+    }
+    const shared = [...owners].filter(([, ids]) => ids.length > 1).map(([key, ids]) => `${key}: ${ids.join(", ")}`);
+    expect(shared).toEqual([]);
+  });
+
+  test("R81: no module's own id or label is listed as another module's alias", () => {
+    const aliases = new Map<string, string>();
+    for (const mod of MODULE_CATALOGUE) {
+      for (const key of mod.pillKeys) aliases.set(normalisePillKey(key), mod.id);
+    }
+    const shadowed: string[] = [];
+    for (const mod of MODULE_CATALOGUE) {
+      for (const own of [mod.id, mod.label]) {
+        const claimant = aliases.get(normalisePillKey(own));
+        if (claimant && claimant !== mod.id) shadowed.push(`${mod.id} ("${own}") is an alias of ${claimant}`);
+      }
+    }
+    expect(shadowed).toEqual([]);
+  });
+
   // R67 B-02. The item quotes these two prompts verbatim, so they are asserted
   // as literals rather than by shape: the whole complaint behind R-117 was that
   // /budgets advertised nothing the composer could DO, and a paraphrase would
@@ -149,6 +206,20 @@ describe("moduleForPill", () => {
     expect(moduleForPill("x", "Drawings & 3D")?.id).toBe("drawings");
   });
 
+  // R81 -- THE ANALYSIS PILL. "analysis" is the /analysis hub's own id; it was
+  // also listed as an alias of work-progress, whose entry sits earlier in the
+  // array, so the alias won. Work Progress still resolves from its own key and
+  // its own label; the word "Analysis" now reaches the screen it opens.
+  test("R81: 'analysis' is the /analysis hub, not Work Progress", () => {
+    expect(moduleForPill("analysis")?.id).toBe("analysis");
+    expect(moduleForPill("analysis", "Analysis")?.id).toBe("analysis");
+    expect(moduleForPill("analytics")?.id).toBe("analysis");
+    // ...and Work Progress is no harder to find than it was.
+    expect(moduleForPill("work_progress")?.id).toBe("work-progress");
+    expect(moduleForPill("progress")?.id).toBe("work-progress");
+    expect(moduleForPill("wp", "Work Progress")?.id).toBe("work-progress");
+  });
+
   test("returns null for a pill with no PROJEXA screen", () => {
     // R80 Part 5: "policies" used to belong here and no longer does. It was a
     // correct example of a backend pill with nothing to open right up until
@@ -178,6 +249,14 @@ describe("pillPointsAtCurrentScreen (A-01: no self-referential pill)", () => {
 
   test("a pill with no module is never treated as a dead end", () => {
     expect(pillPointsAtCurrentScreen("policies", "Policies", "/dashboard")).toBe(false);
+  });
+
+  // R81 -- A-01, THE RIGHT WAY ROUND. Both halves were inverted: the pill was
+  // dead on /analysis (where it points) and refused on /work-progress (where it
+  // does not).
+  test("R81: Analysis is a dead end on /analysis, and live on /work-progress", () => {
+    expect(pillPointsAtCurrentScreen("analysis", "Analysis", "/analysis")).toBe(true);
+    expect(pillPointsAtCurrentScreen("analysis", "Analysis", "/work-progress")).toBe(false);
   });
 });
 

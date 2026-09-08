@@ -186,7 +186,20 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     label: "Work Progress",
     route: "/work-progress",
     prefixes: ["/work-progress"],
-    pillKeys: ["work_progress", "progress", "analysis"],
+    // R67 MERGE (D-11, lane E2's E-27) LEFT THIS HALF BEHIND. "analysis" was
+    // listed here from the world in which "Analysis" MEANT this module's own
+    // ?tab=analytics leaf. E-27 fixed that on the DESTINATION side --
+    // pill-routes.ts now sends the pill to the /analysis hub that lists all
+    // four analysis screens -- but the RESOLUTION side still claimed the word,
+    // and moduleForPill() scans in array order, so this entry (index 6) beat
+    // the `analysis` module's own id (index 38). The consequence was A-01
+    // exactly inverted: "Analysis" greyed out as "you are here" on
+    // /work-progress, which it does not open, and live on /analysis, which it
+    // does. The word belongs to the hub. This module is still found by
+    // "work_progress", "progress", its own id and its own label, and its
+    // analytics TAB is reached by its leaf and by composer-cards.ts's
+    // route+tab table -- neither of which goes through moduleForPill().
+    pillKeys: ["work_progress", "progress"],
     // A-10 supersedes A-04's placeholder here: the item names this one
     // explicitly for Work Progress, and A-04's own example survives verbatim
     // as the first of the two worked examples below the input.
@@ -797,11 +810,24 @@ export function moduleForPathname(pathname: string): ModuleDef | null {
 export function moduleForPill(pillKey: string, label?: string): ModuleDef | null {
   const candidates = [normalisePillKey(pillKey), label ? normalisePillKey(label) : ""].filter(Boolean);
   for (const candidate of candidates) {
-    for (const mod of MODULE_CATALOGUE) {
-      if (mod.id === candidate) return mod;
-      if (normalisePillKey(mod.label) === candidate) return mod;
-      if (mod.pillKeys.some((k) => normalisePillKey(k) === candidate)) return mod;
-    }
+    // A NAME BEATS AN ALIAS, WHATEVER THE ARRAY ORDER. `id` and `label` are a
+    // module naming ITSELF; `pillKeys` are aliases it also answers to. This
+    // used to be one pass, so the winner was whichever module happened to sit
+    // earlier in MODULE_CATALOGUE -- and "analysis" was claimed both as the
+    // `analysis` module's id (index 38) and as an alias of `work-progress`
+    // (index 6), so the alias won and the Analysis pill resolved to the wrong
+    // screen. Two passes make the precedence a RULE rather than a position:
+    // moving an entry in the array can no longer change what a pill resolves
+    // to. The remaining ambiguity -- one alias claimed by two modules -- is
+    // not decidable here and is asserted away in module-catalogue.test.ts.
+    const named = MODULE_CATALOGUE.find(
+      (mod) => mod.id === candidate || normalisePillKey(mod.label) === candidate
+    );
+    if (named) return named;
+    const aliased = MODULE_CATALOGUE.find((mod) =>
+      mod.pillKeys.some((k) => normalisePillKey(k) === candidate)
+    );
+    if (aliased) return aliased;
   }
   return null;
 }
