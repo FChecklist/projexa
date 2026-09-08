@@ -709,17 +709,36 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     ],
   },
   {
-    id: "projects",
-    label: "Projects",
+    // id and label are BOTH deliberately not the bare word "projects", and
+    // pillKeys is deliberately empty. moduleForPill() matches a pill against
+    // mod.id, normalisePillKey(mod.label) AND mod.pillKeys, so an id of
+    // "projects" or a label of "Projects" captures the platform pill on its
+    // own no matter how empty pillKeys is.
+    id: "project-directory",
+    label: "Project Directory",
     route: "/projects",
     prefixes: ["/projects"],
     needsProject: false,
-    pillKeys: ["projects", "project"],
+    // DELIBERATELY EMPTY, and this is the whole point of the entry. Two
+    // different things share the word "projects":
+    //   the PLATFORM PILL "Projects" means "choose which project I am working
+    //     on", and this product answers that in the top rail on purpose --
+    //     card-catalogue.ts renders it as "pick one in the top rail" rather
+    //     than letting a pill compete with the selector;
+    //   the MODULE "/projects" means "manage the project list" -- a real
+    //     shipped ERP screen with a create route that R80 Part 5 GAP-9 flagged
+    //     as reachable-once-created-but-never-openable.
+    // Both are true and they must not be conflated. Route coverage is driven
+    // by `prefixes`, pill resolution by `pillKeys`, so leaving this empty gives
+    // /projects and /projects/new their chain segment WITHOUT making
+    // moduleForPill("projects") resolve and silently delete the top-rail
+    // guidance. card-catalogue.test.ts asserts that guidance still appears.
+    pillKeys: [],
     placeholder: "e.g. set up a new project for the Marina tower",
     examples: ["set up a new project for the Marina tower", "which projects are running behind schedule"],
     leaves: [
-      { id: "projects.new", label: "New project", path: "/projects/new", needsProject: false, chainLabel: "New project" },
-      { id: "projects.open", label: "Open", path: "/projects", needsProject: false },
+      { id: "project-directory.new", label: "New project", path: "/projects/new", needsProject: false, chainLabel: "New project" },
+      { id: "project-directory.open", label: "Open", path: "/projects", needsProject: false },
     ],
   },
   {

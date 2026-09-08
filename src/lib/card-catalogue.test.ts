@@ -555,13 +555,19 @@ describe("rankCards -- the server's order wins, the role tops up", () => {
   });
 
   test("a key this build has no card for is reported, never rendered", () => {
+    // R80 Part 5: "policies" was the example of a key this build has no card
+    // for, and it stopped being one when /grc/policies, /grc/policies/new and
+    // /grc/policies/[id] shipped and the GRC module claimed the pill. Swapped
+    // for a key that is still genuinely unbacked; the invariant under test (an
+    // unknown key is REPORTED in unknownKeys and never rendered as a card) is
+    // unchanged.
     const { cards, unknownKeys } = rankCards({
-      ranked: [{ pillKey: "policies" }, { pillKey: "work-progress.entry" }],
+      ranked: [{ pillKey: "manufacturing" }, { pillKey: "work-progress.entry" }],
       role: "pm",
     });
-    expect(unknownKeys).toEqual(["policies"]);
+    expect(unknownKeys).toEqual(["manufacturing"]);
     expect(cards.map((c) => c.id)).toContain("work-progress.entry");
-    expect(cards.some((c) => c.id === "policies")).toBe(false);
+    expect(cards.some((c) => c.id === "manufacturing")).toBe(false);
   });
 
   test("the current screen's own module is excluded from the six", () => {
