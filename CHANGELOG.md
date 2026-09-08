@@ -1,5 +1,38 @@
 # Changelog — projexa
 
+## Add the missing "Frequent actions" heading and the bottom row's real fourth/fifth controls (2026-09-08)
+Owner: "not only bottom control, the top and centre also to be updated,"
+after re-sending the mock's left panel specifically. Three pieces, all
+wired onto controls/state that already existed -- nothing new invented:
+
+- **Top**: the "Frequent actions" heading was missing entirely. It
+  already existed as an `aria-label`, screen-reader only; added as real
+  visible text too.
+- **Centre**: re-verified the pill styling (icons/teal/no kind-word
+  badge) still holds after the heading was added.
+- **Bottom**: "All modules" and "Tasks" joined Back/Home/Reset, matching
+  the mock's real four-item row. "All modules" is the exact same toggle
+  `PillStrip.tsx` already had -- only the trigger moved to this row,
+  via two new *optional* props on `ControlStrip.tsx` so nothing else
+  breaks. "Tasks" reuses the same `onHome` handler Home already calls
+  (validated against this app's own existing logic: `onHome` already
+  treats "go home" and "open the module directory" as one action on the
+  home screen) rather than inventing a second mechanism -- the Task
+  Master tabs the mock's "Tasks" was a shortcut to are already always
+  visible above this strip. "HOME" became "Home" (sentence case, same
+  handler). Reset was kept past the mock's own four items -- removing a
+  real, working control isn't a visual change.
+
+New tests updated: three `"HOME"` text assertions re-pointed to `"Home"`
+in `Composer.test.tsx`/`ControlStrip.test.tsx`/`strip-controls.test.tsx`.
+Verified: typecheck/lint clean, full suite 4088/4088 pass, production
+build clean. Live-verified in the pane at both the short and normal
+viewport, zero confirmed overlaps with the row now carrying five
+controls. Real Chrome's extension was disconnected this round (transient)
+so the usual cross-browser screenshot could not be taken -- disclosed
+rather than silently skipped. See CLAUDE.md's "Composer shell, part 10"
+for the full mechanism.
+
 ## Two more real mock differences found on a pixel-level re-read: label casing and a list that should have been a table (2026-09-08)
 Owner re-sent the mock at full resolution: "make sure this is 100% copied
 as it is." A genuinely precise read against the live page (not a glance)

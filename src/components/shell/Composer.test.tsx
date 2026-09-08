@@ -226,9 +226,10 @@ describe("the fork still assembles the kit's own composer", () => {
     // composer's HISTORY button so the Task Master's History tab is the only
     // control by that name (correction C-03), and nothing in this repo ever
     // wrote the drop's storage key -- it listed nothing for its whole life.
-    // HOME is the strip control that proves the fork is mounted, and HISTORY's
-    // absence is now itself the assertion.
-    expect(getByText("HOME")).toBeDefined();
+    // Home is the strip control that proves the fork is mounted, and HISTORY's
+    // absence is now itself the assertion. 2026-09-07: "HOME" -> "Home",
+    // sentence case per the frozen mock -- same control, same handler.
+    expect(getByText("Home")).toBeDefined();
     expect(queryByText("HISTORY")).toBeNull();
   });
 

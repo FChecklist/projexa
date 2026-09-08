@@ -208,6 +208,19 @@ export function PillStrip({
 
   return (
     <div>
+      {/* 2026-09-07 -- VISUAL-ONLY, per the frozen mock ("copy it exactly...
+          exactly means exactly"): the mock labels this band "Frequent
+          actions" -- this group already carried that exact meaning via
+          `aria-label="Things you can do"` below, but only for a screen
+          reader. This makes it a real, visible heading too; the aria-label
+          stays as is (sighted and non-sighted users now agree on the
+          section's name, which is what M24's own "same meaning, not two
+          different words" rule already asks for elsewhere in this file). */}
+      {!loading && (
+        <div className="mb-0.5 text-[11px] font-medium" style={{ color: "var(--color-ct-muted)" }}>
+          Frequent actions
+        </div>
+      )}
       {/*
           2026-09-07 -- FULL-WIDTH ROWS, PER THE FROZEN MOCK. This band was a
           `flex flex-wrap` of compact inline pills; the frozen mock's own
@@ -344,20 +357,6 @@ export function PillStrip({
             })}
           </>
         )}
-
-        {/* self-start: everything above is now a flex-col of full-width rows
-            (this container's default cross-axis stretch would otherwise
-            widen this toggle to match them), but this is a compact nav
-            link, not a frequent-action row -- it keeps its natural size. */}
-        <button
-          type="button"
-          onClick={onToggleExpanded}
-          aria-expanded={expanded}
-          className="veri-mode-pill self-start"
-          style={{ color: "var(--color-ct-muted)" }}
-        >
-          {expanded ? "Show fewer" : "All modules"}
-        </button>
       </div>
 
       {expanded && (

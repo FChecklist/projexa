@@ -181,10 +181,11 @@ describe("44 px minimums, on the elements that produce the box", () => {
     expect(button.style.minHeight).toBe("44px");
   };
 
-  test("Reset, Remove and HOME", () => {
+  test("Reset, Remove and Home", () => {
     const { getByText, getAllByText } = renderControlStrip();
     atLeast44(getByText("Reset").closest("button")!);
-    atLeast44(getByText("HOME").closest("button")!);
+    // 2026-09-07: "HOME" -> "Home", sentence case per the frozen mock.
+    atLeast44(getByText("Home").closest("button")!);
     for (const remove of getAllByText("Remove")) atLeast44(remove.closest("button")!);
   });
 

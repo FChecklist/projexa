@@ -114,6 +114,20 @@ export type ControlStripProps = {
     pinned: boolean;
     onTogglePin: () => void;
   } | null;
+  /**
+   * 2026-09-07 -- VISUAL-ONLY, per the frozen mock ("copy it exactly...
+   * object by object... exactly means exactly"): the mock's bottom row is
+   * "All modules | Tasks | Back | Home", not just Back/Home/Reset. "All
+   * modules" is not new -- it is the SAME toggle PillStrip.tsx already had
+   * (M24Shell.tsx's own `showAllPills` state), moved here so the trigger
+   * sits where the mock puts it; the catalogue panel it opens still lives
+   * in PillStrip, unchanged. Optional so every existing caller/test that
+   * doesn't pass it keeps compiling -- the row just omits the control it
+   * has no props for, the same graceful-absence pattern `loaded` already
+   * uses above.
+   */
+  allModulesExpanded?: boolean;
+  onToggleAllModules?: () => void;
 };
 
 export function ControlStrip({
@@ -125,6 +139,8 @@ export function ControlStrip({
   onReset,
   prompt,
   loaded,
+  allModulesExpanded,
+  onToggleAllModules,
 }: ControlStripProps) {
   const empty = chain.segments.length === 0;
   // Same rule an (x) on the last segment already follows -- canCutAt refuses
@@ -299,6 +315,39 @@ export function ControlStrip({
         </span>
       )}
 
+      {/* 2026-09-07 -- ALL MODULES, moved here from PillStrip.tsx to match
+          the mock's own row exactly. Same toggle, same state
+          (`showAllPills` in M24Shell.tsx) -- only WHERE the trigger sits
+          changed. Rendered only when the caller supplies it (every
+          existing test/caller that doesn't keeps compiling and simply
+          doesn't show this one control, same pattern `loaded` uses). */}
+      {onToggleAllModules && (
+        <button
+          type="button"
+          onClick={onToggleAllModules}
+          aria-expanded={allModulesExpanded}
+          className="veri-view-tab shrink-0"
+          style={{ minWidth: 44, minHeight: 44 }}
+        >
+          {allModulesExpanded ? "Show fewer" : "All modules"}
+        </button>
+      )}
+
+      {/* 2026-09-07 -- TASKS, per the mock. Not a new mode or a new fetch:
+          the Task Master's own tabs (Home/Approval Pending/In Queue/
+          Completed/History) are already always visible above this strip,
+          exactly what the mock's own "Tasks" was a shortcut TO -- so this
+          reuses the same `onHome` handler HOME already calls rather than
+          inventing a second mechanism for "show me my tasks". */}
+      <button
+        type="button"
+        onClick={onHome}
+        className="veri-view-tab shrink-0"
+        style={{ minWidth: 44, minHeight: 44 }}
+      >
+        Tasks
+      </button>
+
       {/* 2026-09-07 -- BACK, per the frozen mock's four-control set. Same
           word-not-glyph, 44 px rule as HOME/Reset beside it (R67 A-18).
           Disabled (not hidden) when there is nothing to step back into, so
@@ -321,14 +370,17 @@ export function ControlStrip({
 
       {/* WORDS, not icons. HISTORY is deliberately absent -- see the header.
           A-18: sized with the row, so the three controls at this end are one
-          band rather than a 44 px button beside a 22 px one. */}
+          band rather than a 44 px button beside a 22 px one.
+          2026-09-07 -- "Home", sentence case per the mock (was "HOME"
+          all-caps) -- a pure text-casing change, the handler/behaviour is
+          the exact same onHome this always called. */}
       <button
         type="button"
         onClick={onHome}
         className="veri-view-tab shrink-0"
-        style={{ letterSpacing: "0.02em", minWidth: 44, minHeight: 44 }}
+        style={{ minWidth: 44, minHeight: 44 }}
       >
-        HOME
+        Home
       </button>
 
       {/* R67 A-18 -- RESET IS A WORD NOW. It was "↺", a 22 x 22 glyph whose

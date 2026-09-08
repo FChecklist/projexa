@@ -3381,6 +3381,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             router.push(HOME_ROUTE);
           }}
           onReset={onReset}
+          // 2026-09-07: the SAME showAllPills state PillStrip's own catalogue
+          // panel already reads -- only the toggle's trigger moved from
+          // PillStrip to ControlStrip, per the frozen mock's own row.
+          allModulesExpanded={showAllPills}
+          onToggleAllModules={() => setShowAllPills((v) => !v)}
           value={draft}
           onChange={setDraft}
           // BAND 2 -- CONVERSATION. Two lanes land here and they are sequential,

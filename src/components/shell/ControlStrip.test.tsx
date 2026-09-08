@@ -139,7 +139,9 @@ describe("the fork changed nothing else about the strip", () => {
     // controls into words too -- so this asserts it over the whole strip
     // instead of over three named buttons.
     const { getByText, getByLabelText, getAllByText, container } = renderStrip();
-    expect(getByText("HOME")).toBeDefined();
+    // 2026-09-07: "HOME" -> "Home", sentence case per the frozen mock --
+    // same control, same handler.
+    expect(getByText("Home")).toBeDefined();
     expect(getByLabelText("Reset the chain")).toBeDefined();
     // 2026-09-07: Back joined the same word-not-glyph set.
     expect(getByLabelText("Back one step")).toBeDefined();

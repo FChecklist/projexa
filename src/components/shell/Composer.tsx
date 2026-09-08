@@ -122,6 +122,12 @@ export type ComposerProps = {
     pinned: boolean;
     onTogglePin: () => void;
   } | null;
+  /** 2026-09-07: passed straight through to ControlStrip -- see its own
+   *  doc comment. The SAME `showAllPills` state M24Shell.tsx already
+   *  threads to the pills band, just also reaching the control strip now
+   *  that the mock's own toggle position moved there. */
+  allModulesExpanded?: boolean;
+  onToggleAllModules?: () => void;
 
   /**
    * R67 C-14: THE SHELL MESSAGE REGION, above the box.
@@ -199,6 +205,8 @@ export function Composer({
   errorMessage,
   busy = false,
   loaded,
+  allModulesExpanded,
+  onToggleAllModules,
   messages,
   conversation,
   pills,
@@ -389,6 +397,8 @@ export function Composer({
             onReset={onReset}
             prompt={instruction}
             loaded={loaded}
+            allModulesExpanded={allModulesExpanded}
+            onToggleAllModules={onToggleAllModules}
           />
         </div>
 
