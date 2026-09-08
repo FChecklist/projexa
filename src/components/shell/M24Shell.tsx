@@ -703,6 +703,19 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // put the cursor there rather than describing what the user should do next.
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [showAllPills, setShowAllPills] = useState(false);
+  // 2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE. See
+  // ControlStrip.tsx's TASKS button, Composer.tsx's `dockedOverTaskMaster`
+  // and AppShell.tsx's `taskMasterExpanded` for the rest of this mechanism
+  // -- all three default to the ORIGINAL always-visible behaviour and only
+  // change when this is explicitly threaded through as false-by-default,
+  // true-on-click. Collapsed (false) by default so the left pane opens on
+  // exactly what the mock shows -- Frequent actions, nothing above it --
+  // and TASKS is the one control that reveals the exact same real Task
+  // Master (same tabs, same rows, same click-to-resolve actions, same data)
+  // one click away. Nothing about Task Master itself changed: this is
+  // DEFAULT VISIBILITY only, using the identical expand/collapse pattern
+  // `showAllPills` right above it already established for "All modules".
+  const [tasksExpanded, setTasksExpanded] = useState(false);
   // 2026-09-07 -- see Composer.tsx's onHeightChange doc comment. Seeded with
   // the same static guess AppShell used before this fix (112 + 96 = 208) so
   // there is no flash of unreserved space before the first real measurement
@@ -3145,6 +3158,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // so this is "how much MORE than the resting height was measured",
       // floored at the same minimum the static constant always guaranteed.
       composerReserveExtra={Math.max(COMPOSER_PILLS_BAND_RESERVE, composerHeight - COMPOSER_RESTING_HEIGHT)}
+      // 2026-09-08: see this state's own doc comment above (near
+      // `showAllPills`) and AppShell.tsx's `taskMasterExpanded` doc comment
+      // for the mechanism -- collapsed by default, matching the mock.
+      taskMasterExpanded={tasksExpanded}
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
@@ -3239,6 +3256,18 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               </ul>
             </div>
           )}
+          {/*
+              2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE.
+              See `tasksExpanded`'s own doc comment (near `showAllPills`
+              above) for why: this whole block -- the tab row, the task
+              rows, "Show N more" -- is now gated on the SAME toggle TASKS
+              drives, collapsed by default. shellErrors above this comment
+              is deliberately OUTSIDE the gate: a real backend failure must
+              never be hidden behind a collapsed panel the user has to think
+              to open.
+          */}
+          {tasksExpanded && (
+          <>
           {/*
               2026-09-07 -- A REAL OVERFLOW/OVERLAP BUG, found live (screenshots
               from both the owner's Edge and a from-scratch repro): this wrapper
@@ -3354,6 +3383,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           )}
+          </>
+          )}
         </div>
       }
       composer={
@@ -3386,6 +3417,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // PillStrip to ControlStrip, per the frozen mock's own row.
           allModulesExpanded={showAllPills}
           onToggleAllModules={() => setShowAllPills((v) => !v)}
+          // 2026-09-08: see `tasksExpanded`'s own doc comment above.
+          tasksExpanded={tasksExpanded}
+          onToggleTasks={() => setTasksExpanded((v) => !v)}
+          dockedOverTaskMaster={tasksExpanded}
           value={draft}
           onChange={setDraft}
           // BAND 2 -- CONVERSATION. Two lanes land here and they are sequential,

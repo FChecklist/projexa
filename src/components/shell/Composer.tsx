@@ -128,6 +128,34 @@ export type ComposerProps = {
    *  that the mock's own toggle position moved there. */
   allModulesExpanded?: boolean;
   onToggleAllModules?: () => void;
+  /** 2026-09-08 -- threaded straight through to ControlStrip's own TASKS
+   *  button; see that file's header and `dockedOverTaskMaster` below for
+   *  the full mechanism. */
+  onToggleTasks?: () => void;
+  tasksExpanded?: boolean;
+  /**
+   * 2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE AT ALL
+   * (owner, looking at real Chrome: "the home, approved pending, in
+   * queue... is still in the top... the Frequently Used is missing" --
+   * confirmed by reading the frozen mock's own DOM: "Frequent actions" is
+   * the very first thing in the left panel, nothing above it). Every
+   * absolute/bottom-anchored/grows-upward mechanic below this comment was
+   * built, and repeatedly bug-fixed, on the premise that this composer
+   * floats OVER a Task Master pane that is always there and always taller
+   * than the composer itself -- which is only true while that pane is
+   * actually showing.
+   *
+   * Default `true` is that exact, unchanged, already-hardened behaviour --
+   * every existing caller/test that doesn't pass this prop keeps rendering
+   * byte-for-byte the same DOM it always did. `false` is the NEW state,
+   * used only when M24Shell.tsx's own `tasksExpanded` is false (the mock's
+   * default): there is no Task Master pane to float over in that state --
+   * this component IS the whole of the left pane's content below the rail
+   * -- so it renders in normal top-anchored flow instead, exactly like any
+   * other block of content, rather than pinned to the bottom of a
+   * container it no longer shares with anything.
+   */
+  dockedOverTaskMaster?: boolean;
 
   /**
    * R67 C-14: THE SHELL MESSAGE REGION, above the box.
@@ -207,6 +235,9 @@ export function Composer({
   loaded,
   allModulesExpanded,
   onToggleAllModules,
+  onToggleTasks,
+  tasksExpanded,
+  dockedOverTaskMaster = true,
   messages,
   conversation,
   pills,
@@ -283,8 +314,16 @@ export function Composer({
   return (
     <div
       ref={rootRef}
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end px-3 pb-3"
-      style={{ maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` }}
+      className={
+        dockedOverTaskMaster
+          ? "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end px-3 pb-3"
+          : // 2026-09-08 -- no Task Master pane to float over (see this
+            // prop's own doc comment above): normal flow, top-anchored,
+            // no z-index/pointer-events dance needed because nothing sits
+            // behind this to click through to.
+            "relative flex flex-col px-3 pb-3"
+      }
+      style={dockedOverTaskMaster ? { maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` } : undefined}
     >
       {/* R67 C-14: the message region, above the box and outside it. It
           renders nothing at all when there is nothing to say, so it costs the
@@ -399,6 +438,8 @@ export function Composer({
             loaded={loaded}
             allModulesExpanded={allModulesExpanded}
             onToggleAllModules={onToggleAllModules}
+            onToggleTasks={onToggleTasks}
+            tasksExpanded={tasksExpanded}
           />
         </div>
 

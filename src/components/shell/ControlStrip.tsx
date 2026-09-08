@@ -128,6 +128,20 @@ export type ControlStripProps = {
    */
   allModulesExpanded?: boolean;
   onToggleAllModules?: () => void;
+  /**
+   * 2026-09-08 -- see the TASKS button's own comment below for why this
+   * exists at all (the mock has no Task Master row visible by default, so
+   * TASKS needs a real toggle, not Home's handler). Optional and falls back
+   * to `onHome` when absent -- same graceful-absence pattern as
+   * `onToggleAllModules` above, so every caller/test written before this
+   * existed keeps compiling and behaving exactly as it did.
+   */
+  onToggleTasks?: () => void;
+  /** Only meaningful together with `onToggleTasks` -- sets the button's own
+   *  `aria-expanded` so a screen reader knows whether the pane it opens is
+   *  currently open, the same fact `allModulesExpanded` already reports for
+   *  "All modules". */
+  tasksExpanded?: boolean;
 };
 
 export function ControlStrip({
@@ -141,6 +155,8 @@ export function ControlStrip({
   loaded,
   allModulesExpanded,
   onToggleAllModules,
+  onToggleTasks,
+  tasksExpanded,
 }: ControlStripProps) {
   const empty = chain.segments.length === 0;
   // Same rule an (x) on the last segment already follows -- canCutAt refuses
@@ -333,15 +349,30 @@ export function ControlStrip({
         </button>
       )}
 
-      {/* 2026-09-07 -- TASKS, per the mock. Not a new mode or a new fetch:
-          the Task Master's own tabs (Home/Approval Pending/In Queue/
-          Completed/History) are already always visible above this strip,
-          exactly what the mock's own "Tasks" was a shortcut TO -- so this
-          reuses the same `onHome` handler HOME already calls rather than
-          inventing a second mechanism for "show me my tasks". */}
+      {/* 2026-09-07 -- TASKS, per the mock. ORIGINALLY reused the same
+          `onHome` handler HOME already calls, on the reasoning that the
+          Task Master's own tabs were "already always visible above this
+          strip" -- WRONG, corrected 2026-09-08 (owner, looking at real
+          Chrome: "the home, approved pending, in queue... is still in the
+          top... the Frequently Used is missing"). Read the frozen mock's
+          own DOM directly: it has NO Task Master tab row at all in its
+          default view -- "Frequent actions" is the very first thing in the
+          left panel, immediately under the rail. So Task Master was never
+          meant to be "always visible" here; TASKS is the mock's own control
+          for reaching it, which means it needs its OWN handler, not Home's.
+          `onToggleTasks` falls back to `onHome` when absent so every
+          existing caller/test that predates this control keeps compiling
+          and behaving exactly as before -- the same graceful-absence
+          pattern `onToggleAllModules` above already uses. See
+          M24Shell.tsx's `tasksExpanded` state and Composer.tsx's
+          `dockedOverTaskMaster` prop for the rest of the mechanism: the
+          Task Master pane and its tab row are collapsed by default now,
+          and this button is what expands them, in place, without
+          navigating anywhere. */}
       <button
         type="button"
-        onClick={onHome}
+        onClick={onToggleTasks ?? onHome}
+        aria-expanded={onToggleTasks ? tasksExpanded : undefined}
         className="veri-view-tab shrink-0"
         style={{ minWidth: 44, minHeight: 44 }}
       >

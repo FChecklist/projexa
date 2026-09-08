@@ -1,5 +1,44 @@
 # Changelog — projexa
 
+## Task Master was never meant to be always-visible; the mock's default view has none of it (2026-09-08)
+Owner, on real Chrome: "the home, approved pending, in queue, completed,
+history is still in the top right - why? / the Frequently Used is
+missing - why?" -- then: "make a new ui ux - a real ui ux - than copy
+those elements - and than wire it."
+
+Read the frozen mock's own DOM directly rather than guessing again: its
+left panel is `Frequent actions / rows / All modules Tasks Back Home /
+examples / input` -- no "Home (38) / Approval Pending..." tab row
+anywhere, and nothing above Frequent actions. The real app had Task
+Master's tabs+rows ALWAYS rendered above it (an earlier part's own
+comment said so explicitly), which is why Frequent actions read as
+"missing" -- buried under 20+ task rows and a "Show 20 more" button.
+
+This needed a real layout change, not a style tweak: `Composer.tsx`'s
+root has always been absolutely positioned, bottom-anchored, growing
+upward OVER a Task Master pane assumed to always be there and always
+taller. Fixed across four files, every new prop defaulting to today's
+exact unchanged behaviour: `M24Shell.tsx` gets a `tasksExpanded` state
+(false by default, same pattern "All modules" already uses one line
+above it); `ControlStrip.tsx`'s TASKS button gets its own real toggle
+handler instead of aliasing HOME; `Composer.tsx` gets a
+`dockedOverTaskMaster` prop that switches its root to normal top-anchored
+flow when there's no Task Master pane to float over; `AppShell.tsx` gets
+a `taskMasterExpanded` prop that collapses the reserved height to zero in
+that state. `M24Shell.tsx`'s own Task Master content is now gated on
+`tasksExpanded` -- except the `shellErrors` banner, deliberately outside
+the gate, so a real backend failure is never hidden behind a collapsed
+panel. Nothing about Task Master's own functionality changed -- same
+tabs, rows, actions, data, polling -- it is one click away behind the
+exact "Tasks" button the mock itself shows.
+
+Verified: typecheck clean, full suite 4088/4088 pass, lint clean,
+production build clean. Live-verified both states (collapsed default,
+expanded via Tasks) in the Claude Browser pane and real Chrome, at two
+viewports -- zero overlaps introduced, only the already-disclosed
+pre-existing Reset/KPI-card overlap survives (unrelated, unchanged). See
+CLAUDE.md's "Composer shell, part 13" for the full mechanism.
+
 ## "Frequent actions" rows were still the old capsule-button shape under the new icons (2026-09-08)
 Owner, looking at real Chrome: "the left side is still old one / you were
 to update it / only update the left side." Part 5-7 swapped each row's

@@ -139,6 +139,19 @@ export type AppShellProps = {
    * zero visual noise on the common path.
    */
   chainRail?: ReactNode;
+  /**
+   * 2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE. Default
+   * `true` reserves this pane's usual height (`calc(100% -
+   * COMPOSER_RESTING_HEIGHT - composerReserveExtra)`) exactly as before --
+   * every existing caller keeps the identical layout. `false` collapses
+   * that reservation to zero, so `taskMaster`'s own content (M24Shell.tsx
+   * renders nothing there in this state, past a real shellErrors banner if
+   * one exists) takes no visual space at all, and `composer` -- rendered
+   * with its own `dockedOverTaskMaster={false}` in that state -- sits in
+   * normal flow immediately below, rather than floating over a reserved
+   * gap with nothing in it.
+   */
+  taskMasterExpanded?: boolean;
 };
 
 /** M24: LEFT 30% / RIGHT 70%. Unchanged from the kit. */
@@ -151,6 +164,7 @@ export function AppShell({
   composer,
   composerReserveExtra = 0,
   chainRail,
+  taskMasterExpanded = true,
 }: AppShellProps) {
   return (
     // h-[100svh], not h-dvh -- unchanged from the kit; see its own comment on
@@ -208,7 +222,14 @@ export function AppShell({
             <div
               className="min-h-0 overflow-y-auto rounded-t-xl"
               style={{
-                height: `calc(100% - ${COMPOSER_RESTING_HEIGHT + composerReserveExtra}px)`,
+                // 2026-09-08 -- see `taskMasterExpanded`'s own doc comment
+                // above: collapsed to zero rather than the usual reserved
+                // height when there is no Task Master pane to show, so
+                // `composer` (rendered in normal flow in that same state)
+                // is not left floating over an empty reserved gap.
+                height: taskMasterExpanded
+                  ? `calc(100% - ${COMPOSER_RESTING_HEIGHT + composerReserveExtra}px)`
+                  : 0,
                 scrollbarGutter: "stable",
               }}
             >
