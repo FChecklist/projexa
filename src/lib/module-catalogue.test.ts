@@ -150,8 +150,16 @@ describe("moduleForPill", () => {
   });
 
   test("returns null for a pill with no PROJEXA screen", () => {
-    expect(moduleForPill("policies")).toBeNull();
+    // R80 Part 5: "policies" used to belong here and no longer does. It was a
+    // correct example of a backend pill with nothing to open right up until
+    // /grc/policies, /grc/policies/new and /grc/policies/[id] shipped; the
+    // catalogue now claims it because the screen genuinely exists. Swapped for
+    // two pills that are still really unbacked rather than deleting the case --
+    // the invariant (a pill the product cannot open must resolve to null, so
+    // the strip never offers a dead destination) is unchanged and still tested.
     expect(moduleForPill("email")).toBeNull();
+    expect(moduleForPill("manufacturing")).toBeNull();
+    expect(moduleForPill("helpdesk")).toBeNull();
   });
 });
 
