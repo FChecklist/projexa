@@ -1,0 +1,46 @@
+-- R81 SEC-05 -- stop anonymous callers enumerating any user's tenant memberships.
+--
+-- WHAT WAS WRONG. Three SECURITY DEFINER functions in `public` took the SUBJECT
+-- as a caller-supplied parameter and applied no check that the caller was that
+-- subject, while being explicitly granted EXECUTE to `anon`:
+--
+--   public.user_organization_ids(p_user_id uuid)
+--     `select organization_id from public.memberships where user_id = p_user_id`
+--     -- hand it any user's uuid and it returns that user's tenant list.
+--   public.user_admin_organization_ids(p_user_id uuid)   -- same shape, admin rows
+--   public.is_conversation_participant(p_conversation_id uuid, p_user_id uuid)
+--
+-- Because `public` is exposed over PostgREST, anyone holding the publishable
+-- anon key -- which ships inside PROJEXA's own client bundle -- could call
+-- /rest/v1/rpc/user_organization_ids with an arbitrary uuid. That is the same
+-- defect class as the mint-session Edge Function (R81_F40): a privileged
+-- routine that trusts a caller-supplied identity.
+--
+-- WHY THIS REVOKES FROM `anon` ONLY, AND NOT FROM `authenticated`.
+-- All three are called from inside live RLS policies -- on public.memberships
+-- ("members can view teammates in their organization", "users can claim owner on
+-- a brand new org...") and on public.conversation_participants ("participants can
+-- view co-participants", "participants can add participants..."). Those policies
+-- are declared FOR {public} and evaluate as the CALLING role, so an authenticated
+-- user reading their own memberships needs EXECUTE. Revoking from `authenticated`
+-- would not harden anything -- an authenticated caller can already see their own
+-- rows -- it would simply deny-all on the memberships table. The finding as
+-- originally written proposed revoking from both; that would have converted a
+-- privacy leak into an outage.
+--
+-- The policies pass `auth.uid()` into these functions, which is NULL for anon, so
+-- anon evaluation of those policies was already returning nothing useful. What
+-- anon loses here is the ability to call the functions DIRECTLY over /rpc with a
+-- uuid of its choosing, which is the whole vulnerability.
+--
+-- DELIBERATELY LEFT GRANTED TO anon:
+--   public.org_invite_preview(p_token text) -- the invite page renders before
+--     login and needs it; it is keyed by an unguessable token, not by a user id.
+--   public.accept_org_invite(p_token text)  -- already safe on its own terms: it
+--     raises errcode 28000 when auth.uid() is null and enforces an email match.
+--   public.organization_has_any_member(p_org_id uuid) -- leaks only a boolean
+--     about an org id the caller must already know, and is load-bearing in the
+--     "claim owner on a brand new org" INSERT policy. Noted, not changed here.
+REVOKE EXECUTE ON FUNCTION public.user_organization_ids(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.user_admin_organization_ids(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.is_conversation_participant(uuid, uuid) FROM anon;
