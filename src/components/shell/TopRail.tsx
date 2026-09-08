@@ -158,9 +158,19 @@ export function TopRail({
         /
       </span>
 
-      {/* THE PROJECT. Tinted so it reads as the one piece of context you act
-          against, using the kit's existing scope-tint tokens rather than a new
-          colour (M24-B / E-118: the palette is not to be re-invented).
+      {/* THE PROJECT.
+          2026-09-08 -- VISUAL-ONLY, per the owner's explicit mandate ("THE
+          FRONT END TO BE 100% COPY OF MOCK UI UX DESIGN"): the frozen
+          mock's own DOM (read directly) draws this as a plain WHITE, fully
+          rounded pill with no border -- `border-radius: 999px`, `background:
+          #fff`, no border at all. This used to be tinted with the kit's
+          `--color-scope-tint`/`--color-scope-tint-border` tokens (M24-B /
+          E-118's own reasoning: "reads as the one piece of context you act
+          against" -- a real, documented decision, not an oversight), which
+          drew a cream, 10px-radius, bordered chip instead. The mock's own
+          instruction now controls for how this is DRAWN; nothing about
+          WHAT it does changes -- same button, same aria-label/aria-live/
+          aria-expanded, same onClick, same switcher list underneath it.
           aria-live so a switch is announced -- acting on the wrong project is
           the expensive mistake, and a screen-reader user gets no tint. */}
       <div className="relative" ref={containerRef}>
@@ -172,10 +182,9 @@ export function TopRail({
           aria-label={
             project ? `Project: ${project.name}. Click to switch project.` : "No project selected. Click to choose a project."
           }
-          className="rounded-md border px-2 py-0.5 text-[12px] font-medium"
+          className="rounded-full px-2 py-0.5 text-[12px] font-medium"
           style={{
-            background: "var(--color-scope-tint)",
-            borderColor: "var(--color-scope-tint-border)",
+            background: "#fff",
             color: "var(--color-ct-navy)",
           }}
         >

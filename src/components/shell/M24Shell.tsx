@@ -3657,8 +3657,13 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                 {promptModule.examples.map((ex) => (
                   <span
                     key={ex}
+                    // 2026-09-08 -- VISUAL-ONLY, per the owner's "100% copy
+                    // of mock" mandate: the mock's own example chips are a
+                    // WHITE pill with a hairline border, not a bare-outline
+                    // one -- the border/radius/padding here already matched,
+                    // only the missing white fill did not.
                     className="rounded-full border px-1.5 py-0.5"
-                    style={{ borderColor: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
+                    style={{ background: "#fff", borderColor: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
                   >
                     {ex}
                   </span>

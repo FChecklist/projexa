@@ -1,5 +1,40 @@
 # Changelog — projexa
 
+## Fix a real textarea-height regression from the Task Master collapse, then a pixel/colour re-audit finds two more mismatches (2026-09-08)
+Owner found this live within minutes of the Task Master fix shipping: the
+composer's textarea was stuck at 220px tall, pushing the send button into
+a dead gap and shoving the example chips far down the panel. Root cause:
+collapsing Task Master relayouts the textarea from an absolutely-positioned
+box to a normal-flow one, and its auto-resize effect measured a bogus
+`scrollHeight` during that one-frame transition and never re-measured
+(depended only on `[value, taRef]`). Fixed with the same ResizeObserver
+pattern this file already uses for an identical stale-measurement bug
+elsewhere -- confirmed live: 46px on load, still grows to 127px for real
+typed text.
+
+Owner then asked for a full pixel-by-pixel, colour-by-colour recheck in
+both browsers. Reading computed styles directly off both the mock and the
+live app (not eyeballing screenshots) found two more real mismatches:
+
+- TopRail's project pill was a cream, 10px-radius, bordered chip (a real,
+  documented pre-mock decision) -- the mock draws it plain white, fully
+  rounded, no border. Fixed to match; same button, same handlers.
+- The composer's example-prompt chips had the mock's border/radius/padding
+  right but no white fill. Added it.
+
+Both confirmed byte-identical (`rgb(255,255,255)` / `border-radius:9999px`)
+to the mock in the Claude Browser pane and real Chrome, two different
+accounts. Disclosed, not changed: the app's own muted-text colour is a
+cool "slate" family used everywhere, vs. the mock's warm grey -- re-theming
+the whole app's grey scale is a much larger undertaking than matching one
+control's shape, same reasoning as Filter/Export's own style earlier.
+
+Verified: typecheck clean, full suite 4088/4088 pass (isolated), lint
+clean, production build clean. Full left-panel navigation re-confirmed
+working after all of today's changes combined. See CLAUDE.md's "Composer
+shell, part 14" for the full mechanism, including a test-suite timing
+flake now confirmed twice (documented, not a regression).
+
 ## Task Master was never meant to be always-visible; the mock's default view has none of it (2026-09-08)
 Owner, on real Chrome: "the home, approved pending, in queue, completed,
 history is still in the top right - why? / the Frequently Used is

@@ -342,8 +342,24 @@ export function ControlStrip({
           type="button"
           onClick={onToggleAllModules}
           aria-expanded={allModulesExpanded}
-          className="veri-view-tab shrink-0"
-          style={{ minWidth: 44, minHeight: 44 }}
+          // 2026-09-08 -- VISUAL-ONLY, per the frozen mock's own DOM (read
+          // directly, not guessed): this row is five flat 11px links, not
+          // five chrome-y `.veri-view-tab` buttons -- 12px/weight-500 text
+          // on a padded, rounded, hover-tinted box. "All modules" and
+          // "Tasks" specifically are ALSO coloured `rgb(24,95,165)` in the
+          // mock (the new `--color-ct-link` token, added for exactly this
+          // -- see its own comment in globals.css) because they OPEN a
+          // panel, distinct from Back/Home/Reset which stay this app's
+          // ordinary muted grey. `hover:underline` replaces
+          // `.veri-view-tab`'s hover background -- the mock is a static
+          // render with no hover state to copy, so this is the same
+          // convention a flat text link already uses everywhere else. The
+          // real 44x44 hit area is unchanged (still `minWidth`/`minHeight`
+          // below) -- these buttons sit side by side, not stacked like the
+          // Frequent-actions pin, so a real 44px box here cannot overlap a
+          // neighbour the way that one could.
+          className="flex shrink-0 items-center justify-center hover:underline"
+          style={{ minWidth: 44, minHeight: 44, fontSize: 11, fontWeight: 400, color: "var(--color-ct-link)" }}
         >
           {allModulesExpanded ? "Show fewer" : "All modules"}
         </button>
@@ -373,8 +389,11 @@ export function ControlStrip({
         type="button"
         onClick={onToggleTasks ?? onHome}
         aria-expanded={onToggleTasks ? tasksExpanded : undefined}
-        className="veri-view-tab shrink-0"
-        style={{ minWidth: 44, minHeight: 44 }}
+        // 2026-09-08: see "All modules" button's own comment above -- same
+        // flat-link restyle, same `--color-ct-link` (this one also opens a
+        // panel), same unchanged 44x44 hit area.
+        className="flex shrink-0 items-center justify-center hover:underline"
+        style={{ minWidth: 44, minHeight: 44, fontSize: 11, fontWeight: 400, color: "var(--color-ct-link)" }}
       >
         Tasks
       </button>
@@ -390,10 +409,15 @@ export function ControlStrip({
         disabled={!canGoBack}
         aria-label="Back one step"
         title="Back one step"
-        className="veri-view-tab shrink-0 disabled:opacity-40"
-        style={{ minWidth: 44, minHeight: 44 }}
+        // 2026-09-08: see "All modules" button's own comment above -- same
+        // flat-link restyle. Back/Home/Reset stay the app's ordinary muted
+        // grey in the mock (they navigate/discard rather than open a
+        // panel), so no `--color-ct-link` here -- only the chrome/size
+        // change applies.
+        className="flex shrink-0 items-center justify-center hover:underline disabled:no-underline disabled:opacity-40"
+        style={{ minWidth: 44, minHeight: 44, fontSize: 11, fontWeight: 400, color: "var(--color-ct-muted)" }}
       >
-        <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+        <span aria-hidden className="mr-1">
           ‹
         </span>
         Back
@@ -408,8 +432,11 @@ export function ControlStrip({
       <button
         type="button"
         onClick={onHome}
-        className="veri-view-tab shrink-0"
-        style={{ minWidth: 44, minHeight: 44 }}
+        // 2026-09-08: see "All modules" button's own comment above -- same
+        // flat-link restyle, muted grey (not `--color-ct-link` -- Home
+        // navigates, it doesn't open a panel).
+        className="flex shrink-0 items-center justify-center hover:underline"
+        style={{ minWidth: 44, minHeight: 44, fontSize: 11, fontWeight: 400, color: "var(--color-ct-muted)" }}
       >
         Home
       </button>
@@ -426,10 +453,13 @@ export function ControlStrip({
         onClick={onReset}
         aria-label="Reset the chain"
         title="Reset the chain"
-        className="veri-view-tab shrink-0"
-        style={{ minWidth: 44, minHeight: 44 }}
+        // 2026-09-08: see "All modules" button's own comment above -- same
+        // flat-link restyle, muted grey (Reset discards, it doesn't open a
+        // panel).
+        className="flex shrink-0 items-center justify-center hover:underline"
+        style={{ minWidth: 44, minHeight: 44, fontSize: 11, fontWeight: 400, color: "var(--color-ct-muted)" }}
       >
-        <span aria-hidden className="mr-1" style={{ color: "var(--color-ct-muted)" }}>
+        <span aria-hidden className="mr-1">
           ↺
         </span>
         Reset

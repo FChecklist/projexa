@@ -127,6 +127,19 @@
      TopRail.tsx's own header background. */
   --color-topbar-tint: #EEEDFE;
 
+  /* ─── 2026-09-08: the control strip's own "opens something" link colour,
+     per the frozen mock ──────────────────────────────────────────────────
+     Read directly off the mock's own DOM: "All modules" and "Tasks" (the
+     two controls in this row that OPEN or TOGGLE a panel) are coloured
+     `rgb(24,95,165)`, while "Back"/"Home"/"Reset" (which navigate/discard
+     rather than open anything) stay the app's ordinary muted grey. Same
+     situation as `--color-topbar-tint` above: no blue hue exists anywhere
+     in this app's real palette (navy/saffron/teal/coral-ish) to derive
+     this from with color-mix(), so it is declared here rather than
+     approximated from a token that isn't actually blue. Used only by
+     ControlStrip.tsx's own "All modules"/"Tasks" buttons. */
+  --color-ct-link: #185FA5;
+
   /* ─── Semantic Colors (unchanged -- veridian-ui-kit doesn't define
      success/warning/error/info tones yet; these stay PROJEXA-local until
      it does) ─── */

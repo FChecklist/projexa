@@ -302,12 +302,48 @@ export function Composer({
 
   // The box sizes ITSELF. This is the whole of the sizing logic, and it is
   // deliberately not user-controllable.
-  useEffect(() => {
+  //
+  // 2026-09-08 -- FOUND LIVE: a STALE measurement, not a value change. The
+  // effect below used to depend on `[value, taRef]` alone, on the
+  // assumption that the only thing that ever needs a fresh height is new
+  // text. Collapsing Task Master (this file's own `dockedOverTaskMaster`
+  // prop, part of the same change) relayouts this textarea from an
+  // absolutely-positioned box whose width was always immediately stable to
+  // a normal-flow one whose real width can still be settling for a frame
+  // or two while the sibling Task Master area's reserved height animates
+  // to 0 -- and a `scrollHeight` read taken against that transitional,
+  // too-narrow width wraps the 2-row placeholder into many lines,
+  // producing a bogus large number that then clamps at the 220px ceiling
+  // and STAYS there forever, because nothing in `[value, taRef]` ever
+  // changes again to re-run this effect. Confirmed live: manually
+  // resetting `style.height = "auto"` after the page had fully settled
+  // measured a real `scrollHeight` of 46px, not 220 -- the layout was
+  // correct, only the ONE measurement taken during the transition was not.
+  //
+  // Same class of bug as `rootRef`'s own ResizeObserver above (see its
+  // comment: "measure again once layout truly settles"), same fix: switch
+  // the initial call to a dependency-free `useLayoutEffect` (reruns after
+  // every commit, not just a `value` change) and add a ResizeObserver on
+  // the textarea's own parent so a LATER, non-React-driven layout settle
+  // (exactly what Task Master's height animating to 0 is) re-measures too.
+  useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
-  }, [value, taRef]);
+  });
+  useEffect(() => {
+    const ta = taRef.current;
+    const container = ta?.parentElement;
+    if (!ta || !container) return;
+    const resize = () => {
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [taRef]);
 
   const sendDisabled = !canSend || busy || !onSubmit;
 
