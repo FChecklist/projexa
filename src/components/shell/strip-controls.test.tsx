@@ -189,19 +189,25 @@ describe("44 px minimums, on the elements that produce the box", () => {
     for (const remove of getAllByText("Remove")) atLeast44(remove.closest("button")!);
   });
 
-  // 2026-09-07 -- the pill strip's Pin now overrides `.veri-icon-btn`'s
-  // normal fixed 30x30 with an explicit width/height (not min-width/
-  // min-height -- an explicit `width` on the class would otherwise ignore
-  // a min-width), so this asserts THAT property instead of `atLeast44`'s
-  // min-width/min-height, on the same two states as before.
+  // 2026-09-08 -- CORRECTED from a 44px assertion (see PillStrip.tsx's own
+  // header for the full reasoning). The pill strip's rows were rebuilt to
+  // match the frozen mock's own compact, flat-row shape -- the previous
+  // 44x44 pin button was sized to defeat `.veri-icon-btn`'s 30x30 default,
+  // but a real 44px box centred on a ~24px-tall row, at the mock's own 4px
+  // row spacing, physically overlaps the NEXT row's own pin target. The
+  // largest box that does NOT overlap a neighbour is the row's own compact
+  // height (~22px) -- still well clear of the ~14px bare-glyph case R67
+  // A-18 was originally about, short of 44px because the mock's own
+  // spacing forecloses it here. This asserts that disclosed figure, on the
+  // same two states as before.
   test("Pin, in both of its states", () => {
     const { container } = renderPillStrip();
     const buttons = [...container.querySelectorAll("button")];
     const pin = buttons.find((b) => b.getAttribute("aria-label") === "Pin Record progress so it never drops off")!;
     const pinned = buttons.find((b) => b.getAttribute("aria-label") === "Pinned: Run WPR")!;
     for (const button of [pin, pinned]) {
-      expect(button.style.width).toBe("44px");
-      expect(button.style.height).toBe("44px");
+      expect(button.style.width).toBe("22px");
+      expect(button.style.height).toBe("22px");
     }
   });
 

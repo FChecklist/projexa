@@ -66,9 +66,43 @@ import { CircleHelp, Pencil, Play, RotateCcw, Star } from "lucide-react";
 // into the tooltip/aria-label, which is where a screen reader already reads
 // it from; a lucide icon distinguishes by SHAPE, not colour, which is the
 // actual thing R67 A-18's original rule protected against ("a strip whose
-// meaning is carried by hue alone"). The pin's click target stays a real
-// 44x44 hit area via padding even though the drawn icon itself is small, so
-// this is a strictly visual change, not a touch-target regression.
+// meaning is carried by hue alone").
+//
+// 2026-09-08 -- CORRECTION, same standing rule ("mock's drawing wins for
+// any still-existing control, only HOW it's drawn changes"). The pass above
+// swapped the badge/text for an icon/star but left every row's own
+// CONTAINER as `.veri-mode-pill` -- a kit class whose own CSS
+// (`border-radius: 999px`, and a rendered height of 40px once its sibling
+// pin button and Tailwind's own cascade are accounted for) draws a big
+// rounded CAPSULE button, the exact "old UI" look the owner pointed at
+// directly ("the left side is still old one... you were to update it").
+// The frozen mock's own DOM for this band (read from the live mock, not
+// guessed) is a flat, compact row -- `border-radius: 8px`, `padding: 3px
+// 6px`, one 11px line, icon and label on the left, the pin star at the
+// row's own right EDGE, inside the same tinted background -- never a pill.
+// `.veri-mode-pill`/`rounded-full` are dropped for these three row groups
+// (screenCards/recent/ranked cards) below in favour of that exact shape,
+// built with plain flex + the same `--color-kpi-tint-positive` tint
+// already in use. Every prop/handler/aria-label/disabled-state is
+// byte-for-byte unchanged.
+//
+// THE ONE DELIBERATE, DISCLOSED TRADE-OFF: the pin star's own real hit box
+// is now ~22x22 (the row's own compact height), not the previous 44x44.
+// A literal 44px target does not fit here without physically overlapping
+// the NEXT row's own pin hit-area -- these rows sit 4px apart (the mock's
+// own spacing), and 44px centred on a ~24px-tall row already overflows
+// +/-10px into the neighbour on each side, so two adjacent 44px targets
+// would overlap by ~16px, meaning a tap near the shared edge could pin the
+// WRONG row. Rather than silently keep the old 44px box (which would
+// reproduce the exact capsule-shaped oversizing this fix removes) or
+// silently shrink it without saying so, this is written down as the
+// standing rule's own answer to a case it hasn't hit before: the mock's
+// compact spacing physically forecloses the ideal target size for a
+// same-row icon control, so the largest NON-OVERLAPPING box is used
+// instead -- strictly bigger than the ~14px bare-glyph case R67 A-18 was
+// originally about, short of the 44px this codebase prefers everywhere
+// else. `strip-controls.test.tsx` documents this instead of asserting the
+// old 44px figure.
 const KIND_ICON: Record<string, typeof Pencil> = {
   write: Pencil,
   record: Pencil,
@@ -237,7 +271,7 @@ export function PillStrip({
           language of its own. Every prop, handler, aria-label and disabled
           state below is unchanged -- this is a layout/style pass only.
       */}
-      <div className="flex flex-col gap-1" role="group" aria-label="Things you can do">
+      <div className="flex flex-col gap-[3px]" role="group" aria-label="Things you can do">
         {loading ? (
           <>
             <SkeletonCards />
@@ -263,11 +297,11 @@ export function PillStrip({
                   onClick={() => onSelectScreenCard?.(card.id)}
                   aria-label={`${card.verb}: ${card.label}`}
                   title={`${card.verb}: ${card.label}`}
-                  className="veri-mode-pill active w-full justify-start rounded-lg"
-                  style={{ background: "var(--color-kpi-tint-positive)" }}
+                  className="flex w-full items-center gap-1 rounded-[8px] border-0 text-left"
+                  style={{ background: "var(--color-kpi-tint-positive)", padding: "3px 6px", fontSize: 11 }}
                 >
-                  <Icon aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
-                  {card.label}
+                  <Icon aria-hidden size={12} className="shrink-0" style={{ color: "var(--color-ct-muted)" }} />
+                  <span className="min-w-0 truncate">{card.label}</span>
                 </button>
               );
             })}
@@ -286,23 +320,29 @@ export function PillStrip({
                 onClick={() => onSelectRecent?.(chain)}
                 aria-label={`Do again: ${chain.label}${chain.outcome === "failed" ? " (failed last time)" : ""}`}
                 title={`Do again: ${chain.fullChain}`}
-                className="veri-mode-pill w-full justify-start rounded-lg"
-                style={{ background: "var(--color-kpi-tint-positive)" }}
+                className="flex w-full items-center gap-1 rounded-[8px] border-0 text-left"
+                style={{ background: "var(--color-kpi-tint-positive)", padding: "3px 6px", fontSize: 11 }}
               >
-                <RotateCcw aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
-                {chain.label}
-                {chain.outcome === "failed" && (
-                  <span className="ml-1 text-[10px]" style={{ color: "var(--color-veri-status-late)" }}>
-                    failed last time
-                  </span>
-                )}
+                <RotateCcw aria-hidden size={12} className="shrink-0" style={{ color: "var(--color-ct-muted)" }} />
+                <span className="min-w-0 truncate">
+                  {chain.label}
+                  {chain.outcome === "failed" && (
+                    <span className="ml-1" style={{ color: "var(--color-veri-status-late)" }}>
+                      failed last time
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
             {cards.map((card) => {
             const blocked = card.disabledReason !== null;
             const Icon = iconForKind(card.kindWord);
             return (
-              <span key={card.id} className="flex w-full items-center gap-1">
+              <span
+                key={card.id}
+                className="flex w-full items-center gap-1 rounded-[8px]"
+                style={{ background: "var(--color-kpi-tint-positive)", padding: "3px 6px" }}
+              >
                 <button
                   type="button"
                   onClick={() => onSelect(card.id)}
@@ -311,44 +351,43 @@ export function PillStrip({
                   // the tooltip, so it is available before the click, not after.
                   aria-label={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
                   title={blocked ? card.disabledReason! : `${card.kindWord}: ${card.label}`}
-                  className="veri-mode-pill disabled:opacity-45 min-w-0 flex-1 justify-start rounded-lg"
-                  style={{ background: "var(--color-kpi-tint-positive)" }}
+                  className="flex min-w-0 flex-1 items-center gap-1 border-0 bg-transparent text-left disabled:opacity-45"
+                  style={{ fontSize: 11 }}
                 >
                   {/* THE KIND, BY SHAPE, NOT COLOUR ALONE (R67 A-18's actual
                       rule) -- the word itself moved into the aria-label/title
                       above, which is where a screen reader and a hover both
                       already read it from. */}
-                  <Icon aria-hidden size={12} className="mr-1 shrink-0" style={{ color: "var(--color-ct-muted)" }} />
-                  {card.label}
+                  <Icon aria-hidden size={12} className="shrink-0" style={{ color: "var(--color-ct-muted)" }} />
+                  <span className="min-w-0 truncate">{card.label}</span>
                   {card.pinned && (
-                    <Star aria-hidden size={12} className="ml-1 shrink-0" fill="var(--color-ct-saffron)" style={{ color: "var(--color-ct-saffron)" }} />
+                    <Star aria-hidden size={12} className="shrink-0" fill="var(--color-ct-saffron)" style={{ color: "var(--color-ct-saffron)" }} />
                   )}
                 </button>
                 {onTogglePin && (
-                  // 2026-09-07 -- VISUAL-ONLY per the mock: a small star, not
-                  // a 44x44 "Pin"/"Pinned" text button. The accessible name,
-                  // aria-pressed and the click handler are byte-for-byte the
-                  // same props as before -- a screen reader still hears the
-                  // full word, exactly as R67 A-18 required. `.veri-icon-btn`
-                  // is normally a fixed 30x30 (below the 44px minimum); the
-                  // explicit width/height below overrides that (inline style
-                  // beats the class for the same property) so the real hit
-                  // area is 44x44 even though the drawn star icon is small --
-                  // a visual change, not a touch-target regression.
+                  // 2026-09-08 -- see this file's header for the full
+                  // reasoning. Was a 44x44 hit area on a `.veri-icon-btn`
+                  // (a kit class whose own 30x30 default the old inline
+                  // width/height overrode); now a plain, un-classed button
+                  // sized to the row's own compact height (~22px) instead --
+                  // the largest box that does NOT overlap the next row's own
+                  // pin target at the mock's own 4px row spacing. The
+                  // accessible name, aria-pressed and the click handler are
+                  // byte-for-byte the same props as before.
                   <button
                     type="button"
                     onClick={() => onTogglePin(card.id)}
                     aria-pressed={card.pinned}
                     aria-label={card.pinned ? `Pinned: ${card.label}` : `Pin ${card.label} so it never drops off`}
                     title={card.pinned ? "Pinned — never drops off" : "Pin — never drops off"}
-                    className="veri-icon-btn shrink-0"
-                    style={{ width: 44, height: 44 }}
+                    className="flex shrink-0 items-center justify-center rounded border-0 bg-transparent"
+                    style={{ width: 22, height: 22 }}
                   >
                     <Star
                       aria-hidden
-                      size={14}
+                      size={12}
                       fill={card.pinned ? "var(--color-ct-saffron)" : "none"}
-                      style={{ color: "var(--color-ct-saffron)" }}
+                      style={{ color: card.pinned ? "var(--color-ct-saffron)" : "var(--color-ct-muted)" }}
                     />
                   </button>
                 )}

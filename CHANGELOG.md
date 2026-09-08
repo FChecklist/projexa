@@ -1,5 +1,70 @@
 # Changelog — projexa
 
+## "Frequent actions" rows were still the old capsule-button shape under the new icons (2026-09-08)
+Owner, looking at real Chrome: "the left side is still old one / you were
+to update it / only update the left side." Part 5-7 swapped each row's
+kind-word badge for an icon and "Pin"/"Pinned" for a star, but left every
+row on `.veri-mode-pill` -- a kit class whose own CSS draws a fully
+rounded capsule, never actually replaced with the mock's real shape. Read
+the mock's own DOM directly this time: a flat 11px row, `padding: 3px 6px`,
+`border-radius: 8px`, icon+label left, a small MUTED-gray star (not
+orange, unless actually pinned) at the row's own right edge. Rebuilt all
+three row groups (screen cards, "Do again", ranked cards) in
+`PillStrip.tsx` to that exact shape; every handler/aria-label/pressed-state
+is unchanged. One disclosed trade-off: the pin star's real hit box is now
+~22x22, not 44x44 -- a literal 44px box on these 4px-apart, ~22px-tall
+rows would overlap the next row's own target, so the largest
+non-overlapping box was used instead (`strip-controls.test.tsx` asserts
+this new figure, with the reasoning written down, not silently changed).
+Verified: typecheck clean, shell test dir 264/264 pass, computed styles
+read directly from the DOM in both the Claude Browser pane and real Chrome
+match the mock's own values exactly. See CLAUDE.md's "Composer shell, part
+12" for the full mechanism.
+
+## Dropped the dashboard's redundant project-name heading, then a full left↔right wiring sweep found and fixed one real bug (2026-09-08)
+Owner: "check real chrome and confirm it matches too, also check using
+your inbuilt browser, i want right side panel to be checked" -- then,
+after that confirmed, asked for an exhaustive boolean pass/fail test of
+every left-panel control driving the right panel and every right-panel
+control driving the left, across every module and chain option, with
+wiring/functionality required to stay the old app's.
+
+- **Heading fix**: `/dashboard/project` read "Dashboard / <project
+  name>"; the mock's own heading is plain "Dashboard" (the project
+  already names itself in the TopRail pill above). No documented
+  rationale for the repetition (unlike the money-formatting fix
+  elsewhere in the same file), so dropped. Verified live in both real
+  Chrome (reconnected -- unreachable on the two prior attempts, not a
+  blip) and the Claude Browser pane.
+- **Wiring sweep**: all 14 `module-catalogue.ts` modules and all 13
+  create-leaf routes navigated and chain-verified; live click round
+  trips confirmed both directions (All modules catalogue → Permits →
+  Open navigated the right panel; the Permits screen's own "+ New"
+  button navigated the right panel **and** updated the left panel's
+  chain); Home/Reset/Back/Pin/a Quick-actions link all confirmed
+  correct. The Projects/Customers/Vendors "mode" tabs the item asked
+  about are intentionally absent (R67 A-22, pre-dates this session) --
+  confirmed, not re-litigated.
+- **Real bug found + fixed**: `budgets/page.tsx`'s `/budgets` →
+  `/finance/budgets` redirect (R67 D-62) was dropping its query string
+  -- unlike its own sibling redirects (`/budgets/new`, `/budgets/[id]`),
+  which already forward theirs. That meant the composer's left panel
+  lost the project entirely on the real destination screen. Fixed by
+  forwarding the query string, matching the sibling pattern exactly.
+  Pre-existing since 2026-09-03, unrelated to any visual work this
+  session -- found only because this pass tested the full round trip.
+- **Disclosed, not fixed**: `/finance/budgets` and
+  `/design-studio/timesheets/new` aren't in `module-catalogue.ts`'s
+  prefix lists, so the composer still can't name a module segment on
+  those two destinations (though the project-context bug above is
+  fixed) -- a product decision, not a bug with one obvious fix.
+
+Verified: typecheck clean, full suite 4088/4088 pass (twice -- one
+interim run hit the repo's own already-documented `BudgetCreateClient`
+flake, cleared on re-run), lint clean, production build clean. See
+CLAUDE.md's "Composer shell, part 11" for the full mechanism, including
+a dev-mode first-compile-lag gotcha this sweep ran into and resolved.
+
 ## Add the missing "Frequent actions" heading and the bottom row's real fourth/fifth controls (2026-09-08)
 Owner: "not only bottom control, the top and centre also to be updated,"
 after re-sending the mock's left panel specifically. Three pieces, all

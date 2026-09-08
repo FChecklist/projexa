@@ -434,9 +434,15 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
 
   return (
     <DashboardScreen
-      // The breadcrumb is the frame, and the frame paints first: the project's
-      // name fills in when it arrives rather than holding the page.
-      breadcrumb={d ? `Dashboard / ${d.projectName}` : "Dashboard"}
+      // 2026-09-08 -- VISUAL-ONLY, per the frozen mock ("copy it exactly...
+      // 100% copied as it is"): the mock's own heading is plain "Dashboard",
+      // never "Dashboard / <project name>" -- the project is already named,
+      // prominently, in the top rail's own pill (TopRail.tsx), immediately
+      // above this heading. Repeating it here was never a documented
+      // decision (no rationale like the money-formatting fix elsewhere in
+      // this file), just an unscrutinized default -- dropped rather than
+      // kept on a guess.
+      breadcrumb="Dashboard"
       // DASHBOARD.PROJECT: "+ New suppressed" -- documented override, this
       // screen answers a question, it doesn't create records.
       newAction={undefined}
