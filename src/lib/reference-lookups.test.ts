@@ -9,7 +9,7 @@
 //   3. a failure is NOT cached -- the next mount retries, rather than the tab
 //      believing "this org has no vendors" for a whole minute.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { loadVendors, invalidateVendors } from "./reference-lookups";
+import { invalidateVendors, loadVendors, rememberedOption, soleOptionId } from "./reference-lookups";
 
 const realFetch = globalThis.fetch;
 let requestedUrls: string[] = [];
@@ -84,5 +84,58 @@ describe("loadVendors", () => {
     await loadVendors();
 
     expect(requestedUrls).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R80 GAP-8 -- the create-screen default derivations.
+//
+// Every one of these tests is the same question asked twice: does it seed when
+// the answer is genuinely determined, and does it REFUSE to seed when it is
+// not? The refusals matter more than the seeds -- a create screen that fills a
+// field in with a plausible guess gets that guess saved.
+// ---------------------------------------------------------------------------
+
+describe("soleOptionId", () => {
+  test("exactly one row is not a choice, so it is the answer", () => {
+    expect(soleOptionId([{ id: "wh-1" }])).toBe("wh-1");
+  });
+
+  test("two rows is a real question and stays unanswered", () => {
+    expect(soleOptionId([{ id: "wh-1" }, { id: "wh-2" }])).toBeNull();
+  });
+
+  test("an empty, null or undefined list seeds nothing", () => {
+    expect(soleOptionId([])).toBeNull();
+    expect(soleOptionId(null)).toBeNull();
+    expect(soleOptionId(undefined)).toBeNull();
+  });
+
+  test("a blank id is no id -- it would set the field to the empty answer", () => {
+    expect(soleOptionId([{ id: "" }])).toBeNull();
+    expect(soleOptionId([{ id: "   " }])).toBeNull();
+  });
+
+  test("extra columns on the row are irrelevant; only the id is read", () => {
+    expect(soleOptionId([{ id: "cust-9", customerName: "Al Noor Contracting" }])).toBe("cust-9");
+  });
+});
+
+describe("rememberedOption", () => {
+  test("a remembered id that is still offered comes back", () => {
+    expect(rememberedOption("mat-steel", ["mat-cement", "mat-steel"])).toBe("mat-steel");
+  });
+
+  test("a remembered id that has since been retired is NOT re-selected", () => {
+    expect(rememberedOption("mat-old", ["mat-cement", "mat-steel"])).toBeNull();
+  });
+
+  test("nothing remembered, and nothing to offer, both mean no suggestion", () => {
+    expect(rememberedOption(null, ["a"])).toBeNull();
+    expect(rememberedOption(undefined, ["a"])).toBeNull();
+    expect(rememberedOption("", ["a"])).toBeNull();
+    expect(rememberedOption("  ", ["a"])).toBeNull();
+    expect(rememberedOption("a", [])).toBeNull();
+    expect(rememberedOption("a", null)).toBeNull();
   });
 });

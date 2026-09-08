@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 
 type Employee = { id: string; name: string };
 
@@ -25,7 +26,19 @@ export default function LeaveBalanceCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchJson<{ employees?: Employee[] }>("/api/employees").then((d) => setEmployees(d.employees ?? [])).catch(() => {});
+    fetchJson<{ employees?: Employee[] }>("/api/employees")
+      .then((d) => {
+        const rows = d.employees ?? [];
+        setEmployees(rows);
+        // R80 GAP-8: Employee is required here, and a roster of one leaves
+        // nothing to pick. Deliberately NOT defaulted to the signed-in user --
+        // this is an administrator setting somebody else's entitlement, so
+        // "me" would be a guess about whose balance is being set, which is
+        // exactly the kind of default this sweep refuses to invent.
+        const sole = soleOptionId(rows);
+        if (sole) setUserId((prev) => prev || sole);
+      })
+      .catch(() => {});
   }, []);
 
   async function saveBalance() {

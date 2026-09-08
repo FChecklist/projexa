@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 
 type ItemRow = { id: string; itemCode: string; itemName: string };
 type WarehouseRow = { id: string; warehouseName: string };
@@ -29,7 +30,23 @@ export default function StockEntryCreateClient() {
 
   useEffect(() => {
     fetchJson<{ items?: ItemRow[] }>("/api/inventory/items").then((d) => setItems(d.items ?? [])).catch(() => {});
-    fetchJson<{ warehouses?: WarehouseRow[] }>("/api/inventory/warehouses").then((d) => setWarehouses(d.warehouses ?? [])).catch(() => {});
+    fetchJson<{ warehouses?: WarehouseRow[] }>("/api/inventory/warehouses")
+      .then((d) => {
+        const rows = d.warehouses ?? [];
+        setWarehouses(rows);
+        // R80 GAP-8. Most construction orgs run ONE store. Making a storekeeper
+        // open a dropdown to choose the only warehouse there is, on every
+        // movement they record all day, is the clearest "the system should
+        // pre-populate before the user asks" case on this screen -- there is no
+        // second answer for the default to be wrong about.
+        //
+        // Seeded through the updater so a pick made while the list was still in
+        // flight wins; the control is a normal, fully editable select, and the
+        // seeding stops on its own the day a second warehouse exists.
+        const sole = soleOptionId(rows);
+        if (sole) setWarehouseId((prev) => prev || sole);
+      })
+      .catch(() => {});
   }, []);
 
   async function recordEntry() {

@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useCurrencies } from "@/lib/currency";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { EMPTY_VALUE } from "@/lib/format-money";
@@ -35,6 +36,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
   boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
+  TITLE_REQUIRED_MESSAGE,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 
@@ -72,6 +74,14 @@ export default function ScopeObjectClient({
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  // R80/GAP-14: the HEADER edit. Display/edit is the same two-state machine
+  // MaterialObjectClient and VendorObjectClient already use on this archetype;
+  // it governs the BOQ's own title only -- the per-line cells below stay
+  // directly editable in display mode exactly as before, because they are
+  // commercial annotation written through their own endpoint.
+  const [mode, setMode] = useState<"display" | "edit">("display");
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingHeader, setSavingHeader] = useState(false);
   // R67 lane I (WS-I item I-05, R-177): the org's category list, so the
   // Category column is a real pick-list here too and not free text that would
   // invent a new category on every typo.
@@ -241,6 +251,56 @@ export default function ScopeObjectClient({
     }
   }
 
+  /**
+   * R80/GAP-14. THE HEADER EDIT, AND WHY IT IS THE TITLE AND NOTHING ELSE.
+   *
+   * A BOQ's title was write-once: it was typed on the New BOQ screen, copied
+   * forward into every revision by the backend's createBoqRevision(), and
+   * correctable only by deleting the BOQ -- which is itself draft-only. So a
+   * typo on a submitted or approved BOQ was permanent.
+   *
+   * Every OTHER header column is refused by the API (see the field allow-list
+   * in api/scope/[id]/route.ts) because it is lineage or workflow state:
+   * version and parentBoqId are what boq-lineage.ts walks to decide which
+   * revision is Current -- and the Work Progress Report is priced off that --
+   * status belongs to Submit/Approve/Create Revision, and projectId would
+   * leave this BOQ's own recorded progress behind on the old project. So the
+   * form below has exactly one field, and the lines keep their own editor.
+   */
+  function startEdit() {
+    if (!boq) return;
+    setTitleDraft(boq.title);
+    setMode("edit");
+  }
+
+  async function saveHeader() {
+    const title = titleDraft.trim();
+    if (!title) { toast.error(TITLE_REQUIRED_MESSAGE); return; }
+    setSavingHeader(true);
+    try {
+      const res = await fetch(`/api/scope/${boqId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const data = await res.json().catch(() => ({}));
+      // A 409 here is the revision-lineage guard: this BOQ was superseded (or
+      // revised) between the page loading and Save being pressed. The
+      // upstream's own sentence is shown rather than a generic failure, and
+      // the screen is reloaded so it stops offering an edit it cannot make.
+      if (!res.ok) {
+        if (res.status === 409) await load();
+        throw new Error(data.error ?? "Couldn't save this BOQ");
+      }
+      setBoq((prev) => (prev ? { ...prev, title: typeof data.title === "string" ? data.title : title } : prev));
+      setMode("display");
+      toast.success("BOQ saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save this BOQ");
+    } finally {
+      setSavingHeader(false);
+    }
+  }
+
   // R67 D-67: deleting a BOQ takes its line items with it, and a QS may
   // have spent an afternoon building them. The kit fired this from a single
   // click. Declared before the early returns below, because a hook must be.
@@ -275,6 +335,32 @@ export default function ScopeObjectClient({
   const total = boqTotal(rows);
   const isDraft = boq.status === "draft";
 
+  // R80/GAP-14 -- THE ONE STATE IN WHICH THE HEADER IS FROZEN.
+  //
+  // A SUPERSEDED revision is a closed historical record: /scope/{id}/compare
+  // renders it as "what was agreed before", and the banner above reads
+  // "Supersedes RevN · variation X". Renaming it after the fact rewrites a
+  // document that was signed off, and does so invisibly -- the revision that
+  // replaced it goes on showing its own title. So Edit is withheld there, with
+  // the reason ON SCREEN (KitObjectScreen draws it disabled rather than
+  // hiding it), never as a button that fails after the click. The same rule is
+  // enforced for real upstream, inside VERIDIAN's own tenant transaction,
+  // where it cannot race a concurrent Create Revision.
+  //
+  // Both halves of "superseded" are tested, not just the status column:
+  // createBoqRevision() sets status='superseded' AND inserts a child carrying
+  // parentBoqId = this id, so a row whose status drifted is still refused.
+  // Draft, submitted and approved BOQs are all editable -- an approval is over
+  // the priced scope, and blocking a title correction on the current revision
+  // is the exact fault this closes.
+  const headerEditReason =
+    boq.status === "superseded"
+      ? "Superseded - Lines change through a revision - use Create Revision"
+      : successor
+        ? `Already revised into ${revisionLabel(successor.version)} - edit that revision instead`
+        : null;
+  const canEditHeader = headerEditReason === null;
+
   return (
     <>
     {/* R67 A-21 -- THE STRIP NAMES THIS BOQ, AND ITS PROJECT.
@@ -289,9 +375,9 @@ export default function ScopeObjectClient({
     <ObjectContext moduleId="scope" label={boq.title} projectId={boq.projectId} />
     <KitObjectScreen
       breadcrumb={SCOPE_OBJECT_BREADCRUMB.breadcrumb}
-      title={boq.title}
+      title={mode === "edit" ? "Edit BOQ" : boq.title}
       subtitle={`Version ${boq.version}`}
-      mode="display"
+      mode={mode}
       hasDraft={false}
       headerStatus={{ tone: STATUS_TONE[boq.status] ?? "neutral", label: boq.status }}
       facets={[
@@ -321,15 +407,23 @@ export default function ScopeObjectClient({
       // BOQ the user reads "Delete (Only a draft BOQ can be deleted)" instead
       // of finding nothing and being unable to tell a missing feature from a
       // broken one.
-      onDelete={isDraft ? removal.request : undefined}
+      onDelete={isDraft && mode === "display" ? removal.request : undefined}
       deleteDisabledReason={isDraft ? undefined : "Only a draft BOQ can be deleted"}
-      // Edit was never offered on this screen at all (no onEdit was ever
-      // passed), for a real reason: a BOQ's lines are immutable once issued and
-      // change through a revision. That reason is now on screen instead of
-      // being inferable only from the absence of a button. The line-level
-      // budget/vendor cells below stay directly editable — they are commercial
-      // annotation, not the scope itself.
-      editDisabledReason="Lines change through a revision - use Create Revision"
+      // R67 D-22 shipped Edit here as permanently disabled-with-a-reason,
+      // because no header write path existed anywhere in the product: a BOQ's
+      // lines are immutable once issued and change through a revision, and the
+      // title had no editor at all. R80/GAP-14 built that write path (PATCH
+      // /api/scope/{id}, title only), so Edit is now REAL on every BOQ whose
+      // revision lineage is still open, and keeps D-22's disabled-with-reason
+      // form on the one state where it is not (see headerEditReason above).
+      // The line-level budget/vendor cells stay directly editable in display
+      // mode — they are commercial annotation, not the scope itself.
+      onEdit={canEditHeader && mode === "display" ? startEdit : undefined}
+      editDisabledReason={headerEditReason ?? undefined}
+      onSave={mode === "edit" ? saveHeader : undefined}
+      onCancel={mode === "edit" ? () => setMode("display") : undefined}
+      saveDisabled={savingHeader || titleDraft.trim() === ""}
+      saveDisabledReason={savingHeader ? "Saving…" : titleDraft.trim() === "" ? TITLE_REQUIRED_MESSAGE : undefined}
       // Real Back, preserving ?projectId= — derived from the loaded BOQ
       // itself (same pattern as PermitObjectClient's permit.projectId), not
       // a page-level query param, so Back is correct even from a bookmarked
@@ -341,6 +435,29 @@ export default function ScopeObjectClient({
         ...(attachedFileName ? [{ level: "success" as const, text: `Attached: ${attachedFileName}` }] : []),
       ]}
     >
+      {/* R80/GAP-14: the header form. ONE field, because one field is all the
+          API accepts -- see headerEditReason above for why version, status,
+          projectId and parentBoqId are not editable here, and the note under
+          the box for how a QS changes what the BOQ actually SAYS. */}
+      {mode === "edit" && (
+        <div className="space-y-1.5 border-b border-ct-border px-4 py-3">
+          <Label htmlFor="boq-title">Title</Label>
+          <Input
+            id="boq-title"
+            value={titleDraft}
+            disabled={savingHeader}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            placeholder="e.g. Civil Works - Phase 1"
+          />
+          {titleDraft.trim() === "" && (
+            <p className="text-[11.5px] text-px-error">{TITLE_REQUIRED_MESSAGE}</p>
+          )}
+          <p className="text-[11.5px] text-px-muted">
+            Version, status and project are not editable here — they are this BOQ&apos;s revision lineage.
+            The lines themselves change through Create Revision.
+          </p>
+        </div>
+      )}
       {/* R67 D-27: a superseded BOQ used to say only "superseded" -- true, and
           useless. It never named the revision that replaced it, so a user
           reading last month's rates had no way to reach the current ones, and
@@ -375,7 +492,10 @@ export default function ScopeObjectClient({
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
       {removal.card}
-      <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3">
+      {/* R80/GAP-14: withheld while the header is being edited. Every button
+          here navigates away or changes the BOQ's state, and doing either on
+          top of an unsaved title would discard it without saying so. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-ct-border px-4 py-3" hidden={mode === "edit"}>
         {isDraft && (
           <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("submit")}>
             {actionBusy === "submit" ? "Submitting…" : "Submit for Approval"}

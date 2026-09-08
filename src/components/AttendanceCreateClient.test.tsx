@@ -62,7 +62,7 @@ describe("AttendanceCreateClient (D-80)", () => {
   });
 
   test("the last worker marked on THIS project comes back with no click", async () => {
-    window.localStorage.setItem(lastChoiceKey("worker", "proj-cedar"), "r2");
+    window.localStorage.setItem(lastChoiceKey("worker", "proj-cedar", null), "r2");
     stub(MANY);
     const { getByLabelText } = render(<AttendanceCreateClient projectId="proj-cedar" />);
     await waitFor(() => expect((getByLabelText("Worker") as HTMLInputElement).value).toBe("Bilal Khan"));
@@ -70,7 +70,7 @@ describe("AttendanceCreateClient (D-80)", () => {
 
   test("a remembered worker who has left the roster is NOT re-selected", async () => {
     // r3 is inactive, so the form filters them out of the options entirely.
-    window.localStorage.setItem(lastChoiceKey("worker", "proj-cedar"), "r3");
+    window.localStorage.setItem(lastChoiceKey("worker", "proj-cedar", null), "r3");
     stub(MANY);
     const { getByLabelText } = render(<AttendanceCreateClient projectId="proj-cedar" />);
     await waitFor(() => expect((getByLabelText("Worker") as HTMLInputElement).disabled).toBe(false));

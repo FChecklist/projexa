@@ -28,6 +28,10 @@ import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+// R80 GAP-8: WHO is looking at this form. Passive -- it reads the shell
+// bootstrap M24Shell has already fetched for this route and never asks for it
+// itself, so identity costs this create screen no round trip (F-19's rule).
+import { useShellUserId } from "@/lib/shell-store";
 // R67 C-06: a multi-field create route IS the card -- band 2 stays empty
 // while this form is open -- so the save reports itself back to the shell
 // and the receipt line lands in the same band a composer write's would.
@@ -45,6 +49,7 @@ function todayIso() {
 export default function AttendanceCreateClient({ projectId, initialDate }: { projectId: string; initialDate?: string }) {
   const router = useRouter();
   const { pushReceipt } = useShellChain();
+  const userId = useShellUserId();
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [rosterLoading, setRosterLoading] = useState(true);
@@ -56,9 +61,21 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
 
   // Read after mount: localStorage is a browser fact, and reading it during
   // render would differ between the server pass and the client's.
+  //
+  // R80 GAP-8: re-runs when the identity lands, because the memory is keyed to
+  // the person. Until it does, `userId` is null and the read lands in the
+  // not-yet-known bucket, which is permanently empty -- the v2 prefix orphaned
+  // v1's entries and setLastChoice() refuses to write there at all. So the
+  // worst case is a suggestion that appears late, never one belonging to the
+  // previous person on this browser.
+  //
+  // It is NOT one frame late: M24Shell defers the shell bootstrap to an idle
+  // callback on /new routes, so this can be a second or more behind the roster
+  // read below. EntityCombobox re-runs its preselection when this lands, which
+  // is what makes the suggestion survive that gap.
   useEffect(() => {
-    setRememberedWorker(getLastChoice(WORKER_PICKER, projectId));
-  }, [projectId]);
+    setRememberedWorker(getLastChoice(WORKER_PICKER, projectId, userId));
+  }, [projectId, userId]);
 
   const loadRoster = useCallback(async () => {
     setRosterError(null);
@@ -136,8 +153,11 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
     // No object page for an attendance row -- back to the tab it joined.
     onSuccess: () => {
       // Remembered only after the server accepted it: a choice that failed to
-      // save is not the choice to offer back next time.
-      setLastChoice(WORKER_PICKER, projectId, values.rosterId);
+      // save is not the choice to offer back next time. And only when `userId`
+      // is known -- a save made before the bootstrap lands (or after it failed)
+      // is simply not remembered, rather than being filed under a scope the
+      // next person on this browser would read back.
+      setLastChoice(WORKER_PICKER, projectId, values.rosterId, userId);
       // R67 C-06: the save reports itself back to the shell -- the receipt
       // line lands in the same band a composer write's would.
       const worker = roster.find((r) => r.id === values.rosterId);

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 
 type Employee = { id: string; name: string };
 type SalaryComponent = { id: string; name: string };
@@ -30,7 +31,20 @@ export default function SalaryStructureCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchJson<{ employees?: Employee[] }>("/api/employees").then((d) => setEmployees(d.employees ?? [])).catch(() => {});
+    fetchJson<{ employees?: Employee[] }>("/api/employees")
+      .then((d) => {
+        const rows = d.employees ?? [];
+        setEmployees(rows);
+        // R80 GAP-8: Employee is required and a roster of one leaves no choice.
+        // Only the WHOSE of this form is seeded -- every money field on it
+        // (CTC, each component's amount and percentage) and the effective date
+        // stay empty on purpose: those are the employer's to state, and a
+        // pre-filled salary figure is exactly the kind of number a create
+        // screen must never invent.
+        const sole = soleOptionId(rows);
+        if (sole) setEmployeeId((prev) => prev || sole);
+      })
+      .catch(() => {});
     fetchJson<{ components?: SalaryComponent[] }>("/api/payroll/salary-components").then((d) => setComponents(d.components ?? [])).catch(() => {});
   }, []);
 

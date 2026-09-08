@@ -241,6 +241,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/procurement/goods-receipts": "PM_OR_ABOVE",
   "/procurement/goods-receipts/[id]/submit": "PM_OR_ABOVE",
   "/procurement/purchase-orders": "PM_OR_ABOVE",
+  // R80 GAP-6: PATCH (edit a draft PO's header) and DELETE (cancel it) were
+  // added to this route, which was GET-only until then. Same tier as raising
+  // the PO in the first place -- withdrawing a commitment to a supplier is
+  // not a lesser act than making one.
+  "/procurement/purchase-orders/[id]": "PM_OR_ABOVE",
   "/procurement/purchase-orders/[id]/submit": "PM_OR_ABOVE",
   "/procurement/quotations": "PM_OR_ABOVE",
   "/procurement/requisitions": "PM_OR_ABOVE",

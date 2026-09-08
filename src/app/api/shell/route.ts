@@ -30,6 +30,23 @@ export type ShellBootstrapPayload = {
   organization: { id: string; name: string; slug: string; country: string | null } | null;
   role: string | null;
   email: string | null;
+  // R80 GAP-8: the signed-in user's own id. NOT new data and NOT a new read --
+  // requireAuth() has already resolved it above to scope the membership and
+  // notification queries; it was simply never projected into the payload.
+  //
+  // It exists so a browser-local per-user scope can be named honestly. Before
+  // this, src/lib/last-choice.ts keyed every remembered picker choice to the
+  // literal string "self", because no screen had an identity to pass and
+  // adding a round trip to /api/organization just to name a localStorage key
+  // would have cost more than the feature saves. On a shared browser profile
+  // -- a site office machine, a shared laptop -- that made one user's
+  // remembered worker and material the next user's suggestion. The shell
+  // bootstrap is already fetched once for every app route, so carrying the id
+  // here costs nothing and removes the placeholder.
+  //
+  // It is a scope label, never an authorisation input: nothing server-side
+  // trusts a value the browser holds.
+  userId: string | null;
   projects: { id: string; name: string }[];
   notifications: unknown[];
   unreadCount: number;
@@ -130,6 +147,7 @@ export const GET = withTiming("GET", async function GET() {
       : null,
     role: ctx.role ?? null,
     email: ctx.user?.email ?? null,
+    userId: ctx.user?.id ?? null,
     projects: projectsValue?.ok ? (projectsValue.data.projects ?? []) : [],
     notifications: (notifValue?.data ?? []) as unknown[],
     unreadCount: unreadValue?.count ?? 0,

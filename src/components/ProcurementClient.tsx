@@ -24,7 +24,9 @@ type Rfq = {
 };
 type Quotation = {
   id: string; quotationNumber: number; status: string; postingDate: string; rfqId: string | null; supplierId: string;
-  items: { id: string; description: string; quantity: string; rate: string }[];
+  // `itemId` is real and nullable on erp_supplier_quotation_items -- see
+  // convertToPo below, which now carries it onto the purchase order.
+  items: { id: string; itemId: string | null; description: string; quantity: string; rate: string }[];
 };
 type PurchaseOrder = {
   id: string; poNumber: number; status: string; orderDate: string; supplierId: string; grandTotal: string;
@@ -127,13 +129,30 @@ export default function ProcurementClient({ initialTab }: { initialTab?: string 
   // ── Convert quotation -> PO ──────────────────────────────────────────
   // Real, already-working inline action -- no Object Page exists for
   // quotations, so this stays exactly as it was, not converted to a route.
+  //
+  // R80 GAP (2026-09-08): the conversion dropped the quotation line's stock
+  // item, which is a real, populated field -- not an invented link:
+  //   * erp_supplier_quotation_items carries `itemId: text('item_id')`
+  //     (schema.ts, nullable) alongside description/quantity/rate;
+  //   * createSupplierQuotation persists it --
+  //     `.values(input.items.map((i) => ({ quotationId: quotation.id,
+  //     itemId: i.itemId, description: i.description, … })))`;
+  //   * listSupplierQuotations reads `with: { items: true }` and the
+  //     /api/v1/projexa/procurement/quotations GET returns those rows
+  //     verbatim, so itemId is already on the objects in `quotations` here;
+  //   * the POST target passes `items: body.items` straight into
+  //     createPurchaseOrder, which writes `itemId: i.itemId` into the PO
+  //     line -- so the field survives end to end with no API change.
+  // Without it, every converted PO line was itemless and could never post
+  // FIFO stock on receipt. `?? undefined` keeps a genuinely itemless
+  // quotation line itemless rather than sending a null-ish placeholder.
   async function convertToPo(q: Quotation) {
     try {
       const res = await fetch("/api/procurement/purchase-orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           supplierId: q.supplierId, orderDate: new Date().toISOString().slice(0, 10),
-          items: q.items.map((i) => ({ description: i.description, quantity: Number(i.quantity), rate: Number(i.rate) })),
+          items: q.items.map((i) => ({ itemId: i.itemId ?? undefined, description: i.description, quantity: Number(i.quantity), rate: Number(i.rate) })),
         }),
       });
       if (!res.ok) throw new Error();

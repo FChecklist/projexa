@@ -101,6 +101,117 @@ describe("resolveInitialValue (D-80's preselection rule)", () => {
     expect(resolveInitialValue(WORKERS, "", null)).toBe("");
     expect(resolveInitialValue([], "", "r1")).toBe("");
   });
+
+  // The membership half of the rule is rememberedOption() in
+  // src/lib/reference-lookups.ts rather than an inline options.some(), so the
+  // rule and the module that documents it cannot drift. Its trim comes along
+  // with it: a stored id with stray whitespace is the same id.
+  test("the remembered id is trimmed, because a padded id is the same id", () => {
+    expect(resolveInitialValue(WORKERS, "", "  r2  ")).toBe("r2");
+    expect(resolveInitialValue(WORKERS, "", "   ")).toBe("");
+  });
+});
+
+// R80 GAP-8 FOLLOW-UP. `storedValue` stopped being a synchronous localStorage
+// read the moment the memory became per-user: the caller cannot resolve it
+// until the shell bootstrap answers, and M24Shell defers that bootstrap on
+// exactly the /new routes this component lives on. The option list therefore
+// arrives FIRST and the memory arrives SECOND, which is the ordering these two
+// tests pin -- one that the late memory is still honoured, one that it is
+// still refused over a field the user emptied.
+describe("a remembered choice that arrives after the options", () => {
+  test("still preselects -- the decision is re-made when the memory lands", async () => {
+    const changes: string[] = [];
+    const { rerender } = render(
+      <EntityCombobox
+        aria-label="Worker"
+        options={WORKERS}
+        value=""
+        storedValue={null}
+        onChange={(v) => changes.push(v)}
+      />
+    );
+    // The options are here; the identity, and so the memory, is not.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(changes).toEqual([]);
+
+    rerender(
+      <EntityCombobox
+        aria-label="Worker"
+        options={WORKERS}
+        value=""
+        storedValue="r2"
+        onChange={(v) => changes.push(v)}
+      />
+    );
+    await waitFor(() => expect(changes).toEqual(["r2"]));
+  });
+
+  test("but a field the user CLEARED is not refilled under them", async () => {
+    const changes: string[] = [];
+    // The user has a worker selected...
+    const { rerender } = render(
+      <EntityCombobox
+        aria-label="Worker"
+        options={WORKERS}
+        value="r3"
+        storedValue={null}
+        onChange={(v) => changes.push(v)}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // ...and takes it back out. Empty is now their answer.
+    rerender(
+      <EntityCombobox
+        aria-label="Worker"
+        options={WORKERS}
+        value=""
+        storedValue={null}
+        onChange={(v) => changes.push(v)}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // The bootstrap lands a moment later carrying a different remembered
+    // worker. It does not get to overwrite a deliberate blank.
+    rerender(
+      <EntityCombobox
+        aria-label="Worker"
+        options={WORKERS}
+        value=""
+        storedValue="r2"
+        onChange={(v) => changes.push(v)}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(changes).toEqual([]);
+  });
+
+  test("the same holds for a list of ONE, where the field filled itself first", async () => {
+    const changes: string[] = [];
+    const ONE = [WORKERS[0]];
+    const { rerender } = render(
+      <EntityCombobox aria-label="Worker" options={ONE} value="" storedValue={null} onChange={(v) => changes.push(v)} />
+    );
+    // Behaviour 1: the sole option answers the field on arrival.
+    await waitFor(() => expect(changes).toEqual(["r1"]));
+
+    // The parent hands it back, then the user clears it anyway.
+    rerender(
+      <EntityCombobox aria-label="Worker" options={ONE} value="r1" storedValue={null} onChange={(v) => changes.push(v)} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    rerender(
+      <EntityCombobox aria-label="Worker" options={ONE} value="" storedValue={null} onChange={(v) => changes.push(v)} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    rerender(
+      <EntityCombobox aria-label="Worker" options={ONE} value="" storedValue="r1" onChange={(v) => changes.push(v)} />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(changes).toEqual(["r1"]);
+  });
 });
 
 describe("EntityCombobox in the DOM", () => {

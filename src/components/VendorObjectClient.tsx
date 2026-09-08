@@ -12,7 +12,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R80 GAP-14: the FORKED object screen, not the kit's. The kit hard-codes the
+// word "Delete" on its destructive footer action
+// (node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:122)
+// and that word is a lie here -- the action sets isActive=false and keeps the
+// vendor's bank details, qualification reviews, sanction checks, portal links
+// and every purchase order and BOQ line pointing at it. Decision D-33 exists
+// for exactly this: KitObjectScreen adds `deleteLabel` and the display-mode
+// `secondaryAction` (Reactivate) and changes nothing else.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { DeleteConfirmationCard } from "@/components/DeleteConfirmation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,6 +58,9 @@ export default function VendorObjectClient({ vendorId }: { vendorId: string }) {
   const [draft, setDraft] = useState({ vendorName: "", vendorType: "", trade: "", gst: "", pan: "", defaultPaymentTermsDays: "", creditLimit: "" });
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // R80 GAP-14: armed by the footer's Deactivate, disarmed by Cancel. Nothing
+  // destructive happens until the card's own second click.
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   const [qStatus, setQStatus] = useState<"in_review" | "qualified" | "rejected">("in_review");
   const [qScore, setQScore] = useState(""); const [qNotes, setQNotes] = useState("");
@@ -110,18 +122,31 @@ export default function VendorObjectClient({ vendorId }: { vendorId: string }) {
     }
   }
 
-  async function toggleActive() {
-    if (!vendor) return;
+  /**
+   * R80 GAP-14. Retiring a vendor goes through the NEW `DELETE
+   * /api/vendors/{id}` -- the module's real delete verb -- while bringing one
+   * back stays a PATCH. Deliberately not one symmetrical call: DELETE is the
+   * destructive-intent verb the object screen's footer fires and the one
+   * api-write-policy gates as such; reactivating is an ordinary field edit.
+   * Both land on the same soft-delete row (see that route's header for why a
+   * hard delete would orphan every PO, RFQ and BOQ line on this vendor).
+   */
+  async function setActive(next: boolean) {
     setBusy("active");
     try {
-      await fetchJson(`/api/vendors/${vendorId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !vendor.isActive }),
-      });
-      toast.success(vendor.isActive ? "Vendor deactivated" : "Vendor activated");
+      if (next) {
+        await fetchJson(`/api/vendors/${vendorId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: true }),
+        });
+      } else {
+        await fetchJson(`/api/vendors/${vendorId}`, { method: "DELETE" });
+      }
+      toast.success(next ? "Vendor reactivated" : "Vendor deactivated");
+      setConfirmingDeactivate(false);
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't update vendor status"));
+      toast.error(errorMessage(err, next ? "Couldn't reactivate this vendor" : "Couldn't deactivate this vendor"));
     } finally {
       setBusy(null);
     }
@@ -219,8 +244,17 @@ export default function VendorObjectClient({ vendorId }: { vendorId: string }) {
   }
   if (!vendor) return <p className="p-6 text-[13px] text-px-muted">Loading…</p>;
 
+  // R80 GAP-14: what the deactivation does NOT destroy, counted off records
+  // this page has already loaded -- no extra read to state the blast radius.
+  const keptFacets = [
+    accounts.length > 0 ? `${accounts.length} bank ${accounts.length === 1 ? "account" : "accounts"}` : null,
+    reviews.length > 0 ? `${reviews.length} qualification ${reviews.length === 1 ? "review" : "reviews"}` : null,
+    checks.length > 0 ? `${checks.length} sanction ${checks.length === 1 ? "check" : "checks"}` : null,
+    links.length > 0 ? `${links.length} portal ${links.length === 1 ? "link" : "links"}` : null,
+  ].filter((part): part is string => part !== null);
+
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Vendors / Vendor"
       title={mode === "edit" ? "Edit Vendor" : vendor.vendorName}
       mode={mode}
@@ -234,20 +268,51 @@ export default function VendorObjectClient({ vendorId }: { vendorId: string }) {
         { label: "Qualification", value: vendor.qualificationStatus.replace(/_/g, " ") },
         { label: "Sanction Screening", value: vendor.sanctionScreeningStatus.replace(/_/g, " ") },
       ]}
-      onEdit={mode === "display" ? startEdit : undefined}
+      onEdit={mode === "display" && vendor.isActive ? startEdit : undefined}
+      editDisabledReason={mode === "display" && !vendor.isActive ? "This vendor is inactive" : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
+      // R80 GAP-14 -- the Delete this screen never had. It ARMS the
+      // confirmation below; it never writes. Withheld while editing or on an
+      // already-inactive vendor, but the control stays on screen with its
+      // reason (D-22) rather than vanishing, so a missing feature is never
+      // mistaken for a broken one.
+      onDelete={vendor.isActive && mode === "display" ? () => setConfirmingDeactivate(true) : undefined}
+      // D-33 / R-093: the word names the act. This keeps the row and
+      // everything filed against it, so it cannot say "Delete".
+      deleteLabel="Deactivate"
+      deleteDisabledReason={busy === "active" ? "Working…" : !vendor.isActive ? "Already inactive" : mode === "edit" ? "Finish editing first" : undefined}
+      // D-33 point 2: deactivation is not one-way. Reactivate replaces the
+      // body toggle this screen used to carry -- one status control, in the
+      // action bar where every other verb on this page lives.
+      secondaryAction={
+        !vendor.isActive && mode === "display"
+          ? { label: "Reactivate", onClick: () => void setActive(true), disabledReason: busy === "active" ? "Working…" : undefined }
+          : undefined
+      }
       onBack={() => router.push("/vendors")}
       saveDisabled={saving || !draft.vendorName.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.vendorName.trim() ? "Vendor name is required" : undefined}
       messages={[]}
     >
-      {mode === "display" && (
-        <div className="flex items-center gap-2 border-b border-px-border px-4 py-3">
-          <Button size="sm" variant="outline" disabled={busy === "active"} onClick={toggleActive}>
-            {busy === "active" ? "Saving…" : vendor.isActive ? "Deactivate" : "Activate"}
-          </Button>
-        </div>
+      {/* R80 GAP-14. The shared confirm card (the same component
+          useDeleteConfirmation renders), driven directly rather than through
+          that hook for ONE reason: the hook's sentence comes from
+          deleteConfirmation(), which hard-codes "Delete <x>? This cannot be
+          undone." Both halves are false here -- nothing is deleted, and
+          Reactivate above undoes it in one click -- and a confirmation that
+          misstates what it is about to do is worse than none. Everything else
+          is the sanctioned flow: same card, same role="alertdialog", same
+          two-click arming, and the sentence still names the blast radius
+          rather than asking "are you sure". */}
+      {confirmingDeactivate && (
+        <DeleteConfirmationCard
+          sentence={`Deactivate ${vendor.vendorName}? Nothing filed against it is removed${keptFacets.length > 0 ? ` — its ${keptFacets.join(", ")} are kept` : ""}, purchase orders and BOQ lines still name it, and you can reactivate it from this page.`}
+          confirmLabel="Deactivate vendor"
+          running={busy === "active"}
+          onConfirm={() => void setActive(false)}
+          onCancel={() => setConfirmingDeactivate(false)}
+        />
       )}
 
       {mode === "edit" ? (
@@ -377,6 +442,6 @@ export default function VendorObjectClient({ vendorId }: { vendorId: string }) {
           </div>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

@@ -48,3 +48,80 @@ export async function loadVendors(ttlMs: number = SHELL_CACHE_TTL_MS): Promise<V
 export function invalidateVendors(): void {
   invalidateShellCache(VENDORS_CACHE_KEY);
 }
+
+// ---------------------------------------------------------------------------
+// R80 GAP-8 -- deriving a create screen's DEFAULT from reference data.
+//
+// The owner's point 7 is "the system should pre-populate data before the user
+// asks". The measured state was that 42 of 64 create screens opened completely
+// blank, and every screen that seeded anything seeded today's date or a static
+// enum constant.
+//
+// THE RULE THESE TWO FUNCTIONS EXIST TO ENFORCE, and the reason they are here
+// rather than inlined per screen: only pre-fill a value that can be JUSTIFIED
+// from real data. Each returns null for "nothing here is derivable" rather
+// than reaching for a plausible-looking answer, because a wrong default on a
+// create form is worse than an empty one -- an empty field is visibly the
+// user's to answer, whereas a wrong one gets saved.
+//
+// They are pure and take their inputs as arguments, so the judgement can be
+// asserted without a DOM, a clock or a network.
+//
+// NOT SEEDED, and deliberately: BudgetCreateClient.tsx renders an unseeded
+// "Fiscal Year" select. A helper could derive the current year from
+// erp_fiscal_years, but seeding that screen is a change to
+// BudgetCreateClient.tsx and belongs with that screen, alongside its real
+// call site -- an exported helper with no caller is dead code, and one whose
+// comment asserts a caller misleads the next reader into thinking a screen is
+// already seeded.
+// ---------------------------------------------------------------------------
+
+/** Anything with an id: the shape every reference list in this app shares. */
+type Identified = { id: string };
+
+/**
+ * The id of the ONLY row, when there is exactly one.
+ *
+ * The case this answers: an org with one warehouse, one legal entity, one
+ * audit engagement, one department. Asking somebody to open a dropdown and
+ * choose the single thing in it is pure ceremony -- there is no second answer
+ * to get wrong, so the choice carries no information.
+ *
+ * TWO rows is not "probably the first one", it is a real question, and this
+ * returns null for it. Preselecting the sole option is also safe as the org
+ * grows: nothing is locked, the control still lists everything, and the moment
+ * a second row exists this stops seeding on its own.
+ *
+ * A blank or whitespace id is treated as no id -- a select whose value is ""
+ * means "nothing chosen" everywhere in this codebase, so seeding one would set
+ * a field to the empty answer while looking like it had set something.
+ */
+export function soleOptionId<T extends Identified>(rows: readonly T[] | null | undefined): string | null {
+  if (!rows || rows.length !== 1) return null;
+  const id = (rows[0]?.id ?? "").trim();
+  return id === "" ? null : id;
+}
+
+/**
+ * A remembered choice, but only if it is still a real option.
+ *
+ * Rule 2 of src/lib/last-choice.ts ("a remembered choice is a suggestion,
+ * never a commitment") stated as a function. A worker who left the roster, a
+ * material that was retired, an expense head that was renamed: all of them are
+ * ids that storage still holds and the current list no longer offers, and
+ * re-selecting one would post a value the user never saw.
+ *
+ * ITS CALLER is resolveInitialValue() in src/components/EntityCombobox.tsx --
+ * the one place in the app that turns a remembered id into a preselection, and
+ * therefore the only place this rule has to hold. It was inlined there as
+ * `options.some(...)` until R80 GAP-8; sharing the function is what keeps the
+ * rule and the sentence describing it from drifting apart.
+ */
+export function rememberedOption(
+  stored: string | null | undefined,
+  options: readonly string[] | null | undefined
+): string | null {
+  const value = (stored ?? "").trim();
+  if (value === "" || !options) return null;
+  return options.includes(value) ? value : null;
+}

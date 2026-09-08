@@ -52,14 +52,14 @@ describe("MaterialReceiptCreateClient (D-80)", () => {
   });
 
   test("the material received last time on THIS project comes back with no click", async () => {
-    window.localStorage.setItem(lastChoiceKey("material", "proj-cedar"), "mat-steel");
+    window.localStorage.setItem(lastChoiceKey("material", "proj-cedar", null), "mat-steel");
     stub([CEMENT, STEEL]);
     const { getByLabelText } = render(<MaterialReceiptCreateClient projectId="proj-cedar" />);
     await waitFor(() => expect((getByLabelText("Material") as HTMLInputElement).value).toBe("Steel rebar 12mm"));
   });
 
   test("a remembered material that has been retired is NOT re-selected", async () => {
-    window.localStorage.setItem(lastChoiceKey("material", "proj-cedar"), RETIRED.id);
+    window.localStorage.setItem(lastChoiceKey("material", "proj-cedar", null), RETIRED.id);
     stub([CEMENT, STEEL, RETIRED]);
     const { getByLabelText } = render(<MaterialReceiptCreateClient projectId="proj-cedar" />);
     await waitFor(() => expect((getByLabelText("Material") as HTMLInputElement).disabled).toBe(false));
@@ -68,7 +68,7 @@ describe("MaterialReceiptCreateClient (D-80)", () => {
   });
 
   test("the memory is per project, so another site's usual material is not applied here", async () => {
-    window.localStorage.setItem(lastChoiceKey("material", "proj-marina"), "mat-steel");
+    window.localStorage.setItem(lastChoiceKey("material", "proj-marina", null), "mat-steel");
     stub([CEMENT, STEEL]);
     const { getByLabelText } = render(<MaterialReceiptCreateClient projectId="proj-cedar" />);
     await waitFor(() => expect((getByLabelText("Material") as HTMLInputElement).disabled).toBe(false));

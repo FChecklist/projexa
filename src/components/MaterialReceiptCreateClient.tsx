@@ -19,6 +19,10 @@ import { useSubmit } from "@/lib/use-submit";
 import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+// R80 GAP-8: WHO is looking at this form. Passive -- it reads the shell
+// bootstrap M24Shell has already fetched for this route and never asks for it
+// itself, so identity costs this create screen no round trip (F-19's rule).
+import { useShellUserId } from "@/lib/shell-store";
 // R67 C-06: a multi-field create route IS the card -- band 2 stays empty
 // while this form is open -- so the save reports itself back to the shell
 // and the receipt line lands in the same band a composer write's would.
@@ -38,6 +42,7 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const router = useRouter();
   // R67 C-06: the shell chain context this save reports its receipt into.
   const { pushReceipt } = useShellChain();
+  const userId = useShellUserId();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsError, setMaterialsError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [materialsLoading, setMaterialsLoading] = useState(true);
@@ -47,9 +52,14 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const [values, setValues] = useState<Record<string, string>>({ receivedDate: todayIso() });
   const orgMoney = useOrgMoney();
 
+  // R80 GAP-8: re-runs when the identity lands, because the memory is keyed to
+  // the person -- a shared site-office browser must not offer the last user's
+  // usual material to the next one. That landing can be a second or more after
+  // the material master below, since M24Shell defers the shell bootstrap on
+  // /new routes; EntityCombobox re-runs its preselection when it does.
   useEffect(() => {
-    setRememberedMaterial(getLastChoice(MATERIAL_PICKER, projectId));
-  }, [projectId]);
+    setRememberedMaterial(getLastChoice(MATERIAL_PICKER, projectId, userId));
+  }, [projectId, userId]);
 
   // R67 D-36: the vendor list. Vendor is OPTIONAL -- site staff genuinely
   // record a delivery before the vendor is set up -- so a failed read degrades
@@ -181,8 +191,11 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
     // to land: a storekeeper recording a delivery is recording the NEXT one
     // next, not reading back the one just saved.
     onSuccess: () => {
-      // Remembered only after the server accepted it.
-      setLastChoice(MATERIAL_PICKER, projectId, values.materialId);
+      // Remembered only after the server accepted it, and only when `userId`
+      // is known -- setLastChoice() refuses the unknown scope outright, so a
+      // save made before the bootstrap lands is forgotten rather than left for
+      // the next person on this browser to inherit.
+      setLastChoice(MATERIAL_PICKER, projectId, values.materialId, userId);
       // R67 C-06: the save reports itself back to the shell -- the receipt
       // line lands in the same band a composer write's would, so a save made
       // through this real screen and one made through the composer read

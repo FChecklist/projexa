@@ -9,6 +9,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 
 type JobOpening = { id: string; title: string };
 type Candidate = { id: string; name: string };
@@ -21,9 +22,29 @@ export default function ApplicationCreateClient() {
   const [candidateId, setCandidateId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // R80 GAP-8: BOTH of this form's fields are required, and both are lists
+  // that are routinely one row long early in a hiring round -- one opening,
+  // one candidate just added. Where the list has a single member there is no
+  // choice left to make, so the form opens answered instead of empty. Each is
+  // judged on its own list: a sole opening is seeded even when there are
+  // twelve candidates.
   useEffect(() => {
-    fetchJson<{ jobOpenings?: JobOpening[] }>("/api/recruitment/job-openings").then((d) => setOpenings(d.jobOpenings ?? [])).catch(() => {});
-    fetchJson<{ candidates?: Candidate[] }>("/api/recruitment/candidates").then((d) => setCandidates(d.candidates ?? [])).catch(() => {});
+    fetchJson<{ jobOpenings?: JobOpening[] }>("/api/recruitment/job-openings")
+      .then((d) => {
+        const rows = d.jobOpenings ?? [];
+        setOpenings(rows);
+        const sole = soleOptionId(rows);
+        if (sole) setJobOpeningId((prev) => prev || sole);
+      })
+      .catch(() => {});
+    fetchJson<{ candidates?: Candidate[] }>("/api/recruitment/candidates")
+      .then((d) => {
+        const rows = d.candidates ?? [];
+        setCandidates(rows);
+        const sole = soleOptionId(rows);
+        if (sole) setCandidateId((prev) => prev || sole);
+      })
+      .catch(() => {});
   }, []);
 
   async function create() {

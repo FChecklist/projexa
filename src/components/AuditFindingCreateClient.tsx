@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 
 type Engagement = { id: string; name: string };
 
@@ -25,7 +26,17 @@ export default function AuditFindingCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchJson<{ engagements?: Engagement[] }>("/api/audit-engagements").then((d) => setEngagements(d.engagements ?? [])).catch(() => {});
+    fetchJson<{ engagements?: Engagement[] }>("/api/audit-engagements")
+      .then((d) => {
+        const rows = d.engagements ?? [];
+        setEngagements(rows);
+        // R80 GAP-8: an org running a single audit engagement is the normal
+        // case, and every finding recorded during it belongs to it. Preselected
+        // rather than asked for; still a plain select, still changeable.
+        const sole = soleOptionId(rows);
+        if (sole) setEngagementId((prev) => prev || sole);
+      })
+      .catch(() => {});
   }, []);
 
   async function createFinding() {

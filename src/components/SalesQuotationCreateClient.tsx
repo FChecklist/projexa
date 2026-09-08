@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Trash2 } from "lucide-react";
 import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { soleOptionId } from "@/lib/reference-lookups";
 import { type Company } from "@/components/company-scope";
 
 type Customer = { id: string; customerName: string };
@@ -37,7 +38,20 @@ export default function SalesQuotationCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {});
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => {
+        const rows: Customer[] = d.customers ?? [];
+        setCustomers(rows);
+        // R80 GAP-8: same rule as the Sales Order form -- Customer is the one
+        // required field this seeding can answer (a description and a rate are
+        // also required on every line, and those are the user's to type), and
+        // an org with a single customer on file has already answered it. Editable, and it stops seeding once a second
+        // customer exists.
+        const sole = soleOptionId(rows);
+        if (sole) setCustomerId((prev) => prev || sole);
+      })
+      .catch(() => {});
     fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {});
     fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
   }, []);

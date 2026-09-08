@@ -7,6 +7,28 @@
 // stage, module #22, already has a real Object Page for) -- redirects
 // there on success instead of building a second, duplicate Object Page for
 // the same entity.
+//
+// R80 GAP (2026-09-08) -- A PO LINE CAN NOW NAME A STOCK ITEM. Every line
+// this screen posted carried only `{ description, quantity, rate }`.
+// erp_purchase_order_items.itemId is nullable (schema.ts: `itemId:
+// text('item_id')`), so the order was accepted -- but the line was
+// structurally incapable of ever moving stock. erp-goods-receipt-service.ts
+// only calls recordStockReceipt for a receipt line that resolves to a stock
+// item, so a goods receipt raised against one of these orders opens no FIFO
+// layer however much is physically received. (GoodsReceiptCreateClient.tsx
+// seeds its rows from the PO's lines as `itemId: i.itemId ?? ""` -- with
+// itemId always null upstream, every seeded row arrived itemless.)
+//
+// The control is the SAME one GoodsReceiptCreateClient.tsx and
+// StockEntryCreateClient.tsx already use -- the /api/inventory/items lookup
+// rendered as `itemName (itemCode)` -- not a second item picker.
+//
+// DELIBERATELY OPTIONAL. Construction buying is not all stock: subcontract
+// labour, plant hire, professional fees and one-off consumables are real PO
+// lines that no item master should have to carry. A line with no item is
+// still valid, still posts, and validation is unchanged (description + rate,
+// exactly as before). The clear-back-to-none sentinel is the `__none__`
+// convention this file's own Company/Office select already uses.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -21,18 +43,29 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { type Company } from "@/components/company-scope";
 
 type Vendor = { id: string; vendorName: string };
-type Line = { description: string; quantity: string; rate: string };
+/** Same shape GoodsReceiptCreateClient/StockEntryCreateClient read off /api/inventory/items. */
+type ItemRow = { id: string; itemCode: string; itemName: string };
+/** `itemId` is "" when the line is free text -- see the header note; it is never required. */
+type Line = { description: string; itemId: string; quantity: string; rate: string };
+
+/** Sentinel for "no stock item", matching the `__none__` this file already uses for Company/Office. Radix forbids a SelectItem with an empty value, so an explicit option is the only way to clear a pick. */
+const NO_ITEM = "__none__";
+
+function blankLine(): Line {
+  return { description: "", itemId: "", quantity: "1", rate: "" };
+}
 
 export default function PurchaseOrderCreateClient() {
   const router = useRouter();
   const currencies = useCurrencies();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [items, setItems] = useState<ItemRow[]>([]);
   const [vendorId, setVendorId] = useState("");
   const [companyId, setCompanyId] = useState("__none__");
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "1", rate: "" }]);
+  const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [currencyId, setCurrencyId] = useState("");
   const [exchangeRate, setExchangeRate] = useState("1");
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +73,10 @@ export default function PurchaseOrderCreateClient() {
   useEffect(() => {
     fetch("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {});
     fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
+    // Same lookup GoodsReceiptCreateClient.tsx and StockEntryCreateClient.tsx
+    // read. A failure is swallowed like its siblings here: the item link is
+    // optional, so an unreachable item master must not block raising the order.
+    fetchJson<{ items?: ItemRow[] }>("/api/inventory/items").then((d) => setItems(d.items ?? [])).catch(() => {});
   }, []);
 
   const selectedCurrency = currencies.find((c) => c.id === currencyId);
@@ -66,7 +103,11 @@ export default function PurchaseOrderCreateClient() {
           vendorId, orderDate, expectedDeliveryDate: expectedDeliveryDate || undefined,
           companyId: companyId === "__none__" ? undefined : companyId,
           currencyId: currencyId || undefined, exchangeRate: currencyId ? Number(exchangeRate) : undefined,
-          items: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
+          // itemId omitted, never sent as "", when the line is free text --
+          // createPurchaseOrder writes `itemId: i.itemId` straight into the
+          // nullable column, and an empty string there would be a dangling
+          // reference rather than the honest null a free-text line deserves.
+          items: lines.map((l) => ({ description: l.description, itemId: l.itemId || undefined, quantity: Number(l.quantity) || 1, rate: Number(l.rate) })),
         }),
       });
       toast.success("Purchase order created");
@@ -140,14 +181,29 @@ export default function PurchaseOrderCreateClient() {
           {lines.map((l, i) => (
             <div key={i} className="flex items-center gap-2">
               <Input placeholder="Description" value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} className="flex-1" />
+              {/* Rendered only when there is an item master to pick from -- an org
+                  with the inventory module unused, or the lookup unreachable, sees
+                  the screen exactly as it was rather than an empty dropdown. */}
+              {items.length > 0 && (
+                <Select value={l.itemId || NO_ITEM} onValueChange={(v) => updateLine(i, { itemId: v === NO_ITEM ? "" : v })}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="Stock item (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_ITEM}>No stock item</SelectItem>
+                    {items.map((it) => <SelectItem key={it.id} value={it.id}>{it.itemName} ({it.itemCode})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
               <Input placeholder="Qty" type="number" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} className="w-16" />
               <Input placeholder="Rate" type="number" value={l.rate} onChange={(e) => updateLine(i, { rate: e.target.value })} className="w-24" />
               <Button variant="ghost" size="icon" disabled={lines.length === 1} onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}><Trash2 className="size-4" /></Button>
             </div>
           ))}
-          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, { description: "", quantity: "1", rate: "" }])}>
+          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, blankLine()])}>
             <Plus className="size-3.5" /> Add Line
           </Button>
+          {items.length > 0 && (
+            <p className="text-xs text-px-muted">A line with no stock item is a free-text purchase — the order is valid, but a goods receipt against that line posts no stock.</p>
+          )}
         </div>
       </div>
     </ObjectScreen>

@@ -131,6 +131,50 @@ export function getShellVendors(): { id: string; vendorName: string }[] | null {
 }
 
 /**
+ * R80 GAP-8. The signed-in user's own id IF the bootstrap has already
+ * answered, otherwise null.
+ *
+ * PASSIVE, for exactly the reason getShellVendors() above is: it never
+ * subscribes and never triggers a fetch, so a create form asking "who is
+ * looking at this?" cannot undo F-19's rule that the shell bootstrap stays off
+ * a create route's critical path. M24Shell wraps every routed screen and does
+ * the fetching; this only reads what it already has.
+ *
+ * The one thing this id is for is naming a browser-local scope (see
+ * src/lib/last-choice.ts). It is never an authorisation input -- every
+ * server-side check resolves its own identity from the session cookie.
+ */
+export function getShellUserId(): string | null {
+  return snapshot.data?.userId ?? null;
+}
+
+/**
+ * getShellUserId() as a hook, re-rendering when the bootstrap lands.
+ *
+ * Starts at null rather than at the current snapshot ON PURPOSE: these are
+ * client components inside a server-rendered tree, and seeding state from a
+ * module-level store the server does not have would make the first client
+ * render disagree with the HTML it is hydrating. Same reasoning, and the same
+ * shape, as useCurrenciesState() in src/lib/currency.ts.
+ *
+ * null therefore means "not known YET (or no session)", never "user zero", and
+ * every caller has to treat it that way -- see how last-choice.ts renders the
+ * unknown case as its own bucket rather than as a shared one.
+ */
+export function useShellUserId(): string | null {
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    const listener = () => setUserId(getShellUserId());
+    listeners.add(listener);
+    listener();
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+  return userId;
+}
+
+/**
  * Mark keys as needing a refresh after a write. The next read revalidates in
  * the background; nothing is cleared, so the screen keeps showing the last
  * known-good answer rather than flashing empty.
@@ -170,6 +214,11 @@ async function fetchBootstrap(): Promise<void> {
         organization: null,
         role: null,
         email: null,
+        // R80 GAP-8: null here is correct and not a placeholder -- this branch
+        // is the shell that could not be read at all, so there is no signed-in
+        // identity to name. last-choice.ts falls back to its own scope when
+        // this is null, which is the same behaviour as before the id existed.
+        userId: null,
         projects: [],
         notifications: [],
         unreadCount: 0,

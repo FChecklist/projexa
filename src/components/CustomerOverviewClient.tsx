@@ -9,13 +9,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
+// R80 GAP-14: the FORKED object screen, not the kit's. The kit hard-codes the
+// word "Delete" on its destructive footer action
+// (node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:122),
+// and that word is a lie here -- the action sets isActive=false and keeps
+// every opportunity, quotation, order and invoice on this customer. Decision
+// D-33 exists for exactly this: KitObjectScreen adds `deleteLabel` and the
+// display-mode `secondaryAction` (Reactivate) and changes nothing else, so a
+// screen can name the act it actually performs.
+import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
+import { DeleteConfirmationCard } from "@/components/DeleteConfirmation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
@@ -50,6 +58,9 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  // R80 GAP-14: armed by the footer's Deactivate, disarmed by Cancel. Nothing
+  // destructive happens until the card's own second click.
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   // A4S14_customerid_01: GET /api/customers/{id}/overview returned 504 on
   // 2 of 2 attempts for a REAL customer id, and this used to parse the error
@@ -115,17 +126,31 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
     }
   }
 
-  async function toggleActive() {
+  /**
+   * R80 GAP-14. Retiring a customer goes through the NEW `DELETE
+   * /api/customers/{id}` -- the module's real delete verb -- while bringing
+   * one back stays a PATCH. They are deliberately not one symmetrical call:
+   * DELETE is the destructive-intent verb the object screen's footer fires and
+   * the one api-write-policy gates as such, and reactivating is an ordinary
+   * field edit. Both end at the same soft-delete row (see that route's header
+   * for why a hard delete would orphan every document on this customer).
+   */
+  async function setActive(next: boolean) {
     setBusy(true);
     try {
-      await fetchJson(`/api/customers/${customerId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !isActive }),
-      });
-      toast.success(isActive ? "Customer deactivated" : "Customer activated");
-      setIsActive((v) => !v);
+      if (next) {
+        await fetchJson(`/api/customers/${customerId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: true }),
+        });
+      } else {
+        await fetchJson(`/api/customers/${customerId}`, { method: "DELETE" });
+      }
+      toast.success(next ? "Customer reactivated" : "Customer deactivated");
+      setIsActive(next);
+      setConfirmingDeactivate(false);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't update customer status"));
+      toast.error(errorMessage(err, next ? "Couldn't reactivate this customer" : "Couldn't deactivate this customer"));
     } finally {
       setBusy(false);
     }
@@ -137,21 +162,66 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
   // customer -- which really is "not found".
   if (!data?.customer) return <p className="py-10 text-center text-sm text-px-muted">Customer not found.</p>;
 
+  // R80 GAP-14: what the deactivation does NOT destroy, counted off the 360
+  // aggregation this page has already loaded -- no extra read to state the
+  // blast radius.
+  const keptRecords =
+    data.opportunities.length + data.quotations.length + data.salesOrders.length + data.salesInvoices.length;
+
   return (
-    <ObjectScreen
+    <KitObjectScreen
       breadcrumb="Customers / Customer"
       title={mode === "edit" ? "Edit Customer" : data.customer.customerName}
       mode={mode}
       hasDraft={false}
+      headerStatus={{ tone: isActive ? "done" : "late", label: isActive ? "active" : "inactive" }}
       facets={[{ label: "GSTIN", value: data.customer.gstin ?? "—" }, { label: "Credit Limit", value: data.customer.creditLimit ? inr(Number(data.customer.creditLimit)) : "—" }]}
-      onEdit={mode === "display" ? startEdit : undefined}
+      onEdit={mode === "display" && isActive ? startEdit : undefined}
+      editDisabledReason={mode === "display" && !isActive ? "This customer is inactive" : undefined}
       onSave={mode === "edit" ? saveEdit : undefined}
       onCancel={mode === "edit" ? () => setMode("display") : undefined}
+      // R80 GAP-14 -- the Delete this screen never had. It ARMS the
+      // confirmation below; it never writes. Withheld while editing or on an
+      // already-inactive customer, but the control stays on screen with its
+      // reason (D-22) instead of vanishing, so a missing feature is never
+      // mistaken for a broken one.
+      onDelete={isActive && mode === "display" ? () => setConfirmingDeactivate(true) : undefined}
+      // D-33 / R-093: the word names the act. This keeps the row and every
+      // document on it, so it cannot say "Delete".
+      deleteLabel="Deactivate"
+      deleteDisabledReason={busy ? "Working…" : !isActive ? "Already inactive" : mode === "edit" ? "Finish editing first" : undefined}
+      // D-33 point 2: deactivation is not one-way. Reactivate replaces the
+      // body toggle this screen used to carry -- one status control, in the
+      // action bar where every other verb on this page lives.
+      secondaryAction={
+        !isActive && mode === "display"
+          ? { label: "Reactivate", onClick: () => void setActive(true), disabledReason: busy ? "Working…" : undefined }
+          : undefined
+      }
       onBack={() => router.push("/customers")}
       saveDisabled={saving || !draft.customerName.trim()}
       saveDisabledReason={saving ? "Saving…" : !draft.customerName.trim() ? "Customer name is required" : undefined}
       messages={[]}
     >
+      {/* R80 GAP-14. The shared confirm card (the same component
+          useDeleteConfirmation renders), driven directly rather than through
+          that hook for ONE reason: the hook's sentence comes from
+          deleteConfirmation(), which hard-codes "Delete <x>? This cannot be
+          undone." Both halves are false here -- nothing is deleted, and
+          Reactivate above undoes it in one click -- and a confirmation that
+          misstates what it is about to do is worse than none. Everything else
+          is the sanctioned flow: same card, same role="alertdialog", same
+          two-click arming, and the sentence still names the blast radius
+          rather than asking "are you sure". */}
+      {confirmingDeactivate && (
+        <DeleteConfirmationCard
+          sentence={`Deactivate ${data.customer.customerName}? Its ${keptRecords} linked ${keptRecords === 1 ? "record is" : "records are"} kept — opportunities, quotations, sales orders and invoices are untouched — and you can reactivate it from this page.`}
+          confirmLabel="Deactivate customer"
+          running={busy}
+          onConfirm={() => void setActive(false)}
+          onCancel={() => setConfirmingDeactivate(false)}
+        />
+      )}
       {mode === "edit" ? (
         <div className="space-y-3 px-4 py-3">
           <div className="space-y-1.5"><Label>Customer Name</Label><Input value={draft.customerName} onChange={(e) => setDraft((d) => ({ ...d, customerName: e.target.value }))} /></div>
@@ -168,11 +238,11 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
         </div>
       ) : (
         <div className="space-y-6 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <Badge variant={isActive ? "default" : "outline"}>{isActive ? "active" : "inactive"}</Badge>
-            <Button size="sm" variant="outline" disabled={busy} onClick={toggleActive}>{busy ? "Saving…" : isActive ? "Deactivate" : "Activate"}</Button>
-          </div>
-
+          {/* R80 GAP-14: the status badge and its toggle used to live here, a
+              second action bar inside the body. The badge is now the header's
+              own headerStatus and the two verbs are Deactivate/Reactivate in
+              the footer, so the record has ONE place that states its status
+              and ONE place that changes it. */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Card className="shadow-card"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-px-muted">Lifetime Invoiced</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{inr(data.summary.lifetimeInvoiced)}</CardContent></Card>
             <Card className="shadow-card"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-px-muted">Outstanding</CardTitle></CardHeader><CardContent className="text-2xl font-semibold">{inr(data.summary.lifetimeOutstanding)}</CardContent></Card>
@@ -243,6 +313,6 @@ export default function CustomerOverviewClient({ customerId }: { customerId: str
           </Card>
         </div>
       )}
-    </ObjectScreen>
+    </KitObjectScreen>
   );
 }

@@ -32,6 +32,10 @@
 // than no preselection at all.
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+// The "still a real option" half of rule 2 in src/lib/last-choice.ts. It lives
+// there, beside soleOptionId(), because it is the same judgement every
+// create-screen default has to make; this is the one component that makes it.
+import { rememberedOption } from "@/lib/reference-lookups";
 
 export type ComboboxOption = { value: string; label: string; hint?: string };
 
@@ -75,8 +79,7 @@ export function resolveInitialValue(
 ): string {
   if (currentValue) return currentValue;
   if (options.length === 1) return options[0].value;
-  if (storedValue && options.some((o) => o.value === storedValue)) return storedValue;
-  return "";
+  return rememberedOption(storedValue, options.map((o) => o.value)) ?? "";
 }
 
 export default function EntityCombobox({
@@ -114,18 +117,52 @@ export default function EntityCombobox({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
-  // The preselection must run once per option list, not on every render, or a
-  // user who deliberately cleared the field would have it refilled under them.
+  // The preselection must run once per ATTEMPT, not on every render -- the
+  // caller rebuilds the `options` array on every render, so this effect re-runs
+  // constantly and only this guard stops it.
+  //
+  // R80 GAP-8 FOLLOW-UP -- WHY THE GUARD IS NOT KEYED ON THE OPTION LIST ALONE.
+  // It used to be, and that was right while `storedValue` was a synchronous
+  // localStorage read the caller had on its very first render. It is not one
+  // any more: the memory is scoped per USER, so the caller cannot resolve it
+  // until the shell bootstrap answers with an id -- and M24Shell DEFERS that
+  // bootstrap to an idle callback on exactly these /new routes (isCreateRoute,
+  // src/components/shell/M24Shell.tsx), while the screen's own roster/material
+  // lookup fires immediately. The options therefore land FIRST, and a
+  // signature-only guard spent the single decision this effect ever makes at
+  // the one moment the remembered choice was still null -- which deleted
+  // behaviour 2 of this component on every cold load, silently. Keyed on the
+  // option list AND the remembered choice, the decision is re-made exactly once
+  // more, when the memory arrives.
   const preselectedFor = useRef<string | null>(null);
+  // ...which reopens the refill the old guard was closing as a side effect, so
+  // it is now closed on purpose. A field that has HELD a value and is empty now
+  // was emptied by somebody, and a suggestion arriving a second later does not
+  // get to undo that: cleared is an answer.
+  const hasHeldValue = useRef(false);
 
   const selected = useMemo(() => options.find((o) => o.value === value) ?? null, [options, value]);
   const visible = useMemo(() => filterOptions(options, query), [options, query]);
 
+  // Declared BEFORE the preselect effect so that, in any commit where both run,
+  // this one has already recorded the value the preselect is about to read.
+  useEffect(() => {
+    if (value) hasHeldValue.current = true;
+  }, [value]);
+
   useEffect(() => {
     if (loading || options.length === 0) return;
     const signature = options.map((o) => o.value).join("|");
-    if (preselectedFor.current === signature) return;
-    preselectedFor.current = signature;
+    // A JSON array of the two inputs, so no pair of (memory, list) can
+    // encode to the same key by accident the way a joined string could.
+    const attempt = JSON.stringify([storedValue ?? "", signature]);
+    if (preselectedFor.current === attempt) return;
+    preselectedFor.current = attempt;
+    // THE CLEARED-FIELD GUARD, kept: empty now and non-empty before means the
+    // user took the value out, and a late-arriving remembered choice must not
+    // put it back. The attempt is marked above either way, so this pairing is
+    // not reconsidered on the next render.
+    if (hasHeldValue.current && !value) return;
     const resolved = resolveInitialValue(options, value, storedValue);
     // Reported up even though it is not a click, so the Save label's field
     // count is correct on the first paint rather than after the first keystroke.
