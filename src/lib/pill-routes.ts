@@ -49,7 +49,21 @@ export type PillTarget =
   /** The second level is this module's verbs (D-08 / C-09). */
   | { kind: "module"; moduleId: string }
   /** A named view. Navigates straight there. */
-  | { kind: "view"; path: string; query?: Readonly<Record<string, string>>; needsProject?: boolean }
+  | {
+      kind: "view";
+      path: string;
+      query?: Readonly<Record<string, string>>;
+      /**
+       * A-17. What the BARE path already renders. Only meaningful on a view
+       * with no `query` of its own: it is how isPillRouteOpen tells "the user
+       * is looking at what this pill opens" from "the user is on this path but
+       * on a different tab, and clicking would change the screen". Set it to
+       * the default the PAGE implements, and say where, so the two cannot
+       * drift silently.
+       */
+      defaultQuery?: Readonly<Record<string, string>>;
+      needsProject?: boolean;
+    }
   /** The top rail's own project control. */
   | { kind: "rail" }
   /** Not part of PROJEXA. Offers the VERIDIAN link in band 2. */
@@ -111,7 +125,13 @@ export const PILL_ROUTES: Readonly<Record<string, PillTarget>> = {
   task_master: { kind: "view", path: "/schedule", query: { tab: "board" } },
   tasks: { kind: "view", path: "/schedule", query: { tab: "board" } },
   to_do: { kind: "view", path: "/schedule", query: { tab: "board" } },
-  calendar: { kind: "view", path: "/schedule" },
+  // /schedule with no tab renders the TIMELINE -- schedule/page.tsx:119,
+  // `isScheduleTab(tab) ? tab : "timeline"`. Declared so Calendar reads as
+  // open on ?tab=timeline (clicking is a no-op) and NOT on ?tab=board,
+  // ?tab=sprints or ?tab=timesheet, where clicking would genuinely change the
+  // screen. The pill still opens the bare path: this describes the screen, it
+  // does not redefine the destination.
+  calendar: { kind: "view", path: "/schedule", defaultQuery: { tab: "timeline" } },
   // Checked against nav-routes rather than assumed: both are shipped tabs of
   // shipped screens, so neither needs the VERIDIAN line.
   policies: { kind: "view", path: "/grc", query: { tab: "policies" }, needsProject: false },
@@ -163,7 +183,42 @@ export function isPillRouteOpen(
   if (target.kind === "view") {
     if (path !== normalisePathname(target.path)) return false;
     const params = typeof search === "string" ? new URLSearchParams(search) : search;
-    return Object.entries(target.query ?? {}).every(([k, v]) => params.get(k) === v);
+    const named = Object.entries(target.query ?? {});
+    if (named.length > 0) return named.every(([k, v]) => params.get(k) === v);
+
+    // A-17, 2026-09-09 (R81 ruling). A view pill that names NO query used to
+    // fall through to Object.entries({}).every(...), which is VACUOUSLY TRUE --
+    // so it reported "open" on any query of its path. Calendar opens /schedule,
+    // and /schedule?tab=board is not the screen Calendar opens: clicking it
+    // WOULD change what is displayed, back to the timeline the bare path
+    // defaults to (schedule/page.tsx:119). The pill was greyed on three tabs
+    // where it was the useful thing to click.
+    //
+    // "Already on this path" and "clicking would do nothing" are different
+    // propositions and this predicate was conflating them. Pressed/greyed means
+    // the second, so that is what it now tests: a query-less view is open only
+    // when the current query carries nothing the pill's own href would not set.
+    //
+    // The ALTERNATIVE was to give PILL_ROUTES.calendar query: { tab: "timeline" }.
+    // Rejected on R81's ruling, and rightly: that redefines the pill as ONE TAB
+    // when pill-routes.test.ts deliberately documents the opposite -- "the pill
+    // named the screen, not one tab of it". Changing what a pill MEANS to fix
+    // when it looks disabled is fixing the wrong end.
+    //
+    // projectId is excluded because pillHref ADDS it for a project-scoped view,
+    // so its presence is the pill's own doing and cannot make the click differ.
+    // projectId is excluded because pillHref ADDS it for a project-scoped
+    // view, so its presence is the pill's own doing and cannot make the click
+    // differ. Anything else present must match what the bare path already
+    // renders, or clicking is not a no-op.
+    const carriedByHref = new Set(target.needsProject ? ["projectId"] : []);
+    const defaults = target.defaultQuery ?? {};
+    for (const [key, value] of params.entries()) {
+      if (carriedByHref.has(key)) continue;
+      if (defaults[key] === value) continue;
+      return false;
+    }
+    return true;
   }
   if (target.kind === "module") {
     const mod = MODULE_CATALOGUE.find((m) => m.id === target.moduleId);

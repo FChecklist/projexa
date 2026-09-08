@@ -128,9 +128,31 @@ describe("aria-pressed: is THIS pill's route what is on screen?", () => {
 
   test("a view with no query of its own is open on its bare path", () => {
     expect(isPillRouteOpen(pillTargetFor("calendar")!, "/schedule", "")).toBe(true);
-    // ...and stays open on its own screen's other tabs, because the pill named
-    // the screen, not one tab of it.
+    // ...and on the tab the bare path already renders, because clicking there
+    // is a no-op. /schedule with no tab IS the timeline (schedule/page.tsx:119).
     expect(isPillRouteOpen(pillTargetFor("calendar")!, "/schedule", "tab=timeline")).toBe(true);
+  });
+
+  test("*** A-17: a query-less view is NOT open on a tab its bare path does not render ***", () => {
+    // The defect this narrowing fixes. Object.entries({}).every(...) is
+    // VACUOUSLY TRUE, so a view naming no query reported "open" on every query
+    // of its path -- and aria-pressed drives the greying, so Calendar was
+    // greyed out on three tabs where clicking it was the useful thing to do.
+    //
+    // "Already on this path" and "clicking would do nothing" are different
+    // propositions. Greyed means the second.
+    //
+    // The rejected alternative was query: { tab: "timeline" } on the route
+    // itself. That redefines the pill as ONE TAB, against the assertion above
+    // that deliberately says the pill named the screen -- fixing what a pill
+    // MEANS in order to correct when it looks disabled.
+    const calendar = pillTargetFor("calendar")!;
+    for (const tab of ["board", "sprints", "timesheet"]) {
+      expect(`=${isPillRouteOpen(calendar, "/schedule", `tab=${tab}`)}`).toBe(`=false`);
+    }
+    // And still open where clicking changes nothing.
+    expect(isPillRouteOpen(calendar, "/schedule", "")).toBe(true);
+    expect(isPillRouteOpen(calendar, "/schedule", "tab=timeline")).toBe(true);
   });
 
   test("a module is 'open' anywhere inside itself, create and object pages included", () => {
