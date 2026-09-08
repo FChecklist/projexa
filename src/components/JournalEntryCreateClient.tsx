@@ -24,13 +24,29 @@ export default function JournalEntryCreateClient() {
   const router = useRouter();
   const currencies = useCurrencies();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // 2026-09-08 -- REAL BUG FOUND (R80 E2E-rewrite sweep): the account
+  // Select's placeholder used to be `accounts.length ? "Account" :
+  // "Loading…"`, with no separate loading boolean. An org with genuinely
+  // zero chart-of-accounts rows (a real, documented state -- see this
+  // screen's own GAP note) never sets `accounts` past its initial empty
+  // array, so the placeholder read "Loading…" forever instead of ever
+  // saying the control is settled and simply empty -- a control that
+  // looks permanently stuck rather than honestly empty. Fixed the same
+  // way BudgetCreateClient.tsx already distinguishes this exact case
+  // ("No fiscal years found in VERIDIAN"): a real loaded flag, set once
+  // the fetch settles either way.
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [userRemark, setUserRemark] = useState("");
   const [lines, setLines] = useState<JeLine[]>([{ accountId: "", debit: "", credit: "" }, { accountId: "", debit: "", credit: "" }]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then((data) => setAccounts(data.accounts ?? [])).catch(() => {});
+    fetch("/api/accounts")
+      .then((r) => r.json())
+      .then((data) => setAccounts(data.accounts ?? []))
+      .catch(() => {})
+      .finally(() => setAccountsLoaded(true));
   }, []);
 
   function updateLine(idx: number, patch: Partial<JeLine>) {
@@ -89,7 +105,11 @@ export default function JournalEntryCreateClient() {
           {lines.map((line, idx) => (
             <div key={idx} className="grid grid-cols-[1fr_90px_90px_28px] items-center gap-1.5">
               <Select value={line.accountId} onValueChange={(v) => updateLine(idx, { accountId: v })}>
-                <SelectTrigger><SelectValue placeholder={accounts.length ? "Account" : "Loading…"} /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={accounts.length ? "Account" : !accountsLoaded ? "Loading…" : "No accounts found"}
+                  />
+                </SelectTrigger>
                 <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
               </Select>
               <Input type="number" placeholder="Debit" value={line.debit} onChange={(e) => updateLine(idx, { debit: e.target.value, credit: e.target.value ? "" : line.credit })} />

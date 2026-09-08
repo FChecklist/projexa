@@ -33,6 +33,31 @@ import { fieldByLabel } from "./helpers";
 // user why. Recruitment and GRC writes were verified NOT to hit this guard
 // (their routes don't check ctx.dbUser) -- confirmed via direct POST calls
 // returning 201, not 400 -- so those really do work end-to-end.
+//
+// STALE-TEST FIX (2026-09-08): GAP #1 and GAP #2 above are both still real
+// (re-confirmed via current source: use-org-role.ts's HR_ADMIN_ROLES is
+// still {owner, admin}, and compliance-tracker's hr/departments, employees,
+// leave/requests, leave/balances and payroll/runs POST routes still hard-
+// require ctx.dbUser -- recruitment's job-openings/candidates routes still
+// fall back to `ctx.dbUser?.id ?? ctx.apiKey?.id` and so still succeed). What
+// changed is the MECHANISM, not these two architecture gaps. Every write
+// test below used to open a `role=dialog` popup. EmployeesClient.tsx's and
+// PayrollClient.tsx's own header/inline comments (all dated "Real-screen
+// conversion (2026-08-30)") say those Dialog popups are gone: "Employee
+// Profile" -> /employees/new, "New Department" -> /employees/departments/new,
+// "Request Leave" -> /employees/leave/new, "New Payroll Run" ->
+// /payroll/runs/new, "View Register" -> /payroll/runs/[id] (a real Object
+// Page, not a Dialog) -- the same chain-sentence Project > Module > New
+// <thing> navigation 04-vendors.spec.ts already documents for /vendors.
+// RecruitmentClient.tsx got the identical conversion ("New Job Opening" ->
+// /recruitment/openings/new, "Add Candidate" -> /recruitment/candidates/new).
+// Every create screen is the shared-kit ObjectScreen, whose only create-mode
+// footer control is a plain "Save" button (node_modules/@fchecklist/
+// veridian-ui-kit/src/screens/ObjectScreen.tsx:92-100) -- there is no
+// "Submit"/"Request"/"Create"/"Add" button inside any of these forms, and no
+// `role=dialog` anywhere in these flows any more. Separately, the
+// Departments-tab 500 GAP this file used to document is now fixed --
+// see that test's own comment below for the exact schema change.
 
 test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)", () => {
   test.use({ storageState: "playwright/.auth/ceo.json" });
@@ -70,16 +95,22 @@ test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)
     expect(resp.body?.error).toMatch(/real user session/i);
   });
 
-  test("Departments tab: real API bug -- GET /api/hr/departments 500s despite 6 seeded departments", async ({ page }) => {
+  test("Departments tab renders the 6 real seeded departments (the relational-query 500 GAP is fixed)", async ({ page }) => {
     await page.goto("/employees");
     await page.getByRole("tab", { name: "Departments" }).click();
-    // GAP (reproduced 5/5 times live before writing this test, root-caused
-    // to compliance-tracker's src/app/api/v1/projexa/hr/departments/route.ts:24-29's
-    // relational query -- `with: { head, users } }` -- throwing and being
-    // swallowed into a generic 500 "Failed to fetch departments"). This
-    // assertion documents the REAL broken state, not the desired one.
-    const errorToast = page.getByText(/failed to fetch departments|couldn.?t load/i);
-    await expect(errorToast.or(page.getByText("No departments yet."))).toBeVisible({ timeout: 15_000 });
+    // Stale: this test used to document GET /api/hr/departments 500ing,
+    // root-caused to compliance-tracker's hr/departments/route.ts:24-29's
+    // relational query (`with: { head, users } }`) throwing on an ambiguous
+    // users<->departments relation pair. That ambiguity is now resolved:
+    // compliance-tracker's schema.ts:2707-2726 names BOTH relation pairs
+    // (`head`/relationName "deptHead", `users`/relationName
+    // "departmentMembers"), and the comment right on that block (schema.ts:
+    // 2710-2725) cites the exact "There are multiple relations between
+    // 'users' and 'departments'" error this fix removes -- the same query
+    // shape hr/departments/route.ts:24-29 still uses can no longer throw at
+    // query-build time. Source-only finding (no dev server run to
+    // reconfirm live) -- if this still 500s, revert to the old assertion.
+    await expect(page.locator("table tbody tr")).toHaveCount(6, { timeout: 15_000 });
   });
 
   test("Org Chart tab renders the real 1-CEO + 10-employee reporting hierarchy", async ({ page }) => {
@@ -127,24 +158,34 @@ test.describe("Employees directory (/employees) -- member-role experience, as Sn
     await page.getByRole("tab", { name: "Leave" }).click();
     await page.waitForLoadState("networkidle");
 
+    // Stale: this used to open a Dialog. EmployeesClient.tsx:398-400's own
+    // comment says the old "Request Leave" Dialog popup was replaced with
+    // router.push("/employees/leave/new") on 2026-08-30 -- the form now
+    // lives on LeaveRequestCreateClient.tsx, a real page with no dialog
+    // role anywhere.
     await page.getByRole("button", { name: /request leave/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await fieldByLabel(dialog, "Leave Type").fill("Casual Leave");
-    const dateInputs = dialog.locator('input[type="date"]');
+    await expect(page).toHaveURL(/\/employees\/leave\/new$/);
+    await fieldByLabel(page.locator("main"), "Leave Type").fill("Casual Leave");
+    const dateInputs = page.locator('input[type="date"]');
     const start = new Date();
     start.setDate(start.getDate() + 30);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     await dateInputs.nth(0).fill(start.toISOString().slice(0, 10));
     await dateInputs.nth(1).fill(end.toISOString().slice(0, 10));
-    await dialog.getByRole("button", { name: /submit|request/i }).click();
+    // Stale: no "Submit"/"Request" button exists in this form any more --
+    // ObjectScreen's create-mode footer control is always plain "Save"
+    // (ObjectScreen.tsx:92-100).
+    await page.getByRole("button", { name: "Save" }).click();
 
-    // GAP: confirmed via direct POST before writing this test -- even a
-    // simple self-service "request my own leave" write, gated only at
-    // "member"+"write" scope (no manager/admin requirement at all), still
-    // requires ctx.dbUser and gets the same 400. So this isn't specific to
-    // admin actions -- it's every HR/Payroll write, full stop.
+    // GAP: still real -- compliance-tracker's src/app/api/v1/projexa/leave/
+    // requests/route.ts:31 still hard-requires ctx.dbUser and 400s "This
+    // action requires a real user session, not an API key" for PROJEXA's
+    // API-key-only caller; LeaveRequestCreateClient.tsx's own header
+    // comment (lines 4-9) discloses this as a known pre-existing
+    // limitation. Even a simple self-service "request my own leave" write,
+    // gated only at "member"+"write" scope (no manager/admin requirement at
+    // all), still hits it -- this isn't specific to admin actions.
     await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 15_000 });
   });
 });
@@ -179,9 +220,14 @@ test.describe("Payroll (/payroll) -- admin actions, as CEO", () => {
   test("View Register on a processed run shows real payslip data (33 seeded payslips / 3 runs = 11 each)", async ({ page }) => {
     await page.goto("/payroll");
     await page.waitForSelector("table tbody tr");
+    // Stale: "View Register" used to open a Dialog. PayrollClient.tsx's own
+    // comment (lines 293-295) says the register now lives on a real Object
+    // Page (PayrollRunObjectClient.tsx, reached via
+    // router.push(`/payroll/runs/${id}`)) -- no dialog role exists anywhere
+    // in this flow any more.
     await page.locator("table tbody tr").first().getByRole("button", { name: /view register/i }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    const rows = page.getByRole("dialog").locator("table tbody tr");
+    await expect(page).toHaveURL(/\/payroll\/runs\/[^/]+$/);
+    const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 15_000 });
     const count = await rows.count();
     expect(count, "expected payslips in at least one processed run's register").toBeGreaterThan(0);
@@ -191,14 +237,31 @@ test.describe("Payroll (/payroll) -- admin actions, as CEO", () => {
     await page.goto("/payroll");
     await page.waitForSelector("table tbody tr");
 
+    // Stale: this used to open a Dialog. PayrollClient.tsx:279-281's own
+    // comment says the old "New Payroll Run" Dialog popup was replaced with
+    // router.push("/payroll/runs/new") on 2026-08-30 -- the form now lives
+    // on PayrollRunCreateClient.tsx, a real page with no dialog role.
     await page.getByRole("button", { name: /new payroll run/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("combobox").click();
+    await expect(page).toHaveURL(/\/payroll\/runs\/new$/);
+    // Scoped to <main> -- the shell owns the one <main> landmark
+    // ((app)/layout.tsx:31-32, enforced by single-main-landmark.test.ts), so
+    // this excludes the sidebar's own ProjectSwitcher combobox (always
+    // mounted, and this seeded org has 4 projects so it always renders --
+    // ProjectSwitcher.tsx:41). With no dialog left to scope to instead, an
+    // unscoped page.getByRole("combobox") would be a strict-mode violation
+    // (2 matches) rather than picking this page's own Month select.
+    await page.locator("main").getByRole("combobox").click();
     await page.getByRole("option", { name: "Dec", exact: false }).click();
-    await fieldByLabel(dialog, "Year").fill("2027");
-    await dialog.getByRole("button", { name: "Create" }).click();
+    await fieldByLabel(page.locator("main"), "Year").fill("2027");
+    // Stale: no "Create" button exists in this form any more --
+    // ObjectScreen's create-mode footer control is always plain "Save"
+    // (ObjectScreen.tsx:92-100).
+    await page.getByRole("button", { name: "Save" }).click();
 
+    // GAP: still real -- compliance-tracker's src/app/api/v1/projexa/
+    // payroll/runs/route.ts:32 still hard-requires ctx.dbUser for
+    // createPayrollRun()'s audit trail and 400s the same message for
+    // PROJEXA's API-key-only caller.
     await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 15_000 });
   });
 });
@@ -222,10 +285,21 @@ test.describe("Recruitment (/recruitment) -- no role gating AND no dbUser archit
   test("real write: create a Job Opening as a member-role account -- actually succeeds (unlike every HR/Payroll write above)", async ({ page }) => {
     await page.goto("/recruitment");
     const title = `E2E Batch C QS Engineer ${Date.now()}`;
+    // Stale: this used to open a Dialog. RecruitmentClient.tsx:171-173's own
+    // comment says the old "New Job Opening" Dialog popup was replaced with
+    // router.push("/recruitment/openings/new") on 2026-08-30.
     await page.getByRole("button", { name: /new job opening/i }).click();
-    const dialog = page.getByRole("dialog");
-    await fieldByLabel(dialog, "Title").fill(title);
-    await dialog.getByRole("button", { name: /create/i }).click();
+    await expect(page).toHaveURL(/\/recruitment\/openings\/new$/);
+    await fieldByLabel(page.locator("main"), "Title").fill(title);
+    // Stale: no "Create" button exists in this form any more --
+    // ObjectScreen's create-mode footer control is always plain "Save"
+    // (ObjectScreen.tsx:92-100).
+    await page.getByRole("button", { name: "Save" }).click();
+    // JobOpeningCreateClient.tsx:42 redirects to the new opening's own real
+    // Object Page (JobOpeningObjectClient.tsx, added in the same conversion
+    // -- job openings never had a detail view before it) rather than
+    // closing a dialog back onto the list.
+    await expect(page).toHaveURL(/\/recruitment\/openings\/[0-9a-f-]+$/);
     await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
   });
 
@@ -233,18 +307,25 @@ test.describe("Recruitment (/recruitment) -- no role gating AND no dbUser archit
     await page.goto("/recruitment");
     await page.getByRole("tab", { name: "Candidates" }).click();
     const candidateName = `E2E Batch C Candidate ${Date.now()}`;
+    // Stale: this used to open a Dialog, and the old "in-memory list is slow
+    // to reflect a new row" gap (worked around below with a manual reload)
+    // was specific to that Dialog-based flow. RecruitmentClient.tsx:184-186's
+    // own comment says the old "Add Candidate" Dialog popup was replaced
+    // with router.push("/recruitment/candidates/new") on 2026-08-30 --
+    // CandidateCreateClient.tsx:31 redirects back to "/recruitment?tab=
+    // candidates" on success, a real navigation that remounts
+    // RecruitmentClient and re-runs its own load() fresh, so the manual
+    // reload this test used to need is no longer necessary (same pattern
+    // grc.spec.ts's own post-conversion list-redirecting create tests use).
     await page.getByRole("button", { name: /add candidate/i }).click();
-    const dialog = page.getByRole("dialog");
-    await fieldByLabel(dialog, "Name").fill(candidateName);
-    await fieldByLabel(dialog, "Email").fill(`e2e.${Date.now()}@example.com`);
-    await dialog.getByRole("button", { name: "Add", exact: true }).click();
-    // Confirmed real via network trace: POST succeeds (201) and the
-    // candidate genuinely persists -- but the in-memory list can be slow
-    // to reflect it without a reload despite the component's own load()
-    // call after success. Reload as a real-world user reasonably would.
-    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
-    await page.reload();
-    await page.getByRole("tab", { name: "Candidates" }).click();
+    await expect(page).toHaveURL(/\/recruitment\/candidates\/new$/);
+    await fieldByLabel(page.locator("main"), "Name").fill(candidateName);
+    await fieldByLabel(page.locator("main"), "Email").fill(`e2e.${Date.now()}@example.com`);
+    // Stale: no "Add" button exists in this form any more -- ObjectScreen's
+    // create-mode footer control is always plain "Save" (ObjectScreen.tsx:
+    // 92-100).
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page).toHaveURL(/\/recruitment\?tab=candidates$/);
     await expect(page.getByText(candidateName)).toBeVisible({ timeout: 15_000 });
   });
 });

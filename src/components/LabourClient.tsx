@@ -426,6 +426,20 @@ export default function LabourClient({
   // the fetched rows: a reader looking at a filtered table wants to know how
   // many they are looking at.
   const visibleRoster = filterRoster(roster, filter, vendorName);
+  // 2026-09-08 -- REAL BUG FOUND (R80 E2E-rewrite sweep, source-only
+  // investigation, later confirmed live): PaneState below was gated on
+  // `roster.length` (the raw fetched count) while the table renders
+  // `visibleRoster` (filtered, and the DEFAULT filter above is
+  // status:"active" -- so a project whose whole roster happens to be
+  // inactive already hits this with no filter change at all). When every
+  // row is filtered out, `mayShowEmptyState()` saw rowCount>0 and
+  // suppressed BOTH the empty message and the "Add Worker" CTA, leaving a
+  // bare table with only column headers -- no rows, no explanation, no way
+  // out. This is exactly the "count what's visible, not what's fetched"
+  // rule R67 D-32's own comment above (visibleRoster's definition) already
+  // states for the record-count label; PaneState's rowCount just wasn't
+  // following it.
+  const rosterFilteredToEmpty = roster.length > 0 && visibleRoster.length === 0;
   const trades = [...new Set(roster.map((r) => r.trade).filter(Boolean))].sort() as string[];
   const companies = [...new Set(roster.map((r) => vendorName(r.vendorId)).filter((n) => n !== EMPTY_VALUE))].sort();
 
@@ -614,14 +628,20 @@ export default function LabourClient({
               projectName={projectName}
               startedAt={rosterStartedAt}
               error={rosterError}
-              rowCount={roster.length}
+              rowCount={visibleRoster.length}
               lastLoadedAt={rosterLoadedAt}
               skeletonColumns={["S.No", ...columns.map((c) => c.label)]}
-              emptyMessage="No workers on the roster yet."
+              emptyMessage={rosterFilteredToEmpty ? "No workers match the current filter." : "No workers on the roster yet."}
               emptyAction={
-                <Button size="sm" onClick={() => router.push(`/labour/new?projectId=${projectId}`)}>
-                  <Plus className="size-4" aria-hidden /> Add Worker
-                </Button>
+                rosterFilteredToEmpty ? (
+                  <Button size="sm" variant="outline" onClick={() => writeFilter(EMPTY_FILTER)}>
+                    Clear filters
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => router.push(`/labour/new?projectId=${projectId}`)}>
+                    <Plus className="size-4" aria-hidden /> Add Worker
+                  </Button>
+                )
               }
               onRetry={() => void loadRoster(true)}
             >
@@ -749,13 +769,21 @@ export default function LabourClient({
                   : `No attendance recorded on ${formatDate(attendanceDay)}.`
               }
               emptyAction={
+                // 2026-09-08 -- REAL BUG FOUND (R80 E2E-rewrite sweep): this
+                // button and the header door button above (line ~721) both
+                // carried the exact accessible name "Mark Attendance" at the
+                // same time whenever attendance is empty -- two simultaneous
+                // controls with an identical name, real for a screen reader
+                // or automation (both do the same navigation, so this is not
+                // a functional defect, only a naming collision). Renamed
+                // this one so the two are distinguishable by name alone.
                 <Button
                   size="sm"
                   disabled={roster.length === 0}
                   title={roster.length === 0 ? "Add a worker to the roster first" : undefined}
                   onClick={() => router.push(`/labour/attendance/new?projectId=${projectId}`)}
                 >
-                  <Plus className="size-4" aria-hidden /> Mark Attendance
+                  <Plus className="size-4" aria-hidden /> Mark attendance now
                 </Button>
               }
               onRetry={() => void loadAttendance(attendanceDay, showEarlier)}

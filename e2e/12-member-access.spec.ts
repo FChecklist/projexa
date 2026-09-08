@@ -39,30 +39,29 @@ test.describe("member-level access (non-admin account)", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Procurement" })).toBeVisible();
   });
 
-  test("unauthenticated GETs to the 4 middleware-unprotected routes 401 at the API layer but the pages don't crash", async ({
+  test("unauthenticated GETs to all 8 routes (formerly mixed gating) now redirect to /login", async ({
     browser,
   }) => {
-    // Real finding from reading src/middleware.ts's PROTECTED_PREFIXES:
-    // /inventory, /procurement, /purchase-orders, and /permits are NOT
-    // listed, so an unauthenticated visit is never redirected to /login by
-    // middleware (unlike /materials, /vendors, /labour, /ffe, /floor-plans,
-    // /mood-boards, /documents, which ARE listed and do redirect). The
-    // underlying API routes still requireAuth() and 401 -- but since none
-    // of these client components check res.ok on their GET calls, the page
-    // silently renders its normal empty state instead of an error or a
-    // redirect. Verified live with a brand-new, fully unauthenticated
-    // browser context (no storageState at all).
+    // STALE: this test used to assert /inventory, /procurement,
+    // /purchase-orders, and /permits were NOT redirected to /login, citing
+    // src/middleware.ts's old hand-written PROTECTED_PREFIXES array (which
+    // didn't list them) as a "real middleware gap". That mechanism is gone.
+    // R48_PAGE_AUTH_GATE_COVERS_HALF_THE_NAV_01 (src/lib/authz/page-access.ts:1-38)
+    // replaced it with a deny-by-default gate: every page under
+    // src/app/(app)/ requires authentication, full stop, no allow-list to
+    // drift. page-access.test.ts:88-114 ("the specific routes the old
+    // allow-list lost are now gated") names /inventory, /permits,
+    // /procurement, and /purchase-orders explicitly as routes the old list
+    // missed and this one closes -- so the documented "gap" is now the
+    // thing under regression test on the source side. All 8 routes below
+    // behave identically today: same redirect, same as /materials/
+    // /vendors/ /labour/ /documents already did.
     const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const page = await context.newPage();
 
-    for (const path of ["/inventory", "/procurement", "/purchase-orders", "/permits"]) {
+    for (const path of ["/inventory", "/procurement", "/purchase-orders", "/permits", "/materials", "/vendors", "/labour", "/documents"]) {
       const res = await page.goto(path);
       expect(res?.status(), `${path} should not itself error`).toBeLessThan(500);
-      expect(page.url(), `${path} should NOT redirect to /login (real middleware gap)`).toContain(path);
-    }
-
-    for (const path of ["/materials", "/vendors", "/labour", "/documents"]) {
-      await page.goto(path);
       await page.waitForURL("**/login**", { timeout: 10_000 });
     }
 

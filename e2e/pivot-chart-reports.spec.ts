@@ -18,12 +18,24 @@ test.describe("Reports pivot/chart view switch (/reports)", () => {
     await page.getByPlaceholder(/search reports and analyses/i).fill("Report");
     await page.waitForTimeout(500);
 
-    const runToggle = page.getByText("Run this report").first();
+    // Stale: the card's toggle read "Run this report" and expanding it only
+    // opened an empty parameter panel needing a separate "Run" click. Real
+    // source now: the button reads "Run Report" (ReportCatalogSection.tsx:199,
+    // data-testid "catalog-run-report" -- also pinned by
+    // ReportsClient.test.tsx:699, which asserts "Run this report" no longer
+    // appears at all), and mounting the runner panel IS the run -- it fires
+    // on arrival with pre-filled month-to-date params, no second button
+    // (ReportCatalogRunner.tsx:125-134, "RUN ON ARRIVAL"). Its two failure
+    // states ("Could not run this report — …" and the 20s timeout sentence,
+    // ReportCatalogRunner.tsx:138-141) both land in one role="alert" <p>
+    // (ReportCatalogRunner.tsx:222), so asserting on that role covers both
+    // instead of guessing at "could not generate"/"network error" wording
+    // that no longer appears anywhere in this component.
+    const runToggle = page.getByTestId("catalog-run-report").first();
     const hasRunnable = await runToggle.isVisible().catch(() => false);
     test.skip(!hasRunnable, "no runnable (definition-backed) report found in the catalog");
     await runToggle.click();
-    await page.getByRole("button", { name: /^run$/i }).click();
-    await expect(page.getByText(/could not generate|network error/i)).not.toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("alert")).not.toBeVisible({ timeout: 20_000 });
 
     const tableTab = page.getByRole("tab", { name: "Table" });
     const hasTabs = await tableTab.isVisible({ timeout: 10_000 }).catch(() => false);

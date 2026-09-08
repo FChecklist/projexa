@@ -29,8 +29,10 @@ test.describe("Invoices (/invoices)", () => {
     await page.waitForSelector("table tbody tr");
     await activeTabPanel(page).getByRole("combobox").first().click();
     // Rendered option text is the real enum value with "_" replaced by " "
-    // (InvoicesClient.tsx:174: `s.replace("_", " ")`, CSS `capitalize`) --
+    // (InvoicesClient.tsx:94: `s.replace("_", " ")`, CSS `capitalize`) --
     // "partially_paid" renders as "partially paid", not the raw enum.
+    // (Line-number citation corrected 2026-09-08 -- was :174, drifted after
+    // the file grew; the behavior itself was never stale.)
     for (const status of ["draft", "submitted", "partially paid", "paid", "overdue", "cancelled"]) {
       await expect(page.getByRole("option", { name: status, exact: true })).toBeVisible();
     }
@@ -58,41 +60,65 @@ test.describe("Invoices (/invoices)", () => {
     await page.waitForSelector("table tbody tr");
     const beforeCount = await page.locator("table tbody tr").count();
 
+    // STALE-TEST FIX (2026-09-08): "Create Invoice" used to open a modal
+    // Dialog; InvoicesClient.tsx:97-99's own comment says that popup "is
+    // gone" as of a 2026-08-30 real-screen conversion -- it now does
+    // router.push("/invoices/new") to a dedicated create route
+    // (InvoiceCreateClient.tsx), the same chain-sentence Project > Module >
+    // New <thing> pattern already fixed for vendors (04-vendors.spec.ts).
+    // There is no role=dialog anywhere in this flow.
     await page.getByRole("button", { name: /create invoice/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(/\/invoices\/new$/);
+    await expect(page.getByRole("heading", { level: 1, name: "New Sales Invoice" })).toBeVisible();
 
-    // GAP found while writing this test: the Customer combobox's real
-    // customer list is lazy-fetched AFTER the dialog opens -- until that
+    // GAP found while writing this test (still real on the new screen): the
+    // Customer combobox's real customer list is lazy-fetched in a useEffect
+    // AFTER this screen mounts (InvoiceCreateClient.tsx:28-30) -- until that
     // fetch resolves, the only option is the static "+ New customer…"
     // entry, and picking too early silently reveals an empty "New Customer
-    // Name" field instead of a real customerId, which then makes the
-    // Create button a permanent no-op (no toast, no POST, no error --
-    // confirmed live via network trace). No loading indicator on the
-    // combobox itself warns the user this is happening. Wait for a real
-    // (non-"New customer") option to actually appear before selecting.
-    const customerCombo = dialog.getByRole("combobox").first();
+    // Name" field instead of a real customerId, which then makes Save a
+    // permanent no-op (no toast, no POST, no error -- confirmed live via
+    // network trace). No loading indicator on the combobox itself warns the
+    // user this is happening. Wait for a real (non-"New customer") option to
+    // actually appear before selecting.
+    //
+    // fieldByLabel() takes a Locator scope (it used to be `dialog`); there's
+    // no dialog to scope to anymore, so scope to the whole document instead
+    // -- equivalent to the old dialog-scoped lookup now that the form fills
+    // the whole page rather than sharing it with a list.
+    const formScope = page.locator("body");
+    const customerCombo = fieldByLabel(formScope, "Customer");
     await customerCombo.click();
     const realCustomerOption = page.getByRole("option").filter({ hasNotText: "New customer" }).first();
     await expect(realCustomerOption).toBeVisible({ timeout: 10_000 });
     await realCustomerOption.click();
 
     const description = `E2E Batch C test line ${Date.now()}`;
-    await fieldByLabel(dialog, "Line Item Description").fill(description);
-    await fieldByLabel(dialog, "Quantity").fill("2");
-    await fieldByLabel(dialog, "Rate").fill("5000");
+    await fieldByLabel(formScope, "Line Item Description").fill(description);
+    await fieldByLabel(formScope, "Quantity").fill("2");
+    await fieldByLabel(formScope, "Rate").fill("5000");
 
     const createResponsePromise = page.waitForResponse(
       (r) => r.url().includes("/api/sales-invoices") && r.request().method() === "POST"
     );
-    await dialog.getByRole("button", { name: "Create Invoice" }).click();
+    // Stale: no "Create Invoice" button on this screen -- ObjectScreen's
+    // create-mode footer control is always plain "Save" (node_modules/
+    // @fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:92-100), same
+    // as vendors.
+    await page.getByRole("button", { name: "Save" }).click();
     const createResponse = await createResponsePromise;
     expect(createResponse.status(), "invoice creation POST did not succeed").toBe(201);
 
-    // Reload rather than trusting the dialog's own in-memory refresh --
-    // more reliable than racing a toast/count check against this page's
-    // own refetch timing.
-    await page.reload();
+    // Stale: nothing to close (no dialog). On success
+    // InvoiceCreateClient.tsx:56 redirects to the new invoice's own Object
+    // Page (InvoiceObjectClient.tsx, title "Invoice #<n>" per
+    // InvoiceObjectClient.tsx:150) rather than back to the list -- confirm
+    // that redirect, then navigate to the list explicitly. A plain
+    // page.reload() here would reload the Object Page, not the list.
+    await expect(page).toHaveURL(/\/invoices\/[0-9a-f-]+$/);
+    await expect(page.getByRole("heading", { level: 1, name: /^Invoice #\d+$/ })).toBeVisible();
+
+    await page.goto("/invoices");
     await page.waitForSelector("table tbody tr");
     const afterCount = await page.locator("table tbody tr").count();
     expect(afterCount, "new invoice did not persist in the list after creation").toBeGreaterThan(beforeCount);
@@ -140,23 +166,48 @@ test.describe("Quotations (/quotations)", () => {
     const hasDraft = await draftRow.isVisible().catch(() => false);
     test.skip(!hasDraft, "no seeded quotation is currently in draft status to transition");
 
-    // Track this exact row by its full original text (unique enough: quote
-    // number + customer + date + total combined) rather than a bare digit
+    // Track this exact row by its quote number cell rather than a bare digit
     // fragment, which can ambiguously match unrelated rows/cells elsewhere
     // in the table on reload.
     const quotationNumberCell = (await draftRow.locator("td").first().innerText()).trim();
-    const originalRowText = (await draftRow.innerText()).trim();
-    await draftRow.getByRole("button", { name: /submit for approval/i }).click();
-    await expect(page.getByText(/pending_approval/i)).toBeVisible({ timeout: 15_000 });
 
-    // Verify it actually persisted: reload and confirm the SAME quotation
-    // (matched by its exact number cell) is no longer draft.
+    // STALE-TEST FIX (2026-09-08): there is no per-row "Submit for Approval"
+    // button on this list anymore. QuotationsClient.tsx:22-27's own comment
+    // says the old inline status/convert/revision/PDF row actions are gone
+    // as of the 2026-08-30 real-screen conversion -- rows now just navigate
+    // (router.push, QuotationsClient.tsx:127) to a real Object Page
+    // (SalesQuotationObjectClient.tsx), where the status-transition buttons
+    // now live: NEXT_ACTIONS[draft] = "Submit for Approval" -> pending_approval
+    // (SalesQuotationObjectClient.tsx:38-44), and the transition is a real
+    // PATCH /api/quotations/[id] (SalesQuotationObjectClient.tsx:68-83).
+    await draftRow.click();
+    await expect(page).toHaveURL(/\/quotations\/[0-9a-f-]+$/);
+
+    const transitionResponsePromise = page.waitForResponse(
+      (r) => r.url().includes("/api/quotations/") && r.request().method() === "PATCH"
+    );
+    await page.getByRole("button", { name: "Submit for Approval" }).click();
+    const transitionResponse = await transitionResponsePromise;
+    expect(transitionResponse.status(), "quotation status PATCH did not succeed").toBe(200);
+
+    // Stale: the header status renders quotation.status.replace(/_/g, " ")
+    // (SalesQuotationObjectClient.tsx:157), so the real text is "pending
+    // approval" (a space) -- the raw enum "pending_approval" the old regex
+    // looked for never appears in the DOM.
+    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 15_000 });
+
+    // Verify it actually persisted: reload this same Object Page and
+    // confirm the status stuck, then confirm the list (matched by the same
+    // quotation number tracked above) reflects it too.
     await page.reload();
+    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 15_000 });
+
+    await page.goto("/quotations");
     await page.waitForSelector("table tbody tr");
     const sameRow = page.locator("table tbody tr").filter({
       has: page.locator("td").first().getByText(quotationNumberCell, { exact: true }),
     });
     await expect(sameRow).not.toContainText("draft", { timeout: 15_000 });
-    console.log(`Quotation ${quotationNumberCell} transitioned from draft; original row: "${originalRowText}"`);
+    console.log(`Quotation ${quotationNumberCell} transitioned from draft to pending_approval`);
   });
 });

@@ -43,8 +43,15 @@ test.describe("purchase-orders", () => {
     // CompanySelector renders null with 0 companies.
     await expect(page.getByText("Company / Office")).toHaveCount(companies.companies.length > 0 ? 1 : 0);
 
+    // Stale: "New Purchase Order" opened a Dialog at authoring time. The
+    // 2026-08-30 "real-screen conversion" (PurchaseOrdersClient.tsx:89)
+    // replaced it with router.push("/purchase-orders/new") -- a real route,
+    // not a modal -- and PurchaseOrderCreateClient.tsx's title reaches the
+    // DOM through ObjectScreen as a plain <h1> (node_modules/@fchecklist/
+    // veridian-ui-kit/src/screens/ObjectScreen.tsx:153), never role="dialog".
     await page.getByRole("button", { name: "New Purchase Order" }).click();
-    await expect(page.getByRole("dialog", { name: "New Purchase Order" })).toBeVisible();
+    await expect(page).toHaveURL(/\/purchase-orders\/new$/);
+    await expect(page.getByRole("heading", { level: 1, name: "New Purchase Order" })).toBeVisible();
     await expect(page.getByText("Company / Office (optional)")).toHaveCount(companies.companies.length > 0 ? 1 : 0);
     await expect(page.getByText("Currency (optional)")).toHaveCount(currencies.currencies.length > 0 ? 1 : 0);
   });
@@ -76,12 +83,24 @@ test.describe("purchase-orders", () => {
 
     const [createRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/purchase-orders") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Create Purchase Order" }).click(),
+      // Stale: button read "Create Purchase Order" at authoring time (the
+      // old Dialog's own submit label). The real-screen conversion moved
+      // this form onto ObjectScreen, whose save button is always literally
+      // "Save" once enabled (ObjectScreen.tsx:99, footerActions: the label
+      // is "Save" plus a "(<reason>)" suffix only while saveDisabled is
+      // true -- no suffix once a vendor is picked).
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(createRes.status(), await createRes.text().catch(() => "")).toBe(201);
     await expect(page.getByText("Purchase order created")).toBeVisible();
 
-    await page.reload();
+    // Stale: reload() used to be enough because the old Dialog's onSuccess
+    // closed it back onto /purchase-orders. PurchaseOrderCreateClient.tsx:73
+    // now does router.push(`/procurement/purchase-orders/${po.id}`) on
+    // success -- reload() would reload that Object Page, which has no PO
+    // list table (PurchaseOrderObjectClient.tsx renders one PO's detail,
+    // not a list). Go back to the list route explicitly to check the real row.
+    await page.goto("/purchase-orders");
     const after = await apiGet<{
       purchaseOrders: { vendorId: string; items: { description: string; quantity: string; rate: string }[] }[];
     }>(page, "/api/purchase-orders");

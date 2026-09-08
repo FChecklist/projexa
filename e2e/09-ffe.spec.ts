@@ -37,7 +37,13 @@ test.describe("ffe", () => {
 
     await expect(page.getByRole("heading", { level: 1, name: "FF&E Specification" })).toBeVisible();
 
+    // Real screen navigation (FfeClient.tsx:90-92, "replaces the old 'New
+    // Item' Dialog popup with a real create route") -- New Item pushes to
+    // /ffe/new (FfeCreateClient.tsx), it does not open a dialog. Field
+    // selectors below are unchanged: the create page kept "same fields"
+    // (FfeCreateClient.tsx:3-4) as the old dialog.
     await page.getByRole("button", { name: "New Item" }).click();
+    await expect(page).toHaveURL(/\/ffe\/new(\?|$)/);
     await fieldInput(page, "Item Name").fill(itemName);
     await fieldInput(page, "Room / Area").fill("Living Room");
     await fieldInput(page, "Category").click();
@@ -45,27 +51,46 @@ test.describe("ffe", () => {
     await fieldInput(page, "Qty").fill("2");
     await fieldInput(page, /^Cost/).fill("15000");
     await fieldInput(page, /^Client Price/).fill("22000");
+    // veridian-ui-kit's ObjectScreen renders one footer button for every
+    // isEditing mode (edit AND create) and it is always literally "Save"
+    // (ObjectScreen.tsx:90-100, shared by FfeCreateClient.tsx's create
+    // mode) -- there is no "Add Item" control anywhere in this flow.
     const [createRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/ffe") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Add Item" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(createRes.status()).toBe(201);
     await expect(page.getByText("FF&E item added")).toBeVisible();
 
-    const row = page.getByRole("row", { name: new RegExp(itemName) });
-    await expect(row).toBeVisible();
-    await expect(row.getByText("specified")).toBeVisible();
+    // FfeCreateClient.tsx:48 -- on success the app navigates to the new
+    // item's own Object Page (/ffe/[id]); it does NOT stay on the /ffe list,
+    // so there is no table row to inspect here. The status lives in
+    // FfeObjectClient.tsx's "Status" definition-list field (dt/dd pair,
+    // line 150), scoped the same way helpers.ts's fieldInput() scopes
+    // labelled controls -- StatusBadge (the header badge) shows the same
+    // text too, so an unscoped getByText("specified") is a strict-mode
+    // multi-match.
+    await expect(page).toHaveURL(/\/ffe\/[^/?]+$/);
+    await expect(page.getByRole("heading", { level: 1, name: itemName })).toBeVisible();
+    const statusField = page.locator("dt", { hasText: "Status" }).locator("xpath=following-sibling::dd[1]");
+    await expect(statusField).toHaveText("specified");
 
+    // FfeObjectClient.tsx:141-143 -- the real advance control's accessible
+    // name interpolates the destination status ("Advance to ordered"), not
+    // the bare "Advance" the pre-conversion /ffe list row used.
     const [advanceRes] = await Promise.all([
       page.waitForResponse((r) => /\/api\/ffe\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH"),
-      row.getByRole("button", { name: "Advance" }).click(),
+      page.getByRole("button", { name: "Advance to ordered" }).click(),
     ]);
     expect(advanceRes.status()).toBe(200);
-    await expect(row.getByText("ordered")).toBeVisible();
+    await expect(statusField).toHaveText("ordered");
 
+    // Back to the list (FfeObjectClient.tsx:133, onBack) to confirm the
+    // write actually persisted into the project's real FF&E schedule --
+    // /api/ffe response shape is unchanged ({ items: [...] }, route.ts:14).
     const [afterRes] = await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/ffe?") && r.request().method() === "GET"),
-      page.reload(),
+      page.getByRole("button", { name: /Back/ }).click(),
     ]);
     const after = (await afterRes.json()) as { items: { itemName: string; status: string; quantity: number }[] };
     expect(after.items.length).toBe(before.items.length + 1);

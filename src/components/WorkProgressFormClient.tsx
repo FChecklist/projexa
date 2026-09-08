@@ -546,12 +546,30 @@ export default function WorkProgressFormClient({
                 above stays, because D-55's hint line and its stated failure
                 state are both built from it. The picker removes the
                 unsearchable list; removing that read is a follow-up. */}
+            {/* 2026-09-08 -- REAL BUG FOUND (R80 E2E-rewrite sweep): this
+                render prop ignored FormField's own `props` entirely (every
+                sibling field in this form destructures it, e.g. the Date
+                field two blocks below spreads `{...props}` onto its
+                <Input>) -- so FormField's <Label htmlFor={id}> pointed at
+                an id nothing on screen carried, AND BoqLinePicker's own
+                SearchSelect draws its accessible name from a fixed internal
+                `aria-label` ("BOQ line"), which wins over any native label
+                association per the ARIA spec regardless. A screen reader
+                announced only "BOQ line", never the fuller, more
+                informative visible label ("BOQ line item ..." /
+                "BOQ line item (optional) ..."). BoqLinePicker/SearchSelect
+                have no `id` prop to receive FormField's `id` even if this
+                threaded it through, so the fix that actually closes the
+                announced-name gap is passing the SAME text the visible
+                <Label> already renders as this control's own `ariaLabel`,
+                overriding its "BOQ line" default. */}
             {() => (
               <BoqLinePicker
                 projectId={projectId}
                 boqId={selectedBoqId}
                 value={(values.boqLineItemId as string) ?? null}
                 onChange={(lineId) => setField("boqLineItemId", lineId ?? "")}
+                ariaLabel={boqLineLabelFor(projectHasBoq)}
               />
             )}
           </FormField>

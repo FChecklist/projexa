@@ -4,9 +4,14 @@ import { apiGet, fieldInput, uniqueSuffix } from "./helpers";
 test.use({ storageState: "playwright/.auth/ceo.json" });
 
 // /inventory (InventoryClient.tsx) has 3 tabs (Stock Balance / Warehouses /
-// Items) each backed by its own endpoint, and 3 write dialogs (New
-// Warehouse, New Item, Record Stock Movement). No search/sort/pagination on
-// any tab -- confirmed by reading the component source.
+// Items) each backed by its own endpoint, and 3 write flows (New Warehouse,
+// New Item, Record Stock Movement). STALE: this used to be 3 write dialogs;
+// InventoryClient.tsx:80-82's own comment ("Real screen navigation
+// (2026-08-30) -- replaces the old ... Dialog popups with real create
+// routes") + WarehouseCreateClient/ItemCreateClient/StockEntryCreateClient.tsx
+// confirm each button now router.push()es to its own /inventory/.../new
+// ObjectScreen page instead. No search/sort/pagination on any tab --
+// confirmed by reading the component source.
 test.describe("inventory", () => {
   test("Items tab renders the real seeded catalog (PHASE1_SEED_REPORT.md: 20 materials -> landed here, not on /materials)", async ({
     page,
@@ -59,30 +64,48 @@ test.describe("inventory", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Inventory" })).toBeVisible();
 
     // 1. Create warehouse.
+    // STALE: "New Warehouse" used to open a Dialog in-place; it now
+    // router.push()es to /inventory/warehouses/new, a real ObjectScreen page
+    // (WarehouseCreateClient.tsx), whose Save/Cancel footer buttons come from
+    // ObjectScreen.tsx's shared footerActions ("Save", not "Add Warehouse").
     await page.getByRole("button", { name: "New Warehouse" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "New Warehouse" })).toBeVisible();
     await fieldInput(page, "Warehouse Name").fill(warehouseName);
     const [whRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/inventory/warehouses") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Add Warehouse" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(whRes.status()).toBe(201);
     await expect(page.getByText("Warehouse added")).toBeVisible();
 
     // 2. Create item.
+    // Same real-screen conversion as the warehouse above -- see
+    // ItemCreateClient.tsx. Its ObjectScreen is titled "New Stock Item" (the
+    // button that opens it is still labelled "New Item").
     await page.getByRole("button", { name: "New Item" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "New Stock Item" })).toBeVisible();
     await fieldInput(page, "Item Code").fill(itemCode);
     await fieldInput(page, "Item Name").fill(itemName);
     await fieldInput(page, "Unit of Measure (optional)").fill("Nos");
     const [itemRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/inventory/items") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Add Item" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(itemRes.status()).toBe(201);
     await expect(page.getByText("Item added")).toBeVisible();
 
+    // createItem() redirects to the new item's own Object Page
+    // (router.push(`/inventory/items/${data.id}`) in ItemCreateClient.tsx),
+    // not back to /inventory -- go back explicitly before the next write.
+    await page.goto("/inventory");
+    await expect(page.getByRole("heading", { level: 1, name: "Inventory" })).toBeVisible();
+
     // 3. Record a stock receipt against the new item + warehouse.
+    // STALE: getByRole('dialog', ...) -- "Record Stock Movement" is now the
+    // page at /inventory/stock-entries/new (StockEntryCreateClient.tsx), not
+    // a dialog; asserting its ObjectScreen heading in place of the dialog.
     await page.getByRole("button", { name: "Record Stock Movement" }).click();
-    await expect(page.getByRole("dialog", { name: "Record Stock Movement" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Record Stock Movement" })).toBeVisible();
     await fieldInput(page, "Item").click();
     await page.getByRole("option", { name: `${itemName} (${itemCode})` }).click();
     await fieldInput(page, "Warehouse").click();
@@ -91,7 +114,7 @@ test.describe("inventory", () => {
     await fieldInput(page, "Rate (optional)").fill("120");
     const [entryRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/inventory/stock-entries") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Record Movement" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(entryRes.status(), await entryRes.text().catch(() => "")).toBe(201);
     await expect(page.getByText("Stock receipt recorded")).toBeVisible();

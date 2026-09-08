@@ -357,7 +357,15 @@ export function Composer({
             // prop's own doc comment above): normal flow, top-anchored,
             // no z-index/pointer-events dance needed because nothing sits
             // behind this to click through to.
-            "relative flex flex-col px-3 pb-3"
+            //
+            // R80 PART 4: `min-h-0 flex-1` so this FILLS the left pane's
+            // remaining height (AppShell's own wrapper is a `flex-1
+            // flex-col`, and the Task Master area above collapses to 0 in
+            // this state) rather than taking only its content's natural
+            // height. A definite height is what makes "three equal
+            // vertical thirds" below mean anything at all -- thirds of a
+            // content-sized box would just be the content again.
+            "relative flex min-h-0 flex-1 flex-col px-3 pb-3"
       }
       style={dockedOverTaskMaster ? { maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` } : undefined}
     >
@@ -376,11 +384,28 @@ export function Composer({
           is completely unchanged -- only the visual chrome moved up a level.
       */}
       <div
-        className="pointer-events-auto relative flex w-full flex-col overflow-visible"
-        style={{
-          minHeight: COMPOSER_RESTING_HEIGHT,
-          maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh`,
-        }}
+        // R80 PART 4 -- THREE EQUAL VERTICAL THIRDS, owner's own words:
+        // "DIVIDE THE LEFT SIDE IN 3 EQUAL PARTS VERTICALLY / PART 1 (TOP
+        // LEFT) - FREQUENT ACTIONS / PART 2 (MIDDLE LEFT) - MODE PILLS /
+        // OPTION SELECTION CHAIN / PART 3 - (BOTTOM LEFT) - CHAT BOX".
+        // When undocked (Task Master collapsed -- the default), this box
+        // fills the pane (`min-h-0 flex-1`) and its three children below
+        // each take `flex-1 basis-0`, i.e. exactly one third each,
+        // scrolling internally instead of pushing a sibling off. The
+        // DOCKED case is deliberately left on the old content-sized
+        // min/maxHeight growth mechanism -- there the composer floats over
+        // a real Task Master pane and must stay as short as its content,
+        // which is the opposite of filling a third of anything.
+        className={
+          dockedOverTaskMaster
+            ? "pointer-events-auto relative flex w-full flex-col overflow-visible"
+            : "pointer-events-auto relative flex min-h-0 w-full flex-1 flex-col overflow-hidden"
+        }
+        style={
+          dockedOverTaskMaster
+            ? { minHeight: COMPOSER_RESTING_HEIGHT, maxHeight: `${COMPOSER_MAX_HEIGHT_VH}vh` }
+            : undefined
+        }
       >
         {/*
             2026-09-07 -- REORDERED to match the frozen mock's own vertical
@@ -428,10 +453,24 @@ export function Composer({
             look-in. PillStrip.tsx itself is untouched -- this only bounds
             its container.
         */}
+        {/* R80 PART 4 -- PART 1 (TOP THIRD): Frequent actions. Undocked,
+            this is `flex-1 basis-0` (one exact third, scrolling inside
+            itself); docked, it keeps the shrink + 40vh cap the comment
+            above describes, because there it shares a content-sized box
+            with a real Task Master pane rather than owning a third of a
+            pane of its own. */}
         {pills && (
           <div
-            className="min-h-0 shrink overflow-y-auto px-3 pb-1.5 pt-2"
-            style={{ borderColor: "var(--color-ct-border)", maxHeight: "40vh" }}
+            className={
+              dockedOverTaskMaster
+                ? "min-h-0 shrink overflow-y-auto px-3 pb-1.5 pt-2"
+                : "min-h-0 h-1/3 shrink-0 grow-0 overflow-y-auto px-3 pb-1.5 pt-2"
+            }
+            style={
+              dockedOverTaskMaster
+                ? { borderColor: "var(--color-ct-border)", maxHeight: "40vh" }
+                : { borderColor: "var(--color-ct-border)" }
+            }
           >
             {pills}
           </div>
@@ -454,33 +493,65 @@ export function Composer({
             an explicit `maxHeight` safety cap, so this band shrinks and
             scrolls internally instead of encroaching on the bands after it.
         */}
-        {conversation && (
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2" style={{ maxHeight: "40vh" }}>
-            {conversation}
-          </div>
-        )}
+        {/* R80 PART 4 -- PART 2 (MIDDLE THIRD): "MODE PILLS / OPTION
+            SELECTION CHAIN". Both halves of that live here: the
+            `conversation` slot (M24Shell renders ChainOptionsPanel into
+            it -- the actual option-selection chips: New | Expiring soon |
+            Open ...) and the ControlStrip below it (the chain's own
+            segments plus All modules / Tasks / Back / Home / Reset). They
+            were two independent siblings of the pills and input bands
+            before; they are one band now so the middle third is a single,
+            coherent third rather than two competing ones. Undocked this
+            wrapper is `flex-1 basis-0` (one exact third); docked it keeps
+            the old auto/shrink behaviour so nothing about the
+            float-over-Task-Master case changes. */}
+        <div
+          className={
+            dockedOverTaskMaster
+              ? "flex min-h-0 flex-col"
+              : "flex min-h-0 h-1/3 shrink-0 grow-0 flex-col overflow-hidden"
+          }
+        >
+          {conversation && (
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
+              style={dockedOverTaskMaster ? { maxHeight: "40vh" } : undefined}
+            >
+              {conversation}
+            </div>
+          )}
 
-        {/* CONTROL STRIP -- and the one instruction, rendered here only.
-            Moved to sit just above the input, per the frozen mock. */}
-        <div className="relative shrink-0 border-t" style={{ borderColor: "var(--color-ct-border)" }}>
-          <ControlStrip
-            chain={chain}
-            onCutFrom={onCutFrom}
-            onSegmentClick={onSegmentClick}
-            onBack={onBack}
-            onHome={onHome}
-            onReset={onReset}
-            prompt={instruction}
-            loaded={loaded}
-            allModulesExpanded={allModulesExpanded}
-            onToggleAllModules={onToggleAllModules}
-            onToggleTasks={onToggleTasks}
-            tasksExpanded={tasksExpanded}
-          />
+          {/* CONTROL STRIP -- and the one instruction, rendered here only.
+              Moved to sit just above the input, per the frozen mock. */}
+          <div className="relative shrink-0 border-t" style={{ borderColor: "var(--color-ct-border)" }}>
+            <ControlStrip
+              chain={chain}
+              onCutFrom={onCutFrom}
+              onSegmentClick={onSegmentClick}
+              onBack={onBack}
+              onHome={onHome}
+              onReset={onReset}
+              prompt={instruction}
+              loaded={loaded}
+              allModulesExpanded={allModulesExpanded}
+              onToggleAllModules={onToggleAllModules}
+              onToggleTasks={onToggleTasks}
+              tasksExpanded={tasksExpanded}
+            />
+          </div>
         </div>
 
-        {/* INPUT -- real height, generous padding. Not a single line. */}
-        <div className="shrink-0 px-3 pb-2.5 pt-1">
+        {/* R80 PART 4 -- PART 3 (BOTTOM THIRD): the chat box (input,
+            Send, worked examples, attach). Undocked it is `flex-1
+            basis-0` like its two siblings and scrolls internally;
+            docked it stays `shrink-0`, its long-standing behaviour. */}
+        <div
+          className={
+            dockedOverTaskMaster
+              ? "shrink-0 px-3 pb-2.5 pt-1"
+              : "min-h-0 h-1/3 shrink-0 grow-0 overflow-y-auto px-3 pb-2.5 pt-1"
+          }
+        >
           {/* R67 C-04: the chain's scalar values, as labelled fields, beside
               the thing they are inputs to. */}
           {fieldsSlot && <div className="mb-1 flex flex-wrap items-end gap-3">{fieldsSlot}</div>}

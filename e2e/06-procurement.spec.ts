@@ -15,13 +15,23 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 // write also lands in that module's table -- see that file's comments for
 // why its assertions use before/after deltas instead of a fixed count).
 //
+// Real-screen conversion (2026-08-30, see ProcurementClient.tsx:55-64):
+// every "New X" / "Record Quotation" Dialog popup this file used to drive
+// is gone. Requisitions/RFQs/Goods Receipts each gained a real create route
+// (.../new) plus a real Object Page (.../[id]) where Submit/Send/Post-to-
+// Stock now live -- these used to be inline buttons on the /procurement
+// list itself. Quotations is the one stage that DIDN'T gain an Object Page
+// (no getSupplierQuotation() exists, QuotationCreateClient.tsx:5-7) -- its
+// create screen redirects back to the list and "Convert to PO" stays a
+// real inline row action, so that stage's flow below is the least changed.
+//
 // The 5 stages are deliberately written as 4 SEPARATE tests (Requisition;
 // RFQ; Quotation+convert-to-PO; Goods Receipt) rather than one chained mega
 // -test: RFQ/Quotation/Goods-Receipt creation don't actually require a
-// prior requisition (every "linked X (optional)" dropdown defaults to
-// "none — raise directly"), so a real bug in one stage (see Requisition
-// test below) shouldn't prevent this suite from exercising and reporting
-// on the other 3 independently.
+// prior requisition (every "linked X (optional)" dropdown defaults to no
+// linkage), so a real bug in one stage (see Requisition test below)
+// shouldn't prevent this suite from exercising and reporting on the other
+// 3 independently.
 test.describe("procurement", () => {
   test("baseline: 4 of 5 stages are genuinely empty; the Purchase Orders stage matches /api/purchase-orders exactly", async ({
     page,
@@ -78,43 +88,64 @@ test.describe("procurement", () => {
 
     await page.goto("/procurement");
     await page.getByRole("tab", { name: "1. Requisitions" }).click();
+    // Stale: this used to open a "New Requisition" Dialog. It now routes to
+    // a real create screen (ProcurementClient.tsx:171-173 ->
+    // RequisitionCreateClient.tsx) -- no getByRole('dialog') exists here
+    // any more.
     await page.getByRole("button", { name: "New Requisition" }).click();
+    await expect(page).toHaveURL(/\/procurement\/requisitions\/new$/);
     await fieldInput(page, "Purpose (optional)").fill(`E2E test run ${suffix}`);
     await fieldInput(page, "Item description").fill(itemDesc);
     await fieldInput(page, "Quantity").fill("10");
+    // Stale: there is no per-module "Create Requisition" button any more --
+    // the create screen's submit control is the shared kit's generic "Save"
+    // (ObjectScreen.tsx footerActions, isEditing branch: `Save{...}`).
     const [reqRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/requisitions") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Create Requisition" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     // Real, reportable bug (see PHASE2_BATCH_B_FINDINGS.md): as of authoring,
     // this POST reliably returns 500 with body {"error":"Failed to create
     // purchase requisition"} against the live site with this exact payload
     // (purpose + 1 line item, no requisitionNumber/warehouseId/other field
-    // supplied -- matching every field the New Requisition dialog itself
+    // supplied -- matching every field the New Requisition screen itself
     // collects, so this is reachable through the real UI, not a contrived
-    // payload). Logged as a test annotation (not just the bare assertion
-    // failure) so the full body survives in the HTML/CI report either way.
+    // payload). Whether this still reproduces couldn't be re-confirmed by
+    // source reading alone (POST /api/procurement/requisitions is a thin
+    // proxy to VERIDIAN's own service, requisitions/route.ts:18-28) -- kept
+    // as a test annotation (not just the bare assertion failure) so the
+    // full body survives in the HTML/CI report either way.
     test.info().annotations.push({
       type: "requisition-create-response",
       description: `status=${reqRes.status()} body=${await reqRes.text().catch((e) => `<failed to read body: ${e}>`)}`,
     });
     expect(reqRes.status()).toBe(201);
     await expect(page.getByText("Requisition created")).toBeVisible();
-    const reqRow = page.getByRole("row", { name: new RegExp(`PR-\\d+.*${suffix}`) });
-    await expect(reqRow).toBeVisible();
-    await expect(reqRow.getByText("draft")).toBeVisible();
+    const reqBody = (await reqRes.json()) as { id: string; requisitionNumber: number };
 
+    // Stale: creating used to leave you on /procurement with a new inline
+    // row. It now navigates to the requisition's real Object Page
+    // (RequisitionCreateClient.tsx:33) -- Requisitions never had one before
+    // this conversion, only the flat list row itself.
+    await expect(page).toHaveURL(new RegExp(`/procurement/requisitions/${reqBody.id}$`));
+    await expect(page.getByRole("heading", { name: `PR-${reqBody.requisitionNumber}` })).toBeVisible();
+    await expect(page.getByText("draft", { exact: true })).toBeVisible();
+
+    // Stale: Submit used to be an inline per-row button on the list. It now
+    // lives on the Object Page, only rendered while status is "draft"
+    // (RequisitionObjectClient.tsx:86-90).
     const [submitReqRes] = await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/procurement/requisitions/") && r.url().endsWith("/submit")),
-      reqRow.getByRole("button", { name: "Submit" }).click(),
+      page.getByRole("button", { name: "Submit" }).click(),
     ]);
     expect(submitReqRes.status(), await submitReqRes.text().catch(() => "")).toBe(200);
     await expect(page.getByText("Requisition submitted")).toBeVisible();
-    await expect(reqRow.getByText("submitted")).toBeVisible();
+    // exact:true -- the toast text ("Requisition submitted") also contains
+    // "submitted" as a substring, and both can be on screen at once.
+    await expect(page.getByText("submitted", { exact: true })).toBeVisible();
 
     await page.reload();
-    await page.getByRole("tab", { name: "1. Requisitions" }).click();
-    await expect(page.getByRole("row", { name: new RegExp(`PR-\\d+.*${suffix}`) }).getByText("submitted")).toBeVisible();
+    await expect(page.getByText("submitted", { exact: true })).toBeVisible();
   });
 
   test("creating an RFQ (raised directly, no linked requisition) and sending it to vendors persists (real write)", async ({
@@ -127,45 +158,46 @@ test.describe("procurement", () => {
 
     await page.goto("/procurement");
     await page.getByRole("tab", { name: "2. RFQs" }).click();
+    // Stale: "New RFQ" used to open a Dialog; it now routes to a real
+    // create screen (ProcurementClient.tsx:209-211 -> RfqCreateClient.tsx).
     await page.getByRole("button", { name: "New RFQ" }).click();
+    await expect(page).toHaveURL(/\/procurement\/rfqs\/new$/);
     await fieldInput(page, "Item description").fill(itemDesc);
     await fieldInput(page, "Quantity").fill("10");
     await page.getByRole("checkbox", { name: vendor.vendorName }).check();
     const [rfqRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/rfqs") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Create RFQ" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(rfqRes.status(), await rfqRes.text().catch(() => "")).toBe(201);
     await expect(page.getByText("RFQ created")).toBeVisible();
-    // This suite has run many times against this same live, persistent org
-    // (see PHASE2_BATCH_B_FINDINGS.md's "repeated-run data accumulation"
-    // note) -- by now there are several older RFQs from prior runs,
-    // already sent (no longer "draft"). Locate the row by THIS RFQ's own
-    // real rfqNumber (from the create response), not "the first RFQ row",
-    // so this test always acts on the one it just created.
-    const rfqNumber = ((await rfqRes.json()) as { rfqNumber: number }).rfqNumber;
-    // Real bug (see PHASE2_BATCH_B_FINDINGS.md and the dedicated
-    // "tab resets" test below): every write action's load() sets
-    // loading=true, which unmounts the whole <Tabs defaultValue=
-    // "requisitions">, silently resetting the active tab back to
-    // Requisitions. Re-clicking is the only way a real user (or this test)
-    // can get back to what they were just looking at.
-    await page.getByRole("tab", { name: "2. RFQs" }).click();
-    const rfqRow = page.getByRole("row", { name: new RegExp(`^RFQ-${rfqNumber}\\b`) });
-    await expect(rfqRow).toBeVisible();
+    const rfqBody = (await rfqRes.json()) as { id: string; rfqNumber: number };
 
+    // Stale: creating used to leave an inline row on /procurement, located
+    // by rfqNumber because of accumulated prior-run data (still true of the
+    // list, just no longer where this test verifies from). RfqCreateClient.tsx:48
+    // now navigates straight to the RFQ's real Object Page -- RFQs never had
+    // one before this conversion. That also retires the old tab-reclick
+    // workaround this test used to need: there is no shared <Tabs> on this
+    // route to reset in the first place.
+    await expect(page).toHaveURL(new RegExp(`/procurement/rfqs/${rfqBody.id}$`));
+    await expect(page.getByRole("heading", { name: `RFQ-${rfqBody.rfqNumber}` })).toBeVisible();
+
+    // Stale: Send used to be an inline per-row button on the list. It now
+    // lives on the Object Page, only rendered while status is "draft"
+    // (RfqObjectClient.tsx:102-106).
     const [sendRfqRes] = await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/procurement/rfqs/") && r.url().endsWith("/send")),
-      rfqRow.getByRole("button", { name: "Send to Vendors" }).click(),
+      page.getByRole("button", { name: "Send to Vendors" }).click(),
     ]);
     expect(sendRfqRes.status(), await sendRfqRes.text().catch(() => "")).toBe(200);
     await expect(page.getByText("RFQ sent to suppliers")).toBeVisible();
-    await page.getByRole("tab", { name: "2. RFQs" }).click();
-    await expect(rfqRow.getByText("sent")).toBeVisible();
+    // exact:true -- see the requisition test's comment above for why (the
+    // toast text also contains "sent" as a substring: "RFQ sent to...").
+    await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
     await page.reload();
-    await page.getByRole("tab", { name: "2. RFQs" }).click();
-    await expect(rfqRow.getByText("sent")).toBeVisible();
+    await expect(page.getByText("sent", { exact: true })).toBeVisible();
   });
 
   test("recording a supplier quotation and converting it to a purchase order persists in both Purchase Orders surfaces (real write)", async ({
@@ -178,30 +210,46 @@ test.describe("procurement", () => {
 
     await page.goto("/procurement");
     await page.getByRole("tab", { name: "3. Quotations" }).click();
+    // Stale: "Record Quotation" used to open a Dialog; it now routes to a
+    // real create screen (ProcurementClient.tsx:244-246 ->
+    // QuotationCreateClient.tsx). Unlike Requisitions/RFQs/Goods Receipts,
+    // Quotations has no Object Page (no getSupplierQuotation(), see
+    // QuotationCreateClient.tsx:5-7) -- Save redirects back to
+    // /procurement?tab=quotations (QuotationCreateClient.tsx:51), which
+    // preselects this same tab on load, so everything from here down
+    // (locate row by quotationNumber, inline "Convert to PO") is unchanged.
     await page.getByRole("button", { name: "Record Quotation" }).click();
+    await expect(page).toHaveURL(/\/procurement\/quotations\/new$/);
     await fieldInput(page, "Vendor").click();
     await page.getByRole("option", { name: vendor.vendorName }).click();
     await fieldInput(page, "Item description").fill(itemDesc);
     await fieldInput(page, "Quantity").fill("10");
     await fieldInput(page, "Rate").fill("250");
+    // Stale: there is no per-module "Record Quotation" submit button any
+    // more -- see the requisition test's comment above re: the shared
+    // kit's generic "Save".
     const [quoteRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/quotations") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Record Quotation" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(quoteRes.status(), await quoteRes.text().catch(() => "")).toBe(201);
     await expect(page.getByText("Quotation recorded")).toBeVisible();
-    // Locate by this quotation's own real quotationNumber (see the RFQ
-    // test's comment above for why "first row matching vendor name" is
-    // unreliable against this suite's own accumulated prior-run data).
+    await expect(page).toHaveURL(/\/procurement\?tab=quotations$/);
+    await expect(page.getByRole("tab", { name: "3. Quotations" })).toHaveAttribute("aria-selected", "true");
+    // This suite has run many times against this same live, persistent org
+    // (see PHASE2_BATCH_B_FINDINGS.md's "repeated-run data accumulation"
+    // note) -- by now there are several older quotations. Locate by THIS
+    // quotation's own real quotationNumber (from the create response), not
+    // "the first row matching vendor name", so this test always acts on
+    // the one it just created.
     const quotationNumber = ((await quoteRes.json()) as { quotationNumber: number }).quotationNumber;
-    // Real bug workaround (see the dedicated "tab resets" test below):
-    // load() resets the active tab to Requisitions after every write.
-    await page.getByRole("tab", { name: "3. Quotations" }).click();
     const quoteRow = page.getByRole("row", { name: new RegExp(`^SQ-${quotationNumber}\\b`) });
     await expect(quoteRow).toBeVisible();
 
-    // Convert to PO -- real cross-table write, verified both here and
-    // against the standalone /api/purchase-orders endpoint.
+    // Convert to PO -- real cross-table write, unchanged: no Object Page
+    // conversion happened here, ProcurementClient.tsx:130-145 still handles
+    // it as a real inline action. Verified both here and against the
+    // standalone /api/purchase-orders endpoint.
     const posBefore = await apiGet<{ purchaseOrders: unknown[] }>(page, "/api/purchase-orders");
     const [convertRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/purchase-orders") && r.request().method() === "POST"),
@@ -233,87 +281,108 @@ test.describe("procurement", () => {
 
     await page.goto("/procurement");
     await page.getByRole("tab", { name: "5. Goods Receipts" }).click();
+    // Stale: "New Goods Receipt" used to open a Dialog; it now routes to a
+    // real create screen (ProcurementClient.tsx:312-314 ->
+    // GoodsReceiptCreateClient.tsx).
     await page.getByRole("button", { name: "New Goods Receipt" }).click();
+    await expect(page).toHaveURL(/\/procurement\/goods-receipts\/new$/);
     await fieldInput(page, "Vendor").click();
     await page.getByRole("option", { name: vendor.vendorName }).click();
     await fieldInput(page, "Receiving Warehouse").click();
     await page.getByRole("option", { name: warehouse.warehouseName }).click();
     await fieldInput(page, "Quantity").fill("10");
+    // Stale: "Record Receipt (draft)" never existed on this screen -- see
+    // the requisition test's comment above re: the shared kit's generic
+    // "Save". The success toast text itself is unchanged
+    // (GoodsReceiptCreateClient.tsx:72).
     const [grRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/goods-receipts") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Record Receipt (draft)" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(grRes.status(), await grRes.text().catch(() => "")).toBe(201);
     await expect(page.getByText("Goods receipt recorded (draft)")).toBeVisible();
-    // Locate by this receipt's own real receiptNumber (see the RFQ test's
-    // comment above for why "first row matching vendor name" is unreliable
-    // against this suite's own accumulated prior-run data -- confirmed live:
-    // an earlier run's GRN-1 for this same vendor is already "submitted",
-    // not "draft").
-    const receiptNumber = ((await grRes.json()) as { receiptNumber: number }).receiptNumber;
-    // Real bug workaround (see the dedicated "tab resets" test below):
-    // load() resets the active tab to Requisitions after every write.
-    await page.getByRole("tab", { name: "5. Goods Receipts" }).click();
-    const grRow = page.getByRole("row", { name: new RegExp(`^GRN-${receiptNumber}\\b`) });
-    await expect(grRow).toBeVisible();
-    await expect(grRow.getByText("draft")).toBeVisible();
+    const grBody = (await grRes.json()) as { id: string; receiptNumber: number };
 
+    // Stale: creating used to leave an inline row on /procurement.
+    // GoodsReceiptCreateClient.tsx:73 now navigates to the receipt's real
+    // Object Page -- goods receipts never had one before this conversion.
+    await expect(page).toHaveURL(new RegExp(`/procurement/goods-receipts/${grBody.id}$`));
+    await expect(page.getByRole("heading", { name: `GRN-${grBody.receiptNumber}` })).toBeVisible();
+    await expect(page.getByText("draft", { exact: true })).toBeVisible();
+
+    // Stale: Post to Stock used to be an inline per-row button on the list.
+    // It now lives on the Object Page, only rendered while status is
+    // "draft" (GoodsReceiptObjectClient.tsx:101-105).
     const [postRes] = await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/procurement/goods-receipts/") && r.url().endsWith("/submit")),
-      grRow.getByRole("button", { name: "Post to Stock" }).click(),
+      page.getByRole("button", { name: "Post to Stock" }).click(),
     ]);
     expect(postRes.status(), await postRes.text().catch(() => "")).toBe(200);
     await expect(page.getByText("Goods receipt posted to stock")).toBeVisible();
-    await page.getByRole("tab", { name: "5. Goods Receipts" }).click();
     // The real backend status string after posting isn't documented in the
-    // frontend (it renders `gr.status` verbatim) -- assert on the one thing
-    // the component code guarantees: the "Post to Stock" button only shows
-    // for status==="draft", so its disappearance proves the status changed.
-    await expect(grRow.getByRole("button", { name: "Post to Stock" })).toHaveCount(0);
+    // frontend (GoodsReceiptObjectClient.tsx renders `receipt.status`
+    // verbatim) -- assert on the one thing the component code guarantees:
+    // the "Post to Stock" button only renders for status==="draft"
+    // (GoodsReceiptObjectClient.tsx:101), so its disappearance proves the
+    // status changed.
+    await expect(page.getByRole("button", { name: "Post to Stock" })).toHaveCount(0);
 
     await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/procurement/goods-receipts") && r.request().method() === "GET"),
       page.reload(),
     ]);
-    await page.getByRole("tab", { name: "5. Goods Receipts" }).click();
-    await expect(grRow.getByRole("button", { name: "Post to Stock" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Post to Stock" })).toHaveCount(0);
   });
 
-  test("real bug: every create/submit/send/convert action resets the active tab back to '1. Requisitions'", async ({
-    page,
-  }) => {
-    // Root cause (read from ProcurementClient.tsx source): load() calls
-    // setLoading(true) synchronously on every refetch (including the ones
-    // triggered by createRequisition/createRfq/sendRfq/createQuotation/
-    // convertToPo/createGoodsReceipt/etc. after a successful write), and
-    // the component's render guard is `if (loading) return <spinner>` --
-    // which unmounts the ENTIRE <Tabs defaultValue="requisitions"> tree.
-    // Since Tabs is uncontrolled (no value=/onValueChange= wiring it to a
-    // state variable that would survive the remount), it always
-    // re-mounts back to its defaultValue. A real user mid-workflow on the
-    // RFQs tab, who just sent an RFQ, is silently bounced back to
-    // Requisitions -- the RFQ they just acted on isn't visibly gone (it's
-    // still in the data, confirmed elsewhere in this file), but it LOOKS
-    // gone, with no error, toast, or visual explanation.
+  // Stale test, flipped rather than deleted: this used to document a real
+  // bug (every write's load() forced loading=true, which unmounted the
+  // whole uncontrolled <Tabs defaultValue="requisitions">, always
+  // remounting back to its default and silently bouncing the user off
+  // whatever tab they were on). That bug is fixed -- Tabs is now
+  // CONTROLLED off a persistent `activeTab` state variable that survives
+  // the loading remount (ProcurementClient.tsx:159 `<Tabs value={activeTab}
+  // onValueChange={goToTab}>`, state declared line 68, load()'s
+  // setLoading(true)/(false) at lines 83/116, the `if (loading) return
+  // <spinner>` unmount guard at lines 154-156), and goToTab()
+  // (lines 147-152) also syncs `?tab=` into the URL. "Convert to PO" is the
+  // only remaining in-place write on this page (every other stage's write
+  // actions moved to their own Object Page routes, see the tests above), so
+  // it's the only real way left to exercise this.
+  test("fixed: 'Convert to PO' no longer resets the active tab off Quotations", async ({ page }) => {
+    const suffix = uniqueSuffix();
+    const vendorsApi = await apiGet<{ vendors: { id: string; vendorName: string }[] }>(page, "/api/vendors");
+    const vendor = vendorsApi.vendors[0];
+
+    // Seed a quotation to convert -- Quotations has no Object Page, so its
+    // create screen redirects straight back here (see the dedicated
+    // quotation test above).
     await page.goto("/procurement");
     await page.getByRole("tab", { name: "3. Quotations" }).click();
-    await expect(page.getByRole("tab", { name: "3. Quotations" })).toHaveAttribute("aria-selected", "true");
-
     await page.getByRole("button", { name: "Record Quotation" }).click();
-    const vendorsApi = await apiGet<{ vendors: { vendorName: string }[] }>(page, "/api/vendors");
     await fieldInput(page, "Vendor").click();
-    await page.getByRole("option", { name: vendorsApi.vendors[0].vendorName }).click();
-    await fieldInput(page, "Item description").fill(`E2E tab-reset probe ${uniqueSuffix()}`);
+    await page.getByRole("option", { name: vendor.vendorName }).click();
+    await fieldInput(page, "Item description").fill(`E2E tab-reset probe ${suffix}`);
+    await fieldInput(page, "Quantity").fill("1");
     await fieldInput(page, "Rate").fill("1");
-    await Promise.all([
+    const [quoteRes] = await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/procurement/quotations") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "Record Quotation" }).click(),
+      page.getByRole("button", { name: "Save" }).click(),
     ]);
     await expect(page.getByText("Quotation recorded")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "3. Quotations" })).toHaveAttribute("aria-selected", "true");
+    const quotationNumber = ((await quoteRes.json()) as { quotationNumber: number }).quotationNumber;
+    const quoteRow = page.getByRole("row", { name: new RegExp(`^SQ-${quotationNumber}\\b`) });
+    await expect(quoteRow).toBeVisible();
 
-    // The bug: still shows "selected" on Requisitions, not Quotations,
+    await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith("/api/procurement/purchase-orders") && r.request().method() === "POST"),
+      quoteRow.getByRole("button", { name: "Convert to PO" }).click(),
+    ]);
+    await expect(page.getByText("Purchase order created from quotation")).toBeVisible();
+
+    // The fix: still shows "selected" on Quotations, not Requisitions,
     // immediately after a write made on the Quotations tab.
-    await expect(page.getByRole("tab", { name: "1. Requisitions" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("tab", { name: "3. Quotations" })).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByRole("tab", { name: "3. Quotations" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "1. Requisitions" })).toHaveAttribute("aria-selected", "false");
   });
 });

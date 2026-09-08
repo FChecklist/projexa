@@ -1,5 +1,45 @@
 # Changelog — projexa
 
+## R80: rewrite 22 stale E2E specs, fix 3 real product bugs, split the left panel into 3 equal thirds (2026-09-08)
+Owner's "R80" work order: exhaustive wiring testing with Playwright, on
+LOCAL + SUPABASE + GITHUB (production deploy is owner-gated and was NOT
+performed — nothing here is live).
+
+- **E2E auth**: all 11 seeded `*.meridian-construction.e2e-test` accounts
+  had drifted Supabase Auth password hashes; reset via SQL.
+- **24 of 25 Playwright specs were stale** against one real architecture
+  shift — modal `role=dialog` creates became dedicated pages rendering the
+  shared `ObjectScreen` ("Save"-only footer), some API routes changed
+  shape, and modules asserted "read-only by design" (permits, documents)
+  now have real write paths. 22 rewritten by 24 parallel agents reading
+  real source; 2 were already correct. Their output needed one real fix:
+  10 `fieldByLabel(page, …)` calls passed a `Page` where a `Locator` is
+  required (a genuine `tsc` error).
+- **3 real product bugs fixed** (found by the sweep, unrelated to the
+  composer): LabourClient's roster empty-state was gated on the raw
+  count while the table renders the filtered set — with everything
+  filtered out you got a bare header row, no message, no CTA (now counts
+  the visible set and distinguishes "no match for this filter" + Clear
+  filters from "roster is empty" + Add Worker); LabourClient rendered two
+  simultaneous buttons both named "Mark Attendance"; JournalEntryCreate's
+  account picker showed "Loading…" **forever** for an org with zero
+  accounts (now has a real loaded flag → Loading… / No accounts found /
+  Account); WorkProgressForm's BOQ-line field ignored FormField's render
+  props so its visible label was never announced.
+- **7 more suspected bugs recorded, not fixed** — Copilot/VeriComposer
+  dead wiring and stale comments, a different subsystem entirely.
+- **Part 4**: the left panel is now exactly three equal vertical thirds
+  (Frequent actions / mode-pills+option-chain / chat box). `flex-1
+  basis-0` measured 249/235/249 live, so the split is explicit `h-1/3`
+  instead — verified 245/245/245 at 1280x800. Only the undocked
+  (Task-Master-collapsed) case changes; the docked case keeps its old
+  content-sized growth.
+
+Verified: typecheck clean, lint clean (1 pre-existing warning), full
+suite 4086/4088 with the 2 failures confirmed clean in isolation
+(18/18 and 5/5) — load flakes, not regressions. See CLAUDE.md's "R80"
+and "R80 Part 4" sections.
+
 ## Fix a real textarea-height regression from the Task Master collapse, then a pixel/colour re-audit finds two more mismatches (2026-09-08)
 Owner found this live within minutes of the Task Master fix shipping: the
 composer's textarea was stuck at 220px tall, pushing the send button into

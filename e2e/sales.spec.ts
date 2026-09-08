@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fieldByLabel } from "./helpers";
+import { apiGet, fieldInput, uniqueSuffix } from "./helpers";
 
 test.use({ storageState: "playwright/.auth/ceo.json" });
 
@@ -21,37 +21,64 @@ test.describe("Sales Orders (/sales-orders)", () => {
   });
 
   test("real write: create a new sales order for a seeded customer, verify it persists", async ({ page }) => {
+    const before = await apiGet<{ salesOrders: unknown[] }>(page, "/api/sales-orders");
+    const customersApi = await apiGet<{ customers: { customerName: string }[] }>(page, "/api/customers");
+    const customer = customersApi.customers[0];
+    const lineDesc = `E2E Batch C SO line ${uniqueSuffix()}`;
+
     await page.goto("/sales-orders");
     await page.waitForSelector("table tbody tr");
-    const beforeCount = await page.locator("table tbody tr").count();
 
+    // STALE-TEST FIX (2026-09-08, same real-screen conversion as
+    // 04-vendors.spec.ts / 07-purchase-orders.spec.ts): "New Sales Order"
+    // used to open a Dialog (role=dialog). SalesOrdersClient.tsx:23-30's own
+    // header comment says that popup is gone as of the 2026-08-30
+    // real-screen conversion -- it now does router.push("/sales-orders/new")
+    // (SalesOrdersClient.tsx:140) to a dedicated create route
+    // (SalesOrderCreateClient.tsx), same chain-sentence pattern used
+    // throughout this app.
     await page.getByRole("button", { name: /new sales order/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(/\/sales-orders\/new$/);
+    await expect(page.getByRole("heading", { name: "New Sales Order" })).toBeVisible();
 
-    // GAP found while writing this test (same root cause as Invoices' own
-    // create dialog): the Customer combobox's real option list is
-    // lazy-fetched after the dialog opens. Selecting before that fetch
-    // resolves leaves customerId unset, making Create a silent no-op (no
-    // toast, no POST). Explicitly wait for a real option before picking.
-    const customerCombo = dialog.getByRole("combobox").first();
-    await customerCombo.click();
-    const realCustomerOption = page.getByRole("option").first();
-    await expect(realCustomerOption).toBeVisible({ timeout: 10_000 });
-    await realCustomerOption.click();
+    // STALE: the Customer field is a shadcn Select (role=combobox),
+    // fetched via /api/customers on the create screen's own mount
+    // (SalesOrderCreateClient.tsx:26,40) -- no longer scoped inside a
+    // dialog's own DOM subtree. An unscoped page.getByRole("combobox").first()
+    // would now silently grab the persistent sidebar's project-switcher
+    // combobox instead (helpers.ts's fieldInput doc comment) since this
+    // form lives on a full page, not an isolated dialog. Scope by the
+    // "Customer" label via fieldInput, and pick a REAL known customer by
+    // name (rather than "first visible option") so this doesn't race the
+    // async fetch.
+    await fieldInput(page, "Customer").click();
+    await page.getByRole("option", { name: customer.customerName }).click();
 
-    const lineItemsSection = dialog.getByText("Line Items", { exact: true }).locator("..");
-    await lineItemsSection.getByPlaceholder("Description").fill(`E2E Batch C SO line ${Date.now()}`);
-    const numberInputs = lineItemsSection.locator('input[type="number"]');
-    await numberInputs.nth(0).fill("3");
-    await numberInputs.nth(1).fill("1500");
+    await page.getByPlaceholder("Description").fill(lineDesc);
+    await page.getByPlaceholder("Qty").fill("3");
+    await page.getByPlaceholder("Rate").fill("1500");
 
-    await dialog.getByRole("button", { name: "Create Sales Order" }).click();
-    await expect(page.getByText(/creating…/i)).not.toBeVisible({ timeout: 15_000 }).catch(() => {});
-    await page.waitForLoadState("networkidle");
+    const [createRes] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith("/api/sales-orders") && r.request().method() === "POST"),
+      // STALE: no "Create Sales Order" button exists -- the create screen
+      // is a shared-kit ObjectScreen, whose only footer control in create
+      // mode is a plain "Save" button
+      // (node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:92-100).
+      page.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(createRes.status(), await createRes.text().catch(() => "")).toBe(201);
+    await expect(page.getByText("Sales order created")).toBeVisible();
 
-    const afterCount = await page.locator("table tbody tr").count();
-    expect(afterCount, "new sales order did not persist").toBeGreaterThan(beforeCount);
+    // STALE: nothing to close (no dialog) -- SalesOrderCreateClient.tsx:73
+    // redirects to the new order's own Object Page on success, which
+    // renders the real line items back from the server
+    // (SalesOrderObjectClient.tsx:139-141).
+    await expect(page).toHaveURL(/\/sales-orders\/[0-9a-f-]+$/);
+    await expect(page.getByText(lineDesc)).toBeVisible({ timeout: 15_000 });
+
+    await page.goto("/sales-orders");
+    const after = await apiGet<{ salesOrders: unknown[] }>(page, "/api/sales-orders");
+    expect(after.salesOrders.length, "new sales order did not persist").toBe(before.salesOrders.length + 1);
   });
 
   test("per-row status Select PATCHes and persists a real status change", async ({ page }) => {
@@ -99,13 +126,34 @@ test.describe("Leads (/sales/leads)", () => {
     // this is a one-time observation, not re-asserted here to keep the
     // suite safely re-runnable.
 
-    const leadName = `E2E Batch C Lead ${Date.now()}`;
+    const leadName = `E2E Batch C Lead ${uniqueSuffix()}`;
     await page.getByRole("button", { name: /new lead/i }).click();
-    const dialog = page.getByRole("dialog");
-    await fieldByLabel(dialog, "Name").fill(leadName);
-    await dialog.getByRole("button", { name: "Create Lead" }).click();
 
-    await expect(page.getByText(leadName)).toBeVisible({ timeout: 15_000 });
+    // STALE-TEST FIX (2026-09-08, same real-screen conversion as
+    // 04-vendors.spec.ts): "New Lead" used to open a Dialog (role=dialog).
+    // LeadsClient.tsx:22-28's own header comment says that popup is gone as
+    // of the 2026-08-30 real-screen conversion -- it now does
+    // router.push("/sales/leads/new") (LeadsClient.tsx:137) to a dedicated
+    // create route (LeadCreateClient.tsx).
+    await expect(page).toHaveURL(/\/sales\/leads\/new$/);
+    await fieldInput(page, "Name").fill(leadName);
+
+    const [createRes] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith("/api/leads") && r.request().method() === "POST"),
+      // STALE: no "Create Lead" button exists -- the create screen is a
+      // shared-kit ObjectScreen, whose only footer control in create mode
+      // is a plain "Save" button
+      // (node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:92-100).
+      page.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(createRes.status()).toBe(201);
+    await expect(page.getByText("Lead created")).toBeVisible();
+
+    // STALE: nothing to close (no dialog) -- LeadCreateClient.tsx:43
+    // redirects to the new lead's own Object Page on success, whose title
+    // is the lead's real name (LeadObjectClient.tsx:87).
+    await expect(page).toHaveURL(/\/sales\/leads\/[0-9a-f-]+$/);
+    await expect(page.getByRole("heading", { name: leadName })).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -132,21 +180,43 @@ test.describe("Customers (/customers)", () => {
   });
 
   test("real write: create a new customer, verify it persists", async ({ page }) => {
+    const before = await apiGet<{ customers: unknown[] }>(page, "/api/customers");
+    const customerName = `E2E Batch C Customer ${uniqueSuffix()}`;
+
     await page.goto("/customers");
     await page.waitForSelector("table tbody tr");
-    const beforeCount = await page.locator("table tbody tr").count();
 
-    const customerName = `E2E Batch C Customer ${Date.now()}`;
+    // STALE-TEST FIX (2026-09-08, same real-screen conversion as
+    // 04-vendors.spec.ts): "New Customer" used to open a Dialog
+    // (role=dialog). CustomersClient.tsx:1-6's own header comment says that
+    // popup is gone as of the 2026-08-30 real-screen conversion -- it now
+    // does router.push("/customers/new") (CustomersClient.tsx:65) to a
+    // dedicated create route (CustomerCreateClient.tsx).
     await page.getByRole("button", { name: /new customer/i }).click();
-    const dialog = page.getByRole("dialog");
-    await fieldByLabel(dialog, "Customer Name").fill(customerName);
-    await dialog.getByRole("button", { name: "Add Customer" }).click();
-    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/customers\/new$/);
+    await expect(page.getByRole("heading", { name: "New Customer" })).toBeVisible();
+    await fieldInput(page, "Customer Name").fill(customerName);
+
+    const [createRes] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith("/api/customers") && r.request().method() === "POST"),
+      // STALE: no "Add Customer" button exists -- the create screen is a
+      // shared-kit ObjectScreen, whose only footer control in create mode
+      // is a plain "Save" button (CustomerCreateClient.tsx:40-57,
+      // node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx:92-100).
+      page.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(createRes.status()).toBe(201);
+    await expect(page.getByText("Customer added")).toBeVisible();
+
+    // STALE: nothing to close (no dialog) -- CustomerCreateClient.tsx:31
+    // redirects to the new customer's own Object Page on success.
+    await expect(page).toHaveURL(/\/customers\/[0-9a-f-]+$/);
+    await expect(page.getByRole("heading", { name: customerName })).toBeVisible({ timeout: 15_000 });
 
     await page.goto("/customers");
-    await page.waitForSelector("table tbody tr");
-    const afterCount = await page.locator("table tbody tr").count();
-    expect(afterCount).toBeGreaterThan(beforeCount);
+    const after = await apiGet<{ customers: { customerName: string }[] }>(page, "/api/customers");
+    expect(after.customers.length).toBe(before.customers.length + 1);
+    expect(after.customers.some((c) => c.customerName === customerName)).toBeTruthy();
     await expect(page.getByText(customerName)).toBeVisible();
   });
 
