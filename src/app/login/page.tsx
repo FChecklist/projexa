@@ -83,6 +83,12 @@ export default function LoginPage() {
             {error && <p className="text-sm text-px-error">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? t("submitting") : t("submit")}</Button>
           </form>
+          {/* G-08: signInWithPassword above is the ONLY way into this app --
+              no magic link, no Google, no SSO -- so before this link existed a
+              forgotten password was a permanent lockout with no route back. */}
+          <p className="mt-3 text-center text-sm">
+            <a href="/forgot-password" className="text-px-muted underline">{t("forgotPasswordLink")}</a>
+          </p>
           <p className="mt-4 text-center text-sm text-px-muted">
             {t("noAccount")} <a href="/signup" className="font-semibold text-px-ink underline">{t("signUpLink")}</a>
           </p>

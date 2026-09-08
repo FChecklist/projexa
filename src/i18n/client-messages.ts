@@ -28,7 +28,9 @@
  * as the exact dotted path it passes. Keep sorted; the test regenerates it.
  */
 export const CLIENT_MESSAGE_NAMESPACES = [
+  "Auth.forgotPassword",
   "Auth.login",
+  "Auth.resetPassword",
   "Auth.signup",
   "Marketing.contactForm",
   "Marketing.header",

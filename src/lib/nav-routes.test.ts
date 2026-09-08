@@ -158,6 +158,13 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/hi/how-it-works",
   "/login",
   "/signup",
+  // G-08. The password recovery route. /forgot-password is reached from
+  // /login (which is the only screen a locked-out user can see) and
+  // /reset-password only from the emailed link, via /auth/callback. Neither
+  // belongs in a sidebar the visitor cannot reach: by definition they are not
+  // signed in yet.
+  "/forgot-password",
+  "/reset-password",
   "/auth/callback",
   "/invite/[token]",
   "/share/report/[token]",

@@ -45,6 +45,16 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/hi/how-it-works",
   "/login",
   "/signup",
+  // G-08. Both are public by necessity: someone who cannot log in is by
+  // definition not logged in. /reset-password is normally reached WITH a
+  // session (the recovery link goes through /auth/callback, which mints one
+  // before forwarding), so gating it would usually be harmless -- but the
+  // interesting case is the link that has expired or been used already, and
+  // there a redirect to /login tells the visitor nothing. The page checks the
+  // session itself and says "this link has expired, request another", which
+  // is the answer they need; the gate could only replace it with a login form.
+  "/forgot-password",
+  "/reset-password",
 ]);
 
 // Public page families whose remaining segments are opaque tokens.

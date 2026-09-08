@@ -79,7 +79,8 @@
       "noAccount": "No account?",
       "signUpLink": "Sign up",
       "genericError": "Login failed",
-      "provisionError": "Failed to finish setting up your workspace"
+      "provisionError": "Failed to finish setting up your workspace",
+      "forgotPasswordLink": "Forgot your password?"
     },
     "signup": {
       "title": "Create your PROJEXA account",
@@ -94,6 +95,26 @@
       "haveAccount": "Already have an account?",
       "loginLink": "Log in",
       "genericError": "Failed to create organization"
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "intro": "Enter the email address on your account and we will send you a link to set a new password.",
+      "email": "Email",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "sentBody": "If that address has a PROJEXA account, a password reset link is on its way. The link can be used once and expires shortly, so open it soon.",
+      "backToLogin": "Back to log in"
+    },
+    "resetPassword": {
+      "title": "Set a new password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "submit": "Save new password",
+      "submitting": "Saving…",
+      "mismatch": "Those two passwords do not match.",
+      "tooShort": "Use at least {min} characters.",
+      "linkExpired": "This reset link has expired or has already been used.",
+      "requestAnother": "Send me a new link"
     }
   },
   "Marketing": {
