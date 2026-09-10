@@ -1,51 +1,662 @@
-﻿"IsReadOnly","IsFixedSize","IsSynchronized","Keys","Values","SyncRoot","Count"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
-"False","False","False","System.Collections.Hashtable+KeyCollection","System.Collections.Hashtable+ValueCollection","System.Object","4"
+fault_id,source,route,file_path,screenshot_path,description,severity,category,role_found,required,classification,justification,wf_audit,wf_artifact,wf_fix,wf_test,wf_pr,wf_deployed,wf_live,pr_ref,fix_files,closed,created_at
+R46P5_R81_01,R46-P5-L3 T-L3-R81-1/2/3,"/ (VERI Chat / Selection Layer, all routes)",src/components/veri-chat/VeriComposer.tsx,,"5 of 6 visible, fully clickable top-level VERI Chat pill branches (Compliance Item, Calculators, Reports, Reports & Analysis, Create) lead every leaf to the literal in-app message ""Browse-only for now -- this module isn't wired up to send yet"", with zero POST /api/assistant fired -- confirmed across 5 independent completed leaf paths (Compliance Item > Create New > General; Calculators > Logistics Engine > Delivery ETA Engine; Reports > Custom Reports; Reports > Compliance Reports & Analytics; Create > Create a Lead). Only 1 of 6 top-level branches (Construction Intelligence) is genuinely wired to fire a real POST /api/assistant call. This is a visible-but-dead-end UX defect distinct from the VERIDIAN backend-timeout family (R-80/R-82 FAILs): those 5 branches never even attempt a network call, they are unwired by design/incompleteness, not degraded by backend latency.",Medium,Function,owner/democeo,YES,TECHNICAL,"R-81 requires no visible pill be unwired; this is a real, reproducible, current violation covering the majority (5/6) of top-level VERI Chat branches. Distinct root cause from the backend-timeout faults already logged, so tracked separately rather than folded into those.
+
+--- R52 GATE 2, 2026-08-26: VERIFIED ALREADY FIXED ON MAIN. NOT CLOSED BY ME. ---
+Checked against main at 249d0dc before writing any code, and no fix was needed:
+F_014 -- ScopeClient.tsx:624-625 already calls two DISTINCT handlers, openCompareDialog(b) and openRevisionDialog(b). The ""both wired to the same broken self-compare handler"" claim no longer holds. Compare defaults `against` to the ORIGINAL BOQ via findOriginalBoqId() (ScopeClient.tsx:514-522, walks parentBoqId to null), not to itself, and the dialog titles at :764/:811 interpolate the version numbers the row saw rendering as a bare ""(v)"". Separate New Revision dialog exists at :764.
+R46P5_R81_01 -- veri-chat-context.tsx:124 sets SHOW_UNDISPATCHABLE_MODULE_CHAINS = false, and mergeChainTrees() returns the construction tree alone when it is false. The five dead-end branches came from /api/module-chain, which is now neither fetched nor merged. R-81's own rule (""NO visible pill may be unwired -- HIDE, do not wire"") is satisfied by hiding, which is what the row asked for.
+R48_PROJECT_CREATE_NO_PRODUCTS_01 -- CreateProjectDialog.tsx:38-70 now reads res.ok BEFORE the body and keeps the backend's own message; :123-141 renders either that error or an explicit ""No products are set up for this organisation yet"" instead of an empty picker. This was PR #165's error-body-as-data family. The row's own SUSPECTED CAUSE (""the failure is swallowed into an empty array instead of surfacing"") was correct.
+ACTION NEEDED: verify live, then close. No code change outstanding.
+
+R52 fn-agent 2026-08-26, VERIFIED ALREADY FIXED ON main BY projexa#158 (b473362), not by this agent. READY TO CLOSE pending a live click. src/components/veri-chat/veri-chat-context.tsx:124 sets SHOW_UNDISPATCHABLE_MODULE_CHAINS = false, so capabilityRoots() returns only the dispatchable Construction Intelligence branch and the five unwired top-level branches no longer render at all. R-81 (""no visible pill may be unwired"") therefore holds by construction rather than by the pills being disabled. Backed by a regression test asserting the flag ships off -- veri-chat-context.test.ts:45. The ""Browse-only for now"" string still exists at VeriComposer.tsx:374 as a fallback, which is correct: it is unreachable while the flag is off and is what would show if it were ever turned back on. NEEDS A LIVE AUTHENTICATED CLICK to confirm only one top-level branch is visible.",false,false,true,false,false,true,true,"projexa#158 (MERGED b473362) -- verified by R52 fn-agent, not this agent's work -- VERIFIED LIVE 2026-08-27 (R57): this PR merged before the original 6623379e freeze (confirmed earlier this session via gh api merged-PR list + timestamps), and current production (2e5661af) is many commits past that freeze point, so it is definitely contained.",,true,2026-08-25 05:00:30.944143+00
+R81_F02_CROSS_REPO_APIKEY_LOOKUP_FAILING,R81 D6-07,,C:\ct\ct\src\lib\db\tenant-scoped.ts appRuntimePoolOptions(),,"WITHDRAWN AS A FALSE FINDING (R81, 2026-09-08), by the same discipline as GAP-13 (ruling R81-RULING-01). ORIGINAL CLAIM: the compliance-tracker dev server on :3005 failed every compliance.lookup_api_key_by_hash call (81 consecutive identical errors), so the PROJEXA<->compliance-tracker integration was broken and the PO->GRN chain could not be exercised. THE DISPROOF, supplied by the concurrently running R80 session which OWNED that process: :3005 was its REPRODUCTION server, started deliberately with CI placeholder credentials, including a DATABASE_URL pointing at postgres@localhost:5432 where nothing listens. Every authenticated DB call therefore failed by construction. WHY THAT EXPLAINS MY EVIDENCE BETTER THAN MY OWN HYPOTHESIS: (a) my ""fresh connection succeeds"" control passed because I built it from the REAL DATABASE_URL in .env.local -- that server never had one, so the two were never comparable; (b) unauthenticated /api/v1/projexa/vendors stayed fast at 401 because that path short-circuits BEFORE any database work, which my pool-exhaustion theory did not predict and this does. THE max:5 POOL AND ITS DOCUMENTED LEAK (R67 D-06) ARE REAL BUT ARE NOT WHAT I HIT. THE INTEGRATION IS NOT BROKEN. Both stray processes have since been killed by that session. WHAT I GOT RIGHT: the hypothesis was explicitly labelled NOT PROVEN and the decisive test was named rather than assumed, so no fix was built on it (KD-14). WHAT I GOT WRONG: I attributed a failure to product code without first establishing what environment the observed process was actually running under -- the process was not mine, and I did not check.",Low,Function,owner,NO,TECHNICAL,"Retained as a withdrawn row rather than deleted, so the false finding and its disproof stay visible. A silent deletion is how a rediscovered ghost finding gets raised again in October.",false,false,false,false,false,false,false,,,true,2026-09-08 12:35:10.92505+00
+R81_F08_VERCEL_TEAM_SLUG_AMBIGUOUS,R81 D3-05,,DOMAIN_OWNERSHIP.yaml,,"The Vercel team slug is ambiguous: DOMAIN_OWNERSHIP.yaml says meet-track-s-projects while live hostnames use veridian-ai-os. Only team ID team_Iqx3zyb7sDdsdzcNskCFFsHD is reliable, and it is what R81 used. CONFIRMED THIS BLOCK: the Domain Ownership Drift Check failed on every run observed (2026-09-07T16:04 .. 2026-09-08T09:39), reporting projexa-ai.com and www not attached to the canonical project. If credits are recharged with this unresolved, environment 2 comes up and the domain still does not serve.",Medium,Other,n/a,NO,NON-TECHNICAL,"Documentation disagreeing with reality about which project owns the production domain, with a guard already failing continuously.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F04_E2E_PASSWORD_COMMITTED,R81 D3-03,,e2e/users.ts:19 and scripts/measure-perf.mjs:23 (projexa),,"A real, working account password for the seeded E2E organisation is committed in plaintext in a PUBLIC repository at the two file:line locations named. The value is deliberately NOT recorded here or anywhere else in this block. Shared across all 11 seeded accounts by design. SEPARATE from claude_log id 115's August finding, which was a different incident. ROTATION IS AN OWNER ACTION. A SECOND, DIFFERENT live plaintext credential (a demo admin account on a public domain) was found during R81 D1-01 inside one of the recovered Google Drive foundational documents; likewise not reproduced, likewise an owner item.",High,Permission,n/a,YES,TECHNICAL,All 16 repositories are public and the credential works. Only the owner may rotate it.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F07_INACTIVE_VENDOR_RETURNED,R81 D3-05,,(vendor list and picker paths),,A deactivated vendor is still returned by every list and picker; no layer filters on isActive. Deactivation has no user-visible effect and a buyer can raise a purchase order against a vendor the business has stopped using.,Medium,Logic,n/a,NO,TECHNICAL,Real but bounded: it produces wrong choices rather than wrong data.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F09_PLATFORM_TABLES_NO_MIGRATIONS,R81 D3-05,,drizzle.config.ts,,"drizzle.config.ts sets schemaFilter: ['compliance'], so db:generate silently produces NOTHING for any platform.* object. 57 live platform.* tables have no migration file, feeding fault E-103. VERIFIED IN THE CONFIG ITSELF this block. R81 D1-04 hand-wrote migrations 0569/0570 for platform.work_orders under exactly this constraint; the rest remain.",Medium,Other,n/a,NO,TECHNICAL,"A generator that silently emits nothing is worse than one that errors, because the omission looks like success.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F05_AI_PROVIDER_UNSET_ON_PROJEXA,R81 D3-04,,adapter.ts:87 / assertAiProviderAllowed(),,"THIS IS A DESIGN AND LICENSING FAULT, NOT A MISCONFIGURATION. Do not treat it as an env var someone forgot to set.
+VERIFIED VERBATIM IN SOURCE by R81 at ct/src/lib/ai/adapter.ts:78-82, the second refusal branch logs: ""Anthropic's Claude Code policy permits OAuth/subscription auth for ordinary individual use only -- never to serve a request on behalf of a different person. Set AI_PROVIDER=openrouter before this product serves anyone other than that one account.""
+THE TENSION THAT MATTERS: the owner ruled on 2026-09-08 that the END-USER DEFAULT for L1/L2/L3 is Claude Code Sonnet High. A Claude Code SUBSCRIPTION / OAuth credential cannot lawfully serve end users' requests. So serving customers on that path is not one config change away -- it is not permitted, and the guard fails closed precisely to prevent it. adapter.ts:56-58's own comment shows the fail-closed behaviour was deliberate and correct.
+MECHANICS, verified line by line and CORRECTING an earlier reading of my own: `if (!allowed)` at adapter.ts:68 fires BEFORE `if (userId !== allowed)` at :78, so with RAJAT_USER_ID unset the code refuses for LITERALLY EVERYONE, the owner included -- not merely for non-owners as first recorded. And resolveProviderName() at :87 is `process.env.AI_PROVIDER ?? ""claude-cli""`, so an UNSET variable does not disable the guard, it SELECTS the guarded provider. .env.example declares NEITHER variable (grep -c returns 0 for both), so any environment provisioned from it lands on the refusing branch by default.
+BOTH BRANCHES: (A) unset or claude-cli -> L1 refuses for 100% of users and modelCalls reads 0 IDENTICALLY to a genuine ""the software resolved everything"" result. (B) openrouter -> adapter.ts:65 returns immediately, RAJAT_USER_ID is never read, the guard restricts nobody. One environment string is the entire difference between ""no one gets AI"" and ""everyone gets AI"".
+OWNER DECISION REQUIRED -- money and licensing, explicitly outside this session's authority. Two lawful routes preserve the intent: end users on OpenRouter, or end users on an Anthropic API KEY (API-key auth is legitimate for serving others and would keep ""Sonnet High"" as the end-user default in substance). NEITHER IS BEING CHOSEN HERE and AI_PROVIDER has NOT been set by either session.
+A CONNECTION NEITHER SESSION HAD MADE: adapter.ts:51-53 records that RAJAT_USER_ID identifies democeo@projexa-ai.com -- the SAME demo admin account whose plaintext credential R81 D1-01 found inside a recovered Google Drive foundational document (see R81_F04). So the single identity the entire AI guard is keyed to is an account with a known-leaked, unrotated password on a public domain. Rotating it is an owner action AND it would change the value this guard depends on.
+Independently verified by both concurrently running sessions, each reading the source rather than accepting the other's report.
+
+[R81 D8-01 ADDENDUM] An exhaustive repo-wide search settles the provisioning question: RAJAT_USER_ID appears in exactly 10 files (.env.local, one commit message, 3 registers, 5 source/test files) and NEITHER variable is set by any .env.production or by vercel.json in EITHER repository. So nothing checked in would move a deployment off the refusing branch -- a fresh environment provisioned from the repo lands on Branch A by construction, not by oversight. The live Production values themselves remain CANNOT-ESTABLISH from code and were measured separately by listing variable NAMES only.",Critical,Other,non-owner,YES,TECHNICAL,"Reclassified from High to Critical and from a configuration fault to a design/licensing fault. A misconfiguration is fixed by setting a variable; this cannot be, because the ruled-for default is not a lawful way to serve end users. Filing it as a config gap would have led someone to ""fix"" it by setting AI_PROVIDER=claude-cli in Production, which is the one action the code exists to prevent.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F06_NO_PASSWORD_RESET,R81 D3-05,,BOTH repos: ct/src/app/forgot-password/page.tsx (17-line redirect to /login); resetPasswordForEmail absent from both,,"THERE IS NO PASSWORD RESET IN EITHER REPOSITORY. Independently verified by R81 after the R80 session corrected an earlier, narrower version of this finding: `grep -rc resetPasswordForEmail src/` returns ZERO hits in compliance-tracker AND zero in PROJEXA, and ct/src/app/forgot-password/page.tsx is a 17-line redirect to /login -- a page that looks like a recovery path and is not one. A locked-out user has no recovery route at all. This is worst for a SOLE OWNER: the owner role is the only one that can administer the organisation, so an owner locked out cannot be helped by any other member, and it compounds the /api/org/repair gap documented in the wave-2 onboarding sheet. Originally filed as ""PROJEXA has no password reset""; the true scope is both products. A PRODUCT gap, not a documentation gap.",Critical,Function,n/a,YES,TECHNICAL,"Escalated from High to Critical on measurement: the original scoping (PROJEXA only) understated it, and a stub page that redirects to /login is worse than no page, because it reads as a working recovery path to anyone auditing the surface. There is no workaround a user can perform themselves and no in-product path for an administrator to perform it for them.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F14_COMPOSER_FALSE_COMMENTS,R81 D0-06,,"src/components/shell/Composer.tsx ~456-467, ~505-512, ~545-552",,"THREE comments, one above each left-panel section, state the UNDOCKED case is `flex-1 basis-0`. The code is `h-1/3 shrink-0 grow-0`. flex-1 basis-0 is the approach that was REPLACED because it measured 249/235/249 instead of equal thirds, so the comments describe the discarded implementation as current. Same class as the six false comments R80 corrected before committing (KD-10). Found while re-measuring for D0-06; the measurement itself reproduced at [245,245,245].",Low,Other,n/a,NO,TECHNICAL,A comment that asserts something false is worse than none; the next person to touch this panel will read the wrong mechanism.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F13_E2E_AUTH_RATE_LIMITED,R81 D6-02,,e2e/auth.setup.ts,,"auth.setup.ts logs four seeded accounts in PARALLEL and intermittently fails two with ""page.waitForURL: Timeout 20000ms exceeded"", which reads as drifted credentials but is not. PROVEN OTHERWISE: auth.users.last_sign_in_at for the CEO UPDATED at 11:54:37 DURING a run in which his setup ""failed"" -- Supabase authenticated him and only the post-login redirect never completed. --workers=1 makes all four pass, repeatably. Cause is Supabase auth rate limiting under concurrent logins; a live source of E2E flakiness and a plausible contributor to CI E2E instability.",Medium,Flow,n/a,NO,TECHNICAL,"Diagnosed from database evidence rather than by re-running until green, and it explains failures that look like a credential problem.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F12_ROLE_COVERAGE_4_OF_6_UNSEEDED,R81 D6-05,,src/lib/authz/roles.ts,,"PROJEXA defines six roles (owner, admin, pm, site_engineer, member, client_viewer). MEASURED against the live seeded organisation: only TWO exist. Exactly one account (the CEO) has owner; the other ten all have member. FOUR roles -- admin, pm, site_engineer, client_viewer -- have NO account at all and have never been exercised by any test. Prior notes said three roles lacked an account; the measured figure is FOUR.",High,Permission,n/a,YES,TECHNICAL,R43_MGR_01 was found only because someone tested a second role. Four untested roles are four untested authorization surfaces.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F11_AUTOCRLF_ASYMMETRY,R81 D0-09,,"projexa: core.autocrlf=true, no .gitattributes",,"ROOT CAUSE of the recurring CRLF flips (""the edit tool has flipped files to CRLF three times""): the two repos are configured OPPOSITELY. projexa has core.autocrlf=true and NO .gitattributes. compliance-tracker has core.autocrlf=false and DOES have one (which itself documents that drizzle hashes migration files as raw bytes with no line-ending normalisation, fault E-102). The same edit in the two repos produces different bytes on disk. Every projexa commit in R81 was byte-checked before and after for this reason.",Medium,Other,n/a,NO,TECHNICAL,"Explains a recurring class of corruption that has cost real time in at least three prior blocks, and points at a one-line fix rather than continued vigilance.",false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F10_WORK_ORDERS_SEQ_NO_GRANT,R81 D1-04,,platform.work_orders_id_seq,,"app_runtime has no USAGE on platform.work_orders_id_seq, so every INSERT by the application role fails with ""permission denied for sequence work_orders_id_seq"". Cause: the table was created outside a migration (via execute_sql) and never received the grants a migration would have issued. DELIBERATELY NOT WORKED AROUND by granting the app role rights it does not otherwise need -- the inserts went through the privileged path instead and the gap was recorded. A concrete second-order cost of the migration debt D1-04 paid.",Low,Permission,n/a,NO,TECHNICAL,Broadening a runtime role to fix a provisioning mistake is the wrong repair.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F01_CROSS_REPO_TEST_GAP,R81 D3-01,,(structural: both repos),,"Neither repo's test suite exercises both repos together, so every cross-repo data path is invisible to both. This is WHY the procure-to-receive chain stayed dead through 4107 passing tests and one earlier fix. PROJEXA's UI posts to PROJEXA's API, which calls compliance-tracker over VERIDIAN_API_BASE_URL, where the ERP service actually runs. Closing this needs a harness that boots BOTH dev servers and drives the real chain. R81 built the first such test (projexa e2e/r81-d607-po-to-grn.spec.ts) and it immediately found a live integration failure neither unit suite can see (R81_F02). NOT closed here: its own dedicated undertaking.",High,Other,n/a,YES,TECHNICAL,A green suite in each repo proves nothing about the path between them. This is the structural cause behind the most severe defect R80 found.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F03_MIDDLEWARE_ROLE_UNSCOPED,R81 D3-02,,src/middleware.ts:170-186,,"Role is resolved with .from(""memberships"").select(""role"").eq(""user_id"", userId).limit(1) -- no organization filter, no ordering. For a multi-org user the role gating EVERY write is whichever row the database returns first, and requireAuth() picks the org the same way, so the two can disagree. The DELETE handlers added by R80 Part 5 depend on this. NOT fixed blind: fixing it wrongly locks people out. MEASURED: all 11 seeded E2E accounts currently have exactly ONE membership, so this is LATENT today and fires the moment any user joins a second org.",High,Permission,n/a,YES,TECHNICAL,Authorization decided by unordered row order is not authorization.,false,false,false,false,false,false,false,,,false,2026-09-08 12:35:10.92505+00
+R81_F15_RECEIPT_INCREMENT_NOT_IDEMPOTENT,R81 D6-07 (disclosed by the R80 session),,ct/src/lib/services/erp-goods-receipt-service.ts submitPurchaseReceipt(),,"The receivedQuantity increment is NOT idempotent and there is NO over-receipt cap. Two receipts posted against the same purchase-order line add twice, so erp_purchase_order_items.receivedQuantity can exceed quantity and the header rollup will read the order as completed on the strength of an over-receipt. Pre-existing and PRE-DISCLOSED by the R80 session when it handed over the D6-07 verification, rather than discovered afterwards -- filed here so it is not mistaken for something the end-to-end test missed. getThreeWayMatchReport already surfaces the condition as over_received, so it is visible downstream but not prevented at the point of write. NOT fixed by R81: a cap is a business rule (is over-receipt forbidden, tolerated within a percentage, or allowed with a flag?) and that is a product decision, not a defect to patch unilaterally.",Medium,Logic,n/a,NO,TECHNICAL,"A quantity that can silently exceed what was ordered is a data-integrity issue, but the remedy needs a stated tolerance policy. Recorded with its downstream detection so the next person sees both the hole and the existing net.",false,false,false,false,false,false,false,,,false,2026-09-08 12:59:00.608348+00
+R81_F17_SHELL_API_20S_STALL,R81 D6-06,/api/shell,"(observed live, cause not established)",,"INTERMITTENT MULTI-SECOND STALL ON THE SHELL PATH. During warm measurement one navigation took 23,439 ms against a warm median of ~3,900 ms, and in that sample three concurrent requests stalled together: /api/shell 21,635 ms, /api/tasks 20,163 ms, /api/notifications 20,132 ms. Three simultaneous requests each landing near 20 s is the signature of queueing, not of slow work: the app_runtime pool is max:5 (ct/src/lib/db/tenant-scoped.ts appRuntimePoolOptions) against the Supabase TRANSACTION pooler, and that file's own comment records a KNOWN, UNFIXED connection leak (""More connections would only leak faster"", R67 D-06). NOT PROVEN -- one observation, and a local dev server under a Playwright run is not production. Recorded because a 20-second stall on the first screen after login would be fatal at launch and because it is consistent with an already-documented leak. TO ESTABLISH: run the /dashboard load repeatedly under load and watch pg_stat_activity for app_runtime connection count against the max of 5.",High,Performance,owner,YES,TECHNICAL,"One observation is not a measurement, and it is labelled as such. But the combination -- three concurrent requests all ~20s, a max:5 pool, and a documented unfixed leak in the same file -- is too coherent to leave unrecorded, and the named next step is cheap.",false,false,false,false,false,false,false,,,false,2026-09-08 13:11:11.182549+00
+R81_F16_DASHBOARD_PERF_WORKORDER_TARGETS_WRONG_PATH,R81 D6-06,/dashboard,docs/R75_PART5_DASHBOARD_PERF_WORK_ORDER.md vs src/lib/services/construction-dashboard-service.ts,,"THE DASHBOARD PERFORMANCE WORK ORDER OPTIMISES A FUNCTION THAT IS NOT ON THE ROUTE IT MEASURED. R75 Part 5 targets getOrgDashboard/getOrgDashboardWithDb in construction-dashboard-service.ts, justified by a login-to-dashboard figure of 6.7s against a 400ms target. R81 D6-06 re-measured WARM, in-browser, with in-page and network timing (KD-15/KD-16): /dashboard median 3,716-3,907 ms over two runs of 3-5 warm navigations. TTFB is only 207-224 ms, so the server answers fast and the cost is AFTER the document. The 37 requests break down as: /api/shell 1,738 ms, /api/work-progress 1,094 ms, /auth/v1/user 692 ms, /api/tasks 596 ms, /api/scope 542 ms, /api/notifications 203 ms. NO DASHBOARD API CALL APPEARS AT ALL. Verified by code search: getOrgDashboard is called ONLY from ct/src/app/api/v1/projexa/dashboard/route.ts and ct/src/lib/task-execution/construction-tools.ts, and projexa reaches that endpoint only through src/lib/dashboard-overview.ts, which is imported by app/(app)/dashboard/overview/page.tsx and ProjectsOverviewClient.tsx -- i.e. the /dashboard/OVERVIEW route and an AI task-execution tool, NOT the /dashboard route whose 6.7s justified the work order. CONSEQUENCE: implementing the CTE consolidation as specified would not move the login-to-dashboard number. It is not wasted work in principle -- it would help /dashboard/overview and the AI tool path -- but it must not be scheduled as the fix for login-to-dashboard, and it carries real risk: that function feeds financial-redaction logic gated on hasRole(ctx.dbUser,""manager""), so a consolidation error is a financial-data-exposure risk, not a UI bug. THE ACTUAL LOGIN-TO-DASHBOARD COST IS FIVE SEPARATE CROSS-REPO CALLS, each PROJEXA->compliance-tracker, dominated by /api/shell.",High,Performance,owner,YES,TECHNICAL,"Filed as a finding rather than acted on, because acting on the work order as written would have meant a risky refactor of financial-redaction code for zero user-visible gain. The 400ms target is still missed by ~9x; the work simply has to be aimed at /api/shell and its four siblings instead.",false,false,false,false,false,false,false,,,false,2026-09-08 13:11:11.182549+00
+R81_F19_NO_USABLE_EMBEDDINGS,R81 D7-01,,ct/src/lib/.../embeddings.ts:436 and compliance.embeddings,,"THERE ARE ZERO USABLE EMBEDDINGS, SO NO VECTOR TIER CAN EVER MATCH. Measured live: compliance.embeddings holds 981 rows across exactly TWO model values -- hash-pseudo-vector (838 rows, not a real model) and unknown-legacy (143 rows), and ALL 143 unknown-legacy rows are quarantined=true. So usable, real, un-quarantined embeddings = 0. The retrieval query filters on `AND e.embedding_model = ${model}`, and since neither stored string is a real provider model id, that predicate can never match a live model. Any semantic/vector tier built on this reads an empty set by construction. Compounding it: compliance.memory_records, memory_versions and memory_sources are all 0 rows -- nothing has ever been ingested -- and 0 of 278 organisations hold the institutional_memory entitlement that gates both the read and the write path. A prior register row citing ""143"" is citing 143 QUARANTINED rows.",High,Function,n/a,YES,TECHNICAL,"IMG cannot be described as working, or even as measurable, while its vector substrate is structurally unmatchable and its content tables are empty. Reporting a proven-point count without this denominator would overstate it badly.",false,false,false,false,false,false,false,,,false,2026-09-08 13:24:13.652838+00
+R81_F20_IMG_GUARDS_ONLY_BIND_APP_RUNTIME,R81 D7-02,,compliance.memory_records / memory_versions / memory_sources / graph_node / graph_edge,,"THE APPEND-ONLY GUARDS BIND ONE ROLE ONLY, AND ONE TABLE HAS NO UPDATE GUARD AT ALL. Read from pg_catalog: every integrity guard except graph_edge_guard fires only when current_user = 'app_runtime'. service_role and postgres hold full DML on all five tables PLUS USING true bypass policies, so the audit trail that memory_versions exists to be is not protected from the roles most likely to be used by a script or an MCP session. Separately, platform.graph_edge has NO UPDATE-immutability guard -- there is no immutability branch anywhere in graph_edge_guard's body -- so a graph edge can be rewritten in place. IMG-036 cannot detect this because its proof tests only for the presence of a BEFORE DELETE trigger, so the register will keep reporting that guard as present while UPDATE stays open. NOT PROVEN BY WRITE: the audit had SELECT-only access, so that the triggers actually RAISE was read from definitions and tgenabled='O', not demonstrated. Proving them needs a write attempt inside a rolled-back transaction, which requires a verified backup first per Addendum B GG-05.",High,Permission,n/a,YES,TECHNICAL,"An append-only guarantee that only holds for one of three roles is not an append-only guarantee, and a register proof that tests for the wrong trigger event will never reveal it. Both halves have to be recorded or the next audit repeats this one.",false,false,false,false,false,false,false,,,false,2026-09-08 13:24:13.652838+00
+R81_F18_IMG_REGISTER_SELF_CONTRADICTION,R81 D7-01,,platform.img_spec,,"THE IMG REGISTER CONTRADICTS ITSELF AND ITS PROOFS ARE PARTLY UNRUNNABLE. Measured live: 74 rows; only 37 carry a closure_proof_sql at all; only 30 have EVER been run, all inside one window on 2026-09-04 04:03-08:36 UTC; 21 stored true. The other 37 rows carry NO proof mechanism and sit at result_bool=false, which is a DEFAULT, not a finding -- they are unmeasurable, and a register that reports them as false is reporting a value it never computed. WORSE, A STORED FALSE POSITIVE WAS FOUND AND CONFIRMED BY RUNNING THE ROW'S OWN PROOF: IMG-016 was stored TRUE while its proof returns 0 against an expected "">= 1"". Corrected to FALSE by R81. Its proof also can NEVER pass -- it searches information_schema.routines for a compliance routine named like %recall%, but the recall ladder is TypeScript, not SQL, so the proof tests the wrong artefact entirely. An independent re-run of all 37 proof-bearing rows disagreed with the register on 8 of 37. THE HONEST POSITION MUST ALWAYS BE STATED WITH BOTH FIGURES: 26 of 37 executed proofs true, AND 37 of 74 never measured. A single number is not reportable here.",High,Other,n/a,YES,TECHNICAL,"A register whose rows can be true while their own proofs fail is worse than no register, because it is quoted as evidence. This is the same class as the closure-gate hole that let six requirements close on a CI-red test.",false,false,false,false,false,false,false,,,false,2026-09-08 13:24:13.652838+00
+R81_F21_AI_INVOLVEMENT_NOT_RECORDABLE,R81 D8-06,,ct/src/lib/pipeline/run-submission.ts:1020,,"WHETHER THE AI DID THE WORK IS NOT RECOVERABLE FROM THE DATABASE. `executor: ""software""` is HARDCODED at run-submission.ts:1020 -- verified directly by R81, not taken from a report. The 'ai' enum value is never assigned anywhere, and pipeline_tasks carries no source or level column. So for any executed business-data write, the record cannot say whether a human, the software tiers, or a model produced it. THIS IS THE ATTRIBUTION REQUIREMENT FAILING AT ITS ROOT: three further fields have no write site at all -- the MODEL ID is resolved at openrouter.ts:59 and discarded at :78-84 (and can change between requests via a 60s-TTL hot-reload row, so even the model that answered is unknowable); the PROMPT HASH is never computed and is explicitly declined at run-submission.ts:300-304; and the RETRIEVED ITEM IDS (the BOQ candidate set sent at level1.ts:102-106) are never returned or written and become unreconstructable once a new BOQ version exists. COMPOUNDING IT: because L1 refuses when RAJAT_USER_ID is unset, modelCalls reads 0 -- IDENTICALLY to a genuine ""the software resolved everything"" result. A metric that reads the same whether the AI worked perfectly or was switched off cannot measure the 95/5 split the programme is built on.",Critical,Other,n/a,YES,TECHNICAL,"An ERP that cannot say whether a model touched a financial write has no AI audit trail, and the one metric meant to prove the software-first design reads identically in the success and the switched-off case. Both halves have to be fixed together or the measurement stays meaningless.",false,false,false,false,false,false,false,,,false,2026-09-08 13:36:56.265243+00
+R81_F22_SIX_SILENT_AI_FAILURE_PATHS,R81 D8-05,,ct/src/lib/pipeline/* and ct/src/lib/ai/llm-client.ts,,"SIX SILENT OR MISLEADING FAILURE PATHS ON THE AI ROUTE, each with a location. S-1: a fully swallowed `catch {}` at run-submission.ts:1137. S-2: telemetry structurally excluded from the wire (verdict.ts:180-187) and PROJEXA has NO code that could render a refusal, so a refusal cannot reach a user even in principle. S-3: telemetry never persisted, only logged (run-submission.ts:1192-1198). S-4: /classify returns a 400 promising records it does not contain (classify-only.ts:84). S-5: the same defect on four routes via unwrapped calls at run-submission.ts:887 and :948. S-6: NO AbortController and no fetch timeout anywhere in llm-client.ts, with retries multiplying the hang -- an unreachable provider hangs rather than failing. D8-05 requires that every AI-only behaviour fail CLEARLY; six do not. NOT FIXED HERE: src/lib/pipeline/** and adapter.ts are owned by a concurrent session building R80 Part 2; these were READ, never written, by agreement.",High,Flow,non-owner,YES,TECHNICAL,"A silent failure is worse than a loud one because nobody investigates it. S-2 is the sharpest: even if the AI refused correctly and said so, the client has no code path to display it, so the user sees nothing at all.",false,false,false,false,false,false,false,,,false,2026-09-08 13:36:56.265243+00
+R81_F23_CONNECTOR_SCOPE_GATE_BYPASSED,R81 D6-04,,"ct/src/lib/services/connector-data-service.ts:117,211",,"THE CONNECTOR SCOPE GATE IS BUILT, TESTED, AND NOT ON THE PRODUCTION PATH. Verified directly by R81, not accepted from a report. ct/src/lib/services/connector-scope-gate-service.ts implements executeGatedConnectorAction, which enforces GOOGLE_CONNECTOR_SCOPE_ALLOW_LIST (composio-connectors.ts:214-235, gmail/googledrive/googlesheets/googledocs mapped to read/edit/write), fails closed for any unlisted toolkit (no_allow_list_recorded), and unconditionally refuses KNOWN_DELETE_CAPABLE_SCOPES. It has a full test suite. IT HAS ZERO PRODUCTION CALL SITES: a search across src finds executeGatedConnectorAction ONLY inside connector-scope-gate-service.test.ts, and getAuthConfigScopes ONLY in its own definition (composio-connectors.ts:367) plus tests. Meanwhile the LIVE read paths import executeAction directly (connector-data-service.ts:38) and call it at :117 (GMAIL_FETCH_EMAILS) and :211 (GOOGLEDRIVE_FIND_FILE), bypassing the gate entirely. So a user's Gmail and Drive can be read through a path that never consults the allow-list, never applies the delete-capable-scope refusal, and never writes the audit record the gate produces. WHAT MAKES THIS WORSE THAN AN UNBUILT CONTROL: the gate's passing tests are a source of FALSE ASSURANCE -- an auditor reading them concludes the control is enforced. LATENT, NOT ACTIVE, and that distinction is recorded honestly: COMPOSIO_API_KEY is unprovisioned (CRR-007, a standing declined purchase, disclosed at composio-connectors.ts:190-196), so no connector call has run live. The exposure begins the moment that key is provisioned. ALSO MISSING, verified by an exhaustive search returning nothing: the PER-USER CONSENT RECORD the owner ruling requires -- no consent_/granted_scopes/scope_grant table or column exists anywhere; connector_accounts stores only status and connectedEmail, so the gate would be evaluated against shared app-level auth_config scopes rather than what any individual user actually granted.
+
+--- SEVERITY CORRECTED Critical -> High, 2026-09-08, on evidence rather than judgement ---
+The defect is confirmed exactly as filed: executeGatedConnectorAction (connector-scope-gate-service.ts:109)
+has ZERO production callers -- the only occurrence in src/ is its own definition -- while the live read
+paths call ungated executeAction at connector-data-service.ts:117 and :211. It has a passing test file,
+so it is a security control with green tests and no call sites.
+But it is NOT REACHABLE today: COMPOSIO_API_KEY is absent from BOTH repos' .env.local, and
+composio-connectors throws when it is unset rather than sending a keyless request
+(composio-connectors.test.ts:85 asserts exactly that). An unreachable bypass cannot stop a customer
+transacting, so Critical overstated it.
+THE TRIGGER IS RECORDED SO THE DOWNGRADE CANNOT BECOME AN EXCUSE: the day COMPOSIO_API_KEY is
+provisioned -- a routine purchase, no code change, nothing that announces itself -- this becomes a
+live deny-by-default gate that is bypassed. The two-line remediation (route :117 and :211 through the
+gate) should therefore land BEFORE that purchase, not after it.",High,Permission,n/a,YES,TECHNICAL,"A security control with green tests and no call sites is worse than an absent one, because the tests are read as proof it is enforced. Filed Critical despite being latent, because the mitigation is an unpaid API key rather than any deliberate control, and provisioning that key is a routine purchase that would silently activate the exposure.",false,false,false,false,false,false,false,,,false,2026-09-08 13:56:57.329573+00
+R81_F24_FALSE_TRIGGER_COMMENT_AND_MISSING_MIGRATIONS,R81 D6-04,,ct/src/lib/db/schema.ts:13668 and drizzle/0327:273-280,,"A COMMENT ASSERTS A DATABASE TRIGGER THAT DOES NOT EXIST IN THE REPOSITORY, and three referenced migrations are absent. schema.ts:13668 states that doc_uid immutability is enforced by ""a trigger [that] blocks any UPDATE ... verified live"". An exhaustive search of drizzle/ and supabase/ for CREATE TRIGGER against source_object, or any doc_uid immutability object, returns NOTHING. Separately, drizzle/0327:273-280 names three migrations -- crr041_048_054_p2_schema_foundation, crr_p2_schema_tier3, crr045_tsvector_gin -- as the home of the vector/HNSW/tsvector objects, and NONE of the three is in the repository. So part of the CRR schema exists only as applied database state with no migration file, which is the same class as fault E-103 and as the platform.work_orders debt R81 D1-04 paid. KD-10 class for the comment: an assertion of ""verified live"" that the repository cannot support. NOT RESOLVED HERE, and stated rather than guessed: whether the trigger actually exists in the live database is CANNOT-ESTABLISH-FROM-SOURCE. A query on information_schema.triggers / pg_trigger for compliance.source_object settles it in one statement, and should be run before anyone relies on doc_uid immutability.",Medium,Other,n/a,NO,TECHNICAL,"Two different failure modes in one place: a comment claiming enforcement that source cannot corroborate, and live schema with no migration file. Either alone is recoverable; together they mean nobody can rebuild this schema from the repo or trust its stated guarantees.",false,false,false,false,false,false,false,,,false,2026-09-08 13:56:57.329573+00
+R81_F25_GRN_STOCK_ITEM_NESTED_TRANSACTION_500,R81 D6-07(a),/api/procurement/goods-receipts/[id]/submit,ct/src/lib/services/erp-goods-receipt-service.ts submitPurchaseReceipt -> recordStockReceipt,,"POSTING A GOODS RECEIPT FAILS WITH A 500 WHENEVER A LINE ACTUALLY NAMES A STOCK ITEM. Found by driving the real UI end to end, and confirmed three independent ways.
+ (1) HTTP: ""Post to Stock"" returned 500, surfaced to PROJEXA as {""error"":""Failed to submit goods receipt"",""code"":""UPSTREAM_500""}.
+ (2) SERVER LOG, verbatim: ""v1 projexa procurement goods-receipt submit error: Error: nested withTenantContext: a transaction for org 4ecc472f-4152-4310-ae8d-cf8b7c52ab6d (opened 2026-09-08T14:13:45.202Z) is still open, and org ... tried to open a second one. Pass the open transaction's db handle down instead -- one request must never hold two of the five app_runtime connections (src/lib/db/tenant-scoped.ts).""
+ (3) DATABASE STATE, which is the damning part: purchase order klpg9hy8ioodfgwc2blxqyni, item_id NOT NULL, sits at status=draft with received_quantity=0, its receipt stranded at status=draft, and ZERO erp_stock_ledger_entries rows. Nothing was credited, nothing was posted, and the order cannot progress.
+CONTRAST, same session, same servers, same flow: a FREE-TEXT line (item_id NULL) reached status=completed with received 5 of 5 and correctly zero stock rows. So the failure is specific to the stock-item path.
+MECHANISM: submitPurchaseReceipt already holds a withTenantContext transaction; recordStockReceipt opens a SECOND one for the same org. tenant-scoped.ts's guard detects the nesting and throws. The free-text path never reaches it, because `if (!item.itemId) continue` short-circuits first.
+WHY THIS WAS INVISIBLE UNTIL NOW, and it matters: before ct 754cef17 and projexa 19491a5, PROJEXA's PO screens never sent an itemId, so recordStockReceipt was effectively unreachable from PROJEXA. 754cef17 correctly moved the receivedQuantity credit above the guard, and 19491a5 let PO lines carry a stock item -- TOGETHER THEY MADE THIS PATH REACHABLE FOR THE FIRST TIME AND IT DOES NOT WORK. The fix is right in intent; the newly-reachable branch is broken. This is not a regression introduced by those commits, it is a latent defect they exposed.
+RELATED: the guard's own message ties this to the max:5 app_runtime pool (see R81_F17 and the concurrent session's standing pool finding) -- the nesting rule exists precisely because one request must not hold two of five connections.
+NOT FIXED BY R81: erp-goods-receipt-service.ts is owned by the concurrent R80 session by agreement. Reported to it directly with the log line and the PO id.
+
+[R81 UPDATE 2026-09-08] FIX SHIPPED BY THE CONCURRENT R80 SESSION as compliance-tracker 6b56c00b, and R81 VERIFIED THE FIX IS CORRECT IN SOURCE: recordStockReceipt now takes an optional existingDb handle (erp-inventory-service.ts:73, `return existingDb ? run(existingDb) : withTenantContext(...)`) and submitPurchaseReceipt now PASSES it (erp-goods-receipt-service.ts:175-178, `await recordStockReceipt(ctx, {...}, db)`). Omitting the handle preserves the previous behaviour exactly. That session also fixed an identical twin in erp-returns-service.ts, and disclosed erp-inventory-planning-service.ts as a wider un-fixed instance rather than bundling it.
+THE ORIGINAL DEFECT IS CONFIRMED GONE FROM THE LOG: no ""nested withTenantContext"" error has been emitted since the fix was loaded.
+BUT THE END-TO-END RE-RUN IS NOT PROVEN, AND THIS ROW STAYS OPEN. Across four attempts the browser run never completed cleanly: 503 UPSTREAM_TIMEOUT twice (PROJEXA aborts an upstream call at 8s), one 404 caused by a corrupted .next build manifest that a mid-write server kill had left behind (cleared by deleting .next; the route file was present and the tree clean at the fix commit throughout), and repeated 15s locator.click timeouts. Free RAM ranged 0.04-0.71 GB with two dev servers, a second Claude session and this one on a 7.82 GB machine. NONE of those failures is attributable to the fix, and NONE of them is evidence FOR it either.
+SO THE HONEST STATE IS: originally FAILED with three independent confirmations (HTTP 500, the verbatim nested-transaction log line, and database state showing draft/received 0/receipt stranded/zero ledger rows); fix reviewed and correct in source; NOT YET RE-PROVEN THROUGH THE UI. It must not be closed until a run on a machine with real headroom shows po_status advancing, received_quantity credited, AND at least one erp_stock_ledger_entries row at valuation_rate 211 rather than 0. The spec is committed-adjacent at projexa e2e/r81-d607b-stock-and-cancel.spec.ts and is deliberately left RED.
+
+[R81 K5-01 CLOSED 2026-09-08 -- citation ct afe275c9, test src/lib/services/erp-goods-receipt-nested-transaction.test.ts]
+CLOSED ON MY OWN VERIFICATION, NOT ON THE FIXING SESSION'S REPORT.
+FIRST, THE CORRECTION THAT MATTERS: commit 6b56c00b, which I previously recorded as ""the fix, verified correct in source"", DID NOT FIX THIS. Threading the open db handle into recordStockReceipt was necessary but NOT SUFFICIENT -- requireErpEnabled() opens its OWN withTenantContext (isErpEnabledForOrg -> isBranchEnabledForOrg) and runs BEFORE the existingDb branch is ever reached, so a caller already inside a transaction still tripped assertNotNested, just at a different line. My reading of the source was right about what the diff did and wrong about whether it was enough. My ""stale dev-server module"" explanation for the post-fix 500 was also wrong: that was a TRUE NEGATIVE. afe275c9 corrects it using isErpEnabledForOrgWithDb, the handle-accepting variant R74 Phase 10 added for exactly this shape, applied to recordStockReceipt, recordStockIssue AND getItemValuation.
+MY INDEPENDENT VERIFICATION:
+ 1. Ran the test myself against the REAL database: 6 pass / 0 fail.
+ 2. Ran my OWN falsifiability cycle rather than accepting the reported one. First attempt was a NO-OP -- my patch asserted a single occurrence and the pattern appears THREE times, so the file never changed and the resulting ""6 pass"" proved nothing. Caught it, redid it reverting ALL THREE gates to the 6b56c00b shape: 1 pass / 5 FAIL with the verbatim production error, ""submitPurchaseReceipt threw instead of completing: nested withTenantContext: a transaction for org 4ecc472f... is still open, and org 4ecc472f... tried to open a second one.""
+ 3. Restored BYTE-IDENTICAL to HEAD (sha256 of working file == sha256 of the HEAD blob, CRLF 0): 6 pass / 0 fail again.
+ 4. Confirmed the test asserts THIS FAULT'S OWN RECORDED CLOSE CONDITION, verbatim and not by paraphrase: status advances past draft (expect(po?.status).not.toBe(""draft""), and one of partially_received/completed); received_quantity credited on BOTH lines; and the load-bearing one -- expect(Number(entry.valuationRate)).toBe(211) with an explicit .not.toBe(0). It also asserts exactly ONE ledger row for TWO received lines, which is the free-text-versus-stock-item split that is the entire substance of the original fix.
+A KNOWN LIMITATION, RECORDED SO NOBODY MISREADS CI: this test SKIPS under CI's placeholder database credentials (8 skipped, with a visible reason). It therefore does NOT pass in CI, and CI going green must never be read as evidence for this fix. That is a property of the CI environment, not of the fix. Per ruling R81-RULING-03 as sharpened -- check test OUTCOME, not job conclusion -- a skip is not a pass, and this fault is closed on the LOCAL real-database run plus the falsifiability cycle above, which is stronger evidence than a browser run could give.
+WHY NOT ALSO CONFIRMED THROUGH THE BROWSER: the read-back path is itself broken (fault R81_F27 -- the single-PO route 404s on orders that exist and that the list route returns). The service-layer test is the better instrument here, exactly as the fixing session argued.",Critical,Function,owner,YES,TECHNICAL,"A purchase receipt that names a stock item -- the ordinary case for a construction ERP buying materials -- cannot be posted at all, and fails in a way that leaves the order silently stuck in draft with no stock and no credit. It is the exact half of the procure-to-receive chain that the previous fix was believed to have completed.",false,false,true,true,true,false,false,compliance-tracker afe275c9 (test: src/lib/services/erp-goods-receipt-nested-transaction.test.ts),ct/src/lib/services/erp-inventory-service.ts; erp-inventory-planning-service.ts; erp-returns-service.ts; erp-goods-receipt-service.ts,true,2026-09-08 14:15:48.438911+00
+R81_F26_NESTING_GUARD_WARNS_IN_PRODUCTION,R81 K1-02,,ct/src/lib/db/tenant-scoped.ts assertNotNested(),,"THE NESTING GUARD THROWS IN DEV AND TEST BUT ONLY WARNS IN PRODUCTION, AND ITS STATED RATIONALE IS CONTRADICTED BY ITS OWN LIST. Verified in source: assertNotNested() reads NODE_ENV per call and `if (env === ""development"" || env === ""test"") throw`, otherwise `console.warn(...)` and THE REQUEST CONTINUES. The documented reason is that ""nesting is a latency/exhaustion bug, not a correctness one: the query results are right, they just cost too much.""
+THAT CLAIM IS FALSE FOR AT LEAST ONE ENTRY IN THE GUARD'S OWN KNOWN-NESTING LIST, which says of the goods-receipt site: ""also a correctness problem: the stock ledger commits in a different transaction from the receipt status it is posting for"". So for that path, production leniency does not degrade performance -- it splits an atomic operation. A failure between the two commits leaves stock posted against a receipt that never reached submitted. That is silent data corruption, and it is silent precisely BECAUSE production only warns.
+WHAT THIS MEANS IN PRACTICE, and it is the inverse of how it looks: the HTTP 500 R81 hit in dev (fault R81_F25) was the SAFE manifestation. The same code in production would have completed the request, warned into a log nobody reads, and left the ledger and the receipt in separate transactions. The loud failure was the good outcome.
+THE LIST IS A SNAPSHOT AND FIVE OF ITS SIX ENTRIES ARE STILL LIVE. Measured this block: erp-returns-service.ts now passes the open handle (fixed by the concurrent session alongside goods-receipt in ct 6b56c00b). STILL NESTING, none passing a handle: erp-inventory-planning-service.ts (recordStockReceipt / recordStockIssue / getItemValuation), erp-invoicing-service.ts and erp-payment-entries-service.ts (isPeriodOpenForDate), construction-valuation-service.ts and erp-contract-service.ts (createSalesInvoice). EVERY ONE IS A FINANCIAL OR INVENTORY PATH. The sixth, orchestra-execution-logger.ts, is fire-and-forget and its own note correctly assesses it as degrading to a skipped log line.
+THE GUARD ITSELF SAYS ""This list is a snapshot, not a maintained registry: the guard itself is the live answer."" That is true in dev, where it throws. It is NOT true in production, where the guard answers with a warning and proceeds.
+NOT FIXED HERE: these are the concurrent session's files by agreement, and the remedy per site is a judgement about transaction boundaries in money-handling code, not a mechanical edit. Filed with the mechanism so it is not rediscovered a third time -- R43_MGR_01 removed one instance in August and another was still live in September.",Critical,Logic,n/a,YES,TECHNICAL,"Production converts a loud, immediately-diagnosed failure into a silent split of an atomic financial operation, on five live paths, while the guard's own comment asserts correctness is not at stake. The one case that was actually exercised proved otherwise within minutes.",false,false,false,false,false,false,false,,,false,2026-09-08 15:22:30.297829+00
+R81_F27_SINGLE_PO_ROUTE_404S_ON_EXISTING_ORDERS,R81 K5-01,/api/procurement/purchase-orders/[id],ct/src/app/api/v1/projexa/procurement/purchase-orders/[id]/route.ts -> erp-buying-service.ts getPurchaseOrder(),,"THE SINGLE-PURCHASE-ORDER ROUTE 404s ON ORDERS THAT EXIST AND THAT THE LIST ROUTE RETURNS TO THE SAME CALLER. Reproduced on four separate purchase orders in one authenticated session.
+EVIDENCE, three independent layers:
+ (1) DATABASE: all four ids exist in compliance.erp_purchase_orders with org_id 4ecc472f-4152-4310-ae8d-cf8b7c52ab6d -- two draft, two completed.
+ (2) LIST ROUTE: GET /api/purchase-orders returns 200 with 55 orders and CONTAINS ALL FOUR IDS.
+ (3) SINGLE ROUTE: GET /api/procurement/purchase-orders/<id> returns 404 {""error"":""Not Found""} for ALL FOUR, and DELETE (which is the cancel verb) likewise 404s. PROJEXA request log: upstreamMs 88-126, so compliance-tracker answered FAST with a 404 -- not a timeout, not a cold compile.
+THIS IS NOT A TENANT-ISOLATION LEAK, and that was checked before filing rather than assumed. 59 purchase orders exist across 3 orgs; exactly 55 belong to the E2E org; the list returned exactly 55. The list is CORRECTLY scoped. Also ruled out: the apparent org mismatch in the logs (PROJEXA orgId 42d7bac5-ffe1-4e10-a783-deaa90f8ce03 vs the rows' 4ecc472f-...) is NOT a mismatch -- public.veridian_credentials maps 42d7bac5 -> 4ecc472f, so they are the same tenant in two id spaces.
+SO THE SINGLE-PO ROUTE IS THE BROKEN ONE. getPurchaseOrder() filters `id = ? AND orgId = ctx.orgId` inside withTenantContext, so a 404 means ctx.orgId did not resolve to 4ecc472f for that call -- while the list route, for the SAME caller in the SAME session, resolved it correctly. Two routes serving the same resource resolve the caller's organisation differently.
+IT IS A REGRESSION, not a standing condition: the same route served the same ids successfully earlier today (R81 read po_status=completed, received 5 of 5, through it at ~12:50). compliance-tracker moved 5b2ef432 -> 7a13df3d -> 6b56c00b in between.
+IMPACT: it BLOCKS verification, not just reading. D6-07's read-back and the cancelled-PO half both go through this route, so R81_F25 cannot be re-proven while it is broken. The failure is in the INSTRUMENT, and R81_F25 must not be judged on runs that died here.
+NOT FIXED HERE: compliance-tracker service code is the concurrent session's by agreement. Handed over with the four ids, the log lines and the getPurchaseOrder() filter as the starting point.",High,Function,owner,YES,TECHNICAL,"A resource that lists but cannot be opened is broken for every consumer, and it silently converts a verification failure into what looks like a product failure. Filed only after ruling out a tenant leak and an id-space mismatch, either of which would have been a materially different and worse claim.",false,false,false,false,false,false,false,,,false,2026-09-08 15:50:17.571718+00
+R81_F31_DEMO_API_KEY_UNRESTRICTED_BEHIND_ONE_ENV_VAR,R81 K1-02,,ct/src/lib/supabase/api-key-auth.ts:97-113,,"AN UNRESTRICTED read,write API KEY IS ONE ENVIRONMENT VARIABLE FROM BEING LIVE FOR EXTERNAL INTEGRATORS. projexa_demo_key (org projexa_demo_org) has scopes ""read,write"" (unrestricted) and rateLimitPerMinute null (unlimited). The comment names the risk: fine for its original purpose, ""unsafe the moment it's handed to external integrators as the sandbox"".
+GUARD: KNOWN_DEMO_KEY_IDS is built from process.env.DEMO_API_KEY_IDS, which is UNSET in every environment, so the key is rejected outright today. Setting that one variable activates the path.
+NOTE THE ASYMMETRY, which is the actual defect: effectiveRateLimitFor() clamps demo keys to 30/min, so the RATE ceiling is applied when the key is allowlisted -- but the SCOPE ceiling is not. An external sandbox user would get a throttled key that can still WRITE to the demo org.
+DORMANT-BEHIND-A-GUARD. Recommended: clamp demo-key scopes to read-only in the same place the rate limit is clamped, so activating the env var cannot grant writes.",High,Permission,n/a,YES,TECHNICAL,"The guard is an unset env var, the activation is a deliberate act someone will eventually take to publish a sandbox, and the code clamps the harmless dimension while leaving write access intact.",false,false,false,false,false,false,false,,,false,2026-09-08 15:51:31.892979+00
+R81_F28_ONE_LINE_FROM_A_CROSS_TENANT_CACHE_LEAK,R81 K1-02,,projexa/src/lib/veridian-client.ts:842-846,,"A CROSS-TENANT DATA LEAK IS ONE PERFORMANCE CHANGE AWAY, AND THE CODE SAYS SO IN ITS OWN COMMENT. Next's ordinary fetch() cache keys on URL + METHOD + BODY ONLY -- NOT headers. Every PROJEXA read reaches VERIDIAN through callVeridian() -> fetchWithTimeout(), where tenancy is carried SOLELY by the per-org Bearer token from resolveApiKey(), and the URL path (e.g. ""/currencies"") is IDENTICAL across orgs. So adding `next: { revalidate }` to that shared fetch would serve org A's cached response to org B. The comment states it outright: ""That is a real cross-tenant leak (same class as E-45), not a theoretical one.""
+WHAT HOLDS IT SHUT TODAY: every call site passes cache: ""no-store"" (lines 627, 723, 755, 817). That is the entire guard. A single perf-minded edit adding revalidate to the shared fetch removes it, and nothing tests for it.
+CLASSIFICATION: DORMANT-BEHIND-A-GUARD -- a live path with a fuse, not dead code. This is precisely the class that produced R81_F25: a documented defect held shut by one condition, until a later change removed the condition.
+RECOMMENDED, not done here: an assertion that fetchWithTimeout() never receives a cache mode other than no-store, so the guard is enforced rather than remembered.
+
+--- SEVERITY CORRECTED Critical -> High, 2026-09-08, and the correction is mine to own ---
+This was filed as ""one line from a cross-tenant leak"", which assumed Next caches fetch by default.
+It does not, and has not since Next 15; projexa pins next ^16.2.10 (package.json:60) and ct 16.2.12.
+So the leak is LATENT -- it requires someone to actively ADD caching (a next:{revalidate} on the
+shared fetch, or removing a cache:""no-store"") -- not live. An independent verification pass overturned
+the original severity and it was right to.
+What remains true and is why this stays High rather than closing: the safety of every proxied
+per-tenant read depends on four hand-written cache:""no-store"" opt-outs, the hazard is invisible at the
+call site, and the triggering change reviews like an ordinary optimisation. That is now ENFORCED
+rather than documented -- projexa 342c6a4 adds src/lib/veridian-client.cache-safety.test.ts, which
+fails the build if any fetchWithTimeout call site loses its opt-out, if the shared fetch gains a
+revalidate, or if the sanctioned cached helper stops keying on organizationId. Proven falsifiable:
+removing one opt-out names that exact call site (veridian-client.ts:617).",High,Permission,n/a,YES,TECHNICAL,"The blast radius is every proxied read route for every tenant, the trigger is an ordinary optimisation, and the only thing preventing it is a convention repeated at four call sites with nothing enforcing it.",false,false,false,false,false,false,false,,,false,2026-09-08 15:51:31.892979+00
+R81_F30_API_ME_NULL_RACE_UNGUARDED_ON_14_PAGES,R81 K1-02,,ct/src/app/(app)/settings/page.tsx:96-108 and ~14 sibling pages,,"/api/me INTERMITTENTLY RETURNS HTTP 200 WITH EVERY FIELD NULL, AND ONLY ONE PAGE DEFENDS AGAINST IT. The comment records it as live-confirmed by real Playwright, 3 of 3 trials: a transient server-side session-resolution race returns 200 with id/name/email/orgId all null, and the old code rendered a permanently empty Profile with no retry. The remedy written for it, fetchMeWithSessionRetry(), is used at EXACTLY ONE call site (settings/page.tsx:154). THE SERVER-SIDE RACE ITSELF WAS NEVER FIXED.
+STILL UNGUARDED, doing a bare fetch(""/api/me"") on mount: crm/{page,accounts,campaigns,contacts,leads,opportunities,pipeline}.tsx (setSalesEnabled), erp/{journal-entries,procurement}/page.tsx (setErpEnabled), capability-registry/page.tsx:82 (setIsAdmin), finops/page.tsx:124 (setRole), hr/attendance/page.tsx:88, hr/page.tsx:65, erp/fixed-assets/[id]/page.tsx:72, pms/page.tsx:58.
+CONSEQUENCE: on a raced load those pages silently render the WRONG ENTITLEMENT STATE -- CRM and ERP modules hidden as ""not enabled"", admin controls hidden, role null -- with no error and no retry. A user sees a product with features missing and nothing to indicate why.
+The fix is per-page (use the existing helper) but the real fix is the server-side race.",High,Flow,n/a,YES,TECHNICAL,"A silent wrong-entitlement render is indistinguishable from ""the feature was never bought"", and the retry helper proving the race is real is applied to one page of fifteen.",false,false,false,false,false,false,false,,,false,2026-09-08 15:51:31.892979+00
+R81_F29_AUTH_GUARD_CI_CHECK_NEVER_WIRED,R81 K1-02,,ct/scripts/check-route-auth-guard.mjs:36-44,,"THE CHECK THAT ENFORCES ""EVERY API ROUTE MUST CALL requireAuth()"" WAS WRITTEN, COMMITTED, AND NEVER WIRED INTO CI. Its own comment records why: ""NOT yet wired into .github/workflows/ci.yml as of this commit -- this session's git token lacks the workflow OAuth scope"", and it writes out the exact remedy: `node scripts/check-route-auth-guard.mjs --base origin/main`. VERIFIED STILL TRUE: git grep for check-route-auth-guard finds no hit anywhere in .github/workflows/; ci.yml wires TEN other check-*.mjs steps but not this one.
+CONSEQUENCE: the CLAUDE.md-mandated authorization convention is UNENFORCED. A new src/app/api/**/route.ts with no auth guard passes CI clean. That is the same convention the 460-route authz gap and the authz drift pin exist to protect.
+This is the cheapest fix in the sweep -- one CI step, already written verbatim in the comment -- and it has sat unapplied because the session that wrote it could not push a workflow file.
+
+[R81 K1-04 CLOSED 2026-09-08, commit d6193e36] FIXED AND WIRED -- and wiring it revealed the check would NOT HAVE WORKED ANYWAY.
+THE SECOND BUG, which is the more valuable half of this fault: both git calls inside getChangedFiles() carried a `2>/dev/null` suffix ON THE COMMAND STRING. execSync runs through cmd.exe on Windows, where that is not valid redirection -- cmd answered ""The system cannot find the path specified"", BOTH calls threw, both catch blocks returned """", and the check reported ""No new/changed API route or service files -- nothing to check"" and EXITED 0 FOR EVERY CHANGE. It was green and checking nothing. So this fault was worse than ""a check that was never wired"": it was a check that, if wired as-is, would have reported success while enforcing nothing.
+PROVEN IN BOTH DIRECTIONS rather than assumed: a planted new src/app/api/**/route.ts exporting a GET with no requireAuth() call PASSED before the fix and now EXITS 1 naming the file; removing the plant returns exit 0. stderr is now suppressed through stdio, which is portable.
+THE ORIGINAL BLOCKER IS GONE: the author recorded that their git token lacked the workflow OAuth scope, which is why it was never wired. This session's token has it -- the push to origin/main succeeded -- so the step is live in ci.yml alongside the ten other check-*.mjs steps.
+Also wired in the same commit: scripts/check-comment-rot.mjs (K1-04's standing check).",High,Permission,n/a,YES,TECHNICAL,"An unenforced authorization convention is a convention, not a control. The remedy is one line and is already written; only the OAuth scope to commit a workflow file was missing.",false,false,true,true,true,false,false,compliance-tracker d6193e36 (pushed to origin/main),ct/scripts/check-route-auth-guard.mjs; ct/scripts/check-comment-rot.mjs; ct/.github/workflows/ci.yml,true,2026-09-08 15:51:31.892979+00
+R81_F33_COMMENT_ROT_STALE_DEFECT_CLAIMS,R81 K1-02,,projexa/src/lib/currency.ts:23-26; projexa/src/lib/chain-options.ts:5; projexa/src/app/api/chain-options/route.ts:24,,"COMMENT ROT: THREE COMMENTS ASSERT DEFECTS THAT ARE NO LONGER TRUE, AND ONE OF THEM WOULD HAVE BEEN FILED AS A LIVE FAULT IF NOT CHECKED. Recorded as rot rather than as faults, per K1-03.
+(1) currency.ts:23-26 claims, measured 2026-08-26, that ""4 of 5 real orgs in compliance.erp_currencies have NO base-currency row at all, so ... every amount they will ever see is labelled in the wrong currency."" RE-MEASURED LIVE 2026-09-08: 11 orgs have currency rows and ALL 11 have a base currency, codes AED and INR. The gap was closed after the comment was written -- R-63's org-provisioning fix. The comment now DEFAMES working code, and left alone it would have been re-filed as a live currency defect against requirements R-60/R-62. Checking before filing is the only reason it was not.
+(2) chain-options.ts:5 and (3) api/chain-options/route.ts:24 both state the VERIDIAN chain-options endpoint ""does not exist yet"" and resolve levels LOCALLY from /scope as a stand-in. It DOES exist: ct/src/app/api/v1/projexa/chain-options/route.ts is present and fully implemented. The documented swap-in never happened, so PROJEXA is running a stand-in against a real endpoint it believes is missing -- which bears on R-80's ""ONE full pill path works end to end"".
+THE GENERAL POINT, which is why this is a fault row and not a note: a comment asserting a defect that has been fixed is not harmless. It causes real work to be scheduled against nothing, and it makes the next sweep distrust every other comment in the file. K1-04's standing check exists to stop exactly this.",Low,Other,n/a,NO,TECHNICAL,"Filed as one row because the class matters more than the instances: two of the three would have produced wasted or wrong work, and the currency one nearly produced a false finding against a requirement that is genuinely satisfied.",false,false,false,false,false,false,false,,,false,2026-09-08 15:52:45.609678+00
+R81_F32_UNWIRED_PILL_DEAD_ENDS_BEHIND_ONE_FLAG,R81 K1-02,,projexa/src/components/veri-chat/veri-chat-context.tsx:126-142,,"THE ""NO VISIBLE PILL MAY BE UNWIRED"" REQUIREMENT (R-81) IS CURRENTLY MET BY HIDING, AND ONE BOOLEAN UNDOES IT. The comment states the failure precisely: a module-chain leaf could carry deterministic:true, survive the prune, render as a pill, and STILL dead-end -- ""A prospect clicking at random drills a full cascade and arrives at a disabled button."" VeriComposer.tsx:113 sets isDispatchableChain only for the construction chain, and :346/:358 disable send for everything else.
+GUARD: SHOW_UNDISPATCHABLE_MODULE_CHAINS = false at line 143. With it false, the /api/module-chain fetch is replaced by Promise.resolve([]). The comment itself says the behaviour ""comes back by flipping this one flag"", and veri-chat-context.test.ts:101 keeps the flag-ON branch alive and tested -- so the broken path is maintained, just not executed.
+WHY THIS MATTERS TO THE LEDGER, and it is the reason this is filed rather than noted: requirements R-80 (""ONE full pill path works end to end"") and R-81 (""NO visible pill may be unwired -- hide the other 402"") are both currently BLOCKED. This comment is the evidence that R-81 is satisfied by SUPPRESSION, not by wiring. Any future session that flips the flag to expose more chains re-breaks R-81 silently, because nothing asserts the invariant ""every rendered pill is dispatchable"".
+SECOND-ORDER: flipping it also re-adds a dependency on /api/module-chain, named in the R46 incident as hanging to Vercel's 300s cap.
+RECOMMENDED, not done here: an assertion that every pill rendered is dispatchable, so R-81 is enforced by a test rather than by a flag.",High,Logic,n/a,YES,TECHNICAL,"A requirement met by hiding the failure is met until someone unhides it, and the flag that hides it is one line with a live, tested branch behind it. Directly bears on the state of R-80 and R-81.",false,false,false,false,false,false,false,,,false,2026-09-08 15:52:45.609678+00
+R81_F36_TWO_GUARD_FUSED_NESTING_SITES,"R81 K3-01 (inventory from the R80 session, filed by R81)",,ct/src/lib/services/fm-asset-dedup-service.ts:70; ct/src/lib/services/fm-register-digitization-service.ts:126,,"TWO NESTING SITES ARE DORMANT ONLY BEHIND A GUARD, AND BOTH ARE ONE INTENDED COMMIT FROM GOING LIVE -- the same shape that produced R81_F25.
+ (1) fm-asset-dedup-service.ts:70 -- dormant ONLY because commitDigitizationBatch has no route yet, AND THE ROUTE IS STATED AS PLANNED WORK. The moment that route is added, this nests on a live path.
+ (2) fm-register-digitization-service.ts:126 parseAndExtractFromFile -- ZERO callers today, while its wired twin parseAndExtractFromPhoto nests IDENTICALLY at :201 and IS LIVE. So the pattern is already in production through the sibling; this one is a second entrance waiting to be opened.
+THIS IS THE DORMANT-BEHIND-A-GUARD CLASS, and it is the class that actually fires. R81_F25 sat behind `if (!item.itemId) continue` for months and became a live HTTP 500 the moment two commits removed the condition that kept it dormant. A sweep asking only ""is it reachable today?"" marks all of these safe.
+Recorded so that whoever adds the commitDigitizationBatch route, or wires parseAndExtractFromFile, is told BEFORE they do it rather than by an incident afterwards.",High,Logic,n/a,YES,TECHNICAL,Filed while dormant precisely because the previous member of this class was filed only after it fired. The remedy is cheap now and an incident later.,false,false,false,false,false,false,false,,,false,2026-09-08 16:32:59.885721+00
+R81_F34_NESTED_TRANSACTIONS_11_REACHABLE_MONEY_PATHS,"R81 K3-01 (inventory from the R80 session, filed by R81)",,"ct/src/lib/services/{erp-invoicing,erp-payment-entries,construction-valuation,erp-contract,crm-service,kpi-hub-service,pms-budget-service}.ts",,"ELEVEN REACHABLE NESTED-TRANSACTION SITES REMAIN, AND IN PRODUCTION EVERY ONE OF THEM SILENTLY PROCEEDS. Sweep denominators, so the number is readable: 1,600 withTenantContext call sites across 348 files; 19,637 call expressions examined inside 1,593 callback bodies; 27 real occurrences; 3 already threading a handle; 22 nesting-and-reachable; 2 guard-fused. Four were fixed in ct 6b56c00b + afe275c9. These eleven are not.
+ erp-invoicing-service.ts:410 submitSalesInvoice -> isPeriodOpenForDate -- invoice stranded at draft, no GL posting
+ erp-invoicing-service.ts:560 submitPurchaseInvoice -> same
+ erp-payment-entries-service.ts:426 decidePaymentEntry -> same -- entry stuck submitted, the invoice outstanding never reduced
+ construction-valuation-service.ts:197 generateInterimBill -> createSalesInvoice -- bill row written with salesInvoiceId NULL
+ erp-contract-service.ts:240 generateInvoiceFromBillingSchedule -> createSalesInvoice
+ crm-service.ts:456 updateOpportunity -> listPipelineStages -- the primary CRM drag-and-drop
+ erp-invoicing-service.ts:1583 paymentProposalList -> listBankAccounts -- N nests per call
+ kpi-hub-service.ts:100 -> getOrchestraAnalytics
+ pms-budget-service.ts:88 getBudgetActuals -> resolveBillableRate -- ONE NEST PER TIME ENTRY, the worst pool amplifier in the inventory
+THE CAVEAT THAT WILL OTHERWISE MAKE THE NEXT SIX FIXES LOOK DONE WHEN THEY ARE NOT: 6 of the 14 callees BEGIN WITH AN ENABLEMENT GATE (requireErpEnabled / requireSalesEnabled) THAT OPENS A TRANSACTION BEFORE THE CALLEE'S OWN. For those, threading the open db handle is NECESSARY BUT NOT SUFFICIENT -- the gate trips assertNotNested before the handle is ever consulted. That is precisely the mistake commit 6b56c00b made and afe275c9 corrected, and it cost a full verification cycle to discover. Only recordStockReceipt/recordStockIssue/getItemValuation have had the ...WithDb treatment.
+WHY THIS IS CRITICAL RATHER THAN A PERFORMANCE ITEM -- see fault R81_F26: assertNotNested THROWS in dev and test but only console.warn()s in PRODUCTION and lets the request finish. So none of these eleven fails loudly where it matters. They split an atomic operation across two transactions and complete. Every one listed above is a financial or inventory path.
+THE 2026-09-02 KNOWN-NESTING LIST AUDITED AGAINST REALITY: 1 stale, 1 partially stale, 4 confirmed, and NINE SITES MISSING FROM IT -- two of which arrive via `await import()` and are invisible to any static-import grep, which is why a documentation-only registry could never have stayed correct.
+
+--- CORRECTION 2026-09-08, from R80's own sweep. The population is 22, not 11. ---
+R80's exhaustive sweep (denominators: 1,600 withTenantContext call sites across 348 files, 19,637 call
+expressions in 1,593 callback bodies) found 27 occurrences = 3 already threading a handle + 22 nesting-and-
+reachable + 2 guard-fused. This fault previously recorded 11 reachable sites; the correct figure is 22.
+CAVEAT THAT MUST TRAVEL WITH THIS FAULT, carried verbatim from R80: 6 of the 14 callees begin with an
+enablement gate (requireErpEnabled / requireSalesEnabled) that opens a transaction BEFORE the callee's own, so
+THREADING A HANDLE ALONE IS NOT A FIX for those. That is precisely why commit 6b56c00b looked correct and fixed
+nothing, and it is the trap the next person to touch this will fall into.
+SEQUENCING AGREED BETWEEN THE TWO SESSIONS: fix all sites first, THEN flip assertNotNested from warn to throw in
+production -- flipping first would convert silent transaction splits into live 500s on financial paths, which
+trades a data-integrity risk for a customer-facing outage. R81 added one condition: today the production path is
+a bare console.warn that nothing counts, so ""all sites fixed"" is a claim rather than a fact. R81 will instrument
+the production warn path to emit a structured, countable record (src/lib/db/** is R81's surface), R80 fixes the
+sites, and the final flip is gated on that counter reading zero from live traffic rather than on either session
+believing the list is complete.
+
+--- SCALE CLARIFICATION 2026-09-08, from R80's own verification, and it cuts against their own number ---
+""7 nesting recordOrchestraExecution call sites"" is true and misleading on its own. A grep of that
+callee across ct finds approximately FIFTY call sites. Seven are inside a transaction and nest; the
+remainder are standalone and MUST NOT be threaded. Anyone reading ""7 sites"" and then grepping finds
+50 and cannot tell which 7 were meant -- so they either thread all 50 (which at least fails loudly
+with a type error on the standalone ones) or thread none because the set is ambiguous. Correct
+wording: ""7 of ~50 recordOrchestraExecution call sites are inside a transaction and nest; the
+remainder are standalone and must not be threaded.""
+
+This sharpens rather than contradicts the reason the runtime counter exists. R80's 22 is a
+STATICALLY reachable figure produced by a parser walking call graphs. It cannot see a site reached
+through an object property, a namespace call, or a runtime-constructed dispatch, and the sweep's own
+caveats record 104 call sites sitting outside a recognised function declaration plus 7 unparseable
+argument spans. So 22 is a FLOOR with an unknown ceiling, not a population. The gap between
+""7 reachable"" and ""50 total"" is exactly the kind of thing static analysis gets right in principle and
+a human reading the summary gets wrong in practice.
+
+INSTRUMENTATION UPDATED (ct 1e43be16) on R80's suggestion: detections now record the CALLER as well
+as the callee, keyed on the pair (outer entry point >>> inner call site). A count alone says the
+sweep was incomplete; the pair says which file to change. Keying on the pair also stops the same
+callee nesting under two different callers collapsing into one row and hiding the second fix behind
+the first's count -- which is precisely the 7-of-50 situation.",Critical,Logic,n/a,YES,TECHNICAL,"Eleven live money-handling paths currently split atomic operations in production without failing, the documented registry meant to track them was wrong in four different ways, and the obvious fix silently does not work on six of them.",false,false,false,false,false,false,false,,,false,2026-09-08 16:32:59.885721+00
+R81_F35_AI_AUDIT_ROW_SILENTLY_DROPPED,"R81 K3-01 (inventory from the R80 session, filed by R81)",,"ct/src/lib/services/orchestra-execution-logger.ts recordOrchestraExecution, called from crm-accounts, crm-service x2, fm-register-digitization, veri-meeting, task-execution-engine",,"THE AI AUDIT ROW REQUIRED BY THE AI CONSTITUTION IS SILENTLY DROPPED ON SEVEN CALL PATHS. recordOrchestraExecution() is invoked from inside seven live transactions (crm-accounts, crm-service x2, fm-register-digitization, veri-meeting, task-execution-engine). Under the nesting guard it degrades to a skipped log line -- the logger's own header says so, and it is fire-and-forget so it swallows its own failure. In DEV it throws and is visible; in PRODUCTION the guard only warns, so the request succeeds and the audit row is simply never written, with nothing surfaced.
+WHY THIS IS NOT MERELY A MISSING LOG: VERIDIAN_AI_CONSTITUTION #19 / SEC-03 REQUIRES that row. An AI action that completes without its audit record is an unattributable AI action, and R81_F21 already established the adjacent half -- executor is hardcoded to ""software"" at run-submission.ts:1020 and the 'ai' enum value is never assigned anywhere, so the database cannot distinguish an AI-resolved task from a software-resolved one either. TOGETHER these mean the system can perform an AI action on customer data and retain no evidence that it did.
+TWO MORE SILENT-SWALLOW SITES IN THE SAME SWEEP: product-branch-service.ts:161 (Stage-0 users silently never upgraded) and api/compliance/recur/route.ts:104 (webhook silently never delivered). Same shape: nest, warn in production, proceed, lose the effect.
+Threading a handle fixes these only where no enablement gate runs first -- see R81_F34.",Critical,Other,n/a,YES,TECHNICAL,"A constitutionally-required audit record that disappears in production and only in production is worse than one that was never designed, because the design implies it exists. Compounds R81_F21, which already showed AI involvement is not recoverable from the database.",false,false,false,false,false,false,false,,,false,2026-09-08 16:32:59.885721+00
+R81_F39_PLATFORM_REGISTRY_TABLES_WRITABLE_BY_THE_APP_ROLE,R81 K-series,,drizzle/0573_r81_rls_on_registry_tables.sql,,"platform.work_orders and platform.r81_gap had RLS disabled and zero policies, while approximately 50 sibling registry tables in the same schema (r43_faults, sumeet_gap, sumeet_requirements, sumeet_uat, crr_*, uat_*, r39/r42/r43_queue and others) all carry RLS enabled plus a single service_role_bypass_<table> policy. app_runtime, the role the running application connects as, holds SELECT/INSERT/UPDATE/DELETE grants on both tables, and RLS with no app_runtime policy is precisely what reduces those grants to zero rows. Both tables were therefore readable and silently REWRITABLE by any code path running as the application role. Their entire purpose is to record what was asked for and what is missing. drizzle/0564 header states the intent: 600 of 602 tables in compliance/platform have RLS enabled and app_runtime correctly lacks BYPASSRLS. FIXED in 0573. Safety established before the change rather than assumed: both repositories were searched for work_orders, workOrders and r81_gap across src TypeScript and TSX with zero hits, and neither table is declared in src/lib/db/schema.ts, so the only readers are maintenance scripts using service_role. Verified after: app_runtime went 38 to 0 work orders and 16 to 0 gaps while service_role still reads 38 and 16; r43_faults used as a control that already returned 0. platform.r81_gap was created by this session, so this fault is partly self-inflicted.
+
+--- EXTENDED AND FULLY CLOSED 2026-09-08 (ct bd729d32, migration 0575) ---
+A sweep of the whole platform schema found two MORE tables in the same state, missed by the original
+finding because it only looked at the two registry tables this session had touched:
+  platform.session_audit_r60_r67  -- 156 rows, RLS off, zero policies, app_runtime granted
+  platform.r74_agent_register     -- 0 rows, same posture
+session_audit_r60_r67 is the sharper instance of this fault's own argument. Its columns are claim_id,
+claim_text, source_ref, evidence_class, evidence_ref, merged, deployed, live_proven, verdict,
+checked_at -- it records claims and whether they were verified. A process able to rewrite the VERDICT
+on its own past claims is worse than one able to rewrite an ordinary log. r74_agent_register being
+empty is why it was worth fixing now rather than later: it is the next table someone starts writing to.
+Same safety check as before, done first: no reader in ct/src, projexa/src or ct/scripts, and not
+declared in schema.ts.
+Verified both directions: app_runtime session_audit 156 -> 0 with claude_log as an already-protected
+control reading 0 throughout; service_role still reads 156.
+PLATFORM TABLES WITHOUT RLS: 2 -> 0 OF 91. The schema now has no exceptions.",High,Permission,,YES,TECHNICAL,An audit trail that the audited process can edit is not an audit trail. The exposure here is not tenant data but the integrity record itself: work-order bodies and the gap ledger that closure decisions are read from.,false,false,false,false,false,false,false,b110f436,drizzle/0573_r81_rls_on_registry_tables.sql,true,2026-09-08 16:55:19.764842+00
+R81_F38_TWO_MIGRATION_LEDGERS_THAT_DO_NOT_RECONCILE,R81 K-series,,scripts/apply-migrations.mjs,,"This repository has two independent migration ledgers and nothing reconciles them. (1) drizzle/meta/_journal.json + drizzle.__drizzle_migrations, read by bun db:migrate and by the CI replay harness; watermark was 1787839204000 (2026-08-27) with 305 applied rows against 379 journal entries. (2) supabase_migrations.schema_migrations, written by Supabase apply_migration; nothing in this repository reads it. On 2026-09-08 four migrations sat in the second ledger and not the first: 20260908120635 (0569), 20260908120645 (0570), 20260908131646 (r80add_submission_telemetry), 20260908163413 (0572_r81_gap_ledger). All four were live in the database and invisible to every mechanism that builds a fresh one. 0572 was worse than unjournaled: it had no .sql file in drizzle/ at all, existing only as live DDL plus a Supabase ledger row; the file has since been reconstructed column-for-column from information_schema. This is the ROOT CAUSE of R81_F37 for the 2026-09-08 entries; the 0294-0296 and 0546-0550 orphans predate it and have a separate origin. Three of the four were R81 own work, so this session MIGRATION-DEBT closure was premature and is corrected by commit b110f436.",High,Flow,,YES,TECHNICAL,"Applying DDL through a path the build does not read produces the most expensive kind of defect: the live system and the source of truth disagree while every check reports green. It also makes environment 1 and environment 2 diverge invisibly, which matters directly for the local-first model where environment 1 is the one being audited.",false,false,false,false,false,false,false,b110f436,"drizzle/0572_r81_gap_ledger.sql, drizzle/meta/_journal.json, scripts/check-migration-journal-parity.mjs",false,2026-09-08 16:55:19.764842+00
+R81_F37_NINE_MIGRATIONS_UNREACHABLE_BY_THE_BUILD,R81 K-series,,drizzle/meta/_journal.json,,"Nine drizzle/*.sql files containing REAL schema have no entry in drizzle/meta/_journal.json: 0294_r42_seq12_submissions_pipeline_tasks, 0295_r42_seq20_screen_registry, 0296_r42_seq15_fix_l2_cross_org_discovery, 0546_r68_phase4_memory_records_search_vector, 0547_r68_phase8_img_product_branch, 0548_r70_phase7_location_stamping, 0549_r70_phase7_graph_edge_validity_bounds, 0550_r70_phase7_current_row_indexes, 0571_r80add_submission_telemetry. Both scripts/apply-migrations.mjs and scripts/replay-migrations-from-empty.mjs iterate journal.entries, so a file with no journal entry is NEVER applied and NEVER replayed. These objects (a search_vector column, IMG product-branch entitlement, location-stamping columns, graph_edge validity bounds, partial current-row indexes, submission telemetry) are therefore absent from any freshly built database, including CI's. The replay-from-empty job reports green regardless, because a harness cannot miss a file it never looks at. check-migration-integrity.mjs states in its own header that it does not check file<->journal parity, citing 0294-0296 as the reason; that exception was sound at three files and had grown to sixteen (nine real schema + seven operational grant/revoke one-offs) before anything counted it. NOT FIXED HERE: journaling another session's migration would queue it for application inside apply-migrations.mjs's single all-or-nothing transaction, and idempotency must be confirmed per file by whoever owns it. 0571 belongs to the concurrent R80 session, which has been notified directly. Detection is in place: scripts/check-migration-journal-parity.mjs fails CI on any NEW unjournaled migration and lists these nine as DEBT; closing this fault means emptying that list.
+
+--- UPDATE 2026-09-08, same day ---
+DOWN TO EIGHT. 0571_r80add_submission_telemetry was journaled by the concurrent R80 session in
+commit 1e00fa19 (""Journal migration 0571: it was live on the shared DB and absent from every fresh
+one""), which also removed its entry from the check's ALLOWED list -- the intended workflow, and the
+allowlist-rot leg of check-migration-journal-parity.mjs would have failed the build if it had been
+journaled without removing the entry. Remaining DEBT: 0294, 0295, 0296, 0546, 0547, 0548, 0549, 0550.
+The parity check reads 399 .sql files / 384 journal entries / 15 unjournaled = 8 DEBT + 7 OPERATIONAL
++ 0 UNLISTED, exit 0.
+
+--- SELF-CORRECTION 2026-09-08: this fault's stated CONSEQUENCE was overstated ---
+This fault says the orphaned files ""are absent from any freshly built database, including CI's"".
+Every word of the MECHANISM is still true -- the runners iterate journal.entries, so an unjournaled
+file is never applied and never replayed. But the CONSEQUENCE implied something that is not the case:
+that fresh databases are otherwise fine and these files are the hole in them.
+
+Measured by running scripts/replay-migrations-from-empty.mjs locally on 2026-09-08: a replay from
+empty produces 371 FAILING STATEMENTS, first failure at position 3. A fresh database does not build
+at all (gap G-24 / E-103 -- pre-existing, because the schema was originally created with db:push,
+which writes nothing to drizzle/). So ""missing from every fresh database"" was technically true and
+practically moot: there is no working fresh database for them to be missing from.
+
+This does not reduce the fault. Journaling remains the right fix, the orphan count is still the
+honest measure of drift, and the parity check still stops NEW orphans appearing. But the argument for
+urgency was weaker than written, and the record should say so rather than let a future reader act on
+a consequence that does not hold.
+
+RELATED, and newly established: compliance.submissions is created ONLY by orphan 0294 while journaled
+0571 does ALTER TABLE compliance.submissions -- a dependency the replay cannot satisfy. That is why
+0294 and 0295 cannot simply be journaled: they must first be made re-runnable (0294 carries four
+CREATE TYPE statements, and CREATE TYPE has no IF NOT EXISTS form, so it needs DO-block guards), or
+their ledger rows backfilled, or applying them to the LIVE database would abort the whole
+all-or-nothing run on objects that already exist.",High,Flow,,YES,TECHNICAL,"A migration the build cannot see is not applied, however green the replay job is. The failure is silent in both directions: nothing reports the file as skipped, and the schema difference surfaces only when a fresh database is built and something queries a column that was never created.",false,false,false,false,false,false,false,b110f436,scripts/check-migration-journal-parity.mjs (detection); 0571 closed by R80 in 1e00fa19,false,2026-09-08 16:55:19.764842+00
+R81_F40_PUBLIC_SECRET_UNAUTHENTICATED_SESSION_MINT_FOR_ANY_USER,R81 release-readiness,,supabase edge function mint-session-r33 (project evpckeuxgvahguwsaeul),,"COMPLETE AUTHENTICATION BYPASS, LIVE NOW, NOT ONLY AT RELEASE. The Supabase Edge Function mint-session-r33 on the PROJEXA project (evpckeuxgvahguwsaeul) is deployed with status ACTIVE and verify_jwt=false, so it is callable by anyone on the internet with no JWT. Its ONLY access control is an equality check against a hardcoded secret string. That secret literal is COMMITTED AND PUBLISHED in the PUBLIC repository FChecklist/compliance-tracker at e2e/demo-gate-smoke.spec.ts:49 -- confirmed present in the origin/main blob, not merely in a local working copy. The value is deliberately not reproduced in this record.
+
+The function takes the target account as a CALLER-SUPPLIED QUERY PARAMETER (email) and applies NO allow-list, NO domain restriction and NO check that the address belongs to a demo or test account. It then constructs a Supabase admin client with the SERVICE_ROLE key from its own environment and calls admin.auth.admin.generateLink({type:""magiclink"", email}), returning properties.hashed_token to the caller as token_hash. A token_hash is exchangeable at GoTrue verify for a full session -- e2e/demo-gate-smoke.spec.ts performs exactly that exchange at :144-150 and then injects the resulting cookie into a browser context.
+
+NET EFFECT: any member of the public who reads the public repository can mint a valid authenticated session for ANY user that exists in the PROJEXA Supabase project, including the owner account and every future paying customer, without a password and without leaving a failed-login trace. This is not a theoretical or latent exposure: the secret is public, the function is live and unauthenticated, and there is no restriction on the target address.
+
+SECOND, RELATED INSTANCE, one step less exposed: mint-session-r39ct on the compliance-tracker project (pcrjmlpuqsbocqfwoxod) is byte-for-byte the same design -- ACTIVE, verify_jwt=false, no email allow-list, service-role generateLink -- with a different hardcoded secret. That second secret is NOT published in origin/main. However the function NAME is public in CLAUDE.md, and the first function's published secret reveals the naming convention both secrets follow, so it is close to guessable. Treat it as the same defect at one remove.
+
+NOT REMEDIATED BY THIS SESSION. Deleting or redeploying a live Edge Function is a deletion and an outward-facing infrastructure change on a production project, which is reserved to the owner; it has been surfaced to the owner directly and to the concurrent R80 session. The function was NOT exercised to prove the bypass -- no session was minted for any account -- because the deployed source is conclusive on its own and exercising it would be exploitation rather than verification.
+
+RECOMMENDED REMEDIATION, in order: (1) DELETE both Edge Functions -- they exist only to let an E2E test authenticate without a password, and the test that uses mint-session-r33 currently skips itself anyway, so deletion costs nothing today; (2) if the capability must be kept, redeploy with the secret moved to a function environment variable (never a repo literal), an explicit allow-list of demo addresses, and verify_jwt=true; (3) purge the published secret from git history, not just from HEAD, since the repository is public and history is readable; (4) treat every account in the PROJEXA project as potentially compromised for the period the secret has been public and review auth.users last_sign_in_at for unexpected activity.
+
+--- REMEDIATED 2026-09-08, owner-approved, with proof ---
+The owner chose ""harden both, keep the test path"" over deletion. Both functions redeployed as v2.
+
+mint-session-r33 (evpckeuxgvahguwsaeul) v2:
+  * ALLOW-LIST added -- only democeo@projexa-ai.com can ever be minted. This is the decisive
+    control: it holds even though the shared secret is public, because the attacker no longer
+    chooses the target account.
+  * secret now prefers Deno.env.get(""MINT_SECRET""); when that env var is set it becomes the ONLY
+    accepted value and the published literal stops working with no redeploy.
+  * verify_jwt flipped false -> TRUE. Defence in depth only, not a real barrier (the anon key that
+    satisfies it is public and shipped in the client bundle), but free: the existing caller in
+    demo-gate-smoke.spec.ts:146 already sends an Authorization: Bearer header, so nothing broke.
+  * A non-allow-listed address returns the SAME 403 whether or not that user exists, so the
+    endpoint cannot be used to enumerate real accounts.
+
+mint-session-r39ct (pcrjmlpuqsbocqfwoxod) v2 -- hardened STRICTER because it could be: an
+exhaustive search of both repositories found NO caller for it at all (its only mention anywhere is
+a descriptive line in CLAUDE.md), so failing closed breaks nothing.
+  * FAILS CLOSED: MINT_SECRET_CT must be set in the function environment or every request is
+    refused with 503. There is NO fallback to the old hardcoded secret; that value is treated as
+    burned.
+  * allow-list comes from MINTABLE_EMAILS and an unset/empty list means NOTHING is mintable.
+    ""Unconfigured"" must never read as ""unrestricted"" -- that inversion is exactly how the original
+    defect behaved.
+  * verify_jwt flipped false -> TRUE.
+
+PROOF, run against the live function after deploy, both directions:
+  PROBE 1 (the control): GET mint-session-r33?email=attacker-probe@example.com with the PUBLIC
+    secret and a valid anon Bearer -> HTTP 403, body {""error"":""forbidden: this address is not
+    mintable""}, NO token_hash. The bypass is closed.
+  PROBE 2 (no collateral damage): same call with the allow-listed democeo address -> HTTP 200 with
+    a token_hash present. The E2E authentication path the owner asked to keep still works.
+  Token values were never printed. The bypass was never exercised against any non-demo account.
+
+RESIDUAL RISK, STATED PLAINLY AND NOT CLOSED: while MINT_SECRET remains unset on the r33 function,
+a stranger holding the published secret can still obtain a session for the ONE allow-listed demo
+account (democeo@projexa-ai.com), which is the account RAJAT_USER_ID points at. That is a large
+reduction from ""any account in the project including every future customer"", but it is not zero.
+TO FULLY CLOSE: set MINT_SECRET in the Supabase dashboard (Edge Functions -> Secrets) on project
+evpckeuxgvahguwsaeul. No code change or redeploy is needed -- the function picks it up immediately
+and the published literal dies at that moment. This is owner action because this session has no
+tool for writing Supabase function secrets.
+
+STILL OUTSTANDING: the published secret remains readable in the PUBLIC repository's git history
+even after any change to HEAD. The owner has approved a history rewrite; the commands are being
+prepared for the owner to run, because rewriting history on a public repo changes every commit SHA
+and breaks existing clones and forks, which is not a unilateral action.",Critical,Permission,,YES,TECHNICAL,"This is the single highest-severity finding of the R81 programme and it outranks every other launch blocker. Every other control in the product -- RLS, tenant isolation, requireAuth on routes, the connector scope gate -- assumes the identity of the caller is trustworthy. This defect lets an anonymous member of the public choose whose identity to hold. Onboarding a single real customer while it stands would expose that customer's data to anyone who reads a public GitHub repository.",false,false,false,false,false,false,false,,supabase edge functions mint-session-r33 v2 (evpckeuxgvahguwsaeul) and mint-session-r39ct v2 (pcrjmlpuqsbocqfwoxod); allow-list + env-preferred secret + verify_jwt=true; PARTIAL - owner must set MINT_SECRET and purge git history,false,2026-09-08 17:41:07.038975+00
+R81_F41_ANON_EXECUTABLE_SECURITY_DEFINER_FUNCTIONS,R81 release audit,,drizzle/0574 (ct) + drizzle/0017 (projexa),,"Two databases, same defect class as R81_F40: a privileged routine trusting a caller-supplied identity, reachable by anyone holding a publishable anon key.
+
+CT (pcrjmlpuqsbocqfwoxod), compliance schema, exposed over PostgREST. Four SECURITY DEFINER functions were executable by PUBLIC -- three because proacl was NULL (which in PostgreSQL IS the default grant of EXECUTE to PUBLIC) and gap_log_orgs_with_recent_activity because its ACL began ""=X/postgres"", where the empty left-hand side is PUBLIC. Reachable at /rest/v1/rpc/<name> with a ""Content-Profile: compliance"" header; without that header the same call 404s with PGRST202 because PostgREST searches only public, which is why a naive probe concludes they are unreachable. gap_log_orgs_with_recent_activity() returned a DISTINCT list of org_ids active in the last 24 hours -- a cross-tenant customer list. backfill_registered_assets(text) upserts into platform_assets for EVERY tenant: an unauthenticated, unbounded, cross-tenant WRITE against a pool whose max is 5.
+
+PROJEXA (evpckeuxgvahguwsaeul), public schema. user_organization_ids(uuid), user_admin_organization_ids(uuid) and is_conversation_participant(uuid,uuid) took the SUBJECT as a parameter, applied no auth.uid() check, and were explicitly granted to anon. Any uuid in, that user's tenant memberships out.
+
+FIXED, and the fix is narrower than the finding proposed, deliberately. On CT the revoke is FROM PUBLIC, not from anon/authenticated by name: the grant actually being exercised was the implicit PUBLIC one, so revoking the named roles would have left PUBLIC intact and changed nothing while reporting success. On PROJEXA the revoke is FROM anon ONLY: all three functions are called inside live RLS policies on public.memberships and public.conversation_participants which are declared FOR {public} and evaluate as the CALLING role, so revoking from authenticated -- as the finding proposed -- would not have hardened anything (an authenticated caller can already see its own rows) and would have denied every membership read. On CT, compliance.conversation_org_id(text) is called by RLS policy app_runtime_insert_own_org_conversation and had to be granted back to app_runtime explicitly. Every policy dependency was checked BEFORE the statements were written.
+
+PROVED BOTH DIRECTIONS AGAINST THE LIVE APIS. Before: the anon call returned HTTP 200. After: HTTP 401 code 42501 ""permission denied for function"" on gap_log_orgs_with_recent_activity, backfill_registered_assets, user_organization_ids and user_admin_organization_ids. Legitimate paths unaffected: org_invite_preview still 200 for anon (the invite page renders pre-login), and the authenticated app is unchanged -- /api/organization, /api/projects and /api/shell all still return 200 with correct data through a minted session.
+
+ROOT ENABLER NOT CLOSED, and it is the more important half: the compliance schema is EXPOSED over PostgREST at all. Revoking four functions treats the symptom. Removing ""compliance"" from the project's Exposed Schemas (Supabase dashboard, API settings) closes every current AND future anon-reachable object in that schema at once. That is a project-level setting change, so it is surfaced to the owner rather than taken unilaterally.",Critical,Permission,,YES,TECHNICAL,"Same reasoning as R81_F40: every other control in the product assumes the caller's identity is trustworthy. A cross-tenant customer list and an unauthenticated cross-tenant write, both reachable with a key that ships in the client bundle, are exactly the kind of thing a first real customer's security review finds.",false,false,false,false,false,false,false,f2e26ee4 / 90b73e1,ct drizzle/0574 (f2e26ee4); projexa drizzle/0017 (90b73e1),true,2026-09-08 18:29:02.272143+00
+R81_F42_SHELL_RETURNS_200_WITH_EMPTY_ARRAYS_WHEN_UPSTREAM_IS_COLD,R81 release audit,,projexa /api/shell,,"/api/shell aggregates five cross-repo calls into one payload. When those upstream calls are cold or failing it returns HTTP 200 with projects:[], currencies:[], vendors:[], capabilityTree:[] AND fetchErrors:{} -- an empty error object. Observed directly: one call returned all-empty arrays, then three consecutive calls to the same endpoint with the same session returned projects=5, currencies=2, vendors=5, fetchErrors={} (6910ms, 2468ms, 2277ms). Nothing in the response distinguishes ""this org genuinely has no projects"" from ""the upstream calls did not come back in time"". A first-time user hitting a cold server sees an empty product and no error, which reads as a broken or unprovisioned account. Same false-green class as the self-skipping E2E spec: the success path and the failure path produce identical output. NOTE: this was found while checking whether the SEC-05 revoke had caused a regression; it had not -- the empties are transient upstream coldness and predate the change.",Medium,Output,,YES,TECHNICAL,"fetchErrors exists as a field, which means the intent to report partial failure was there; it is simply not populated on this path. A dashboard that renders empty on upstream failure is worse than one that says it could not load, because the user has no reason to retry.",false,false,false,false,false,false,false,,,false,2026-09-08 18:29:02.272143+00
+R81_F43_MODULES_ADVERTISE_CAPABILITIES_WITH_NO_COMPOSER_EXECUTOR,R81 release audit + R80 catalogue analysis,,projexa/src/lib/module-catalogue.ts + composer executor wiring,,"THE PRODUCT INVITES A USER TO TYPE A SENTENCE IT CANNOT EXECUTE, on its primary screen, as their first action.
+
+25 modules in the PROJEXA catalogue carry example sentences advertising a capability with no composer executor behind them. FIVE of those are UI-SURFACED -- they render a pill, and the example text appears as the PLACEHOLDER INSIDE THE COMPOSER INPUT. Four are certain and are core construction modules, four of Sumeet's own eleven:
+  permits    pill ""Permits""        -- ""add the building permit for Villa 21, expiring 30 Nov"" / ""which permits expire in the next 30 days""
+  drawings   pill ""Drawings & 3D""  -- ""upload revision C of the ground floor plan"" / ""which drawings changed this week""
+  materials  pill ""Material""       -- ""record 20 bags of cement received today"" / ""what is the current stock of TMT bars""
+  vendors    pill ""Vendors""        -- ""add a vendor, or ask what we owe this month"" / ""which vendors worked on this project""
+A fifth resolves as pill-backed in PILL_CATALOGUE and is being confirmed.
+
+The remaining 20 are not UI-surfaced and carry the same defect at lower blast radius: design-studio, accounting, procurement, invoices, quotations, inventory, expenses, payroll, recruitment, kpis, change-orders, punch-list, rfis, submittals, site-diary, ffe, mood-boards, wiki, knowledge-base, project-directory, analysis. Representative advertised strings: procurement ""raise a purchase order for 200 bags of cement""; payroll ""run payroll for September""; invoices ""raise an invoice for the Phase 1 milestone""; punch-list ""log a snag for the cracked tile in unit 4B""; rfis ""raise an RFI about the beam reinforcement detail""; inventory ""move 50 bags of cement to the north warehouse"".
+
+THE DISTINCTION THAT MUST TRAVEL WITH THIS FAULT, or it will be read as 25 unbuilt modules and scoped ten times too large. SEVERAL OF THESE MODULES HAVE WORKING SCREENS. /procurement, /invoices and /punch-list all render and do real CRUD today. What is missing is a COMPOSER EXECUTOR: the pill and the example sentence promise the assistant can do it, and only the screen can. The remediation is ""give the composer a function for a module that already works"", not ""build the module"". That is a far smaller job than the raw count of 25 suggests.
+
+EVIDENCE PROVENANCE, stated because the two halves were established by different sessions. The ADVERTISING half was verified directly by R81 in projexa/src/lib/module-catalogue.ts: permits at :111-121 carries pillKeys [""permits"",""permit""] and examples [""add the building permit for Villa 21, expiring 30 Nov"",""which permits expire in the next 30 days""], drawings at :125-134 the same shape. The EXECUTOR-ABSENCE half is R80's finding from their own catalogue analysis on their own surface and is recorded on their authority, NOT independently re-derived here -- platform.module_registry was checked and is a different namespace (the ERP entity registry: crm_accounts, erp_invoices and similar), so it does not settle composer executor coverage either way.
+
+LAUNCH CALL (R81, and R80 concurs): the FIVE UI-SURFACED modules BLOCK release. The other 20 do not. The reasoning is R-81's own rule applied one level up -- a pill that advertises a capability and does nothing is worse than no pill -- and it is stronger here than in the R-81 case, because the composer's own placeholder text instructs the user to type the failing sentence. A first-time user's first action is invited by the product and then fails.
+
+--- INDEPENDENTLY VERIFIED 2026-09-08 by R81, and the true figure is STARKER than reported ---
+The executor-absence half is no longer held on one session's authority. R80 supplied the location:
+the registry is not in Supabase at all, it is ct/src/lib/pipeline/function-registry.ts, where every
+entry declares the module it serves. Parsed directly:
+
+  THE ENTIRE PRODUCT HAS 8 REGISTERED FUNCTIONS ACROSS 7 MODULES.
+  documents 1, manpower 2, meetings 1, reports 1, schedule 1, scope 1, work_progress 1.
+
+All 25 modules named in this fault have ZERO. So the finding is not ""25 of 39 modules lack an
+executor"" -- it is that SEVEN modules in the whole catalogue have one, and everything else the
+composer advertises is unbacked. The 25 are the advertised subset of a much larger absence.
+
+TWO REFINEMENTS FROM R80 THAT CHANGE THE SIZING, both accepted:
+1. The sentence count is 50, not 40 -- two examples per module, uniformly across all 25.
+2. Roughly half those sentences are IMPERATIVES (""raise a purchase order for 200 bags of cement"",
+   ""run payroll for September"") and half are QUERIES (""which invoices are overdue""). An imperative
+   with no executor is a broken promise. A query may be answerable by generic retrieval and may not
+   need a per-module executor at all. SIZE THE REMEDIATION ON THE ~25 IMPERATIVES, NOT THE 50
+   SENTENCES.
+
+THE FIFTH UI-SURFACED MODULE IS analysis, AND IT IS HIDDEN BY A SECOND DEFECT. On the tree as it
+stands only FOUR pills resolve: permits, drawings, materials, vendors. analysis is absent because
+moduleForPill(""analysis"") returns work-progress, not analysis -- module-catalogue.ts:189 still lists
+""analysis"" in work-progress's pillKeys, the un-migrated resolution half of E-27 (the destination half
+was applied at M24Shell.tsx:1697-1701, which is why it looked complete). So the Analysis pill
+currently resolves to the WRONG module, and that mis-resolution is the only reason the count was
+four. Fixing the resolution INCREASES this fault's blast radius to five. R80 owns that fix.
+
+--- SEVERITY CORRECTED High -> Medium, 2026-09-08. MY FRAMING WAS WRONG AND I CHECKED TOO LATE. ---
+I called this ""the single most damaging thing a first customer would meet"" and filed the severity on
+two facts -- the module advertises a sentence, and no executor exists. I never checked the third and
+decisive fact: WHAT THE USER ACTUALLY SEES. R80 went and looked, and the product is better than I said.
+
+ct/src/lib/pipeline/dry-run.ts:266 already implements a designed honest-gap path. gapAnswer() returns
+""Creating {noun} from chat is not enabled for this workspace - Open {screen}"" WITH THE ROUTE ATTACHED,
+and the code's own comment states the intent: executable:false is ""the honest gap ... a sentence the
+user is owed rather than a disabled button"". Verified directly by R81 in dry-run.ts and its sibling
+test. So a user typing an advertised sentence does NOT hit an error, a dead end, or silence. They get
+a truthful refusal and a way to do the thing on a screen that works.
+
+WHAT WAS GENUINELY BROKEN, and it is narrower: GAP_CAPABILITIES listed only six nouns (customers,
+vendors, invoices, quotations, purchase orders, employees), so NINETEEN of the twenty-five uncovered
+modules fell through to the generic ""That is not enabled for this workspace yet - Open Home"". Someone
+asking about a permit was sent to the dashboard. That was the real damage and R80 fixed it in
+07c18eb4, giving every advertised-but-unexecutable module an entry with the screen and route from its
+own MODULE_CATALOGUE row.
+
+THIS DOES NOT CLOSE THE FAULT. Fifty advertised sentences still have no executor and cannot run. What
+changed is the consequence: an unexecutable sentence is now answered honestly and routed, instead of
+shrugged at. That is the difference between ""the product lies to you"" and ""the product tells you it
+cannot do this yet, and takes you where you can"". Only the first deserved High.
+
+R81's own lesson, recorded because it is the same failure this programme keeps filing: I asserted a
+user-facing consequence without observing the user-facing behaviour. Advertising plus missing executor
+does not equal a bad experience; the refusal path is a third variable and I did not look at it.
+
+--- MY ""INDEPENDENTLY VERIFIED"" FIGURE OF 8/7 WAS WRONG. CORRECTED 2026-09-09. ---
+I recorded ""8 registered functions across 7 modules"" in this fault as independently verified. It is
+wrong, and the way it was wrong is worth more than the number.
+
+SPEC_LIST at function-registry.ts:100 is not 28 object literals. The first EIGHT are hand-written
+literals carrying visible functionId: and module: keys. The remaining TWENTY are one-liners produced
+by a helper at :96 -- readSpec(functionId, label, module, requiresProject) -- which returns
+{ ..., kind: ""ask"", writes: false, requiredParams: [] }. My parse keyed on the object KEYS, so it saw
+the eight literals and none of the twenty. The tell was there and I missed it: my eight ids are
+exactly the first eight of the real list, in order, which is the fingerprint of a parser that stopped
+at a change of syntax rather than a change of content.
+
+VERIFIED FIGURES, re-derived by counting both constructs:
+  28 specs total, across 13 distinct modules
+   7 WRITES across 6 modules: record_work_progress, record_attendance, add_roster_entry,
+     create_meeting, create_boq_revision, create_document, record_timesheet
+     (modules: work_progress, manpower, meetings, scope, documents, schedule)
+  21 READS across 8 modules (budget, compliance, customers, dashboard, department, reports,
+     sales, schedule)
+
+THE NUMBER THAT ACTUALLY SIZES THIS FAULT IS SEVEN, AND IT IS A DIFFERENT SEVEN. An imperative needs
+a WRITE -- ""raise a purchase order for 200 bags of cement"" cannot be served by a read. So the correct
+framing, which supersedes both my ""8 across 7"" and R80's earlier ""14 modules matched by token"", is:
+
+  THE PRODUCT CAN WRITE IN SIX MODULES. IT INVITES IMPERATIVES IN TWENTY-FIVE.
+
+That is checkable in one command and depends on neither session's string-matching heuristic.
+
+METHOD NOTE. Both of us produced a wrong number here by different routes -- mine from a parse blind to
+a helper, theirs from substring matching that made punch-list match every list_* function. The figure
+only became trustworthy when it was derived from the data's own structure (kind/writes) rather than
+from its spelling.",Medium,Function,,YES,TECHNICAL,"This is the first thing a new customer touches. Sumeet's evaluation of the product will begin by typing the sentence the placeholder suggested, on one of his own modules, and getting nothing. Of all the open faults this is the one most likely to decide whether the product looks finished, and unlike most of them the fix is small: wire executors for modules whose screens already work.",false,false,false,false,false,false,false,,NOT FIXED - remediation assigned to the R80 session (composer/service surface),false,2026-09-08 18:53:30.215317+00
+R81_F44_NO_CI_GATE_IS_ENFORCED_ON_EITHER_REPO,R81 release audit,,GitHub branch protection - FChecklist/compliance-tracker and FChecklist/projexa,,"EVERY CI GATE EITHER SESSION HAS BUILT IS ADVISORY. A red build merges.
+
+Verified directly against the GitHub API, not relayed from a report:
+  FChecklist/projexa           -- GET branches/main/protection returns ""Branch not protected"". rulesets: 0. visibility: public.
+  FChecklist/compliance-tracker -- a protection object EXISTS, which is what makes this easy to miss, but it enforces nothing that gates a merge:
+        required_status_checks        ABSENT
+        required_pull_request_reviews ABSENT
+        enforce_admins                false
+        required_linear_history       false
+        required_signatures           false
+        allow_force_pushes            false  (the one thing it does prevent)
+      rulesets: 0. visibility: public.
+
+WHAT THIS MAKES POINTLESS. The following were built, wired into CI, and proven falsifiable during
+this programme, and not one of them can stop a merge:
+  scripts/check-route-auth-guard.mjs          (R81_F29 - every API route must call requireAuth)
+  scripts/check-migration-journal-parity.mjs  (R81_F37/F38 - a migration the build cannot see)
+  scripts/check-comment-rot.mjs               (documented defects must keep their fault rows)
+  scripts/check-closure-citation-skips.mjs    (a cited test must RUN, not sit in a green job)
+  Secret Scanning / gitleaks in BOTH repos    (the published-secret class, R81_F40)
+  Lint, Type Check, Build, Unit Tests, E2E, Migration Integrity (AR-12), Migration Replay
+A gate that cannot block is a notification. This is the same false-assurance shape the programme
+keeps filing -- a green check that answers a question nobody is required to act on -- except at the
+level of the whole pipeline rather than one script.
+
+NOT REMEDIATED BY THIS SESSION, and deliberately so: changing repository settings is an
+outward-facing administrative action on a public repository shared with a concurrent session, and
+turning required checks on incorrectly would block that session's merges without warning. OWNER
+ACTION.
+
+RECOMMENDED, in this order: (1) enable required status checks on main in BOTH repos, starting with
+the cheap DB-free ones that are already green and stable -- Lint, Type Check, Build, Unit Tests,
+Migration Integrity (AR-12), Secret Scanning -- rather than the whole list at once; (2) require a
+pull request; (3) enable enforce_admins, without which the rule is advisory for the account that
+does most of the merging. Do NOT turn on the report-only jobs as required checks yet:
+check-closure-citation-skips.mjs is intentionally continue-on-error because it fails today by
+design, and Migration Replay From Empty is report-only for E-103 reasons that predate this session.",High,Flow,,YES,NON-TECHNICAL,"This one multiplies everything else. Every control this programme added assumed CI could hold a line it cannot currently hold, so the true state of the repository is ""these checks run and are then ignored by anything that matters"". It is also among the cheapest items on the whole list: three settings changes, no code, no spend.",false,false,false,false,false,false,false,,NOT FIXED - owner action (GitHub repository settings on both repos),false,2026-09-08 19:28:59.871745+00
+R81_F45_ENABLEMENT_FAILURES_SWALLOWED_INTO_SILENT_FEATURE_DENIAL,R81 cross-session audit,,ct/src/lib/purpose-bound-ai.ts resolveOrgDomains + ct/src/lib/services/mca-filing-service.ts generateFormData,,"THE NESTING FIX REMOVED THE TRIGGER BUT NOT THE MECHANISM.
+
+resolveOrgDomains wraps each of its three enablement checks (ERP, CRM, PMS) in `catch { return false }`.
+generateFormData's AOC-4 branch calls balanceSheet/profitAndLoss with `.catch(() => null)`.
+
+Until 2026-09-08 those catches were swallowing assertNotNested's throw, which is why the nesting was
+invisible: resolveOrgDomains quietly returned [""compliance""] alone and the model was denied every ERP,
+CRM and PMS tool the org had actually paid for -- no error, no log, just a smaller system prompt --
+and AOC-4 was generated with null financials instead of failing. The R80 session has now threaded
+both paths, so the specific thing being swallowed is gone.
+
+THE SWALLOW ITSELF REMAINS, AND IT IS THE PART THAT GENERALISES. A dropped connection, a statement
+timeout, a transient failure in erp-enablement-service, crm-enablement-service or
+pms-enablement-service still returns false rather than propagating. The organisation silently loses
+every tool in that domain for the life of the request, and nothing anywhere records that it happened.
+The same holds for AOC-4: a financial statutory filing is produced with null figures rather than
+refusing to produce one.
+
+This is the same shape as the self-skipping E2E spec, the vacuous auth-guard check and the
+report-only replay job: SUCCESS AND FAILURE PRODUCE INDISTINGUISHABLE OUTPUT. It is arguably the most
+persistent single pattern this programme has found, and here it is on a paid-entitlement path and a
+statutory filing path.
+
+NOT A NESTING DEFECT and deliberately filed separately, so that closing the nesting class does not
+close this by association. Suggested remediation: distinguish ""the enablement service says no"" from
+""the enablement service did not answer"". The first is a legitimate false; the second must surface --
+at minimum a structured log, and for the AOC-4 path a refusal rather than a null-valued filing.
+Filed by R81 during a cross-session audit; the surface belongs to the R80 session.",High,Output,,YES,TECHNICAL,"An organisation paying for ERP, CRM or PMS can silently lose all of it for a request because a catch turned an infrastructure failure into a policy answer, and no operator can tell the difference afterwards. On the MCA path the same pattern produces a statutory filing containing nulls. Both fail in the direction that looks like normal operation.",false,false,false,false,false,false,false,,"NOT FIXED - reported to the session owning that surface; the nesting half is fixed, the swallow is not",false,2026-09-08 19:59:36.648507+00
+R81_F46_CT_CANNOT_CHANGE_A_FORGOTTEN_PASSWORD,R81 release audit,,ct/src/app/forgot-password/page.tsx,,"THE RESIDUAL AFTER G-08 WAS SPLIT, AND IT IS DELIBERATELY SMALL.
+
+compliance-tracker has no way for a user to CHANGE a forgotten password. Its /forgot-password is a
+17-line redirect to /login carrying a magic-link prompt.
+
+WHAT THIS IS NOT. It is not a lockout, and the earlier R81 claim that ""no password reset exists in
+EITHER repo, a locked-out customer has no recovery path"" was wrong about ct. Verified by counting the
+sign-in methods actually offered in ct/src/app/login and ct/src/components: passcode 36 references,
+magic 11, signInWithOtp 1, signInWithOAuth 1 -- against exactly ONE signInWithPassword. A ct user who
+forgets a password has four other ways in, and the redirect is a DOCUMENTED decision: the page's own
+header cites P1-OBS-003 and its governing UMR, recording that the login form has no password flow at
+all, so pointing at magic-link is the correct behaviour rather than a stub.
+
+WHAT REMAINS is the narrow case of a user who WANTS a password and has forgotten theirs. They can
+always get in, but they cannot restore the credential. That is a convenience gap, not an access gap.
+
+Filed separately ON PURPOSE. Carrying it under G-08 would have let a genuine PROJEXA lockout and a ct
+convenience gap share a severity, and the PROJEXA half is now fixed (projexa 7e0c902). A gap that
+inherits a blocker's severity by association is how a launch list becomes unreadable.",Low,Function,,NO,TECHNICAL,"Recorded so the decision is deliberate rather than an oversight discovered later. ct offers four working sign-in routes; adding a password-reset flow is a product choice about whether password auth is a first-class path there at all, and that question should be answered before the flow is built.",false,false,false,false,false,false,false,,NOT FIXED - deliberately deferred; needs a product decision on whether password auth is first-class in ct,false,2026-09-08 22:16:38.734808+00
+R81_F47_STAGE0_FAILURE_RETURNED_BUT_UNREADABLE_BY_ITS_CONSUMERS,R81 audit of f127e3c8,,ct/src/app/(app)/the-firm-practice/page.tsx:108 + ct/src/components/PmsEnablementSection.tsx:66,,"THE FIX IS RIGHT AND ITS STATED GOAL IS NOT YET ACHIEVED.
+
+G-26 hoisted the stage-0 auto-upgrade out of the branch-enable transaction and stopped it failing
+silently: the failure is now logged at console.error and RETURNED through a well-formed discriminated
+union, Stage0AutoUpgradeOutcome (product-branch-service.ts:134), whose success arm carries
+`failed?: false; reason?: never` so a success-with-a-reason cannot be constructed. That part is sound.
+
+The commit's own comment states the purpose: ""it is logged at ERROR and RETURNED, so the caller and
+the two UI surfaces that read stage0AutoUpgrade can say the upgrade did not happen instead of implying
+it did.""
+
+THEY CANNOT. Both consumers re-declare the shape INLINE and omit the new fields:
+  the-firm-practice/page.tsx:108   stage0AutoUpgrade?: { upgraded: number; blocked: number }
+  PmsEnablementSection.tsx:66      stage0AutoUpgrade?: { upgraded: number; blocked: number }
+Neither imports Stage0AutoUpgradeOutcome. So neither can branch on `failed`, and a customer still
+cannot tell ""there was nobody to upgrade"" from ""the upgrade failed"" -- both render as
+upgraded: 0, blocked: 0.
+
+WHY TYPESCRIPT DOES NOT CATCH THIS, which is the transferable part: structural typing accepts a
+NARROWER inline type against a wider return. Omitting a field is not an error; it is a legal
+projection. Had either consumer imported the exported union instead of re-declaring the shape, adding
+`failed` would have forced them to handle it. RE-DECLARING A RETURN TYPE INLINE OPTS OUT OF EVERY
+FUTURE CHANGE TO IT, silently.
+
+Fix is small: import Stage0AutoUpgradeOutcome in both consumers and branch on `failed` to render the
+reason. Not launch-blocking -- this is strictly better than before the hoist, because the ERROR log
+now exists and an operator can find it. What is missing is the customer-facing half.",Medium,Output,,YES,TECHNICAL,"The remediation was designed correctly and stopped one step short of its own goal. Worth recording precisely because the code, the type and the comment are all right -- the defect lives in two consumers that opted out of the contract by restating it.",false,false,false,false,false,false,false,,NOT FIXED - two-line change in each consumer; surface belongs to the R80 session,false,2026-09-08 22:57:44.451761+00
+R81_F48_STAGE0_HEADER_DESCRIBES_THE_PRE_FIX_WORLD_AS_CURRENT,R81 audit of f127e3c8,,ct/src/lib/services/stage0-service.ts:326-340,,"COMMENT ROT, CREATED BY THE FIX ITSELF, AND NOT COVERED BY THE ROT CHECK.
+
+autoUpgradeStage0UsersOnBranchEnable carries a header describing the OLD behaviour in the PRESENT
+TENSE, after f127e3c8 changed it:
+  ""The call there is wrapped in a try/catch that only console.warn()s""      -- it now console.error()s
+                                                                              and returns a typed outcome
+  ""in dev/test the throw is swallowed and NO stage-0 user is ever auto-upgraded""  -- the hoist fixed this
+  ""threading the handle IS the whole fix""  -- this is the exact conclusion the hoist OVERTURNED;
+                                              threading was rejected because ai_assistants RLS requires
+                                              current_user_id() = user_id and the enclosing transaction
+                                              carries the admin
+
+A reader arriving at this function is told the pre-fix world is the current one, and is told the
+remedy is the one that was tried and rejected. That is worse than no comment: it is a confident,
+specific, wrong instruction sitting directly above correct code.
+
+NOT CAUGHT BY scripts/check-comment-rot.mjs, because that check verifies a registered anchor still
+EXISTS -- it cannot detect a comment that survives while the behaviour it describes changes underneath
+it. That is the limit of the design and worth stating: the check catches deletion, not divergence.
+This entry is the counter-example that proves it.",Low,Other,,YES,TECHNICAL,"This programme has repeatedly found that a stale explanation sends the next reader chasing the wrong thing. Here the stale text names the rejected remedy as the whole fix, so the most likely next action a reader takes is the one that would re-break it.",false,false,false,false,false,false,false,,NOT FIXED - rewrite the header to describe the hoist; surface belongs to the R80 session,false,2026-09-08 22:57:44.451761+00
+R81_F49_PERMITS_PILL_OFFERS_VERBS_FROM_OTHER_MODULES,R81 / R80 joint - found by the d603 click sweep,,projexa module-catalogue / pill verb resolution,,"Clicking the Permits pill offers these verbs: ""Add drawing"", ""Upload document"", ""Run report"",
+""File minutes"", ""Run WPR"", ""New finance budget"". NOT ONE CONCERNS PERMITS, and the first navigates to
+/drawings/new.
+
+The verb exists -- the dashboard's own frequent-actions row carries ""Add permit"" -- so this is not a
+missing capability. The Permits pill's DESTINATION and its OFFERING disagree.
+
+Same family as the Analysis pill resolving to work-progress (fixed in projexa 065fff1): a pill whose
+identity is correct in one resolution path and wrong in another. Two instances now, which makes it a
+pattern rather than a one-off, and suggests the verb list is resolved from something other than the
+module the pill resolves to.
+
+FOUND ONLY BECAUSE A TEST FINALLY RAN. The d603 click sweep had never completed in the spec's life --
+an assertion above it failed first on every run - so nothing below it had ever executed. Reordering
+that assertion is what surfaced this. Worth recording: a test that fails early hides every check
+after it, and the hidden ones are invisible rather than red.
+
+Not launch-blocking: the pill navigates somewhere real and the honest-gap path answers unexecutable
+sentences. But a user clicking Permits and being offered ""Add drawing"" is the product contradicting
+its own labelling.
+
+--- WITHDRAWN 2026-09-09. FALSE FINDING. Verified in the components, not accepted on report. ---
+R80 reported this and then retracted it; R81 checked the retraction rather than taking it, because
+withdrawing a fault on report alone is the same error as filing one on report alone.
+
+THE PRODUCT IS CORRECT. The band the reporting spec queried by accessible name ""Things you can do"" is
+PillStrip's FREQUENT ACTIONS band -- which shows the CURRENT SCREEN's own cards, not the selected
+module's verbs. Confirmed at three points:
+  projexa/src/components/shell/M24Shell.tsx:3510  screenCards={selectedModule ? [] : screenCardViews}
+      -- deliberately EMPTY once a module is selected
+  projexa/src/components/shell/PillStrip.tsx:291  renders (screenCards ?? []).map(...) under that group
+  PillStrip.tsx:248-255  the group carries aria-label=""Things you can do"" over a VISIBLE heading
+      reading ""Frequent actions""
+So the six verbs observed after clicking Permits were the DASHBOARD's frequent actions, behaving
+exactly as designed. A module's own leaves are a different surface entirely.
+
+CONSEQUENCE FOR THE RECORD, and this is why the withdrawal matters more than the fault did: R81 wrote
+""two makes it a pattern -- worth finding the shared cause rather than patching the second instance.""
+THERE IS ONE INSTANCE, NOT TWO. The Analysis-to-work-progress mis-resolution was real and is fixed
+(projexa 065fff1). This was noise, and a pattern built on it would have sent someone hunting a shared
+cause that does not exist. A false finding that manufactures a false PATTERN is more expensive than
+one that stands alone.
+
+MECHANISM, recorded because it is the same one this programme keeps filing: the reporter inferred a
+band's meaning from a verb-model comment and an aria-label without opening the component that renders
+it. One read of PillStrip.tsx would have settled it before anything was reported. Identical in shape
+to the audit agents asserting from a pattern match without opening the file, and to R81's own parse
+that reported 8 function specs because it never looked at how the other 20 were constructed.",Low,Function,,YES,TECHNICAL,Second instance of a pill whose destination and offering disagree. The first was fixed as a one-off; two makes it worth finding the shared cause rather than patching the second instance.,false,false,false,false,false,false,false,,"NOT FIXED - reported by R80, filed by R81; surface belongs to the R80 session",true,2026-09-08 22:57:44.451761+00
+R81_F50_UNDEFINED_COLOUR_TOKENS_RENDER_AS_NO_COLOUR,R81 / R80 joint,,ct/src/app/globals.css + 65 consuming files,,"TWO COLOUR TOKENS ARE USED AND DEFINED NOWHERE, SO THE CLASSES DO NOTHING.
+
+  ct-accent       bg-ct-accent       20 files
+  ct-teal-hover   bg-ct-teal-hover   45 files
+
+Neither --color-ct-accent nor --color-ct-teal-hover is defined in ct/src/app/globals.css or in
+@fchecklist/veridian-ui-kit/src/tokens/globals.css. Tailwind v4 emits a utility only for a token that
+exists, so both are NO-OP CLASSES: every element intended to carry that background renders with no
+background at all.
+
+WHY THIS SURVIVED. There is no error at any stage -- an unknown utility is simply not emitted, so
+there is no build error; it is a string in a className, so no type error; the element renders, so no
+runtime error. The fallback is the page colour, which makes the result look PLAIN rather than BROKEN.
+It surfaced only when an accessibility check computed a real contrast ratio on /pricing and found
+#fbf5ed on #fffdf9 at 1.06:1 -- text that is genuinely invisible. R80 found ct-accent that way;
+ct-teal-hover, with more than twice the footprint, had never been noticed by anyone. Its sibling
+--color-ct-saffron-hover IS defined, which is exactly why the gap survives review: the naming pattern
+looks established.
+
+GETTING THE NUMBER RIGHT REQUIRED TWO CORRECTIONS TO R81''S OWN SCAN, both recorded because each
+produced a confident wrong answer:
+  1. Matching token names inside CSS COMMENTS. globals.css discusses tokens in prose (""...for
+     --color-ct-muted (imported from...)""), and counting those as definitions is a false NEGATIVE.
+  2. Excluding the ui-kit. 13 of the 48 defined tokens live there, so scanning only this repo reported
+     ct-muted (241 files) and ct-navy (240 files) as undefined -- fourteen false positives, every one
+     a token that works perfectly.
+The answer only became credible after tailwind.config.ts was ruled out as an alternative definition
+source: it defines shadcn semantic colours via hsl(var(--...)) and no ct- colours at all.
+
+GUARD SHIPPED, not the fix: ct 9f9fad0b, src/lib/design-token-integrity.test.ts. The two known tokens
+are ALLOW-LISTED rather than failing, because defining them means choosing colour VALUES and brand
+colours are an owner/design decision, not a session''s to invent. Any NEW undefined token fails
+immediately. Emptying the allow-list closes this fault.
+
+SEPARATE OBSERVATION, NOT FILED AND NOT INVESTIGATED: ct/tailwind.config.ts declares content globs
+""./pages"", ""./components"", ""./app"" while the application lives under src/. If anything actually reads
+that file it scans nothing. Tailwind v4 configures from CSS, so it is probably vestigial -- but that
+is an inference, not a finding, and it is the documented content-scan-gap shape.
+
+--- DUPLICATION RESOLVED 2026-09-09 ---
+Both sessions built this guard within minutes of each other from the same finding, under the same
+filename in different directories (src/lib/ by R81, src/app/ by R80). Messages crossed: R80 offered
+the thread and R81 took it while R80 was already finishing it. R81 compared them properly rather than
+assuming redundancy and deleted its own -- the surviving check reads both CSS sources including the
+ui-kit, enforces in both directions, and carries its own empty-scan guard, so nothing needed porting.
+Its inventory entries also carry per-token file counts.
+Figures differ trivially between the two derivations (20/45 files vs 21/46) because one excluded
+.test. files; the finding is identical.
+NOTE FOR THE RECORD: this was the FIRST genuine duplication of the two-session collaboration, and it
+happened in the one area with no surface rule -- design tokens belonged to neither split, so both
+sessions claimed it. Everywhere a boundary was defined, it held.",Medium,Output,,YES,TECHNICAL,"Sixty-five files render an element with no background where an accent or hover colour was intended. Individually cosmetic; collectively it means a whole visual layer of the product has never actually been applied, and the only reason anyone found out is that one instance happened to make text invisible.",false,false,false,false,false,false,false,,"GUARD ONLY - ct 3b322fae src/app/design-token-integrity.test.ts (the guard of record). R81 built an equivalent check independently at src/lib/ in 9f9fad0b and DELETED it in 299fc640 after comparing them: the surviving one covers everything, including the empty-scan guard.",false,2026-09-08 23:30:48.326101+00
