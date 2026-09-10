@@ -130,3 +130,30 @@ curl -H "Authorization: token <OLD_TOKEN>" \
 ```
 
 Expected result: HTTP 401 (Unauthorized).
+
+---
+
+## OT6: Supply the marketing WhatsApp number and reply email
+
+**Purpose:** The marketing site (and any future `src/components/marketing/**` lead-capture flow) reads two contact values from environment variables rather than hard-coding them, so a missing value hides the element instead of rendering a broken `mailto:`/`wa.me` link. Both are still **PENDING** as of 2026-09-10 (W-WEB, S12.A.A5).
+
+**Owner action needed:**
+
+1. Decide the WhatsApp number the business wants customers/leads to reach (with country code, e.g. `+971XXXXXXXXX`).
+2. Decide the reply email address the business wants to publish (e.g. `hello@projexa-ai.com` — note this domain is not yet confirmed as owned/configured for mail).
+3. Set both as environment variables (Vercel project settings and local `.env.local`):
+   ```
+   NEXT_PUBLIC_WA_NUMBER=<owner-supplied, digits only or E.164>
+   NEXT_PUBLIC_REPLY_EMAIL=<owner-supplied>
+   ```
+4. Do not commit either value into source; they are read at build/runtime from `process.env.NEXT_PUBLIC_WA_NUMBER` / `process.env.NEXT_PUBLIC_REPLY_EMAIL` and default to an empty string, which hides the corresponding link.
+
+**Verification:**
+
+```powershell
+Select-String -Path "C:\ct\projexa\src\components\marketing\*","C:\ct\projexa\src\app\api\lead\*" -Pattern '\+971 ?\d|@projexa-ai\.com|hello@' -ErrorAction SilentlyContinue
+```
+
+Expected result: no hard-coded phone number or email address literal in the marketing component tree — only references to `NEXT_PUBLIC_WA_NUMBER` / `NEXT_PUBLIC_REPLY_EMAIL`.
+
+**Status as of 2026-09-10 (W-WEB run):** the standalone static preview at `C:\Users\Dell\Downloads\Claude Code\audit_9_sept_2026\website\projexa-ai-com-v4\index.html` was fixed to remove its hard-coded `mailto:hello@projexa-ai.com` and now reads an `OWNER_CONFIG` object (defaulting to empty strings) that hides the email/WhatsApp links until supplied — mirroring the env-var pattern above. No changes were made to the live `src/components/marketing/**` components this run (see W-WEB_NOTES.md, step A4): they do not currently render any WhatsApp or reply-email element, hard-coded or otherwise, so there was nothing to fix there, and no `NEXT_PUBLIC_WA_NUMBER`/`NEXT_PUBLIC_REPLY_EMAIL` reads exist there yet. Wire this env-based pattern into whichever component ends up rendering owner contact info once the LandingPage content decision (A4) is made.
