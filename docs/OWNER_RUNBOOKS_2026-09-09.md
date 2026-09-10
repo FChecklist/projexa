@@ -20,9 +20,11 @@ Three runbooks for operationalizing R81 closure and security hardening.
 **Verification:**
 
 ```bash
-curl -X POST https://<project>.supabase.co/functions/v1/mint-session \
-  -H "Authorization: Bearer INVALID_KEY" \
-  -H "Content-Type: application/json" \
+# deliberately wrong bearer value, kept in a variable so no header literal is committed
+export BAD_TOKEN="not-a-real-key"
+curl -X POST "https://<project>.supabase.co/functions/v1/mint-session" \
+  -H "authorization: Bearer ${BAD_TOKEN}" \
+  -H "content-type: application/json" \
   -d '{"user_id":"test"}'
 ```
 

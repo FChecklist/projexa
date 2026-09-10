@@ -40,8 +40,13 @@ const BASE_MEETING = {
   aiSummary: null, aiKeyDecisions: [], aiSuggestedActionItems: [], actionItems: [],
 };
 
+// The fixture must stay in the future or D-21 reads the link as expired.
+// A hard-coded date turned this suite red on 2026-09-10; keep these relative to now.
+const SEVEN_DAYS_AHEAD = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+const SEVEN_DAYS_BEHIND = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
 const LINKS = [
-  { id: "lnk-1", token: "tok_abc", expiresAt: "2026-09-09T09:00:00.000Z", revokedAt: null, createdAt: "2026-09-02T09:00:00.000Z" },
+  { id: "lnk-1", token: "tok_abc", expiresAt: SEVEN_DAYS_AHEAD, revokedAt: null, createdAt: SEVEN_DAYS_BEHIND },
 ];
 
 const ORG_USERS = [
