@@ -1,2 +1,7 @@
 [test]
 root = "src"
+# P2.3 (W-ENV, R81-ADDENDUM-B phase S5): destructive-test guard -- runs
+# before any test file, refuses to run at all if DATABASE_URL doesn't point
+# at localhost or this repo's known dev/test Supabase project. See
+# src/lib/db/test-guard.ts for the check and why it exists.
+preload = ["./src/lib/db/test-guard-preload.ts"]
