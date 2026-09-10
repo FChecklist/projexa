@@ -9,6 +9,14 @@ const CAPABILITY_KEYS = [
   { key: "workflow", icon: ShieldCheck },
 ] as const;
 
+// English gets three "how it works" example rows appended below, merged
+// from the v4 standalone preview (website/projexa-ai-com-v4/index.html,
+// S12.A.A3/A4) -- a concrete walkthrough of the same VERI capability pitched
+// above it, not a replacement for it. Hindi keeps this section exactly as it
+// was, per the S12.A ruling: these are new translation keys
+// (copilot.flow.*), never requested when locale is "hi".
+const FLOW_ROW_KEYS = ["tell", "complete", "decide"] as const;
+
 export async function CopilotSpotlight({ locale }: MarketingLocaleProps) {
   const t = await getTranslations({ locale, namespace: "Marketing.copilot" });
 
@@ -74,6 +82,39 @@ export async function CopilotSpotlight({ locale }: MarketingLocaleProps) {
             </div>
           </Reveal>
         </div>
+
+        {locale === "en" && (
+          <div className="mt-20">
+            <Reveal className="mx-auto max-w-2xl text-center">
+              <p className="text-sm font-semibold uppercase tracking-widest text-primary">{t("flow.eyebrow")}</p>
+              <h3 className="mt-3 font-heading text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                {t("flow.heading")}
+              </h3>
+            </Reveal>
+
+            <div className="mt-10 space-y-6">
+              {FLOW_ROW_KEYS.map((row, i) => (
+                <Reveal key={row} delay={i * 90}>
+                  <div className="grid grid-cols-1 gap-4 rounded-2xl border border-border bg-card p-6 shadow-card sm:grid-cols-[auto_1fr_1fr] sm:items-start sm:gap-8">
+                    <span className="font-heading text-2xl text-primary">{`0${i + 1}`}</span>
+                    <div>
+                      <h4 className="font-heading text-base font-semibold text-foreground">{t(`flow.rows.${row}.title`)}</h4>
+                      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{t(`flow.rows.${row}.body`)}</p>
+                    </div>
+                    <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t(`flow.rows.${row}.exampleFrom`)}</p>
+                      <p className="mt-1.5 text-foreground">{t(`flow.rows.${row}.exampleLine`)}</p>
+                      <p className="mt-2 border-t border-dashed border-border pt-2 text-muted-foreground">
+                        <span className="mr-1.5 text-xs font-bold uppercase tracking-wide text-primary">PROJEXA AI</span>
+                        {t(`flow.rows.${row}.exampleAi`)}
+                      </p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

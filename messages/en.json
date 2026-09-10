@@ -179,6 +179,28 @@
           "title": "Rework from miscommunication",
           "body": "A decision made on-site never makes it back to the drawings. Three weeks later, it's redone at the client's expense — and yours."
         }
+      },
+      "tenProblems": {
+        "eyebrow": "Identified across construction, interiors and fit-out firms",
+        "heading": "The ten problems that create 90% of rework, confusion and cost escalation.",
+        "subhead": "Each one is a hand-off that fails between two people. Each one has a fix in PROJEXA that runs without anyone remembering to do it.",
+        "items": {
+          "p01": { "title": "Extra work is done, never billed", "body": "Variations agreed on site by phone, forgotten by invoicing. Margin gone before the bill is raised.", "cost": "2–4% of project value", "fix": "Every site instruction becomes a variation the moment it is logged. It sits in the next progress bill automatically." },
+          "p02": { "title": "Site builds from the old drawing", "body": "Revision C is on the consultant's email. Revision B is on the wall. The wall wins.", "cost": "Rework, days lost", "fix": "Each revision is stamped, sent, and acknowledged by name on site before work continues." },
+          "p03": { "title": "Approvals stuck for a week", "body": "Client, consultant, owner. One of them is travelling. Crews stand idle, then rush.", "cost": "Idle crews, penalties", "fix": "One link, one tap, any phone. Chased by the system every day until approved, with the owner copied." },
+          "p04": { "title": "Material ordered twice, or late", "body": "PO in one file, delivery note in a drawer, stock in someone's head.", "cost": "Cash locked, delays", "fix": "PO → delivery → stock matched in one chain. Duplicate or late orders are flagged before they are placed." },
+          "p05": { "title": "The daily report never arrives", "body": "Engineers hate typing. The owner learns about a delay when the client calls.", "cost": "Late decisions", "fix": "One photo and one number from a shared link. Progress, manpower and delay reason are recorded in 30 seconds." },
+          "p06": { "title": "Manpower on paper, payroll disputes", "body": "Headcount on site, headcount on the sheet and headcount in payroll are three different numbers.", "cost": "Payroll leakage", "fix": "Daily manpower is captured at source and reconciled with timesheets and payroll." },
+          "p07": { "title": "Six versions of the BOQ", "body": "Estimation, site, procurement and accounts each keep their own Excel. Nobody knows the true budget.", "cost": "Budget unknown", "fix": "One BOQ, imported from your Excel, live against spend. Every trade sees budget left, today." },
+          "p08": { "title": "Subcontractor invoices don't match the work", "body": "Certified quantity, claimed quantity and paid quantity drift apart, and retention becomes a fight.", "cost": "Overpayment, disputes", "fix": "Claims are matched to measured progress and the BOQ before approval, with retention tracked automatically." },
+          "p09": { "title": "Snags lost, retention held", "body": "Handover lists on paper and in photos on five phones. The last 5–10% of the contract waits for months.", "cost": "5–10% retention delayed", "fix": "Snags logged with photos, assigned, closed with evidence. The handover pack generates itself." },
+          "p10": { "title": "The owner decides from memory", "body": "Twelve WhatsApp groups, three phone calls and a feeling. The real number arrives on Friday, as a surprise.", "cost": "Late, expensive calls", "fix": "One morning screen: money, delays, what needs you. Overruns are flagged before they become a Friday." }
+        },
+        "sumline": {
+          "stat": "90%",
+          "text": "of rework, confusion and cost escalation trace back to these ten hand-offs.",
+          "small": "Industry estimate; PROJEXA is built to measure your actual figure on your own projects."
+        }
       }
     },
     "solution": {
@@ -234,6 +256,25 @@
         "documents": "Documents",
         "kpis": "KPIs",
         "reports": "Reports"
+      },
+      "goodNews": {
+        "eyebrow": "The good news",
+        "heading": "All ten are the same problem. So one system ends all ten.",
+        "subhead": "Coordination is not a people problem; it is a hand-off problem. PROJEXA moves every hand-off into the system, where it cannot be forgotten, delayed or lost.",
+        "roles": {
+          "owner": { "label": "For the owner", "title": "You see it today, not Friday", "body": "Money, delays and decisions on one screen every morning. Nothing waits for a meeting." },
+          "pm": { "label": "For the project manager", "title": "You chase nothing", "body": "Approvals, deliveries, drawings and claims are chased by the system. You approve, in one line." },
+          "site": { "label": "For the site", "title": "Nothing to learn, nothing to install", "body": "A shared link, a photo, a number. Thirty seconds. The rest is done for them." }
+        },
+        "method": {
+          "headline": "15 minutes a day. No data feeding. You tell it by email or a shared link. AI completes it.",
+          "small": "Share any task from your own phone, by email or a shared link. Built for your industry: BOQ, progress, procurement, labour, drawings, approvals, invoices, VAT."
+        },
+        "outcomes": {
+          "recovered": { "value": "10%", "label": "of project cost recovered", "note": "pilot target, measured per project" },
+          "approvals": { "value": "1 day", "label": "approvals, not 1 week", "note": "pilot target" },
+          "groupChats": { "value": "0", "label": "group chats needed to run a site", "note": "one inbox, one link" }
+        }
       }
     },
     "system": {
@@ -354,6 +395,33 @@
         "a1": "RFI-042 has been pending vendor response for 4 days. It's blocking two dependent schedule items due Friday. Want me to flag it to the vendor and notify the PM?",
         "q2": "Yes, do that.",
         "typing": "Notifying vendor and PM…"
+      },
+      "flow": {
+        "eyebrow": "How it works",
+        "heading": "You tell it. AI completes it. You decide.",
+        "rows": {
+          "tell": {
+            "title": "Tell it, in one line",
+            "body": "Reply to the email PROJEXA sent, or open the link your PM shared. No forms, no screens to learn.",
+            "exampleFrom": "Shared link · site engineer · 17:02",
+            "exampleLine": "📷 joinery-2nd-floor.jpg · 14 workers · veneer late, supplier says Thursday",
+            "exampleAi": "Joinery 31% → 34%. Manpower 14 logged. Delay reason recorded. PM alerted. Thursday follow-up set."
+          },
+          "complete": {
+            "title": "AI completes the work",
+            "body": "Creates the entry, matches PO to delivery to stock, updates progress against the BOQ, chases the approval, drafts the invoice. Every action stamped.",
+            "exampleFrom": "Email · project manager · 09:41",
+            "exampleLine": "PO-118 veneer · AED 48,500 · you replied approved",
+            "exampleAi": "PO issued. Budget line 4.2 updated. Delivery in 6 days. Owner informed. Nothing else needed from you."
+          },
+          "decide": {
+            "title": "You decide, early",
+            "body": "One morning screen. Overruns and delays are flagged before they cost you.",
+            "exampleFrom": "Owner · 07:30 daily",
+            "exampleLine": "Villa 12: AED 62k variations not yet billed · Tower B: 9 days delay, penalty risk AED 40k",
+            "exampleAi": "Both flagged for you to review and action."
+          }
+        }
       }
     },
     "value": {
@@ -404,6 +472,29 @@
         }
       }
     },
+    "proof": {
+      "eyebrow": "Proof, not a demo",
+      "heading": "Proven on your own project in 30 days. Paid, not free — serious firms only.",
+      "days": {
+        "day0": { "label": "Day 0", "title": "Your project, live", "body": "Company, project, users and their roles set up. BOQ loaded. First site update within the hour." },
+        "day31": { "label": "Day 31", "title": "Customised, free", "body": "Reports and screens shaped to how your firm works. Earned by your team using it." },
+        "day60": { "label": "Day 60", "title": "Money back", "body": "If it has not paid for itself, your first quarter is refunded in full." }
+      },
+      "price": {
+        "amount": "USD 100",
+        "unit": "per project per month",
+        "detail": "AED 365 · billed quarterly in advance · excl. 5% VAT",
+        "features": [
+          "Unlimited users, every module",
+          "No base fee, no setup fee",
+          "Closed or paused projects: free",
+          "Cancel any quarter, full data export"
+        ],
+        "guaranteeTitle": "100% money back on day 60.",
+        "guaranteeBody": "One rule: 15 minutes a day, per project, measured the same way for every account.",
+        "cta": "Start the 30-day proof"
+      }
+    },
     "finalCta": {
       "heading": "PROJEXA makes work complete.",
       "body": "Every RFI answered. Every schedule slip caught early. Every change order on record. From first drawing to final handover — nothing falls through.",
@@ -417,9 +508,12 @@
       "emailPlaceholder": "you@company.com",
       "companyLabel": "Company (optional)",
       "companyPlaceholder": "Your company",
+      "mobileLabel": "Mobile (optional)",
+      "mobilePlaceholder": "Your mobile number",
       "messageLabel": "Message (optional)",
       "messagePlaceholder": "Tell us about the project",
       "submit": "Talk to an Engineer",
+      "fineprint": "Name, work email and mobile — company and a note are optional. No spam.",
       "errorRequired": "Name and email are required.",
       "errorGeneric": "Something went wrong. Please try again.",
       "successToast": "Thanks — we've got it.",
@@ -430,7 +524,8 @@
       "tagline": "— Construction Intelligence AI OS",
       "login": "Log in",
       "signup": "Sign up",
-      "copyright": "© {year} PROJEXA. Built on VERIDIAN AI OS."
+      "copyright": "© {year} PROJEXA. Built on VERIDIAN AI OS.",
+      "whatsapp": "WhatsApp"
     },
     "howItWorks": {
       "hero": {

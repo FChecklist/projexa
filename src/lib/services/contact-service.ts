@@ -29,10 +29,22 @@ function sanitize(p: ContactRequestPayload) {
   };
 }
 
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 export async function submitContactRequest(payload: ContactRequestPayload): Promise<void> {
   const clean = sanitize(payload);
   if (!clean.name || !clean.email) {
     throw new ContactRequestError("Name and email are required.");
+  }
+  if (!EMAIL_PATTERN.test(clean.email)) {
+    throw new ContactRequestError("Enter a valid email address.");
+  }
+  // Mobile is optional (this form is shared by the homepage and
+  // /how-it-works, neither of which required it before S12.A.A4 added the
+  // field) -- but a value that's clearly not a phone number is rejected
+  // rather than stored, same as the email check above.
+  if (clean.phone && clean.phone.replace(/\D/g, "").length < 7) {
+    throw new ContactRequestError("Enter a valid mobile number, or leave it blank.");
   }
 
   await db.insert(contactRequests).values({

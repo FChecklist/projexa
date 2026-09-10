@@ -21,6 +21,7 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
+  const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -34,7 +35,7 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
       const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, company, message, sourcePage }),
+        body: JSON.stringify({ name, email, company, phone, message, sourcePage }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -87,7 +88,7 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
             placeholder={t("emailPlaceholder")}
           />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-1.5">
           <Label htmlFor={`${sourcePage}-company`} className="text-px-cloud2">{t("companyLabel")}</Label>
           <Input
             id={`${sourcePage}-company`}
@@ -95,6 +96,17 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
             onChange={(e) => setCompany(e.target.value)}
             className="border-white/20 bg-white/10 text-white placeholder:text-px-cloud2/50"
             placeholder={t("companyPlaceholder")}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${sourcePage}-phone`} className="text-px-cloud2">{t("mobileLabel")}</Label>
+          <Input
+            id={`${sourcePage}-phone`}
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="border-white/20 bg-white/10 text-white placeholder:text-px-cloud2/50"
+            placeholder={t("mobilePlaceholder")}
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
@@ -119,6 +131,7 @@ export function ContactForm({ sourcePage }: { sourcePage: "home" | "how-it-works
         {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         {t("submit")}
       </Button>
+      <p className="mt-3 text-xs text-px-cloud2/70">{t("fineprint")}</p>
     </form>
   );
 }

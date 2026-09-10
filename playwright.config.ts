@@ -42,7 +42,7 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
-      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/],
+      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/, /landing\.spec\.ts/],
     },
     {
       // R67 J-01/J-02/J-03 (audit R-246/R-279/R-280). The public marketing
@@ -53,9 +53,14 @@ export default defineConfig({
       // itself unless PLAYWRIGHT_BASE_URL names a local origin.
       //     PLAYWRIGHT_BASE_URL=http://localhost:3100 \
       //       bunx playwright test --project=public-pages
+      //
+      // S12.A.A4 (W-WEB): e2e/landing.spec.ts joined this project rather than
+      // "chromium" for the same reason -- it exercises the logged-out home
+      // page and its lead-capture form, so it must not depend on
+      // auth.setup.ts's real login against production.
       name: "public-pages",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /public-pages-perf\.spec\.ts/,
+      testMatch: [/public-pages-perf\.spec\.ts/, /landing\.spec\.ts/],
     },
   ],
 });

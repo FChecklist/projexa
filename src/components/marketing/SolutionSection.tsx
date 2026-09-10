@@ -22,8 +22,65 @@ const MORE_MODULE_KEYS = [
   "moodBoards", "ffe", "floorPlans", "manpower", "materials", "vendors", "documents", "kpis", "reports",
 ] as const;
 
+// English gets the "good news" band merged from the v4 standalone preview
+// (website/projexa-ai-com-v4/index.html, S12.A.A3/A4): all ten problems are
+// one hand-off problem, three role good-news cards, the 15-minutes-a-day
+// method, and three outcome tiles. Hindi keeps this section's original
+// module-teaser content untouched, per the S12.A ruling -- the deeper module
+// catalog is still available to every visitor, in both locales, in
+// ModuleCatalogSection right after this one.
+const ROLE_KEYS = ["owner", "pm", "site"] as const;
+const OUTCOME_KEYS = ["recovered", "approvals", "groupChats"] as const;
+
 export async function SolutionSection({ locale }: MarketingLocaleProps) {
   const t = await getTranslations({ locale, namespace: "Marketing.solution" });
+
+  if (locale === "en") {
+    return (
+      <section className="border-b border-border bg-muted/40 py-20 sm:py-28">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-widest text-primary">{t("goodNews.eyebrow")}</p>
+            <h2 className="mt-3 font-heading text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+              {t("goodNews.heading")}
+            </h2>
+            <p className="mt-4 text-balance text-lg text-muted-foreground">
+              {t("goodNews.subhead")}
+            </p>
+          </Reveal>
+
+          <div className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-3">
+            {ROLE_KEYS.map((role, i) => (
+              <Reveal key={role} delay={i * 90}>
+                <div className="h-full rounded-2xl border border-border bg-card p-6 shadow-card">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-primary">{t(`goodNews.roles.${role}.label`)}</p>
+                  <h3 className="mt-2 font-heading text-lg font-semibold text-foreground">{t(`goodNews.roles.${role}.title`)}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t(`goodNews.roles.${role}.body`)}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal delay={100} className="mt-8 max-w-2xl rounded-2xl border-l-4 border-primary bg-card p-6 shadow-card">
+            <p className="font-heading text-lg leading-snug text-foreground">{t("goodNews.method.headline")}</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t("goodNews.method.small")}</p>
+          </Reveal>
+
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+            {OUTCOME_KEYS.map((outcome, i) => (
+              <Reveal key={outcome} delay={i * 90}>
+                <div className="h-full rounded-2xl border border-border bg-card p-6 text-center shadow-card">
+                  <p className="font-heading text-3xl font-semibold text-foreground">{t(`goodNews.outcomes.${outcome}.value`)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t(`goodNews.outcomes.${outcome}.label`)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground/70">{t(`goodNews.outcomes.${outcome}.note`)}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="border-b border-border bg-muted/40 py-20 sm:py-28">
