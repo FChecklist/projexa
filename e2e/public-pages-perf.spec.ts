@@ -154,7 +154,14 @@ test.describe("public pages -- static, light, painted", () => {
         const page = await context.newPage();
         await page.goto(route, { waitUntil: "load" });
 
-        const sections = page.locator("section");
+        // :not([aria-label]) excludes the global Sonner Toaster's
+        // notification region -- it renders as its own <section
+        // aria-label="Notifications alt+T"> (sonner's own markup, not this
+        // repo's), sits empty (height 0) whenever no toast is showing, and
+        // is not marketing content this check is about. None of the real
+        // page sections carry an aria-label, so this only ever excludes the
+        // Toaster.
+        const sections = page.locator("section:not([aria-label])");
         const count = await sections.count();
         expect(count).toBeGreaterThan(0);
 
