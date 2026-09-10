@@ -75,6 +75,22 @@ export function ProjectStatusCard({
                           : `${LEDGER_BUDGET_LABEL} ${ledgerBudget === null || ledgerBudget === undefined ? EMPTY_VALUE : value("budget", ledgerBudget)}`}
                       </div>
                     )}
+                    {/* DOD-P2 (D28): a bare "46.0%" has no denominator -- a
+                        reader cannot tell 46% of a AED 475,000 contract from
+                        46% of a AED 4,750 one. percentByValue is the one
+                        percent field on this card whose numerator AND
+                        denominator (earnedValue, contractValue) already ride
+                        in the same payload, so this prints the real ratio
+                        rather than fabricating one for progressPercent, which
+                        has no count-based denominator in this payload today. */}
+                    {field.key === "percentByValue" &&
+                      !financialsRedacted &&
+                      typeof data.contractValue === "number" &&
+                      data.contractValue > 0 && (
+                        <div className="text-[11px] text-px-muted" data-testid="project-status-percentByValue-denominator">
+                          {value("earnedValue", data.earnedValue ?? 0)} of {value("contractValue", data.contractValue)}
+                        </div>
+                      )}
                   </div>
                 );
               })}

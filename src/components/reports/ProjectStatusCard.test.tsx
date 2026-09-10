@@ -95,6 +95,23 @@ describe("the two percentages are relabelled AND explained (R-138)", () => {
   });
 });
 
+describe("DOD-P2 (D28): percentByValue carries its denominator, not a bare percentage", () => {
+  test("percentByValue's earned-value / contract-value denominator is printed under it", () => {
+    const { container } = renderCard();
+    const denom = container.querySelector('[data-testid="project-status-percentByValue-denominator"]');
+    expect(denom).not.toBeNull();
+    // PAYLOAD: earnedValue 218500, contractValue 475000, both AED-formatted
+    // the same way the rest of the card formats money.
+    expect(denom!.textContent).toBe("AED 218,500 of AED 475,000");
+  });
+
+  test("when contractValue is absent, the denominator line does not print a false ratio", () => {
+    const { container } = renderCard({ ...PAYLOAD, contractValue: null });
+    const denom = container.querySelector('[data-testid="project-status-percentByValue-denominator"]');
+    expect(denom).toBeNull();
+  });
+});
+
 describe("absent is an en dash with a reason; a real zero is still a zero", () => {
   test("a null budget is the en dash, titled 'not recorded', never 'AED 0'", () => {
     const { container } = renderCard();
