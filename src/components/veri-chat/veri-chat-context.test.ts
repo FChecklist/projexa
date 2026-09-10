@@ -42,7 +42,12 @@ const moduleChainNodes: CapabilityNode[] = [
 
 describe("R-81: the composer offers only chains PROJEXA can dispatch", () => {
   test("the flag ships OFF -- the undispatchable VERIDIAN module chain is hidden by default", () => {
-    expect(SHOW_UNDISPATCHABLE_MODULE_CHAINS).toBe(false);
+    // DOD-R3 FALSIFICATION PLANT (temporary, reverted next commit): flips
+    // the expected boolean -- proves this closure test genuinely executes
+    // and can fail, not just a name that happens to be CLOSED (R-81 is
+    // itself BLOCKED pending exactly this kind of CI-observed evidence per
+    // R81-RULING-03).
+    expect(SHOW_UNDISPATCHABLE_MODULE_CHAINS).toBe(true);
   });
 
   test("mergeChainTrees drops the whole module chain when it is hidden, however wired its leaves claim to be", () => {
