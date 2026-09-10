@@ -22,6 +22,26 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
+  migration-guard:
+    # P2.1 (W-ENV, R81-ADDENDUM-B Part A / phase S5): the shared-database
+    # model means a migration merged to main is applied to the SAME Supabase
+    # project environment 2 will serve the moment it runs -- there is no
+    # promotion step for schema (see R81-ADDENDUM-B Part A2). A destructive
+    # migration (DROP TABLE/COLUMN, a narrowing ALTER COLUMN ... TYPE,
+    # TRUNCATE) landing on main is therefore a production incident, not a
+    # review comment. This job fails the build before that can happen.
+    # Reviewed exceptions opt out per-file with an explicit
+    # `-- MIGRATION-GUARD-OVERRIDE: reviewed by ... - <reason>` comment; see
+    # scripts/check-migration-guard.mjs for the full rule and
+    # scripts/__fixtures__/migration-guard for proof it fails on destructive
+    # DDL and passes on additive/reviewed DDL.
+    name: Migration guard (additive-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun scripts/check-migration-guard.mjs --self-test
+      - run: bun scripts/check-migration-guard.mjs drizzle
   test:
     # Added during the R1-R64 recheck (2026-08-30): this repo had 220+ real
     # bun:test tests (route role-gates, offline sync, report math, static
