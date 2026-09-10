@@ -122,7 +122,10 @@ describe("POST /api/work-progress/photos -- R74-RULING-03 closure for R-48", () 
     const res = await POST(makeUploadRequest({ veridianEntryId: "entry-1", file }) as any);
     const body = await res.json();
 
-    expect(res.status).toBe(201);
+    // DOD-R3 FALSIFICATION PLANT (temporary, reverted next commit): 999 is
+    // not a real HTTP status -- proves this closure test genuinely executes
+    // and can fail, not just a name that happens to be CLOSED.
+    expect(res.status).toBe(999);
     // R74-RULING-03 condition (e): assert the actual persisted shape, not
     // just the response echoing back whatever was sent.
     expect(uploadCalls).toHaveLength(1);
