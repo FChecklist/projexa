@@ -36,10 +36,7 @@ describe("CURRENCY_FALLBACK_LABEL with the real deployed env (R-62)", () => {
   test("NEXT_PUBLIC_DEFAULT_CURRENCY_CODE=AED (projexa-ai.com's actual Vercel setting) resolves the fallback to exactly 'AED ', a CODE not a symbol", async () => {
     const { CURRENCY_FALLBACK_LABEL, currencyLabel } = await import("./currency")
 
-    // DOD-R3 FALSIFICATION PLANT (temporary, reverted next commit): "XXX "
-    // is deterministically wrong -- proves this closure test genuinely
-    // executes and can fail, not just a name that happens to be CLOSED.
-    expect(CURRENCY_FALLBACK_LABEL).toBe("XXX ")
+    expect(CURRENCY_FALLBACK_LABEL).toBe("AED ")
     // The exact call shape every one of the ~30 real call sites makes before
     // useCurrencies() has answered: no id, no currencies loaded yet.
     expect(currencyLabel(undefined, [])).toBe("AED ")
