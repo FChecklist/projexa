@@ -3,14 +3,23 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import type { MarketingLocaleProps } from "./marketing-locale";
 
-// OT6 (docs/OWNER_RUNBOOKS_2026-09-09.md): the owner-supplied WhatsApp
-// number and reply email, read from env with an empty-string fallback --
-// same idiom as src/lib/currency.ts's NEXT_PUBLIC_DEFAULT_CURRENCY_CODE.
-// Both are still unsupplied as of S12.A.A4, so both links stay hidden; the
-// code path exists and is correct so the owner only has to set the two env
-// vars, never touch this component.
+// OT6 (docs/OWNER_RUNBOOKS_2026-09-09.md): the owner-supplied reply email,
+// read from env with an empty-string fallback -- same idiom as
+// src/lib/currency.ts's NEXT_PUBLIC_DEFAULT_CURRENCY_CODE. Still unsupplied
+// as of this run, so the link stays hidden; the code path exists and is
+// correct so the owner only has to set the env var, never touch this
+// component.
+//
+// PM ruling (2026-09-10, post-A4): no WhatsApp Business API and no business
+// phone number -- NEXT_PUBLIC_WA_NUMBER is dead, not just unset, and was
+// removed here rather than left empty. The ruling also describes a
+// system-wide "Copy link" control replacing WhatsApp on every actionable
+// item, governed by a single rule the ruling names as lib/share-link-usable.ts
+// -- that file was not found anywhere in this checkout (C:\ct\ct or
+// C:\ct\projexa) as of this commit, so that broader feature is NOT
+// implemented here; flagged back to the PM rather than guessed at. This
+// footer only had the WhatsApp link removed.
 const REPLY_EMAIL = (process.env.NEXT_PUBLIC_REPLY_EMAIL ?? "").trim();
-const WA_NUMBER = (process.env.NEXT_PUBLIC_WA_NUMBER ?? "").trim();
 
 export async function MarketingFooter({ locale }: MarketingLocaleProps) {
   const t = await getTranslations({ locale, namespace: "Marketing.footer" });
@@ -28,9 +37,6 @@ export async function MarketingFooter({ locale }: MarketingLocaleProps) {
           <Link href="/signup" className="hover:text-white">{t("signup")}</Link>
           {REPLY_EMAIL && (
             <a href={`mailto:${REPLY_EMAIL}`} className="hover:text-white">{REPLY_EMAIL}</a>
-          )}
-          {WA_NUMBER && (
-            <a href={`https://wa.me/${WA_NUMBER.replace(/\D/g, "")}`} className="hover:text-white">{t("whatsapp")}</a>
           )}
         </div>
         <p className="text-xs text-px-cloud2/50">{t("copyright", { year: new Date().getFullYear() })}</p>
