@@ -102,7 +102,12 @@ async function main() {
   // wiring to the org created in Phase 1).
   const orgRes = await pgClient.query(
     `insert into organizations (name, slug, country) values ($1, $2, $3) returning id`,
-    [ORG_NAME, `${slugify(ORG_NAME)}-${Math.random().toString(36).slice(2, 7)}`, "IN"]
+    // P2.2 (W-ENV, R81-ADDENDUM-B phase S5): test-tenant scoping requires
+    // every e2e org's slug to start with "test-" so a checker can tell test
+    // data from real tenant data at a glance. The org this creates is
+    // e2e-only (see e2e/users.ts), so it always gets the prefix -- there is
+    // no branch where re-running this script should produce a non-test slug.
+    [ORG_NAME, `test-${slugify(ORG_NAME)}-${Math.random().toString(36).slice(2, 7)}`, "IN"]
   );
   const projexaOrgId = orgRes.rows[0].id;
   console.log("PROJEXA organizations.id:", projexaOrgId);

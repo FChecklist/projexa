@@ -56,7 +56,11 @@ console.log("=== Phase 1 seed: Meridian Construction Group (E2E Test Org) ===");
 // ---------------------------------------------------------------------------
 // 0. Guard: refuse to run twice against the same org name.
 // ---------------------------------------------------------------------------
-const existing = await raw(`select id from compliance.organisations where slug = $1`, ["meridian-construction-e2e-test"]);
+// P2.2 (W-ENV, R81-ADDENDUM-B phase S5): slug corrected to the "test-"
+// prefix convention (was "meridian-construction-e2e-test") -- the live row
+// this guard checks against was renamed to match; see
+// scripts/check-test-tenant-scoping.mjs's registry for both.
+const existing = await raw(`select id from compliance.organisations where slug = $1`, ["test-meridian-construction-e2e"]);
 if (existing.rows.length) {
   console.error("Org already exists:", existing.rows[0].id, "-- aborting to avoid duplicate seed.");
   await client.end();
@@ -72,7 +76,7 @@ const projexaBranchId = projexaBranch.rows[0].id;
 const orgId = await ins(
   "organisations",
   ["name", "slug", "plan", "account_type", "country", "primary_product_branch_id"],
-  ["Meridian Construction Group (E2E Test Org)", "meridian-construction-e2e-test", "pro", "company", "IN", projexaBranchId]
+  ["Meridian Construction Group (E2E Test Org)", "test-meridian-construction-e2e", "pro", "company", "IN", projexaBranchId]
 );
 console.log("orgId:", orgId);
 
