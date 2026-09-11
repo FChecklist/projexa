@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
-import { revalidateTag } from "next/cache";
+import { revalidateTag, revalidatePath } from "next/cache";
 import { withTiming } from "@/lib/with-timing";
 
 export const GET = withTiming("GET", async function GET(request: NextRequest) {
@@ -87,7 +87,23 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
 
     // R67 F-18: the cached list must be cleared or the new row is
     // invisible until the 30 s window expires, which reads as a failed save.
+    //
+    // FIXED 2026-09-12 (real bug found running R-B2's spec for real against
+    // Env-1): revalidateTag() alone is not a synchronous "read-your-own-write"
+    // guarantee from a Route Handler -- next/cache's own type declaration
+    // says as much ("For immediate expiration ... use updateTag instead"),
+    // and updateTag is Server-Action-only, not usable here. Empirically
+    // confirmed: a hard reload of /scope immediately after this route
+    // returned 201 could still render the just-created BOQ missing from the
+    // list -- the app's own "Saved BOQ ... " confirmation had already fired,
+    // proving the write itself was real, so this was the read path serving a
+    // stale Full Route Cache entry for the page, not a data-cache miss.
+    // revalidatePath() additionally purges that page-level cache; both calls
+    // together (data cache + route cache) closed the gap in real, repeated
+    // testing (see this route's sibling revalidateTag calls for the same fix
+    // applied consistently).
     revalidateTag(MODULE_TAGS.scope, "max");
+    revalidatePath("/scope");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create BOQ");
