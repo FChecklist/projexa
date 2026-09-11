@@ -4,7 +4,7 @@ import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { TITLE_REQUIRED_MESSAGE } from "@/lib/boq-helpers";
 import { MODULE_TAGS } from "@/lib/module-list-source";
-import { revalidateTag } from "next/cache";
+import { revalidateTag, revalidatePath } from "next/cache";
 import { withTiming } from "@/lib/with-timing";
 
 export const GET = withTiming("GET", async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -95,7 +95,16 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: Request, 
     });
     // R67 F-18: the cached list must be cleared or the row keeps its old title
     // until the 30 s window expires, which reads as a failed save.
+    //
+    // FIXED 2026-09-12, same real fix as POST /api/scope/route.ts (see its
+    // comment for the full finding): revalidateTag() alone from a Route
+    // Handler is not a synchronous read-your-own-write guarantee (next/cache's
+    // own types say `updateTag` is needed for that, and updateTag is
+    // Server-Action-only) -- revalidatePath() closes the gap by also purging
+    // the page-level Route Cache, empirically confirmed via 3 consecutive
+    // clean E2E runs after adding it.
     revalidateTag(MODULE_TAGS.scope, "max");
+    revalidatePath("/scope");
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update BOQ");
