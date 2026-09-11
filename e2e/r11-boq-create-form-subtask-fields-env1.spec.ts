@@ -27,9 +27,32 @@ import { test, expect } from "@playwright/test";
 //     exactly as entered, and its derived quantity/rate/amount reflect the
 //     canonical child-rate rule (root rate x breakdown% / 100), proving the
 //     fields were not just accepted cosmetically.
-//  3. Tested under two roles (CEO and a member-level Finance account) -- both
-//     can reach and use this form; PROJEXA does not gate BOQ creation to
-//     owner-only.
+//  3. Tested under two roles: CEO (owner) can reach and use this form, and a
+//     member-level Finance account is correctly REFUSED (403) -- see the
+//     2026-09-12 correction below for why this is the opposite of what this
+//     comment used to claim.
+//
+// CORRECTED 2026-09-12 (PM, real bug found running this spec against local
+// ENV1): the ORIGINAL premise above -- "PROJEXA does not gate BOQ creation to
+// owner-only" -- was wrong, and the "member role" test below asserted success
+// for an account that the app's own real, deliberate policy refuses.
+// src/lib/authz/api-write-policy.ts maps "/scope" to the PM_OR_ABOVE write
+// tier (ROLE_GROUPS.PM_OR_ABOVE = ["owner","admin","pm"], deliberately
+// excluding "member"/"site_engineer"/"client_viewer" -- see that file's own
+// comment: "Financial/contractual/commercial/schedule authority: budgets,
+// change orders, purchase orders, invoices, BOQ scope, baselines"). Deepak
+// Joshi (the seeded "Finance" test account) has PROJEXA-local role "member"
+// (e2e/users.ts's own comment: only Arjun/CEO is seeded above "member" tier),
+// so src/middleware.ts's checkApiWriteAccess() call correctly answers 403
+// "Forbidden: your role does not permit this action" BEFORE the request ever
+// reaches compliance-tracker -- confirmed by reading the middleware/policy
+// source directly and cross-checking against the seeded role, not guessed.
+// This is the access-control gate working exactly as designed, not a bug in
+// BOQ creation itself -- R-11's own actual requirement (sub-task fields
+// enterable and persisted) is fully proven by the CEO-role test above, which
+// passes independently of this role question. The "member role" test below
+// now asserts the real, correct behavior (refused with a visible, named
+// reason) instead of a false "should succeed" premise.
 //
 // STATUS AS OF THIS COMMIT (2026-09-11, W-TEST): NOT YET OBSERVED FULLY
 // GREEN, same class of open condition as r33/r21-r24/r22/r23-c13 in this
@@ -192,12 +215,38 @@ test.describe("R-11: sub-task fields (Item Code / Parent Item Code / Breakdown %
   });
 });
 
-test.describe("R-11 (member role): the same form is reachable and usable by a non-owner account", () => {
+// CORRECTED 2026-09-12: BOQ/scope creation is PM_OR_ABOVE-gated by design
+// (src/lib/authz/api-write-policy.ts) -- a plain "member" account (Deepak's
+// real seeded role) must be REFUSED, not permitted. This block now proves
+// the gate itself works, rather than asserting the opposite of the real
+// policy.
+test.describe("R-11 (member role): BOQ creation is correctly REFUSED for a role below PM_OR_ABOVE", () => {
   test.use({ storageState: "playwright/.auth/finance.json", navigationTimeout: 90_000, actionTimeout: 45_000 });
 
-  test("as Finance (member role): fill and save a sub-task line, re-read via a fresh page load AND the API to confirm persistence", async ({ page }) => {
-    const boqId = await createBoqWithSubtaskViaForm(page, `R-11 spec Finance ${Date.now()}`);
-    await assertSubtaskVisibleOnObjectPage(page, boqId);
-    await assertSubtaskPersisted(page, boqId);
+  test("as Finance (member role): the create form is reachable, but Save is refused with a visible, named reason (403, not a silent hang)", async ({ page }) => {
+    await page.goto(`/scope/new?projectId=${PROJECT_ID}`);
+    await page.getByLabel("Title").fill(`R-11 spec Finance-refused ${Date.now()}`);
+    await page.getByLabel("Description, line 1").fill("R-11 spec root line");
+    await page.getByLabel("Unit, line 1").fill("sqm");
+    await page.getByLabel("Qty, line 1").fill("100");
+    await page.getByLabel("Rate, line 1").fill("50");
+    await page.getByLabel("Item code, line 1").fill("R11-ROOT");
+
+    const saveButton = page.getByRole("button", { name: /^Save/ });
+    await expect(saveButton, "the Save primary must not still be naming a missing field once this form is filled").toHaveText("Save");
+    await saveButton.click();
+
+    // Must NOT navigate to a created BOQ -- the write is refused server-side.
+    const alert = page.getByRole("alert").filter({ hasText: /forbidden|role|permit/i });
+    await expect(alert, "a member-role Save attempt must surface a visible, named refusal reason (not a silent hang)").toBeVisible({ timeout: 15_000 });
+    await expect(page, "the page must stay on the create form -- no BOQ was created for a refused write").toHaveURL(/\/scope\/new/);
+
+    // Server-side confirmation the write never landed: the real API call
+    // this same click made returns 403, not 201 -- same assertion style as
+    // R-01's "must not server-error", just the opposite expected status.
+    const apiRes = await page.request.post("/api/scope", {
+      data: { projectId: PROJECT_ID, title: `R-11 spec Finance-refused API-check ${Date.now()}`, lineItems: [{ description: "x", unit: "m2", quantity: 1, rate: 1 }] },
+    });
+    expect(apiRes.status(), "the real write path must answer 403 for a member-role account, matching PM_OR_ABOVE").toBe(403);
   });
 });
