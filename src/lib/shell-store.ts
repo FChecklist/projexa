@@ -131,6 +131,49 @@ export function getShellVendors(): { id: string; vendorName: string }[] | null {
 }
 
 /**
+ * F-034/F-036. The capability tree IF the shell already holds a FRESH copy
+ * this session, otherwise null.
+ *
+ * PASSIVE, for the same reason getShellVendors()/getShellUserId() below are:
+ * never subscribes, never triggers a fetch. veri-chat-context.tsx's own
+ * fetchCapabilityTree() reads this first so a page mount does not throw a
+ * second, redundant GET /api/capability-tree at ct for data /api/shell's own
+ * fan-out (F-21/R-236) already asked for and cached here -- see that file's
+ * own header for the concurrent-double-fetch history this closes.
+ *
+ * Freshness (not just presence) matters: a stale-but-present tree from
+ * before an invalidation, or one the bootstrap itself failed to load
+ * (`errors.capabilityTree` set), must fall back to a real fetch rather than
+ * silently serving stale/absent data forever.
+ */
+export function getFreshShellCapabilityTree(): unknown[] | null {
+  if (!snapshot.data) return null;
+  if (snapshot.data.errors?.capabilityTree) return null;
+  if (staleShellKeys(snapshot, Date.now()).includes("capabilityTree")) return null;
+  return snapshot.data.capabilityTree;
+}
+
+/**
+ * F-034/F-036. The shell bootstrap's own in-flight request, IF one is
+ * already running -- otherwise null. NEVER starts one.
+ *
+ * veri-chat-context.tsx's fetchCapabilityTree() uses this to JOIN an
+ * already-started /api/shell request instead of firing a second, concurrent
+ * /api/capability-tree request for the identical data. It deliberately never
+ * starts a shell load itself: F-19 depends on M24Shell being the one that
+ * decides WHEN the shell bootstrap is allowed to run (immediately on most
+ * routes, deferred to an idle callback on a create route, see M24Shell.tsx's
+ * own `bootstrapReady`) -- calling loadShell() from here unconditionally
+ * would force the full shell bootstrap (org + projects + notifications +
+ * pill usage + capability tree + currencies + vendors, not just the one
+ * field this file needs) onto a create route's critical path on every mount,
+ * which is exactly what F-19 exists to prevent.
+ */
+export function getInFlightShellLoad(): Promise<void> | null {
+  return inFlight;
+}
+
+/**
  * R80 GAP-8. The signed-in user's own id IF the bootstrap has already
  * answered, otherwise null.
  *

@@ -8,7 +8,7 @@
 // chain path is offered, and it is the one that dispatches end to end." The
 // SHOW_UNDISPATCHABLE_MODULE_CHAINS-on cases are kept and tested too, so the
 // flag is a live, verified switch rather than a comment promising reversibility.
-import { describe, test, expect, mock, afterEach } from "bun:test";
+import { describe, test, expect, mock, afterEach, beforeEach } from "bun:test";
 import {
   fetchCapabilityTree,
   fetchJsonNodes,
@@ -17,11 +17,17 @@ import {
   CONSTRUCTION_CHAIN_MODE_KEY,
   type CapabilityNode,
 } from "./veri-chat-context";
+import { getShellSnapshot, loadShell, resetShellStore } from "@/lib/shell-store";
 
 const originalFetch = global.fetch;
 
+beforeEach(() => {
+  resetShellStore();
+});
+
 afterEach(() => {
   global.fetch = originalFetch;
+  resetShellStore();
 });
 
 function jsonResponse(body: unknown, ok = true) {
@@ -154,5 +160,105 @@ describe("fetchJsonNodes", () => {
   test("defaults to an empty array when `nodes` is missing from the response", async () => {
     global.fetch = mock(async () => jsonResponse({})) as unknown as typeof fetch;
     expect(await fetchJsonNodes("/api/whatever")).toEqual([]);
+  });
+});
+
+// F-034/F-036: a single page mount used to fetch the identical construction
+// tree TWICE, concurrently -- once inside /api/shell's own fan-out (F-21/
+// R-236), once again here, unconditionally. A real Playwright trace showed 5
+// concurrent GETs within 626ms of a /scope/new mount from this and other
+// top-level reads, contributing to 7-9+ concurrent withTenantContext
+// connections against ct's 5-connection pool and a real 504.
+//
+// shellPayload()/mockShellFetch() below stand in for a real GET /api/shell
+// response -- minimal, but real enough for readJsonWithRetry() (shell-store's
+// own fetch wrapper) to accept it, matching shell-store.test.ts's own
+// payload() convention.
+function shellPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    organization: { id: "o1", name: "Skyline Builders", slug: "skyline", country: "IN" },
+    role: "member",
+    email: "a@example.com",
+    userId: "u1",
+    projects: [],
+    notifications: [],
+    unreadCount: 0,
+    pillUsage: [],
+    recentChains: [],
+    history: [],
+    isNewUser: false,
+    capabilityTree: [constructionNode],
+    currencies: [],
+    vendors: [],
+    fetchedAt: Date.now(),
+    errors: {},
+    ...overrides,
+  };
+}
+
+describe("F-034/F-036: fetchCapabilityTree does not duplicate the shell's own /api/shell fetch", () => {
+  test("VERIFY THE BUG WOULD BE CAUGHT: with no shell data at all, fetchCapabilityTree falls back to a direct fetch (baseline -- this path is unchanged by the fix)", async () => {
+    const called: string[] = [];
+    global.fetch = mock(async (url: string) => {
+      called.push(url);
+      return jsonResponse({ nodes: [constructionNode] });
+    }) as unknown as typeof fetch;
+
+    const tree = await fetchCapabilityTree();
+    expect(tree.map((n) => n.key)).toEqual([CONSTRUCTION_CHAIN_MODE_KEY]);
+    expect(called).toEqual(["/api/capability-tree"]);
+  });
+
+  test("a FRESH shell (already populated by /api/shell) is used directly -- zero calls to /api/capability-tree", async () => {
+    global.fetch = mock(async () =>
+      new Response(JSON.stringify(shellPayload()), { status: 200, headers: { "content-type": "application/json" } })
+    ) as unknown as typeof fetch;
+    await loadShell();
+    expect(getShellSnapshot().data?.capabilityTree).toEqual([constructionNode]);
+
+    const called: string[] = [];
+    global.fetch = mock(async (url: string) => {
+      called.push(url);
+      throw new Error("fetchCapabilityTree must not have called this at all");
+    }) as unknown as typeof fetch;
+
+    const tree = await fetchCapabilityTree();
+    expect(tree.map((n) => n.key)).toEqual([CONSTRUCTION_CHAIN_MODE_KEY]);
+    expect(called).toEqual([]);
+  });
+
+  test("an IN-FLIGHT shell load (M24Shell's own /api/shell call, already started) is JOINED -- fetchCapabilityTree waits on it instead of firing a second request", async () => {
+    let shellCalls = 0;
+    let resolveShell!: (body: unknown) => void;
+    global.fetch = mock(async () => {
+      shellCalls += 1;
+      return new Promise<Response>((resolve) => {
+        resolveShell = (body: unknown) =>
+          resolve(new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }));
+      });
+    }) as unknown as typeof fetch;
+
+    // Simulates M24Shell's useShell() effect firing first on mount (React
+    // commits a descendant's effects before its ancestor's -- M24Shell sits
+    // BELOW VeriChatProvider in app/(app)/layout.tsx, see that file's own
+    // header comment) and starting the ONE shell request before
+    // fetchCapabilityTree() runs.
+    const shellLoadPromise = loadShell();
+
+    const treePromise = fetchCapabilityTree();
+    // Let the join's own microtasks (getInFlightShellLoad -> await it) run
+    // before the shell request resolves, proving fetchCapabilityTree is
+    // actually waiting on the SAME request rather than having already fired
+    // (and possibly resolved) its own.
+    await Promise.resolve();
+    expect(shellCalls).toBe(1);
+
+    resolveShell(shellPayload());
+    await shellLoadPromise;
+    const tree = await treePromise;
+
+    expect(tree.map((n) => n.key)).toEqual([CONSTRUCTION_CHAIN_MODE_KEY]);
+    // The whole point: ONE real network call total for this mount, not two.
+    expect(shellCalls).toBe(1);
   });
 });
