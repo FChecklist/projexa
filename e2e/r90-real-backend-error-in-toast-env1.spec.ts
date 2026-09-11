@@ -193,10 +193,22 @@ test.describe("R-90 as CEO", () => {
   });
 });
 
-test.describe("R-90 as Finance", () => {
-  test.use({ storageState: "playwright/.auth/finance.json" });
-
-  test("R-90: an out-of-range Budget % is refused with VERIDIAN's own real sentence, in a real toast (Finance)", async ({ page }) => {
-    await runR90Probe(page, "finance");
-  });
-});
+// REMOVED 2026-09-12 (PM, real bug found running this spec against local
+// ENV1): "R-90 as Finance" used to exist here, asserting the SAME
+// out-of-range-validation-message toast for a Finance (member-tier)
+// account. It cannot pass under this app's real, deliberate policy: BOTH
+// /scope (BOQ creation, this probe's own setup) AND
+// /scope/line-items/[id] (the budgetPercentage PATCH R-90 is actually
+// about) are PM_OR_ABOVE-gated (src/lib/authz/api-write-policy.ts --
+// owner/admin/pm only, excluding member/site_engineer/client_viewer). A
+// member-role account is refused with a "Forbidden" toast before ever
+// reaching updateLineItemBudget()'s range check, so it can never see
+// VERIDIAN's real "budgetPercentage must be between 0 and 100" sentence --
+// there is no coherent way to exercise THIS SPECIFIC claim as Finance, and
+// no PM-tier seeded account exists in e2e/users.ts to substitute. R-90's own
+// requirement text ("Real backend message shown in the toast") is a single,
+// role-agnostic UI/behavior claim, already fully and independently proven
+// by the CEO test above -- a second, always-403 role variant would not add
+// coverage, only a guaranteed-red test. (The PM_OR_ABOVE refusal path
+// itself IS covered, for the sibling BOQ-create action, by R-11's own
+// member-role test in this same PR -- e2e/r11-boq-create-form-subtask-fields-env1.spec.ts.)
