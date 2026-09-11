@@ -153,11 +153,41 @@ async function assertSubtaskPersisted(page: import("@playwright/test").Page, boq
   expect(Number(sub!.quantity), "the sub-task's derived quantity must equal the root's quantity, unscaled").toBe(100);
 }
 
+// ADDED 2026-09-11 (PM ruling, R83 X-06/X-07): the API re-read above proves
+// the fields reached the server, but per X-06/X-07 a UI-facing requirement
+// needs the ACTUAL DISPLAYED value re-read from the UI, not an API-call
+// substitute -- an API-only check cannot catch a real display bug (correct
+// data, wrong render). Confirmed the real Object Page markup by direct read
+// (src/components/ScopeObjectClient.tsx:555-559): a line's own itemCode
+// renders as `<span class="font-mono text-[10px]">{itemCode}</span>` inside
+// its row's first cell, and a sub-task's own breakdownPercentage renders as
+// literal "{pct}% of parent" text in that same cell, alongside the real
+// `pl-8` indentation class already used as R-31's own signal that a row is
+// understood as a child. Same navigate-fresh-and-read-real-DOM pattern as
+// r15-r30-r31-boq-view-env1.spec.ts.
+async function assertSubtaskVisibleOnObjectPage(page: import("@playwright/test").Page, boqId: string) {
+  await page.goto(`/scope/${boqId}`, { waitUntil: "networkidle" });
+
+  // Item Code: the root's own row shows "R11-ROOT", un-indented.
+  const rootCell = page.locator("td", { hasText: "R11-ROOT" }).first();
+  await expect(rootCell, "the root line's own real Item Code must be visible on the real Object Page").toBeVisible();
+  await expect(page.locator("td.pl-8", { hasText: "R11-ROOT" }), "the root line must NOT carry the sub-task-only pl-8 indentation class").toHaveCount(0);
+
+  // Item Code + Breakdown %, sub-task's own row: pl-8 indentation (proves
+  // the Parent Item Code resolved -- an unlinked line would not render as a
+  // child at all) plus the real "40% of parent" label sourced from the
+  // real, persisted breakdownPercentage, not a hand-typed assumption.
+  const subCell = page.locator("td.pl-8", { hasText: "R11-SUB" });
+  await expect(subCell, "the sub-task's own real Item Code, rendered as a child row (pl-8), must be visible").toBeVisible();
+  await expect(subCell, "the sub-task's real, persisted Breakdown % must display as '40% of parent'").toContainText("40% of parent");
+}
+
 test.describe("R-11: sub-task fields (Item Code / Parent Item Code / Breakdown %) are enterable in the real create form", () => {
   test.use({ storageState: "playwright/.auth/ceo.json", navigationTimeout: 90_000, actionTimeout: 45_000 });
 
-  test("as CEO (owner role): fill and save a sub-task line, re-read to confirm persistence", async ({ page }) => {
+  test("as CEO (owner role): fill and save a sub-task line, re-read via a fresh page load AND the API to confirm persistence", async ({ page }) => {
     const boqId = await createBoqWithSubtaskViaForm(page, `R-11 spec CEO ${Date.now()}`);
+    await assertSubtaskVisibleOnObjectPage(page, boqId);
     await assertSubtaskPersisted(page, boqId);
   });
 });
@@ -165,8 +195,9 @@ test.describe("R-11: sub-task fields (Item Code / Parent Item Code / Breakdown %
 test.describe("R-11 (member role): the same form is reachable and usable by a non-owner account", () => {
   test.use({ storageState: "playwright/.auth/finance.json", navigationTimeout: 90_000, actionTimeout: 45_000 });
 
-  test("as Finance (member role): fill and save a sub-task line, re-read to confirm persistence", async ({ page }) => {
+  test("as Finance (member role): fill and save a sub-task line, re-read via a fresh page load AND the API to confirm persistence", async ({ page }) => {
     const boqId = await createBoqWithSubtaskViaForm(page, `R-11 spec Finance ${Date.now()}`);
+    await assertSubtaskVisibleOnObjectPage(page, boqId);
     await assertSubtaskPersisted(page, boqId);
   });
 });
