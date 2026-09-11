@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, request as pwRequest, type Page } from "@playwright/test";
 
 // R-30 (BOQ): "Sumeet can SEE line items of a BOQ".
 // R-31 (BOQ): "Sub-task rows indented and labelled % of parent".
@@ -101,32 +101,62 @@ function pctPattern(value: number): string {
   return `${value}(\\.\\d+)?`;
 }
 
+// CORRECTED 2026-09-12 (PM, real bug found running this spec against local
+// ENV1): createAndViewBoq() used to POST /api/scope through `page.request`,
+// which carries whichever role's storageState the calling describe block
+// set -- fine for the CEO block, but the Finance block authenticates as a
+// PROJEXA-local "member" (e2e/users.ts), and src/lib/authz/api-write-policy.ts
+// deliberately gates /scope to PM_OR_ABOVE (owner/admin/pm only -- see
+// roles.ts). Every Finance-role run of this spec was refused 403 at its own
+// SETUP step, before the real thing R-15/R-30/R-31 are about (VIEWING a
+// BOQ's line items) was ever exercised -- same root cause as the R-11 fix
+// in this same PR, confirmed by reading api-write-policy.ts/roles.ts
+// directly. GET is never gated by this policy (checkApiWriteAccess only
+// checks MUTATING_METHODS), so viewing was never actually the problem.
+// Fix: always create the fixture BOQ via a CEO-authenticated request
+// context (creation rights aren't what these three requirements are about),
+// then view it through `page`, whichever role's storageState the describe
+// block set -- so the Finance block genuinely tests Finance's VIEW access,
+// not Finance's (deliberately absent) write access.
+const CEO_STORAGE_STATE = "playwright/.auth/ceo.json";
+
 /**
  * Creates a real, isolated BOQ (one root line + two weighted sub-tasks) via
- * real authenticated API calls, then asserts R-30/R-31/R-15 against the real
- * rendered Object Page -- shared between the CEO and Finance role blocks
- * below so each one exercises the identical real scenario end to end.
+ * a real authenticated API call made as CEO (creation is PM_OR_ABOVE-gated;
+ * these requirements are about viewing, not creating), then asserts
+ * R-30/R-31/R-15 against the real rendered Object Page, viewed through
+ * `page` -- shared between the CEO and Finance role blocks below so each
+ * one exercises the identical real scenario end to end.
  */
 async function createAndViewBoq(page: Page, tag: string) {
   const rootDesc = `R-15/R-30/R-31 spec: root line (${tag})`;
   const sub1Desc = `R-15/R-30/R-31 spec: sub-task Alpha 40% (${tag})`;
   const sub2Desc = `R-15/R-30/R-31 spec: sub-task Bravo 25% (${tag})`;
 
-  const createRes = await page.request.post("/api/scope", {
-    data: {
-      projectId: PROJECT_ID,
-      title: `R-15-R30-R31 env1 spec (${tag}) ${Date.now()}`,
-      lineItems: [
-        { itemCode: `R15${tag}-ROOT`, description: rootDesc, unit: "sqm", quantity: 20, rate: 1000 },
-        { itemCode: `R15${tag}-SUBA`, description: sub1Desc, unit: "sqm", quantity: 8, rate: 1000, parentItemCode: `R15${tag}-ROOT`, breakdownPercentage: 40 },
-        { itemCode: `R15${tag}-SUBB`, description: sub2Desc, unit: "sqm", quantity: 5, rate: 1000, parentItemCode: `R15${tag}-ROOT`, breakdownPercentage: 25 },
-      ],
-    },
+  const creatorContext = await pwRequest.newContext({
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || "https://projexa-ai.com",
+    storageState: CEO_STORAGE_STATE,
   });
-  expect(createRes.ok(), `BOQ creation must succeed for this spec's own ${tag} setup`).toBe(true);
-  const created = await createRes.json();
-  const boqId: string = created.id;
-  expect(boqId, "the real created BOQ must come back with a real id").toBeTruthy();
+  let boqId: string;
+  try {
+    const createRes = await creatorContext.post("/api/scope", {
+      data: {
+        projectId: PROJECT_ID,
+        title: `R-15-R30-R31 env1 spec (${tag}) ${Date.now()}`,
+        lineItems: [
+          { itemCode: `R15${tag}-ROOT`, description: rootDesc, unit: "sqm", quantity: 20, rate: 1000 },
+          { itemCode: `R15${tag}-SUBA`, description: sub1Desc, unit: "sqm", quantity: 8, rate: 1000, parentItemCode: `R15${tag}-ROOT`, breakdownPercentage: 40 },
+          { itemCode: `R15${tag}-SUBB`, description: sub2Desc, unit: "sqm", quantity: 5, rate: 1000, parentItemCode: `R15${tag}-ROOT`, breakdownPercentage: 25 },
+        ],
+      },
+    });
+    expect(createRes.ok(), `BOQ creation (as CEO, PM_OR_ABOVE-gated) must succeed for this spec's own ${tag} setup`).toBe(true);
+    const created = await createRes.json();
+    boqId = created.id;
+    expect(boqId, "the real created BOQ must come back with a real id").toBeTruthy();
+  } finally {
+    await creatorContext.dispose();
+  }
 
   // The real user action under test: open the real BOQ Object Page, the same
   // route a click into this BOQ from /scope would land on.
