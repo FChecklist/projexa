@@ -33,8 +33,17 @@ mock.module("./server", () => ({
       return {
         select: () => ({
           eq: () => ({
-            limit: () => ({
-              maybeSingle: async () => membershipResult,
+            // R81_F03: order() added between eq() and limit() -- the real
+            // fetchMembership() now asks for created_at ASC (see auth-guard.ts)
+            // so a multi-org user's row choice is deterministic. This
+            // fixture only ever has one candidate row per test, so there is
+            // nothing to actually sort -- it only has to exist in the chain
+            // without throwing, same reasoning as the sibling fake in
+            // auth-guard.test.ts.
+            order: () => ({
+              limit: () => ({
+                maybeSingle: async () => membershipResult,
+              }),
             }),
           }),
         }),

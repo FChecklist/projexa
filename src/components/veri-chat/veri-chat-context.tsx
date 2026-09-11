@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { createVeriChatContext, FIXED_MODES } from "@fchecklist/veridian-ui-kit/context";
 import type { CapabilityNode, CapabilityInputField, PathSegment } from "@fchecklist/veridian-ui-kit/context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { getFreshShellCapabilityTree, getInFlightShellLoad } from "@/lib/shell-store";
 
 export type { CapabilityNode, CapabilityInputField, PathSegment };
 export { FIXED_MODES };
@@ -153,6 +154,53 @@ export function mergeChainTrees(
   return [...construction, ...pruneUnwired(moduleChain)];
 }
 
+// F-034/F-036. This provider mounts (via the shared factory's own
+// VeriChatProvider, see create-veri-chat-context.tsx) as the OUTERMOST
+// wrapper in app/(app)/layout.tsx, above M24Shell -- which means its
+// fetch-on-mount effect and M24Shell's own GET /api/shell (F-21/R-236's
+// bootstrap, which already asks ct for this exact same construction tree as
+// part of its own fan-out) fire within the same page mount. Before this fix,
+// they were two fully independent fetches: a real Playwright trace showed 5
+// concurrent GETs within 626ms of a single /scope/new mount, contributing to
+// 7-9+ concurrent withTenantContext connections against ct's 5-connection
+// pool and a real 504.
+//
+// fetchConstructionTree() below closes the gap the ONLY way that is safe
+// without touching F-19 (M24Shell.tsx's "the shell yields to the form on a
+// create route" deferral, which relies on nothing else force-starting a
+// shell load early): it READS the shell store, and JOINS an already-started
+// shell request, but never STARTS one itself.
+//   1. the shell already holds a FRESH tree this session -- zero network
+//      (the common case on every route after the first page of a session).
+//   2. a shell bootstrap is ALREADY in flight -- on every non-create route,
+//      React commits M24Shell's own mount effect (a descendant of this
+//      provider) before this provider's, so `useShell()`'s loadShell() call
+//      has already set the in-flight promise by the time this runs; join it
+//      and reuse its answer instead of firing a second request for the same
+//      data.
+//   3. neither -- fetch /api/capability-tree directly, exactly as before
+//      this fix. This is the unavoidable, unchanged path on a COLD load of a
+//      create route (F-19 defers M24Shell's own shell call there until an
+//      idle callback/2s timeout, so nothing is warm or in flight yet at
+//      mount) -- deliberately left as-is rather than risking F-19's
+//      behavior to also cover that narrower case.
+async function fetchConstructionTree(): Promise<CapabilityNode[]> {
+  const cached = getFreshShellCapabilityTree();
+  if (cached) return cached as CapabilityNode[];
+
+  const shellLoad = getInFlightShellLoad();
+  if (shellLoad) {
+    await shellLoad;
+    const afterJoin = getFreshShellCapabilityTree();
+    if (afterJoin) return afterJoin as CapabilityNode[];
+    // The joined bootstrap didn't come back with a usable tree (e.g. its own
+    // capabilityTree lookup failed) -- fall through to a direct fetch rather
+    // than silently returning nothing, matching R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01's rule below.
+  }
+
+  return fetchJsonNodes("/api/capability-tree");
+}
+
 // Fetches PROJEXA's own construction tree, plus -- only when the flag above is
 // on -- the full VERIDIAN module chain, in parallel. The shared factory's
 // `tree` is just "every top-level chain mode this composer offers," so this is
@@ -161,7 +209,7 @@ export function mergeChainTrees(
 // Neither fetch failing takes the other down.
 export async function fetchCapabilityTree(): Promise<CapabilityNode[]> {
   const [construction, moduleChain] = await Promise.all([
-    fetchJsonNodes("/api/capability-tree"),
+    fetchConstructionTree(),
     SHOW_UNDISPATCHABLE_MODULE_CHAINS ? fetchJsonNodes("/api/module-chain") : Promise.resolve<CapabilityNode[]>([]),
   ]);
   return mergeChainTrees(construction, moduleChain);

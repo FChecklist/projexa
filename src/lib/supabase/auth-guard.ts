@@ -120,11 +120,29 @@ export async function requireAuth(): Promise<AuthContext> {
 
   const user: AuthUser = { id: data.claims.sub as string, email: (data.claims.email as string | undefined) ?? null };
 
+  // R81_F03: a multi-org user has more than one row here (memberships has a
+  // real UNIQUE(user_id, organization_id), not a per-user one), and without
+  // an ORDER BY, "whichever row Postgres happens to return first" is
+  // genuinely undefined -- not "the newest" or "the oldest", just whatever a
+  // given query plan produces. middleware.ts's own write-role lookup below
+  // makes this SAME unordered call independently, so a multi-org user could
+  // get gated by ONE org's role here and a DIFFERENT org's role there,
+  // disagreeing with each other on the same request. Fixed to the oldest
+  // membership (created_at ASC) -- a stable "home org" convention, chosen
+  // over newest because it does not change out from under an existing
+  // session the moment a user is invited into a second org. This does NOT
+  // add "pick your active org" (no UI, no stored preference exists for
+  // that -- a real, separate feature) -- it only makes the CURRENT
+  // undefined-first-row behavior deterministic and, critically, makes this
+  // function and middleware.ts's lookup agree with each other. MEASURED
+  // (R81): every seeded E2E account has exactly one membership today, so
+  // this changes nothing for any account that exists right now.
   const fetchMembership = () =>
     supabase
       .from("memberships")
       .select("organization_id, role")
       .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
 
