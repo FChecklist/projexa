@@ -130,7 +130,23 @@ test.describe("R-B2: real click-through BOQ creation and the Daily Entry BOQ-lin
     // see header note). cuid-shaped id (r11's own hard-won fix: NOT a UUID,
     // and the pattern must require a minimum length so it can't match the
     // literal "new" segment of the pre-save URL).
-    await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 30_000 });
+    //
+    // WIDENED 2026-09-12 (PM, real flakiness found running this spec against
+    // local ENV1, same class as r11-boq-create-form-subtask-fields-env1.spec.ts's
+    // own documented 90_000/45_000 navigationTimeout/actionTimeout widening):
+    // test.slow() above triples Playwright's OWN internal timeouts, but does
+    // NOT extend an explicit `{ timeout }` passed directly to waitForURL --
+    // that stays hardcoded regardless. Confirmed via compliance-tracker's dev
+    // server log this was never a real save failure: both POSTs /api/scope
+    // returned 201 every time, and a same-run GET /api/v1/projexa/scope/{id}
+    // was observed taking 8.0s server-side under this machine's real, elevated
+    // local load (RAM pressure from the same E2E session this spec itself
+    // documents needing test.slow() for) -- this test creates TWO full BOQs
+    // via real click-through form-fill, heavier than its siblings, so it is
+    // the one most likely to graze a 30s ceiling under load. Widened to match
+    // this file's own test.slow()-implied budget rather than the pre-widening
+    // default.
+    await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 60_000 });
     const boqId = page.url().match(/\/scope\/([a-z0-9]{10,})/)?.[1];
     expect(boqId, "the URL after save must carry the real new BOQ id (not the literal 'new')").toBeTruthy();
     expect(boqId, "the extracted id must not be the create screen's own path segment").not.toBe("new");
@@ -154,10 +170,15 @@ test.describe("R-B2: real click-through BOQ creation and the Daily Entry BOQ-lin
     // positive success (data accepted client-side, never actually saved)
     // could not survive.
     await page.goto(`/scope?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" });
+    // WIDENED 2026-09-12 (PM, same reasoning as this file's waitForURL widen
+    // above): confirmed via compliance-tracker's dev server log the real
+    // create (201) and the real list GET (200) both succeeded server-side --
+    // 15s was simply tight for a full hard-reload + list render under this
+    // machine's real, elevated local load, not a persistence failure.
     await expect(
       page.getByRole("link", { name: title, exact: true }),
       "the newly created BOQ's own real title must appear as a real link row in the list after a hard reload -- proving the save genuinely persisted, not just a client-side illusion"
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test("TC-30: the Daily Entry BOQ-line dropdown offers whichever BOQ is currently selected's own real lines, not a locked-in project-wide set", async ({ page }) => {
