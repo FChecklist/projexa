@@ -177,6 +177,119 @@ jobs:
             perf/perf-results.json
             perf/perf-results.md
 
+  e2e-env1:
+    # PM/W-PROD R81 follow-up (2026-09-11): closes a real gap the `perf` job
+    # above does not touch. Env 1 (this repo's own server on :3100 pointed at
+    # a LOCAL compliance-tracker on :3000, per e2e/r81-d603-chain.spec.ts's
+    # own header) is the environment R-80/R-81/R-82's real, 13/13-locally-
+    # passing specs actually target -- but nothing in this file ever started
+    # it, so those specs have never once run in CI. `perf` doesn't fix this:
+    # it starts PROJEXA alone against production creds for a latency budget,
+    # never a local compliance-tracker, and it isn't gated for a build-
+    # environment reason PROJEXA controls -- it's gated because the owner has
+    # not funded/enabled it yet.
+    #
+    # WHY THIS JOB ALSO STARTS OUT GATED, deliberately diverging from a plain
+    # "run on every PR" ask: unlike `perf` (which reuses creds that already
+    # exist), this job needs FOUR SECRETS THAT DO NOT YET EXIST IN THIS REPO
+    # -- CT_DATABASE_URL / CT_SUPABASE_URL / CT_SUPABASE_ANON_KEY /
+    # CT_SUPABASE_SERVICE_ROLE_KEY, compliance-tracker's own live Supabase
+    # project (pcrjmlpuqsbocqfwoxod) creds, which this repo's secrets do not
+    # currently hold under any name (confirmed: only PERF_* and
+    # CLAUDE_CODE_OAUTH_TOKEN exist here today). Landing this unconditional
+    # would either fail every PR (missing secrets) or -- once someone adds
+    # them -- silently start running two real servers against the live
+    # production database on every single PR with no owner decision in
+    # between. `perf`'s own header already sets the precedent for exactly
+    # this situation (a real capability gated behind a repository VARIABLE
+    # until the owner deliberately turns it on): same shape, applied here.
+    # Turn on with Settings > Variables > E2E_ENV1_ENABLED = true, once
+    # Settings > Secrets has the four CT_* values above (copy them from
+    # compliance-tracker's own already-live `DATABASE_URL` /
+    # `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
+    # `SUPABASE_SERVICE_ROLE_KEY` secrets -- same project, this repo just has
+    # no copy of them yet).
+    #
+    # SCOPE, DELIBERATELY NARROW: only e2e/r81-d603-chain.spec.ts, not the
+    # whole e2e/ directory. That spec is documented READ-ONLY BY
+    # CONSTRUCTION in its own header; the rest of e2e/ (Batch B/C) is not
+    # audited for that property here and must not be swept in by accident
+    # just because this job exists.
+    name: E2E (Env 1)
+    if: ${{ vars.E2E_ENV1_ENABLED == 'true' }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { path: projexa }
+      # Public repo (FChecklist/compliance-tracker, made public 2026-08-29)
+      # -- no token needed for a read-only checkout.
+      - uses: actions/checkout@v7
+        with: { repository: FChecklist/compliance-tracker, path: ct }
+      - uses: oven-sh/setup-bun@v2
+      - name: Install both apps
+        run: |
+          cd "$GITHUB_WORKSPACE/ct" && bun install --frozen-lockfile
+          cd "$GITHUB_WORKSPACE/projexa" && bun install --frozen-lockfile
+      - name: Start compliance-tracker on :3000
+        # Same webServer command compliance-tracker's own playwright.config.ts
+        # uses for its e2e job -- `next dev`, not a full production build,
+        # for the same OOM-avoidance reason documented in that repo's
+        # CLAUDE.md ("both build and typecheck OOM under Node's default
+        # heap on an 8GB machine" -- this runner is bigger, but there is no
+        # reason to pay a ~2m23s build here when dev-mode boot is what the
+        # spec's own header was written and verified against).
+        run: |
+          cd "$GITHUB_WORKSPACE/ct"
+          nohup bash -c "node scripts/generate-protected-routes.mjs && npx next dev -p 3000" > /tmp/ct.log 2>&1 &
+          disown
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/health > /dev/null 2>&1 && break
+            sleep 5
+          done
+        env:
+          DATABASE_URL: ${{ secrets.CT_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.CT_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CT_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CT_SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Start PROJEXA on :3100 (pointed at the local compliance-tracker)
+        run: |
+          cd "$GITHUB_WORKSPACE/projexa"
+          nohup bash -c "npx next dev -p 3100" > /tmp/projexa.log 2>&1 &
+          disown
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3100/login > /dev/null 2>&1 && break
+            sleep 5
+          done
+          if ! curl -sf http://localhost:3100/login > /dev/null 2>&1; then
+            echo "PROJEXA never became reachable on :3100" >&2
+            exit 1
+          fi
+        env:
+          # This is the one line that actually turns "Env 1" on: without it
+          # veridian-client.ts falls back to the paused production Vercel URL.
+          VERIDIAN_API_BASE_URL: http://localhost:3000/api/v1/projexa
+          DATABASE_URL: ${{ secrets.PERF_DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PERF_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PERF_SUPABASE_ANON_KEY }}
+      - run: cd "$GITHUB_WORKSPACE/projexa" && bunx playwright install --with-deps chromium
+      - name: Run the Env-1 spec
+        run: cd "$GITHUB_WORKSPACE/projexa" && bunx playwright test e2e/r81-d603-chain.spec.ts
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3100
+      - name: Server logs
+        if: failure()
+        run: |
+          echo "--- compliance-tracker (:3000) ---"; cat /tmp/ct.log || true
+          echo "--- PROJEXA (:3100) ---"; cat /tmp/projexa.log || true
+      - name: Keep the trace/report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-env1-report
+          path: projexa/playwright-report/
+          if-no-files-found: ignore
+
   secret-scan:
     # R60 T9: replaces GitHub's own secret scanning/push protection, which
     # was auto-disabled when this repo went private (GitHub Free has
