@@ -60,11 +60,25 @@ test("R-23 / R-C13: reducing the quantity of a progressed BOQ line is blocked, a
   const progressedLine = (created.lineItems as Array<{ id: string; itemCode: string }>).find((l) => l.itemCode === "R23C13-PROGRESSED");
   expect(progressedLine, "the progressed line must come back from the real create response, not be assumed").toBeTruthy();
 
+  // REAL BUG FOUND AND FIXED IN THIS TEST (not the product), 2026-09-11:
+  // same fix as r22-boq-revision-remove-progressed-line-blocked-env1.spec.ts
+  // -- see that file's own comment for the full diagnosis (a real Env-1 run
+  // returned 400 {"error":"activityId is required"} for the boqId-only
+  // shape this spec originally used).
+  const activityRes = await page.request.post("/api/work-progress/activities", {
+    data: { projectId: PROJECT_ID, name: `R23-C13 spec activity ${Date.now()}` },
+  });
+  expect(activityRes.ok(), "activity creation must succeed for this spec's own setup").toBe(true);
+  const activityBody = await activityRes.json();
+  const activityId: string | undefined = activityBody.id ?? activityBody.activity?.id;
+  expect(activityId, "the real activity id must come back from the create response").toBeTruthy();
+
   const progressRes = await page.request.post("/api/work-progress", {
     data: {
       projectId: PROJECT_ID,
       boqId,
       boqLineItemId: progressedLine!.id,
+      activityId,
       entryDate: new Date().toISOString().slice(0, 10),
       quantityDone: 45,
       percentComplete: 45,

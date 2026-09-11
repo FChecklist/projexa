@@ -63,6 +63,26 @@ test("R-22: removing a BOQ line already recorded as progressed on site is blocke
   const progressedLine = (created.lineItems as Array<{ id: string; itemCode: string }>).find((l) => l.itemCode === "R22-PROGRESSED");
   expect(progressedLine, "the progressed line must come back from the real create response, not be assumed").toBeTruthy();
 
+  // REAL BUG FOUND AND FIXED IN THIS TEST (not the product), 2026-09-11:
+  // this spec originally posted {projectId, boqId, boqLineItemId, ...}
+  // WITHOUT activityId, on the assumption (never actually run until now)
+  // that boqId alone was sufficient -- r41-r42-r43's spec had already
+  // flagged this exact ambiguity by name (its own "PAYLOAD AMBIGUITY" note,
+  // citing this file's old shape as one of two candidate payloads) but
+  // could not settle it from source alone. A real run against Env-1 settled
+  // it: POST /api/work-progress without activityId returns a real 400,
+  // {"error":"activityId is required","code":null} -- confirmed by a
+  // temporary debug log of the real response body, removed after diagnosis.
+  // Fixed the same way r41-r42-r43 already does: create a real activity
+  // first and send both activityId and boqId.
+  const activityRes = await page.request.post("/api/work-progress/activities", {
+    data: { projectId: PROJECT_ID, name: `R22 spec activity ${Date.now()}` },
+  });
+  expect(activityRes.ok(), "activity creation must succeed for this spec's own setup").toBe(true);
+  const activityBody = await activityRes.json();
+  const activityId: string | undefined = activityBody.id ?? activityBody.activity?.id;
+  expect(activityId, "the real activity id must come back from the create response").toBeTruthy();
+
   // Real progress entry against that exact line, through the real API a
   // Daily Entry form submission hits.
   const progressRes = await page.request.post("/api/work-progress", {
@@ -70,6 +90,7 @@ test("R-22: removing a BOQ line already recorded as progressed on site is blocke
       projectId: PROJECT_ID,
       boqId,
       boqLineItemId: progressedLine!.id,
+      activityId,
       entryDate: new Date().toISOString().slice(0, 10),
       quantityDone: 40,
       percentComplete: 40,
