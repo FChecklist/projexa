@@ -241,6 +241,25 @@ test.describe("R-B2: real click-through BOQ creation and the Daily Entry BOQ-lin
       await lineCombobox.fill(query);
       const listbox = page.getByRole("listbox", { name: dropdownLabel });
       await listbox.waitFor({ state: "visible", timeout: 10_000 });
+      // FIXED 2026-09-12 (real bug found running this spec for real against
+      // Env-1): SearchSelect.tsx renders the <ul role="listbox"> the instant
+      // it opens (onFocus/onChange), showing a "Searching…" placeholder li
+      // while its own 200ms-debounced /api/scope/lines fetch is still in
+      // flight (SearchSelect.tsx L167, BoqLinePicker.tsx L48-64) -- the
+      // listbox being VISIBLE is not the same claim as its real results
+      // having arrived. `waitFor({ state: "visible" })` above only proves
+      // the former, so a plain, immediate `.innerText()` genuinely raced the
+      // debounce+fetch and could capture "Searching…" instead of the real
+      // options -- confirmed directly: an isolated repro of this exact
+      // click/fill/read sequence captured the correct BOQ-scoped option only
+      // once an explicit extra wait was inserted before reading, and the
+      // real network responses (logged via page.on("response")) show the
+      // correct, BOQ-scoped data arriving anywhere from ~50ms to several
+      // seconds after the listbox first becomes visible. Wait for the
+      // loading placeholder to clear before trusting the text -- the real,
+      // falsifiable claim under test (which BOQ's lines are offered) is
+      // unchanged; this only stops reading the list mid-fetch.
+      await expect(listbox.getByText("Searching…"), "the listbox's own loading placeholder must clear before its real options are trusted").toHaveCount(0, { timeout: 10_000 });
       const text = await listbox.innerText();
       await page.keyboard.press("Escape");
       return text.split("\n");
