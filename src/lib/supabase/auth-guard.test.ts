@@ -77,17 +77,25 @@ describe("requireAuth: organizationId resolves only from the caller's OWN member
       from: (table: string) => ({
         select: () => ({
           eq: (column: string, value: string) => ({
-            limit: () => ({
-              maybeSingle: async () => {
-                if (table !== "memberships" || column !== "user_id") {
-                  return { data: null, error: null };
-                }
-                // Only ever look up the row keyed by the EXACT value this
-                // was called with -- proving the real code's own
-                // `.eq("user_id", user.id)` filter, not a hand-substituted
-                // stand-in, is what's under test.
-                return { data: opts.membershipsByUserId[value] ?? null, error: null };
-              },
+            // R81_F03: order() added between eq() and limit() -- the real
+            // code now asks for created_at ASC so a multi-org user's row
+            // choice is deterministic instead of whatever Postgres returns
+            // first. This fixture has at most one row per user id, so the
+            // ordering itself has nothing to sort -- it only has to exist
+            // in the chain without throwing.
+            order: () => ({
+              limit: () => ({
+                maybeSingle: async () => {
+                  if (table !== "memberships" || column !== "user_id") {
+                    return { data: null, error: null };
+                  }
+                  // Only ever look up the row keyed by the EXACT value this
+                  // was called with -- proving the real code's own
+                  // `.eq("user_id", user.id)` filter, not a hand-substituted
+                  // stand-in, is what's under test.
+                  return { data: opts.membershipsByUserId[value] ?? null, error: null };
+                },
+              }),
             }),
           }),
         }),
@@ -170,5 +178,76 @@ describe("requireAuth: organizationId resolves only from the caller's OWN member
     expect(ctx.user).toBeNull();
     expect(ctx.organizationId).toBeNull();
     expect(ctx.response?.status).toBe(401);
+  });
+});
+
+// R81_F03 (D95): a multi-org user used to resolve to "whichever row Postgres
+// returns first" -- genuinely undefined without an ORDER BY, and not
+// something requireAuth() and middleware.ts's own write-gate lookup were
+// guaranteed to agree on since each is an independent query. This fake
+// actually SORTS its rows by created_at the way a real ORDER BY would (a
+// fixture that just returns whatever object-key order JS happened to keep
+// would pass whether or not the real query bothered to ask for that order --
+// this one only agrees with the real query if the real query truly requests
+// ascending order).
+describe("requireAuth: a multi-org user resolves deterministically, not to an arbitrary row (R81_F03)", () => {
+  function fakeMultiOrgSupabase(rows: { organization_id: string; role: string; created_at: string }[]) {
+    let orderCalled = false;
+    let orderColumn: string | null = null;
+    let orderAscending: boolean | null = null;
+    return {
+      client: {
+        auth: {
+          getClaims: async () => ({ data: { claims: { sub: "user-multi", email: "multi@example.com" } }, error: null }),
+        },
+        from: (table: string) => ({
+          select: () => ({
+            eq: (column: string, value: string) => ({
+              order: (col: string, opts: { ascending: boolean }) => {
+                orderCalled = true;
+                orderColumn = col;
+                orderAscending = opts.ascending;
+                const sorted = [...rows].sort((a, b) =>
+                  orderAscending ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)
+                );
+                return {
+                  limit: () => ({
+                    maybeSingle: async () => {
+                      if (table !== "memberships" || column !== "user_id" || value !== "user-multi") {
+                        return { data: null, error: null };
+                      }
+                      return { data: sorted[0] ?? null, error: null };
+                    },
+                  }),
+                };
+              },
+            }),
+          }),
+        }),
+      },
+      getOrderCall: () => ({ orderCalled, orderColumn, orderAscending }),
+    };
+  }
+
+  test("resolves the OLDEST membership row, not the newest or an arbitrary one, and genuinely asks Postgres to sort by created_at ascending", async () => {
+    const fake = fakeMultiOrgSupabase([
+      { organization_id: "org-newest", role: "admin", created_at: "2026-09-10T00:00:00.000Z" },
+      { organization_id: "org-oldest", role: "member", created_at: "2026-01-01T00:00:00.000Z" },
+      { organization_id: "org-middle", role: "pm", created_at: "2026-05-01T00:00:00.000Z" },
+    ]);
+    mock.module("./server", () => ({ createClient: async () => fake.client }));
+
+    const { requireAuth } = await import("./auth-guard");
+    const ctx = await requireAuth();
+
+    expect(ctx.organizationId).toBe("org-oldest");
+    expect(ctx.role).toBe("member");
+    // Not vacuous: prove the real code actually calls .order(), and asks for
+    // ascending created_at specifically -- not descending, not some other
+    // column that happened to sort the same way in this one fixture.
+    const call = fake.getOrderCall();
+    expect(call.orderCalled).toBe(true);
+    expect(call.orderColumn).toBe("created_at");
+    expect(call.orderAscending).toBe(true);
   });
 });

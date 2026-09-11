@@ -167,10 +167,18 @@ export async function middleware(request: NextRequest) {
   // POST/PUT/PATCH/DELETE on /api/*, never for a GET or a page navigation, so
   // the read path this middleware handles is unchanged.
   if (pathname.startsWith("/api/") && MUTATING_METHODS.has(request.method) && userId && supabase) {
+    // R81_F03: ordered the SAME way as auth-guard.ts's requireAuth() (see
+    // that function's own comment for the full reasoning) -- without this,
+    // a multi-org user could be role-gated here against a DIFFERENT org
+    // than requireAuth() resolves for the route handler this same request
+    // reaches next, since neither lookup had any ORDER BY and Postgres does
+    // not guarantee row order without one. created_at ASC in both places is
+    // what makes the two agree, not merely each individually deterministic.
     const { data: membership, error: membershipError } = await supabase
       .from("memberships")
       .select("role")
       .eq("user_id", userId)
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
 
