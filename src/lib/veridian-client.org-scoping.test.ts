@@ -17,7 +17,7 @@
 // authenticate as a different VERIDIAN tenant -- the actual cross-tenant leak
 // this fault row was worried about, even though this particular row's own
 // evidence didn't show one.
-import { describe, test, expect, mock, afterEach } from "bun:test";
+import { describe, test, expect, mock, spyOn, afterEach } from "bun:test";
 
 let lastRequestedOrgId: string | undefined;
 
@@ -84,6 +84,51 @@ describe("getVeridianApiKey: scoped strictly to the requested organizationId", (
 
     const key = await getVeridianApiKey("org-with-no-credentials-row");
     expect(key).toBeNull();
+  });
+
+  // CI incident 2026-09-12 (e2e-env1 job, compliance-tracker PR investigation):
+  // every real occurrence of this function's failure log in that run read as
+  // the generic Drizzle wrapper message ("Failed query: select ... limit $2")
+  // with the actual reason (a Postgres/pooler-level rejection, carried on
+  // `err.cause`) silently dropped -- see veridian-client.ts's own comment on
+  // describeErrorChain(). This proves the fix the opposite way from the
+  // DB-unreachable test above: that test proves the RETURN VALUE contract
+  // (null, never throws); this one proves the LOG carries the real cause a
+  // Drizzle-style wrapped error hides one level down, which is what makes a
+  // failure like this diagnosable from CI/production logs at all.
+  test("logs the underlying cause of a wrapped DB error (e.g. Drizzle's own DrizzleQueryError), not just its generic wrapper message", async () => {
+    mock.module("drizzle-orm", () => ({ eq: (_col: unknown, val: string) => ({ __mockEq: true, val }) }));
+    const realCause = new Error("Tenant or user not found");
+    (realCause as { code?: string }).code = "XX000";
+    const wrapped = new Error('Failed query: select "veridian_api_key" from "veridian_credentials" where "veridian_credentials"."organization_id" = $1 limit $2\nparams: org-x,1');
+    (wrapped as { cause?: unknown }).cause = realCause;
+    mock.module("@/lib/db", () => ({
+      db: {
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              limit: () => Promise.reject(wrapped),
+            }),
+          }),
+        }),
+      },
+      veridianCredentials: { organizationId: "organization_id" },
+    }));
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { getVeridianApiKey } = await import("./veridian-client");
+
+      const key = await getVeridianApiKey("org-x");
+
+      expect(key).toBeNull();
+      const logged = errorSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+      expect(logged).toContain("Failed query");
+      // The part that was previously lost: the real, underlying cause.
+      expect(logged).toContain("Tenant or user not found");
+      expect(logged).toContain("XX000");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 
