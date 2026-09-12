@@ -466,6 +466,40 @@ async function fetchWithTimeout(
   throw lastErr;
 }
 
+// CI incident 2026-09-12 (e2e-env1 job): this catch block used to log only
+// `err.message`, which for a Drizzle/postgres-js failure is JUST the wrapper
+// DrizzleQueryError puts around every failed query -- "Failed query: <sql>"
+// plus a `params:` line -- never the actual reason the connection/query
+// failed. That real reason lives one level down, on `err.cause` (a
+// PostgresError for a query-time rejection, e.g. wrong password/tenant/
+// pooler-cluster routing, or a plain Error with `.code` like ENOTFOUND for a
+// network failure). Every real occurrence of this log line in that CI run
+// therefore read as the same useless "Failed query: select ... limit $2" with
+// no way to tell "wrong password" from "wrong pooler host" from "table
+// missing" apart -- see PROJEXA_DATABASE_URL's own investigation notes.
+// Walks the cause chain (same depth-bounded pattern isConnectionFailure()
+// above already uses) and joins each level's own message/code so the server
+// log carries the whole story. Never returned to a client (this function's
+// contract of "return null, never throw" is unchanged) and never includes
+// the connection string itself -- postgres.js/PostgresError messages carry
+// the Postgres-protocol failure text (and sometimes the host, which is not a
+// credential), never the password.
+function describeErrorChain(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    if (current instanceof Error) {
+      const code = (current as { code?: unknown }).code;
+      parts.push(code ? `${current.message} (code=${String(code)})` : current.message);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(" -- caused by: ");
+}
+
 // Looks up this org's own VERIDIAN API key from public.veridian_credentials.
 // Returns null (never throws) when no row exists or the DB is unreachable --
 // resolveApiKey() below turns either case into a thrown, fail-loud AR-04
@@ -484,7 +518,7 @@ export async function getVeridianApiKey(organizationId: string): Promise<string 
   } catch (err) {
     console.error(
       `[veridian-client] getVeridianApiKey(${organizationId}) failed -- treating as no per-org key found:`,
-      err instanceof Error ? err.message : err
+      err instanceof Error ? describeErrorChain(err) : err
     );
     return null;
   }
