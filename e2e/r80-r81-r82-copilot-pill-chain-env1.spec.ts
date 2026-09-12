@@ -7,6 +7,17 @@ import { DEFAULT_PROJECT } from "./helpers";
 // VERIDIAN_API_BASE_URL points at the live local compliance-tracker
 // (http://localhost:3000/api/v1/projexa), so Environment 1 is complete.
 //
+// RENAMED 2026-09-12 (from r81-d603-chain.spec.ts) -- this file was correct
+// and passing 13/13 locally the whole time, but compliance-tracker's
+// e2e-env1 CI job (ci.yml, #1677) matches spec files by the naming
+// convention "*-env1.spec.ts" (playwright's own CLI treats a bare
+// positional arg as a path substring, not an exact filename), specifically
+// so new same-convention specs get picked up automatically without editing
+// that workflow again. This file's old name did not contain "env1", so it
+// silently never ran in any CI job in either repo, regardless of secrets --
+// found and fixed while root-causing that job's own first real run. No
+// content changed, only the filename; the RENAMED note above documents why.
+//
 // READ-ONLY BY CONSTRUCTION. POST /api/assistant inserts an assistant_queries
 // row (route.ts inserts "pending" before dispatching), and this work order
 // forbids any database write -- so no test here dispatches. R-80's "full pill

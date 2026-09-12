@@ -1,19 +1,22 @@
 import { test, expect, type Page } from "@playwright/test";
 
-// SUPERSEDED 2026-09-11 (PM ruling, this session): e2e/r81-d603-chain.spec.ts
-// (W-ROUTER-authored, on main) is now the CANONICAL closure citation for
-// R-82 -- it reaches R-82 through the REAL live UI mechanisms (the "All
-// modules" PillStrip and /copilot's CopilotClient), while THIS spec's own
-// "NOT HIDDEN" assertion below rests on a premise an Explore agent confirmed
-// false: VeriComposer.tsx is real, compiling code, but DEAD -- it has zero
-// JSX mount sites anywhere in the app, so it is not actually "docked through
-// the shell's own Composer slot on every authenticated page" as the comment
-// below claims. This test still happens to PASS (its own textarea locator
-// coincidentally matches an unrelated real textarea elsewhere on the page),
-// which is exactly the kind of false-premise-but-green result R74-RULING-03
-// exists to catch -- do not cite THIS file as R-82's primary evidence.
-// Kept, not deleted, as secondary/historical context (real API-response
-// assertions below still have some value) -- but r81-d603-chain.spec.ts is
+// SUPERSEDED 2026-09-11 (PM ruling, this session): e2e/r80-r81-r82-copilot-
+// pill-chain-env1.spec.ts (W-ROUTER-authored, on main; renamed 2026-09-12
+// from r81-d603-chain.spec.ts so it actually matches the e2e-env1 CI job's
+// "*-env1.spec.ts" naming convention -- see that file's own RENAMED note)
+// is now the CANONICAL closure citation for R-82 -- it reaches R-82 through
+// the REAL live UI mechanisms (the "All modules" PillStrip and /copilot's
+// CopilotClient), while THIS spec's own "NOT HIDDEN" assertion below rests
+// on a premise an Explore agent confirmed false: VeriComposer.tsx is real,
+// compiling code, but DEAD -- it has zero JSX mount sites anywhere in the
+// app, so it is not actually "docked through the shell's own Composer slot
+// on every authenticated page" as the comment below claims. This test still
+// happens to PASS (its own textarea locator coincidentally matches an
+// unrelated real textarea elsewhere on the page), which is exactly the kind
+// of false-premise-but-green result R74-RULING-03 exists to catch -- do not
+// cite THIS file as R-82's primary evidence. Kept, not deleted, as
+// secondary/historical context (real API-response assertions below still
+// have some value) -- but r80-r81-r82-copilot-pill-chain-env1.spec.ts is
 // the requirement's real closure test going forward.
 //
 // R-82 (Assistant): "Assistant either reaches project data or is hidden".
