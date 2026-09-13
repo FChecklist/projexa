@@ -149,6 +149,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // so a sidebar entry would be meaningless.
   "/",
   "/how-it-works",
+  // Legal/footer-only page (owner-approved Disclaimer, 2026-09-13). Linked
+  // from MarketingFooter on every real page, not from the authenticated
+  // app's sidebar -- same class as /how-it-works above: a real, standalone
+  // page, reachable, just never via AppSidebar.
+  "/disclaimer",
   // The same two marketing pages prerendered in Hindi (R67 J-01). They are
   // never linked from anywhere: middleware.ts REWRITES a Hindi visitor's
   // request for "/" or /how-it-works to them, so the canonical URL a person
