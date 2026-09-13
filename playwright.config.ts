@@ -18,7 +18,16 @@ export default defineConfig({
   // Real live external site -- keep worker count low to avoid hammering it
   // and to keep test output easy to read as a real transcript.
   workers: 3,
-  reporter: process.env.CI ? [["github"], ["list"]] : [["list"], ["json", { outputFile: "e2e-results.json" }]],
+  // "./playwright/redacted-reporter.ts" MUST be first: it redacts
+  // cookie/authorization header values out of every TestError's
+  // message/stack (and patches process.stdout/stderr directly as a
+  // backstop) before the reporters after it ever print anything -- see
+  // that file's own header comment for why (a real, live credential leak
+  // via Playwright's own "Call log" formatting, printed into these PUBLIC
+  // repos' world-readable CI job logs).
+  reporter: process.env.CI
+    ? [["./playwright/redacted-reporter.ts"], ["github"], ["list"]]
+    : [["./playwright/redacted-reporter.ts"], ["list"], ["json", { outputFile: "e2e-results.json" }]],
   // Copilot Discuss tests wait up to 60s for a real LLM round-trip under
   // concurrent load; Batch B's proxy-through-VERIDIAN round trips were also
   // observed needing headroom under real (if elevated) load -- give every
