@@ -39,6 +39,14 @@ import {
   TITLE_REQUIRED_MESSAGE,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
+// R85 Addendum 3 v4 (R-50), Phase 2 -- THE GRID. Self-contained: fetches its
+// own dual-view data (including a real, fresh `?view=customer` preview on
+// demand) rather than reusing this screen's own `rows`/`boq` state, which
+// only ever carries the legacy single-value quantity/rate/amount shape. See
+// that file's own header for the full dual-view contract (E1) this wires
+// into. Rendered unconditionally below, at every BOQ stage/status -- never
+// behind a tab, toggle or collapse (2-01).
+import BoqDualViewGrid from "@/components/BoqDualViewGrid";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
 // "late" | "neutral" -- veridian-ui-kit/screens/types.ts). "submitted"
@@ -515,6 +523,10 @@ export default function ScopeObjectClient({
           </Button>
         )}
       </div>
+
+      {/* R-50, Phase 2: THE GRID -- see BoqDualViewGrid.tsx's own header for
+          the full spec this wires into. Always visible, every stage. */}
+      <BoqDualViewGrid boqId={boqId} />
 
       {rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-ct-muted">This BOQ has no line items.</p>

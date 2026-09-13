@@ -7,12 +7,31 @@ import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { withTiming } from "@/lib/with-timing";
 
+// R85 Addendum 3 v4, Phase 2 (2-09/E1): `view` is forwarded straight through
+// as a query param so BoqDualViewGrid.tsx's INTERNAL<->CUSTOMER switch can
+// request `?view=customer` -- VERIDIAN's own GET /api/v1/construction/boq/
+// [id] treats that as a forced-redaction PREVIEW of the real customer
+// payload (see that route's own comment), not a client-side toggle over
+// data already sent to the browser in internal form. actingUserId/
+// actingUserEmail are forwarded the same way every other per-user-
+// attributed call in this file already does (timesheets/[id]/route.ts) --
+// without them VERIDIAN's cost-visibility gate has no real internal role to
+// check for PROJEXA's shared per-org API key caller, so EVERY read would be
+// redacted regardless of which real PROJEXA user is asking.
 export const GET = withTiming("GET", async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
+  const view = new URL(request.url).searchParams.get("view");
   try {
-    const data = await callVeridian(`/scope/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(
+      `/scope/${encodeURIComponent(id)}${view ? `?view=${encodeURIComponent(view)}` : ""}`,
+      {
+        organizationId: ctx.organizationId!,
+        actingUserId: ctx.user?.id,
+        actingUserEmail: ctx.user?.email ?? undefined,
+      }
+    );
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load BOQ");
