@@ -83,7 +83,18 @@ async function assertColdStartMessageAttributed(page: Page, itemCode: string) {
   // temporarily removing the `kind === "unreachable"` mapping in use-submit.ts
   // (or reverting to a raw err.message passthrough), confirming this
   // assertion goes red on raw "Failed to fetch" text, then reverting.
-  const alert = page.getByRole("alert");
+  //
+  // FIXED 2026-09-13 (env1 CI fix pass, second round): a real Env-1 CI run
+  // (compliance-tracker run 34760945921 / job 103734029724) confirmed the
+  // getByRole("alert") locator is genuinely ambiguous on this app -- Next.js
+  // itself renders a second, always-present `<div role="alert" aria-live=
+  // "assertive" id="__next-route-announcer__">` on every page (its own
+  // route-change screen-reader announcer), which shares the exact role this
+  // test was matching on. Playwright's own strict-mode error surfaced both
+  // real elements directly. Scoped to exclude that specific, well-known
+  // Next.js internal id rather than the real, attributed failure banner this
+  // spec is actually about.
+  const alert = page.locator('[role="alert"]:not(#__next-route-announcer__)');
   await expect(alert, "a network-level failure must surface a real, attributed failure region, not silence").toBeVisible({ timeout: 15_000 });
   const message = (await alert.textContent()) ?? "";
   expect(message, "the user must see use-submit.ts's real, attributed 'unreachable' sentence").toMatch(/request never reached the server/i);
