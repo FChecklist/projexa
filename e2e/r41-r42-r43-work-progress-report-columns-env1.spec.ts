@@ -158,7 +158,21 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       // loads (Total mode, then Balance mode) -- comfortably over the
       // config's default 75s when the real report run is slow (R67 E-28
       // documents up to a real 30s server-side deadline on this exact route).
-      test.setTimeout(150_000);
+      //
+      // WIDENED 2026-09-13 (env1 CI fix pass, second round): this test still
+      // timed out at 150_000 total (compliance-tracker run 34760945921 /
+      // job 103734029724) even after the two explicit waits inside
+      // assertScopeRow() were each widened to 90s -- GET /api/work-progress/
+      // report fans out up to 5 real upstream calls (scope, activities,
+      // progress, roster, then attendance sequentially after), and this same
+      // run's own earlier evidence measured a single such call's real
+      // `upstreamMs` reaching a 29.5s tail -- a bad-luck combination across
+      // that many calls, on top of this shared project's own growing real
+      // BOQ count, can plausibly exceed even a 90s single-wait budget. Raised
+      // the overall ceiling so the individual waits (also raised, see
+      // assertScopeRow()) have real room rather than being capped by this
+      // number first.
+      test.setTimeout(240_000);
 
       // 1. Real BOQ: a root line + one real weighted sub-task.
       const createRes = await page.request.post("/api/scope", {
@@ -280,22 +294,25 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     if ((await boqSelector.count()) > 0) {
       const captionText = await page.getByTestId("wpr-caption").innerText();
       if (!captionText.includes(BOQ_TITLE)) {
-        // WIDENED 2026-09-13 (env1 CI fix pass): this project ("Meridian
-        // Heights", PROJECT_ID above) is shared by every env1 spec in this
-        // suite and accumulates real, never-cleaned-up BOQs across every CI
-        // run -- confirmed live via the Supabase MCP: 240 real rows for this
-        // exact project_id at investigation time. GET /api/work-progress/
-        // report fans out up to 5 real upstream calls to compliance-tracker
-        // (scope -- now listing all 240 BOQs' own line items --, activities,
-        // progress entries, roster, then attendance sequentially after), and
-        // this same CI run's own structured server log (projexa-server.log,
-        // compliance-tracker run 34758516701 / job 103727532493) measured
-        // real per-call `upstreamMs` averaging 4.5s with a 29.5s tail across
-        // 174 samples -- comfortably enough on its own to exceed a bare
-        // default (page-level ~30s) waitForResponse budget, well before this
-        // spec's own real Third-column/report-render work even starts.
+        // WIDENED 2026-09-13 (env1 CI fix pass, then widened AGAIN the same
+        // day after the first pass -- 90s -- still wasn't enough, see the
+        // rootLink comment below for the second run's own evidence): this
+        // project ("Meridian Heights", PROJECT_ID above) is shared by every
+        // env1 spec in this suite and accumulates real, never-cleaned-up
+        // BOQs across every CI run -- confirmed live via the Supabase MCP:
+        // 240 real rows for this exact project_id at investigation time (and
+        // growing every run, including this spec's own and its siblings').
+        // GET /api/work-progress/report fans out up to 5 real upstream calls
+        // to compliance-tracker (scope -- listing every one of that
+        // project's BOQs' own line items --, activities, progress entries,
+        // roster, then attendance sequentially after), and this suite's own
+        // structured server logs have measured real per-call `upstreamMs`
+        // averaging 4.5s with a 29.5s tail -- a bad-luck stack of several
+        // such calls can plausibly exceed even a generous single-wait
+        // budget, well before this spec's own real Third-column/report-
+        // render work even starts.
         await Promise.all([
-          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET", { timeout: 90_000 }),
+          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET", { timeout: 120_000 }),
           (async () => {
             await boqSelector.click();
             await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
@@ -306,14 +323,17 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
 
     const rootLink = page.getByTestId("scope-code-link").filter({ hasText: ROOT_CODE });
     // WIDENED 2026-09-13 (env1 CI fix pass, same reasoning as the
-    // waitForResponse widen just above): the real Env-1 CI failure
-    // (compliance-tracker run 34758516701 / job 103727532493, 2026-09-13)
-    // was this exact assertion timing out at the old 30s ceiling, not a
-    // missing/wrong row -- real, environment-driven backend latency this
-    // test's own 150_000ms test.setTimeout already anticipated for the test
-    // as a whole, but this one explicit `{ timeout }` had not been raised to
-    // match.
-    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 90_000 });
+    // waitForResponse widen just above -- TWICE the same day): the first
+    // widening pass (30s -> 90s) was confirmed still insufficient by a real,
+    // subsequent Env-1 CI run (compliance-tracker run 34760945921 / job
+    // 103734029724) -- this exact assertion timed out again, still not on a
+    // missing/wrong row, on a run where this shared project's real BOQ count
+    // had grown even further (this spec's own sibling r33's fix now also
+    // creates 1-2 extra revisions per run). Raised to 120s, with
+    // test.setTimeout raised to 240_000 alongside it so this explicit
+    // `{ timeout }` has real room inside the test's own overall ceiling
+    // rather than being capped by it first.
+    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 120_000 });
     const rootRow = rootLink.locator("xpath=ancestor::tr[1]");
 
     if (mode === "balance") {

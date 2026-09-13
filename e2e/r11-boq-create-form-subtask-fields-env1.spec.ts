@@ -88,7 +88,20 @@ const PROJECT_ID = "dd486dad-9119-4d9a-a9d9-cf0ee0cc9e04";
 test.slow();
 
 async function createBoqWithSubtaskViaForm(page: import("@playwright/test").Page, title: string) {
-  await page.goto(`/scope/new?projectId=${PROJECT_ID}`);
+  // FIXED 2026-09-13 (env1 CI fix pass, second round): this spec's own
+  // waitForURL kept timing out even after widening to 60s (compliance-
+  // tracker run 34760945921 / job 103734029724) while
+  // rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+  // TC-10 -- the exact same ScopeCreateClient.tsx form-fill-and-save flow,
+  // same shared project, same run -- passed reliably in 30.9s. The one real
+  // difference between the two specs' setup: rb2 navigates to /scope/new
+  // with `{ waitUntil: "networkidle" }`, letting the page's own initial
+  // client-side requests settle before any field is touched; this spec used
+  // the bare default (`waitUntil: "load"`), which resolves as soon as the
+  // initial document and its static resources finish, not once the page's
+  // own post-hydration data fetches are done. Matched to rb2's own
+  // established, working pattern rather than guessing at a new one.
+  await page.goto(`/scope/new?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" });
 
   await page.getByLabel("Title").fill(title);
 
