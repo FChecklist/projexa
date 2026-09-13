@@ -26,6 +26,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   const projectId = encodeURIComponent(id);
+  // R86 (R-33 CI-flake root cause, compliance-tracker categoryBoqAmountsReport's
+  // own comment): optional explicit boqId, so a caller that already knows which
+  // BOQ it means (e.g. a just-created one) doesn't have to out-climb every other
+  // BOQ on a shared project to get it read back. Omitted, behaviour is
+  // unchanged -- whatever's currently active for the project.
+  const url = new URL(request.url);
+  const boqId = url.searchParams.get("boqId");
+  const boqIdParam = boqId ? `&boqId=${encodeURIComponent(boqId)}` : "";
 
   try {
     // `format=legacy` IS THE CONTRACT THIS ROUTE READS. R67 E-32 flipped the
@@ -37,7 +45,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // shape explicitly is the escape hatch E-32 shipped for exactly this; the
     // sibling route below and the route test beside this file pin it.
     const [amounts, progress] = await Promise.all([
-      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?format=legacy&projectId=${projectId}`, {
+      callVeridian<CategoryBoqAmounts>(`/reports/category-boq-amounts?format=legacy&projectId=${projectId}${boqIdParam}`, {
         organizationId: ctx.organizationId!,
       }),
       callVeridian<CategoryProgress>(`/reports/category-progress?format=legacy&projectId=${projectId}`, {
