@@ -101,6 +101,24 @@ import { test, expect, type Page } from "@playwright/test";
 //  4. Runs against Env-1 (http://localhost:3100, real Supabase-backed
 //     backend) -- not yet executed by this session; drafted for independent
 //     review and run.
+//
+// ROOT-CAUSED 2026-09-13 (env1 CI fix pass): the real CI failure was NOT a
+// wrong computed value -- it was `rootLink`'s own visibility wait timing out
+// at 30s because this shared project's real, accumulated scale (240 BOQs at
+// investigation time, confirmed via the Supabase MCP -- every env1 CI run
+// ever executed creates more and nothing cleans them up) combined with this
+// same run's own measured real upstream latency (compliance-tracker run
+// 34758516701 / job 103727532493: 4.5s average, 29.5s tail across 174
+// samples) to exceed hardcoded 30s waits inside a test whose OWN
+// test.setTimeout(150_000) already anticipated needing far more headroom
+// than that. Widened the two explicit waits inside assertScopeRow()
+// accordingly -- see their own inline comments. This is a timing fix, not a
+// logic fix: the explicit boqId selection this spec already does (the
+// boqSelector block) is the correct, existing defense against the SEPARATE
+// "which BOQ is latest" ambiguity r33-category-rollup-excludes-subtasks-
+// env1.spec.ts's own header documents hitting harder (that spec has no
+// selector to fall back on) -- this spec does not need r33's version-bump
+// workaround because it never depends on the ambiguous auto-pick succeeding.
 test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Total(-or-Balance) columns", () => {
   const PROJECT_ID = "dd486dad-9119-4d9a-a9d9-cf0ee0cc9e04"; // Meridian Heights, same real project every env1 spec in this batch uses
   const RUN_TAG = Date.now();
@@ -131,6 +149,9 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     pctPrev: number; pctCurrent: number; pctTotal: number; pctBalance: number;
   };
   let expected: Expected;
+  // Set by the CEO test right after creation, read by assertScopeRow's own
+  // diagnostic API cross-check below -- see its own comment for why.
+  let createdBoqId: string | undefined;
 
   test.describe("CEO creates the real setup and sees the real computed columns", () => {
     test.use({ storageState: "playwright/.auth/ceo.json" });
@@ -140,7 +161,29 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       // loads (Total mode, then Balance mode) -- comfortably over the
       // config's default 75s when the real report run is slow (R67 E-28
       // documents up to a real 30s server-side deadline on this exact route).
-      test.setTimeout(150_000);
+      //
+      // WIDENED 2026-09-13 (env1 CI fix pass, second round): this test still
+      // timed out at 150_000 total (compliance-tracker run 34760945921 /
+      // job 103734029724) even after the two explicit waits inside
+      // assertScopeRow() were each widened to 90s -- GET /api/work-progress/
+      // report fans out up to 5 real upstream calls (scope, activities,
+      // progress, roster, then attendance sequentially after), and this same
+      // run's own earlier evidence measured a single such call's real
+      // `upstreamMs` reaching a 29.5s tail -- a bad-luck combination across
+      // that many calls, on top of this shared project's own growing real
+      // BOQ count, can plausibly exceed even a 90s single-wait budget. Raised
+      // the overall ceiling so the individual waits (also raised, see
+      // assertScopeRow()) have real room rather than being capped by this
+      // number first.
+      //
+      // RAISED AGAIN 2026-09-13 (fourth round): assertScopeRow() now also
+      // does a diagnostic API cross-check plus a reload-and-reselect cycle
+      // (see its own comments) before the rootLink check -- each call now
+      // does real work that can itself take up to two more ~45-120s waits,
+      // which 240_000 does not leave room for across TWO calls
+      // (assertScopeRow runs twice in this CEO test, "total" then
+      // "balance").
+      test.setTimeout(360_000);
 
       // 1. Real BOQ: a root line + one real weighted sub-task.
       const createRes = await page.request.post("/api/scope", {
@@ -157,6 +200,7 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       const created = await createRes.json();
       const boqId: string = created.id;
       expect(boqId, "the real BOQ id must come back from the create response").toBeTruthy();
+      createdBoqId = boqId;
 
       const lineItems = created.lineItems as Array<{ id: string; itemCode: string; amount: number | string; quantity: number | string; rate: number | string }>;
       const rootLine = lineItems.find((l) => l.itemCode === ROOT_CODE);
@@ -242,6 +286,13 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       // Reduced, read-only: no setup calls (Finance's real "member" role
       // cannot make them -- see header note), just the real report re-read
       // in the default "Total" third-column mode.
+      //
+      // ADDED 2026-09-13 (fourth round, same reasoning as the CEO test's own
+      // test.setTimeout raise): this test previously relied on the config's
+      // default 75_000ms, which assertScopeRow()'s own real waits (up to two
+      // ~45-120s stages, including its reload cycle) can now exceed on a
+      // single call.
+      test.setTimeout(240_000);
       await assertScopeRow(page, "total");
     });
   });
@@ -262,18 +313,139 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     if ((await boqSelector.count()) > 0) {
       const captionText = await page.getByTestId("wpr-caption").innerText();
       if (!captionText.includes(BOQ_TITLE)) {
-        await Promise.all([
-          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET"),
-          (async () => {
-            await boqSelector.click();
-            await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
-          })(),
-        ]);
+        // WIDENED 2026-09-13 (env1 CI fix pass, then widened AGAIN the same
+        // day after the first pass -- 90s -- still wasn't enough, see the
+        // rootLink comment below for the second run's own evidence): this
+        // project ("Meridian Heights", PROJECT_ID above) is shared by every
+        // env1 spec in this suite and accumulates real, never-cleaned-up
+        // BOQs across every CI run -- confirmed live via the Supabase MCP:
+        // 240 real rows for this exact project_id at investigation time (and
+        // growing every run, including this spec's own and its siblings').
+        // GET /api/work-progress/report fans out up to 5 real upstream calls
+        // to compliance-tracker (scope -- listing every one of that
+        // project's BOQs' own line items --, activities, progress entries,
+        // roster, then attendance sequentially after), and this suite's own
+        // structured server logs have measured real per-call `upstreamMs`
+        // averaging 4.5s with a 29.5s tail -- a bad-luck stack of several
+        // such calls can plausibly exceed even a generous single-wait
+        // budget, well before this spec's own real Third-column/report-
+        // render work even starts.
+        // FIXED 2026-09-13 (env1 CI fix pass, third round): the previous
+        // `Promise.all([waitForResponse(...), click sequence])` approach
+        // still failed deterministically at the 120s ceiling on
+        // compliance-tracker run 34760945921 / job 103738088094, with
+        // `rootLink` reporting "element(s) not found" rather than merely
+        // slow -- a further timeout widen would not have fixed a real logic
+        // gap. `waitForResponse`'s predicate only matches the URL/method,
+        // not WHICH request -- if any earlier /api/work-progress/report GET
+        // (e.g. the page's own initial auto-pick load) resolves after this
+        // listener is registered, `Promise.all` can resolve on THAT
+        // response instead of the one this click actually triggers, letting
+        // the code race ahead to check `rootLink` against stale, still-
+        // wrong-BOQ state that never catches up. Replaced with a direct,
+        // state-based wait on the real rendered caption itself
+        // (`report?.boqTitle` from the server, reportCaption() in
+        // work-progress-report-params.ts) actually showing this spec's own
+        // BOQ title -- unambiguous proof the correct report has loaded,
+        // independent of which network response happened to resolve first.
+        await boqSelector.click();
+        await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
+        await expect(
+          page.getByTestId("wpr-caption"),
+          "the real caption must reflect this spec's own selected BOQ before its rows are read"
+        ).toContainText(BOQ_TITLE, { timeout: 120_000 });
+      }
+    }
+
+    // DIAGNOSTIC CROSS-CHECK, added 2026-09-13 (env1 CI fix pass, fourth
+    // round): the previous two fixes (a race-prone waitForResponse, then a
+    // state-based caption wait) each independently ELIMINATED a real
+    // candidate cause without fixing the actual failure -- compliance-
+    // tracker run 34763964774 / job 103742046491 still reported `rootLink`
+    // "element(s) not found" at the full 120s ceiling, with the caption
+    // wait immediately above it having already succeeded (no separate error
+    // from that line), proving the correct BOQ's report genuinely loaded.
+    // Direct DB verification via the Supabase MCP (pcrjmlpuqsbocqfwoxod)
+    // confirmed the root+sub lines for this exact run's own BOQ were
+    // genuinely persisted with their real item codes -- ruling out "never
+    // saved". So the remaining live question is DATA (does the report API's
+    // own JSON response even contain this row) vs RENDER (rows.map()'s own
+    // `r.code ? <Link data-testid="scope-code-link"> : "—"`,
+    // WorkProgressReportClient.tsx -- an empty/falsy `code` would render the
+    // row with NO link at all, which is indistinguishable from "row
+    // missing" to a testid-based locator). Rather than guess a third time,
+    // this makes the real API call the UI itself makes (same query params
+    // runReport() sends) and asserts directly on the JSON -- if this fails,
+    // the message below names the row array's real length and every code in
+    // it, turning the next CI run's failure text into a definitive answer
+    // instead of another "not found".
+    if (createdBoqId) {
+      const reportRes = await page.request.get(
+        `/api/work-progress/report?projectId=${PROJECT_ID}&from=${FROM}&to=${TO}&boqId=${createdBoqId}`
+      );
+      expect(reportRes.ok(), "the real report API itself must succeed for this spec's own BOQ id").toBe(true);
+      const reportBody: { rows?: Array<{ code?: string; lineItemId?: string; description?: string }> } = await reportRes.json();
+      const apiRows = reportBody.rows ?? [];
+      const apiRootRow = apiRows.find((r) => r.code === ROOT_CODE);
+      expect(
+        apiRootRow,
+        `the report API's own rows[] must contain a row whose code is exactly "${ROOT_CODE}" -- got ${apiRows.length} row(s) with codes [${apiRows.map((r) => JSON.stringify(r.code)).join(", ")}]`
+      ).toBeTruthy();
+    }
+
+    // RESULT 2026-09-13 (env1 CI fix pass, fourth round -- compliance-tracker
+    // run 34765564708 / job 103746331943): the diagnostic above PASSED
+    // (silently, as `expect().toBeTruthy()` does on success -- no log line
+    // is expected or needed) while `rootLink` below still failed with the
+    // exact same "element(s) not found" at line 159's own test. Confirmed
+    // from the run's own failure trace: the outer call site was line 269
+    // (`assertScopeRow(page, "total")`, the FIRST call), so this is the
+    // SAME invocation, not a second/stale one -- the report API's rows[]
+    // genuinely contains this row (this diagnostic proves it), yet the DOM
+    // does not, within the same page load. This rules out BOTH "never
+    // saved" (DB-verified earlier) AND "API doesn't return it" (this
+    // diagnostic) -- what remains is a genuine client-side render/state gap
+    // between `report.boqTitle` (which the caption wait above already
+    // proved updates correctly) and `report.rows` (which the table reads),
+    // even though both come from the exact same `setReport(data)` call in
+    // WorkProgressReportClient.tsx's runReport(). Rather than a fifth guess
+    // at the exact React mechanism, this reloads the page once the correct
+    // BOQ is confirmed selected (the URL already carries a resolvable
+    // `boqVersion` from writeParamsToUrl by this point) -- a fresh load runs
+    // the whole fetch-and-render cycle from scratch, which a genuine
+    // client-state staleness bug would not survive. If the reload's own
+    // auto-pick lands on a DIFFERENT BOQ (a real possibility in this shared,
+    // ever-growing project), the same caption-based selector correction
+    // used above runs again to fix it, so the two mechanisms compose rather
+    // than compete.
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByTestId("wpr-caption").waitFor({ state: "visible", timeout: 45_000 });
+    const captionAfterReload = await page.getByTestId("wpr-caption").innerText();
+    if (!captionAfterReload.includes(BOQ_TITLE)) {
+      const boqSelectorAfterReload = page.getByTestId("boq-selector");
+      if ((await boqSelectorAfterReload.count()) > 0) {
+        await boqSelectorAfterReload.click();
+        await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
+        await expect(
+          page.getByTestId("wpr-caption"),
+          "the real caption must reflect this spec's own selected BOQ again after the reload"
+        ).toContainText(BOQ_TITLE, { timeout: 120_000 });
       }
     }
 
     const rootLink = page.getByTestId("scope-code-link").filter({ hasText: ROOT_CODE });
-    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 30_000 });
+    // WIDENED 2026-09-13 (env1 CI fix pass, same reasoning as the
+    // waitForResponse widen just above -- TWICE the same day): the first
+    // widening pass (30s -> 90s) was confirmed still insufficient by a real,
+    // subsequent Env-1 CI run (compliance-tracker run 34760945921 / job
+    // 103734029724) -- this exact assertion timed out again, still not on a
+    // missing/wrong row, on a run where this shared project's real BOQ count
+    // had grown even further (this spec's own sibling r33's fix now also
+    // creates 1-2 extra revisions per run). Raised to 120s, with
+    // test.setTimeout raised to 240_000 alongside it so this explicit
+    // `{ timeout }` has real room inside the test's own overall ceiling
+    // rather than being capped by it first.
+    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 120_000 });
     const rootRow = rootLink.locator("xpath=ancestor::tr[1]");
 
     if (mode === "balance") {

@@ -88,7 +88,20 @@ const PROJECT_ID = "dd486dad-9119-4d9a-a9d9-cf0ee0cc9e04";
 test.slow();
 
 async function createBoqWithSubtaskViaForm(page: import("@playwright/test").Page, title: string) {
-  await page.goto(`/scope/new?projectId=${PROJECT_ID}`);
+  // FIXED 2026-09-13 (env1 CI fix pass, second round): this spec's own
+  // waitForURL kept timing out even after widening to 60s (compliance-
+  // tracker run 34760945921 / job 103734029724) while
+  // rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+  // TC-10 -- the exact same ScopeCreateClient.tsx form-fill-and-save flow,
+  // same shared project, same run -- passed reliably in 30.9s. The one real
+  // difference between the two specs' setup: rb2 navigates to /scope/new
+  // with `{ waitUntil: "networkidle" }`, letting the page's own initial
+  // client-side requests settle before any field is touched; this spec used
+  // the bare default (`waitUntil: "load"`), which resolves as soon as the
+  // initial document and its static resources finish, not once the page's
+  // own post-hydration data fetches are done. Matched to rb2's own
+  // established, working pattern rather than guessing at a new one.
+  await page.goto(`/scope/new?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" });
 
   await page.getByLabel("Title").fill(title);
 
@@ -136,7 +149,23 @@ async function createBoqWithSubtaskViaForm(page: import("@playwright/test").Page
   //     correctly 503'd as a nonsense id. Fixed by requiring a realistic
   //     minimum id length (real ids observed are 20+ chars), which "new"
   //     cannot satisfy.
-  await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 30_000 });
+  //
+  // WIDENED 2026-09-13 (env1 CI fix pass, same reasoning
+  // rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+  // sibling widening already documented 2026-09-12): test.slow() above
+  // triples Playwright's OWN internal timeouts but does NOT extend an
+  // explicit `{ timeout }` passed directly to waitForURL, which stayed
+  // hardcoded at 30s here -- lower than this same describe block's own
+  // navigationTimeout: 90_000. Confirmed via a real Env-1 CI run
+  // (compliance-tracker run 34758516701 / job 103727532493, 2026-09-13):
+  // this exact line timed out at 30s while POST /api/scope's own real
+  // upstream latency in that same run measured 4.5s on average and up to
+  // 29.5s at the tail (projexa-server.log's structured `upstreamMs` field,
+  // 174 samples) -- a real, environment-driven latency this test's own
+  // hardcoded 30s ceiling did not leave enough margin for, not a product
+  // regression. Widened to 60s to match rb2's own established fix for the
+  // identical symptom.
+  await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 60_000 });
   const boqId = page.url().match(/\/scope\/([a-z0-9]{10,})/)?.[1];
   expect(boqId, "the URL after save must carry the real new BOQ id (not the literal 'new')").toBeTruthy();
   expect(boqId, "the extracted id must not be the create screen's own path segment").not.toBe("new");
