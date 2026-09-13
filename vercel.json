@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "sh -c 'test \"$VERCEL_GIT_COMMIT_REF\" = \"main\" || exit 0; git diff --quiet HEAD^ HEAD -- . \":(exclude)*.md\" \":(exclude)*.jsonl\" \":(exclude)kt/**\" \":(exclude)ai-os/**\" \":(exclude).github/**\" && exit 0; exit 1'"
+}
