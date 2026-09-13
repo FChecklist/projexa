@@ -162,26 +162,44 @@ async function createAndViewBoq(page: Page, tag: string) {
   // route a click into this BOQ from /scope would land on.
   await page.goto(`/scope/${boqId}`, { waitUntil: "networkidle" });
 
+  // CORRECTED 2026-09-13 (R-50 Phase 2 fallout, PR #270/compliance-tracker
+  // #1727): this page now ALSO renders BoqDualViewGrid (R85 Addendum 3 v4)
+  // above this same grid, "always visible, every stage" per its own header
+  // comment (ScopeObjectClient.tsx L527-529) -- a genuine, by-design second
+  // grid, not a regression. It renders each line's own description text
+  // too (its own real "internal view" column set), so an UNSCOPED text
+  // locator on this page now legitimately matches two elements: this
+  // requirement's own pre-existing budget/vendor/cost grid, AND R-50's new
+  // money grid. Confirmed by direct read of both components -- neither is
+  // wrong, they coexist by design (R-50's own header, "Always visible,
+  // every stage"). This spec is about the PRE-EXISTING grid specifically
+  // (R-15/R-30/R-31 predate R-50 and describe the Budget %/Vendor/cost
+  // columns, not the dual-view money model), so its locators are now
+  // scoped inside ScopeObjectClient.tsx's `boq-legacy-detail-grid` testid
+  // (added alongside this fix) to keep testing that same grid rather than
+  // either grid ambiguously.
+  const legacyGrid = page.getByTestId("boq-legacy-detail-grid");
+
   // R-30: every real line item's own description is real, visible page text.
-  await expect(page.getByText(rootDesc), "the root line's own description must be visible").toBeVisible();
-  await expect(page.getByText(sub1Desc), "sub-task Alpha's own description must be visible").toBeVisible();
-  await expect(page.getByText(sub2Desc), "sub-task Bravo's own description must be visible").toBeVisible();
+  await expect(legacyGrid.getByText(rootDesc), "the root line's own description must be visible").toBeVisible();
+  await expect(legacyGrid.getByText(sub1Desc), "sub-task Alpha's own description must be visible").toBeVisible();
+  await expect(legacyGrid.getByText(sub2Desc), "sub-task Bravo's own description must be visible").toBeVisible();
 
   // R-31: a sub-task row's own <td> carries the real `pl-8` indentation
   // class and its own real "X% of parent" label; the root row's own <td>
   // never carries that indentation class.
-  const rootCell = page.locator("td.font-medium.text-ct-navy", { hasText: rootDesc });
+  const rootCell = legacyGrid.locator("td.font-medium.text-ct-navy", { hasText: rootDesc });
   await expect(rootCell, "the root line's own cell must render (un-indented, font-medium/text-ct-navy)").toBeVisible();
   await expect(
-    page.locator("td.pl-8", { hasText: rootDesc }),
+    legacyGrid.locator("td.pl-8", { hasText: rootDesc }),
     "the root line must NOT be indented -- pl-8 is a sub-task-only class"
   ).toHaveCount(0);
 
-  const sub1Cell = page.locator("td.pl-8", { hasText: sub1Desc });
+  const sub1Cell = legacyGrid.locator("td.pl-8", { hasText: sub1Desc });
   await expect(sub1Cell, "sub-task Alpha's own cell must carry the real pl-8 indentation class").toBeVisible();
   await expect(sub1Cell, "sub-task Alpha must be labelled with its own real % of parent").toContainText(new RegExp(`${pctPattern(40)}% of parent`));
 
-  const sub2Cell = page.locator("td.pl-8", { hasText: sub2Desc });
+  const sub2Cell = legacyGrid.locator("td.pl-8", { hasText: sub2Desc });
   await expect(sub2Cell, "sub-task Bravo's own cell must carry the real pl-8 indentation class").toBeVisible();
   await expect(sub2Cell, "sub-task Bravo must be labelled with its own real % of parent").toContainText(new RegExp(`${pctPattern(25)}% of parent`));
 

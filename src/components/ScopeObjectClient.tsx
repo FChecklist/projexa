@@ -531,7 +531,13 @@ export default function ScopeObjectClient({
       {rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-ct-muted">This BOQ has no line items.</p>
       ) : (
-        <Table>
+        // R-50 fixup: BoqDualViewGrid above (data-testid="boq-grid-row-*")
+        // and this pre-existing budget/vendor/cost grid now legitimately
+        // coexist on the same Object Page and both render each line's own
+        // description text, so an unscoped text locator matches both. This
+        // testid lets a test disambiguate this specific (legacy) grid --
+        // see e2e/r15-r30-r31-boq-view-env1.spec.ts for the consumer.
+        <Table data-testid="boq-legacy-detail-grid">
           <TableHeader>
             <TableRow>
               <TableHead>Description</TableHead>
