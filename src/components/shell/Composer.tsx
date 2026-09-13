@@ -81,6 +81,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } fr
 import { ArrowUp, Loader2 } from "lucide-react";
 import {
   COMPOSER_MAX_HEIGHT_VH,
+  COMPOSER_PILLS_BAND_RESERVE,
   COMPOSER_RESTING_HEIGHT,
   type Chain,
 } from "@fchecklist/veridian-ui-kit/shell";
@@ -453,23 +454,43 @@ export function Composer({
             look-in. PillStrip.tsx itself is untouched -- this only bounds
             its container.
         */}
-        {/* R80 PART 4 -- PART 1 (TOP THIRD): Frequent actions. Undocked,
-            this is `flex-1 basis-0` (one exact third, scrolling inside
-            itself); docked, it keeps the shrink + 40vh cap the comment
-            above describes, because there it shares a content-sized box
-            with a real Task Master pane rather than owning a third of a
-            pane of its own. */}
+        {/* R80 PART 4 -- PART 1 (TOP): Frequent actions.
+            2026-09-13 correction: this band, the MIDDLE band below and the
+            chat band after it were each locked to a rigid `h-1/3
+            shrink-0 grow-0` -- exactly one third, always, regardless of
+            content -- even though this comment (and the two below) already
+            described the intent as `flex-1 basis-0`, genuinely flexible
+            thirds. Measured live: with `h-1/3 shrink-0 grow-0`, this band's
+            real content (6 pinned actions) needed 302px against a 142px
+            allotment, and the chat band needed 346px against the same
+            142px -- both silently overflowing into their own
+            `overflow-y-auto`, so on a real dashboard the Send button sat
+            below the visible fold of its own box. A rigid equal split can
+            never be correct for three bands whose content needs are this
+            different by nature: a scrollable list of shortcuts, a
+            fixed-content mode-selector, and a composer whose own kit
+            already defines its real resting height
+            (COMPOSER_RESTING_HEIGHT + COMPOSER_PILLS_BAND_RESERVE = 208,
+            not the 142px a rigid third gives it here).
+            Now genuinely `flex-1` (equal share of whatever space remains
+            after every band's own `minHeight` is satisfied), so a band
+            with real, fixed content gets at least that content's height,
+            and the shortcuts list -- which is a list, not a fixed amount
+            of content -- takes whatever is left over and scrolls for the
+            rest, exactly as its own `overflow-y-auto` has always assumed
+            it might need to. Docked behaviour (floating over a real Task
+            Master pane) is unchanged. */}
         {pills && (
           <div
             className={
               dockedOverTaskMaster
                 ? "min-h-0 shrink overflow-y-auto px-3 pb-1.5 pt-2"
-                : "min-h-0 h-1/3 shrink-0 grow-0 overflow-y-auto px-3 pb-1.5 pt-2"
+                : "min-h-0 flex-1 overflow-y-auto px-3 pb-1.5 pt-2"
             }
             style={
               dockedOverTaskMaster
                 ? { borderColor: "var(--color-ct-border)", maxHeight: "40vh" }
-                : { borderColor: "var(--color-ct-border)" }
+                : { borderColor: "var(--color-ct-border)", minHeight: 64 }
             }
           >
             {pills}
@@ -509,8 +530,9 @@ export function Composer({
           className={
             dockedOverTaskMaster
               ? "flex min-h-0 flex-col"
-              : "flex min-h-0 h-1/3 shrink-0 grow-0 flex-col overflow-hidden"
+              : "flex min-h-0 flex-1 flex-col overflow-hidden"
           }
+          style={dockedOverTaskMaster ? undefined : { minHeight: 142 }}
         >
           {conversation && (
             <div
@@ -549,8 +571,9 @@ export function Composer({
           className={
             dockedOverTaskMaster
               ? "shrink-0 px-3 pb-2.5 pt-1"
-              : "min-h-0 h-1/3 shrink-0 grow-0 overflow-y-auto px-3 pb-2.5 pt-1"
+              : "min-h-0 flex-1 overflow-y-auto px-3 pb-2.5 pt-1"
           }
+          style={dockedOverTaskMaster ? undefined : { minHeight: COMPOSER_RESTING_HEIGHT + COMPOSER_PILLS_BAND_RESERVE }}
         >
           {/* R67 C-04: the chain's scalar values, as labelled fields, beside
               the thing they are inputs to. */}
