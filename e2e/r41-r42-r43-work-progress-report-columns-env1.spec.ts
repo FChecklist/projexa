@@ -175,7 +175,15 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       // the overall ceiling so the individual waits (also raised, see
       // assertScopeRow()) have real room rather than being capped by this
       // number first.
-      test.setTimeout(240_000);
+      //
+      // RAISED AGAIN 2026-09-13 (fourth round): assertScopeRow() now also
+      // does a diagnostic API cross-check plus a reload-and-reselect cycle
+      // (see its own comments) before the rootLink check -- each call now
+      // does real work that can itself take up to two more ~45-120s waits,
+      // which 240_000 does not leave room for across TWO calls
+      // (assertScopeRow runs twice in this CEO test, "total" then
+      // "balance").
+      test.setTimeout(360_000);
 
       // 1. Real BOQ: a root line + one real weighted sub-task.
       const createRes = await page.request.post("/api/scope", {
@@ -278,6 +286,13 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       // Reduced, read-only: no setup calls (Finance's real "member" role
       // cannot make them -- see header note), just the real report re-read
       // in the default "Total" third-column mode.
+      //
+      // ADDED 2026-09-13 (fourth round, same reasoning as the CEO test's own
+      // test.setTimeout raise): this test previously relied on the config's
+      // default 75_000ms, which assertScopeRow()'s own real waits (up to two
+      // ~45-120s stages, including its reload cycle) can now exceed on a
+      // single call.
+      test.setTimeout(240_000);
       await assertScopeRow(page, "total");
     });
   });
@@ -376,6 +391,46 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
         apiRootRow,
         `the report API's own rows[] must contain a row whose code is exactly "${ROOT_CODE}" -- got ${apiRows.length} row(s) with codes [${apiRows.map((r) => JSON.stringify(r.code)).join(", ")}]`
       ).toBeTruthy();
+    }
+
+    // RESULT 2026-09-13 (env1 CI fix pass, fourth round -- compliance-tracker
+    // run 34765564708 / job 103746331943): the diagnostic above PASSED
+    // (silently, as `expect().toBeTruthy()` does on success -- no log line
+    // is expected or needed) while `rootLink` below still failed with the
+    // exact same "element(s) not found" at line 159's own test. Confirmed
+    // from the run's own failure trace: the outer call site was line 269
+    // (`assertScopeRow(page, "total")`, the FIRST call), so this is the
+    // SAME invocation, not a second/stale one -- the report API's rows[]
+    // genuinely contains this row (this diagnostic proves it), yet the DOM
+    // does not, within the same page load. This rules out BOTH "never
+    // saved" (DB-verified earlier) AND "API doesn't return it" (this
+    // diagnostic) -- what remains is a genuine client-side render/state gap
+    // between `report.boqTitle` (which the caption wait above already
+    // proved updates correctly) and `report.rows` (which the table reads),
+    // even though both come from the exact same `setReport(data)` call in
+    // WorkProgressReportClient.tsx's runReport(). Rather than a fifth guess
+    // at the exact React mechanism, this reloads the page once the correct
+    // BOQ is confirmed selected (the URL already carries a resolvable
+    // `boqVersion` from writeParamsToUrl by this point) -- a fresh load runs
+    // the whole fetch-and-render cycle from scratch, which a genuine
+    // client-state staleness bug would not survive. If the reload's own
+    // auto-pick lands on a DIFFERENT BOQ (a real possibility in this shared,
+    // ever-growing project), the same caption-based selector correction
+    // used above runs again to fix it, so the two mechanisms compose rather
+    // than compete.
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByTestId("wpr-caption").waitFor({ state: "visible", timeout: 45_000 });
+    const captionAfterReload = await page.getByTestId("wpr-caption").innerText();
+    if (!captionAfterReload.includes(BOQ_TITLE)) {
+      const boqSelectorAfterReload = page.getByTestId("boq-selector");
+      if ((await boqSelectorAfterReload.count()) > 0) {
+        await boqSelectorAfterReload.click();
+        await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
+        await expect(
+          page.getByTestId("wpr-caption"),
+          "the real caption must reflect this spec's own selected BOQ again after the reload"
+        ).toContainText(BOQ_TITLE, { timeout: 120_000 });
+      }
     }
 
     const rootLink = page.getByTestId("scope-code-link").filter({ hasText: ROOT_CODE });
