@@ -224,6 +224,16 @@ test.describe("R-50 Phase 2: contract lock is a REAL refusal, not merely a disab
     const boqData = await boq.json();
     const lineId = boqData.lineItems[0].id as string;
     const preConfirm = await request.patch(`/api/scope/line-items/${lineId}`, { data: { qtyContract: 120 } });
-    expect(preConfirm.ok(), "contract-side edits succeed before any baseline is confirmed").toBe(true);
+    // DIAGNOSTIC (2026-09-13, real-CI fallout investigation): the bare
+    // `.ok()` assertion below gave no way to tell a real lock-logic bug
+    // apart from an unrelated refusal (auth/validation/transient infra) --
+    // this codebase's own CLAUDE.md documents a real, reproducible class of
+    // transient 503s under this exact CI job. Surface the real status/body
+    // in the failure message permanently rather than re-adding this only
+    // when something breaks again.
+    if (!preConfirm.ok()) {
+      console.log(`R50_LOCK_PRECONFIRM_FAILURE status=${preConfirm.status()} body=${await preConfirm.text()}`);
+    }
+    expect(preConfirm.ok(), `contract-side edits succeed before any baseline is confirmed (status=${preConfirm.status()})`).toBe(true);
   });
 });
