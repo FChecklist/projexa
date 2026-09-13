@@ -416,10 +416,32 @@ export function PillStrip({
                 // A-17: aria-pressed while this pill's own route is open, so a
                 // screen reader is told which of these the user is standing on
                 // -- the same fact the sighted "you are here" note carries.
+                //
+                // FOUND LIVE, this list had NO aria-current at all: a nav-style
+                // list of routes is exactly what aria-current="page" exists for
+                // (aria-pressed is a toggle-button state, not "this is where you
+                // are" -- the two read differently to a screen reader). Kept
+                // aria-pressed alongside it rather than replacing it, since nothing
+                // else in this file reads it as the one true signal.
                 aria-pressed={entry.pressed ?? undefined}
+                aria-current={entry.pressed ? "page" : undefined}
                 aria-label={entry.shortcut ? `${name} (${entry.shortcut})` : name}
                 title={entry.shortcut ? `${name} · ${entry.shortcut}` : name}
-                className={`veri-mode-pill disabled:opacity-45${entry.pressed ? " active" : ""}`}
+                // FOUND LIVE: `disabled:opacity-45` was applied UNCONDITIONALLY,
+                // including to the "you are here" pill -- the one and only entry
+                // `unavailable` is set for today (see ModuleEntryView's own doc
+                // comment). So the ONE pill meant to read as "you are standing
+                // here" (white background + shadow, from `.active` below) was
+                // simultaneously dimmed to 45% opacity by the disabled styling,
+                // which visually cancels the highlight against this band's own
+                // light background -- confirmed live, via computed styles: the
+                // white/shadow WAS there, opacity 0.45 made it unreadable as a
+                // highlight. `.active` already draws the real distinction (same
+                // convention this file's own header describes); this pill is
+                // still functionally disabled (the `disabled` attribute above is
+                // unchanged), it just no longer fades the one highlight the class
+                // exists to show.
+                className={`veri-mode-pill${entry.pressed ? " active" : " disabled:opacity-45"}`}
               >
                 {entry.label}
                 {aside && (

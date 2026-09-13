@@ -2070,13 +2070,27 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // B-07: arming a card is a new request, so the previous verdict stands
       // down from band 2 (same reason as selectEntity above).
       setNotice(null);
+      // FOUND LIVE (root-caused, not guessed) -- A-09's "loaded" facts describe
+      // WHERE A CHAIN CAME FROM, and a card click is a brand new chain built
+      // right here, same as selectEntity()/the "view" pill below. Every other
+      // fresh-chain path already clears this (selectEntity, the "view" case,
+      // resetChain, openDoor); this one didn't, so a chain loaded earlier and
+      // then abandoned for a card click left `loaded` pointing at a chain that
+      // is no longer on screen. The navigation effect (screen.pathname's own
+      // useEffect below) then judges the NEXT navigation by those stale facts:
+      // if the card's own route happened to match the old loaded route, it
+      // would wrongly "keep" a "Loaded from history" banner for a chain the
+      // user never loaded; otherwise it would wrongly "clear-all" and delete
+      // the draft this card click is building, when a fresh chain is supposed
+      // to only "clear-segments" (A-06: the draft is the user's).
+      setLoaded(null);
       if (knownFunctionId) return;
       const href = cardHref(card, card.needsProject ? projectId : null);
       if (!href) return;
       setProjectPrompt(null);
       router.push(href);
     },
-    [bumpUsage, chainForUsage, projectId, rankedPills, router]
+    [bumpUsage, chainForUsage, projectId, rankedPills, router, setLoaded]
   );
 
   // R67 A-11/A-12 -- AN ENTRY IN THE EXPANDED "ALL MODULES" LIST.
@@ -2241,9 +2255,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       setSegments((prev) =>
         prev.some((s) => s.id === leaf.id) ? prev : [...prev, { id: leaf.id, label: leaf.label, kind: "step" as const }]
       );
+      // Same fix as onCardSelect/onScreenCardSelect above: a leaf continues a
+      // chain built HERE, never one loaded from history, so any stale "loaded"
+      // facts left over from an earlier History/"Do again" load must not
+      // survive into it -- see onCardSelect's own comment for the full
+      // reasoning and what goes wrong (a wrong "keep"/"clear-all" on the next
+      // navigation) when this is skipped.
+      setLoaded(null);
       router.push(moduleHref(leaf, projectId));
     },
-    [bumpUsage, chainForUsage, projectId, requestProject, router]
+    [bumpUsage, chainForUsage, projectId, requestProject, router, setLoaded]
   );
 
   // R67 A-20 -- THE SCREEN'S OWN CARDS, KEYED BY ROUTE AND TAB.
@@ -2281,6 +2302,12 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       setPendingFunctionId(null);
       setArmedCard(null);
       setPlatformNotice(null);
+      // Same fix as onCardSelect above, same reason: this screen card builds a
+      // brand new chain, not a loaded one, so any stale A-09 "loaded" facts
+      // left over from an earlier History/"Do again" load must be cleared
+      // here too, or the navigation effect judges the next navigation by a
+      // chain that is no longer the one on screen.
+      setLoaded(null);
       // The sentence, minus the word the strip is already showing -- see
       // chainForScreenCard() for why the module must not be named twice, and
       // why leaving it in would stand this very card row down.
@@ -2305,7 +2332,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       setProjectPrompt(null);
       router.push(href);
     },
-    [bumpUsage, chainForUsage, chainModule, pathname, projectId, requestProject, router, screenCards]
+    [bumpUsage, chainForUsage, chainModule, pathname, projectId, requestProject, router, screenCards, setLoaded]
   );
 
   const screenCardViews: ScreenCardView[] = useMemo(
