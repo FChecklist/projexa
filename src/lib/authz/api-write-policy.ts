@@ -322,6 +322,15 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // already PM_OR_ABOVE by the "/scope" entry above.
   "/scope/categories": "PM_OR_ABOVE",
   "/scope/categories/[id]": "PM_OR_ABOVE",
+  // R85 Addendum 3 v4 (R-50), Phase 2/6 (E4): WHO may see cost/variance at
+  // all -- ORG_ADMIN, matching compliance-tracker's own PATCH gate on this
+  // exact config ("admin" role, described there as "the single most
+  // important line of defense in this phase" alongside the DB CHECK
+  // constraint that hard-floors client_viewer). A materially higher bar
+  // than editing a BOQ's own figures (PM_OR_ABOVE, immediately above) --
+  // deciding WHO can see the money is a different, more sensitive act than
+  // entering it.
+  "/scope/cost-visibility": "ORG_ADMIN",
   // The NOTE that stood here -- "zero callers anywhere in src, BOQ import
   // exists only as a direct API surface with no click-reachable UI" -- was
   // true when it was written and is no longer: R67 lane D22 (item D-52, and

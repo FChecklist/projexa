@@ -16,6 +16,14 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
       organizationId: ctx.organizationId!,
       method: "PATCH",
       body,
+      // R85 Addendum 3 v4, Phase 2: the grid's own dual-view cell edits
+      // (qtyProject/rateProject/qtyContract/rateContract) go through this
+      // same route -- forwarding the real acting user is what lets
+      // VERIDIAN's cost-visibility gate return this PROJEXA user's own
+      // role-appropriate response instead of unconditionally redacting
+      // every API-key call (see /api/scope/[id]/route.ts's own comment).
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
     });
     return NextResponse.json(data);
   } catch (err) {
