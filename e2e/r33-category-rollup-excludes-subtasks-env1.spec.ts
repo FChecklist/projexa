@@ -45,46 +45,26 @@ const TEST_CATEGORY = `R33 Spec Category ${Date.now()}`;
 const RUN_TAG = Date.now();
 
 test("R-33: a category's roll-up total counts a root line once, never its sub-task's share again", async ({ page }) => {
-  // This spec now makes several extra real round trips (a list read plus
-  // possibly more than one revision, see below) on top of its original
-  // create + report-read pair, against a backend whose real per-call
-  // upstream latency this same investigation measured averaging 4.5s with a
-  // 29.5s tail (see the root-cause note just below) -- the config's default
-  // 75s test timeout leaves too little margin for that stacked up.
   test.setTimeout(120_000);
 
-  // ROOT-CAUSED 2026-09-13 (env1 CI fix pass): the real CI failure
-  // (compliance-tracker run 34758516701 / job 103727532493, 2026-09-13,
-  // "Received: undefined" -- this spec's own category simply never appeared)
-  // was NOT a caching gap. categoryBoqAmountsReport() (compliance-tracker's
-  // construction-reports-service.ts:2597-2612) has NO boqId parameter at
-  // all -- it always picks exactly ONE BOQ for the whole project via
-  // `orderBy: desc(version), desc(createdAt)`, and this shared project
-  // ("Meridian Heights") is a real, live fixture every env1 spec in this
-  // suite writes into with nothing cleaning it up between runs. Confirmed
-  // directly via the Supabase MCP at investigation time: 240 real BOQ rows
-  // for this exact project_id, with max(version)=2 -- and createBoq() always
-  // stores a fresh, independent BOQ at version:1
-  // (construction-boq-service.ts:1228), while createBoqRevision() bumps
-  // version:+1 (line 1291). Because the sort key is version FIRST, ANY
-  // existing non-superseded version-2+ row in this project permanently
-  // outranks a brand-new version-1 BOQ, no matter how recent -- this was not
-  // a timing race, it was a deterministic loss every run makes against
-  // whatever earlier spec (in this batch, r21-r24 and friends) already
-  // created a revision here. There is no PROJEXA-side API parameter to work
-  // around this (the report endpoint genuinely has none), so the fix is to
-  // make THIS spec's own BOQ win the same real ordering rule the backend
-  // uses: read the project's current max version first, then bump this
-  // spec's own BOQ with real revisions (the same mechanism
-  // r21-r24-boq-compare-variation-and-percentage-change-env1.spec.ts already
-  // uses for an unrelated reason) until its version exceeds it. Computed at
-  // runtime rather than hardcoded, so this stays correct as the shared
-  // project's real max version keeps growing across future runs.
-  const existingRes = await page.request.get(`/api/scope?projectId=${PROJECT_ID}`);
-  expect(existingRes.ok(), "listing this project's existing BOQs for this spec's own version-disambiguation setup must succeed").toBe(true);
-  const existingBoqs: Array<{ version?: number | string }> = (await existingRes.json()).boqs ?? [];
-  const maxExistingVersion = existingBoqs.reduce((m, b) => Math.max(m, Number(b.version) || 0), 0);
-
+  // SUPERSEDED 2026-09-13 (R86, second root-cause pass): the "make this
+  // spec's own BOQ win the version race" fix directly below (2026-09-13,
+  // same day) was itself a real, self-inflicted CI-timeout bug, not a
+  // stable fix -- proven live, not guessed: compliance-tracker CI run
+  // 34774191857 and BOTH of its first 2 reruns timed out (120s exceeded on
+  // a single POST /api/scope/{id}/revisions call) at exactly this loop,
+  // because EVERY run of this spec has to out-climb not just whatever
+  // existed before it but also every PRIOR run of this same spec (nothing
+  // ever revises this shared "Meridian Heights" project back down) -- the
+  // project's real max version climbed from 2 (at the first root-cause's
+  // investigation time) to 16 in the span of this one CI investigation,
+  // confirmed live via the Supabase MCP, with no ceiling. The real fix is
+  // upstream: categoryBoqAmountsReport() (compliance-tracker's
+  // construction-reports-service.ts) now takes an explicit, ownership-
+  // checked `boqId`, threaded through PROJEXA's own
+  // /api/projects/[id]/category-distribution route as an optional query
+  // param -- this spec no longer needs to WIN anything, it just tells the
+  // report which BOQ it means. Zero revision round trips now required.
   const lineItemsPayload = [
     { itemCode: "R33-ROOT", description: "R-33 spec: root line", unit: "sqm", quantity: 10, rate: 500, category: TEST_CATEGORY },
     { itemCode: "R33-SUB", description: "R-33 spec: weighted sub-task", unit: "sqm", quantity: 4, rate: 500, parentItemCode: "R33-ROOT", breakdownPercentage: 40, category: TEST_CATEGORY },
@@ -94,32 +74,18 @@ test("R-33: a category's roll-up total counts a root line once, never its sub-ta
     data: { projectId: PROJECT_ID, title: `R-33 env1 spec ${RUN_TAG}`, lineItems: lineItemsPayload },
   });
   expect(createRes.ok(), "BOQ creation must succeed for this spec's own setup").toBe(true);
-  let created: { id: string; version?: number | string; lineItems: Array<{ itemCode: string; amount: number | string }> } = await createRes.json();
-
-  // Bump this spec's own BOQ past whatever else currently exists in the
-  // shared project -- see the root-cause note above. Each revision resubmits
-  // the SAME two lines (their content is irrelevant beyond winning the
-  // version race and producing a positive root amount), and the loop
-  // terminates deterministically since version strictly increases by 1 each
-  // pass while maxExistingVersion is fixed at the value read before setup
-  // began (nothing else runs concurrently under this suite's workers=1 CI
-  // config).
-  while (Number(created.version ?? 1) <= maxExistingVersion) {
-    const revRes = await page.request.post(`/api/scope/${created.id}/revisions`, {
-      data: { title: `R-33 env1 spec ${RUN_TAG} (v${Number(created.version ?? 1) + 1})`, lineItems: lineItemsPayload },
-    });
-    expect(revRes.ok(), "bumping this spec's own BOQ past the project's current max version must succeed").toBe(true);
-    created = await revRes.json();
-  }
+  const created: { id: string; lineItems: Array<{ itemCode: string; amount: number | string }> } = await createRes.json();
 
   const rootLine = created.lineItems.find((l) => l.itemCode === "R33-ROOT");
   expect(rootLine, "the real root line must come back from the create response").toBeTruthy();
   const rootAmount = Number(rootLine!.amount);
   expect(rootAmount, "the root line's real stored amount must be a positive number").toBeGreaterThan(0);
 
-  // Real authenticated read of the real category-distribution report -- the
-  // same request the project dashboard's category chart issues.
-  const distRes = await page.request.get(`/api/projects/${PROJECT_ID}/category-distribution`);
+  // Real authenticated read of the real category-distribution report,
+  // explicitly targeting THIS spec's own just-created BOQ -- see the
+  // superseded-root-cause note above for why an implicit "whatever's
+  // currently active" read is no longer used here.
+  const distRes = await page.request.get(`/api/projects/${PROJECT_ID}/category-distribution?boqId=${created.id}`);
   expect(distRes.ok(), "the real category-distribution endpoint must succeed").toBe(true);
   const dist = await distRes.json();
   const categories: Array<{ name: string; totalAmount: number }> = dist.categories ?? [];
