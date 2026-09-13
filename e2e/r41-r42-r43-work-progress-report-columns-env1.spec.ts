@@ -311,13 +311,30 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
         // such calls can plausibly exceed even a generous single-wait
         // budget, well before this spec's own real Third-column/report-
         // render work even starts.
-        await Promise.all([
-          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET", { timeout: 120_000 }),
-          (async () => {
-            await boqSelector.click();
-            await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
-          })(),
-        ]);
+        // FIXED 2026-09-13 (env1 CI fix pass, third round): the previous
+        // `Promise.all([waitForResponse(...), click sequence])` approach
+        // still failed deterministically at the 120s ceiling on
+        // compliance-tracker run 34760945921 / job 103738088094, with
+        // `rootLink` reporting "element(s) not found" rather than merely
+        // slow -- a further timeout widen would not have fixed a real logic
+        // gap. `waitForResponse`'s predicate only matches the URL/method,
+        // not WHICH request -- if any earlier /api/work-progress/report GET
+        // (e.g. the page's own initial auto-pick load) resolves after this
+        // listener is registered, `Promise.all` can resolve on THAT
+        // response instead of the one this click actually triggers, letting
+        // the code race ahead to check `rootLink` against stale, still-
+        // wrong-BOQ state that never catches up. Replaced with a direct,
+        // state-based wait on the real rendered caption itself
+        // (`report?.boqTitle` from the server, reportCaption() in
+        // work-progress-report-params.ts) actually showing this spec's own
+        // BOQ title -- unambiguous proof the correct report has loaded,
+        // independent of which network response happened to resolve first.
+        await boqSelector.click();
+        await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
+        await expect(
+          page.getByTestId("wpr-caption"),
+          "the real caption must reflect this spec's own selected BOQ before its rows are read"
+        ).toContainText(BOQ_TITLE, { timeout: 120_000 });
       }
     }
 
