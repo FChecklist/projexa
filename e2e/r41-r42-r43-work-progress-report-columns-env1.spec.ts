@@ -101,6 +101,24 @@ import { test, expect, type Page } from "@playwright/test";
 //  4. Runs against Env-1 (http://localhost:3100, real Supabase-backed
 //     backend) -- not yet executed by this session; drafted for independent
 //     review and run.
+//
+// ROOT-CAUSED 2026-09-13 (env1 CI fix pass): the real CI failure was NOT a
+// wrong computed value -- it was `rootLink`'s own visibility wait timing out
+// at 30s because this shared project's real, accumulated scale (240 BOQs at
+// investigation time, confirmed via the Supabase MCP -- every env1 CI run
+// ever executed creates more and nothing cleans them up) combined with this
+// same run's own measured real upstream latency (compliance-tracker run
+// 34758516701 / job 103727532493: 4.5s average, 29.5s tail across 174
+// samples) to exceed hardcoded 30s waits inside a test whose OWN
+// test.setTimeout(150_000) already anticipated needing far more headroom
+// than that. Widened the two explicit waits inside assertScopeRow()
+// accordingly -- see their own inline comments. This is a timing fix, not a
+// logic fix: the explicit boqId selection this spec already does (the
+// boqSelector block) is the correct, existing defense against the SEPARATE
+// "which BOQ is latest" ambiguity r33-category-rollup-excludes-subtasks-
+// env1.spec.ts's own header documents hitting harder (that spec has no
+// selector to fall back on) -- this spec does not need r33's version-bump
+// workaround because it never depends on the ambiguous auto-pick succeeding.
 test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Total(-or-Balance) columns", () => {
   const PROJECT_ID = "dd486dad-9119-4d9a-a9d9-cf0ee0cc9e04"; // Meridian Heights, same real project every env1 spec in this batch uses
   const RUN_TAG = Date.now();
@@ -262,8 +280,22 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     if ((await boqSelector.count()) > 0) {
       const captionText = await page.getByTestId("wpr-caption").innerText();
       if (!captionText.includes(BOQ_TITLE)) {
+        // WIDENED 2026-09-13 (env1 CI fix pass): this project ("Meridian
+        // Heights", PROJECT_ID above) is shared by every env1 spec in this
+        // suite and accumulates real, never-cleaned-up BOQs across every CI
+        // run -- confirmed live via the Supabase MCP: 240 real rows for this
+        // exact project_id at investigation time. GET /api/work-progress/
+        // report fans out up to 5 real upstream calls to compliance-tracker
+        // (scope -- now listing all 240 BOQs' own line items --, activities,
+        // progress entries, roster, then attendance sequentially after), and
+        // this same CI run's own structured server log (projexa-server.log,
+        // compliance-tracker run 34758516701 / job 103727532493) measured
+        // real per-call `upstreamMs` averaging 4.5s with a 29.5s tail across
+        // 174 samples -- comfortably enough on its own to exceed a bare
+        // default (page-level ~30s) waitForResponse budget, well before this
+        // spec's own real Third-column/report-render work even starts.
         await Promise.all([
-          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET"),
+          page.waitForResponse((r) => r.url().includes("/api/work-progress/report") && r.request().method() === "GET", { timeout: 90_000 }),
           (async () => {
             await boqSelector.click();
             await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
@@ -273,7 +305,15 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     }
 
     const rootLink = page.getByTestId("scope-code-link").filter({ hasText: ROOT_CODE });
-    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 30_000 });
+    // WIDENED 2026-09-13 (env1 CI fix pass, same reasoning as the
+    // waitForResponse widen just above): the real Env-1 CI failure
+    // (compliance-tracker run 34758516701 / job 103727532493, 2026-09-13)
+    // was this exact assertion timing out at the old 30s ceiling, not a
+    // missing/wrong row -- real, environment-driven backend latency this
+    // test's own 150_000ms test.setTimeout already anticipated for the test
+    // as a whole, but this one explicit `{ timeout }` had not been raised to
+    // match.
+    await expect(rootLink, "this spec's own real root line must appear in the real Scope-wise table").toBeVisible({ timeout: 90_000 });
     const rootRow = rootLink.locator("xpath=ancestor::tr[1]");
 
     if (mode === "balance") {
