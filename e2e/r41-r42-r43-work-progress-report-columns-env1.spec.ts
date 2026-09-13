@@ -149,6 +149,9 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     pctPrev: number; pctCurrent: number; pctTotal: number; pctBalance: number;
   };
   let expected: Expected;
+  // Set by the CEO test right after creation, read by assertScopeRow's own
+  // diagnostic API cross-check below -- see its own comment for why.
+  let createdBoqId: string | undefined;
 
   test.describe("CEO creates the real setup and sees the real computed columns", () => {
     test.use({ storageState: "playwright/.auth/ceo.json" });
@@ -189,6 +192,7 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
       const created = await createRes.json();
       const boqId: string = created.id;
       expect(boqId, "the real BOQ id must come back from the create response").toBeTruthy();
+      createdBoqId = boqId;
 
       const lineItems = created.lineItems as Array<{ id: string; itemCode: string; amount: number | string; quantity: number | string; rate: number | string }>;
       const rootLine = lineItems.find((l) => l.itemCode === ROOT_CODE);
@@ -336,6 +340,42 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
           "the real caption must reflect this spec's own selected BOQ before its rows are read"
         ).toContainText(BOQ_TITLE, { timeout: 120_000 });
       }
+    }
+
+    // DIAGNOSTIC CROSS-CHECK, added 2026-09-13 (env1 CI fix pass, fourth
+    // round): the previous two fixes (a race-prone waitForResponse, then a
+    // state-based caption wait) each independently ELIMINATED a real
+    // candidate cause without fixing the actual failure -- compliance-
+    // tracker run 34763964774 / job 103742046491 still reported `rootLink`
+    // "element(s) not found" at the full 120s ceiling, with the caption
+    // wait immediately above it having already succeeded (no separate error
+    // from that line), proving the correct BOQ's report genuinely loaded.
+    // Direct DB verification via the Supabase MCP (pcrjmlpuqsbocqfwoxod)
+    // confirmed the root+sub lines for this exact run's own BOQ were
+    // genuinely persisted with their real item codes -- ruling out "never
+    // saved". So the remaining live question is DATA (does the report API's
+    // own JSON response even contain this row) vs RENDER (rows.map()'s own
+    // `r.code ? <Link data-testid="scope-code-link"> : "—"`,
+    // WorkProgressReportClient.tsx -- an empty/falsy `code` would render the
+    // row with NO link at all, which is indistinguishable from "row
+    // missing" to a testid-based locator). Rather than guess a third time,
+    // this makes the real API call the UI itself makes (same query params
+    // runReport() sends) and asserts directly on the JSON -- if this fails,
+    // the message below names the row array's real length and every code in
+    // it, turning the next CI run's failure text into a definitive answer
+    // instead of another "not found".
+    if (createdBoqId) {
+      const reportRes = await page.request.get(
+        `/api/work-progress/report?projectId=${PROJECT_ID}&from=${FROM}&to=${TO}&boqId=${createdBoqId}`
+      );
+      expect(reportRes.ok(), "the real report API itself must succeed for this spec's own BOQ id").toBe(true);
+      const reportBody: { rows?: Array<{ code?: string; lineItemId?: string; description?: string }> } = await reportRes.json();
+      const apiRows = reportBody.rows ?? [];
+      const apiRootRow = apiRows.find((r) => r.code === ROOT_CODE);
+      expect(
+        apiRootRow,
+        `the report API's own rows[] must contain a row whose code is exactly "${ROOT_CODE}" -- got ${apiRows.length} row(s) with codes [${apiRows.map((r) => JSON.stringify(r.code)).join(", ")}]`
+      ).toBeTruthy();
     }
 
     const rootLink = page.getByTestId("scope-code-link").filter({ hasText: ROOT_CODE });
