@@ -35,6 +35,7 @@ export async function MarketingFooter({ locale }: MarketingLocaleProps) {
         <div className="flex items-center gap-6 text-sm text-px-cloud2">
           <Link href="/login" className="hover:text-white">{t("login")}</Link>
           <Link href="/signup" className="hover:text-white">{t("signup")}</Link>
+          <Link href="/disclaimer" className="hover:text-white">{t("disclaimer")}</Link>
           {REPLY_EMAIL && (
             <a href={`mailto:${REPLY_EMAIL}`} className="hover:text-white">{REPLY_EMAIL}</a>
           )}
