@@ -43,6 +43,7 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/hi", // the same landing page, prerendered in Hindi (R67 J-01)
   "/how-it-works",
   "/hi/how-it-works",
+  "/disclaimer",
   "/login",
   "/signup",
   // G-08. Both are public by necessity: someone who cannot log in is by
