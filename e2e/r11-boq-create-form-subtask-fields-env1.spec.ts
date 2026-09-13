@@ -136,7 +136,23 @@ async function createBoqWithSubtaskViaForm(page: import("@playwright/test").Page
   //     correctly 503'd as a nonsense id. Fixed by requiring a realistic
   //     minimum id length (real ids observed are 20+ chars), which "new"
   //     cannot satisfy.
-  await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 30_000 });
+  //
+  // WIDENED 2026-09-13 (env1 CI fix pass, same reasoning
+  // rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+  // sibling widening already documented 2026-09-12): test.slow() above
+  // triples Playwright's OWN internal timeouts but does NOT extend an
+  // explicit `{ timeout }` passed directly to waitForURL, which stayed
+  // hardcoded at 30s here -- lower than this same describe block's own
+  // navigationTimeout: 90_000. Confirmed via a real Env-1 CI run
+  // (compliance-tracker run 34758516701 / job 103727532493, 2026-09-13):
+  // this exact line timed out at 30s while POST /api/scope's own real
+  // upstream latency in that same run measured 4.5s on average and up to
+  // 29.5s at the tail (projexa-server.log's structured `upstreamMs` field,
+  // 174 samples) -- a real, environment-driven latency this test's own
+  // hardcoded 30s ceiling did not leave enough margin for, not a product
+  // regression. Widened to 60s to match rb2's own established fix for the
+  // identical symptom.
+  await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 60_000 });
   const boqId = page.url().match(/\/scope\/([a-z0-9]{10,})/)?.[1];
   expect(boqId, "the URL after save must carry the real new BOQ id (not the literal 'new')").toBeTruthy();
   expect(boqId, "the extracted id must not be the create screen's own path segment").not.toBe("new");

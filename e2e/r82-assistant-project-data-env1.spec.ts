@@ -19,6 +19,16 @@ import { test, expect, type Page } from "@playwright/test";
 // have some value) -- but r80-r81-r82-copilot-pill-chain-env1.spec.ts is
 // the requirement's real closure test going forward.
 //
+// CONFIRMED 2026-09-13 (env1 CI fix pass): re-checked platform.sumeet_requirements
+// directly (pcrjmlpuqsbocqfwoxod) -- row R-82's own closure_test_path is
+// "e2e/r81-d603-chain.spec.ts", the pre-rename name of
+// r80-r81-r82-copilot-pill-chain-env1.spec.ts (see that file's own RENAMED
+// note, 2026-09-12), NOT this file. This corroborates the supersession claim
+// above from the DB's own record, independent of this file's own comment.
+// Fixed here instead of excluded/deleted: the failure was a real
+// response-shape bug in this spec's own assertion (see below), not a reason
+// to drop the coverage -- least-risk fix per this task's own guidance.
+//
 // R-82 (Assistant): "Assistant either reaches project data or is hidden".
 // Recorded closure_state=BLOCKED, same shared root cause as the rest of the
 // eleven (F-2026-0910-PM-068). Evidence: a prior live check of
@@ -92,7 +102,19 @@ async function assertAssistantReachesData(page: Page) {
     },
   });
   expect(dashRes.ok(), "get_construction_project_dashboard must succeed for a real project id").toBe(true);
-  const dash = await dashRes.json();
+  const dashRow = await dashRes.json();
+  // CORRECTED 2026-09-13 (env1 CI fix pass): this route (PROJEXA's own
+  // POST /api/assistant, route.ts above) does NOT return the codeReference
+  // result directly -- it persists and returns the local `assistant_queries`
+  // row, whose own `result` column holds whatever VERIDIAN's
+  // /api/v1/projexa/assistant returned for `result.result` (see route.ts's
+  // `.update({ status: "done", result: result.result })`). So the real
+  // dashboard payload is at `dashRow.result`, not top-level on the row. An
+  // earlier version of this assertion read `dash.taskCount` directly, which
+  // is always `undefined` on the actual row shape (status/result/error_message/
+  // etc.), not a stub-detection signal.
+  expect(dashRow.status, "the query row must have completed, not errored/pending").toBe("done");
+  const dash = dashRow.result ?? {};
   // A stub/never-wired tool would return an empty object, a hardcoded
   // placeholder, or throw -- a real one returns a taskCount that is an actual
   // number (>= 0), proving it queried something rather than fabricating a
