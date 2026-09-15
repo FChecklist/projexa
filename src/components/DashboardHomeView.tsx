@@ -26,7 +26,14 @@ import { Button } from "@/components/ui/button";
 // is follow-up work in DashboardCard/ProjectRow.tsx themselves, not
 // something to improvise inside this file against a merge conflict.
 import { Plus } from "lucide-react";
-import { HomeGreeting } from "@fchecklist/veridian-ui-kit/shell";
+import { useEffect, useState } from "react";
+// BUG 4 FIX, 2026-09-14 -- the kit's own <HomeGreeting> (previously imported
+// from here) is gone from this screen; see DashboardGreeting's own header
+// comment below for why and what replaced it. `HomeStat` is still the kit's
+// type -- reused rather than redeclared so `stats` below stays byte-for-byte
+// the same shape a future HomeGreeting-based screen elsewhere in this repo
+// already expects.
+import { type HomeStat } from "@fchecklist/veridian-ui-kit/shell";
 import { type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // R67 G-05 / D-61: one money format for the whole product. Imported from the
 // server-safe module, not from @/lib/currency ("use client"), so the same
@@ -208,6 +215,90 @@ function columnLabel(columns: ScreenColumn[], field: string, fallback: string): 
   return sanitizeScreenLabel(columns.find((c) => c.field === field)?.label, fallback);
 }
 
+// BUG 4 FIX, 2026-09-14 (owner directive: the kit's <HomeGreeting> "takes too
+// much vertical space" on this screen's right pane).
+//
+// WHY NOT A COMPACT PROP ON THE KIT COMPONENT (option (a) in the task): it
+// does not have one. node_modules/@fchecklist/veridian-ui-kit/src/shell/
+// HomeGreeting.tsx's own props type is exactly `{ userName, summary, stats }`
+// -- no size/density/compact variant exists to opt into, and the kit is a
+// pinned release dependency this repo cannot edit the source of (this file's
+// own header note, restated at the call site this replaces).
+//
+// WHY THIS ROUTE STILL NEEDS ITS OWN HEADING: DashboardHomeView.tsx's own
+// comment (right below, at the call site) is explicit that "No PageHeading
+// here" was deliberate BECAUSE HomeGreeting supplied a real `<h1>` -- so
+// deleting it outright, rather than replacing it, would leave PROJEXA's
+// designated home route with no heading at all. This component keeps that
+// same real `<h1>Good morning, {name}.</h1>` semantics -- option (b) in the
+// task -- but drops the two things that cost the most vertical space and
+// added no information of their own: the kit's decorative sparkle-icon tile
+// (a 44px square plus its own gap) and the separate bordered/shadowed
+// "card" (border + shadow + 16px top/bottom padding) the summary sentence
+// and stat pills sat inside. The summary sentence and stat pills THEMSELVES
+// are kept, byte-for-byte the same data and words (`dashboardSummary()`,
+// `stats` below) -- DashboardHomeView.test.tsx already asserts on their
+// exact text (`/You have 2 active projects/`, `"3 permits expiring"`), and
+// dropping real information a reader relies on was never what "takes too
+// much space" was asking for; only the padding and the icon were.
+//
+// SPACE SAVED (measured against the kit source, not guessed): the icon tile
+// row (~44px + 16px gap) and the bordered card's own vertical chrome (16px
+// top padding + 16px bottom padding + the 16px `mt-4` gap above it, none of
+// which wrapped real content) are gone outright -- roughly 108px of pure
+// padding/decoration, on top of collapsing two stacked blocks (heading, then
+// a separate card below it) into one compact block with the summary and
+// stats inline directly under a single-line heading.
+//
+// THE HYDRATION-SAFE GREETING WORD, KEPT. HomeGreeting.tsx's own comment
+// explains why the greeting word ("Good morning"/"Good evening") cannot be
+// computed directly in the render body: the server (UTC) and the browser
+// (the visitor's own timezone) disagree on the hour on nearly every real
+// request outside UTC, which is a deterministic hydration mismatch, not a
+// rare timing coincidence. The same fix is reproduced here -- a stable,
+// timezone-independent SSR/first-paint string, swapped for the real local
+// greeting in an effect once safely client-side.
+const GREETING_STABLE = "Welcome back";
+
+function greetingWord(now: Date): string {
+  const h = now.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+const GREETING_TONE_CLASSES: Record<HomeStat["tone"], string> = {
+  attention: "bg-red-50 text-red-600",
+  upcoming: "bg-amber-50 text-amber-700",
+  onTrack: "bg-emerald-50 text-emerald-700",
+};
+
+function DashboardGreeting({ userName, summary, stats }: { userName: string; summary: string; stats: HomeStat[] }) {
+  const [greeting, setGreeting] = useState(GREETING_STABLE);
+  useEffect(() => {
+    setGreeting(greetingWord(new Date()));
+  }, []);
+
+  return (
+    <div className="px-6 pt-4 pb-2">
+      <h1 className="font-heading text-xl text-ct-navy tracking-tight">
+        {greeting}, {userName}.
+      </h1>
+      <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] leading-snug text-ct-muted">
+        <span>{summary}</span>
+        {stats.map((s, i) => (
+          <span
+            key={i}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${GREETING_TONE_CLASSES[s.tone]}`}
+          >
+            {s.label}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
+}
+
 /**
  * R67 E-02 chart 1 -- one group per project. E-19 (R-180) adds BUDGET as a
  * fourth bar, because "Revenue / Budget / ... by project" is what that item
@@ -330,12 +421,16 @@ export default function DashboardHomeView({
           instead of on a spinner. Every guard lives in prefetch-store.ts. */}
       <DashboardSpeculation fallbackProjectId={data?.projects?.[0]?.id ?? null} />
       {/* No PageHeading here -- this is PROJEXA's designated home route
-          (see (app)/layout.tsx's HOME_ROUTE), and HomeGreeting below
-          already renders a real "Good morning, {name}." heading. */}
+          (see (app)/layout.tsx's HOME_ROUTE), and DashboardGreeting below
+          already renders a real "Good morning, {name}." heading. BUG 4 FIX,
+          2026-09-14: this used to be the kit's own <HomeGreeting>, replaced
+          with a local, compact equivalent -- see DashboardGreeting's own
+          header comment (above, near columnLabel) for why and how much
+          vertical space it saves. */}
       {/* R46S11_01: dashboardSummary() will not state a count the read could
           not produce -- a 504 must never render as a confident "you have
           none" on the first screen after login. */}
-      <HomeGreeting
+      <DashboardGreeting
         userName={userName}
         summary={dashboardSummary(
           data ? { totalProjects: data.totalProjects, delayedProjectCount } : null,

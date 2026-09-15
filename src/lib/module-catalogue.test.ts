@@ -35,10 +35,15 @@ describe("MODULE_CATALOGUE", () => {
     expect(new Set(leafIds).size).toBe(leafIds.length);
   });
 
-  test("every module carries a placeholder and exactly two example prompts", () => {
+  // 2026-09-15: examples are no longer capped at exactly two -- clicking one
+  // now fills the composer (M24Shell.tsx's `onExampleSelect`), so more real,
+  // properly-wired examples are a feature, not noise. The floor is still 2
+  // (a module must never show only one worked example); most modules carry a
+  // third.
+  test("every module carries a placeholder and at least two example prompts", () => {
     for (const mod of MODULE_CATALOGUE) {
       expect(mod.placeholder.length).toBeGreaterThan(0);
-      expect(mod.examples).toHaveLength(2);
+      expect(mod.examples.length).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -110,10 +115,11 @@ describe("MODULE_CATALOGUE", () => {
   // let that regress silently.
   test("B-02: /budgets offers both prompts the item quotes, verbatim", () => {
     const budgets = MODULE_CATALOGUE.find((m) => m.id === "budgets");
-    expect(budgets?.examples).toEqual([
-      "Set budget % to 30 on all civil lines",
-      "Show budget vs actual by category for this project",
-    ]);
+    // toContain (not toEqual) since 2026-09-15 added a third example -- B-02's
+    // own guarantee is that both of its quoted prompts survive verbatim, not
+    // that nothing else may ever join them.
+    expect(budgets?.examples).toContain("Set budget % to 30 on all civil lines");
+    expect(budgets?.examples).toContain("Show budget vs actual by category for this project");
   });
 
   test("B-02: /scope offers the one of the two that is a scope edit", () => {
