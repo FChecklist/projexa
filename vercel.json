@@ -1,11 +1,7 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": [
     "bom1"
   ],
-  "git": {
-    "deploymentEnabled": {
-      "*": false
-    }
-  },
-  "ignoreCommand": "sh -c '[ -n \"$OWNER_DEPLOY_APPROVAL\" ] && [ \"$OWNER_DEPLOY_APPROVAL\" = \"$(date -u +%Y-%m-%d)\" ] && exit 1; exit 0'"
+  "ignoreCommand": "sh -c 'test \"$VERCEL_GIT_COMMIT_REF\" = \"main\" || exit 0; git diff --quiet HEAD^ HEAD -- . \":(exclude)*.md\" \":(exclude)*.jsonl\" \":(exclude)kt/**\" \":(exclude)ai-os/**\" \":(exclude).github/**\" && exit 0; exit 1'"
 }
