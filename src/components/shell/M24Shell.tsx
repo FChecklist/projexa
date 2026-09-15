@@ -1685,6 +1685,32 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     composerRef.current?.focus();
   }, [chain, setLoaded]);
 
+  // 2026-09-15 -- EXAMPLE CHIPS, NOW CLICKABLE. This REVERSES A-11/A-12's own
+  // rule ("the whole of what a pill is allowed to do to the input -- it must
+  // never type into it"), per the owner's explicit directive: the chips look
+  // like buttons (rounded pill, hairline border, per the 2026-09-08 mock
+  // re-skin) and a control that looks clickable but silently does nothing on
+  // click is exactly the kind of dead control M24 elsewhere refuses to ship.
+  // A click REPLACES the draft outright rather than appending -- the same
+  // "one clear action, not an accumulation" rule Reset already follows above
+  // -- and moves focus into the box so the next keystroke lands where the
+  // user would expect, with the caret after the inserted text rather than
+  // before it (a plain .focus() leaves the caret at position 0).
+  const onExampleSelect = useCallback((example: string) => {
+    setDraft(example);
+    const el = composerRef.current;
+    if (!el) return;
+    el.focus();
+    // Deferred one tick: the textarea's value prop updates on this same
+    // render, but setSelectionRange must run after the DOM actually reflects
+    // it, or the browser clamps the requested offset to the OLD (often
+    // shorter, sometimes empty) value's length.
+    requestAnimationFrame(() => {
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+  }, []);
+
   // ─── LEFT SCREEN COMPLETION, 2026-09-14 ──────────────────────────────────
   //
   // Owner directive (compiled by the orchestrating session from several live
@@ -3495,11 +3521,23 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // rule this banner has always followed, just no longer gated on
   // `tasksExpanded` (that state -- and the Task Master pane it used to gate
   // -- no longer exists; Tasks is one of the 7 views now).
+  //
+  // 2026-09-15 BUGFIX (live-browser report: a cold-start construction-data
+  // outage put 5+ "Couldn't load X" lines in this list at once, and since
+  // this banner sat above the tablist with no height cap, it pushed the 7
+  // view tabs -- Box 1's actual primary navigation -- below the fold,
+  // forcing a scroll just to click "Dashboard" or "Back"). `max-h-28
+  // overflow-y-auto` caps THIS banner's own height (the list scrolls inside
+  // itself once it has more than ~3 lines) so it can never again displace
+  // the tablist. The banner still renders first in the DOM, unconditionally
+  // above the nav row -- LeftScreenCompletion.test.tsx's own "renders above
+  // everything" assertion is about DOM order, not pixel height, and stays
+  // true; only its own vertical footprint is now bounded.
   const leftPanelBanner =
     shellErrors.length > 0 ? (
       <div
         role="status"
-        className="m-2 shrink-0 rounded-lg border p-3 text-[12px]"
+        className="m-2 max-h-28 shrink-0 overflow-y-auto rounded-lg border p-3 text-[12px]"
         style={{ borderColor: "var(--color-ct-border)" }}
       >
         <p className="font-semibold" style={{ color: "var(--color-veri-status-late)" }}>
@@ -4052,32 +4090,44 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                 ? promptModule.placeholder
                 : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
           }
-          // R67 A-02: two worked examples in the module's own vocabulary, so a
+          // R67 A-02: worked examples in the module's own vocabulary, so a
           // site engineer sees what a sentence this box accepts looks like
           // before typing one.
           //
           // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
           // direction): the mock renders each example as its own small
           // bordered chip, not one combined "e.g. X · Y" sentence. A-02's
-          // actual content -- both worked examples, in the module's own
-          // words -- is unchanged; only the two are now two elements
-          // instead of one.
+          // actual content -- the worked examples, in the module's own
+          // words -- is unchanged; only the rendering is per-chip.
+          //
+          // 2026-09-15 -- CLICKABLE, per the owner's own directive (see
+          // `onExampleSelect`'s own comment above for why this reverses
+          // A-11/A-12). Real `<button>`s now, not `<span>`s -- an
+          // `aria-label` names the action for a screen reader, since the
+          // visible text alone ("which permits expire this month") does not
+          // say what activating it does.
           examples={
             promptModule ? (
               <span className="flex flex-wrap gap-1">
                 {promptModule.examples.map((ex) => (
-                  <span
+                  <button
                     key={ex}
+                    type="button"
+                    onClick={() => onExampleSelect(ex)}
+                    disabled={submitting}
+                    aria-label={`Use example: ${ex}`}
+                    title="Click to use this in the box"
                     // 2026-09-08 -- VISUAL-ONLY, per the owner's "100% copy
                     // of mock" mandate: the mock's own example chips are a
                     // WHITE pill with a hairline border, not a bare-outline
                     // one -- the border/radius/padding here already matched,
-                    // only the missing white fill did not.
-                    className="rounded-full border px-1.5 py-0.5"
+                    // only the missing white fill did not. Preserved
+                    // verbatim now that the element is a real button.
+                    className="cursor-pointer rounded-full border px-1.5 py-0.5 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: "#fff", borderColor: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
                   >
                     {ex}
-                  </span>
+                  </button>
                 ))}
               </span>
             ) : undefined
