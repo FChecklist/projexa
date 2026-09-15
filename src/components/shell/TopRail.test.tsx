@@ -112,3 +112,45 @@ describe("TopRail project picker", () => {
     expect(container.textContent).toContain("No projects to switch to yet.");
   });
 });
+
+// OWNER FIX, 2026-09-14 -- "+ Add new project" at the end of this same list.
+describe("TopRail '+ Add new project'", () => {
+  test("omitted by default -- a caller that doesn't pass onCreateProject renders exactly as before", () => {
+    const { getByRole, queryByText } = renderRail();
+    fireEvent.click(getByRole("button", { name: /Click to switch project/ }));
+    expect(queryByText("Add new project")).toBeNull();
+  });
+
+  test("renders last, after every real project, when the caller wires it", () => {
+    const { getByRole, getAllByRole } = renderRail({ onCreateProject: () => {} });
+    fireEvent.click(getByRole("button", { name: /Click to switch project/ }));
+    const options = getAllByRole("option").map((o) => (o.textContent ?? "").trim());
+    // The switcher's real job -- choosing among existing projects -- still
+    // reads first; the create action is the last item, not mixed in among
+    // the choices above it (it is also not its own role="option", so it is
+    // never counted as a selectable project).
+    expect(options).toEqual([
+      "All projects",
+      "Cedar Heights Villa - Phase 1",
+      "✓Villa 21",
+      "Marina Tower",
+    ]);
+  });
+
+  test("clicking it calls onCreateProject and closes the list, without reporting a project selection", () => {
+    let calls = 0;
+    const { getByRole, getByText, queryByRole, chosen } = renderRail({
+      onCreateProject: () => {
+        calls += 1;
+      },
+    });
+    fireEvent.click(getByRole("button", { name: /Click to switch project/ }));
+    fireEvent.click(getByText("Add new project"));
+    expect(calls).toBe(1);
+    // Not a project choice: onSelectProject must never fire for this click.
+    expect(chosen).toEqual([]);
+    // Same close-then-act shape as every other choice in this list -- it
+    // cannot be left open over whatever screen the click navigates to.
+    expect(queryByRole("listbox")).toBeNull();
+  });
+});

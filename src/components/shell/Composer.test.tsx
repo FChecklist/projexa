@@ -218,19 +218,29 @@ describe("a live Send has no extra words at all", () => {
 });
 
 describe("the fork still assembles the kit's own composer", () => {
-  test("the forked ControlStrip is the one mounted, chain and all", () => {
-    const { getByTitle, getByText, queryByText } = renderComposer({ value: "x" });
-    // The chain's root segment, rendered by the strip with its full name.
-    expect(getByTitle("Cedar Heights Villa")).toBeDefined();
-    // WAS: expect(getByText("HISTORY")).toBeDefined(). A-01 deleted the
-    // composer's HISTORY button so the Task Master's History tab is the only
-    // control by that name (correction C-03), and nothing in this repo ever
-    // wrote the drop's storage key -- it listed nothing for its whole life.
-    // Home is the strip control that proves the fork is mounted, and HISTORY's
-    // absence is now itself the assertion. 2026-09-07: "HOME" -> "Home",
-    // sentence case per the frozen mock -- same control, same handler.
-    expect(getByText("Home")).toBeDefined();
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- SUPERSEDES "the forked ControlStrip
+  // is the one mounted, chain and all". Box 1's nav row (Modules/Tasks/
+  // Frequent Action/Reports/Dashboard/Home/Back, plus Reset) is no longer
+  // mounted by THIS component -- it lives in LeftScreenCompletion.tsx, mounted
+  // by M24Shell.tsx through the `pills` slot (see LeftScreenCompletion.test.tsx
+  // for its own coverage of that row). Mounting the old ControlStrip here too
+  // would put two Back/Home controls on one screen -- the exact duplicate-
+  // control defect this codebase has repeatedly treated as a real bug (see
+  // this file's own header). What DOES still belong to this file is that the
+  // `pills` slot renders whatever Box 1 content the caller supplies, and that
+  // no chain-sentence/Home/Back control is drawn here on its own account any
+  // more -- both asserted directly below.
+  test("no chain sentence or nav control is rendered by this component itself", () => {
+    const { container, queryByText, queryByTitle } = renderComposer({ value: "x" });
+    // ComposerProps still accepts `chain`/`onHome`/etc (see renderComposer's
+    // own default props above) for prop-surface stability, but this file's
+    // own render no longer reads them -- Box 1 (LeftScreenCompletion, via
+    // `pills`) is what renders the sentence and the nav row now.
+    expect(queryByTitle("Cedar Heights Villa")).toBeNull();
+    expect(queryByText("Home")).toBeNull();
     expect(queryByText("HISTORY")).toBeNull();
+    // The two-box structure is what's left in its place.
+    expect(container.querySelector('[data-testid="composer-box2"]')).toBeTruthy();
   });
 
   test("the pills and conversation bands render only when given content", () => {
@@ -271,17 +281,16 @@ describe("the Send label", () => {
       messages: <p data-testid="region">Saved — Permit P-12</p>,
     });
     const region = container.querySelector("[data-testid='region']");
-    // 2026-09-07: was `.rounded-xl` -- that class (and its border/shadow/
-    // white-background siblings) moved to AppShell.tsx's shared card wrapper
-    // when Composer.tsx and TaskMaster started sharing one visual surface
-    // (see Composer.tsx's own note at this exact div). `.pointer-events-auto`
-    // is the one class unique to this box both before and after that move
-    // (the outer wrapper above it is deliberately pointer-events-none, so
-    // clicks pass through the empty space it reserves while growing). The
+    // LEFT SCREEN COMPLETION, 2026-09-14 -- the docked/floating-over-Task-
+    // Master overlay this `.pointer-events-auto`/`.pointer-events-none` pair
+    // existed for is gone (this component always renders in normal flow
+    // now -- see this file's own header), so there is no longer a reason for
+    // either class to exist at all. The shared white card (this component's
+    // own two-box wrapper) now carries a stable `data-testid` instead. The
     // RULE this test protects -- messages sits as a sibling BEFORE the box,
-    // not inside it -- is completely unchanged; only which class identifies
-    // the box in a DOM query changed.
-    const box = container.querySelector(".pointer-events-auto");
+    // not inside it -- is completely unchanged; only which attribute
+    // identifies the box in a DOM query changed.
+    const box = container.querySelector('[data-testid="composer-box2"]')?.parentElement;
     expect(region).toBeTruthy();
     expect(box).toBeTruthy();
     expect(box!.contains(region)).toBe(false);

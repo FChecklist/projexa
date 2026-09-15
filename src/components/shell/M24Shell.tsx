@@ -148,6 +148,10 @@ import { cardsFor, chainForScreenCard, hrefForScreenCard, type ScreenCard } from
 // D-66, because the kit exposes no picker slot, which is why this shell was
 // CYCLING through projects one click at a time under a caret promising a menu.
 import { TopRail } from "./TopRail";
+// LEFT SCREEN COMPLETION, 2026-09-14 -- Box 1 of the 2-box left panel (owner
+// directive; see this file's own comment near `activeLeftView` below for the
+// full quotes and the design reasoning).
+import { LeftScreenCompletion, type LeftViewId } from "./LeftScreenCompletion";
 import { useShellScreen, type ScreenProjectSource } from "./shell-screen-context";
 import {
   EMPTY_RANKED_CACHE,
@@ -244,6 +248,16 @@ import { asOfLabel } from "@/lib/pane-state";
 // The key was renamed with it, because a key called "usage" holding pins is how
 // the next reader concludes the local ordering is still there. The old key is
 // read once so nobody loses the pins they had.
+// LEFT SCREEN COMPLETION, 2026-09-14 -- REPORTS and DASHBOARD are real,
+// already-catalogued MODULE_CATALOGUE entries (module-catalogue.ts), each
+// with its own real leaves (Reports: "Open"; Dashboard: "Project dashboard",
+// "Company hierarchy"). Selecting either of Box 1's Reports/Dashboard
+// buttons reuses `selectEntity()` -- the SAME mechanism picking any other
+// module already uses -- rather than inventing a second, parallel way to
+// enter a module. See `onSelectReportsView`/`onSelectDashboardView` below.
+const REPORTS_MODULE = MODULE_CATALOGUE.find((m) => m.id === "reports") ?? null;
+const DASHBOARD_MODULE = MODULE_CATALOGUE.find((m) => m.id === "dashboard") ?? null;
+
 const PINNED_CARDS_KEY = "veri.pill.pinned";
 const LEGACY_PILL_USAGE_KEY = "veri.pill.usage";
 
@@ -701,20 +715,21 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // The composer's own box, so a control whose whole meaning is "type it" can
   // put the cursor there rather than describing what the user should do next.
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const [showAllPills, setShowAllPills] = useState(false);
-  // 2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE. See
-  // ControlStrip.tsx's TASKS button, Composer.tsx's `dockedOverTaskMaster`
-  // and AppShell.tsx's `taskMasterExpanded` for the rest of this mechanism
-  // -- all three default to the ORIGINAL always-visible behaviour and only
-  // change when this is explicitly threaded through as false-by-default,
-  // true-on-click. Collapsed (false) by default so the left pane opens on
-  // exactly what the mock shows -- Frequent actions, nothing above it --
-  // and TASKS is the one control that reveals the exact same real Task
-  // Master (same tabs, same rows, same click-to-resolve actions, same data)
-  // one click away. Nothing about Task Master itself changed: this is
-  // DEFAULT VISIBILITY only, using the identical expand/collapse pattern
-  // `showAllPills` right above it already established for "All modules".
-  const [tasksExpanded, setTasksExpanded] = useState(false);
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- SUPERSEDES `showAllPills`/
+  // `tasksExpanded`/`toggleAllPills`/`toggleTasks` (R80-BUGFIX 2026-09-14's
+  // mutual-exclusivity fix for "All modules" and Tasks being independently
+  // toggleable overlays that could together overflow the composer -- see
+  // this file's own prior history for the full live-repro writeup). That
+  // whole mechanism existed to prevent TWO panels from being open at once;
+  // the 7-view left panel makes that structurally impossible instead --
+  // LeftScreenCompletion (Box 1) renders exactly one view's content, always,
+  // by construction (see LeftScreenCompletion.tsx's own header) -- so the
+  // state and the toggle functions that used to coordinate two independent
+  // booleans are removed rather than kept as dead code. `activeLeftView`
+  // (declared further down, beside `onLeftBack`) is what replaced them; see
+  // that block for the full reasoning, including why "Frequent Action" (not
+  // "Modules") is the default so `M24Shell.loaded-chain-reset.test.tsx`'s
+  // real, must-keep-passing assertions need no changes.
   // 2026-09-07 -- see Composer.tsx's onHeightChange doc comment. Seeded with
   // the same static guess AppShell used before this fix (112 + 96 = 208) so
   // there is no flash of unreserved space before the first real measurement
@@ -749,6 +764,22 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     loadedChainRef.current = next;
     setLoadedChain(next);
   }, []);
+  // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation -- "the right
+  // screen also changes... for every selection, every chain, for each
+  // step"). selectEntity() below now navigates to the picked module's own
+  // route the MOMENT it is picked, not only once a leaf/verb is chosen. The
+  // pathname-change effect further down ("what survives a navigation")
+  // would otherwise treat that self-caused navigation as an ORDINARY one and
+  // clear the very `segments` entry selectEntity just wrote -- wiping Box
+  // 1's own "Which step?" leaves the instant they appeared. This ref is the
+  // narrowest fix: set immediately before a module-pick push, and consumed
+  // (cleared to null) the first time the effect sees a matching pathname, so
+  // a LATER, unrelated navigation to the same route still clears normally.
+  // Deliberately NOT reusing `setLoaded`/`loadedChainRef` for this: that
+  // mechanism is a different UI concept (a chain restored from history,
+  // which shows its own "Loaded from history"/Pin control) and reusing it
+  // here would paint that banner over an ordinary module pick.
+  const selfModuleNavRef = useRef<string | null>(null);
   const [draft, setDraft] = useState("");
   // R67 D-55: null, not 0. A tab badge reading 0 over a failed read is a
   // claim nobody made; the kit renders no badge at all for an absent count,
@@ -1654,6 +1685,166 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     composerRef.current?.focus();
   }, [chain, setLoaded]);
 
+  // ─── LEFT SCREEN COMPLETION, 2026-09-14 ──────────────────────────────────
+  //
+  // Owner directive (compiled by the orchestrating session from several live
+  // messages into one task assignment): "just keep two boxes / top left box
+  // - Modules, Tasks, Frequent Action, Reports, Dashboard, Home, Back / when
+  // the respective button pressed, the mode pill option selection changes
+  // dynamically / and similarly the right screen changes ... the bottom left
+  // box - is the chat box". Box 1 (LeftScreenCompletion.tsx) is a thin,
+  // presentational nav; this shell owns which of its 7 controls is active,
+  // what each one's own content is, and what Back/Reset actually do.
+  //
+  // DEFAULT VIEW IS "frequent", NOT "modules". This is deliberate, not
+  // arbitrary: R-92's own M24Shell.loaded-chain-reset.test.tsx (a real,
+  // already-shipped, must-keep-passing suite) mounts the real shell and
+  // expects `[aria-label="Things you can do"]` -- PillStrip's screenCards/
+  // recent/ranked-cards band -- to be on screen immediately after bootstrap,
+  // with no view button clicked first. Keeping "Frequent Action" as the
+  // startup view preserves that real contract with ZERO changes to
+  // PillStrip's own rendering, rather than requiring every existing caller
+  // to click a button before seeing the strip this codebase's own tests
+  // already depend on.
+  const [activeLeftView, setActiveLeftViewState] = useState<LeftViewId>("frequent");
+  // The view-selector's own undo history -- a plain stack of PREVIOUS top-
+  // level views, pushed only when the view actually changes. Not React state:
+  // nothing renders from "what was the view before this one", it is only
+  // consulted by onLeftBack below.
+  const leftViewHistoryRef = useRef<LeftViewId[]>([]);
+  const selectLeftView = useCallback((next: LeftViewId) => {
+    setActiveLeftViewState((current) => {
+      if (current !== next) leftViewHistoryRef.current.push(current);
+      return next;
+    });
+  }, []);
+
+  // BACK, REINTERPRETED FOR THE 7-VIEW SELECTOR (spec's own words: "implement
+  // real 'previous selected view' navigation (or fall back to Home when
+  // there's no prior view) so Back has genuine, always-available behavior in
+  // this new model, distinct from the old chain-segment concept it doesn't
+  // need to inherit").
+  //
+  // THREE TIERS, tried in order, each one a REAL step back through whatever
+  // was just done rather than a single flat "previous view" jump:
+  //
+  //   1. A chain is mid-build (a module or one of its leaves is selected --
+  //      `segments` holds only non-root, user-added steps). Step it back ONE
+  //      segment via the EXISTING, already-tested cutChainFrom mechanism
+  //      (`onBack` above -- the same one the old ControlStrip Back button
+  //      always called): "Modules > Permits > New" -> "Modules > Permits" ->
+  //      "Modules" (catalogue), one Back press per step, genuinely undoing
+  //      the drill-down rather than jumping straight out of it.
+  //   2. No chain, but Tasks is open on a non-Home sub-tab: step back to
+  //      Tasks' own Home tab first, mirroring tier 1's "one level at a time"
+  //      rule for Tasks' own drill-down (tab -> rows).
+  //   3. Nothing left to unwind on the CURRENT view: pop the view-history
+  //      stack, falling back to "home" when it is empty -- never a dead
+  //      control with no explanation.
+  // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation) -- the module a
+  // set of `segments` names, if any -- shared by both tiers below so Back's
+  // right-pane sync and Back's chain-sentence sync can never disagree about
+  // which module is left standing.
+  const moduleFromSegments = useCallback((list: Chain["segments"]) => {
+    const entity = list.find((s) => s.kind === "action");
+    return entity ? (MODULE_CATALOGUE.find((m) => m.id === entity.id) ?? null) : null;
+  }, []);
+
+  const onLeftBack = useCallback(() => {
+    if (segments.length > 0) {
+      // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation, direct quote:
+      // "the sync of left selections and right screen... it has to be for
+      // every selection, every chain, for each step") -- Back must sync the
+      // right pane to wherever THIS step lands, the same as every forward
+      // step now does (selectEntity/onLeafSelect), not only walk the chain
+      // sentence back while the right pane stays put (the original bug 2
+      // report). Computed from `segments` BEFORE onBack() cuts them, since
+      // the cut itself is an async state update this callback cannot read
+      // back synchronously.
+      const remainingModule = moduleFromSegments(segments.slice(0, -1));
+      const dest = remainingModule ? moduleRoute(remainingModule, projectId) : HOME_ROUTE;
+      if (normalisePathname(screen.pathname) !== normalisePathname(dest)) {
+        if (remainingModule) selfModuleNavRef.current = normalisePathname(remainingModule.route);
+        router.push(dest);
+      }
+      onBack();
+      return;
+    }
+    if (activeLeftView === "tasks" && activeTab !== "home") {
+      setActiveTab("home");
+      return;
+    }
+    const prev = leftViewHistoryRef.current.pop();
+    const nextView = prev ?? "home";
+    // Tier 3: popping the view history changes WHICH VIEW is active, so it
+    // gets the same right-pane sync a fresh click of `nextView` would get
+    // (onLeftSelectView, above) -- Back must land Box 1 and the right pane
+    // on the same place, never one without the other. "Frequent Action" is
+    // exempt for the same reason it is exempt going forward: it has no
+    // destination of its own (see onLeftSelectView's own comment).
+    if (nextView === "reports" && REPORTS_MODULE) {
+      const dest = moduleRoute(REPORTS_MODULE, projectId);
+      if (normalisePathname(screen.pathname) !== normalisePathname(dest)) router.push(dest);
+    } else if (nextView === "dashboard" && DASHBOARD_MODULE) {
+      const dest = moduleRoute(DASHBOARD_MODULE, projectId);
+      if (normalisePathname(screen.pathname) !== normalisePathname(dest)) router.push(dest);
+    } else if ((nextView === "modules" || nextView === "tasks" || nextView === "home") && screen.pathname !== HOME_ROUTE) {
+      router.push(HOME_ROUTE);
+    }
+    setActiveLeftViewState(nextView);
+  }, [segments, onBack, activeLeftView, activeTab, moduleFromSegments, screen.pathname, projectId, router]);
+
+  // HOME -- mirrors this shell's own pre-existing onHome semantics (see the
+  // Composer `onHome` callback further down, now folded in here): navigate to
+  // HOME_ROUTE if not already there, and land on the Modules view either way
+  // -- the same "HOME opens the grouped module directory / All modules"
+  // behaviour this shell has documented since R67 A-08, now reachable through
+  // Box 1's own Home button instead of a second, separate control.
+  const onLeftHome = useCallback(() => {
+    const alreadyHome = screen.pathname === HOME_ROUTE;
+    if (!alreadyHome) {
+      router.push(HOME_ROUTE);
+    } else {
+      // BUG A FIX, 2026-09-14/15 (live-browser repro: Dashboard -> Home left
+      // a leftover "Which step?" panel with Dashboard's own leaves stacked
+      // next to Home's Modules catalogue). ROOT CAUSE: DASHBOARD_MODULE's
+      // own route IS HOME_ROUTE ("/dashboard" -- module-catalogue.ts), so
+      // clicking Dashboard then Home hits exactly this `alreadyHome` branch
+      // and `router.push` above is skipped as a genuine no-op (the pathname
+      // never changes). The ONLY other place `segments` (and therefore
+      // `selectedModule`/`optionLevel`) is cleared on an ordinary navigation
+      // is the `screen.pathname` effect further down this file -- which
+      // never fires when the pathname does not actually change. So the
+      // Dashboard action segment set by `selectEntity` stayed in `segments`,
+      // `optionLevel` kept resolving it every render, and Box 2's
+      // `conversation` fallback (gated on `boxOneShowsOptionLevel`, which
+      // does not include "home" because Box 1's own Home content is always
+      // the plain module catalogue, never `optionLevel`) went on rendering
+      // it as a stale, disconnected "Which step?" panel beside Home's own
+      // content. Applying the exact same navigationOutcome() rule the
+      // pathname effect uses -- here, unconditionally rather than gated on
+      // a pathname change that will never come -- closes the gap without
+      // duplicating the "keep a pinned/matching loaded chain" exception.
+      const outcome = navigationOutcome({ loaded: loadedChainRef.current, nextPathname: HOME_ROUTE });
+      if (outcome !== "keep") {
+        setSegments([]);
+        setPendingFunctionId(null);
+        setArmedCard(null);
+        setNotice(null);
+        if (outcome === "clear-all") {
+          setDraft("");
+          setLoaded(null);
+        }
+      }
+    }
+    selectLeftView("home");
+  }, [screen.pathname, router, selectLeftView, setLoaded]);
+  // `onSelectReportsView`/`onSelectDashboardView`/`onLeftSelectView` are
+  // declared further down, right after `selectEntity` -- they call it, and
+  // `selectEntity` is declared later in this same function body (a `const`,
+  // so referencing it here would be a genuine temporal-dead-zone error, not
+  // just a style choice). See the block right after `selectEntity` below.
+
   // LOADS AND STOPS. Restores the chain and navigates. Navigation is a read.
   // It calls no action endpoint, and the ChainLoad it receives has no way to
   // express one.
@@ -2027,8 +2218,97 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // <some other chain>" over the verbs of the module just chosen.
       setNotice(null);
       setLoaded(null);
+      // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation, direct quote:
+      // "when the respective button pressed... the right screen also
+      // changes... it has to be for every selection, every chain, for each
+      // step") -- SUPERSEDES this file's earlier "the module narrows the
+      // sentence; only its VERB navigates" rule (D-08/C-09 comment above on
+      // onModuleEntrySelect) for the MODULE-PICK step specifically: picking
+      // a module now opens its own list route immediately, same as every
+      // other step. What a LEAF click itself does (onLeafSelect, below) is
+      // unchanged -- it always navigated. Guarded against a redundant push
+      // when already standing on that module's own route (e.g. clicking
+      // "Reports" while already on /reports). `selfModuleNavRef` stops the
+      // navigation-effect's ordinary "clear-segments" outcome from erasing
+      // the segment just set above -- see that ref's own comment.
+      if (normalisePathname(pathname ?? "") !== normalisePathname(mod.route)) {
+        selfModuleNavRef.current = normalisePathname(mod.route);
+        router.push(moduleRoute(mod, projectId));
+      }
     },
-    [setLoaded]
+    [pathname, projectId, router, setLoaded]
+  );
+
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- REPORTS / DASHBOARD. Both real
+  // MODULE_CATALOGUE entries (this file's own module-level consts, above);
+  // selecting either reuses `selectEntity()`, the exact mechanism any other
+  // module pick already uses, so Box 1's own drill-down (module -> its
+  // leaves, via `optionLevel` further down) works for these two exactly as
+  // it does for Permits/Scope/etc -- no new mechanism invented.
+  const onSelectReportsView = useCallback(() => {
+    if (REPORTS_MODULE) selectEntity(REPORTS_MODULE);
+    selectLeftView("reports");
+  }, [selectEntity, selectLeftView]);
+  const onSelectDashboardView = useCallback(() => {
+    if (DASHBOARD_MODULE) selectEntity(DASHBOARD_MODULE);
+    selectLeftView("dashboard");
+  }, [selectEntity, selectLeftView]);
+
+  const onLeftSelectView = useCallback(
+    (view: LeftViewId) => {
+      if (view === "home") {
+        onLeftHome();
+        return;
+      }
+      if (view === "reports") {
+        onSelectReportsView();
+        return;
+      }
+      if (view === "dashboard") {
+        onSelectDashboardView();
+        return;
+      }
+      // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation, direct quote:
+      // "when the respective button pressed... the right screen also
+      // changes... for every selection"). "Modules" and "Tasks" have no
+      // leaf/module of their own to open yet at this level (Modules is the
+      // bare catalogue; Task Master has no route of its own anywhere in this
+      // app -- confirmed against src/app's own route list), so the nearest
+      // real, already-shipped page that is genuinely "relevant" is
+      // HOME_ROUTE, documented since R52 as THE GROUPED MODULE DIRECTORY
+      // rendered in the right pane -- exactly what "browsing modules" or
+      // "stepping away from Task Master's own drill-down" should show.
+      // "Frequent Action" is deliberately NOT included here: unlike the
+      // other 6 views it has no destination of its own to browse to -- its
+      // whole job (A-20's screenCards, band 3) is to describe whatever
+      // screen is ALREADY on the right, so forcing a navigation away from it
+      // would defeat the one thing it exists to do, not close a sync gap.
+      if ((view === "modules" || view === "tasks") && screen.pathname !== HOME_ROUTE) {
+        router.push(HOME_ROUTE);
+      }
+      // LIVE-BROWSER BUG FIX, 2026-09-14 (coordinator report): opening Tasks
+      // showed its tab as active but the content area sat on an empty/stale
+      // pane indefinitely -- confirmed via the dev server's own request log
+      // that GET /api/tasks was never even asked for. ROOT CAUSE: Box 1's
+      // view selector (`activeLeftView`) is a THIRD axis, independent of both
+      // `activeTab` (Task Master's own Home/Approval/Queue/Done/History
+      // sub-tab) and `pathname` -- the only two dependencies the mount/
+      // tab-switch effect above (the one that actually calls `loadTasks()`)
+      // reacts to. Switching Box 1 to "tasks" changes neither, so that effect
+      // never re-runs and Task Master is left showing whatever it already
+      // had (nothing, the first time this view is ever opened in a session).
+      // Fixed the same way this file fixes every other "an action needs a
+      // fetch that nothing already triggers" gap: call the SAME `loadTasks`
+      // the mount effect uses, behind the SAME per-tab staleness gate
+      // (`tasksFetchedAtRef`/`TASK_REVALIDATE_MS`) that effect already
+      // enforces, rather than an unconditional fetch on every click.
+      if (view === "tasks") {
+        const lastFetched = tasksFetchedAtRef.current.get(activeTab);
+        if (lastFetched === undefined || Date.now() - lastFetched >= TASK_REVALIDATE_MS) void loadTasks();
+      }
+      selectLeftView(view);
+    },
+    [onLeftHome, onSelectReportsView, onSelectDashboardView, screen.pathname, router, selectLeftView, activeTab, loadTasks]
   );
 
   // R67 A-07 -- A CARD CLICK. It records usage and OPENS THE CARD'S OWN ROUTE.
@@ -2130,7 +2410,6 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     (entryId: string) => {
       const entry = pillEntryById(entryId);
       if (!entry) return;
-      setShowAllPills(false);
       setPlatformNotice(null);
       switch (entry.destination) {
         case "input":
@@ -2262,7 +2541,28 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // reasoning and what goes wrong (a wrong "keep"/"clear-all" on the next
       // navigation) when this is skipped.
       setLoaded(null);
-      router.push(moduleHref(leaf, projectId));
+      // LEFT SCREEN COMPLETION BUG FIX, 2026-09-14 (live-browser repro: Back
+      // from a leaf's own route lagged one click behind, and skipped straight
+      // to a view-history pop instead of landing on the module tier first).
+      // ROOT CAUSE: this push was missing the exact `selfModuleNavRef` guard
+      // `selectEntity` above already uses -- see that ref's own declaration
+      // comment. Without it, the navigation-effect's ordinary clear-segments
+      // outcome (this file, the `lastPathRef` effect) wiped the `segments`
+      // entry just set above the instant the route actually landed, because
+      // it could not tell this pathname change was self-inflicted. By the
+      // time a user reached this leaf's page and pressed Back, `segments`
+      // was already `[]`, so `onLeftBack`'s tier 1 (`segments.length > 0`)
+      // was skipped on the very click that should have used it, falling
+      // straight to tier 3 -- which only changes Box 1's own view (no
+      // destination for "Frequent Action") on THAT click, and only pushes a
+      // route on the NEXT one. Same fix, same reasoning, same mechanism as
+      // `selectEntity`'s own guard: protect the segment this call just set so
+      // it survives arriving at its own route, which is what lets
+      // `onLeftBack`'s tier 1 fire on the correct click and cut back exactly
+      // one level (the module tier), not zero or two.
+      const href = moduleHref(leaf, projectId);
+      selfModuleNavRef.current = normalisePathname(href);
+      router.push(href);
     },
     [bumpUsage, chainForUsage, projectId, requestProject, router, setLoaded]
   );
@@ -2835,7 +3135,6 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     lastPathRef.current = screen.pathname;
     setProjectPrompt(null);
     setSubmitError(null);
-    setShowAllPills(false);
     // A-15: the "say what you need" prompt belonged to the screen it was
     // asked for; a new screen asks its own question. A-17: so did the "not
     // part of PROJEXA" line.
@@ -2865,7 +3164,17 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     //                   person typed are theirs (A-06).
     const outcome = navigationOutcome({ loaded: loadedChainRef.current, nextPathname: screen.pathname });
     if (outcome === "keep") return;
-    setSegments([]);
+    // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation) -- see
+    // `selfModuleNavRef`'s own declaration for the full reasoning. Consumed
+    // (read then cleared) unconditionally, on EVERY navigation, not only
+    // when it matches -- a ref left set past the one navigation it was
+    // written for would wrongly protect a later, unrelated arrival at the
+    // same route (e.g. the user leaves and comes back via the browser's own
+    // Back button) from the ordinary clear-segments rule.
+    const selfNavModule = selfModuleNavRef.current;
+    selfModuleNavRef.current = null;
+    const isSelfModuleNav = selfNavModule !== null && normalisePathname(screen.pathname) === selfNavModule;
+    if (!isSelfModuleNav) setSegments([]);
     setPendingFunctionId(null);
     setArmedCard(null);
     // B-07: an answer about the chain that was just cleared has nothing left to
@@ -3179,6 +3488,256 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     onLeafSelect,
   ]);
 
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- shellErrors' own banner, now
+  // rendered by LeftScreenCompletion (Box 1) ABOVE whichever of the 7 views
+  // is active, regardless of which one that is -- a real backend failure
+  // must never be hidden behind a view the user has to think to open, same
+  // rule this banner has always followed, just no longer gated on
+  // `tasksExpanded` (that state -- and the Task Master pane it used to gate
+  // -- no longer exists; Tasks is one of the 7 views now).
+  const leftPanelBanner =
+    shellErrors.length > 0 ? (
+      <div
+        role="status"
+        className="m-2 shrink-0 rounded-lg border p-3 text-[12px]"
+        style={{ borderColor: "var(--color-ct-border)" }}
+      >
+        <p className="font-semibold" style={{ color: "var(--color-veri-status-late)" }}>
+          This panel is showing less than it should.
+        </p>
+        <ul className="mt-1 space-y-0.5" style={{ color: "var(--color-ct-muted)" }}>
+          {shellErrors.map((e) => (
+            <li key={e.what}>
+              Couldn&apos;t load {e.what}: {e.detail}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- THE "Tasks" VIEW'S OWN CONTENT.
+  // Byte-for-byte the same TaskMaster wiring this shell has always had
+  // (tabs/activeTab/onTabChange/primaryGroup/secondaryGroup/systemGroup/
+  // onLoadChain/onRowAction, the same taskReadError fallback with its own
+  // Retry, the same "Show N more" page control) -- only WHERE it renders
+  // changed, from AppShell's separate always-reserved `taskMaster` slot to
+  // one of Box 1's 7 views, and the `tasksExpanded` visibility gate is gone
+  // because LeftScreenCompletion's own "exactly one view renders" rule
+  // already supplies it.
+  const tasksViewContent = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {taskReadError ? (
+          // Never an empty list in place of an error -- see task-errors.ts.
+          <div className="flex h-full flex-col">
+            <div className="m-2 shrink-0 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
+              <p role="alert" className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
+                <span>{taskReadError.sentence}</span>
+                {taskReadError.retryable && (
+                  <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
+                    Retry
+                  </button>
+                )}
+              </p>
+              {taskReadError.detail && (
+                <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  {taskReadError.detail}
+                </p>
+              )}
+            </div>
+            {primaryGroup.rows.length + (secondaryGroup?.rows.length ?? 0) > 0 && (
+              <div className="min-h-0 flex-1 opacity-70">
+                <p className="px-3 pb-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
+                  Showing what loaded {asOfLabel(tasksLoadedAt) ?? "earlier"}.
+                </p>
+                <TaskMaster
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={onTabChange}
+                  primary={primaryGroup}
+                  secondary={secondaryGroup}
+                  system={systemGroup}
+                  onLoad={onLoadChain}
+                  onRowAction={onRowAction}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <TaskMaster
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={onTabChange}
+            primary={primaryGroup}
+            secondary={secondaryGroup}
+            system={systemGroup}
+            onLoad={onLoadChain}
+            onRowAction={onRowAction}
+          />
+        )}
+      </div>
+      {/* R67 F-26 (R-242): the pane loads 20 rows, not 50, and says so.
+          Rendered ONLY when the backend handed back a cursor. */}
+      {!tasksError && nextCursor && (
+        <div className="shrink-0 border-t px-2 py-1.5" style={{ borderColor: "var(--color-ct-border)" }}>
+          <button
+            type="button"
+            className="veri-view-tab w-full"
+            onClick={() => void loadTasks(nextCursor)}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Loading…" : `Show ${TASK_PAGE_SIZE} more`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- THE CHAIN SENTENCE, in words, for
+  // Box 1's own header (see LeftScreenCompletion.tsx). `chain.segments`
+  // already carries the project/module/create-page roots AND every step the
+  // user picked (this file's own `chain` useMemo, above) -- reused as-is
+  // rather than recomputed.
+  //
+  // BUG FIX, 2026-09-14 (live-browser repro: picking "Permits" alone showed
+  // "R74 Test Project › Permits › Permits", the module named twice). ROOT
+  // CAUSE: `chain.segments` deliberately holds TWO representations of the
+  // same pick side by side -- a route-derived root (`chainModule`, added by
+  // the `chain` useMemo above from the CURRENT pathname) and the user's own
+  // `action`/`step` entry (`selectEntity`/`onLeafSelect`, kept so
+  // `onLeftBack`'s tier 1 can still cut the chain back one level at a time --
+  // see `selfModuleNavRef`'s own comment). Both are needed structurally:
+  // `onCutFrom`/the kit's `cutChainFrom` only know how to remove a non-root
+  // segment, so the user's own entry has to stay in `chain.segments` for
+  // Back to keep working. The fix is scoped to the SENTENCE TEXT only, never
+  // to `chain.segments` itself:
+  //   - a module already named by a route-derived root is named again by the
+  //     `action` segment `selectEntity` adds once it also navigates there
+  //     ("Permits › Permits") -- collapsed as an exact adjacent repeat, so a
+  //     genuinely different two-word run that happens to share a label is
+  //     never silently eaten;
+  //   - a CREATE page's own route-derived segment (`screen.createSegment`,
+  //     e.g. "New permit") already names this level; the trailing `step`
+  //     entry the leaf pick itself added (e.g. "New", kept only so Back can
+  //     still cut it -- see `onLeafSelect`'s own comment) is the SAME pick,
+  //     dropped from the sentence rather than said again in different words.
+  const leftChainSentence = useMemo(() => {
+    if (chain.segments.length === 0) return null;
+    const withoutRedundantLeaf = screen.createSegment ? chain.segments.filter((s) => s.kind !== "step") : chain.segments;
+    // A SET, not an adjacent-pair check: the route-derived root and the
+    // user's own duplicate entry are not always neighbours -- on a create
+    // page the route-derived `created` root sits BETWEEN the module's root
+    // and the module's own `action` entry ("… › Permits › New permit ›
+    // Permits" before this loop), so only catching an immediately-repeated
+    // label would miss it.
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const seg of withoutRedundantLeaf) {
+      if (seen.has(seg.label)) continue;
+      seen.add(seg.label);
+      labels.push(seg.label);
+    }
+    return labels.join(" › ");
+  }, [chain.segments, screen.createSegment]);
+  const leftLoadedBanner = loadedChain
+    ? {
+        from: loadedChain.from,
+        pinned: loadedChain.pinned,
+        onTogglePin: () => setLoaded({ ...loadedChain, pinned: !loadedChain.pinned }),
+      }
+    : null;
+
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- ONE VIEW'S CONTENT, chosen by
+  // `activeLeftView`. "frequent" (the DEFAULT -- see `activeLeftView`'s own
+  // declaration for why) reuses band 3's PillStrip exactly as it always
+  // rendered; "modules"/"reports"/"dashboard" reuse `optionLevel` (below)
+  // once a module is selected, falling back to the SAME catalogue-only
+  // PillStrip render (now with `hideFrequentBand`) when nothing is picked
+  // yet; "tasks" is `tasksViewContent` above; "home" reuses the same
+  // catalogue with a one-line heading so it is honestly distinct on screen
+  // from "modules" while still being 100% reused content, per the owner's
+  // own "MOST CAN BE TAKEN FROM EXISTING" instruction.
+  const modulesCatalogue = (
+    <PillStrip
+      cards={[]}
+      onSelect={() => {}}
+      expanded
+      onToggleExpanded={() => {}}
+      allModules={allModules}
+      onSelectModule={onModuleEntrySelect}
+      hideFrequentBand
+    />
+  );
+  // LEFT SCREEN COMPLETION, 2026-09-14 -- BUG 3 FIX (duplicate "Which step?"
+  // panel). `optionLevel` is ONE memoized element, and it used to be handed
+  // to TWO places at once: Box 1's own content area (below, for the
+  // "modules"/"reports"/"dashboard" views) AND the Composer's separate
+  // `conversation` band (further down this file), which falls back to the
+  // very same `optionLevel` whenever nothing else (a pending verdict, an
+  // answer, a notice) claims that band -- with no gate checking whether Box
+  // 1 was already showing it. The moment a module was selected while
+  // standing on one of those three views, both places rendered the same
+  // "Which step?" chip row -- stacked, byte-for-byte identical, the exact
+  // double-mount this file's own header warns the LeftScreenCompletion
+  // redesign was supposed to make impossible "by construction". This flag
+  // is that construction: it names the exact three views where Box 1 has
+  // already claimed `optionLevel`, and `conversation`'s own fallback (see
+  // its render further down) is gated on it so the two spots can never both
+  // render it at once.
+  const boxOneShowsOptionLevel =
+    activeLeftView === "modules" || activeLeftView === "reports" || activeLeftView === "dashboard";
+  const leftViewContent =
+    activeLeftView === "tasks" ? (
+      tasksViewContent
+    ) : activeLeftView === "modules" ? (
+      optionLevel ?? modulesCatalogue
+    ) : activeLeftView === "reports" ? (
+      optionLevel ?? (
+        <p className="p-2 text-[12px]" style={{ color: "var(--color-ct-muted)" }}>
+          Loading Reports…
+        </p>
+      )
+    ) : activeLeftView === "dashboard" ? (
+      optionLevel ?? (
+        <p className="p-2 text-[12px]" style={{ color: "var(--color-ct-muted)" }}>
+          Loading Dashboard…
+        </p>
+      )
+    ) : activeLeftView === "home" ? (
+      <>
+        <p className="px-2 pb-1 text-[11px] font-semibold" style={{ color: "var(--color-ct-navy)" }}>
+          Jump to any module
+        </p>
+        {modulesCatalogue}
+      </>
+    ) : (
+      // "frequent" -- byte-for-byte the same band R-92's own tests
+      // (PillStrip.test.tsx, M24Shell.loaded-chain-reset.test.tsx) already
+      // depend on.
+      <PillStrip
+        cards={cardViews}
+        screenCards={selectedModule ? [] : screenCardViews}
+        onSelectScreenCard={onScreenCardSelect}
+        recent={recentChains}
+        onSelectRecent={onRecentSelect}
+        onSelect={onCardSelect}
+        onTogglePin={onTogglePin}
+        loading={cardsLoading}
+        expanded={false}
+        onToggleExpanded={() => {}}
+        allModules={allModules}
+        onSelectModule={onModuleEntrySelect}
+        unknownKeys={unknownKeys}
+        footnote={
+          rankingFailed
+            ? "Recent tasks unavailable"
+            : firstRunHint
+              ? "Click a task, then the thing it is about, then Save."
+              : undefined
+        }
+      />
+    );
+
   return (
     <AppShell
       // F_019 fix (2026-08-27): this shell always renders the composer's
@@ -3203,10 +3762,15 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // so this is "how much MORE than the resting height was measured",
       // floored at the same minimum the static constant always guaranteed.
       composerReserveExtra={Math.max(COMPOSER_PILLS_BAND_RESERVE, composerHeight - COMPOSER_RESTING_HEIGHT)}
-      // 2026-09-08: see this state's own doc comment above (near
-      // `showAllPills`) and AppShell.tsx's `taskMasterExpanded` doc comment
-      // for the mechanism -- collapsed by default, matching the mock.
-      taskMasterExpanded={tasksExpanded}
+      // LEFT SCREEN COMPLETION, 2026-09-14 -- ALWAYS false now. There is no
+      // longer a separate, always-reserved Task Master pane above the
+      // composer for anything to float over: Tasks is one of Box 1's own 7
+      // views (see `activeLeftView`/`tasksViewContent` below), rendered
+      // inside LeftScreenCompletion exactly like every other view.
+      // `composerReserveExtra` above is now inert as a result (AppShell.tsx's
+      // own math only applies it when this is true) -- left wired rather than
+      // torn out, since it is harmless and a future caller may still dock.
+      taskMasterExpanded={false}
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
@@ -3266,6 +3830,14 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // deliberate departure from an object page -- applies unchanged.
             projects={projects}
             onSelectProject={(next) => chooseProject(next ? next.id : null)}
+            // OWNER FIX, 2026-09-14 -- "+ Add new project" in this same
+            // list. Wired to the real, existing create-project route
+            // (`/projects/new` -- `src/app/(app)/projects/new/page.tsx`,
+            // rendering `ProjectCreateClient.tsx`), the same route the
+            // dashboard's own "Create Project" entry point already
+            // navigates to (R67 D-01 replaced that screen's old modal with
+            // this route) -- not a new create-project flow.
+            onCreateProject={() => router.push("/projects/new")}
             // R67 D-66: the breadcrumb's project name and the "pick a project"
             // chooser card both open THIS list rather than each growing a
             // switcher of their own.
@@ -3276,167 +3848,12 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           />
         </div>
       }
-      taskMaster={
-        <div className="flex h-full min-h-0 flex-col">
-          {/* R48_TWO_OF_THREE_PER_PAGE_500S_NEVER_SURFACED_01: the org and
-              projects reads fail silently. This pane is where the shell
-              already admits a failure, so it is where the other two belong --
-              rather than the user being reassured by a Task Master sitting on
-              top of two unreported backend errors. */}
-          {shellErrors.length > 0 && (
-            <div
-              role="status"
-              className="m-2 shrink-0 rounded-lg border p-3 text-[12px]"
-              style={{ borderColor: "var(--color-ct-border)" }}
-            >
-              <p className="font-semibold" style={{ color: "var(--color-veri-status-late)" }}>
-                This panel is showing less than it should.
-              </p>
-              <ul className="mt-1 space-y-0.5" style={{ color: "var(--color-ct-muted)" }}>
-                {shellErrors.map((e) => (
-                  <li key={e.what}>
-                    Couldn&apos;t load {e.what}: {e.detail}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {/*
-              2026-09-08 -- THE MOCK'S DEFAULT VIEW HAS NO TASK MASTER PANE.
-              See `tasksExpanded`'s own doc comment (near `showAllPills`
-              above) for why: this whole block -- the tab row, the task
-              rows, "Show N more" -- is now gated on the SAME toggle TASKS
-              drives, collapsed by default. shellErrors above this comment
-              is deliberately OUTSIDE the gate: a real backend failure must
-              never be hidden behind a collapsed panel the user has to think
-              to open.
-          */}
-          {tasksExpanded && (
-          <>
-          {/*
-              2026-09-07 -- A REAL OVERFLOW/OVERLAP BUG, found live (screenshots
-              from both the owner's Edge and a from-scratch repro): this wrapper
-              had no overflow constraint of its own. TaskMaster's "primary"
-              group (Needs You et al) is deliberately `shrink-0` and never
-              scrolls internally -- M24's own rule, "PIN THE 'NEEDS YOU' GROUP".
-              That is safe as long as there is always enough room for it, which
-              held before AppShell.tsx started measuring the composer's real
-              height (part 4's fix): a composer state with many pills/a project
-              picker (exactly what clicking a project-less pill like "Run WPR"
-              produces) can genuinely be taller than the OLD static reservation
-              ever was, and the task-list area now correctly shrinks to make
-              room for it. TaskMaster's primary group, having no shrink/scroll
-              mechanism of its own and no overflow constraint on this wrapper,
-              simply rendered past its own allocated box in that squeeze --
-              landing on top of the "Show N more" button below it and, past
-              that, the composer itself. Fixed with a safety net, not a
-              redesign: `overflow-y-auto` here changes nothing in the normal
-              case (there is always enough room, so nothing scrolls, primary
-              stays visually pinned exactly as M24 asks) -- it only engages
-              when the composer's real height has genuinely squeezed the task
-              list below what it needs, at which point scrolling is what
-              should happen instead of silently overlapping. Confirmed via
-              geometric bounding-rect checks (not a screenshot glance) before
-              and after: 6 genuine overlaps involving "Show 20 more" and real
-              task rows, zero after.
-          */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-        {taskReadError ? (
-          // Never an empty list in place of an error -- that is the exact
-          // defect this codebase has shipped repeatedly, and it makes a broken
-          // backend indistinguishable from "you have nothing to do".
-          //
-          // R67 D-55/D-65: the kit's TaskMaster prints "Nothing is waiting on
-          // you." whenever BOTH lists are empty, so on a failure it is
-          // rendered only when real rows survive from an earlier read --
-          // greyed, and labelled with when they were true. The sentence comes
-          // from the one shared dictionary, and Retry re-issues the read
-          // rather than reloading the whole route.
-          <div className="flex h-full flex-col">
-            <div className="m-2 shrink-0 rounded-lg border p-3" style={{ borderColor: "var(--color-ct-border)" }}>
-              {/* ONE LINE, then the backend's own words under it. The sentence
-                  is the shared dictionary's (src/lib/task-errors.ts), so
-                  "supabaseKey is required" reads here exactly as it does on
-                  every other screen, and a 401 is offered no Retry because
-                  retrying will not fix a permission. The detail is kept
-                  because it is the only sentence that can tell an operator
-                  WHY, and hiding it in a tooltip would lose it.
-
-                  A-16: Retry calls the task read itself. The old control
-                  called router.refresh(), which re-renders a server component
-                  that does not own this list -- so the one control offered on
-                  a failure could not actually retry it. */}
-              <p role="alert" className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-veri-status-late)" }}>
-                <span>{taskReadError.sentence}</span>
-                {taskReadError.retryable && (
-                  <button type="button" onClick={() => void loadTasks()} className="veri-view-tab" style={{ minHeight: 24 }}>
-                    Retry
-                  </button>
-                )}
-              </p>
-              {taskReadError.detail && (
-                <p className="mt-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
-                  {taskReadError.detail}
-                </p>
-              )}
-            </div>
-            {primaryGroup.rows.length + (secondaryGroup?.rows.length ?? 0) > 0 && (
-              <div className="min-h-0 flex-1 opacity-70">
-                <p className="px-3 pb-1 text-[11px]" style={{ color: "var(--color-ct-muted)" }}>
-                  Showing what loaded {asOfLabel(tasksLoadedAt) ?? "earlier"}.
-                </p>
-                <TaskMaster
-                  tabs={tabs}
-                  activeTab={activeTab}
-                  onTabChange={onTabChange}
-                  primary={primaryGroup}
-                  secondary={secondaryGroup}
-                  system={systemGroup}
-                  onLoad={onLoadChain}
-                  onRowAction={onRowAction}
-                />
-              </div>
-            )}
-          </div>
-        ) : (
-        <TaskMaster
-          tabs={tabs}
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          primary={primaryGroup}
-          secondary={secondaryGroup}
-          system={systemGroup}
-          onLoad={onLoadChain}
-          onRowAction={onRowAction}
-        />
-        )}
-          </div>
-          {/* R67 F-26 (R-242): the pane now loads 20 rows, not 50, and says so.
-              Rendered ONLY when the backend handed back a cursor -- a control
-              that loads nothing is a dead end, and M24 forbids dead ends. It
-              sits below the kit's TaskMaster rather than inside it, so no kit
-              file is forked for one button. */}
-          {!tasksError && nextCursor && (
-            <div className="shrink-0 border-t px-2 py-1.5" style={{ borderColor: "var(--color-ct-border)" }}>
-              <button
-                type="button"
-                className="veri-view-tab w-full"
-                onClick={() => void loadTasks(nextCursor)}
-                disabled={loadingMore}
-              >
-                {loadingMore ? "Loading…" : `Show ${TASK_PAGE_SIZE} more`}
-              </button>
-            </div>
-          )}
-          </>
-          )}
-        </div>
-      }
+      // LEFT SCREEN COMPLETION, 2026-09-14 -- no separate Task Master slot
+      // any more; see `tasksViewContent` above and `taskMasterExpanded` on
+      // AppShell.
+      taskMaster={null}
       composer={
         <Composer
-          chain={chain}
-          onCutFrom={onCutFrom}
-          onBack={onBack}
           onHeightChange={setComposerHeight}
           // R67-PART-B decision #5: the shell message region -- adopted as-is.
           // No lane-A equivalent existed (its notice/submitError were local
@@ -3444,28 +3861,18 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // consumable by any page (R-282: a form save that survives its own
           // redirect).
           messages={<ShellMessageRegion onOpen={(href) => router.push(href)} />}
-          // R67 A-08: HOME must never router.push the route the user is
-          // already on -- a control that appears to navigate and does nothing
-          // reads as a broken button. On the home screen it does the thing
-          // HOME actually means here instead: opens the grouped module
-          // directory, which on PROJEXA is the "All modules" list.
-          onHome={() => {
-            if (screen.pathname === HOME_ROUTE) {
-              setShowAllPills(true);
-              return;
-            }
-            router.push(HOME_ROUTE);
-          }}
-          onReset={onReset}
-          // 2026-09-07: the SAME showAllPills state PillStrip's own catalogue
-          // panel already reads -- only the toggle's trigger moved from
-          // PillStrip to ControlStrip, per the frozen mock's own row.
-          allModulesExpanded={showAllPills}
-          onToggleAllModules={() => setShowAllPills((v) => !v)}
-          // 2026-09-08: see `tasksExpanded`'s own doc comment above.
-          tasksExpanded={tasksExpanded}
-          onToggleTasks={() => setTasksExpanded((v) => !v)}
-          dockedOverTaskMaster={tasksExpanded}
+          // LEFT SCREEN COMPLETION, 2026-09-14 -- `chain`/`onCutFrom`/`onBack`/
+          // `onHome`/`onReset`/`allModulesExpanded`/`onToggleAllModules`/
+          // `tasksExpanded`/`onToggleTasks`/`dockedOverTaskMaster` are no
+          // longer passed: Composer.tsx no longer mounts a nav row of its own
+          // (see that file's own header) -- Box 1 (LeftScreenCompletion,
+          // below, via the `pills` slot) owns Home/Back/Reset/the chain
+          // sentence/the "Loaded from history" banner now. `showAllPills`/
+          // `toggleAllPills`/`tasksExpanded`/`toggleTasks`/`setTasksExpanded`
+          // remain declared elsewhere in this file (R80-BUGFIX 2026-09-14's
+          // mutual-exclusivity fix) but are no longer read by anything this
+          // component renders -- the exclusivity they protected against is now
+          // structural (LeftScreenCompletion renders exactly one view, always).
           value={draft}
           onChange={setDraft}
           // BAND 2 -- CONVERSATION. Two lanes land here and they are sequential,
@@ -3505,66 +3912,33 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                 {notice.text && <p>{notice.text}</p>}
               </div>
             ) : (
-              optionLevel
+              // BUG 3 FIX, 2026-09-14 -- see `boxOneShowsOptionLevel`'s own
+              // comment above (right before `leftViewContent`). Box 1 is
+              // already rendering `optionLevel` on the "modules"/"reports"/
+              // "dashboard" views, so this band renders nothing there rather
+              // than the same panel a second time; it still renders
+              // `optionLevel` on every OTHER view (e.g. "Frequent Action"),
+              // where Box 1 is showing something else and this band is the
+              // only place the picked module's own leaves are visible.
+              boxOneShowsOptionLevel ? null : optionLevel
             )
           }
-          // BAND 3 -- the screen's own verbs first, then six role-ranked cards
-          // and "All modules". M24 shows "their top five or six ... That IS the
-          // load reduction"; D-10 makes those six verb+object CARDS rather than
-          // module names, and keeps every demoted pill reachable under "All
-          // modules" so nothing becomes a dead end.
+          // BOX 1 -- LEFT SCREEN COMPLETION. `leftViewContent`/
+          // `leftChainSentence`/`leftLoadedBanner`/`leftPanelBanner`/
+          // `tasksViewContent`/`onLeftSelectView`/`onLeftBack` are all
+          // computed above, right before this `return`.
           pills={
-            <>
-              {/* R67 A-02 -- THE SCREEN'S OWN VERBS COME FIRST. On a module
-                  route the composer already knows the module, so band 3 leads
-                  with that module's real leaf actions -- each one navigating
-                  to exactly the URL the screen's own header control produces
-                  -- and the ranked cards that follow are the ways OUT of this
-                  screen. The module's own cards are not among them (A-01/A-07):
-                  they would only point back here.
-
-                  A-12: once the user PICKS a different module, its verbs take
-                  over band 2 and this row stands down -- two modules' verbs on
-                  one screen is exactly the duplicate vocabulary being removed,
-                  and the sentence in the strip names only one of them. */}
-              <PillStrip
-                cards={cardViews}
-                // A-20: the screen's own verbs are a PROP of the strip now,
-                // keyed by route AND tab, instead of a separate row above it
-                // rendering the module's leaves. A module has one set of leaves
-                // however many tabs it has, which is exactly why eight of the
-                // seventeen captured composer crops were identical.
-                screenCards={selectedModule ? [] : screenCardViews}
-                onSelectScreenCard={onScreenCardSelect}
-                recent={recentChains}
-                onSelectRecent={onRecentSelect}
-                onSelect={onCardSelect}
-                onTogglePin={onTogglePin}
-                loading={cardsLoading}
-                expanded={showAllPills}
-                onToggleExpanded={() => setShowAllPills((v) => !v)}
-                allModules={allModules}
-                onSelectModule={onModuleEntrySelect}
-                unknownKeys={unknownKeys}
-                // A-08: a failed ranking read must not look like a considered
-                // answer. The role cards still stand; one muted line says why
-                // the recent ones are missing. A-10: otherwise, an account with
-                // nothing finished yet gets the one-line shape of the product.
-                footnote={
-                  rankingFailed
-                    ? "Recent tasks unavailable"
-                    : firstRunHint
-                      ? "Click a task, then the thing it is about, then Save."
-                      : undefined
-                }
-              />
-              {/* R67 A-22 -- AND NOTHING ELSE. This slot used to be a flex
-                  column with a gap around TWO rows: the module's leaves above
-                  the strip, and the strip. A-20 moved the leaves inside the
-                  strip as screenCards, which left a container with a gap and a
-                  single child -- a column of one, reserving space between rows
-                  that no longer exist. */}
-            </>
+            <LeftScreenCompletion
+              active={activeLeftView}
+              onSelect={onLeftSelectView}
+              onBack={onLeftBack}
+              onReset={onReset}
+              chainSentence={leftChainSentence}
+              loaded={leftLoadedBanner}
+              banner={leftPanelBanner}
+            >
+              {leftViewContent}
+            </LeftScreenCompletion>
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
@@ -3584,17 +3958,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           sendLabel={sendButtonLabel}
           canSend={sendEnabled}
           busy={submitting}
-          // A-09: the strip admits when the sentence was loaded rather than
-          // built here, and offers the pin that keeps it across a navigation.
-          loaded={
-            loadedChain
-              ? {
-                  from: loadedChain.from,
-                  pinned: loadedChain.pinned,
-                  onTogglePin: () => setLoaded({ ...loadedChain, pinned: !loadedChain.pinned }),
-                }
-              : null
-          }
+          // A-09: the "loaded from history" banner -- now `leftLoadedBanner`,
+          // passed to LeftScreenCompletion (Box 1) above, not to this
+          // component; see this Composer call's own header comment.
           errorMessage={submitError ?? projectPrompt}
           // R67 C-07 (port item) -- the attach control the kit's Composer has
           // always had a slot for and lane A never filled. Renders nothing on

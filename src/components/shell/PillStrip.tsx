@@ -52,6 +52,33 @@
 // path, so selecting a card cannot perform a write.
 
 import { useEffect, useRef } from "react";
+// R80-BUGFIX 2026-09-14 (bug 1 of 4, owner-reported live screenshots):
+// clicking "All modules" flips ControlStrip's own toggle correctly
+// (`aria-expanded` flips, its label swaps "All modules" <-> "Show fewer" --
+// confirmed live, so `showAllPills`/`expanded` genuinely reach this
+// component) but the catalogue that opens below "Frequent actions" appeared
+// to render nothing. Root-caused by reading the actual render path rather
+// than guessing: `allModules` is real and non-empty (PILL_CATALOGUE is a
+// frozen, populated array -- pill-catalogue.test.ts asserts this against the
+// real catalogue, not a mock, and passes), and this component's own
+// `{expanded && (...)}` block (below) genuinely renders one real <button>
+// per entry -- PillStrip.test.tsx's own R-92 suite proves that directly
+// against this exact component. The actual defect is layout, not data or a
+// missing render branch: Composer.tsx gives this whole component a SINGLE
+// small, internally-scrolling band (see that file's PART 1 comment -- at
+// most a third of the pane, or 40vh docked), and "Frequent actions" alone
+// already routinely fills or exceeds that allotment on a real account (see
+// this codebase's own R80 Part 4 entry: "6 pinned actions needed 302px
+// against a 142px allotment"). So the newly-revealed catalogue renders
+// entirely BELOW THE FOLD of that specific nested scroll region -- present
+// in the DOM, reachable only by scrolling a small box the user has no reason
+// to suspect is independently scrollable, which reads exactly like "nothing
+// happened". Fixed by scrolling the catalogue into view, within its own
+// nearest scrolling ancestor, the instant it opens -- the same "the control
+// decides, not the user's blind scroll" pattern M24Shell.tsx already uses
+// elsewhere (onHome's composerRef.focus()). Guarded with `?.` because
+// `scrollIntoView` is not implemented by every DOM test environment
+// (including this repo's happy-dom) -- its absence must not throw.
 import { CircleHelp, Pencil, Play, RotateCcw, Star } from "lucide-react";
 
 // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
@@ -193,6 +220,18 @@ export type PillStripProps = {
   unknownKeys?: readonly string[];
   /** One muted line under the cards -- a degraded read, or a first-run hint. */
   footnote?: React.ReactNode;
+  /**
+   * LEFT SCREEN COMPLETION (2026-09-14) -- true when this render is standing
+   * in for the "Modules" view's own catalogue-only content (see
+   * LeftScreenCompletion.tsx/M24Shell.tsx), where "Frequent actions" is a
+   * SIBLING view of its own rather than something shown above every other
+   * view. Suppresses the "Frequent actions" heading and its whole
+   * `role="group"` band (screenCards/recent/cards); the `expanded` block and
+   * `footnote` are unaffected. Optional and defaulted to false, so every
+   * existing caller/test that predates the 7-view left panel keeps rendering
+   * byte-for-byte the same DOM it always did.
+   */
+  hideFrequentBand?: boolean;
 };
 
 /** Three of these stand in for the six cards, and only when nothing at all is
@@ -226,6 +265,7 @@ export function PillStrip({
   onSelectModule,
   unknownKeys,
   footnote,
+  hideFrequentBand = false,
 }: PillStripProps) {
   // Warned once per distinct set, in the console only. A key the server ranks
   // and this build cannot render is a deployment-skew fact for a developer,
@@ -240,8 +280,27 @@ export function PillStrip({
     );
   }, [unknownKeys]);
 
+  // R80-BUGFIX 2026-09-14 -- see this file's header comment for the full
+  // root cause. Scrolls the expanded catalogue into view, within its own
+  // nearest scrolling ancestor, whenever it opens -- so it is never left
+  // sitting below the fold of Composer.tsx's small internally-scrolling
+  // pills band.
+  const expandedPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (expanded) expandedPanelRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [expanded]);
+
   return (
     <div>
+      {/* LEFT SCREEN COMPLETION (2026-09-14) -- see hideFrequentBand's own
+          doc comment on PillStripProps: the "Modules" view renders this
+          component for its catalogue only, so the "Frequent actions"
+          heading and band below (which belongs to the sibling "Frequent
+          Action" view now) must not also render there -- that would be the
+          exact "two views visible at once" bug the 7-view redesign exists
+          to make structurally impossible. */}
+      {!hideFrequentBand && (
+        <>
       {/* 2026-09-07 -- VISUAL-ONLY, per the frozen mock ("copy it exactly...
           exactly means exactly"): the mock labels this band "Frequent
           actions" -- this group already carried that exact meaning via
@@ -397,11 +456,18 @@ export function PillStrip({
           </>
         )}
       </div>
+        </>
+      )}
 
       {expanded && (
         // FIXED ORDER, EXPANDED IN PLACE. Not a menu, not a dialog: the list
         // appears under the cards it belongs to and closes with "Show fewer".
-        <div className="mt-1 flex flex-wrap items-center gap-1" role="group" aria-label="All modules">
+        <div
+          ref={expandedPanelRef}
+          className="mt-1 flex flex-wrap items-center gap-1"
+          role="group"
+          aria-label="All modules"
+        >
           {allModules.map((entry) => {
             const blocked = Boolean(entry.unavailable);
             // A-12: the note explains where the pill goes; it never refuses.
