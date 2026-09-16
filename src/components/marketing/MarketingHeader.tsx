@@ -8,18 +8,17 @@ import { Menu, X, ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 
-// Exact order + 8 labels as specified by the site owner -- do not reorder or
-// reword. Every entry except "howItWorks" is a same-page anchor on the
-// homepage; "howItWorks" is a real route. See the `href()` helper below for
-// why these live as bare anchor ids rather than full hrefs: this header is
+// 2026-09-16: "How It Works" dropped from the header per the owner's
+// direction (the standalone /how-it-works route still exists and still
+// renders -- nothing there was deleted -- it's just no longer a promoted
+// nav item; "Modules" carries that slot now). Every remaining entry is a
+// same-page anchor on the homepage. See the `href()` helper below for why
+// these live as bare anchor ids rather than full hrefs: this header is
 // shared by both marketing pages, and an anchor that's same-page on "/" has
-// to become "/#id" when rendered from "/how-it-works" (the "one integrated
-// site" requirement -- nav must actually work from either page, not just
-// look identical).
+// to become "/#id" when rendered from a non-home route.
 const NAV_LINK_KEYS = [
   { key: "aiOs", anchor: "ai-os" },
   { key: "system", anchor: "system" },
-  { key: "howItWorks", href: "/how-it-works" },
   { key: "paysForItself", anchor: "pays-for-itself" },
   { key: "selfCoordination", anchor: "self-coordination" },
   { key: "modules", anchor: "modules" },
@@ -34,7 +33,6 @@ export function MarketingHeader() {
   const isHome = pathname === "/";
 
   function linkHref(link: (typeof NAV_LINK_KEYS)[number]): string {
-    if ("href" in link) return link.href;
     return isHome ? `#${link.anchor}` : `/#${link.anchor}`;
   }
 
@@ -50,15 +48,11 @@ export function MarketingHeader() {
 
         <nav className="hidden items-center gap-5 xl:flex">
           {NAV_LINK_KEYS.map((link) => {
-            const isRoute = "href" in link;
-            const active = isRoute && pathname === link.href;
             return (
               <Link
                 key={link.key}
                 href={linkHref(link)}
-                className={`text-sm font-medium transition-colors hover:text-white ${
-                  active ? "text-white" : "text-px-cloud2"
-                }`}
+                className="text-sm font-medium text-px-cloud2 transition-colors hover:text-white"
               >
                 {t(`navLinks.${link.key}`)}
               </Link>

@@ -24,7 +24,10 @@ describe("loadMessages", () => {
     const hi = (await loadMessages("hi")) as Record<string, Record<string, Record<string, string>>>;
 
     // The exact string the J-01/J-02 acceptance asserts on the English page.
-    expect(en.Marketing.hero.headingLine1).toBe("Every deadline, drawing and decision.");
+    // Updated 2026-09-16 (Owner's Statement hero redesign,
+    // WO-PROJEXA-AI-LINK-001 session) -- headingLine1 changed for real,
+    // this asserts today's real copy, not the pre-redesign one.
+    expect(en.Marketing.hero.headingLine1).toBe("Your projects are profitable.");
     expect(hi.Marketing.hero.headingLine1).not.toBe(en.Marketing.hero.headingLine1);
     expect(hi.Marketing.hero.headingLine1).toMatch(DEVANAGARI);
   });
