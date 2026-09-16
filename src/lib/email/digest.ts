@@ -72,6 +72,59 @@ export async function sendDigestForMembership(membershipId: string): Promise<Dig
   return { sent: result.sent, todoCount: rows.length, membershipId };
 }
 
+// Cron path for the digest -- the recurring, no-manual-trigger counterpart
+// to sendDigestForMembership() above, wired to Vercel Cron via
+// src/app/api/internal/email-digest-cadence/run/route.ts. Unlike the manual
+// "get my digest" button (POST /api/email/send-digest), which always sends
+// -- even an empty digest, as an interactive confirmation that the click
+// worked -- this only sends to a membership whose organization actually has
+// at least one open todo right now. A daily cron that emails every
+// membership "nothing to report" is spam, not a digest, so that case is
+// skipped here on purpose; the manual route's own empty-state behavior is
+// left completely alone.
+export type DigestCadenceOutcome = { membershipId: string; sent: boolean; error?: string };
+
+export type DigestCadenceResult = {
+  ranAt: string;
+  checked: number;
+  sent: number;
+  failed: number;
+  results: DigestCadenceOutcome[];
+};
+
+export async function runDigestCadence(): Promise<DigestCadenceResult> {
+  const openOrgRows = await db
+    .selectDistinct({ organizationId: todos.organizationId })
+    .from(todos)
+    .where(eq(todos.done, false));
+
+  const results: DigestCadenceOutcome[] = [];
+
+  for (const { organizationId } of openOrgRows) {
+    const orgMemberships = await db.select().from(memberships).where(eq(memberships.organizationId, organizationId));
+    for (const membership of orgMemberships) {
+      try {
+        const outcome = await sendDigestForMembership(membership.id);
+        results.push({ membershipId: membership.id, sent: outcome.sent });
+      } catch (error) {
+        results.push({
+          membershipId: membership.id,
+          sent: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  return {
+    ranAt: new Date().toISOString(),
+    checked: results.length,
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent).length,
+    results,
+  };
+}
+
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
 }

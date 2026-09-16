@@ -94,13 +94,16 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
       .map(([route]) => route)
       .sort();
     // /org/invites/preview is GET-only, so it has no write policy entry at all.
-    expect(publicRoutes).toEqual(["/contact", "/org/provision"]);
+    // /internal/email-digest-cadence/run is Vercel Cron's entry point -- see
+    // its own CRON_SECRET-bearer comment in api-write-policy.ts.
+    expect(publicRoutes).toEqual(["/contact", "/internal/email-digest-cadence/run", "/org/provision"]);
   });
 
-  test("no mutating route outside the PUBLIC pair is left ungated", () => {
+  test("no mutating route outside the PUBLIC set is left ungated", () => {
+    const PUBLIC_BY_DESIGN = new Set(["/contact", "/internal/email-digest-cadence/run", "/org/provision"]);
     const ungated = mutatingRoutes.filter((r) => {
       const tier = API_WRITE_POLICY[r];
-      return tier === "PUBLIC" && r !== "/contact" && r !== "/org/provision";
+      return tier === "PUBLIC" && !PUBLIC_BY_DESIGN.has(r);
     });
     expect(ungated).toEqual([]);
   });

@@ -152,6 +152,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/fraud-cases": "ORG_ADMIN",
   "/fraud-cases/[id]": "ORG_ADMIN",
   "/hr/departments": "ORG_ADMIN",
+  // Public by design, same posture as /contact and /org/provision, but for a
+  // different reason: this is Vercel Cron's own entry point (see vercel.json's
+  // "crons"), triggered with no user session and no org context at all -- its
+  // real gate is the CRON_SECRET bearer check inside the route itself
+  // (email-digest-cadence/run/route.ts's own isAuthorized()), not a role.
+  "/internal/email-digest-cadence/run": "PUBLIC",
   "/inventory/items": "PM_OR_ABOVE",
   "/inventory/stock-entries": "FIELD",
   "/inventory/warehouses": "PM_OR_ABOVE",
