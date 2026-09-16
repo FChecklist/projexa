@@ -29,29 +29,48 @@ test.use({ storageState: "playwright/.auth/ceo.json", viewport: { width: 1440, h
 const P = DEFAULT_PROJECT.id;
 
 // FIXED 2026-09-16 (root-caused via compliance-tracker's cross-repo e2e-env1
-// CI job, R-80/R-81 both timing out at 45s on `main`): this stopped matching
-// anything the moment Left Screen Completion (2026-09-14) shipped. Two
-// independent breaks, not one:
-//   1. ModuleDirectory.tsx renders `<section aria-label="All modules">`, whose
-//      IMPLICIT role is "region" (a labelled <section>), not "group" -- the
-//      locator's role was simply wrong for what the element has always been
-//      since that redesign.
-//   2. The old toggle-button reveal ("All modules" as a button you click to
-//      expand) no longer exists. Modules is now one of Box 1's 7 fixed tabs
-//      (LeftScreenCompletion.tsx's LEFT_VIEWS, id "modules", rendered as
-//      `<button role="tab">Modules</button>`) and is NOT the default active
-//      tab (Frequent Action is, per M24Shell.tsx's own comment) -- so on a
-//      fresh page load the region is simply not mounted yet, toggle or not.
+// CI job, R-80/R-81 both timing out at 45s on `main`, then a second real
+// finding after the first attempted fix): the role "group" was ALWAYS
+// correct -- PillStrip.tsx's own "All modules" band is a real
+// `<div role="group" aria-label="All modules">` (verified directly in its
+// source), unchanged by Left Screen Completion. Reaching it is what changed:
+// the old toggle-button reveal no longer exists. Modules is now one of
+// Box 1's 7 fixed tabs (LeftScreenCompletion.tsx's LEFT_VIEWS, id "modules",
+// rendered as `<button role="tab">Modules</button>`) and is NOT the default
+// active tab (Frequent Action is, per M24Shell.tsx's own comment) -- so on a
+// fresh page load PillStrip's "modules" render (`activeLeftView ===
+// "modules"`, M24Shell.tsx's `modulesCatalogue`) simply isn't mounted until
+// that tab is selected.
+//
+// FIRST FIX ATTEMPT WAS WRONG, kept here as the record of it: changing the
+// role to "region" instead of clicking the tab. That accidentally matched a
+// SEPARATE, unrelated component -- ModuleDirectory.tsx's own
+// `<section aria-label="All modules">` (an implicit "region", real, but not
+// what Box 1's Modules tab renders) -- which is apparently reachable too,
+// and whose items are `<Link>`s, not `<button>`s, so the test "passed" the
+// visibility wait and then failed with zero pills instead. Caught by
+// actually reading both components' real markup, not by re-guessing.
 async function openAllModules(page: import("@playwright/test").Page) {
-  const region = page.getByRole("region", { name: "All modules" });
-  if ((await region.count()) === 0) {
-    const modulesTab = page.getByRole("tab", { name: "Modules" }).first();
-    if ((await modulesTab.count()) > 0) {
+  // SECOND real finding, same root-causing session: `group.count() === 0`
+  // is not the right gate for "do we need to click the tab". Local repro
+  // (6/7 passing after the role fix above, this one still failing) showed
+  // the sweep below getting "SHORT" on 23 of 24 iterations even with a
+  // same-locator retry -- because after most pill clicks the "modules" tab
+  // is no longer the selected one (clicking a pill can hand focus/selection
+  // elsewhere), but PillStrip's own "All modules" group can still be
+  // present-but-stale in the DOM at that moment, so `count() === 0` never
+  // fires and the tab never gets re-clicked. The real signal for "are we
+  // actually showing Modules" is the tab's own `aria-selected`, not whether
+  // a same-named group happens to still exist.
+  const modulesTab = page.getByRole("tab", { name: "Modules" }).first();
+  if ((await modulesTab.count()) > 0) {
+    const selected = await modulesTab.getAttribute("aria-selected");
+    if (selected !== "true") {
       await modulesTab.click();
       await page.waitForTimeout(800);
     }
   }
-  return page.getByRole("region", { name: "All modules" });
+  return page.getByRole("group", { name: "All modules" });
 }
 
 // ---------------------------------------------------------------------------
@@ -182,9 +201,30 @@ test("R-81 every visible pill is wired, and the module-chain population is hidde
             ? "focus-change"
             : "NONE";
     results.push({ label, effect });
-    if (after !== before) {
-      await page.goto(`/dashboard?projectId=${P}`);
-      await page.waitForLoadState("domcontentloaded");
+    // THIRD real finding, same root-causing session, from reading the actual
+    // failure DOM snapshot rather than guessing again: the Modules tab
+    // stays `aria-selected="true"` across a click that does NOT navigate,
+    // but M24Shell.tsx's `optionLevel` state (the "Which step?" New/Open
+    // prompt) can still get set by that click and then PERMANENTLY
+    // overrides `modulesCatalogue` for every later openAllModules() call in
+    // this same loop -- the tab looks selected, but its content is no
+    // longer the pill grid, so every subsequent iteration reads 0 buttons
+    // and reports SHORT. The old `if (after !== before)` reset only cleared
+    // this for pills that changed the URL, missing exactly the state-only
+    // case that actually causes it.
+    //
+    // A full page.goto() every iteration (R-80's own loop does this)
+    // reliably clears it too, but is a full reload x24 -- tried locally,
+    // it pushed this specific test over Playwright's own navigation
+    // timeout on this dev server. ControlStrip/LeftScreenCompletion's own
+    // "Reset the chain" button (onReset in M24Shell.tsx) exists precisely
+    // to clear an armed card/draft/prompt in one step without a reload --
+    // the in-app equivalent of a real user pressing it -- so use that
+    // instead: cheap, in-SPA, and clears the exact state that leaks here.
+    const resetBtn = page.getByRole("button", { name: "Reset the chain" }).first();
+    if ((await resetBtn.count()) > 0) {
+      await resetBtn.click({ timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(300);
     }
   }
   console.log(`R81_D603_R81_CLICKS ${JSON.stringify(results, null, 1)}`);
