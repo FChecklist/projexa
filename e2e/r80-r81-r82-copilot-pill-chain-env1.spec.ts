@@ -28,16 +28,30 @@ test.use({ storageState: "playwright/.auth/ceo.json", viewport: { width: 1440, h
 
 const P = DEFAULT_PROJECT.id;
 
+// FIXED 2026-09-16 (root-caused via compliance-tracker's cross-repo e2e-env1
+// CI job, R-80/R-81 both timing out at 45s on `main`): this stopped matching
+// anything the moment Left Screen Completion (2026-09-14) shipped. Two
+// independent breaks, not one:
+//   1. ModuleDirectory.tsx renders `<section aria-label="All modules">`, whose
+//      IMPLICIT role is "region" (a labelled <section>), not "group" -- the
+//      locator's role was simply wrong for what the element has always been
+//      since that redesign.
+//   2. The old toggle-button reveal ("All modules" as a button you click to
+//      expand) no longer exists. Modules is now one of Box 1's 7 fixed tabs
+//      (LeftScreenCompletion.tsx's LEFT_VIEWS, id "modules", rendered as
+//      `<button role="tab">Modules</button>`) and is NOT the default active
+//      tab (Frequent Action is, per M24Shell.tsx's own comment) -- so on a
+//      fresh page load the region is simply not mounted yet, toggle or not.
 async function openAllModules(page: import("@playwright/test").Page) {
-  const group = page.getByRole("group", { name: "All modules" });
-  if ((await group.count()) === 0) {
-    const toggle = page.getByRole("button", { name: /^All modules$/i }).first();
-    if ((await toggle.count()) > 0) {
-      await toggle.click();
+  const region = page.getByRole("region", { name: "All modules" });
+  if ((await region.count()) === 0) {
+    const modulesTab = page.getByRole("tab", { name: "Modules" }).first();
+    if ((await modulesTab.count()) > 0) {
+      await modulesTab.click();
       await page.waitForTimeout(800);
     }
   }
-  return page.getByRole("group", { name: "All modules" });
+  return page.getByRole("region", { name: "All modules" });
 }
 
 // ---------------------------------------------------------------------------
