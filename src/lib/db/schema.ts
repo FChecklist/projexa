@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, unique, boolean, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, unique, boolean, jsonb, primaryKey, date } from "drizzle-orm/pg-core";
 
 // PROJEXA's own tenant/auth/billing schema. All construction domain data
 // (BOQ, progress, site diary, budgets, etc.) lives in VERIDIAN -- see
@@ -163,6 +163,11 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// assigneeId/dueDate/note added 2026-09-16 (WO-PROJEXA-AI-LINK-001): the AI
+// Link's verb allowlist (ASSIGN/SET_DUE/NOTE/MARK_STATUS/DRAFT) needs real
+// columns to act on -- todos was previously just {text, done}, a flat
+// checklist item with nothing for ASSIGN/SET_DUE/NOTE to write to.
+// Additive and nullable, so every existing row and query is unaffected.
 export const todos = pgTable("todos", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
@@ -172,6 +177,9 @@ export const todos = pgTable("todos", {
   text: text("text").notNull(),
   done: boolean("done").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  assigneeId: uuid("assignee_id"),
+  dueDate: date("due_date"),
+  note: text("note"),
 });
 
 // Work Progress Report (WPR): links a site photo captured against a daily
@@ -237,4 +245,47 @@ export const contactRequests = pgTable("contact_requests", {
   // "how-it-works" today (see ContactForm's sourcePage prop).
   sourcePage: text("source_page"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── WO-PROJEXA-AI-LINK-001 (2026-09-16) ───────────────────────────────────
+// AI Link: a per-(org, user) token addressing a read-only, personal-data-
+// excluded SQL projection (public.ai_link_projection, SECURITY DEFINER --
+// see drizzle/0023). The token carries NO authority by itself; RLS is
+// enabled with no anon/authenticated policies, same posture as
+// veridianCredentials -- readable only by the service_role key from
+// src/lib/supabase/service-role.ts.
+export const orgAiLink = pgTable("org_ai_link", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull(),
+  token: text("token").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+// Email-as-the-interface: a membership-scoped one-click action token.
+// tokenHash (not the raw token) is stored -- the raw value exists only in
+// the emailed link. A real BEFORE INSERT trigger
+// (check_email_action_token_org_match, drizzle/0023) rejects any row whose
+// membership does not belong to the same org as its target todo -- the
+// token IS the enforcement, not an app-layer check a future edit could skip.
+export const emailActionToken = pgTable("email_action_token", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  todoId: uuid("todo_id")
+    .notNull()
+    .references(() => todos.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  membershipId: uuid("membership_id")
+    .notNull()
+    .references(() => memberships.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
 });

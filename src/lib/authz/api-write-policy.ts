@@ -68,6 +68,13 @@ export const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PA
 export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review": "ORG_ADMIN",
   "/access-review/certifications/[id]": "ORG_ADMIN",
+  // WO-PROJEXA-AI-LINK-001: creating/rotating/revoking your OWN AI Link
+  // token -- same self-service-on-own-record shape as /todos below.
+  "/ai-link": "ANY_MEMBER",
+  // Applying an AI-proposed action (the ALLOWED_VERBS allowlist) against a
+  // todo in the caller's own org. Same tier as /todos/[id] itself, which
+  // this route is a verb-restricted way of writing to.
+  "/ai/apply": "ANY_MEMBER",
   "/assistant": "ANY_MEMBER",
   "/attendance": "FIELD",
   // R67 D-30: the whole-roster daily sheet. Same tier as the one-worker
@@ -127,6 +134,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // by role anyway: VERIDIAN refuses a hard delete outside the 24-hour window,
   // under a legal hold, or with anything referencing the row.
   "/drawings/[id]": "FIELD",
+  // WO-PROJEXA-AI-LINK-001 Part 2: manually triggering the digest email for
+  // the caller's OWN membership -- self-service on one's own record, same
+  // shape as /todos.
+  "/email/send-digest": "ANY_MEMBER",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",
