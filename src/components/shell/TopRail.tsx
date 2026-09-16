@@ -44,6 +44,16 @@
 // all. A glyph would therefore have to be invented, and a made-up status on
 // the one control M24 calls the most expensive to get wrong is worse than no
 // glyph. When a real status reaches this payload, it renders here.
+//
+// OWNER FIX, 2026-09-14 -- "+ Add new project" added to the end of this same
+// list (`onCreateProject`, optional). No new create-project flow: it opens
+// the real, already-shipped `/projects/new` route (`ProjectCreateClient.tsx`,
+// R67 D-01) -- the same route `DashboardHomeView.tsx`'s "Create Project"/
+// "New project" buttons, `ProjectsListClient.tsx`'s "New" action, and
+// `ProjectsOverviewClient.tsx`'s "Create" button already navigate to. This is
+// a second entry point into that one flow, same precedent as `openSignal`
+// giving the breadcrumb and the "pick a project" card a second door into
+// this same switcher rather than each growing its own.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -62,6 +72,18 @@ export type TopRailProps = {
   projects: TopRailProject[];
   /** null means "All projects". */
   onSelectProject: (project: TopRailProject | null) => void;
+  /**
+   * OWNER FIX, 2026-09-14 -- "+ Add new project" entry at the end of this
+   * list. Optional and additive: omitting it (no caller update required)
+   * renders the switcher exactly as before. When supplied, M24Shell.tsx
+   * wires it to the SAME route the app's own nav/home screen already use to
+   * create a project (`/projects/new`, `ProjectCreateClient.tsx`) -- this
+   * file does not invent a new create-project flow, only a second entry
+   * point into the one that already exists, same precedent as `openSignal`
+   * below giving the breadcrumb and the "pick a project" card a second door
+   * into this same list rather than each growing a switcher of their own.
+   */
+  onCreateProject?: () => void;
   /**
    * R67 D-66: a monotonic counter the shell increments when something ELSE
    * asks for the switcher -- the breadcrumb's project name, the "pick a
@@ -84,6 +106,7 @@ export function TopRail({
   project,
   projects,
   onSelectProject,
+  onCreateProject,
   openSignal,
   search,
   alerts,
@@ -127,6 +150,15 @@ export function TopRail({
     },
     [onSelectProject]
   );
+
+  // OWNER FIX, 2026-09-14 -- same close-then-act shape as `choose` above,
+  // for the "+ Add new project" entry. Closing first (not left for the
+  // navigation to do) matches every other choice in this list: the menu
+  // must never still be open over whatever screen the click landed on.
+  const createProject = useCallback(() => {
+    setOpen(false);
+    onCreateProject?.();
+  }, [onCreateProject]);
 
   return (
     <header
@@ -241,6 +273,29 @@ export function TopRail({
               // An empty menu with no explanation reads as a broken control.
               <li className="px-3 py-1.5 text-[12px]" style={{ color: "var(--color-ct-muted)" }}>
                 No projects to switch to yet.
+              </li>
+            )}
+            {/* OWNER FIX, 2026-09-14 -- "+ Add new project", always last so
+                the switcher's real job (choosing among existing projects)
+                still reads first. A hairline border-t separates it from the
+                choices above it, same token ControlStrip.tsx's own
+                border-t already uses, so it reads as a distinct action
+                rather than one more option in the list. Renders only when
+                the caller wires `onCreateProject` -- omitting the prop
+                keeps every existing render byte-for-byte the same. */}
+            {onCreateProject && (
+              <li className="border-t" style={{ borderColor: "var(--color-ct-border)" }}>
+                <button
+                  type="button"
+                  onClick={createProject}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] font-medium hover:underline"
+                  style={{ color: "var(--color-veri-status-context)" }}
+                >
+                  <span aria-hidden className="w-3">
+                    +
+                  </span>
+                  Add new project
+                </button>
               </li>
             )}
           </ul>

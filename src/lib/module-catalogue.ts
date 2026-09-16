@@ -66,8 +66,16 @@ export type ModuleDef = {
   pillKeys: readonly string[];
   /** The composer's placeholder on this module's routes (A-02). */
   placeholder: string;
-  /** Shown under the input as two worked examples (A-02). */
-  examples: readonly [string, string];
+  /**
+   * Shown under the input as clickable worked examples (A-02); clicking one
+   * FILLS the composer with that exact sentence rather than typing into it
+   * itself (2026-09-15, per the owner's own "make the example chips
+   * clickable" directive -- see M24Shell.tsx's `onExampleSelect`). At least
+   * two, so the box is never shown with only one worked example -- most
+   * modules carry a third for variety, but that is not a floor every module
+   * must hit.
+   */
+  examples: readonly [string, string, ...string[]];
   /** The module's leaf actions, in the order the strip offers them. */
   leaves: readonly ModuleLeaf[];
   /**
@@ -101,7 +109,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     chainModule: false,
     pillKeys: ["dashboard"],
     placeholder: "Ask about this project, or type what you need.",
-    examples: ["how much of the BOQ is complete", "which permits expire this month"],
+    examples: ["how much of the BOQ is complete", "which permits expire this month", "what is on track vs delayed this week"],
     leaves: [
       { id: "dashboard.project", label: "Project dashboard", path: "/dashboard/project" },
       { id: "dashboard.hierarchy", label: "Company hierarchy", path: "/dashboard/hierarchy", needsProject: false },
@@ -114,7 +122,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/permits"],
     pillKeys: ["permits", "permit"],
     placeholder: "e.g. add the building permit for Villa 21, expiring 30 Nov",
-    examples: ["add the building permit for Villa 21, expiring 30 Nov", "which permits expire in the next 30 days"],
+    examples: ["add the building permit for Villa 21, expiring 30 Nov", "which permits expire in the next 30 days", "which permits are still pending approval"],
     leaves: [
       { id: "permits.new", label: "New", path: "/permits/new", chainLabel: "New permit" },
       { id: "permits.expiring", label: "Expiring soon", path: "/permits", query: { withinDays: "30" } },
@@ -128,7 +136,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/drawings", "/floor-plans"],
     pillKeys: ["drawings", "drawings_3d"],
     placeholder: "e.g. upload revision C of the ground floor plan",
-    examples: ["upload revision C of the ground floor plan", "which drawings changed this week"],
+    examples: ["upload revision C of the ground floor plan", "which drawings changed this week", "show the latest floor plan for Villa 21"],
     leaves: [
       { id: "drawings.new", label: "New", path: "/drawings/new", chainLabel: "New drawing" },
       { id: "drawings.open", label: "Open", path: "/drawings" },
@@ -141,7 +149,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/documents"],
     pillKeys: ["documents"],
     placeholder: "e.g. file the signed contract under this project",
-    examples: ["file the signed contract under this project", "which documents were added this month"],
+    examples: ["file the signed contract under this project", "which documents were added this month", "find the signed NOC for this project"],
     leaves: [
       { id: "documents.upload", label: "Upload", path: "/documents/upload", chainLabel: "Upload document" },
       { id: "documents.open", label: "Open", path: "/documents" },
@@ -155,7 +163,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     pillKeys: ["minutes_of_meeting", "moms", "mom"],
     noProjectPrompt: "Choose a project for these minutes",
     placeholder: "Ask about this project's meetings, or type minutes to file…",
-    examples: ["file the minutes of today's site meeting", "what was decided about the lift shaft"],
+    examples: ["file the minutes of today's site meeting", "what was decided about the lift shaft", "who owns the action items from last week's meeting"],
     leaves: [
       { id: "moms.new", label: "New Meeting", path: "/moms/new", chainLabel: "New meeting" },
       { id: "moms.open", label: "Open", path: "/moms" },
@@ -175,7 +183,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     // ships verbatim; putting it here would advertise the wrong screen. So this
     // route keeps lane A's own scope sentence and gains B-02's scope one.
     placeholder: "e.g. Set budget % to 30 on all civil lines",
-    examples: ["Set budget % to 30 on all civil lines", "create a revision of the current BOQ"],
+    examples: ["Set budget % to 30 on all civil lines", "create a revision of the current BOQ", "which BOQ lines are still unpriced"],
     leaves: [
       { id: "scope.new", label: "New BOQ", path: "/scope/new", chainLabel: "New BOQ" },
       { id: "scope.open", label: "Open", path: "/scope" },
@@ -204,7 +212,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     // explicitly for Work Progress, and A-04's own example survives verbatim
     // as the first of the two worked examples below the input.
     placeholder: "e.g. record 50% on excavation",
-    examples: ["12 nos of R60SK-A done today, 40%", "run the WPR for this month"],
+    examples: ["12 nos of R60SK-A done today, 40%", "run the WPR for this month", "which activities are behind schedule this week"],
     leaves: [
       // A-04: the two verbs are verbs. "Record progress" puts the cursor in
       // the form's first field; "Run WPR" runs the report on arrival rather
@@ -236,7 +244,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/labour"],
     pillKeys: ["labour", "manpower"],
     placeholder: "e.g. mark all masons present today",
-    examples: ["mark all masons present today", "who was absent yesterday"],
+    examples: ["mark all masons present today", "who was absent yesterday", "how many workers are on site right now"],
     leaves: [
       { id: "labour.attendance", label: "Mark attendance", path: "/labour/attendance/new", chainLabel: "Mark attendance" },
       { id: "labour.new", label: "New worker", path: "/labour/new", chainLabel: "New worker" },
@@ -250,7 +258,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/materials", "/site-materials"],
     pillKeys: ["materials", "material"],
     placeholder: "e.g. record 20 bags of cement received today",
-    examples: ["record 20 bags of cement received today", "what is the current stock of TMT bars"],
+    examples: ["record 20 bags of cement received today", "what is the current stock of TMT bars", "which materials are running low this week"],
     leaves: [
       { id: "materials.receipt", label: "Record receipt", path: "/materials/receipts/new", chainLabel: "Record receipt" },
       { id: "materials.new", label: "New material", path: "/materials/new", chainLabel: "New material" },
@@ -275,7 +283,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     // A's originals here were questions, so the screen only ever advertised
     // reading. One of these two is a write, which is the point.
     placeholder: "e.g. Set budget % to 30 on all civil lines",
-    examples: ["Set budget % to 30 on all civil lines", "Show budget vs actual by category for this project"],
+    examples: ["Set budget % to 30 on all civil lines", "Show budget vs actual by category for this project", "which line items are over budget this month"],
     leaves: [
       // R67 lane D22 (item D-41) x R67 D-62, reconciled at the integration
       // merge: both lanes moved the ERP fiscal-year ledger out of "Budgets",
@@ -293,7 +301,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/schedule"],
     pillKeys: ["schedule", "calendar", "task_master", "tasks"],
     placeholder: "e.g. log 2 hours on the shuttering task today",
-    examples: ["log 2 hours on the shuttering task today", "which tasks are late this week"],
+    examples: ["log 2 hours on the shuttering task today", "which tasks are late this week", "who is assigned to the excavation task"],
     leaves: [
       { id: "schedule.task", label: "New task", path: "/schedule/tasks/new", chainLabel: "New task" },
       { id: "schedule.time", label: "Log time", path: "/schedule/log-time", chainLabel: "Log time" },
@@ -308,7 +316,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["reports", "report"],
     placeholder: "e.g. run the work progress report for January",
-    examples: ["run the work progress report for January", "show me the vendor cost report"],
+    examples: ["run the work progress report for January", "show me the vendor cost report", "export the budget vs actual report for this project"],
     leaves: [{ id: "reports.open", label: "Open", path: "/reports", needsProject: false }],
   },
   // A-05: Customers and Vendors were MODE TABS at the head of every control
@@ -324,7 +332,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["customers", "customer"],
     placeholder: "e.g. add a customer, or ask which customers have open quotations",
-    examples: ["add a new customer", "which customers have open quotations"],
+    examples: ["add a new customer", "which customers have open quotations", "show the outstanding balance for a customer"],
     leaves: [
       { id: "customers.new", label: "New customer", path: "/customers/new", needsProject: false, chainLabel: "New customer" },
       { id: "customers.open", label: "Open", path: "/customers", needsProject: false },
@@ -338,7 +346,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["vendors", "vendor"],
     placeholder: "e.g. add a vendor, or ask what we owe this month",
-    examples: ["add a new vendor", "which vendors worked on this project"],
+    examples: ["add a new vendor", "which vendors worked on this project", "what do we owe each vendor this month"],
     leaves: [
       { id: "vendors.new", label: "New vendor", path: "/vendors/new", needsProject: false, chainLabel: "New vendor" },
       { id: "vendors.open", label: "Open", path: "/vendors", needsProject: false },
@@ -374,7 +382,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/design-studio"],
     pillKeys: ["design_studio", "design", "timesheets", "timesheet"],
     placeholder: "e.g. log 6 hours of drafting on the villa elevations",
-    examples: ["log 6 hours of drafting on the villa elevations", "show design hours against budget this month"],
+    examples: ["log 6 hours of drafting on the villa elevations", "show design hours against budget this month", "who logged the most design hours this week"],
     leaves: [
       { id: "design-studio.timesheet", label: "Log timesheet", path: "/design-studio/timesheets/new", chainLabel: "New timesheet" },
       { id: "design-studio.cost", label: "Cost analysis", path: "/design-studio/cost-analysis", chainLabel: "Cost analysis" },
@@ -390,7 +398,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["accounting", "journal", "journal_entries", "ledger"],
     placeholder: "e.g. post a journal entry for the October site rent",
-    examples: ["post a journal entry for the October site rent", "show the trial balance for this quarter"],
+    examples: ["post a journal entry for the October site rent", "show the trial balance for this quarter", "show the profit and loss for this quarter"],
     leaves: [
       { id: "accounting.journal", label: "New journal entry", path: "/accounting/journal-entries/new", needsProject: false, chainLabel: "New journal entry" },
       { id: "accounting.company", label: "New company", path: "/accounting/companies/new", needsProject: false, chainLabel: "New company" },
@@ -409,7 +417,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["procurement", "purchase_orders", "purchase_order", "po", "buying"],
     placeholder: "e.g. raise a purchase order for 200 bags of cement",
-    examples: ["raise a purchase order for 200 bags of cement", "which purchase orders are still awaiting delivery"],
+    examples: ["raise a purchase order for 200 bags of cement", "which purchase orders are still awaiting delivery", "raise a requisition for site safety equipment"],
     leaves: [
       { id: "procurement.po", label: "New purchase order", path: "/purchase-orders/new", needsProject: false, chainLabel: "New purchase order" },
       { id: "procurement.requisition", label: "New requisition", path: "/procurement/requisitions/new", needsProject: false, chainLabel: "New requisition" },
@@ -427,7 +435,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["invoices", "invoice", "billing", "credit_notes", "credit_note"],
     placeholder: "e.g. raise an invoice for the Phase 1 milestone",
-    examples: ["raise an invoice for the Phase 1 milestone", "which invoices are overdue"],
+    examples: ["raise an invoice for the Phase 1 milestone", "which invoices are overdue", "show the total outstanding across all invoices"],
     leaves: [
       { id: "invoices.new", label: "New invoice", path: "/invoices/new", needsProject: false, chainLabel: "New invoice" },
       { id: "invoices.credit-note", label: "New credit note", path: "/invoices/credit-notes/new", needsProject: false, chainLabel: "New credit note" },
@@ -445,7 +453,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["quotations", "quotation", "quote", "sales_quotation"],
     placeholder: "e.g. quote the interior fit-out for Cedar Heights",
-    examples: ["quote the interior fit-out for Cedar Heights", "which quotations have not been accepted yet"],
+    examples: ["quote the interior fit-out for Cedar Heights", "which quotations have not been accepted yet", "which quotations are expiring this week"],
     leaves: [
       { id: "quotations.new", label: "New quotation", path: "/quotations/new", needsProject: false, chainLabel: "New quotation" },
       { id: "quotations.open", label: "Open", path: "/quotations", needsProject: false },
@@ -459,7 +467,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["sales_orders", "sales_order", "order", "orders"],
     placeholder: "e.g. convert the Cedar Heights quotation into an order",
-    examples: ["convert the Cedar Heights quotation into an order", "which sales orders are not yet invoiced"],
+    examples: ["convert the Cedar Heights quotation into an order", "which sales orders are not yet invoiced", "show all sales orders pending delivery"],
     leaves: [
       { id: "sales-orders.new", label: "New sales order", path: "/sales-orders/new", needsProject: false, chainLabel: "New sales order" },
       { id: "sales-orders.open", label: "Open", path: "/sales-orders", needsProject: false },
@@ -473,7 +481,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["sales", "leads", "lead", "opportunities", "opportunity", "crm", "pipeline"],
     placeholder: "e.g. add a lead for the Marina tower fit-out",
-    examples: ["add a lead for the Marina tower fit-out", "which opportunities are closing this month"],
+    examples: ["add a lead for the Marina tower fit-out", "which opportunities are closing this month", "which leads have not been followed up this week"],
     leaves: [
       { id: "sales.lead", label: "New lead", path: "/sales/leads/new", needsProject: false, chainLabel: "New lead" },
       { id: "sales.opportunity", label: "New opportunity", path: "/sales/opportunities/new", needsProject: false, chainLabel: "New opportunity" },
@@ -493,7 +501,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["inventory", "stock", "warehouse", "warehouses", "items"],
     placeholder: "e.g. move 50 bags of cement to the north warehouse",
-    examples: ["move 50 bags of cement to the north warehouse", "what is on hand across all warehouses"],
+    examples: ["move 50 bags of cement to the north warehouse", "what is on hand across all warehouses", "which items are below reorder level"],
     leaves: [
       { id: "inventory.item", label: "New item", path: "/inventory/items/new", needsProject: false, chainLabel: "New item" },
       { id: "inventory.stock-entry", label: "New stock entry", path: "/inventory/stock-entries/new", needsProject: false, chainLabel: "New stock entry" },
@@ -509,7 +517,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["expenses", "expense", "claim", "claims", "reimbursement"],
     placeholder: "e.g. claim the site travel expense from Tuesday",
-    examples: ["claim the site travel expense from Tuesday", "which expenses are still unapproved"],
+    examples: ["claim the site travel expense from Tuesday", "which expenses are still unapproved", "show total expenses claimed this month"],
     leaves: [
       { id: "expenses.new", label: "New expense", path: "/expenses/new", needsProject: false, chainLabel: "New expense" },
       { id: "expenses.open", label: "Open", path: "/expenses", needsProject: false },
@@ -526,7 +534,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["employees", "employee", "hr", "people", "staff", "leave", "departments"],
     placeholder: "e.g. add a site engineer to the payroll",
-    examples: ["add a site engineer to the payroll", "who is on leave next week"],
+    examples: ["add a site engineer to the payroll", "who is on leave next week", "which departments have open leave requests"],
     leaves: [
       { id: "employees.new", label: "New employee", path: "/employees/new", needsProject: false, chainLabel: "New employee" },
       { id: "employees.department", label: "New department", path: "/employees/departments/new", needsProject: false, chainLabel: "New department" },
@@ -543,7 +551,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["payroll", "payslip", "payslips", "salary", "salaries"],
     placeholder: "e.g. run payroll for September",
-    examples: ["run payroll for September", "show the salary structure for site engineers"],
+    examples: ["run payroll for September", "show the salary structure for site engineers", "which employees have pending payslips"],
     leaves: [
       { id: "payroll.run", label: "New payroll run", path: "/payroll/runs/new", needsProject: false, chainLabel: "New payroll run" },
       { id: "payroll.component", label: "New salary component", path: "/payroll/components/new", needsProject: false, chainLabel: "New salary component" },
@@ -561,7 +569,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["recruitment", "hiring", "openings", "candidates", "applications"],
     placeholder: "e.g. open a vacancy for a quantity surveyor",
-    examples: ["open a vacancy for a quantity surveyor", "which applications are waiting on an interview"],
+    examples: ["open a vacancy for a quantity surveyor", "which applications are waiting on an interview", "how many candidates applied this week"],
     leaves: [
       { id: "recruitment.opening", label: "New opening", path: "/recruitment/openings/new", needsProject: false, chainLabel: "New opening" },
       { id: "recruitment.application", label: "New application", path: "/recruitment/applications/new", needsProject: false, chainLabel: "New application" },
@@ -577,7 +585,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["grc", "governance", "risk", "risks", "policies", "policy", "compliance", "audit", "audits"],
     placeholder: "e.g. raise a risk for the delayed steel delivery",
-    examples: ["raise a risk for the delayed steel delivery", "which policies are due for review"],
+    examples: ["raise a risk for the delayed steel delivery", "which policies are due for review", "which audits are still open"],
     leaves: [
       { id: "grc.policy", label: "New policy", path: "/grc/policies/new", needsProject: false, chainLabel: "New policy" },
       { id: "grc.risk", label: "New risk", path: "/grc/risks/new", needsProject: false, chainLabel: "New risk" },
@@ -596,7 +604,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/kpis"],
     pillKeys: ["kpis", "kpi", "metrics", "targets"],
     placeholder: "e.g. set a monthly concrete pour target for this project",
-    examples: ["set a monthly concrete pour target for this project", "which KPIs are below target"],
+    examples: ["set a monthly concrete pour target for this project", "which KPIs are below target", "show KPI trends for this project this quarter"],
     leaves: [
       { id: "kpis.new", label: "New KPI", path: "/kpis/new", chainLabel: "New KPI" },
       { id: "kpis.open", label: "Open", path: "/kpis" },
@@ -609,7 +617,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/change-orders"],
     pillKeys: ["change_orders", "change_order", "variation", "variations", "vo"],
     placeholder: "e.g. raise a change order for the revised lobby finish",
-    examples: ["raise a change order for the revised lobby finish", "what is the approved variation value on this project"],
+    examples: ["raise a change order for the revised lobby finish", "what is the approved variation value on this project", "which change orders are still pending approval"],
     leaves: [
       { id: "change-orders.new", label: "New change order", path: "/change-orders/new", chainLabel: "New change order" },
       { id: "change-orders.open", label: "Open", path: "/change-orders" },
@@ -622,7 +630,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/punch-list"],
     pillKeys: ["punch_list", "punch", "snag", "snags", "snagging", "defects"],
     placeholder: "e.g. log a snag for the cracked tile in unit 4B",
-    examples: ["log a snag for the cracked tile in unit 4B", "how many punch items are still open"],
+    examples: ["log a snag for the cracked tile in unit 4B", "how many punch items are still open", "which punch items are overdue"],
     leaves: [
       { id: "punch-list.new", label: "New punch item", path: "/punch-list/new", chainLabel: "New punch item" },
       { id: "punch-list.open", label: "Open", path: "/punch-list" },
@@ -635,7 +643,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/rfis"],
     pillKeys: ["rfis", "rfi", "queries", "information_request"],
     placeholder: "e.g. raise an RFI about the beam reinforcement detail",
-    examples: ["raise an RFI about the beam reinforcement detail", "which RFIs are still unanswered"],
+    examples: ["raise an RFI about the beam reinforcement detail", "which RFIs are still unanswered", "which RFIs are overdue for a response"],
     leaves: [
       { id: "rfis.new", label: "New RFI", path: "/rfis/new", chainLabel: "New RFI" },
       { id: "rfis.open", label: "Open", path: "/rfis" },
@@ -648,7 +656,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/submittals"],
     pillKeys: ["submittals", "submittal", "approvals", "material_approval"],
     placeholder: "e.g. submit the tile sample for approval",
-    examples: ["submit the tile sample for approval", "which submittals are pending with the consultant"],
+    examples: ["submit the tile sample for approval", "which submittals are pending with the consultant", "which submittals were rejected this month"],
     leaves: [
       { id: "submittals.new", label: "New submittal", path: "/submittals/new", chainLabel: "New submittal" },
       { id: "submittals.open", label: "Open", path: "/submittals" },
@@ -661,7 +669,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/site-diary"],
     pillKeys: ["site_diary", "diary", "daily_report", "day_report"],
     placeholder: "e.g. record today's site diary entry",
-    examples: ["record today's site diary entry", "show the site diary for last week"],
+    examples: ["record today's site diary entry", "show the site diary for last week", "how many site diary entries are missing this week"],
     leaves: [
       { id: "site-diary.new", label: "New entry", path: "/site-diary/new", chainLabel: "New diary entry" },
       { id: "site-diary.open", label: "Open", path: "/site-diary" },
@@ -674,7 +682,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/ffe"],
     pillKeys: ["ffe", "furniture", "fixtures", "equipment"],
     placeholder: "e.g. add the lobby seating to the FF&E schedule",
-    examples: ["add the lobby seating to the FF&E schedule", "what is the FF&E spend on this project"],
+    examples: ["add the lobby seating to the FF&E schedule", "what is the FF&E spend on this project", "which FF&E items are still pending delivery"],
     leaves: [
       { id: "ffe.new", label: "New FF&E item", path: "/ffe/new", chainLabel: "New FF&E item" },
       { id: "ffe.open", label: "Open", path: "/ffe" },
@@ -687,7 +695,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     prefixes: ["/mood-boards"],
     pillKeys: ["mood_boards", "mood_board", "moodboard", "concept"],
     placeholder: "e.g. start a mood board for the master bedroom",
-    examples: ["start a mood board for the master bedroom", "show the approved mood boards for this project"],
+    examples: ["start a mood board for the master bedroom", "show the approved mood boards for this project", "which mood boards are awaiting client approval"],
     leaves: [
       { id: "mood-boards.new", label: "New mood board", path: "/mood-boards/new", chainLabel: "New mood board" },
       { id: "mood-boards.open", label: "Open", path: "/mood-boards" },
@@ -701,7 +709,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["wiki", "handbook", "sop", "sops"],
     placeholder: "e.g. write up the concrete pour method statement",
-    examples: ["write up the concrete pour method statement", "find the site induction procedure"],
+    examples: ["write up the concrete pour method statement", "find the site induction procedure", "which SOPs were updated this month"],
     leaves: [
       { id: "wiki.new", label: "New page", path: "/wiki/new", needsProject: false, chainLabel: "New wiki page" },
       { id: "wiki.open", label: "Open", path: "/wiki", needsProject: false },
@@ -715,7 +723,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["knowledge_base", "kb", "help", "articles"],
     placeholder: "e.g. add an article on the material approval process",
-    examples: ["add an article on the material approval process", "search the knowledge base for retention terms"],
+    examples: ["add an article on the material approval process", "search the knowledge base for retention terms", "which articles were viewed most this month"],
     leaves: [
       { id: "knowledge-base.new", label: "New article", path: "/knowledge-base/new", needsProject: false, chainLabel: "New article" },
       { id: "knowledge-base.open", label: "Open", path: "/knowledge-base", needsProject: false },
@@ -748,7 +756,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     // guidance. card-catalogue.test.ts asserts that guidance still appears.
     pillKeys: [],
     placeholder: "e.g. set up a new project for the Marina tower",
-    examples: ["set up a new project for the Marina tower", "which projects are running behind schedule"],
+    examples: ["set up a new project for the Marina tower", "which projects are running behind schedule", "how many active projects do we have right now"],
     leaves: [
       { id: "project-directory.new", label: "New project", path: "/projects/new", needsProject: false, chainLabel: "New project" },
       { id: "project-directory.open", label: "Open", path: "/projects", needsProject: false },
@@ -762,7 +770,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     needsProject: false,
     pillKeys: ["analysis", "analytics", "insights"],
     placeholder: "e.g. compare planned against actual cost across projects",
-    examples: ["compare planned against actual cost across projects", "where is margin slipping this quarter"],
+    examples: ["compare planned against actual cost across projects", "where is margin slipping this quarter", "show the portfolio-wide schedule variance"],
     leaves: [{ id: "analysis.open", label: "Open", path: "/analysis", needsProject: false }],
   },
 ] as const;
